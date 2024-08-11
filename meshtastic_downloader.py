@@ -7,6 +7,9 @@ from dotenv import load_dotenv
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 
+# Change to the script's directory
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
 # Load configuration
 env_file = ".env"
 load_dotenv(env_file)

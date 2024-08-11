@@ -31,15 +31,15 @@ case "$save_choice" in
 esac
 
 # Save the configuration to .env
-echo "SAVE_APKS=$save_apks" > .env
-echo "SAVE_FIRMWARE=$save_firmware" >> .env
+echo "SAVE_APKS=$save_apks" > ~/fetchtastic/.env
+echo "SAVE_FIRMWARE=$save_firmware" >> ~/fetchtastic/.env
 
 # Prompt for number of versions to keep for Android app if saving APKs
 if [ "$save_apks" = true ]; then
     echo "Enter the number of different versions of the Android app to keep (default: 2): "
     read android_versions_to_keep
     android_versions_to_keep=${android_versions_to_keep:-2}
-    echo "ANDROID_VERSIONS_TO_KEEP=$android_versions_to_keep" >> .env
+    echo "ANDROID_VERSIONS_TO_KEEP=$android_versions_to_keep" >> ~/fetchtastic/.env
 fi
 
 # Prompt for number of versions to keep for firmware if saving firmware
@@ -47,7 +47,7 @@ if [ "$save_firmware" = true ]; then
     echo "Enter the number of different versions of the firmware to keep (default: 2): "
     read firmware_versions_to_keep
     firmware_versions_to_keep=${firmware_versions_to_keep:-2}
-    echo "FIRMWARE_VERSIONS_TO_KEEP=$firmware_versions_to_keep" >> .env
+    echo "FIRMWARE_VERSIONS_TO_KEEP=$firmware_versions_to_keep" >> ~/fetchtastic/.env
 
     # Prompt for automatic extraction of firmware files if saving firmware
     echo "Do you want to automatically extract specific files from firmware zips? [y/n] (default: n): "
@@ -57,13 +57,13 @@ if [ "$save_firmware" = true ]; then
         echo "Enter the strings to match for extraction from the main firmware .zip file, separated by spaces (example: 'rak4631-'):"
         read extract_patterns
         if [ -z "$extract_patterns" ]; then
-            echo "AUTO_EXTRACT=no" >> .env
+            echo "AUTO_EXTRACT=no" >> ~/fetchtastic/.env
         else
-            echo "AUTO_EXTRACT=yes" >> .env
-            echo "EXTRACT_PATTERNS=\"$extract_patterns\"" >> .env
+            echo "AUTO_EXTRACT=yes" >> ~/fetchtastic/.env
+            echo "EXTRACT_PATTERNS=\"$extract_patterns\"" >> ~/fetchtastic/.env
         fi
     else
-        echo "AUTO_EXTRACT=no" >> .env
+        echo "AUTO_EXTRACT=no" >> ~/fetchtastic/.env
     fi
 fi
 
@@ -128,16 +128,16 @@ if [ "$notifications" = "y" ]; then
     ntfy_topic="$ntfy_server/$topic_name"
 
     # Save the NTFY configuration to .env
-    echo "NTFY_SERVER=$ntfy_topic" >> .env
+    echo "NTFY_SERVER=$ntfy_topic" >> ~/fetchtastic/.env
 
     # Save the topic URL to topic.txt
-    echo "$ntfy_topic" > topic.txt
+    echo "$ntfy_topic" > ~/fetchtastic/topic.txt
 
     echo "Notification setup complete. Your NTFY topic URL is: $ntfy_topic"
 else
     echo "Skipping notification setup."
-    echo "NTFY_SERVER=" >> .env
-    rm -f topic.txt  # Remove the topic.txt file if notifications are disabled
+    echo "NTFY_SERVER=" >> ~/fetchtastic/.env
+    rm -f ~/fetchtastic/topic.txt  # Remove the topic.txt file if notifications are disabled
 fi
 
 # Run the script once after setup and show the latest version
