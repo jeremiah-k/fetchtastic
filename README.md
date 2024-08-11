@@ -13,7 +13,7 @@ This repository contains a set of scripts to download the latest Meshtastic Andr
 
 ### Step 2: Request storage access for Termux API
 
-Open Termux and run this command:
+Open Termux and run this command, allowing Termux API storage access:
 ```
 termux-setup-storage
 ```
