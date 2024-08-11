@@ -1,13 +1,13 @@
 #!/data/data/com.termux/files/usr/bin/sh
 
-# Remove the crontab entry for meshtastic_downloader.py
-existing_cron=$(crontab -l 2>/dev/null | grep 'meshtastic_downloader.py')
+# Remove the crontab entry for fetchtastic.py
+existing_cron=$(crontab -l 2>/dev/null | grep 'fetchtastic.py')
 
 if [ -n "$existing_cron" ]; then
-    (crontab -l 2>/dev/null | grep -v 'meshtastic_downloader.py') | crontab -
-    echo "Crontab entry for meshtastic_downloader.py removed."
+    (crontab -l 2>/dev/null | grep -v 'fetchtastic.py') | crontab -
+    echo "Crontab entry for fetchtastic.py removed."
 else
-    echo "No crontab entry for meshtastic_downloader.py found."
+    echo "No crontab entry for fetchtastic.py found."
 fi
 
 # Remove the start-crond.sh script from the boot directory

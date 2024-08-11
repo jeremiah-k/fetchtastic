@@ -13,12 +13,15 @@ mkdir -p ~/.termux/boot
 # Create the start-crond.sh script in the boot directory
 echo '#!/data/data/com.termux/files/usr/bin/sh' > ~/.termux/boot/start-crond.sh
 echo 'crond' >> ~/.termux/boot/start-crond.sh
-echo 'python /data/data/com.termux/files/home/fetchtastic/meshtastic_downloader.py' >> ~/.termux/boot/start-crond.sh
+echo 'python /data/data/com.termux/files/home/fetchtastic/fetchtastic.py' >> ~/.termux/boot/start-crond.sh
 chmod +x ~/.termux/boot/start-crond.sh
 
 # Add a separator and some spacing
 echo "--------------------------------------------------------"
 echo
+
+# Get the directory of the setup.sh script
+SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
 
 # Prompt to save APKs, firmware, or both
 echo "Do you want to save APKs, firmware, or both? [a/f/b] (default: b): "
@@ -31,15 +34,15 @@ case "$save_choice" in
 esac
 
 # Save the configuration to .env
-echo "SAVE_APKS=$save_apks" > .env
-echo "SAVE_FIRMWARE=$save_firmware" >> .env
+echo "SAVE_APKS=$save_apks" > "$SCRIPT_DIR/.env"
+echo "SAVE_FIRMWARE=$save_firmware" >> "$SCRIPT_DIR/.env"
 
 # Prompt for number of versions to keep for Android app if saving APKs
 if [ "$save_apks" = true ]; then
     echo "Enter the number of different versions of the Android app to keep (default: 2): "
     read android_versions_to_keep
     android_versions_to_keep=${android_versions_to_keep:-2}
-    echo "ANDROID_VERSIONS_TO_KEEP=$android_versions_to_keep" >> .env
+    echo "ANDROID_VERSIONS_TO_KEEP=$android_versions_to_keep" >> "$SCRIPT_DIR/.env"
 fi
 
 # Prompt for number of versions to keep for firmware if saving firmware
@@ -47,7 +50,7 @@ if [ "$save_firmware" = true ]; then
     echo "Enter the number of different versions of the firmware to keep (default: 2): "
     read firmware_versions_to_keep
     firmware_versions_to_keep=${firmware_versions_to_keep:-2}
-    echo "FIRMWARE_VERSIONS_TO_KEEP=$firmware_versions_to_keep" >> .env
+    echo "FIRMWARE_VERSIONS_TO_KEEP=$firmware_versions_to_keep" >> "$SCRIPT_DIR/.env"
 
     # Prompt for automatic extraction of firmware files if saving firmware
     echo "Do you want to automatically extract specific files from firmware zips? [y/n] (default: n): "
@@ -57,32 +60,32 @@ if [ "$save_firmware" = true ]; then
         echo "Enter the strings to match for extraction from the main firmware .zip file, separated by spaces (example: 'rak4631-'):"
         read extract_patterns
         if [ -z "$extract_patterns" ]; then
-            echo "AUTO_EXTRACT=no" >> .env
+            echo "AUTO_EXTRACT=no" >> "$SCRIPT_DIR/.env"
         else
-            echo "AUTO_EXTRACT=yes" >> .env
-            echo "EXTRACT_PATTERNS=\"$extract_patterns\"" >> .env
+            echo "AUTO_EXTRACT=yes" >> "$SCRIPT_DIR/.env"
+            echo "EXTRACT_PATTERNS=\"$extract_patterns\"" >> "$SCRIPT_DIR/.env"
         fi
     else
-        echo "AUTO_EXTRACT=no" >> .env
+        echo "AUTO_EXTRACT=no" >> "$SCRIPT_DIR/.env"
     fi
 fi
 
-# Check for existing cron jobs related to meshtastic_downloader.py
-existing_cron=$(crontab -l 2>/dev/null | grep 'meshtastic_downloader.py')
+# Check for existing cron jobs related to fetchtastic.py
+existing_cron=$(crontab -l 2>/dev/null | grep 'fetchtastic.py')
 
 if [ -n "$existing_cron" ]; then
-    echo "An existing cron job for meshtastic_downloader.py was found:"
+    echo "An existing cron job for fetchtastic.py was found:"
     echo "$existing_cron"
     read -p "Do you want to keep the existing crontab entry for running the script daily at 3 AM? [y/n] (default: y): " keep_cron
     keep_cron=${keep_cron:-y}
 
     if [ "$keep_cron" = "n" ]; then
-        (crontab -l 2>/dev/null | grep -v 'meshtastic_downloader.py') | crontab -
+        (crontab -l 2>/dev/null | grep -v 'fetchtastic.py') | crontab -
         echo "Crontab entry removed."
         read -p "Do you want to add a new crontab entry to run the script daily at 3 AM? [y/n] (default: y): " add_cron
         add_cron=${add_cron:-y}
         if [ "$add_cron" = "y" ]; then
-            (crontab -l 2>/dev/null; echo "0 3 * * * python ~/fetchtastic/meshtastic_downloader.py") | crontab -
+            (crontab -l 2>/dev/null; echo "0 3 * * * python /data/data/com.termux/files/home/fetchtastic/fetchtastic.py") | crontab -
             echo "Crontab entry added."
         else
             echo "Skipping crontab installation."
@@ -94,7 +97,7 @@ else
     read -p "Do you want to add a crontab entry to run the script daily at 3 AM? [y/n] (default: y): " add_cron
     add_cron=${add_cron:-y}
     if [ "$add_cron" = "y" ]; then
-        (crontab -l 2>/dev/null; echo "0 3 * * * python ~/fetchtastic/meshtastic_downloader.py") | crontab -
+        (crontab -l 2>/dev/null; echo "0 3 * * * python /data/data/com.termux/files/home/fetchtastic/fetchtastic.py") | crontab -
         echo "Crontab entry added."
     else
         echo "Skipping crontab installation."
@@ -128,22 +131,22 @@ if [ "$notifications" = "y" ]; then
     ntfy_topic="$ntfy_server/$topic_name"
 
     # Save the NTFY configuration to .env
-    echo "NTFY_SERVER=$ntfy_topic" >> .env
+    echo "NTFY_SERVER=$ntfy_topic" >> "$SCRIPT_DIR/.env"
 
     # Save the topic URL to topic.txt
-    echo "$ntfy_topic" > topic.txt
+    echo "$ntfy_topic" > "$SCRIPT_DIR/topic.txt"
 
     echo "Notification setup complete. Your NTFY topic URL is: $ntfy_topic"
 else
     echo "Skipping notification setup."
-    echo "NTFY_SERVER=" >> .env
-    rm -f topic.txt  # Remove the topic.txt file if notifications are disabled
+    echo "NTFY_SERVER=" >> "$SCRIPT_DIR/.env"
+    rm -f "$SCRIPT_DIR/topic.txt"  # Remove the topic.txt file if notifications are disabled
 fi
 
 # Run the script once after setup and show the latest version
 echo
 echo "Performing first run, this may take a few minutes..."
-latest_output=$(python ~/fetchtastic/meshtastic_downloader.py)
+latest_output=$(python /data/data/com.termux/files/home/fetchtastic/fetchtastic.py)
 
 echo
 echo "Setup complete. The Meshtastic downloader script will run on boot and also daily at 3 AM (if crontab entry was added)."
