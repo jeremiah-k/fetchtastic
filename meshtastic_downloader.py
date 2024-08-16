@@ -83,21 +83,35 @@ def extract_files(zip_path, extract_dir, patterns):
     except Exception as e:
         log_message(f"Error: An unexpected error occurred while extracting files from {zip_path}: {e}")
 
+def verify_and_cleanup_versions(directory, expected_versions, keep_count):
+    # Get the list of currently downloaded versions
+    downloaded_versions = [d for d in os.listdir(directory) if os.path.isdir(os.path.join(directory, d))]
+    
+    # Check for any missing versions
+    missing_versions = set(expected_versions) - set(downloaded_versions)
+    for missing_version in missing_versions:
+        log_message(f"Missing version detected: {missing_version}. Attempting to download...")
+
+    # Clean up old versions only if we have more than the keep_count
+    cleanup_old_versions(directory, keep_count)
+
 def cleanup_old_versions(directory, keep_count):
     versions = sorted(
         (os.path.join(directory, d) for d in os.listdir(directory) if os.path.isdir(os.path.join(directory, d))),
         key=os.path.getmtime
     )
-    old_versions = versions[:-keep_count]
-    for version in old_versions:
-        for root, dirs, files in os.walk(version, topdown=False):
-            for name in files:
-                os.remove(os.path.join(root, name))
-                log_message(f"Removed file: {os.path.join(root, name)}")
-            for name in dirs:
-                os.rmdir(os.path.join(root, name))
-        os.rmdir(version)
-        log_message(f"Removed directory: {version}")
+    
+    if len(versions) > keep_count:
+        old_versions = versions[:-keep_count]  # Keep the newest 'keep_count' versions, delete the rest
+        for version in old_versions:
+            for root, dirs, files in os.walk(version, topdown=False):
+                for name in files:
+                    os.remove(os.path.join(root, name))
+                    log_message(f"Removed file: {os.path.join(root, name)}")
+                for name in dirs:
+                    os.rmdir(os.path.join(root, name))
+            os.rmdir(version)
+            log_message(f"Removed directory: {version}")
 
 def check_and_download(releases, latest_release_file, release_type, download_dir, versions_to_keep, extract_patterns):
     downloaded_versions = []
@@ -116,22 +130,23 @@ def check_and_download(releases, latest_release_file, release_type, download_dir
         with open(latest_release_file, 'w') as f:
             f.write(latest_release_tag)
         for release in releases:
-            if release['tag_name'] != saved_release_tag:
-                release_dir = os.path.join(download_dir, release['tag_name'])
-                if not os.path.exists(release_dir):
-                    os.makedirs(release_dir)
-                for asset in release['assets']:
-                    file_name = asset['name']
-                    download_path = os.path.join(release_dir, file_name)
-                    download_file(asset['browser_download_url'], download_path)
-                    if auto_extract and file_name.endswith('.zip'):
-                        log_message(f"Attempting to extract from {download_path} to {release_dir} with patterns {extract_patterns}")
-                        extract_files(download_path, release_dir, extract_patterns)
-                downloaded_versions.append(release['tag_name'])
+            release_tag = release['tag_name']
+            release_dir = os.path.join(download_dir, release_tag)
+            if not os.path.exists(release_dir):
+                os.makedirs(release_dir)
+            for asset in release['assets']:
+                file_name = asset['name']
+                download_path = os.path.join(release_dir, file_name)
+                download_file(asset['browser_download_url'], download_path)
+                if auto_extract and file_name.endswith('.zip'):
+                    log_message(f"Attempting to extract from {download_path} to {release_dir} with patterns {extract_patterns}")
+                    extract_files(download_path, release_dir, extract_patterns)
+            downloaded_versions.append(release_tag)
+
     else:
         log_message(f"All {release_type} versions are up to date.")
-    
-    cleanup_old_versions(download_dir, versions_to_keep)
+
+    verify_and_cleanup_versions(download_dir, [r['tag_name'] for r in releases], versions_to_keep)
     return downloaded_versions
 
 def main():
