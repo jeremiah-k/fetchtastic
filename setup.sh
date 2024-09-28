@@ -13,7 +13,7 @@ mkdir -p ~/.termux/boot
 # Create the start-crond.sh script in the boot directory
 echo '#!/data/data/com.termux/files/usr/bin/sh' > ~/.termux/boot/start-crond.sh
 echo 'crond' >> ~/.termux/boot/start-crond.sh
-echo 'python /data/data/com.termux/files/home/fetchtastic/meshtastic_downloader.py' >> ~/.termux/boot/start-crond.sh
+echo 'python /data/data/com.termux/files/home/fetchtastic/fetchtastic.py' >> ~/.termux/boot/start-crond.sh
 chmod +x ~/.termux/boot/start-crond.sh
 
 # Add a separator and some spacing
@@ -70,22 +70,22 @@ if [ "$save_firmware" = true ]; then
     fi
 fi
 
-# Check for existing cron jobs related to meshtastic_downloader.py
-existing_cron=$(crontab -l 2>/dev/null | grep 'meshtastic_downloader.py')
+# Check for existing cron jobs related to fetchtastic.py
+existing_cron=$(crontab -l 2>/dev/null | grep 'fetchtastic.py')
 
 if [ -n "$existing_cron" ]; then
-    echo "An existing cron job for meshtastic_downloader.py was found:"
+    echo "An existing cron job for fetchtastic.py was found:"
     echo "$existing_cron"
     read -p "Do you want to keep the existing crontab entry for running the script daily at 3 AM? [y/n] (default: y): " keep_cron
     keep_cron=${keep_cron:-y}
 
     if [ "$keep_cron" = "n" ]; then
-        (crontab -l 2>/dev/null | grep -v 'meshtastic_downloader.py') | crontab -
+        (crontab -l 2>/dev/null | grep -v 'fetchtastic.py') | crontab -
         echo "Crontab entry removed."
         read -p "Do you want to add a new crontab entry to run the script daily at 3 AM? [y/n] (default: y): " add_cron
         add_cron=${add_cron:-y}
         if [ "$add_cron" = "y" ]; then
-            (crontab -l 2>/dev/null; echo "0 3 * * * python /data/data/com.termux/files/home/fetchtastic/meshtastic_downloader.py") | crontab -
+            (crontab -l 2>/dev/null; echo "0 3 * * * python /data/data/com.termux/files/home/fetchtastic/fetchtastic.py") | crontab -
             echo "Crontab entry added."
         else
             echo "Skipping crontab installation."
@@ -97,7 +97,7 @@ else
     read -p "Do you want to add a crontab entry to run the script daily at 3 AM? [y/n] (default: y): " add_cron
     add_cron=${add_cron:-y}
     if [ "$add_cron" = "y" ]; then
-        (crontab -l 2>/dev/null; echo "0 3 * * * python /data/data/com.termux/files/home/fetchtastic/meshtastic_downloader.py") | crontab -
+        (crontab -l 2>/dev/null; echo "0 3 * * * python /data/data/com.termux/files/home/fetchtastic/fetchtastic.py") | crontab -
         echo "Crontab entry added."
     else
         echo "Skipping crontab installation."
@@ -146,7 +146,7 @@ fi
 # Run the script once after setup and show the latest version
 echo
 echo "Performing first run, this may take a few minutes..."
-latest_output=$(python /data/data/com.termux/files/home/fetchtastic/meshtastic_downloader.py)
+latest_output=$(python /data/data/com.termux/files/home/fetchtastic/fetchtastic.py)
 
 echo
 echo "Setup complete. The Meshtastic downloader script will run on boot and also daily at 3 AM (if crontab entry was added)."
