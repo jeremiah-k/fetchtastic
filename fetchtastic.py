@@ -152,7 +152,7 @@ def check_and_download(releases, latest_release_file, release_type, download_dir
 # Main function to run the downloader
 def main():
     start_time = time.time()
-    log_message("Starting the Meshtastic downloader with updated logic...")
+    log_message("Starting Fetchtastic...")
 
     downloaded_firmwares = []
     downloaded_apks = []
