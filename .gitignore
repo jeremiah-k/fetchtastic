@@ -1,3 +1,4 @@
 .env
 topic.txt
 fetchtastic.log
+.aider*
