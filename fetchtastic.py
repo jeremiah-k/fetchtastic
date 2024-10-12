@@ -6,6 +6,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
+import re
 
 # Change to the script's directory
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
@@ -22,6 +23,12 @@ android_versions_to_keep = int(os.getenv("ANDROID_VERSIONS_TO_KEEP", 2))
 firmware_versions_to_keep = int(os.getenv("FIRMWARE_VERSIONS_TO_KEEP", 2))
 auto_extract = os.getenv("AUTO_EXTRACT", "no") == "yes"
 extract_patterns = os.getenv("EXTRACT_PATTERNS", "").split()
+
+apk_patterns_str = os.getenv("APK_PATTERNS", "")
+apk_patterns = apk_patterns_str.split()
+
+firmware_patterns_str = os.getenv("FIRMWARE_PATTERNS", "")
+firmware_patterns = firmware_patterns_str.split()
 
 # Paths for storage
 android_releases_url = "https://api.github.com/repos/meshtastic/Meshtastic-Android/releases"
@@ -42,7 +49,11 @@ def log_message(message):
 
 def send_ntfy_notification(message):
     if ntfy_server:
-        requests.post(ntfy_server, data=message.encode('utf-8'))
+        try:
+            response = requests.post(ntfy_server, data=message.encode('utf-8'))
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            log_message(f"Error sending notification: {e}")
 
 # Function to get the latest releases and sort by date
 def get_latest_releases(url, versions_to_keep, scan_count=5):
@@ -81,7 +92,6 @@ def extract_files(zip_path, extract_dir, patterns):
     try:
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
             for file_name in zip_ref.namelist():
-                log_message(f"Checking if {file_name} matches patterns {patterns}")
                 if any(pattern in file_name for pattern in patterns):
                     zip_ref.extract(file_name, extract_dir)
                     log_message(f"Extracted {file_name} to {extract_dir}")
@@ -108,7 +118,7 @@ def cleanup_old_versions(directory, keep_count):
         log_message(f"Removed directory: {version}")
 
 # Function to check for missing releases and download them if necessary
-def check_and_download(releases, latest_release_file, release_type, download_dir, versions_to_keep, extract_patterns):
+def check_and_download(releases, latest_release_file, release_type, download_dir, versions_to_keep, extract_patterns, patterns=None):
     downloaded_versions = []
 
     if not os.path.exists(download_dir):
@@ -133,10 +143,18 @@ def check_and_download(releases, latest_release_file, release_type, download_dir
             log_message(f"Downloading new version: {release_tag}")
             for asset in release['assets']:
                 file_name = asset['name']
+                # Generate pattern from asset filename
+                asset_pattern = re.sub(r'[-_.]?v?\d+.*', '', file_name)
+                # Check if any pattern matches the asset filename
+                if patterns:
+                    if not any(asset_pattern.startswith(pattern) for pattern in patterns):
+                        # Suppress messages for known non-relevant files
+                        if file_name not in ['version_info.txt']:
+                            pass  # Optionally, you can log a debug message here
+                        continue
                 download_path = os.path.join(release_dir, file_name)
                 download_file(asset['browser_download_url'], download_path)
-                if auto_extract and file_name.endswith('.zip'):
-                    log_message(f"Extracting from {download_path} to {release_dir} with patterns {extract_patterns}")
+                if auto_extract and file_name.endswith('.zip') and release_type == "Firmware":
                     extract_files(download_path, release_dir, extract_patterns)
             downloaded_versions.append(release_tag)
 
@@ -157,33 +175,40 @@ def main():
     downloaded_firmwares = []
     downloaded_apks = []
 
-    # Scan for the last 5 releases, download the latest 2
+    # Scan for the last 5 releases, download the latest versions_to_download
     releases_to_scan = 5
-    versions_to_download = 2
 
-    if save_firmware:
+    if save_firmware and firmware_patterns:
+        versions_to_download = firmware_versions_to_keep
         latest_firmware_releases = get_latest_releases(firmware_releases_url, versions_to_download, releases_to_scan)
         downloaded_firmwares = check_and_download(
             latest_firmware_releases,
             latest_firmware_release_file,
             "Firmware",
             firmware_dir,
-            versions_to_download,
-            extract_patterns
+            firmware_versions_to_keep,
+            extract_patterns,
+            patterns=firmware_patterns
         )
         log_message(f"Latest Firmware releases: {', '.join(release['tag_name'] for release in latest_firmware_releases)}")
+    elif not firmware_patterns:
+        log_message("No firmware patterns selected. Skipping firmware download.")
 
-    if save_apks:
+    if save_apks and apk_patterns:
+        versions_to_download = android_versions_to_keep
         latest_android_releases = get_latest_releases(android_releases_url, versions_to_download, releases_to_scan)
         downloaded_apks = check_and_download(
             latest_android_releases,
             latest_android_release_file,
             "Android APK",
             apks_dir,
-            versions_to_download,
-            extract_patterns
+            android_versions_to_keep,
+            extract_patterns,
+            patterns=apk_patterns
         )
         log_message(f"Latest Android APK releases: {', '.join(release['tag_name'] for release in latest_android_releases)}")
+    elif not apk_patterns:
+        log_message("No APK patterns selected. Skipping APK download.")
 
     end_time = time.time()
     log_message(f"Finished the Meshtastic downloader. Total time taken: {end_time - start_time:.2f} seconds")
