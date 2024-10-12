@@ -26,8 +26,8 @@ extract_patterns = os.getenv("EXTRACT_PATTERNS", "").split()
 selected_firmware_assets_str = os.getenv("SELECTED_FIRMWARE_ASSETS", "")
 selected_firmware_assets = selected_firmware_assets_str.split()
 
-selected_apk_assets_str = os.getenv("SELECTED_APK_ASSETS", "")
-selected_apk_assets = selected_apk_assets_str.split()
+selected_apk_patterns_str = os.getenv("SELECTED_APK_PATTERNS", "")
+selected_apk_patterns = selected_apk_patterns_str.split()
 
 # Paths for storage
 android_releases_url = "https://api.github.com/repos/meshtastic/Meshtastic-Android/releases"
@@ -118,7 +118,7 @@ def cleanup_old_versions(directory, keep_count):
         log_message(f"Removed directory: {version}")
 
 # Function to check for missing releases and download them if necessary
-def check_and_download(releases, latest_release_file, release_type, download_dir, versions_to_keep, extract_patterns, selected_assets=None):
+def check_and_download(releases, latest_release_file, release_type, download_dir, versions_to_keep, extract_patterns, selected_assets=None, selected_patterns=None):
     downloaded_versions = []
 
     if not os.path.exists(download_dir):
@@ -143,13 +143,19 @@ def check_and_download(releases, latest_release_file, release_type, download_dir
             log_message(f"Downloading new version: {release_tag}")
             for asset in release['assets']:
                 file_name = asset['name']
-                # Check if the asset is in the selected list
-                if selected_assets and file_name not in selected_assets:
-                    log_message(f"Skipping asset {file_name}, not in selected list.")
-                    continue
+                # For APKs, check patterns instead of exact names
+                if release_type == "Android APK" and selected_patterns:
+                    if not any(pattern.lower() in file_name.lower() for pattern in selected_patterns):
+                        log_message(f"Skipping asset {file_name}, does not match selected patterns.")
+                        continue
+                # For firmware, check if the asset is in the selected list
+                elif release_type == "Firmware" and selected_assets:
+                    if file_name not in selected_assets:
+                        log_message(f"Skipping asset {file_name}, not in selected list.")
+                        continue
                 download_path = os.path.join(release_dir, file_name)
                 download_file(asset['browser_download_url'], download_path)
-                if auto_extract and file_name.endswith('.zip'):
+                if auto_extract and file_name.endswith('.zip') and release_type == "Firmware":
                     log_message(f"Extracting from {download_path} to {release_dir} with patterns {extract_patterns}")
                     extract_files(download_path, release_dir, extract_patterns)
             downloaded_versions.append(release_tag)
@@ -198,7 +204,7 @@ def main():
             apks_dir,
             android_versions_to_keep,
             extract_patterns,
-            selected_assets=selected_apk_assets
+            selected_patterns=selected_apk_patterns
         )
         log_message(f"Latest Android APK releases: {', '.join(release['tag_name'] for release in latest_android_releases)}")
 
