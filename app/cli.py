@@ -19,13 +19,17 @@ def main():
     if args.command == 'setup':
         # Run the setup process
         setup_config.run_setup()
-    elif args.command == 'download' or args.command is None:
+    elif args.command == 'download':
         # Check if configuration exists
         if not setup_config.config_exists():
             print("No configuration found. Running setup.")
             setup_config.run_setup()
         # Run the downloader
         downloader.main()
+    elif args.command is None:
+        # No command provided
+        print("No command provided.")
+        print("For help and available commands, run 'fetchtastic --help'.")
     else:
         parser.print_help()
 

@@ -1,0 +1,4 @@
+requests
+pick
+PyYAML
+urllib3

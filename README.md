@@ -1,35 +1,105 @@
 # Fetchtastic Termux Setup
 
-This repository contains a set of scripts to download the latest Meshtastic Android app and Firmware releases to your phone via Termux. It also provides optional notifications via a NTFY server. Follow the steps below to set up and run the script.
+Fetchtastic is a tool to download the latest Meshtastic Android app and Firmware releases to your phone via Termux. It also provides optional notifications via an NTFY server. This guide will help you set up and run Fetchtastic on your device.
 
-## Setup Steps
+## Prerequisites
 
-### Step 1: Install **Termux** and addons.
+### Install Termux and Add-ons
 
-1. Install Termux: Download and install [Termux](https://f-droid.org/en/packages/com.termux/) from F-Droid.
-2. Install Termux Boot: Download and install [Termux Boot](https://f-droid.org/en/packages/com.termux.boot/) from F-Droid.
-3. Install Termux API: Download and install [Termux API](https://f-droid.org/en/packages/com.termux.api/) from F-Droid.
-4. (Optional) Install ntfy: Download and install [ntfy](https://f-droid.org/en/packages/io.heckel.ntfy/) from F-Droid.
+1. **Install Termux**: Download and install [Termux](https://f-droid.org/en/packages/com.termux/) from F-Droid.
+2. **Install Termux Boot**: Download and install [Termux Boot](https://f-droid.org/en/packages/com.termux.boot/) from F-Droid.
+3. **Install Termux API**: Download and install [Termux API](https://f-droid.org/en/packages/com.termux.api/) from F-Droid.
+4. *(Optional)* **Install ntfy**: Download and install [ntfy](https://f-droid.org/en/packages/io.heckel.ntfy/) from F-Droid.
 
-### Step 2: Request storage access for Termux API
+### Request Storage Access for Termux
 
-Open Termux and run this command, allowing Termux API storage access:
-```
+Open Termux and run the following command to grant storage access:
+
+```bash
 termux-setup-storage
 ```
+## Installation
 
-### Step 3: Install Git and Clone the Repository
+### Step 1: Install Python
 
-Next run these commands to install git and clone the repository:
-```
-pkg install git -y
-git clone https://github.com/jeremiah-k/fetchtastic.git
-cd fetchtastic
+```bash
+pkg install python -y
 ```
 
-### Step 3: Run the Setup Script
+### Step 2: Install Fetchtastic
 
-Run setup.sh and follow the prompts to complete the setup.
+```bash
+pip install fetchtastic
 ```
-sh setup.sh
+
+## Usage
+
+### Run the Setup Process
+
+Run the setup command and follow the proompts to configure Fetchtastic:
+
+```bash
+fetchtastic setup
 ```
+
+During setup, you will be able to:
+
+- Choose whether to download APKs, firmware, or both.
+- Select specific assets to download.
+- Set the number of versions to keep.
+- Configure automatic extraction of firmware files. (Optional)
+- Set up notifications via NTFY. (Optional)
+- Add a cron job to run Fetchtastic regularly. (Optional)
+
+### Perform Downloads
+
+To manually start the download process, run:
+
+```bash
+fetchtastic download
+```
+
+This will download the latest versions of the selected assets and store them in the specified directories.
+
+### Help and Reconfiguration
+
+To view help and usage instructions, run:
+
+```bash
+fetchtastic --help
+```
+
+If you need to reconfigure Fetchtastic, run:
+
+```bash
+fetchtastic setup
+```
+
+### Files and Directories
+
+By default, Fetchtastic saves files and configuration in the `Downloads/Fetchtastic` directory:
+
+ - **Configuration File**: `Downloads/Fetchtastic/fetchtastic.yaml`
+ - **Log File**: `Downloads/Fetchtastic/fetchtastic.log`
+ - **APKs**: `Downloads/Fetchtastic/apks`
+ - **Firmware**: `Downloads/Fetchtastic/firmware`
+
+You can manually edit the configuration file to change the settings.
+
+
+### Scheduling with Cron
+
+During setup, you have the option to add a cron job that runs Fetchtastic daily at 3 AM.
+
+To modify cron job, you can run:
+```bash
+crontab -e
+```
+
+### Notifications via NTFY
+
+If you choose to set up notifications, Fetchtastic will send updates to your specified NTFY topic.
+
+### Contributing
+
+Contributions are welcome! Feel free to open issues or submit pull requests.
