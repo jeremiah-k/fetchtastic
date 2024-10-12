@@ -47,10 +47,18 @@ if [ "$update_config" = "y" ]; then
     esac
     SAVE_CHOICE="$save_choice"
 
-    # Save the configuration to .env
+    # Save the initial configuration to .env
     echo "SAVE_APKS=$save_apks" > "$ENV_FILE"
     echo "SAVE_FIRMWARE=$save_firmware" >> "$ENV_FILE"
     echo "SAVE_CHOICE=$SAVE_CHOICE" >> "$ENV_FILE"
+
+    # Run the menu scripts based on user choices
+    if [ "$save_apks" = true ]; then
+        python menu_apk.py
+    fi
+    if [ "$save_firmware" = true ]; then
+        python menu_firmware.py
+    fi
 
     # Prompt for number of versions to keep for Android app if saving APKs
     if [ "$save_apks" = true ]; then
@@ -74,7 +82,7 @@ if [ "$update_config" = "y" ]; then
         read auto_extract
         auto_extract=${auto_extract:-${AUTO_EXTRACT_YN:-n}}
         if [ "$auto_extract" = "y" ]; then
-            echo "Enter the strings to match for extraction from the main firmware .zip file, separated by spaces (current: '${EXTRACT_PATTERNS}'):"
+            echo "Enter the strings to match for extraction from the firmware .zip files, separated by spaces (current: '${EXTRACT_PATTERNS}'):"
             read extract_patterns
             extract_patterns=${extract_patterns:-${EXTRACT_PATTERNS}}
             if [ -z "$extract_patterns" ]; then
@@ -127,14 +135,6 @@ if [ "$update_config" = "y" ]; then
         echo "Skipping notification setup."
         echo "NTFY_SERVER=" >> "$ENV_FILE"
         rm -f "$SCRIPT_DIR/topic.txt"  # Remove the topic.txt file if notifications are disabled
-    fi
-
-    # Run the menu scripts based on user choices
-    if [ "$save_apks" = true ]; then
-        python menu_apk.py
-    fi
-    if [ "$save_firmware" = true ]; then
-        python menu_firmware.py
     fi
 else
     echo "Keeping existing configuration."
