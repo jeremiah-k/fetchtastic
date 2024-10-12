@@ -31,7 +31,6 @@ def run_setup():
     # Check if running in Termux
     if not is_termux():
         print("Warning: Fetchtastic is designed to run in Termux on Android.")
-        print("Please install Termux and try again.")
         print("For more information, visit https://github.com/jeremiah-k/fetchtastic/")
         return
 
