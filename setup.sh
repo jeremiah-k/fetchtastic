@@ -27,7 +27,7 @@ SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
 ENV_FILE="$SCRIPT_DIR/.env"
 if [ -f "$ENV_FILE" ]; then
     # Load current settings
-    source "$ENV_FILE"
+    . "$ENV_FILE"
     echo "Existing configuration found. Do you want to update it? [y/n] (default: n): "
     read update_config
     update_config=${update_config:-n}
@@ -66,14 +66,6 @@ if [ "$update_config" = "y" ]; then
         read firmware_versions_to_keep
         firmware_versions_to_keep=${firmware_versions_to_keep:-${FIRMWARE_VERSIONS_TO_KEEP:-2}}
         echo "FIRMWARE_VERSIONS_TO_KEEP=$firmware_versions_to_keep" >> "$ENV_FILE"
-    fi
-
-    # Run the menu scripts based on user choices
-    if [ "$save_apks" = true ]; then
-        python menu_apk.py
-    fi
-    if [ "$save_firmware" = true ]; then
-        python menu_firmware.py
     fi
 
     # Prompt for automatic extraction of firmware files if saving firmware
@@ -123,9 +115,9 @@ if [ "$update_config" = "y" ]; then
         ntfy_topic="$ntfy_server/$topic_name"
 
         # Save the NTFY configuration to .env
-        echo "NTFY_SERVER=$ntfy_topic" >> "$ENV_FILE"
-        echo "NTFY_SERVER_URL=$ntfy_server" >> "$ENV_FILE"
-        echo "NTFY_TOPIC_NAME=$topic_name" >> "$ENV_FILE"
+        echo "NTFY_SERVER=\"$ntfy_topic\"" >> "$ENV_FILE"
+        echo "NTFY_SERVER_URL=\"$ntfy_server\"" >> "$ENV_FILE"
+        echo "NTFY_TOPIC_NAME=\"$topic_name\"" >> "$ENV_FILE"
 
         # Save the topic URL to topic.txt
         echo "$ntfy_topic" > "$SCRIPT_DIR/topic.txt"
@@ -135,6 +127,14 @@ if [ "$update_config" = "y" ]; then
         echo "Skipping notification setup."
         echo "NTFY_SERVER=" >> "$ENV_FILE"
         rm -f "$SCRIPT_DIR/topic.txt"  # Remove the topic.txt file if notifications are disabled
+    fi
+
+    # Run the menu scripts based on user choices
+    if [ "$save_apks" = true ]; then
+        python menu_apk.py
+    fi
+    if [ "$save_firmware" = true ]; then
+        python menu_firmware.py
     fi
 else
     echo "Keeping existing configuration."

@@ -26,20 +26,17 @@ def fetch_apk_assets():
     return asset_names
 
 # Function to present a menu to the user to select assets
-def select_assets(assets, existing_selection):
+def select_assets(assets):
     title = 'Select the APK files you want to download (press SPACE to select, ENTER to confirm):'
     options = assets
-    # Pre-select existing selections
-    pre_selected_indices = [i for i, asset in enumerate(assets) if asset in existing_selection]
-    selected_options = pick(options, title, multiselect=True, min_selection_count=1, indicator='*', default_index=pre_selected_indices)
+    selected_options = pick(options, title, multiselect=True, min_selection_count=1, indicator='*')
     selected_assets = [option[0] for option in selected_options]
     return selected_assets
 
 def main():
     try:
         assets = fetch_apk_assets()
-        existing_selection = os.getenv("SELECTED_APK_ASSETS", "").split()
-        selected_assets = select_assets(assets, existing_selection)
+        selected_assets = select_assets(assets)
         # Save the selected assets to .env
         selected_assets_str = ' '.join(selected_assets)
         # Remove existing SELECTED_APK_ASSETS line from .env
