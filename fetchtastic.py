@@ -92,7 +92,6 @@ def extract_files(zip_path, extract_dir, patterns):
     try:
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
             for file_name in zip_ref.namelist():
-                log_message(f"Checking if {file_name} matches patterns {patterns}")
                 if any(pattern in file_name for pattern in patterns):
                     zip_ref.extract(file_name, extract_dir)
                     log_message(f"Extracted {file_name} to {extract_dir}")
@@ -149,13 +148,13 @@ def check_and_download(releases, latest_release_file, release_type, download_dir
                 # Check if any pattern matches the asset filename
                 if patterns:
                     if not any(asset_pattern.startswith(pattern) for pattern in patterns):
-                        log_message(f"Skipping asset {file_name}, does not match selected patterns.")
+                        # Suppress messages for known non-relevant files
+                        if file_name not in ['version_info.txt']:
+                            pass  # Optionally, you can log a debug message here
                         continue
-
                 download_path = os.path.join(release_dir, file_name)
                 download_file(asset['browser_download_url'], download_path)
                 if auto_extract and file_name.endswith('.zip') and release_type == "Firmware":
-                    log_message(f"Extracting from {download_path} to {release_dir} with patterns {extract_patterns}")
                     extract_files(download_path, release_dir, extract_patterns)
             downloaded_versions.append(release_tag)
 
@@ -179,7 +178,7 @@ def main():
     # Scan for the last 5 releases, download the latest versions_to_download
     releases_to_scan = 5
 
-    if save_firmware:
+    if save_firmware and firmware_patterns:
         versions_to_download = firmware_versions_to_keep
         latest_firmware_releases = get_latest_releases(firmware_releases_url, versions_to_download, releases_to_scan)
         downloaded_firmwares = check_and_download(
@@ -192,8 +191,10 @@ def main():
             patterns=firmware_patterns
         )
         log_message(f"Latest Firmware releases: {', '.join(release['tag_name'] for release in latest_firmware_releases)}")
+    elif not firmware_patterns:
+        log_message("No firmware patterns selected. Skipping firmware download.")
 
-    if save_apks:
+    if save_apks and apk_patterns:
         versions_to_download = android_versions_to_keep
         latest_android_releases = get_latest_releases(android_releases_url, versions_to_download, releases_to_scan)
         downloaded_apks = check_and_download(
@@ -206,6 +207,8 @@ def main():
             patterns=apk_patterns
         )
         log_message(f"Latest Android APK releases: {', '.join(release['tag_name'] for release in latest_android_releases)}")
+    elif not apk_patterns:
+        log_message("No APK patterns selected. Skipping APK download.")
 
     end_time = time.time()
     log_message(f"Finished the Meshtastic downloader. Total time taken: {end_time - start_time:.2f} seconds")

@@ -28,10 +28,17 @@ def fetch_firmware_assets():
 
 # Function to present a menu to the user to select assets
 def select_assets(assets):
-    title = 'Select the firmware files you want to download (press SPACE to select, ENTER to confirm):'
+    title = '''Select the firmware files you want to download (press SPACE to select, ENTER to confirm):
+Note: These are files from the latest release. Version numbers may change in other releases.'''
     options = assets
-    selected_options = pick(options, title, multiselect=True, min_selection_count=1, indicator='*')
+    selected_options = pick(options, title, multiselect=True, min_selection_count=0, indicator='*')
     selected_assets = [option[0] for option in selected_options]
+    if not selected_assets:
+        print("No firmware files selected. Firmware will not be downloaded.")
+        # Update .env to reflect that firmware should not be saved
+        with open(env_file, 'a') as f:
+            f.write('SAVE_FIRMWARE=false\n')
+        return None
     return selected_assets
 
 def extract_patterns(selected_assets):
@@ -46,6 +53,8 @@ def main():
     try:
         assets = fetch_firmware_assets()
         selected_assets = select_assets(assets)
+        if selected_assets is None:
+            return
         # Save the selected assets to .env
         selected_assets_str = ' '.join(selected_assets)
         # Remove existing SELECTED_FIRMWARE_ASSETS and FIRMWARE_PATTERNS lines from .env
