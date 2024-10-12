@@ -23,6 +23,9 @@ firmware_versions_to_keep = int(os.getenv("FIRMWARE_VERSIONS_TO_KEEP", 2))
 auto_extract = os.getenv("AUTO_EXTRACT", "no") == "yes"
 extract_patterns = os.getenv("EXTRACT_PATTERNS", "").split()
 
+selected_assets_str = os.getenv("SELECTED_ASSETS", "")
+selected_assets = selected_assets_str.split()
+
 # Paths for storage
 android_releases_url = "https://api.github.com/repos/meshtastic/Meshtastic-Android/releases"
 firmware_releases_url = "https://api.github.com/repos/meshtastic/firmware/releases"
@@ -42,7 +45,11 @@ def log_message(message):
 
 def send_ntfy_notification(message):
     if ntfy_server:
-        requests.post(ntfy_server, data=message.encode('utf-8'))
+        try:
+            response = requests.post(ntfy_server, data=message.encode('utf-8'))
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            log_message(f"Error sending notification: {e}")
 
 # Function to get the latest releases and sort by date
 def get_latest_releases(url, versions_to_keep, scan_count=5):
@@ -108,7 +115,7 @@ def cleanup_old_versions(directory, keep_count):
         log_message(f"Removed directory: {version}")
 
 # Function to check for missing releases and download them if necessary
-def check_and_download(releases, latest_release_file, release_type, download_dir, versions_to_keep, extract_patterns):
+def check_and_download(releases, latest_release_file, release_type, download_dir, versions_to_keep, extract_patterns, selected_assets=None):
     downloaded_versions = []
 
     if not os.path.exists(download_dir):
@@ -133,6 +140,10 @@ def check_and_download(releases, latest_release_file, release_type, download_dir
             log_message(f"Downloading new version: {release_tag}")
             for asset in release['assets']:
                 file_name = asset['name']
+                # For firmware, check if the asset is in the selected list
+                if release_type == "Firmware" and selected_assets and file_name not in selected_assets:
+                    log_message(f"Skipping asset {file_name}, not in selected list.")
+                    continue
                 download_path = os.path.join(release_dir, file_name)
                 download_file(asset['browser_download_url'], download_path)
                 if auto_extract and file_name.endswith('.zip'):
@@ -157,31 +168,34 @@ def main():
     downloaded_firmwares = []
     downloaded_apks = []
 
-    # Scan for the last 5 releases, download the latest 2
+    # Scan for the last 5 releases, download the latest versions_to_download
     releases_to_scan = 5
-    versions_to_download = 2
 
     if save_firmware:
+        versions_to_download = firmware_versions_to_keep
         latest_firmware_releases = get_latest_releases(firmware_releases_url, versions_to_download, releases_to_scan)
         downloaded_firmwares = check_and_download(
             latest_firmware_releases,
             latest_firmware_release_file,
             "Firmware",
             firmware_dir,
-            versions_to_download,
-            extract_patterns
+            firmware_versions_to_keep,
+            extract_patterns,
+            selected_assets=selected_assets
         )
         log_message(f"Latest Firmware releases: {', '.join(release['tag_name'] for release in latest_firmware_releases)}")
 
     if save_apks:
+        versions_to_download = android_versions_to_keep
         latest_android_releases = get_latest_releases(android_releases_url, versions_to_download, releases_to_scan)
         downloaded_apks = check_and_download(
             latest_android_releases,
             latest_android_release_file,
             "Android APK",
             apks_dir,
-            versions_to_download,
-            extract_patterns
+            android_versions_to_keep,
+            extract_patterns,
+            selected_assets=None  # Do not use selected_assets for APKs
         )
         log_message(f"Latest Android APK releases: {', '.join(release['tag_name'] for release in latest_android_releases)}")
 

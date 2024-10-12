@@ -4,8 +4,8 @@
 pkg update -y
 pkg install cronie python openssl termux-api -y
 
-# Install Python requests and dotenv module
-LDFLAGS=" -lm -lcompiler_rt" pip install requests python-dotenv
+# Install Python modules
+LDFLAGS=" -lm -lcompiler_rt" pip install requests python-dotenv pick
 
 # Create the boot script directory if it doesn't exist
 mkdir -p ~/.termux/boot
@@ -22,6 +22,9 @@ echo
 
 # Get the directory of the setup.sh script
 SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
+
+# Run the menu script to get user's selection of firmware assets
+python menu.py
 
 # Prompt to save APKs, firmware, or both
 echo "Do you want to save APKs, firmware, or both? [a/f/b] (default: b): "
