@@ -55,9 +55,11 @@ def run_setup():
     config['SAVE_FIRMWARE'] = save_firmware
 
     # Run the menu scripts based on user choices
+    # Adjust SAVE_APKS and SAVE_FIRMWARE based on selections
     if save_apks:
         apk_selection = menu_apk.run_menu()
         if not apk_selection:
+            print("No APK assets selected. APKs will not be downloaded.")
             save_apks = False
             config['SAVE_APKS'] = False
         else:
@@ -65,10 +67,17 @@ def run_setup():
     if save_firmware:
         firmware_selection = menu_firmware.run_menu()
         if not firmware_selection:
+            print("No firmware assets selected. Firmware will not be downloaded.")
             save_firmware = False
             config['SAVE_FIRMWARE'] = False
         else:
             config['SELECTED_FIRMWARE_ASSETS'] = firmware_selection['selected_assets']
+
+    # If both save_apks and save_firmware are False, inform the user and restart setup
+    if not save_apks and not save_firmware:
+        print("You must select at least one asset to download (APK or firmware).")
+        print("Please run 'fetchtastic setup' again and select at least one asset.")
+        return
 
     # Prompt for number of versions to keep
     if save_apks:
@@ -124,7 +133,7 @@ def run_setup():
             yaml.dump(config, f)
 
         print(f"Notifications have been set up using the topic: {ntfy_topic}")
-        # Ask if the user wants to copy the topic name to the clipboard
+        # Ask if the user wants to copy the topic URL to the clipboard
         copy_to_clipboard = input("Do you want to copy the topic URL to the clipboard? [y/n] (default: y): ").strip().lower() or 'y'
         if copy_to_clipboard == 'y':
             copy_to_clipboard_termux(ntfy_topic)
@@ -164,7 +173,7 @@ def install_crond():
     try:
         # Check if crond is installed
         result = subprocess.run(['command', '-v', 'crond'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        if result.returncode != 0:
+        if result.returncode != 0 or not result.stdout.strip():
             print("Installing crond...")
             subprocess.run(['pkg', 'install', 'termux-services', '-y'], check=True)
             subprocess.run(['sv-enable', 'crond'], check=True)
@@ -222,6 +231,42 @@ def setup_cron_job():
                 print("Skipping cron job installation.")
     except Exception as e:
         print(f"An error occurred while setting up the cron job: {e}")
+
+def run_clean():
+    print("This will remove Fetchtastic configuration files, downloaded files, and cron job entries.")
+    confirm = input("Are you sure you want to proceed? [y/n] (default: n): ").strip().lower() or 'n'
+    if confirm != 'y':
+        print("Clean operation cancelled.")
+        return
+
+    # Remove configuration file
+    if os.path.exists(CONFIG_FILE):
+        os.remove(CONFIG_FILE)
+        print(f"Removed configuration file: {CONFIG_FILE}")
+
+    # Remove download directory
+    if os.path.exists(DEFAULT_CONFIG_DIR):
+        import shutil
+        shutil.rmtree(DEFAULT_CONFIG_DIR)
+        print(f"Removed download directory: {DEFAULT_CONFIG_DIR}")
+
+    # Remove cron job entries
+    try:
+        # Get current crontab entries
+        result = subprocess.run(['crontab', '-l'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if result.returncode == 0:
+            existing_cron = result.stdout
+            # Remove existing fetchtastic cron jobs
+            new_cron = '\n'.join([line for line in existing_cron.split('\n') if 'fetchtastic download' not in line])
+            # Update crontab
+            process = subprocess.Popen(['crontab', '-'], stdin=subprocess.PIPE, text=True)
+            process.communicate(input=new_cron)
+            print("Removed Fetchtastic cron job entries.")
+    except Exception as e:
+        print(f"An error occurred while removing cron jobs: {e}")
+
+    print("Fetchtastic has been cleaned from your system.")
+    print("If you installed Fetchtastic via pip and wish to uninstall it, run 'pip uninstall fetchtastic'.")
 
 def load_config():
     if not config_exists():
