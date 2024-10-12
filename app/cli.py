@@ -17,6 +17,9 @@ def main():
     # Command to display NTFY topic
     parser_topic = subparsers.add_parser('topic', help='Display the current NTFY topic')
 
+    # Command to clean/remove Fetchtastic files and settings
+    parser_clean = subparsers.add_parser('clean', help='Remove Fetchtastic configuration, downloads, and cron jobs')
+
     args = parser.parse_args()
 
     if args.command == 'setup':
@@ -36,6 +39,9 @@ def main():
             print(f"Current NTFY topic URL: {config['NTFY_SERVER']}")
         else:
             print("Notifications are not set up. Run 'fetchtastic setup' to configure notifications.")
+    elif args.command == 'clean':
+        # Run the clean process
+        setup_config.run_clean()
     elif args.command is None:
         # No command provided
         print("No command provided.")
