@@ -91,7 +91,7 @@ def run_setup():
         auto_extract = input("Do you want to automatically extract specific files from firmware zips? [y/n] (default: n): ").strip().lower() or 'n'
         if auto_extract == 'y':
             print("Enter the strings to match for extraction from the firmware .zip files, separated by spaces.")
-            print("Example: rak4631- tbeam- tbeamonetank-")
+            print("Example: rak4631- tbeam-2 t1000-e- tlora-v2-1-1_6-")
             extract_patterns = input("Extraction patterns: ").strip()
             if extract_patterns:
                 config['AUTO_EXTRACT'] = True
