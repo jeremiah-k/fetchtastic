@@ -105,9 +105,19 @@ def run_setup():
     download_dir = DEFAULT_CONFIG_DIR
     config['DOWNLOAD_DIR'] = download_dir
 
-    # Save configuration to YAML file before setting up notifications
+    # Save configuration to YAML file before proceeding
     with open(CONFIG_FILE, 'w') as f:
         yaml.dump(config, f)
+
+    # Ask if the user wants to set up a cron job
+    setup_cron = input("Do you want to add a cron job to run Fetchtastic daily at 3 AM? [y/n] (default: y): ").strip().lower() or 'y'
+    if setup_cron == 'y':
+        # Install crond if not already installed
+        install_crond()
+        # Call function to set up cron job
+        setup_cron_job()
+    else:
+        print("Skipping cron job setup.")
 
     # Ask if the user wants to perform a first run
     perform_first_run = input("Do you want to perform a first run now? [y/n] (default: y): ").strip().lower() or 'y'
@@ -132,14 +142,14 @@ def run_setup():
         with open(CONFIG_FILE, 'w') as f:
             yaml.dump(config, f)
 
-        print(f"Notifications have been set up using the topic: {ntfy_topic}")
-        # Ask if the user wants to copy the topic URL to the clipboard
-        copy_to_clipboard = input("Do you want to copy the topic URL to the clipboard? [y/n] (default: y): ").strip().lower() or 'y'
+        print(f"Notifications have been set up using the topic: {topic_name}")
+        # Ask if the user wants to copy the topic name to the clipboard
+        copy_to_clipboard = input("Do you want to copy the topic name to the clipboard? [y/n] (default: y): ").strip().lower() or 'y'
         if copy_to_clipboard == 'y':
-            copy_to_clipboard_termux(ntfy_topic)
-            print("Topic URL copied to clipboard.")
+            copy_to_clipboard_termux(topic_name)
+            print("Topic name copied to clipboard.")
         else:
-            print("You can copy the topic URL from above.")
+            print("You can copy the topic name from above.")
 
         print("You can view your current topic at any time by running 'fetchtastic topic'.")
         print("You can change the topic by running 'fetchtastic setup' again or editing the YAML file.")
@@ -149,16 +159,6 @@ def run_setup():
         with open(CONFIG_FILE, 'w') as f:
             yaml.dump(config, f)
         print("Notifications have not been set up.")
-
-    # Ask if the user wants to set up a cron job
-    setup_cron = input("Do you want to add a cron job to run Fetchtastic daily at 3 AM? [y/n] (default: y): ").strip().lower() or 'y'
-    if setup_cron == 'y':
-        # Install crond if not already installed
-        install_crond()
-        # Call function to set up cron job
-        setup_cron_job()
-    else:
-        print("Skipping cron job setup.")
 
 def is_termux():
     return 'com.termux' in os.environ.get('PREFIX', '')
