@@ -4,10 +4,22 @@ import os
 import yaml
 from . import menu_apk
 from . import menu_firmware
+from . import downloader  # Import downloader to perform first run
 
 # Define the default configuration directory
-DEFAULT_CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".fetchtastic")
-CONFIG_FILE = os.path.join(DEFAULT_CONFIG_DIR, "fetchtastic.yaml")
+HOME_DIR = os.path.expanduser("~")
+
+# Try to find the Downloads directory
+DOWNLOADS_DIR = os.path.join(HOME_DIR, 'Downloads')
+if not os.path.exists(DOWNLOADS_DIR):
+    # Try other common locations
+    DOWNLOADS_DIR = os.path.join(HOME_DIR, 'Download')
+    if not os.path.exists(DOWNLOADS_DIR):
+        # Use HOME_DIR if Downloads directory is not found
+        DOWNLOADS_DIR = HOME_DIR
+
+DEFAULT_CONFIG_DIR = os.path.join(DOWNLOADS_DIR, 'Fetchtastic')
+CONFIG_FILE = os.path.join(DEFAULT_CONFIG_DIR, 'fetchtastic.yaml')
 
 def config_exists():
     return os.path.exists(CONFIG_FILE)
@@ -69,9 +81,8 @@ def run_setup():
         else:
             config['AUTO_EXTRACT'] = False
 
-    # Prompt for custom download directory
-    default_download_dir = os.path.join(os.path.expanduser("~"), "fetchtastic_downloads")
-    download_dir = input(f"Enter the download directory (default: {default_download_dir}): ").strip() or default_download_dir
+    # Set the download directory to the same as the config directory
+    download_dir = DEFAULT_CONFIG_DIR
     config['DOWNLOAD_DIR'] = download_dir
 
     # Prompt for NTFY server configuration
@@ -91,6 +102,12 @@ def run_setup():
         yaml.dump(config, f)
 
     print(f"Setup complete. Configuration saved at {CONFIG_FILE}")
+
+    # Ask if the user wants to perform a first run
+    perform_first_run = input("Do you want to perform a first run now? [y/n] (default: y): ").strip().lower() or 'y'
+    if perform_first_run == 'y':
+        print("Performing first run, this may take a few minutes...")
+        downloader.main()
 
 def load_config():
     if not config_exists():

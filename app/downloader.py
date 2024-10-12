@@ -29,11 +29,16 @@ def main():
     selected_apk_assets = config.get('SELECTED_APK_ASSETS', [])
     selected_firmware_assets = config.get('SELECTED_FIRMWARE_ASSETS', [])
 
-    download_dir = config.get('DOWNLOAD_DIR', os.path.join(os.path.expanduser("~"), "fetchtastic_downloads"))
+    download_dir = config.get('DOWNLOAD_DIR', os.path.join(os.path.expanduser("~"), "Downloads", "Fetchtastic"))
     firmware_dir = os.path.join(download_dir, "firmware")
     apks_dir = os.path.join(download_dir, "apks")
     latest_android_release_file = os.path.join(apks_dir, "latest_android_release.txt")
     latest_firmware_release_file = os.path.join(firmware_dir, "latest_firmware_release.txt")
+
+    # Create necessary directories
+    for dir_path in [download_dir, firmware_dir, apks_dir]:
+        if not os.path.exists(dir_path):
+            os.makedirs(dir_path)
 
     # Logging setup
     log_file = os.path.join(download_dir, "fetchtastic.log")
