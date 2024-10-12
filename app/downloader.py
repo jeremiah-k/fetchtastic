@@ -21,6 +21,7 @@ def main():
     save_apks = config.get("SAVE_APKS", False)
     save_firmware = config.get("SAVE_FIRMWARE", False)
     ntfy_server = config.get("NTFY_SERVER", "")
+    ntfy_topic = config.get("NTFY_TOPIC", "")
     android_versions_to_keep = config.get("ANDROID_VERSIONS_TO_KEEP", 2)
     firmware_versions_to_keep = config.get("FIRMWARE_VERSIONS_TO_KEEP", 2)
     auto_extract = config.get("AUTO_EXTRACT", False)
@@ -49,12 +50,15 @@ def main():
         print(message)
 
     def send_ntfy_notification(message):
-        if ntfy_server:
+        if ntfy_server and ntfy_topic:
             try:
-                response = requests.post(ntfy_server, data=message.encode('utf-8'))
+                ntfy_url = f"{ntfy_server.rstrip('/')}/{ntfy_topic}"
+                response = requests.post(ntfy_url, data=message.encode('utf-8'))
                 response.raise_for_status()
             except requests.exceptions.RequestException as e:
                 log_message(f"Error sending notification: {e}")
+        else:
+            log_message("Notifications are not configured.")
 
     # Function to get the latest releases and sort by date
     def get_latest_releases(url, versions_to_keep, scan_count=5):
@@ -175,6 +179,9 @@ def main():
     # Scan for the last 5 releases, download the latest versions_to_download
     releases_to_scan = 5
 
+    latest_firmware_releases = []
+    latest_android_releases = []
+
     if save_firmware and selected_firmware_assets:
         versions_to_download = firmware_versions_to_keep
         latest_firmware_releases = get_latest_releases(firmware_releases_url, versions_to_download, releases_to_scan)
@@ -208,7 +215,8 @@ def main():
         log_message("No APK assets selected. Skipping APK download.")
 
     end_time = time.time()
-    log_message(f"Finished the Meshtastic downloader. Total time taken: {end_time - start_time:.2f} seconds")
+    total_time = end_time - start_time
+    log_message(f"Finished the Meshtastic downloader. Total time taken: {total_time:.2f} seconds")
 
     # Send notification if there are new downloads
     if downloaded_firmwares or downloaded_apks:
@@ -220,13 +228,16 @@ def main():
         message += f"{datetime.now()}"
         send_ntfy_notification(message)
     else:
-        message = (
-            f"All Firmware and Android APK versions are up to date.\n"
-            f"Latest Firmware releases: {', '.join(release['tag_name'] for release in latest_firmware_releases)}\n"
-            f"Latest Android APK releases: {', '.join(release['tag_name'] for release in latest_android_releases)}\n"
-            f"{datetime.now()}"
-        )
-        send_ntfy_notification(message)
+        if latest_firmware_releases or latest_android_releases:
+            message = (
+                f"All Firmware and Android APK versions are up to date.\n"
+                f"Latest Firmware releases: {', '.join(release['tag_name'] for release in latest_firmware_releases)}\n"
+                f"Latest Android APK releases: {', '.join(release['tag_name'] for release in latest_android_releases)}\n"
+                f"{datetime.now()}"
+            )
+            send_ntfy_notification(message)
+        else:
+            log_message("No releases found to check for updates.")
 
 if __name__ == "__main__":
     main()
