@@ -6,6 +6,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
+import re
 
 # Change to the script's directory
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
@@ -23,11 +24,11 @@ firmware_versions_to_keep = int(os.getenv("FIRMWARE_VERSIONS_TO_KEEP", 2))
 auto_extract = os.getenv("AUTO_EXTRACT", "no") == "yes"
 extract_patterns = os.getenv("EXTRACT_PATTERNS", "").split()
 
-selected_firmware_assets_str = os.getenv("SELECTED_FIRMWARE_ASSETS", "")
-selected_firmware_assets = selected_firmware_assets_str.split()
+apk_patterns_str = os.getenv("APK_PATTERNS", "")
+apk_patterns = apk_patterns_str.split()
 
-selected_apk_patterns_str = os.getenv("SELECTED_APK_PATTERNS", "")
-selected_apk_patterns = selected_apk_patterns_str.split()
+firmware_patterns_str = os.getenv("FIRMWARE_PATTERNS", "")
+firmware_patterns = firmware_patterns_str.split()
 
 # Paths for storage
 android_releases_url = "https://api.github.com/repos/meshtastic/Meshtastic-Android/releases"
@@ -118,7 +119,7 @@ def cleanup_old_versions(directory, keep_count):
         log_message(f"Removed directory: {version}")
 
 # Function to check for missing releases and download them if necessary
-def check_and_download(releases, latest_release_file, release_type, download_dir, versions_to_keep, extract_patterns, selected_assets=None, selected_patterns=None):
+def check_and_download(releases, latest_release_file, release_type, download_dir, versions_to_keep, extract_patterns, patterns=None):
     downloaded_versions = []
 
     if not os.path.exists(download_dir):
@@ -143,16 +144,14 @@ def check_and_download(releases, latest_release_file, release_type, download_dir
             log_message(f"Downloading new version: {release_tag}")
             for asset in release['assets']:
                 file_name = asset['name']
-                # For APKs, check patterns instead of exact names
-                if release_type == "Android APK" and selected_patterns:
-                    if not any(pattern.lower() in file_name.lower() for pattern in selected_patterns):
+                # Generate pattern from asset filename
+                asset_pattern = re.sub(r'[-_.]?v?\d+.*', '', file_name)
+                # Check if any pattern matches the asset filename
+                if patterns:
+                    if not any(asset_pattern.startswith(pattern) for pattern in patterns):
                         log_message(f"Skipping asset {file_name}, does not match selected patterns.")
                         continue
-                # For firmware, check if the asset is in the selected list
-                elif release_type == "Firmware" and selected_assets:
-                    if file_name not in selected_assets:
-                        log_message(f"Skipping asset {file_name}, not in selected list.")
-                        continue
+
                 download_path = os.path.join(release_dir, file_name)
                 download_file(asset['browser_download_url'], download_path)
                 if auto_extract and file_name.endswith('.zip') and release_type == "Firmware":
@@ -190,7 +189,7 @@ def main():
             firmware_dir,
             firmware_versions_to_keep,
             extract_patterns,
-            selected_assets=selected_firmware_assets
+            patterns=firmware_patterns
         )
         log_message(f"Latest Firmware releases: {', '.join(release['tag_name'] for release in latest_firmware_releases)}")
 
@@ -204,7 +203,7 @@ def main():
             apks_dir,
             android_versions_to_keep,
             extract_patterns,
-            selected_patterns=selected_apk_patterns
+            patterns=apk_patterns
         )
         log_message(f"Latest Android APK releases: {', '.join(release['tag_name'] for release in latest_android_releases)}")
 

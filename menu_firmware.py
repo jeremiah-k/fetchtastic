@@ -2,6 +2,7 @@
 
 import os
 import sys
+import re
 from pick import pick
 import requests
 from dotenv import load_dotenv
@@ -33,20 +34,32 @@ def select_assets(assets):
     selected_assets = [option[0] for option in selected_options]
     return selected_assets
 
+def extract_patterns(selected_assets):
+    patterns = []
+    for asset in selected_assets:
+        # Remove version numbers and extensions to create patterns
+        pattern = re.sub(r'[-_.]?v?\d+.*', '', asset)
+        patterns.append(pattern)
+    return patterns
+
 def main():
     try:
         assets = fetch_firmware_assets()
         selected_assets = select_assets(assets)
         # Save the selected assets to .env
         selected_assets_str = ' '.join(selected_assets)
-        # Remove existing SELECTED_FIRMWARE_ASSETS line from .env
+        # Remove existing SELECTED_FIRMWARE_ASSETS and FIRMWARE_PATTERNS lines from .env
         with open(env_file, 'r') as f:
             lines = f.readlines()
         with open(env_file, 'w') as f:
             for line in lines:
-                if not line.startswith('SELECTED_FIRMWARE_ASSETS='):
+                if not line.startswith('SELECTED_FIRMWARE_ASSETS=') and not line.startswith('FIRMWARE_PATTERNS='):
                     f.write(line)
             f.write(f'SELECTED_FIRMWARE_ASSETS="{selected_assets_str}"\n')
+            # Generate patterns
+            patterns = extract_patterns(selected_assets)
+            patterns_str = ' '.join(patterns)
+            f.write(f'FIRMWARE_PATTERNS="{patterns_str}"\n')
         print("Selected firmware assets saved to .env")
     except Exception as e:
         print(f"An error occurred: {e}")
