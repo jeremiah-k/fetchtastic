@@ -41,8 +41,8 @@ if [ "$update_config" = "y" ]; then
     read save_choice
     save_choice=${save_choice:-${SAVE_CHOICE:-b}}
     case "$save_choice" in
-        a) save_apks=true; save_firmware=false ;;
-        f) save_apks=false; save_firmware=true ;;
+        a|A) save_apks=true; save_firmware=false ;;
+        f|F) save_apks=false; save_firmware=true ;;
         *) save_apks=true; save_firmware=true ;;
     esac
     SAVE_CHOICE="$save_choice"
@@ -78,13 +78,20 @@ if [ "$update_config" = "y" ]; then
 
     # Prompt for automatic extraction of firmware files if saving firmware
     if [ "$save_firmware" = true ]; then
-        echo "Do you want to automatically extract specific files from firmware zips? [y/n] (default: ${AUTO_EXTRACT_YN:-n}): "
+        default_extract=${AUTO_EXTRACT_YN:-n}
+        if [ "$default_extract" = "yes" ]; then
+            default_extract="y"
+        elif [ "$default_extract" = "no" ]; then
+            default_extract="n"
+        fi
+        echo "Do you want to automatically extract specific files from firmware zips? [y/n] (default: $default_extract): "
         read auto_extract
-        auto_extract=${auto_extract:-${AUTO_EXTRACT_YN:-n}}
+        auto_extract=${auto_extract:-$default_extract}
         if [ "$auto_extract" = "y" ]; then
-            echo "Enter the strings to match for extraction from the firmware .zip files, separated by spaces (current: '${EXTRACT_PATTERNS}'):"
+            default_patterns="${EXTRACT_PATTERNS}"
+            echo "Enter the strings to match for extraction from the firmware .zip files, separated by spaces (current: '${default_patterns}'):"
             read extract_patterns
-            extract_patterns=${extract_patterns:-${EXTRACT_PATTERNS}}
+            extract_patterns=${extract_patterns:-${default_patterns}}
             if [ -z "$extract_patterns" ]; then
                 echo "AUTO_EXTRACT=no" >> "$ENV_FILE"
             else
@@ -98,9 +105,10 @@ if [ "$update_config" = "y" ]; then
     fi
 
     # Prompt for NTFY server configuration
-    echo "Do you want to set up notifications via NTFY? [y/n] (default: ${NOTIFICATIONS:-y}): "
+    default_notifications=${NOTIFICATIONS:-y}
+    echo "Do you want to set up notifications via NTFY? [y/n] (default: $default_notifications): "
     read notifications
-    notifications=${notifications:-${NOTIFICATIONS:-y}}
+    notifications=${notifications:-$default_notifications}
     NOTIFICATIONS="$notifications"
 
     if [ "$notifications" = "y" ]; then
@@ -114,10 +122,14 @@ if [ "$update_config" = "y" ]; then
             *) ntfy_server="https://$ntfy_server" ;;
         esac
 
+        # Generate a random topic name if not set
+        random_topic=$(cat /dev/urandom | tr -dc 'a-z0-9' | fold -w 5 | head -n 1)
+        default_topic_name=${NTFY_TOPIC_NAME:-fetchtastic-$random_topic}
+
         # Prompt for the topic name
-        echo "Enter a unique topic name (default: ${NTFY_TOPIC_NAME:-fetchtastic-$(cat /dev/urandom | tr -dc 'a-z0-9' | fold -w 5 | head -n 1)}): "
+        echo "Enter a unique topic name (default: $default_topic_name): "
         read topic_name
-        topic_name=${topic_name:-${NTFY_TOPIC_NAME:-fetchtastic-$(cat /dev/urandom | tr -dc 'a-z0-9' | fold -w 5 | head -n 1)}}
+        topic_name=${topic_name:-$default_topic_name}
 
         # Construct the full NTFY topic URL
         ntfy_topic="$ntfy_server/$topic_name"
