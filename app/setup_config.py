@@ -5,6 +5,7 @@ import yaml
 import subprocess
 import random
 import string
+import shutil  # Added for shutil.which()
 from . import menu_apk
 from . import menu_firmware
 from . import downloader  # Import downloader to perform first run
@@ -119,12 +120,6 @@ def run_setup():
     else:
         print("Skipping cron job setup.")
 
-    # Ask if the user wants to perform a first run
-    perform_first_run = input("Do you want to perform a first run now? [y/n] (default: y): ").strip().lower() or 'y'
-    if perform_first_run == 'y':
-        print("Performing first run, this may take a few minutes...")
-        downloader.main()
-
     # Prompt for NTFY server configuration
     notifications = input("Do you want to set up notifications via NTFY? [y/n] (default: y): ").strip().lower() or 'y'
     if notifications == 'y':
@@ -135,14 +130,16 @@ def run_setup():
         # Generate a random topic name if the user doesn't provide one
         default_topic = 'fetchtastic-' + ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
         topic_name = input(f"Enter a unique topic name (default: {default_topic}): ").strip() or default_topic
-        ntfy_topic = f"{ntfy_server}/{topic_name}"
-        config['NTFY_SERVER'] = ntfy_topic
+        # Save only the topic name in the config
+        config['NTFY_TOPIC'] = topic_name
+        config['NTFY_SERVER'] = ntfy_server
 
         # Save updated configuration
         with open(CONFIG_FILE, 'w') as f:
             yaml.dump(config, f)
 
         print(f"Notifications have been set up using the topic: {topic_name}")
+        print(f"You can subscribe to this topic in the ntfy app by pasting the topic name.")
         # Ask if the user wants to copy the topic name to the clipboard
         copy_to_clipboard = input("Do you want to copy the topic name to the clipboard? [y/n] (default: y): ").strip().lower() or 'y'
         if copy_to_clipboard == 'y':
@@ -154,11 +151,20 @@ def run_setup():
         print("You can view your current topic at any time by running 'fetchtastic topic'.")
         print("You can change the topic by running 'fetchtastic setup' again or editing the YAML file.")
     else:
+        config['NTFY_TOPIC'] = ''
         config['NTFY_SERVER'] = ''
         # Save updated configuration
         with open(CONFIG_FILE, 'w') as f:
             yaml.dump(config, f)
         print("Notifications have not been set up.")
+
+    # Ask if the user wants to perform a first run
+    perform_first_run = input("Do you want to perform a first run now? [y/n] (default: y): ").strip().lower() or 'y'
+    if perform_first_run == 'y':
+        print("Performing first run, this may take a few minutes...")
+        downloader.main()
+    else:
+        print("Setup complete. You can run 'fetchtastic download' to start downloading.")
 
 def is_termux():
     return 'com.termux' in os.environ.get('PREFIX', '')
@@ -172,8 +178,8 @@ def copy_to_clipboard_termux(text):
 def install_crond():
     try:
         # Check if crond is installed
-        result = subprocess.run(['command', '-v', 'crond'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        if result.returncode != 0 or not result.stdout.strip():
+        crond_path = shutil.which('crond')
+        if crond_path is None:
             print("Installing crond...")
             subprocess.run(['pkg', 'install', 'termux-services', '-y'], check=True)
             subprocess.run(['sv-enable', 'crond'], check=True)
@@ -246,7 +252,6 @@ def run_clean():
 
     # Remove download directory
     if os.path.exists(DEFAULT_CONFIG_DIR):
-        import shutil
         shutil.rmtree(DEFAULT_CONFIG_DIR)
         print(f"Removed download directory: {DEFAULT_CONFIG_DIR}")
 
