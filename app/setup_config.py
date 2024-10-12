@@ -2,6 +2,7 @@
 
 import os
 import yaml
+import subprocess
 from . import menu_apk
 from . import menu_firmware
 from . import downloader  # Import downloader to perform first run
@@ -108,6 +109,79 @@ def run_setup():
     if perform_first_run == 'y':
         print("Performing first run, this may take a few minutes...")
         downloader.main()
+
+    # Ask if the user wants to set up a cron job
+    setup_cron = input("Do you want to add a cron job to run Fetchtastic daily at 3 AM? [y/n] (default: y): ").strip().lower() or 'y'
+    if setup_cron == 'y':
+        # Install crond if not already installed
+        install_crond()
+        # Call function to set up cron job
+        setup_cron_job()
+    else:
+        print("Skipping cron job setup.")
+
+def install_crond():
+    try:
+        # Check if crond is installed
+        result = subprocess.run(['which', 'crond'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if result.returncode != 0:
+            print("Installing crond...")
+            subprocess.run(['pkg', 'install', 'termux-services', '-y'], check=True)
+            subprocess.run(['sv-enable', 'crond'], check=True)
+            print("crond installed and started.")
+        else:
+            print("crond is already installed.")
+    except Exception as e:
+        print(f"An error occurred while installing crond: {e}")
+
+def setup_cron_job():
+    try:
+        # Get current crontab entries
+        result = subprocess.run(['crontab', '-l'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if result.returncode != 0:
+            existing_cron = ''
+        else:
+            existing_cron = result.stdout
+
+        # Check for existing cron jobs related to fetchtastic
+        if 'fetchtastic download' in existing_cron:
+            print("An existing cron job for Fetchtastic was found:")
+            print(existing_cron)
+            keep_cron = input("Do you want to keep the existing crontab entry? [y/n] (default: y): ").strip().lower() or 'y'
+            if keep_cron == 'n':
+                # Remove existing fetchtastic cron jobs
+                new_cron = '\n'.join([line for line in existing_cron.split('\n') if 'fetchtastic download' not in line])
+                # Update crontab
+                process = subprocess.Popen(['crontab', '-'], stdin=subprocess.PIPE, text=True)
+                process.communicate(input=new_cron)
+                print("Existing Fetchtastic cron job removed.")
+                # Ask if they want to add a new cron job
+                add_cron = input("Do you want to add a new crontab entry to run Fetchtastic daily at 3 AM? [y/n] (default: y): ").strip().lower() or 'y'
+                if add_cron == 'y':
+                    # Add new cron job
+                    new_cron += f"\n0 3 * * * fetchtastic download\n"
+                    # Update crontab
+                    process = subprocess.Popen(['crontab', '-'], stdin=subprocess.PIPE, text=True)
+                    process.communicate(input=new_cron)
+                    print("New cron job added.")
+                else:
+                    print("Skipping cron job installation.")
+            else:
+                print("Keeping existing crontab entry.")
+        else:
+            # No existing fetchtastic cron job
+            add_cron = input("Do you want to add a crontab entry to run Fetchtastic daily at 3 AM? [y/n] (default: y): ").strip().lower() or 'y'
+            if add_cron == 'y':
+                # Add new cron job
+                new_cron = existing_cron.strip() + f"\n0 3 * * * fetchtastic download\n"
+                # Update crontab
+                process = subprocess.Popen(['crontab', '-'], stdin=subprocess.PIPE, text=True)
+                process.communicate(input=new_cron)
+                print("Cron job added to run Fetchtastic daily at 3 AM.")
+            else:
+                print("Skipping cron job installation.")
+    except Exception as e:
+        print(f"An error occurred while setting up the cron job: {e}")
 
 def load_config():
     if not config_exists():
