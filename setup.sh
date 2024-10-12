@@ -2,7 +2,7 @@
 
 # Ensure necessary packages are installed
 pkg update -y
-pkg install cronie python openssl termux-api -y
+pkg install -y cronie python openssl termux-api python-pip
 
 # Install Python modules
 LDFLAGS=" -lm -lcompiler_rt" pip install requests python-dotenv pick
@@ -23,54 +23,121 @@ echo
 # Get the directory of the setup.sh script
 SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
 
-# Run the menu script to get user's selection of firmware assets
-python menu.py
-
-# Prompt to save APKs, firmware, or both
-echo "Do you want to save APKs, firmware, or both? [a/f/b] (default: b): "
-read save_choice
-save_choice=${save_choice:-b}
-case "$save_choice" in
-    a) save_apks=true; save_firmware=false ;;
-    f) save_apks=false; save_firmware=true ;;
-    *) save_apks=true; save_firmware=true ;;
-esac
-
-# Save the configuration to .env
-echo "SAVE_APKS=$save_apks" > "$SCRIPT_DIR/.env"
-echo "SAVE_FIRMWARE=$save_firmware" >> "$SCRIPT_DIR/.env"
-
-# Prompt for number of versions to keep for Android app if saving APKs
-if [ "$save_apks" = true ]; then
-    echo "Enter the number of different versions of the Android app to keep (default: 2): "
-    read android_versions_to_keep
-    android_versions_to_keep=${android_versions_to_keep:-2}
-    echo "ANDROID_VERSIONS_TO_KEEP=$android_versions_to_keep" >> "$SCRIPT_DIR/.env"
+# Load existing .env if it exists
+ENV_FILE="$SCRIPT_DIR/.env"
+if [ -f "$ENV_FILE" ]; then
+    # Load current settings
+    source "$ENV_FILE"
+    echo "Existing configuration found. Do you want to update it? [y/n] (default: n): "
+    read update_config
+    update_config=${update_config:-n}
+else
+    update_config="y"
 fi
 
-# Prompt for number of versions to keep for firmware if saving firmware
-if [ "$save_firmware" = true ]; then
-    echo "Enter the number of different versions of the firmware to keep (default: 2): "
-    read firmware_versions_to_keep
-    firmware_versions_to_keep=${firmware_versions_to_keep:-2}
-    echo "FIRMWARE_VERSIONS_TO_KEEP=$firmware_versions_to_keep" >> "$SCRIPT_DIR/.env"
+if [ "$update_config" = "y" ]; then
+    # Prompt to save APKs, firmware, or both
+    echo "Do you want to save APKs, firmware, or both? [a/f/b] (default: ${SAVE_CHOICE:-b}): "
+    read save_choice
+    save_choice=${save_choice:-${SAVE_CHOICE:-b}}
+    case "$save_choice" in
+        a) save_apks=true; save_firmware=false ;;
+        f) save_apks=false; save_firmware=true ;;
+        *) save_apks=true; save_firmware=true ;;
+    esac
+    SAVE_CHOICE="$save_choice"
+
+    # Save the configuration to .env
+    echo "SAVE_APKS=$save_apks" > "$ENV_FILE"
+    echo "SAVE_FIRMWARE=$save_firmware" >> "$ENV_FILE"
+    echo "SAVE_CHOICE=$SAVE_CHOICE" >> "$ENV_FILE"
+
+    # Prompt for number of versions to keep for Android app if saving APKs
+    if [ "$save_apks" = true ]; then
+        echo "Enter the number of different versions of the Android app to keep (default: ${ANDROID_VERSIONS_TO_KEEP:-2}): "
+        read android_versions_to_keep
+        android_versions_to_keep=${android_versions_to_keep:-${ANDROID_VERSIONS_TO_KEEP:-2}}
+        echo "ANDROID_VERSIONS_TO_KEEP=$android_versions_to_keep" >> "$ENV_FILE"
+    fi
+
+    # Prompt for number of versions to keep for firmware if saving firmware
+    if [ "$save_firmware" = true ]; then
+        echo "Enter the number of different versions of the firmware to keep (default: ${FIRMWARE_VERSIONS_TO_KEEP:-2}): "
+        read firmware_versions_to_keep
+        firmware_versions_to_keep=${firmware_versions_to_keep:-${FIRMWARE_VERSIONS_TO_KEEP:-2}}
+        echo "FIRMWARE_VERSIONS_TO_KEEP=$firmware_versions_to_keep" >> "$ENV_FILE"
+    fi
+
+    # Run the menu scripts based on user choices
+    if [ "$save_apks" = true ]; then
+        python menu_apk.py
+    fi
+    if [ "$save_firmware" = true ]; then
+        python menu_firmware.py
+    fi
 
     # Prompt for automatic extraction of firmware files if saving firmware
-    echo "Do you want to automatically extract specific files from firmware zips? [y/n] (default: n): "
-    read auto_extract
-    auto_extract=${auto_extract:-n}
-    if [ "$auto_extract" = "y" ]; then
-        echo "Enter the strings to match for extraction from the main firmware .zip file, separated by spaces (example: 'rak4631-'):"
-        read extract_patterns
-        if [ -z "$extract_patterns" ]; then
-            echo "AUTO_EXTRACT=no" >> "$SCRIPT_DIR/.env"
+    if [ "$save_firmware" = true ]; then
+        echo "Do you want to automatically extract specific files from firmware zips? [y/n] (default: ${AUTO_EXTRACT_YN:-n}): "
+        read auto_extract
+        auto_extract=${auto_extract:-${AUTO_EXTRACT_YN:-n}}
+        if [ "$auto_extract" = "y" ]; then
+            echo "Enter the strings to match for extraction from the main firmware .zip file, separated by spaces (current: '${EXTRACT_PATTERNS}'):"
+            read extract_patterns
+            extract_patterns=${extract_patterns:-${EXTRACT_PATTERNS}}
+            if [ -z "$extract_patterns" ]; then
+                echo "AUTO_EXTRACT=no" >> "$ENV_FILE"
+            else
+                echo "AUTO_EXTRACT=yes" >> "$ENV_FILE"
+                echo "EXTRACT_PATTERNS=\"$extract_patterns\"" >> "$ENV_FILE"
+            fi
         else
-            echo "AUTO_EXTRACT=yes" >> "$SCRIPT_DIR/.env"
-            echo "EXTRACT_PATTERNS=\"$extract_patterns\"" >> "$SCRIPT_DIR/.env"
+            echo "AUTO_EXTRACT=no" >> "$ENV_FILE"
         fi
-    else
-        echo "AUTO_EXTRACT=no" >> "$SCRIPT_DIR/.env"
+        AUTO_EXTRACT_YN="$auto_extract"
     fi
+
+    # Prompt for NTFY server configuration
+    echo "Do you want to set up notifications via NTFY? [y/n] (default: ${NOTIFICATIONS:-y}): "
+    read notifications
+    notifications=${notifications:-${NOTIFICATIONS:-y}}
+    NOTIFICATIONS="$notifications"
+
+    if [ "$notifications" = "y" ]; then
+        # Prompt for the NTFY server
+        echo "Enter the NTFY server (default: ${NTFY_SERVER_URL:-ntfy.sh}): "
+        read ntfy_server
+        ntfy_server=${ntfy_server:-${NTFY_SERVER_URL:-ntfy.sh}}
+        # Add https:// if not included
+        case "$ntfy_server" in
+            http://*|https://*) ;;  # Do nothing if it already starts with http:// or https://
+            *) ntfy_server="https://$ntfy_server" ;;
+        esac
+
+        # Prompt for the topic name
+        echo "Enter a unique topic name (default: ${NTFY_TOPIC_NAME:-fetchtastic-$(cat /dev/urandom | tr -dc 'a-z0-9' | fold -w 5 | head -n 1)}): "
+        read topic_name
+        topic_name=${topic_name:-${NTFY_TOPIC_NAME:-fetchtastic-$(cat /dev/urandom | tr -dc 'a-z0-9' | fold -w 5 | head -n 1)}}
+
+        # Construct the full NTFY topic URL
+        ntfy_topic="$ntfy_server/$topic_name"
+
+        # Save the NTFY configuration to .env
+        echo "NTFY_SERVER=$ntfy_topic" >> "$ENV_FILE"
+        echo "NTFY_SERVER_URL=$ntfy_server" >> "$ENV_FILE"
+        echo "NTFY_TOPIC_NAME=$topic_name" >> "$ENV_FILE"
+
+        # Save the topic URL to topic.txt
+        echo "$ntfy_topic" > "$SCRIPT_DIR/topic.txt"
+
+        echo "Notification setup complete. Your NTFY topic URL is: $ntfy_topic"
+    else
+        echo "Skipping notification setup."
+        echo "NTFY_SERVER=" >> "$ENV_FILE"
+        rm -f "$SCRIPT_DIR/topic.txt"  # Remove the topic.txt file if notifications are disabled
+    fi
+else
+    echo "Keeping existing configuration."
 fi
 
 # Check for existing cron jobs related to fetchtastic.py
@@ -107,45 +174,6 @@ else
     fi
 fi
 
-# Prompt for NTFY server configuration
-echo "Do you want to set up notifications via NTFY? [y/n] (default: y): "
-read notifications
-notifications=${notifications:-y}
-
-if [ "$notifications" = "y" ]; then
-    # Prompt for the NTFY server
-    echo "Enter the NTFY server (default: ntfy.sh): "
-    read ntfy_server
-    ntfy_server=${ntfy_server:-ntfy.sh}
-    # Add https:// if not included
-    case "$ntfy_server" in
-        http://*|https://*) ;;  # Do nothing if it already starts with http:// or https://
-        *) ntfy_server="https://$ntfy_server" ;;
-    esac
-
-    # Prompt for the topic name
-    echo "Enter a unique topic name (default: fetchtastic-{random}): "
-    read topic_name
-    if [ -z "$topic_name" ]; then
-        topic_name="fetchtastic-$(cat /dev/urandom | tr -dc 'a-z0-9' | fold -w 5 | head -n 1)"
-    fi
-
-    # Construct the full NTFY topic URL
-    ntfy_topic="$ntfy_server/$topic_name"
-
-    # Save the NTFY configuration to .env
-    echo "NTFY_SERVER=$ntfy_topic" >> "$SCRIPT_DIR/.env"
-
-    # Save the topic URL to topic.txt
-    echo "$ntfy_topic" > "$SCRIPT_DIR/topic.txt"
-
-    echo "Notification setup complete. Your NTFY topic URL is: $ntfy_topic"
-else
-    echo "Skipping notification setup."
-    echo "NTFY_SERVER=" >> "$SCRIPT_DIR/.env"
-    rm -f "$SCRIPT_DIR/topic.txt"  # Remove the topic.txt file if notifications are disabled
-fi
-
 # Run the script once after setup and show the latest version
 echo
 echo "Performing first run, this may take a few minutes..."
@@ -157,7 +185,7 @@ echo "The downloaded files will be stored in '/storage/emulated/0/Download/Mesht
 echo "$latest_output"
 
 # New final message logic
-if [ "$notifications" = "y" ]; then
+if [ "$NOTIFICATIONS" = "y" ]; then
     echo "Your NTFY topic URL is: $ntfy_topic"
 else
     echo "Notifications are not set. To configure notifications, please rerun setup.sh."
