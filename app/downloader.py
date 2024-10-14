@@ -30,7 +30,7 @@ def main():
     selected_apk_assets = config.get('SELECTED_APK_ASSETS', [])
     selected_firmware_assets = config.get('SELECTED_FIRMWARE_ASSETS', [])
 
-    download_dir = config.get('DOWNLOAD_DIR', os.path.join(os.path.expanduser("~"), "Downloads", "Fetchtastic"))
+    download_dir = config.get('DOWNLOAD_DIR', os.path.join(os.path.expanduser("~"), "storage", "downloads", "Meshtastic"))
     firmware_dir = os.path.join(download_dir, "firmware")
     apks_dir = os.path.join(download_dir, "apks")
     latest_android_release_file = os.path.join(apks_dir, "latest_android_release.txt")
@@ -103,11 +103,14 @@ def main():
                     log_message(f"Checking file: {base_name}")
                     for pattern in patterns:
                         if pattern in base_name:
-                            zip_ref.extract(file_info, extract_dir)
-                            log_message(f"Extracted {file_name} to {extract_dir}")
-                            matched_files.append(file_name)
-                            # Do not break; continue checking other patterns
-                            # in case the file matches multiple patterns
+                            # Extract and flatten directory structure
+                            source = zip_ref.open(file_info)
+                            target_path = os.path.join(extract_dir, base_name)
+                            with open(target_path, 'wb') as target_file:
+                                target_file.write(source.read())
+                            log_message(f"Extracted {base_name} to {extract_dir}")
+                            matched_files.append(base_name)
+                            break  # Stop checking patterns for this file
                 if not matched_files:
                     log_message(f"No files matched the extraction patterns in {zip_path}.")
         except zipfile.BadZipFile:
