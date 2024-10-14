@@ -138,8 +138,10 @@ def run_setup():
         with open(CONFIG_FILE, 'w') as f:
             yaml.dump(config, f)
 
+        full_topic_url = f"{ntfy_server.rstrip('/')}/{topic_name}"
         print(f"Notifications have been set up using the topic: {topic_name}")
-        print(f"You can subscribe to this topic in the ntfy app by pasting the topic name.")
+        print(f"You can subscribe to this topic in the ntfy app easily by pasting the topic name.")
+        print(f"Full topic URL: {full_topic_url}")
         # Ask if the user wants to copy the topic name to the clipboard
         copy_to_clipboard = input("Do you want to copy the topic name to the clipboard? [y/n] (default: y): ").strip().lower() or 'y'
         if copy_to_clipboard == 'y':

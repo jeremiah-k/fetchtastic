@@ -98,10 +98,12 @@ def main():
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                 matched_files = []
                 for file_name in zip_ref.namelist():
-                    if any(pattern in file_name for pattern in patterns):
-                        zip_ref.extract(file_name, extract_dir)
-                        log_message(f"Extracted {file_name} to {extract_dir}")
-                        matched_files.append(file_name)
+                    for pattern in patterns:
+                        if pattern in file_name:
+                            zip_ref.extract(file_name, extract_dir)
+                            log_message(f"Extracted {file_name} to {extract_dir}")
+                            matched_files.append(file_name)
+                            break  # Stop checking patterns for this file
                 if not matched_files:
                     log_message(f"No files matched the extraction patterns in {zip_path}.")
         except zipfile.BadZipFile:

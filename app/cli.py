@@ -36,9 +36,10 @@ def main():
         # Display the NTFY topic
         config = setup_config.load_config()
         if config and config.get('NTFY_SERVER') and config.get('NTFY_TOPIC'):
-            ntfy_server = config['NTFY_SERVER']
+            ntfy_server = config['NTFY_SERVER'].rstrip('/')
             ntfy_topic = config['NTFY_TOPIC']
-            print(f"Current NTFY topic URL: {ntfy_server.rstrip('/')}/{ntfy_topic}")
+            full_url = f"{ntfy_server}/{ntfy_topic}"
+            print(f"Current NTFY topic URL: {full_url}")
             print(f"Topic name: {ntfy_topic}")
         else:
             print("Notifications are not set up. Run 'fetchtastic setup' to configure notifications.")
