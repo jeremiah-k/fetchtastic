@@ -36,7 +36,7 @@ pip install fetchtastic
 
 ### Run the Setup Process
 
-Run the setup command and follow the proompts to configure Fetchtastic:
+Run the setup command and follow the prompts to configure Fetchtastic:
 
 ```bash
 fetchtastic setup
@@ -61,19 +61,13 @@ fetchtastic download
 
 This will download the latest versions of the selected assets and store them in the specified directories.
 
-### Help and Reconfiguration
+### Command list
 
-To view help and usage instructions, run:
-
-```bash
-fetchtastic --help
-```
-
-If you need to reconfigure Fetchtastic, run:
-
-```bash
-fetchtastic setup
-```
+- **setup**: Run the setup process.
+- **download**: Download firmware and APKs.
+- **topic**: Display the current NTFY topic.
+- **clean**: Remove configuration, downloads, and cron jobs.
+- **--help**: Show help and usage instructions.
 
 ### Files and Directories
 
