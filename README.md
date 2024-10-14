@@ -73,10 +73,10 @@ This will download the latest versions of the selected assets and store them in 
 
 By default, Fetchtastic saves files and configuration in the `Downloads/Fetchtastic` directory:
 
- - **Configuration File**: `Downloads/Metchtastic/fetchtastic.yaml`
- - **Log File**: `Downloads/Metchtastic/fetchtastic.log`
- - **APKs**: `Downloads/Metchtastic/apks`
- - **Firmware**: `Downloads/Metchtastic/firmware`
+ - **Configuration File**: `Downloads/Meshtastic/fetchtastic.yaml`
+ - **Log File**: `Downloads/Meshtastic/fetchtastic.log`
+ - **APKs**: `Downloads/Meshtastic/apks`
+ - **Firmware**: `Downloads/Meshtastic/firmware`
 
 You can manually edit the configuration file to change the settings.
 
