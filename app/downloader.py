@@ -92,18 +92,22 @@ def main():
         except requests.exceptions.RequestException as e:
             log_message(f"Error downloading {url}: {e}")
 
-    # Function to extract files based on the given patterns
+    # Updated extract_files function
     def extract_files(zip_path, extract_dir, patterns):
         try:
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                 matched_files = []
-                for file_name in zip_ref.namelist():
+                for file_info in zip_ref.infolist():
+                    file_name = file_info.filename
+                    base_name = os.path.basename(file_name)
+                    log_message(f"Checking file: {base_name}")
                     for pattern in patterns:
-                        if pattern in file_name:
-                            zip_ref.extract(file_name, extract_dir)
+                        if pattern in base_name:
+                            zip_ref.extract(file_info, extract_dir)
                             log_message(f"Extracted {file_name} to {extract_dir}")
                             matched_files.append(file_name)
-                            break  # Stop checking patterns for this file
+                            # Do not break; continue checking other patterns
+                            # in case the file matches multiple patterns
                 if not matched_files:
                     log_message(f"No files matched the extraction patterns in {zip_path}.")
         except zipfile.BadZipFile:
