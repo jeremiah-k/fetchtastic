@@ -30,7 +30,7 @@ def main():
     selected_apk_assets = config.get('SELECTED_APK_ASSETS', [])
     selected_firmware_assets = config.get('SELECTED_FIRMWARE_ASSETS', [])
 
-    download_dir = config.get('DOWNLOAD_DIR', os.path.join(os.path.expanduser("~"), "Downloads", "Fetchtastic"))
+    download_dir = config.get('DOWNLOAD_DIR', os.path.join(os.path.expanduser("~"), "storage", "downloads", "Meshtastic"))
     firmware_dir = os.path.join(download_dir, "firmware")
     apks_dir = os.path.join(download_dir, "apks")
     latest_android_release_file = os.path.join(apks_dir, "latest_android_release.txt")
@@ -92,14 +92,27 @@ def main():
         except requests.exceptions.RequestException as e:
             log_message(f"Error downloading {url}: {e}")
 
-    # Function to extract files based on the given patterns
+    # Updated extract_files function
     def extract_files(zip_path, extract_dir, patterns):
         try:
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                for file_name in zip_ref.namelist():
-                    if any(pattern in file_name for pattern in patterns):
-                        zip_ref.extract(file_name, extract_dir)
-                        log_message(f"Extracted {file_name} to {extract_dir}")
+                matched_files = []
+                for file_info in zip_ref.infolist():
+                    file_name = file_info.filename
+                    base_name = os.path.basename(file_name)
+                    log_message(f"Checking file: {base_name}")
+                    for pattern in patterns:
+                        if pattern in base_name:
+                            # Extract and flatten directory structure
+                            source = zip_ref.open(file_info)
+                            target_path = os.path.join(extract_dir, base_name)
+                            with open(target_path, 'wb') as target_file:
+                                target_file.write(source.read())
+                            log_message(f"Extracted {base_name} to {extract_dir}")
+                            matched_files.append(base_name)
+                            break  # Stop checking patterns for this file
+                if not matched_files:
+                    log_message(f"No files matched the extraction patterns in {zip_path}.")
         except zipfile.BadZipFile:
             log_message(f"Error: {zip_path} is a bad zip file and cannot be opened.")
         except Exception as e:

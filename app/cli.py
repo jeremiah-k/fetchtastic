@@ -9,16 +9,16 @@ def main():
     subparsers = parser.add_subparsers(dest='command')
 
     # Command to run setup
-    parser_setup = subparsers.add_parser('setup', help='Run the setup process')
+    subparsers.add_parser('setup', help='Run the setup process')
 
     # Command to download firmware and APKs
-    parser_download = subparsers.add_parser('download', help='Download firmware and APKs')
+    subparsers.add_parser('download', help='Download firmware and APKs')
 
     # Command to display NTFY topic
-    parser_topic = subparsers.add_parser('topic', help='Display the current NTFY topic')
+    subparsers.add_parser('topic', help='Display the current NTFY topic')
 
     # Command to clean/remove Fetchtastic files and settings
-    parser_clean = subparsers.add_parser('clean', help='Remove Fetchtastic configuration, downloads, and cron jobs')
+    subparsers.add_parser('clean', help='Remove Fetchtastic configuration, downloads, and cron jobs')
 
     args = parser.parse_args()
 
@@ -35,8 +35,12 @@ def main():
     elif args.command == 'topic':
         # Display the NTFY topic
         config = setup_config.load_config()
-        if config and config.get('NTFY_SERVER'):
-            print(f"Current NTFY topic URL: {config['NTFY_SERVER']}")
+        if config and config.get('NTFY_SERVER') and config.get('NTFY_TOPIC'):
+            ntfy_server = config['NTFY_SERVER'].rstrip('/')
+            ntfy_topic = config['NTFY_TOPIC']
+            full_url = f"{ntfy_server}/{ntfy_topic}"
+            print(f"Current NTFY topic URL: {full_url}")
+            print(f"Topic name: {ntfy_topic}")
         else:
             print("Notifications are not set up. Run 'fetchtastic setup' to configure notifications.")
     elif args.command == 'clean':

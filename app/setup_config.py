@@ -10,19 +10,25 @@ from . import menu_apk
 from . import menu_firmware
 from . import downloader  # Import downloader to perform first run
 
-# Define the default configuration directory
-HOME_DIR = os.path.expanduser("~")
+def get_downloads_dir():
+    # For Termux, use ~/storage/downloads
+    if 'com.termux' in os.environ.get('PREFIX', ''):
+        storage_downloads = os.path.expanduser("~/storage/downloads")
+        if os.path.exists(storage_downloads):
+            return storage_downloads
+    # For other environments, use standard Downloads directories
+    home_dir = os.path.expanduser("~")
+    downloads_dir = os.path.join(home_dir, 'Downloads')
+    if os.path.exists(downloads_dir):
+        return downloads_dir
+    downloads_dir = os.path.join(home_dir, 'Download')
+    if os.path.exists(downloads_dir):
+        return downloads_dir
+    # Fallback to home directory
+    return home_dir
 
-# Try to find the Downloads directory
-DOWNLOADS_DIR = os.path.join(HOME_DIR, 'Downloads')
-if not os.path.exists(DOWNLOADS_DIR):
-    # Try other common locations
-    DOWNLOADS_DIR = os.path.join(HOME_DIR, 'Download')
-    if not os.path.exists(DOWNLOADS_DIR):
-        # Use HOME_DIR if Downloads directory is not found
-        DOWNLOADS_DIR = HOME_DIR
-
-DEFAULT_CONFIG_DIR = os.path.join(DOWNLOADS_DIR, 'Fetchtastic')
+DOWNLOADS_DIR = get_downloads_dir()
+DEFAULT_CONFIG_DIR = os.path.join(DOWNLOADS_DIR, 'Meshtastic')
 CONFIG_FILE = os.path.join(DEFAULT_CONFIG_DIR, 'fetchtastic.yaml')
 
 def config_exists():
@@ -56,7 +62,6 @@ def run_setup():
     config['SAVE_FIRMWARE'] = save_firmware
 
     # Run the menu scripts based on user choices
-    # Adjust SAVE_APKS and SAVE_FIRMWARE based on selections
     if save_apks:
         apk_selection = menu_apk.run_menu()
         if not apk_selection:
@@ -74,7 +79,7 @@ def run_setup():
         else:
             config['SELECTED_FIRMWARE_ASSETS'] = firmware_selection['selected_assets']
 
-    # If both save_apks and save_firmware are False, inform the user and restart setup
+    # If both save_apks and save_firmware are False, inform the user and exit setup
     if not save_apks and not save_firmware:
         print("You must select at least one asset to download (APK or firmware).")
         print("Please run 'fetchtastic setup' again and select at least one asset.")
@@ -138,8 +143,10 @@ def run_setup():
         with open(CONFIG_FILE, 'w') as f:
             yaml.dump(config, f)
 
+        full_topic_url = f"{ntfy_server.rstrip('/')}/{topic_name}"
         print(f"Notifications have been set up using the topic: {topic_name}")
-        print(f"You can subscribe to this topic in the ntfy app by pasting the topic name.")
+        print(f"You can subscribe to this topic in the ntfy app easily by pasting the topic name.")
+        print(f"Full topic URL: {full_topic_url}")
         # Ask if the user wants to copy the topic name to the clipboard
         copy_to_clipboard = input("Do you want to copy the topic name to the clipboard? [y/n] (default: y): ").strip().lower() or 'y'
         if copy_to_clipboard == 'y':
