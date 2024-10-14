@@ -1,6 +1,6 @@
 # Fetchtastic Termux Setup
 
-Fetchtastic is a tool to download the latest Meshtastic Android app and Firmware releases to your phone via Termux. It also provides optional notifications via an NTFY server. This guide will help you set up and run Fetchtastic on your device.
+Fetchtastic is a tool to download the latest Meshtastic Android app and Firmware releases to your phone via Termux. It also provides optional notifications via an NTFY server.
 
 ## Prerequisites
 
@@ -85,7 +85,7 @@ You can manually edit the configuration file to change the settings.
 
 During setup, you have the option to add a cron job that runs Fetchtastic daily at 3 AM.
 
-To modify cron job, you can run:
+To modify the cron job, you can run:
 ```bash
 crontab -e
 ```
