@@ -27,8 +27,8 @@ def main():
     auto_extract = config.get("AUTO_EXTRACT", False)
     extract_patterns = config.get("EXTRACT_PATTERNS", [])
 
-    selected_apk_assets = config.get('SELECTED_APK_ASSETS', [])
-    selected_firmware_assets = config.get('SELECTED_FIRMWARE_ASSETS', [])
+    selected_apk_patterns = config.get('SELECTED_APK_ASSETS', [])
+    selected_firmware_patterns = config.get('SELECTED_FIRMWARE_ASSETS', [])
 
     download_dir = config.get('DOWNLOAD_DIR', os.path.join(os.path.expanduser("~"), "storage", "downloads", "Meshtastic"))
     firmware_dir = os.path.join(download_dir, "firmware")
@@ -136,7 +136,7 @@ def main():
             log_message(f"Removed directory: {version}")
 
     # Function to check for missing releases and download them if necessary
-    def check_and_download(releases, latest_release_file, release_type, download_dir, versions_to_keep, extract_patterns, selected_assets=None):
+    def check_and_download(releases, latest_release_file, release_type, download_dir, versions_to_keep, extract_patterns, selected_patterns=None):
         downloaded_versions = []
 
         if not os.path.exists(download_dir):
@@ -161,9 +161,15 @@ def main():
                 log_message(f"Downloading new version: {release_tag}")
                 for asset in release['assets']:
                     file_name = asset['name']
-                    if selected_assets:
-                        if file_name not in selected_assets:
-                            continue
+                    # Modify the matching logic here
+                    if selected_patterns:
+                        matched = False
+                        for pattern in selected_patterns:
+                            if pattern in file_name:
+                                matched = True
+                                break
+                        if not matched:
+                            continue  # Skip this asset
                     download_path = os.path.join(release_dir, file_name)
                     download_file(asset['browser_download_url'], download_path)
                     if auto_extract and file_name.endswith('.zip') and release_type == "Firmware":
@@ -195,7 +201,7 @@ def main():
     latest_firmware_releases = []
     latest_android_releases = []
 
-    if save_firmware and selected_firmware_assets:
+    if save_firmware and selected_firmware_patterns:
         versions_to_download = firmware_versions_to_keep
         latest_firmware_releases = get_latest_releases(firmware_releases_url, versions_to_download, releases_to_scan)
         downloaded_firmwares = check_and_download(
@@ -205,13 +211,13 @@ def main():
             firmware_dir,
             firmware_versions_to_keep,
             extract_patterns,
-            selected_assets=selected_firmware_assets
+            selected_patterns=selected_firmware_patterns
         )
         log_message(f"Latest Firmware releases: {', '.join(release['tag_name'] for release in latest_firmware_releases)}")
-    elif not selected_firmware_assets:
+    elif not selected_firmware_patterns:
         log_message("No firmware assets selected. Skipping firmware download.")
 
-    if save_apks and selected_apk_assets:
+    if save_apks and selected_apk_patterns:
         versions_to_download = android_versions_to_keep
         latest_android_releases = get_latest_releases(android_releases_url, versions_to_download, releases_to_scan)
         downloaded_apks = check_and_download(
@@ -221,10 +227,10 @@ def main():
             apks_dir,
             android_versions_to_keep,
             extract_patterns,
-            selected_assets=selected_apk_assets
+            selected_patterns=selected_apk_patterns
         )
         log_message(f"Latest Android APK releases: {', '.join(release['tag_name'] for release in latest_android_releases)}")
-    elif not selected_apk_assets:
+    elif not selected_apk_patterns:
         log_message("No APK assets selected. Skipping APK download.")
 
     end_time = time.time()
