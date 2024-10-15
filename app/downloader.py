@@ -61,14 +61,14 @@ def main():
             log_message("Notifications are not configured.")
 
     # Function to get the latest releases and sort by date
-    def get_latest_releases(url, versions_to_keep, scan_count=5):
+    def get_latest_releases(url, scan_count=10):
         response = requests.get(url)
         response.raise_for_status()
         releases = response.json()
         # Sort releases by published date, descending order
         sorted_releases = sorted(releases, key=lambda r: r['published_at'], reverse=True)
-        # Limit the number of releases to be scanned and downloaded
-        return sorted_releases[:scan_count][:versions_to_keep]
+        # Limit the number of releases to be scanned
+        return sorted_releases[:scan_count]
 
     # Function to download a file with retry mechanism
     def download_file(url, download_path):
@@ -118,22 +118,20 @@ def main():
         except Exception as e:
             log_message(f"Error: An unexpected error occurred while extracting files from {zip_path}: {e}")
 
-    # Cleanup function to keep only a specific number of versions
-    def cleanup_old_versions(directory, keep_count):
-        versions = sorted(
-            (os.path.join(directory, d) for d in os.listdir(directory) if os.path.isdir(os.path.join(directory, d))),
-            key=os.path.getmtime
-        )
-        old_versions = versions[:-keep_count]
-        for version in old_versions:
-            for root, dirs, files in os.walk(version, topdown=False):
-                for name in files:
-                    os.remove(os.path.join(root, name))
-                    log_message(f"Removed file: {os.path.join(root, name)}")
-                for name in dirs:
-                    os.rmdir(os.path.join(root, name))
-            os.rmdir(version)
-            log_message(f"Removed directory: {version}")
+    # Cleanup function to keep only specific versions based on release tags
+    def cleanup_old_versions(directory, releases_to_keep):
+        versions = [d for d in os.listdir(directory) if os.path.isdir(os.path.join(directory, d))]
+        for version in versions:
+            if version not in releases_to_keep:
+                version_path = os.path.join(directory, version)
+                for root, dirs, files in os.walk(version_path, topdown=False):
+                    for name in files:
+                        os.remove(os.path.join(root, name))
+                        log_message(f"Removed file: {os.path.join(root, name)}")
+                    for name in dirs:
+                        os.rmdir(os.path.join(root, name))
+                os.rmdir(version_path)
+                log_message(f"Removed directory: {version_path}")
 
     # Function to check for missing releases and download them if necessary
     def check_and_download(releases, latest_release_file, release_type, download_dir, versions_to_keep, extract_patterns, selected_patterns=None):
@@ -149,7 +147,9 @@ def main():
                 saved_release_tag = f.read().strip()
 
         # Determine which releases to download
-        for release in releases:
+        releases_to_download = releases[:versions_to_keep]
+
+        for release in releases_to_download:
             release_tag = release['tag_name']
             release_dir = os.path.join(download_dir, release_tag)
 
@@ -177,12 +177,15 @@ def main():
                 downloaded_versions.append(release_tag)
 
         # Update latest_release_file with the most recent tag
-        if releases:
+        if releases_to_download:
             with open(latest_release_file, 'w') as f:
-                f.write(releases[0]['tag_name'])
+                f.write(releases_to_download[0]['tag_name'])
+
+        # Create a list of all release tags to keep
+        release_tags_to_keep = [release['tag_name'] for release in releases_to_download]
 
         # Clean up old versions
-        cleanup_old_versions(download_dir, versions_to_keep)
+        cleanup_old_versions(download_dir, release_tags_to_keep)
         return downloaded_versions
 
     start_time = time.time()
@@ -195,15 +198,15 @@ def main():
     android_releases_url = "https://api.github.com/repos/meshtastic/Meshtastic-Android/releases"
     firmware_releases_url = "https://api.github.com/repos/meshtastic/firmware/releases"
 
-    # Scan for the last 5 releases, download the latest versions_to_download
-    releases_to_scan = 5
+    # Increase scan count to cover more releases for cleanup
+    releases_to_scan = 10
 
     latest_firmware_releases = []
     latest_android_releases = []
 
     if save_firmware and selected_firmware_patterns:
         versions_to_download = firmware_versions_to_keep
-        latest_firmware_releases = get_latest_releases(firmware_releases_url, versions_to_download, releases_to_scan)
+        latest_firmware_releases = get_latest_releases(firmware_releases_url, releases_to_scan)
         downloaded_firmwares = check_and_download(
             latest_firmware_releases,
             latest_firmware_release_file,
@@ -213,13 +216,13 @@ def main():
             extract_patterns,
             selected_patterns=selected_firmware_patterns
         )
-        log_message(f"Latest Firmware releases: {', '.join(release['tag_name'] for release in latest_firmware_releases)}")
+        log_message(f"Latest Firmware releases: {', '.join(release['tag_name'] for release in latest_firmware_releases[:versions_to_download])}")
     elif not selected_firmware_patterns:
         log_message("No firmware assets selected. Skipping firmware download.")
 
     if save_apks and selected_apk_patterns:
         versions_to_download = android_versions_to_keep
-        latest_android_releases = get_latest_releases(android_releases_url, versions_to_download, releases_to_scan)
+        latest_android_releases = get_latest_releases(android_releases_url, releases_to_scan)
         downloaded_apks = check_and_download(
             latest_android_releases,
             latest_android_release_file,
@@ -229,7 +232,7 @@ def main():
             extract_patterns,
             selected_patterns=selected_apk_patterns
         )
-        log_message(f"Latest Android APK releases: {', '.join(release['tag_name'] for release in latest_android_releases)}")
+        log_message(f"Latest Android APK releases: {', '.join(release['tag_name'] for release in latest_android_releases[:versions_to_download])}")
     elif not selected_apk_patterns:
         log_message("No APK assets selected. Skipping APK download.")
 
@@ -250,8 +253,8 @@ def main():
         if latest_firmware_releases or latest_android_releases:
             message = (
                 f"All Firmware and Android APK versions are up to date.\n"
-                f"Latest Firmware releases: {', '.join(release['tag_name'] for release in latest_firmware_releases)}\n"
-                f"Latest Android APK releases: {', '.join(release['tag_name'] for release in latest_android_releases)}\n"
+                f"Latest Firmware releases: {', '.join(release['tag_name'] for release in latest_firmware_releases[:versions_to_download])}\n"
+                f"Latest Android APK releases: {', '.join(release['tag_name'] for release in latest_android_releases[:versions_to_download])}\n"
                 f"{datetime.now()}"
             )
             send_ntfy_notification(message)
