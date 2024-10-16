@@ -306,19 +306,36 @@ def install_apk(apks_dir, installed_apk_type, always_install=False):
         with open(installed_apk_version_file, 'r') as f:
             installed_version = f.read().strip()
 
+    # Check if the apk is installed on the system and get its version
+    def get_installed_apk_version(package_name):
+        try:
+            result = subprocess.run(['pm', 'dump', package_name], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            if result.returncode == 0:
+                for line in result.stdout.splitlines():
+                    if 'versionName=' in line:
+                        return line.strip().split('=')[1]
+            return None
+        except Exception as e:
+            return None
+
+    # Map installed_apk_type to package name
+    package_name = 'com.geeksville.mesh'
+
+    device_installed_version = get_installed_apk_version(package_name)
+
     # If the latest version is newer than installed version, proceed to install
-    if installed_version != latest_version:
+    if device_installed_version != latest_version:
         print(f"New APK version available: {latest_version}")
         if always_install:
-            print(f"Automatically installing APK {apk_file}")
+            print(f"Automatically installing Meshtastic APK version {latest_version}")
             subprocess.run(['termux-open', apk_file], check=True)
             with open(installed_apk_version_file, 'w') as f:
                 f.write(latest_version)
         else:
             # Prompt the user
-            install_prompt = input(f"Do you want to install the new APK version {latest_version}? [Y/n]: ").strip().lower() or 'y'
+            install_prompt = input(f"Do you want to install Meshtastic APK version {latest_version}? [Y/n]: ").strip().lower() or 'y'
             if install_prompt == 'y':
-                print(f"Installing APK {apk_file}")
+                print(f"Installing Meshtastic APK version {latest_version}")
                 subprocess.run(['termux-open', apk_file], check=True)
                 # Update the installed version file
                 with open(installed_apk_version_file, 'w') as f:
@@ -326,7 +343,7 @@ def install_apk(apks_dir, installed_apk_type, always_install=False):
             else:
                 print("APK installation skipped.")
     else:
-        print("APK is already up to date.")
+        print(f"Meshtastic APK version {latest_version} is already installed.")
 
 if __name__ == "__main__":
     main()

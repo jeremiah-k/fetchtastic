@@ -6,6 +6,7 @@ import subprocess
 import random
 import string
 import shutil
+
 from . import menu_apk
 from . import menu_firmware
 from . import downloader  # Import downloader to perform first run
@@ -43,6 +44,9 @@ def run_setup():
 
     # Check and install termux-api and termux-services
     check_and_install_termux_packages()
+
+    # Ensure 'allow-external-apps' is enabled
+    ensure_allow_external_apps()
 
     print("Running Fetchtastic Setup...")
     if not os.path.exists(DEFAULT_CONFIG_DIR):
@@ -166,6 +170,13 @@ def run_setup():
     else:
         print("Skipping cron job setup.")
 
+    # Ask if the user wants to run Fetchtastic at boot
+    setup_boot = input("Do you want to run Fetchtastic at boot? [y/n] (default: y): ").strip().lower() or 'y'
+    if setup_boot == 'y':
+        setup_boot_script(config)
+    else:
+        print("Skipping boot script setup.")
+
     # Prompt for NTFY server configuration
     notifications = input("Do you want to set up notifications via NTFY? [y/n] (default: y): ").strip().lower() or 'y'
     if notifications == 'y':
@@ -205,6 +216,10 @@ def run_setup():
         with open(CONFIG_FILE, 'w') as f:
             yaml.dump(config, f)
         print("Notifications have not been set up.")
+
+    # Save configuration again in case any changes were made
+    with open(CONFIG_FILE, 'w') as f:
+        yaml.dump(config, f)
 
     # Ask if the user wants to perform a first run
     perform_first_run = input("Do you want to perform a first run now? [y/n] (default: y): ").strip().lower() or 'y'
@@ -290,8 +305,24 @@ def setup_cron_job(config):
     except Exception as e:
         print(f"An error occurred while setting up the cron job: {e}")
 
+def setup_boot_script(config):
+    boot_dir = os.path.expanduser("~/.termux/boot")
+    boot_script = os.path.join(boot_dir, 'fetchtastic.sh')
+    try:
+        if not os.path.exists(boot_dir):
+            os.makedirs(boot_dir)
+        # Decide whether to use 'download' or 'install' based on AUTO_INSTALL_APK
+        command = 'fetchtastic install' if config.get('AUTO_INSTALL_APK') else 'fetchtastic download'
+        with open(boot_script, 'w') as f:
+            f.write("#!/data/data/com.termux/files/usr/bin/sh\n")
+            f.write(f"sh -c '{command}'\n")
+        os.chmod(boot_script, 0o700)
+        print("Boot script created at ~/.termux/boot/fetchtastic.sh")
+    except Exception as e:
+        print(f"An error occurred while setting up the boot script: {e}")
+
 def run_clean():
-    print("This will remove Fetchtastic configuration files, downloaded files, and cron job entries.")
+    print("This will remove Fetchtastic configuration files, downloaded files, boot scripts, and cron job entries.")
     confirm = input("Are you sure you want to proceed? [y/n] (default: n): ").strip().lower() or 'n'
     if confirm != 'y':
         print("Clean operation cancelled.")
@@ -306,6 +337,12 @@ def run_clean():
     if os.path.exists(DEFAULT_CONFIG_DIR):
         shutil.rmtree(DEFAULT_CONFIG_DIR)
         print(f"Removed download directory: {DEFAULT_CONFIG_DIR}")
+
+    # Remove boot script
+    boot_script = os.path.expanduser("~/.termux/boot/fetchtastic.sh")
+    if os.path.exists(boot_script):
+        os.remove(boot_script)
+        print(f"Removed boot script: {boot_script}")
 
     # Remove cron job entries
     try:
@@ -368,4 +405,33 @@ def check_and_install_termux_packages():
             subprocess.run(['termux-setup-storage'], check=True)
         else:
             print("Storage access is required for downloading files.")
+
+def ensure_allow_external_apps():
+    properties_file = os.path.expanduser("~/.termux/termux.properties")
+    need_reload = False
+
+    if not os.path.exists(os.path.dirname(properties_file)):
+        os.makedirs(os.path.dirname(properties_file))
+
+    allow_external_apps = False
+    if os.path.exists(properties_file):
+        with open(properties_file, 'r') as f:
+            lines = f.readlines()
+        for line in lines:
+            if 'allow-external-apps' in line and '=' in line:
+                key, value = line.strip().split('=', 1)
+                if key.strip() == 'allow-external-apps' and value.strip() == 'true':
+                    allow_external_apps = True
+                    break
+
+    if not allow_external_apps:
+        print("Enabling 'allow-external-apps' in termux.properties...")
+        with open(properties_file, 'a') as f:
+            f.write('\nallow-external-apps = true\n')
+        need_reload = True
+
+    if need_reload:
+        print("Reloading Termux settings...")
+        subprocess.run(['termux-reload-settings'], check=True)
+        print("'allow-external-apps' has been enabled.")
 
