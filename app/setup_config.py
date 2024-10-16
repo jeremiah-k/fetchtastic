@@ -40,6 +40,9 @@ def run_setup():
         print("Warning: Fetchtastic is designed to run in Termux on Android.")
         print("For more information, visit https://github.com/jeremiah-k/fetchtastic/")
         return
+    
+    # Check and install termux-api and termux-services
+    check_and_install_termux_packages()
 
     print("Running Fetchtastic Setup...")
     if not os.path.exists(DEFAULT_CONFIG_DIR):
@@ -68,6 +71,45 @@ def run_setup():
             print("No APK assets selected. APKs will not be downloaded.")
             save_apks = False
             config['SAVE_APKS'] = False
+        
+        # Ask if they want to automatically install the latest APK
+        auto_install_apk = input("Do you want to automatically install the latest APK after download? [y/N]: ").strip().lower() == 'y'
+        config['AUTO_INSTALL_APK'] = auto_install_apk
+
+        if auto_install_apk:
+            # Ask if they want to always install without prompting
+            always_install = input("Do you want to always install the latest APK without prompting? [y/N]: ").strip().lower() == 'y'
+            config['ALWAYS_INSTALL_APK'] = always_install
+
+            # Determine which APK to install
+            selected_apk_assets = config.get('SELECTED_APK_ASSETS', [])
+            if len(selected_apk_assets) == 1:
+                # Only one APK selected
+                installed_apk_type = selected_apk_assets[0]
+                config['INSTALLED_APK_TYPE'] = installed_apk_type
+            elif len(selected_apk_assets) > 1:
+                # Multiple APKs selected
+                print("You have selected multiple APKs for download.")
+                print("Please select which APK you want to install automatically.")
+                for idx, apk_option in enumerate(selected_apk_assets, 1):
+                    print(f"{idx}. {apk_option}")
+                choice = input(f"Enter the number of the APK to install (default: 1): ").strip()
+                if choice.isdigit() and 1 <= int(choice) <= len(selected_apk_assets):
+                    installed_apk_type = selected_apk_assets[int(choice) - 1]
+                else:
+                    installed_apk_type = selected_apk_assets[0]
+                config['INSTALLED_APK_TYPE'] = installed_apk_type
+            else:
+                # No APKs selected
+                installed_apk_type = None
+                config['INSTALLED_APK_TYPE'] = installed_apk_type
+
+            if installed_apk_type:
+                print(f"APK '{installed_apk_type}' will be installed automatically.")
+            else:
+                print("No APK type selected for installation.")
+
+
         else:
             config['SELECTED_APK_ASSETS'] = apk_selection['selected_assets']
     if save_firmware:
@@ -279,6 +321,39 @@ def run_clean():
 
     print("Fetchtastic has been cleaned from your system.")
     print("If you installed Fetchtastic via pip and wish to uninstall it, run 'pip uninstall fetchtastic'.")
+
+def check_and_install_termux_packages():
+    import shutil
+
+    # Check if termux-api is installed
+    termux_api_path = shutil.which('termux-battery-status')  # Example command from termux-api
+    if termux_api_path is None:
+        print("Termux API is not installed.")
+        install_api = input("Do you want to install Termux API? [Y/n]: ").strip().lower() or 'y'
+        if install_api == 'y':
+            print("Installing Termux API...")
+            subprocess.run(['pkg', 'install', 'termux-api', '-y'], check=True)
+            print("Please install the Termux:API app from F-Droid and grant permissions.")
+            input("Press Enter after installing Termux:API and granting permissions.")
+        else:
+            print("Termux API is required for certain features.")
+    else:
+        print("Termux API is already installed.")
+
+    # Check if termux-services is installed
+    crond_path = shutil.which('crond')
+    if crond_path is None:
+        print("Termux services are not installed.")
+        install_services = input("Do you want to install Termux services? [Y/n]: ").strip().lower() or 'y'
+        if install_services == 'y':
+            print("Installing Termux services...")
+            subprocess.run(['pkg', 'install', 'termux-services', '-y'], check=True)
+            subprocess.run(['sv-enable', 'crond'], check=True)
+            print("Termux services installed and crond enabled.")
+        else:
+            print("Termux services are required for scheduled tasks.")
+    else:
+        print("Termux services are already installed.")
 
 def load_config():
     if not config_exists():

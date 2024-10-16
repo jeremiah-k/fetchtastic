@@ -260,6 +260,18 @@ def main():
             send_ntfy_notification(message)
         else:
             log_message("No releases found to check for updates.")
+    
+    # Get configuration values
+    auto_install_apk = config.get('AUTO_INSTALL_APK', False)
+    always_install_apk = config.get('ALWAYS_INSTALL_APK', False)
+    installed_apk_type = config.get('INSTALLED_APK_TYPE')
+
+    # After downloading APKs, handle installation
+    if (install or auto_install_apk) and save_apks:
+        if installed_apk_type:
+            install_apk(apks_dir, installed_apk_type, always_install_apk)
+        else:
+            log_message("No APK type specified for installation.")
 
 if __name__ == "__main__":
     main()
