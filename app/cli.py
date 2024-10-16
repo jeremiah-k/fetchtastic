@@ -14,14 +14,14 @@ def main():
     # Command to download firmware and APKs
     subparsers.add_parser('download', help='Download firmware and APKs')
 
+    # Command to download and install APKs
+    subparsers.add_parser('install', help='Download and install APKs')
+
     # Command to display NTFY topic
     subparsers.add_parser('topic', help='Display the current NTFY topic')
 
     # Command to clean/remove Fetchtastic files and settings
     subparsers.add_parser('clean', help='Remove Fetchtastic configuration, downloads, and cron jobs')
-
-    # Command to download and install APKs
-    subparsers.add_parser('install', help='Download and install APKs')
 
     args = parser.parse_args()
 
@@ -35,6 +35,13 @@ def main():
             setup_config.run_setup()
         # Run the downloader
         downloader.main()
+    elif args.command == 'install':
+        # Check if configuration exists
+        if not setup_config.config_exists():
+            print("No configuration found. Running setup.")
+            setup_config.run_setup()
+        # Run the downloader with install=True
+        downloader.main(install=True)
     elif args.command == 'topic':
         # Display the NTFY topic
         config = setup_config.load_config()
@@ -51,20 +58,9 @@ def main():
                 print("Full URL copied to clipboard.")
         else:
             print("Notifications are not set up. Run 'fetchtastic setup' to configure notifications.")
-
     elif args.command == 'clean':
         # Run the clean process
         setup_config.run_clean()
-
-    # Handle the 'install' command
-    elif args.command == 'install':
-        # Check if configuration exists
-        if not setup_config.config_exists():
-            print("No configuration found. Running setup.")
-            setup_config.run_setup()
-        # Run the downloader with install=True
-        downloader.main(install=True)
-    
     elif args.command is None:
         # No command provided
         print("No command provided.")
