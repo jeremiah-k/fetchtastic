@@ -14,9 +14,6 @@ def main():
     # Command to download firmware and APKs
     subparsers.add_parser('download', help='Download firmware and APKs')
 
-    # Command to download and install APKs
-    subparsers.add_parser('install', help='Download and install APKs')
-
     # Command to display NTFY topic
     subparsers.add_parser('topic', help='Display the current NTFY topic')
 
@@ -35,13 +32,6 @@ def main():
             setup_config.run_setup()
         # Run the downloader
         downloader.main()
-    elif args.command == 'install':
-        # Check if configuration exists
-        if not setup_config.config_exists():
-            print("No configuration found. Running setup.")
-            setup_config.run_setup()
-        # Run the downloader with install=True
-        downloader.main(install=True)
     elif args.command == 'topic':
         # Display the NTFY topic
         config = setup_config.load_config()

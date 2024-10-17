@@ -4,14 +4,13 @@ import os
 import requests
 import zipfile
 import time
-import subprocess
 from datetime import datetime
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from . import setup_config
 
-def main(install=False):
+def main():
     # Load configuration
     config = setup_config.load_config()
     if not config:
@@ -262,89 +261,5 @@ def main(install=False):
         else:
             log_message("No releases found to check for updates.")
 
-    # Get configuration values for installation
-    auto_install_apk = config.get('AUTO_INSTALL_APK', False)
-    always_install_apk = config.get('ALWAYS_INSTALL_APK', False)
-    installed_apk_type = config.get('INSTALLED_APK_TYPE')
-
-    # After downloading APKs, handle installation
-    if (install or auto_install_apk) and save_apks:
-        if installed_apk_type:
-            install_apk(apks_dir, installed_apk_type, always_install_apk)
-        else:
-            log_message("No APK type specified for installation.")
-
-def install_apk(apks_dir, installed_apk_type, always_install=False):
-    # Path to store the installed APK version
-    installed_apk_version_file = os.path.join(apks_dir, 'installed_apk_version.txt')
-
-    # Get the list of downloaded versions
-    versions = [d for d in os.listdir(apks_dir) if os.path.isdir(os.path.join(apks_dir, d))]
-
-    if not versions:
-        print("No APK versions found for installation.")
-        return
-
-    # Get the latest version
-    latest_version = sorted(versions, reverse=True)[0]
-
-    # Get the APK file to install
-    apk_file = None
-    apk_path = os.path.join(apks_dir, latest_version)
-    for file in os.listdir(apk_path):
-        if installed_apk_type in file and file.endswith('.apk'):
-            apk_file = os.path.join(apk_path, file)
-            break
-
-    if not apk_file:
-        print(f"No APK file matching '{installed_apk_type}' found for installation.")
-        return
-
-    # Read the installed APK version
-    installed_version = None
-    if os.path.exists(installed_apk_version_file):
-        with open(installed_apk_version_file, 'r') as f:
-            installed_version = f.read().strip()
-
-    # Check if the apk is installed on the system and get its version
-    def get_installed_apk_version(package_name):
-        try:
-            result = subprocess.run(['pm', 'dump', package_name], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            if result.returncode == 0:
-                for line in result.stdout.splitlines():
-                    if 'versionName=' in line:
-                        return line.strip().split('=')[1]
-            return None
-        except Exception as e:
-            return None
-
-    # Map installed_apk_type to package name
-    package_name = 'com.geeksville.mesh'
-
-    device_installed_version = get_installed_apk_version(package_name)
-
-    # If the latest version is newer than installed version, proceed to install
-    if device_installed_version != latest_version:
-        print(f"New APK version available: {latest_version}")
-        if always_install:
-            print(f"Automatically installing Meshtastic APK version {latest_version}")
-            subprocess.run(['termux-open', apk_file], check=True)
-            with open(installed_apk_version_file, 'w') as f:
-                f.write(latest_version)
-        else:
-            # Prompt the user
-            install_prompt = input(f"Do you want to install Meshtastic APK version {latest_version}? [Y/n]: ").strip().lower() or 'y'
-            if install_prompt == 'y':
-                print(f"Installing Meshtastic APK version {latest_version}")
-                subprocess.run(['termux-open', apk_file], check=True)
-                # Update the installed version file
-                with open(installed_apk_version_file, 'w') as f:
-                    f.write(latest_version)
-            else:
-                print("APK installation skipped.")
-    else:
-        print(f"Meshtastic APK version {latest_version} is already installed.")
-
 if __name__ == "__main__":
     main()
-

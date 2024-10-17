@@ -45,9 +45,6 @@ def run_setup():
     # Check and install termux-api and termux-services
     check_and_install_termux_packages()
 
-    # Ensure 'allow-external-apps' is enabled
-    ensure_allow_external_apps()
-
     print("Running Fetchtastic Setup...")
     if not os.path.exists(DEFAULT_CONFIG_DIR):
         os.makedirs(DEFAULT_CONFIG_DIR)
@@ -77,43 +74,6 @@ def run_setup():
             config['SAVE_APKS'] = False
         else:
             config['SELECTED_APK_ASSETS'] = apk_selection['selected_assets']
-
-            # Ask if they want to automatically install the latest APK
-            auto_install_apk = input("Do you want to automatically install the latest APK after download? [y/N]: ").strip().lower() == 'y'
-            config['AUTO_INSTALL_APK'] = auto_install_apk
-
-            if auto_install_apk:
-                # Ask if they want to always install without prompting
-                always_install = input("Do you want to always install the latest APK without prompting? [y/N]: ").strip().lower() == 'y'
-                config['ALWAYS_INSTALL_APK'] = always_install
-
-                # Determine which APK to install
-                selected_apk_assets = config.get('SELECTED_APK_ASSETS', [])
-                if len(selected_apk_assets) == 1:
-                    # Only one APK selected
-                    installed_apk_type = selected_apk_assets[0]
-                    config['INSTALLED_APK_TYPE'] = installed_apk_type
-                elif len(selected_apk_assets) > 1:
-                    # Multiple APKs selected
-                    print("You have selected multiple APKs for download.")
-                    print("Please select which APK you want to install automatically.")
-                    for idx, apk_option in enumerate(selected_apk_assets, 1):
-                        print(f"{idx}. {apk_option}")
-                    choice = input(f"Enter the number of the APK to install (default: 1): ").strip()
-                    if choice.isdigit() and 1 <= int(choice) <= len(selected_apk_assets):
-                        installed_apk_type = selected_apk_assets[int(choice) - 1]
-                    else:
-                        installed_apk_type = selected_apk_assets[0]
-                    config['INSTALLED_APK_TYPE'] = installed_apk_type
-                else:
-                    # No APKs selected
-                    installed_apk_type = None
-                    config['INSTALLED_APK_TYPE'] = installed_apk_type
-
-                if installed_apk_type:
-                    print(f"APK '{installed_apk_type}' will be installed automatically.")
-                else:
-                    print("No APK type selected for installation.")
 
     if save_firmware:
         firmware_selection = menu_firmware.run_menu()
@@ -166,14 +126,14 @@ def run_setup():
         # Install crond if not already installed
         install_crond()
         # Call function to set up cron job
-        setup_cron_job(config)
+        setup_cron_job()
     else:
         print("Skipping cron job setup.")
 
     # Ask if the user wants to run Fetchtastic at boot
     setup_boot = input("Do you want to run Fetchtastic at boot? [y/n] (default: y): ").strip().lower() or 'y'
     if setup_boot == 'y':
-        setup_boot_script(config)
+        setup_boot_script()
     else:
         print("Skipping boot script setup.")
 
@@ -252,7 +212,7 @@ def install_crond():
     except Exception as e:
         print(f"An error occurred while installing crond: {e}")
 
-def setup_cron_job(config):
+def setup_cron_job():
     try:
         # Get current crontab entries
         result = subprocess.run(['crontab', '-l'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -262,13 +222,13 @@ def setup_cron_job(config):
             existing_cron = result.stdout
 
         # Check for existing cron jobs related to fetchtastic
-        if 'fetchtastic download' in existing_cron or 'fetchtastic install' in existing_cron:
+        if 'fetchtastic download' in existing_cron:
             print("An existing cron job for Fetchtastic was found:")
             print(existing_cron)
             keep_cron = input("Do you want to keep the existing crontab entry? [y/n] (default: y): ").strip().lower() or 'y'
             if keep_cron == 'n':
                 # Remove existing fetchtastic cron jobs
-                new_cron = '\n'.join([line for line in existing_cron.split('\n') if 'fetchtastic download' not in line and 'fetchtastic install' not in line])
+                new_cron = '\n'.join([line for line in existing_cron.split('\n') if 'fetchtastic download' not in line])
                 # Update crontab
                 process = subprocess.Popen(['crontab', '-'], stdin=subprocess.PIPE, text=True)
                 process.communicate(input=new_cron)
@@ -276,10 +236,8 @@ def setup_cron_job(config):
                 # Ask if they want to add a new cron job
                 add_cron = input("Do you want to add a new crontab entry to run Fetchtastic daily at 3 AM? [y/n] (default: y): ").strip().lower() or 'y'
                 if add_cron == 'y':
-                    # Decide whether to use 'download' or 'install' based on AUTO_INSTALL_APK
-                    cron_command = 'fetchtastic install' if config.get('AUTO_INSTALL_APK') else 'fetchtastic download'
                     # Add new cron job
-                    new_cron += f"\n0 3 * * * {cron_command}\n"
+                    new_cron += f"\n0 3 * * * fetchtastic download\n"
                     # Update crontab
                     process = subprocess.Popen(['crontab', '-'], stdin=subprocess.PIPE, text=True)
                     process.communicate(input=new_cron)
@@ -292,10 +250,8 @@ def setup_cron_job(config):
             # No existing fetchtastic cron job
             add_cron = input("Do you want to add a crontab entry to run Fetchtastic daily at 3 AM? [y/n] (default: y): ").strip().lower() or 'y'
             if add_cron == 'y':
-                # Decide whether to use 'download' or 'install' based on AUTO_INSTALL_APK
-                cron_command = 'fetchtastic install' if config.get('AUTO_INSTALL_APK') else 'fetchtastic download'
                 # Add new cron job
-                new_cron = existing_cron.strip() + f"\n0 3 * * * {cron_command}\n"
+                new_cron = existing_cron.strip() + f"\n0 3 * * * fetchtastic download\n"
                 # Update crontab
                 process = subprocess.Popen(['crontab', '-'], stdin=subprocess.PIPE, text=True)
                 process.communicate(input=new_cron)
@@ -305,17 +261,15 @@ def setup_cron_job(config):
     except Exception as e:
         print(f"An error occurred while setting up the cron job: {e}")
 
-def setup_boot_script(config):
+def setup_boot_script():
     boot_dir = os.path.expanduser("~/.termux/boot")
     boot_script = os.path.join(boot_dir, 'fetchtastic.sh')
     try:
         if not os.path.exists(boot_dir):
             os.makedirs(boot_dir)
-        # Decide whether to use 'download' or 'install' based on AUTO_INSTALL_APK
-        command = 'fetchtastic install' if config.get('AUTO_INSTALL_APK') else 'fetchtastic download'
         with open(boot_script, 'w') as f:
             f.write("#!/data/data/com.termux/files/usr/bin/sh\n")
-            f.write(f"sh -c '{command}'\n")
+            f.write("sh -c 'fetchtastic download'\n")
         os.chmod(boot_script, 0o700)
         print("Boot script created at ~/.termux/boot/fetchtastic.sh")
     except Exception as e:
@@ -351,7 +305,7 @@ def run_clean():
         if result.returncode == 0:
             existing_cron = result.stdout
             # Remove existing fetchtastic cron jobs
-            new_cron = '\n'.join([line for line in existing_cron.split('\n') if 'fetchtastic download' not in line and 'fetchtastic install' not in line])
+            new_cron = '\n'.join([line for line in existing_cron.split('\n') if 'fetchtastic download' not in line])
             # Update crontab
             process = subprocess.Popen(['crontab', '-'], stdin=subprocess.PIPE, text=True)
             process.communicate(input=new_cron)
@@ -405,33 +359,3 @@ def check_and_install_termux_packages():
             subprocess.run(['termux-setup-storage'], check=True)
         else:
             print("Storage access is required for downloading files.")
-
-def ensure_allow_external_apps():
-    properties_file = os.path.expanduser("~/.termux/termux.properties")
-    need_reload = False
-
-    if not os.path.exists(os.path.dirname(properties_file)):
-        os.makedirs(os.path.dirname(properties_file))
-
-    allow_external_apps = False
-    if os.path.exists(properties_file):
-        with open(properties_file, 'r') as f:
-            lines = f.readlines()
-        for line in lines:
-            if 'allow-external-apps' in line and '=' in line:
-                key, value = line.strip().split('=', 1)
-                if key.strip() == 'allow-external-apps' and value.strip() == 'true':
-                    allow_external_apps = True
-                    break
-
-    if not allow_external_apps:
-        print("Enabling 'allow-external-apps' in termux.properties...")
-        with open(properties_file, 'a') as f:
-            f.write('\nallow-external-apps = true\n')
-        need_reload = True
-
-    if need_reload:
-        print("Reloading Termux settings...")
-        subprocess.run(['termux-reload-settings'], check=True)
-        print("'allow-external-apps' has been enabled.")
-
