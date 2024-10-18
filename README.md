@@ -11,6 +11,16 @@ Fetchtastic is a tool to download the latest Meshtastic Android app and Firmware
 3. **Install Termux API**: Download and install [Termux API](https://f-droid.org/en/packages/com.termux.api/) from F-Droid.
 4. *(Optional)* **Install ntfy**: Download and install [ntfy](https://f-droid.org/en/packages/io.heckel.ntfy/) from F-Droid.
 
+### Setup Termux Storage Access
+
+Open Termux and run the following command to grant storage access:
+
+```bash
+termux-setup-storage
+``` 
+
+"Allow" when prompted, then restart Termux to apply the changes.
+
 ## Installation
 
 ### Step 1: Install Dependencies
