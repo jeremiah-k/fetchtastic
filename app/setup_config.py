@@ -34,14 +34,34 @@ CONFIG_FILE = os.path.join(DEFAULT_CONFIG_DIR, 'fetchtastic.yaml')
 def config_exists():
     return os.path.exists(CONFIG_FILE)
 
-def run_setup():
-    # Check if running in Termux
-    if not is_termux():
-        print("Warning: Fetchtastic is designed to run in Termux on Android.")
-        print("For more information, visit https://github.com/jeremiah-k/fetchtastic/")
-        return
+def check_storage_setup():
+    # Check if storage has been set up in Termux by verifying ~/storage directory
+    storage_dir = os.path.expanduser("~/storage")
+    if not os.path.exists(storage_dir):
+        print("Storage access is required to continue.")
+        print("We will now run a command to enable storage access.")
+        print("Please allow storage permissions in the upcoming popup.")
+        confirm = input("Proceed with setting up storage? [y/n] (default: yes): ").strip().lower() or 'y'
+        if confirm == 'y':
+            try:
+                # Run the termux-setup-storage command
+                subprocess.run(['termux-setup-storage'], check=True)
+                print("Storage access has been successfully configured. Please restart Termux if needed.")
+            except Exception as e:
+                print(f"An error occurred while setting up storage: {e}")
+                return False
+        else:
+            print("Storage setup is required to proceed. Exiting setup.")
+            return False
+    return True
 
+def run_setup():
     print("Running Fetchtastic Setup...")
+    
+    # First, check if Termux storage has been set up
+    if is_termux() and not check_storage_setup():
+        return
+    
     if not os.path.exists(DEFAULT_CONFIG_DIR):
         os.makedirs(DEFAULT_CONFIG_DIR)
 
