@@ -48,7 +48,7 @@ def run_setup():
     config = {}
 
     # Prompt to save APKs, firmware, or both
-    save_choice = input("Do you want to save APKs, firmware, or both? [a/f/b] (default: b): ").strip().lower() or 'b'
+    save_choice = input("Would you like to download APKs, firmware, or both? [a/f/b] (default: both): ").strip().lower() or 'b'
     if save_choice == 'a':
         save_apks = True
         save_firmware = False
@@ -81,22 +81,22 @@ def run_setup():
 
     # If both save_apks and save_firmware are False, inform the user and exit setup
     if not save_apks and not save_firmware:
-        print("You must select at least one asset to download (APK or firmware).")
-        print("Please run 'fetchtastic setup' again and select at least one asset.")
+        print("Please select at least one type of asset to download (APK or firmware).")
+        print("Run 'fetchtastic setup' again and select at least one asset.")
         return
 
     # Prompt for number of versions to keep
     if save_apks:
-        android_versions_to_keep = input("Enter the number of different versions of the Android app to keep (default: 2): ").strip() or '2'
+        android_versions_to_keep = input("How many versions of the Android app would you like to keep? (default is 2): ").strip() or '2'
         config['ANDROID_VERSIONS_TO_KEEP'] = int(android_versions_to_keep)
     if save_firmware:
-        firmware_versions_to_keep = input("Enter the number of different versions of the firmware to keep (default: 2): ").strip() or '2'
+        firmware_versions_to_keep = input("How many versions of the firmware would you like to keep? (default is 2): ").strip() or '2'
         config['FIRMWARE_VERSIONS_TO_KEEP'] = int(firmware_versions_to_keep)
 
         # Prompt for automatic extraction
-        auto_extract = input("Do you want to automatically extract specific files from firmware zips? [y/n] (default: n): ").strip().lower() or 'n'
+        auto_extract = input("Would you like to automatically extract specific files from firmware zip archives? [y/n] (default: no): ").strip().lower() or 'n'
         if auto_extract == 'y':
-            print("Enter the strings to match for extraction from the firmware .zip files, separated by spaces.")
+            print("Enter the keywords to match for extraction from the firmware zip files, separated by spaces.")
             print("Example: rak4631- tbeam-2 t1000-e- tlora-v2-1-1_6-")
             extract_patterns = input("Extraction patterns: ").strip()
             if extract_patterns:
@@ -116,62 +116,57 @@ def run_setup():
         yaml.dump(config, f)
 
     # Ask if the user wants to set up a cron job
-    setup_cron = input("Do you want to add a cron job to run Fetchtastic daily at 3 AM? [y/n] (default: y): ").strip().lower() or 'y'
+    setup_cron = input("Would you like to schedule Fetchtastic to run daily at 3 AM? [y/n] (default: yes): ").strip().lower() or 'y'
     if setup_cron == 'y':
-        # Install crond if not already installed
         install_crond()
-        # Call function to set up cron job
         setup_cron_job()
     else:
         print("Skipping cron job setup.")
 
     # Prompt for NTFY server configuration
-    notifications = input("Do you want to set up notifications via NTFY? [y/n] (default: y): ").strip().lower() or 'y'
+    notifications = input("Would you like to set up notifications via NTFY? [y/n] (default: yes): ").strip().lower() or 'y'
     if notifications == 'y':
         ntfy_server = input("Enter the NTFY server (default: ntfy.sh): ").strip() or 'ntfy.sh'
         if not ntfy_server.startswith('http://') and not ntfy_server.startswith('https://'):
             ntfy_server = 'https://' + ntfy_server
 
-        # Generate a random topic name if the user doesn't provide one
         default_topic = 'fetchtastic-' + ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
         topic_name = input(f"Enter a unique topic name (default: {default_topic}): ").strip() or default_topic
-        # Save only the topic name in the config
+
         config['NTFY_TOPIC'] = topic_name
         config['NTFY_SERVER'] = ntfy_server
 
-        # Save updated configuration
         with open(CONFIG_FILE, 'w') as f:
             yaml.dump(config, f)
 
         full_topic_url = f"{ntfy_server.rstrip('/')}/{topic_name}"
-        print(f"Notifications have been set up using the topic: {topic_name}")
-        print(f"You can subscribe to this topic in the ntfy app easily by pasting the topic name.")
+        print(f"Notifications set up using topic: {topic_name}")
+        print(f"Subscribe by pasting the topic name in the ntfy app.")
         print(f"Full topic URL: {full_topic_url}")
-        # Ask if the user wants to copy the topic name to the clipboard
-        copy_to_clipboard = input("Do you want to copy the topic name to the clipboard? [y/n] (default: y): ").strip().lower() or 'y'
+
+        copy_to_clipboard = input("Do you want to copy the topic name to the clipboard? [y/n] (default: yes): ").strip().lower() or 'y'
         if copy_to_clipboard == 'y':
             copy_to_clipboard_termux(topic_name)
             print("Topic name copied to clipboard.")
         else:
             print("You can copy the topic name from above.")
 
-        print("You can view your current topic at any time by running 'fetchtastic topic'.")
-        print("You can change the topic by running 'fetchtastic setup' again or editing the YAML file.")
+        print("Run 'fetchtastic topic' to view your current topic.")
+        print("Run 'fetchtastic setup' again or edit the YAML file to change the topic.")
     else:
         config['NTFY_TOPIC'] = ''
         config['NTFY_SERVER'] = ''
-        # Save updated configuration
         with open(CONFIG_FILE, 'w') as f:
             yaml.dump(config, f)
         print("Notifications have not been set up.")
 
     # Ask if the user wants to perform a first run
-    perform_first_run = input("Do you want to perform a first run now? [y/n] (default: y): ").strip().lower() or 'y'
+    perform_first_run = input("Would you like to start the first run now? [y/n] (default: yes): ").strip().lower() or 'y'
     if perform_first_run == 'y':
-        print("Performing first run, this may take a few minutes...")
+        print("Starting first run, this may take a few minutes...")
         downloader.main()
     else:
-        print("Setup complete. You can run 'fetchtastic download' to start downloading.")
+        print("Setup complete. Run 'fetchtastic download' to start downloading.")
 
 def is_termux():
     return 'com.termux' in os.environ.get('PREFIX', '')
@@ -184,7 +179,6 @@ def copy_to_clipboard_termux(text):
 
 def install_crond():
     try:
-        # Check if crond is installed
         crond_path = shutil.which('crond')
         if crond_path is None:
             print("Installing crond...")
@@ -209,7 +203,7 @@ def setup_cron_job():
         if 'fetchtastic download' in existing_cron:
             print("An existing cron job for Fetchtastic was found:")
             print(existing_cron)
-            keep_cron = input("Do you want to keep the existing crontab entry? [y/n] (default: y): ").strip().lower() or 'y'
+            keep_cron = input("Do you want to keep the existing crontab entry? [y/n] (default: yes): ").strip().lower() or 'y'
             if keep_cron == 'n':
                 # Remove existing fetchtastic cron jobs
                 new_cron = '\n'.join([line for line in existing_cron.split('\n') if 'fetchtastic download' not in line])
@@ -218,7 +212,7 @@ def setup_cron_job():
                 process.communicate(input=new_cron)
                 print("Existing Fetchtastic cron job removed.")
                 # Ask if they want to add a new cron job
-                add_cron = input("Do you want to add a new crontab entry to run Fetchtastic daily at 3 AM? [y/n] (default: y): ").strip().lower() or 'y'
+                add_cron = input("Would you like to schedule Fetchtastic to run daily at 3 AM? [y/n] (default: yes): ").strip().lower() or 'y'
                 if add_cron == 'y':
                     # Add new cron job
                     new_cron += f"\n0 3 * * * fetchtastic download\n"
@@ -232,7 +226,7 @@ def setup_cron_job():
                 print("Keeping existing crontab entry.")
         else:
             # No existing fetchtastic cron job
-            add_cron = input("Do you want to add a crontab entry to run Fetchtastic daily at 3 AM? [y/n] (default: y): ").strip().lower() or 'y'
+            add_cron = input("Would you like to schedule Fetchtastic to run daily at 3 AM? [y/n] (default: yes): ").strip().lower() or 'y'
             if add_cron == 'y':
                 # Add new cron job
                 new_cron = existing_cron.strip() + f"\n0 3 * * * fetchtastic download\n"
@@ -247,7 +241,7 @@ def setup_cron_job():
 
 def run_clean():
     print("This will remove Fetchtastic configuration files, downloaded files, and cron job entries.")
-    confirm = input("Are you sure you want to proceed? [y/n] (default: n): ").strip().lower() or 'n'
+    confirm = input("Are you sure you want to proceed? [y/n] (default: no): ").strip().lower() or 'n'
     if confirm != 'y':
         print("Clean operation cancelled.")
         return
