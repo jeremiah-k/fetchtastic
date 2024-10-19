@@ -1,6 +1,7 @@
 # app/setup_config.py
 
 import os
+import sys
 import yaml
 import subprocess
 import random
@@ -37,27 +38,50 @@ def config_exists():
 def is_termux():
     return 'com.termux' in os.environ.get('PREFIX', '')
 
+def check_storage_setup():
+    # Check if the Termux storage directory and Downloads are set up and writable
+    storage_dir = os.path.expanduser("~/storage")
+    storage_downloads = os.path.expanduser("~/storage/downloads")
+
+    if os.path.exists(storage_dir) and os.path.exists(storage_downloads) and os.access(storage_downloads, os.W_OK):
+        print("Termux storage access is already set up.")
+        return True
+    else:
+        print("Termux storage access is not set up.")
+        return False
+
 def run_setup():
     print("Running Fetchtastic Setup...")
 
     # Install required Termux packages first
     if is_termux():
         install_termux_packages()
-        # Run termux-setup-storage
-        setup_storage()
-        # After setting up storage, inform the user and exit
-        print("Termux storage has been set up, and required packages have been installed.")
-        print("Please restart Termux and run 'fetchtastic setup' again to continue.")
-        exit()
+        # Check if storage is set up
+        if not check_storage_setup():
+            # Run termux-setup-storage
+            setup_storage()
+            # After setting up storage, inform the user and exit
+            print("Termux storage has been set up, and required packages have been installed.")
+            print("Please restart Termux and run 'fetchtastic setup' again to continue.")
+            sys.exit()
+        else:
+            print("Termux storage is already set up.")
 
-    # The rest of your setup process continues here
+    # Proceed with the rest of the setup
     if not os.path.exists(DEFAULT_CONFIG_DIR):
         os.makedirs(DEFAULT_CONFIG_DIR)
 
     config = {}
+    if config_exists():
+        # Load existing configuration
+        config = load_config()
+        print("Existing configuration found. You can keep current settings or change them.")
+    else:
+        # Initialize default configuration
+        config = {}
 
     # Prompt to save APKs, firmware, or both
-    save_choice = input("Would you like to download APKs, firmware, or both? [a/f/b] (default: both): ").strip().lower() or 'b'
+    save_choice = input(f"Would you like to download APKs, firmware, or both? [a/f/b] (default: both): ").strip().lower() or 'both'
     if save_choice == 'a':
         save_apks = True
         save_firmware = False
@@ -96,28 +120,45 @@ def run_setup():
 
     # Prompt for number of versions to keep
     if save_apks:
-        android_versions_to_keep = input("How many versions of the Android app would you like to keep? (default is 2): ").strip() or '2'
+        current_versions = config.get('ANDROID_VERSIONS_TO_KEEP', 2)
+        android_versions_to_keep = input(f"How many versions of the Android app would you like to keep? (default is {current_versions}): ").strip() or str(current_versions)
         config['ANDROID_VERSIONS_TO_KEEP'] = int(android_versions_to_keep)
     if save_firmware:
-        firmware_versions_to_keep = input("How many versions of the firmware would you like to keep? (default is 2): ").strip() or '2'
+        current_versions = config.get('FIRMWARE_VERSIONS_TO_KEEP', 2)
+        firmware_versions_to_keep = input(f"How many versions of the firmware would you like to keep? (default is {current_versions}): ").strip() or str(current_versions)
         config['FIRMWARE_VERSIONS_TO_KEEP'] = int(firmware_versions_to_keep)
 
         # Prompt for automatic extraction
-        auto_extract = input("Would you like to automatically extract specific files from firmware zip archives? [y/n] (default: no): ").strip().lower() or 'n'
+        auto_extract_default = 'yes' if config.get('AUTO_EXTRACT', False) else 'no'
+        auto_extract = input(f"Would you like to automatically extract specific files from firmware zip archives? [y/n] (default: {auto_extract_default}): ").strip().lower() or auto_extract_default[0]
         if auto_extract == 'y':
             print("Enter the keywords to match for extraction from the firmware zip files, separated by spaces.")
             print("Example: rak4631- tbeam-2 t1000-e- tlora-v2-1-1_6-")
-            extract_patterns = input("Extraction patterns: ").strip()
-            if extract_patterns:
-                config['AUTO_EXTRACT'] = True
-                config['EXTRACT_PATTERNS'] = extract_patterns.split()
+            if config.get('EXTRACT_PATTERNS'):
+                current_patterns = ' '.join(config.get('EXTRACT_PATTERNS', []))
+                print(f"Current patterns: {current_patterns}")
+                extract_patterns = input("Extraction patterns (leave blank to keep current): ").strip()
+                if extract_patterns:
+                    config['AUTO_EXTRACT'] = True
+                    config['EXTRACT_PATTERNS'] = extract_patterns.split()
+                else:
+                    # Keep existing patterns
+                    config['AUTO_EXTRACT'] = True
             else:
-                config['AUTO_EXTRACT'] = False
+                extract_patterns = input("Extraction patterns: ").strip()
+                if extract_patterns:
+                    config['AUTO_EXTRACT'] = True
+                    config['EXTRACT_PATTERNS'] = extract_patterns.split()
+                else:
+                    config['AUTO_EXTRACT'] = False
+                    print("No extraction patterns provided. Extraction will be skipped.")
+                    print("You can run 'fetchtastic setup' again to set extraction patterns.")
         else:
             config['AUTO_EXTRACT'] = False
 
     # Ask if the user wants to only download when connected to Wi-Fi
-    wifi_only = input("Do you want to only download when connected to Wi-Fi? [y/n] (default: yes): ").strip().lower() or 'y'
+    wifi_only_default = 'yes' if config.get('WIFI_ONLY', True) else 'no'
+    wifi_only = input(f"Do you want to only download when connected to Wi-Fi? [y/n] (default: {wifi_only_default}): ").strip().lower() or wifi_only_default[0]
     config['WIFI_ONLY'] = True if wifi_only == 'y' else False
 
     # Set the download directory to the same as the config directory
@@ -129,22 +170,34 @@ def run_setup():
         yaml.dump(config, f)
 
     # Ask if the user wants to set up a cron job
-    setup_cron = input("Would you like to schedule Fetchtastic to run daily at 3 AM? [y/n] (default: yes): ").strip().lower() or 'y'
+    cron_default = 'yes'  # Default to 'yes'
+    setup_cron = input(f"Would you like to schedule Fetchtastic to run daily at 3 AM? [y/n] (default: {cron_default}): ").strip().lower() or cron_default[0]
     if setup_cron == 'y':
         install_crond()
         setup_cron_job()
     else:
-        print("Skipping cron job setup.")
+        remove_cron_job()
+        print("Cron job has been removed.")
+
+    # Ask if the user wants to run Fetchtastic on boot
+    boot_default = 'yes'  # Default to 'yes'
+    run_on_boot = input(f"Do you want Fetchtastic to run on device boot? [y/n] (default: {boot_default}): ").strip().lower() or boot_default[0]
+    if run_on_boot == 'y':
+        setup_boot_script()
+    else:
+        remove_boot_script()
+        print("Boot script has been removed.")
 
     # Prompt for NTFY server configuration
-    notifications = input("Would you like to set up notifications via NTFY? [y/n] (default: yes): ").strip().lower() or 'y'
+    notifications_default = 'yes'  # Default to 'yes'
+    notifications = input(f"Would you like to set up notifications via NTFY? [y/n] (default: {notifications_default}): ").strip().lower() or 'y'
     if notifications == 'y':
-        ntfy_server = input("Enter the NTFY server (default: ntfy.sh): ").strip() or 'ntfy.sh'
+        ntfy_server = input(f"Enter the NTFY server (current: {config.get('NTFY_SERVER', 'ntfy.sh')}): ").strip() or config.get('NTFY_SERVER', 'ntfy.sh')
         if not ntfy_server.startswith('http://') and not ntfy_server.startswith('https://'):
             ntfy_server = 'https://' + ntfy_server
 
-        default_topic = 'fetchtastic-' + ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
-        topic_name = input(f"Enter a unique topic name (default: {default_topic}): ").strip() or default_topic
+        current_topic = config.get('NTFY_TOPIC', 'fetchtastic-' + ''.join(random.choices(string.ascii_lowercase + string.digits, k=6)))
+        topic_name = input(f"Enter a unique topic name (current: {current_topic}): ").strip() or current_topic
 
         config['NTFY_TOPIC'] = topic_name
         config['NTFY_SERVER'] = ntfy_server
@@ -164,14 +217,12 @@ def run_setup():
         else:
             print("You can copy the topic name from above.")
 
-        print("Run 'fetchtastic topic' to view your current topic.")
-        print("Run 'fetchtastic setup' again or edit the YAML file to change the topic.")
     else:
         config['NTFY_TOPIC'] = ''
         config['NTFY_SERVER'] = ''
         with open(CONFIG_FILE, 'w') as f:
             yaml.dump(config, f)
-        print("Notifications have not been set up.")
+        print("Notifications have been disabled.")
 
     # Ask if the user wants to perform a first run
     perform_first_run = input("Would you like to start the first run now? [y/n] (default: yes): ").strip().lower() or 'y'
@@ -206,7 +257,12 @@ def install_termux_packages():
 def setup_storage():
     # Run termux-setup-storage
     print("Setting up Termux storage access...")
-    subprocess.run(['termux-setup-storage'], check=True)
+    try:
+        subprocess.run(['termux-setup-storage'], check=True)
+    except subprocess.CalledProcessError as e:
+        print("An error occurred while setting up Termux storage.")
+        print("Please grant storage permissions when prompted.")
+        sys.exit()
 
 def install_crond():
     try:
@@ -233,50 +289,18 @@ def setup_cron_job():
         else:
             existing_cron = result.stdout
 
-        # Check for existing cron jobs related to fetchtastic
-        if 'fetchtastic download' in existing_cron:
-            print("An existing cron job for Fetchtastic was found:")
-            print(existing_cron)
-            keep_cron = input("Do you want to keep the existing crontab entry? [y/n] (default: yes): ").strip().lower() or 'y'
-            if keep_cron == 'n':
-                # Remove existing fetchtastic cron jobs
-                new_cron = '\n'.join([line for line in existing_cron.split('\n') if 'fetchtastic download' not in line])
-                # Add new cron job
-                new_cron += f"\n0 3 * * * fetchtastic download\n"
-                # Update crontab
-                process = subprocess.Popen(['crontab', '-'], stdin=subprocess.PIPE, text=True)
-                process.communicate(input=new_cron)
-                print("Cron job updated.")
-            else:
-                print("Keeping existing crontab entry.")
-        else:
-            # Add new cron job
-            new_cron = existing_cron.strip() + f"\n0 3 * * * fetchtastic download\n"
-            # Update crontab
-            process = subprocess.Popen(['crontab', '-'], stdin=subprocess.PIPE, text=True)
-            process.communicate(input=new_cron)
-            print("Cron job added to run Fetchtastic daily at 3 AM.")
+        # Remove existing fetchtastic cron jobs
+        new_cron = '\n'.join([line for line in existing_cron.split('\n') if 'fetchtastic download' not in line])
+        # Add new cron job
+        new_cron += f"\n0 3 * * * fetchtastic download\n"
+        # Update crontab
+        process = subprocess.Popen(['crontab', '-'], stdin=subprocess.PIPE, text=True)
+        process.communicate(input=new_cron)
+        print("Cron job added to run Fetchtastic daily at 3 AM.")
     except Exception as e:
         print(f"An error occurred while setting up the cron job: {e}")
 
-def run_clean():
-    print("This will remove Fetchtastic configuration files, downloaded files, and cron job entries.")
-    confirm = input("Are you sure you want to proceed? [y/n] (default: no): ").strip().lower() or 'n'
-    if confirm != 'y':
-        print("Clean operation cancelled.")
-        return
-
-    # Remove configuration file
-    if os.path.exists(CONFIG_FILE):
-        os.remove(CONFIG_FILE)
-        print(f"Removed configuration file: {CONFIG_FILE}")
-
-    # Remove download directory
-    if os.path.exists(DEFAULT_CONFIG_DIR):
-        shutil.rmtree(DEFAULT_CONFIG_DIR)
-        print(f"Removed download directory: {DEFAULT_CONFIG_DIR}")
-
-    # Remove cron job entries
+def remove_cron_job():
     try:
         # Get current crontab entries
         result = subprocess.run(['crontab', '-l'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -287,12 +311,38 @@ def run_clean():
             # Update crontab
             process = subprocess.Popen(['crontab', '-'], stdin=subprocess.PIPE, text=True)
             process.communicate(input=new_cron)
-            print("Removed Fetchtastic cron job entries.")
+            print("Cron job removed.")
     except Exception as e:
-        print(f"An error occurred while removing cron jobs: {e}")
+        print(f"An error occurred while removing the cron job: {e}")
 
-    print("Fetchtastic has been cleaned from your system.")
-    print("If you installed Fetchtastic via pip and wish to uninstall it, run 'pip uninstall fetchtastic'.")
+def is_cron_job_set():
+    try:
+        result = subprocess.run(['crontab', '-l'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if result.returncode == 0 and 'fetchtastic download' in result.stdout:
+            return True
+        else:
+            return False
+    except Exception:
+        return False
+
+def setup_boot_script():
+    boot_dir = os.path.expanduser("~/.termux/boot")
+    boot_script = os.path.join(boot_dir, "fetchtastic.sh")
+    if not os.path.exists(boot_dir):
+        print("It seems that Termux:Boot is not installed or hasn't been run yet.")
+        print("Please install Termux:Boot from the Play Store or F-Droid and run it once to create the necessary directories.")
+        return
+    with open(boot_script, 'w') as f:
+        f.write("#!/data/data/com.termux/files/usr/bin/sh\n")
+        f.write("fetchtastic download\n")
+    os.chmod(boot_script, 0o700)
+    print("Boot script created to run Fetchtastic on device boot.")
+
+def remove_boot_script():
+    boot_script = os.path.expanduser("~/.termux/boot/fetchtastic.sh")
+    if os.path.exists(boot_script):
+        os.remove(boot_script)
+        print("Boot script removed.")
 
 def load_config():
     if not config_exists():
