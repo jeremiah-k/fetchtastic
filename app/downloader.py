@@ -106,10 +106,8 @@ def main():
             supplicant_state = data.get('supplicant_state', '')
             ip_address = data.get('ip', '')
             if supplicant_state == 'COMPLETED' and ip_address != '':
-                log_message("Device is connected to Wi-Fi.")
                 return True
             else:
-                log_message("Device is not connected to Wi-Fi.")
                 return False
         except Exception as e:
             log_message(f"Error checking Wi-Fi connection: {e}")

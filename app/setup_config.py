@@ -90,7 +90,7 @@ def run_setup():
     elif config.get('SAVE_FIRMWARE'):
         current_choice = 'f'
 
-    save_choice = input(f"Would you like to download APKs, firmware, or both? [a/f/b] (current: {current_choice}): ").strip().lower() or current_choice
+    save_choice = input(f"Would you like to download APKs, firmware, or both? [a/f/b] (default: both): ").strip().lower() or 'both'
     if save_choice == 'a':
         save_apks = True
         save_firmware = False
@@ -130,20 +130,24 @@ def run_setup():
     # Prompt for number of versions to keep
     if save_apks:
         current_versions = config.get('ANDROID_VERSIONS_TO_KEEP', 2)
-        android_versions_to_keep = input(f"How many versions of the Android app would you like to keep? (current: {current_versions}): ").strip() or str(current_versions)
+        android_versions_to_keep = input(f"How many versions of the Android app would you like to keep? (default is {current_versions}): ").strip() or str(current_versions)
         config['ANDROID_VERSIONS_TO_KEEP'] = int(android_versions_to_keep)
     if save_firmware:
         current_versions = config.get('FIRMWARE_VERSIONS_TO_KEEP', 2)
-        firmware_versions_to_keep = input(f"How many versions of the firmware would you like to keep? (current: {current_versions}): ").strip() or str(current_versions)
+        firmware_versions_to_keep = input(f"How many versions of the firmware would you like to keep? (default is {current_versions}): ").strip() or str(current_versions)
         config['FIRMWARE_VERSIONS_TO_KEEP'] = int(firmware_versions_to_keep)
 
         # Prompt for automatic extraction
-        current_auto_extract = 'yes' if config.get('AUTO_EXTRACT', False) else 'no'
-        auto_extract = input(f"Would you like to automatically extract specific files from firmware zip archives? [y/n] (current: {current_auto_extract}): ").strip().lower() or current_auto_extract[0]
+        auto_extract_default = 'yes' if config.get('AUTO_EXTRACT', False) else 'no'
+        auto_extract = input(f"Would you like to automatically extract specific files from firmware zip archives? [y/n] (default: {auto_extract_default}): ").strip().lower() or auto_extract_default[0]
         if auto_extract == 'y':
-            current_patterns = ' '.join(config.get('EXTRACT_PATTERNS', []))
+            if config.get('EXTRACT_PATTERNS'):
+                current_patterns = ' '.join(config.get('EXTRACT_PATTERNS', []))
+                print(f"Current patterns: {current_patterns}")
+            else:
+                current_patterns = ''
             print("Enter the keywords to match for extraction from the firmware zip files, separated by spaces.")
-            print(f"Current patterns: {current_patterns}")
+            print("Example: rak4631- tbeam-2 t1000-e- tlora-v2-1-1_6-")
             extract_patterns = input("Extraction patterns (leave blank to keep current): ").strip() or current_patterns
             if extract_patterns:
                 config['AUTO_EXTRACT'] = True
@@ -154,8 +158,8 @@ def run_setup():
             config['AUTO_EXTRACT'] = False
 
     # Ask if the user wants to only download when connected to Wi-Fi
-    current_wifi_only = 'yes' if config.get('WIFI_ONLY', True) else 'no'
-    wifi_only = input(f"Do you want to only download when connected to Wi-Fi? [y/n] (current: {current_wifi_only}): ").strip().lower() or current_wifi_only[0]
+    wifi_only_default = 'yes' if config.get('WIFI_ONLY', True) else 'no'
+    wifi_only = input(f"Do you want to only download when connected to Wi-Fi? [y/n] (default: {wifi_only_default}): ").strip().lower() or wifi_only_default[0]
     config['WIFI_ONLY'] = True if wifi_only == 'y' else False
 
     # Set the download directory to the same as the config directory
@@ -167,8 +171,8 @@ def run_setup():
         yaml.dump(config, f)
 
     # Ask if the user wants to set up a cron job
-    current_cron = 'yes' if is_cron_job_set() else 'no'
-    setup_cron = input(f"Would you like to schedule Fetchtastic to run daily at 3 AM? [y/n] (current: {current_cron}): ").strip().lower() or current_cron[0]
+    cron_default = 'yes' if not config_exists() else ('yes' if is_cron_job_set() else 'no')
+    setup_cron = input(f"Would you like to schedule Fetchtastic to run daily at 3 AM? [y/n] (default: {cron_default}): ").strip().lower() or cron_default[0]
     if setup_cron == 'y':
         install_crond()
         setup_cron_job()
@@ -178,8 +182,8 @@ def run_setup():
 
     # Ask if the user wants to run Fetchtastic on boot
     boot_script = os.path.expanduser("~/.termux/boot/fetchtastic.sh")
-    current_boot = 'yes' if os.path.exists(boot_script) else 'no'
-    run_on_boot = input(f"Do you want Fetchtastic to run on device boot? [y/n] (current: {current_boot}): ").strip().lower() or current_boot[0]
+    boot_default = 'yes' if not config_exists() else ('yes' if os.path.exists(boot_script) else 'no')
+    run_on_boot = input(f"Do you want Fetchtastic to run on device boot? [y/n] (default: {boot_default}): ").strip().lower() or boot_default[0]
     if run_on_boot == 'y':
         setup_boot_script()
     else:
@@ -187,8 +191,8 @@ def run_setup():
         print("Boot script has been removed.")
 
     # Prompt for NTFY server configuration
-    current_notifications = 'yes' if config.get('NTFY_TOPIC') else 'no'
-    notifications = input(f"Would you like to set up notifications via NTFY? [y/n] (current: {current_notifications}): ").strip().lower() or current_notifications[0]
+    notifications_default = 'yes' if config.get('NTFY_TOPIC') else 'no'
+    notifications = input(f"Would you like to set up notifications via NTFY? [y/n] (default: {notifications_default}): ").strip().lower() or notifications_default[0]
     if notifications == 'y':
         ntfy_server = input(f"Enter the NTFY server (current: {config.get('NTFY_SERVER', 'ntfy.sh')}): ").strip() or config.get('NTFY_SERVER', 'ntfy.sh')
         if not ntfy_server.startswith('http://') and not ntfy_server.startswith('https://'):
