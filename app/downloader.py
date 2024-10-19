@@ -292,13 +292,8 @@ def main():
     if downloads_skipped:
         log_message("Not connected to Wi-Fi. Skipping all downloads.")
         # Prepare notification message
-        message_lines = ["New releases are available but downloads were skipped because the device is not connected to Wi-Fi."]
-        if new_firmware_versions:
-            message_lines.append(f"Firmware versions available: {', '.join(new_firmware_versions)}")
-        if new_apk_versions:
-            message_lines.append(f"Android APK versions available: {', '.join(new_apk_versions)}")
+        message_lines = ["Downloads were skipped because the device is not connected to Wi-Fi."]
         notification_message = '\n'.join(message_lines) + f"\n{datetime.now()}"
-        log_message(notification_message)
         send_ntfy_notification(notification_message, title="Fetchtastic Downloads Skipped")
     elif downloaded_firmwares or downloaded_apks:
         # Prepare notification messages

@@ -189,8 +189,8 @@ def run_setup():
         print("Boot script has been removed.")
 
     # Prompt for NTFY server configuration
-    notifications_default = 'yes' if config.get('NTFY_TOPIC') else 'no'
-    notifications = input(f"Would you like to set up notifications via NTFY? [y/n] (default: {notifications_default}): ").strip().lower() or notifications_default[0]
+    notifications_default = 'yes'  # Default to 'yes'
+    notifications = input(f"Would you like to set up notifications via NTFY? [y/n] (default: {notifications_default}): ").strip().lower() or 'y'
     if notifications == 'y':
         ntfy_server = input(f"Enter the NTFY server (current: {config.get('NTFY_SERVER', 'ntfy.sh')}): ").strip() or config.get('NTFY_SERVER', 'ntfy.sh')
         if not ntfy_server.startswith('http://') and not ntfy_server.startswith('https://'):
