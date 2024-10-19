@@ -26,6 +26,7 @@ def main():
     firmware_versions_to_keep = config.get("FIRMWARE_VERSIONS_TO_KEEP", 2)
     auto_extract = config.get("AUTO_EXTRACT", False)
     extract_patterns = config.get("EXTRACT_PATTERNS", [])
+    wifi_only = config.get("WIFI_ONLY", True)
 
     selected_apk_patterns = config.get('SELECTED_APK_ASSETS', [])
     selected_firmware_patterns = config.get('SELECTED_FIRMWARE_ASSETS', [])
@@ -77,7 +78,7 @@ def main():
         adapter = HTTPAdapter(max_retries=retry)
         session.mount('https://', adapter)
         session.mount('http://', adapter)
-        
+
         try:
             if not os.path.exists(download_path):
                 log_message(f"Downloading {url}")
@@ -91,6 +92,17 @@ def main():
                 log_message(f"{download_path} already exists, skipping download.")
         except requests.exceptions.RequestException as e:
             log_message(f"Error downloading {url}: {e}")
+
+    def is_connected_to_wifi():
+        try:
+            result = os.popen('termux-wifi-connectioninfo').read()
+            if '"connected":true' in result:
+                return True
+            else:
+                return False
+        except Exception as e:
+            log_message(f"Error checking Wi-Fi connection: {e}")
+            return False
 
     # Updated extract_files function
     def extract_files(zip_path, extract_dir, patterns):
@@ -158,7 +170,12 @@ def main():
             else:
                 # Proceed to download this version
                 os.makedirs(release_dir, exist_ok=True)
-                log_message(f"Downloading new version: {release_tag}")
+                log_message(f"New {release_type} version {release_tag} is available.")
+                # Check Wi-Fi connection before downloading
+                if wifi_only and not is_connected_to_wifi():
+                    log_message("Not connected to Wi-Fi. Skipping download.")
+                    send_ntfy_notification(f"New {release_type} version {release_tag} is available, but not connected to Wi-Fi. Download will proceed when connected.")
+                    continue  # Skip downloading this release
                 for asset in release['assets']:
                     file_name = asset['name']
                     # Modify the matching logic here
@@ -252,7 +269,7 @@ def main():
     else:
         if latest_firmware_releases or latest_android_releases:
             message = (
-                f"All Firmware and Android APK versions are up to date.\n"
+                f"No new downloads. All Firmware and Android APK versions are up to date or waiting for Wi-Fi connection.\n"
                 f"Latest Firmware releases: {', '.join(release['tag_name'] for release in latest_firmware_releases[:versions_to_download])}\n"
                 f"Latest Android APK releases: {', '.join(release['tag_name'] for release in latest_android_releases[:versions_to_download])}\n"
                 f"{datetime.now()}"
