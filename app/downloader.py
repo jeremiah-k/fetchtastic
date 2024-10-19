@@ -57,8 +57,9 @@ def main():
                 ntfy_url = f"{ntfy_server.rstrip('/')}/{ntfy_topic}"
                 response = requests.post(ntfy_url, data=message.encode('utf-8'))
                 response.raise_for_status()
+                log_message(f"Notification sent to {ntfy_url}")
             except requests.exceptions.RequestException as e:
-                log_message(f"Error sending notification: {e}")
+                log_message(f"Error sending notification to {ntfy_url}: {e}")
         else:
             log_message("Notifications are not configured.")
 
@@ -102,15 +103,19 @@ def main():
                 log_message("termux-wifi-connectioninfo returned empty result.")
                 return False
             data = json.loads(result)
-            connected = data.get('connected', False)
-            ssid = data.get('ssid', '')
-            log_message(f"Wi-Fi connection status: connected={connected}, ssid='{ssid}'")
-            return connected
+            supplicant_state = data.get('supplicant_state', '')
+            ip_address = data.get('ip', '')
+            if supplicant_state == 'COMPLETED' and ip_address != '':
+                log_message("Device is connected to Wi-Fi.")
+                return True
+            else:
+                log_message("Device is not connected to Wi-Fi.")
+                return False
         except Exception as e:
             log_message(f"Error checking Wi-Fi connection: {e}")
             return False
 
-    # Updated extract_files function
+    # Function to extract files from zip archives
     def extract_files(zip_path, extract_dir, patterns):
         try:
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
@@ -118,7 +123,6 @@ def main():
                 for file_info in zip_ref.infolist():
                     file_name = file_info.filename
                     base_name = os.path.basename(file_name)
-                    log_message(f"Checking file: {base_name}")
                     for pattern in patterns:
                         if pattern in base_name:
                             # Extract and flatten directory structure
@@ -193,14 +197,9 @@ def main():
                 log_message(f"Downloading new {release_type} version: {release_tag}")
                 for asset in release['assets']:
                     file_name = asset['name']
-                    # Modify the matching logic here
+                    # Matching logic
                     if selected_patterns:
-                        matched = False
-                        for pattern in selected_patterns:
-                            if pattern in file_name:
-                                matched = True
-                                break
-                        if not matched:
+                        if not any(pattern in file_name for pattern in selected_patterns):
                             continue  # Skip this asset
                     download_path = os.path.join(release_dir, file_name)
                     download_file(asset['browser_download_url'], download_path)
