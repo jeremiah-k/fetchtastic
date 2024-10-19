@@ -5,7 +5,7 @@ import yaml
 import subprocess
 import random
 import string
-import shutil  # Added for shutil.which()
+import shutil
 from . import menu_apk
 from . import menu_firmware
 from . import downloader  # Import downloader to perform first run
@@ -34,28 +34,23 @@ CONFIG_FILE = os.path.join(DEFAULT_CONFIG_DIR, 'fetchtastic.yaml')
 def config_exists():
     return os.path.exists(CONFIG_FILE)
 
-def check_storage_setup():
-    # Check if the Termux storage directory and Downloads are set up and writable
-    storage_dir = os.path.expanduser("~/storage")
-    storage_downloads = os.path.expanduser("~/storage/downloads")
-    
-    # If ~/storage or ~/storage/downloads doesn't exist or isn't writable, exit
-    if not os.path.exists(storage_dir) or not os.path.exists(storage_downloads) or not os.access(storage_downloads, os.W_OK):
-        print("Storage access is required to continue.")
-        print("Please run 'termux-setup-storage' and restart Termux before running this setup again.")
-        exit()  # Exit the script as storage is not set up
-    print("Storage access has been successfully verified.")
-    return True
+def is_termux():
+    return 'com.termux' in os.environ.get('PREFIX', '')
 
 def run_setup():
-    # First, check if Termux storage has been set up
-    if is_termux() and not check_storage_setup():
-        print("Setup cannot continue without proper storage access.")
-        return
-
-    # The rest of your setup process continues here
     print("Running Fetchtastic Setup...")
 
+    # Install required Termux packages first
+    if is_termux():
+        install_termux_packages()
+        # Run termux-setup-storage
+        setup_storage()
+        # After setting up storage, inform the user and exit
+        print("Termux storage has been set up, and required packages have been installed.")
+        print("Please restart Termux and run 'fetchtastic setup' again to continue.")
+        exit()
+
+    # The rest of your setup process continues here
     if not os.path.exists(DEFAULT_CONFIG_DIR):
         os.makedirs(DEFAULT_CONFIG_DIR)
 
@@ -121,6 +116,10 @@ def run_setup():
         else:
             config['AUTO_EXTRACT'] = False
 
+    # Ask if the user wants to only download when connected to Wi-Fi
+    wifi_only = input("Do you want to only download when connected to Wi-Fi? [y/n] (default: yes): ").strip().lower() or 'y'
+    config['WIFI_ONLY'] = True if wifi_only == 'y' else False
+
     # Set the download directory to the same as the config directory
     download_dir = DEFAULT_CONFIG_DIR
     config['DOWNLOAD_DIR'] = download_dir
@@ -182,21 +181,42 @@ def run_setup():
     else:
         print("Setup complete. Run 'fetchtastic download' to start downloading.")
 
-def is_termux():
-    return 'com.termux' in os.environ.get('PREFIX', '')
-
 def copy_to_clipboard_termux(text):
     try:
         subprocess.run(['termux-clipboard-set'], input=text.encode('utf-8'), check=True)
     except Exception as e:
         print(f"An error occurred while copying to clipboard: {e}")
 
+def install_termux_packages():
+    # Install termux-api and termux-services if they are not installed
+    packages_to_install = []
+    # Check for termux-api
+    if shutil.which('termux-battery-status') is None:
+        packages_to_install.append('termux-api')
+    # Check for termux-services
+    if shutil.which('sv-enable') is None:
+        packages_to_install.append('termux-services')
+    if packages_to_install:
+        print("Installing required Termux packages...")
+        subprocess.run(['pkg', 'install'] + packages_to_install + ['-y'], check=True)
+        print("Required Termux packages installed.")
+    else:
+        print("All required Termux packages are already installed.")
+
+def setup_storage():
+    # Run termux-setup-storage
+    print("Setting up Termux storage access...")
+    subprocess.run(['termux-setup-storage'], check=True)
+
 def install_crond():
     try:
         crond_path = shutil.which('crond')
         if crond_path is None:
             print("Installing crond...")
-            subprocess.run(['pkg', 'install', 'termux-services', '-y'], check=True)
+            # Ensure termux-services is installed
+            if shutil.which('sv-enable') is None:
+                subprocess.run(['pkg', 'install', 'termux-services', '-y'], check=True)
+            # Enable crond service
             subprocess.run(['sv-enable', 'crond'], check=True)
             print("crond installed and started.")
         else:
@@ -221,35 +241,21 @@ def setup_cron_job():
             if keep_cron == 'n':
                 # Remove existing fetchtastic cron jobs
                 new_cron = '\n'.join([line for line in existing_cron.split('\n') if 'fetchtastic download' not in line])
+                # Add new cron job
+                new_cron += f"\n0 3 * * * fetchtastic download\n"
                 # Update crontab
                 process = subprocess.Popen(['crontab', '-'], stdin=subprocess.PIPE, text=True)
                 process.communicate(input=new_cron)
-                print("Existing Fetchtastic cron job removed.")
-                # Ask if they want to add a new cron job
-                add_cron = input("Would you like to schedule Fetchtastic to run daily at 3 AM? [y/n] (default: yes): ").strip().lower() or 'y'
-                if add_cron == 'y':
-                    # Add new cron job
-                    new_cron += f"\n0 3 * * * fetchtastic download\n"
-                    # Update crontab
-                    process = subprocess.Popen(['crontab', '-'], stdin=subprocess.PIPE, text=True)
-                    process.communicate(input=new_cron)
-                    print("New cron job added.")
-                else:
-                    print("Skipping cron job installation.")
+                print("Cron job updated.")
             else:
                 print("Keeping existing crontab entry.")
         else:
-            # No existing fetchtastic cron job
-            add_cron = input("Would you like to schedule Fetchtastic to run daily at 3 AM? [y/n] (default: yes): ").strip().lower() or 'y'
-            if add_cron == 'y':
-                # Add new cron job
-                new_cron = existing_cron.strip() + f"\n0 3 * * * fetchtastic download\n"
-                # Update crontab
-                process = subprocess.Popen(['crontab', '-'], stdin=subprocess.PIPE, text=True)
-                process.communicate(input=new_cron)
-                print("Cron job added to run Fetchtastic daily at 3 AM.")
-            else:
-                print("Skipping cron job installation.")
+            # Add new cron job
+            new_cron = existing_cron.strip() + f"\n0 3 * * * fetchtastic download\n"
+            # Update crontab
+            process = subprocess.Popen(['crontab', '-'], stdin=subprocess.PIPE, text=True)
+            process.communicate(input=new_cron)
+            print("Cron job added to run Fetchtastic daily at 3 AM.")
     except Exception as e:
         print(f"An error occurred while setting up the cron job: {e}")
 
