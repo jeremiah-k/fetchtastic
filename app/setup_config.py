@@ -239,14 +239,14 @@ def copy_to_clipboard_termux(text):
         print(f"An error occurred while copying to clipboard: {e}")
 
 def install_termux_packages():
-    # Install termux-api and termux-services if they are not installed
+    # Install termux-api and cronie if they are not installed
     packages_to_install = []
     # Check for termux-api
     if shutil.which('termux-battery-status') is None:
         packages_to_install.append('termux-api')
-    # Check for termux-services
-    if shutil.which('sv-enable') is None:
-        packages_to_install.append('termux-services')
+    # Check for cronie
+    if shutil.which('crond') is None:
+        packages_to_install.append('cronie')
     if packages_to_install:
         print("Installing required Termux packages...")
         subprocess.run(['pkg', 'install'] + packages_to_install + ['-y'], check=True)
@@ -268,17 +268,17 @@ def install_crond():
     try:
         crond_path = shutil.which('crond')
         if crond_path is None:
-            print("Installing crond...")
-            # Ensure termux-services is installed
-            if shutil.which('sv-enable') is None:
-                subprocess.run(['pkg', 'install', 'termux-services', '-y'], check=True)
-            # Enable crond service
-            subprocess.run(['sv-enable', 'crond'], check=True)
-            print("crond installed and started.")
+            print("Installing cronie...")
+            # Install cronie
+            subprocess.run(['pkg', 'install', 'cronie', '-y'], check=True)
+            print("cronie installed.")
         else:
-            print("crond is already installed.")
+            print("cronie is already installed.")
+        # Start crond service
+        subprocess.run(['crond'], check=True)
+        print("crond service started.")
     except Exception as e:
-        print(f"An error occurred while installing crond: {e}")
+        print(f"An error occurred while installing or starting crond: {e}")
 
 def setup_cron_job():
     try:
