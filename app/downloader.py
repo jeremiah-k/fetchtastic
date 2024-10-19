@@ -51,11 +51,16 @@ def main():
             log.write(f"{datetime.now()}: {message}\n")
         print(message)
 
-    def send_ntfy_notification(message):
+    def send_ntfy_notification(message, title=None):
         if ntfy_server and ntfy_topic:
             try:
                 ntfy_url = f"{ntfy_server.rstrip('/')}/{ntfy_topic}"
-                response = requests.post(ntfy_url, data=message.encode('utf-8'))
+                headers = {
+                    'Content-Type': 'text/plain; charset=utf-8',
+                }
+                if title:
+                    headers['Title'] = title
+                response = requests.post(ntfy_url, data=message.encode('utf-8'), headers=headers)
                 response.raise_for_status()
                 log_message(f"Notification sent to {ntfy_url}")
             except requests.exceptions.RequestException as e:
@@ -100,7 +105,6 @@ def main():
             result = os.popen('termux-wifi-connectioninfo').read()
             if not result:
                 # If result is empty, assume not connected
-                log_message("termux-wifi-connectioninfo returned empty result.")
                 return False
             data = json.loads(result)
             supplicant_state = data.get('supplicant_state', '')
@@ -156,7 +160,6 @@ def main():
     # Function to check for missing releases and download them if necessary
     def check_and_download(releases, latest_release_file, release_type, download_dir, versions_to_keep, extract_patterns, selected_patterns=None):
         downloaded_versions = []
-        downloads_skipped = False
         new_versions_available = []
 
         if not os.path.exists(download_dir):
@@ -170,18 +173,6 @@ def main():
 
         # Determine which releases to download
         releases_to_download = releases[:versions_to_keep]
-
-        # Check Wi-Fi connection before starting downloads
-        wifi_connected = is_connected_to_wifi()
-        if wifi_only and not wifi_connected:
-            downloads_skipped = True
-            log_message("Not connected to Wi-Fi. Skipping all downloads.")
-            # Collect new versions available
-            for release in releases_to_download:
-                release_tag = release['tag_name']
-                if release_tag != saved_release_tag:
-                    new_versions_available.append(release_tag)
-            return downloaded_versions, downloads_skipped, new_versions_available
 
         for release in releases_to_download:
             release_tag = release['tag_name']
@@ -222,14 +213,22 @@ def main():
             if release_tag != saved_release_tag and release_tag not in downloaded_versions:
                 new_versions_available.append(release_tag)
 
-        return downloaded_versions, downloads_skipped, new_versions_available
+        return downloaded_versions, new_versions_available
 
     start_time = time.time()
     log_message("Starting Fetchtastic...")
 
+    # Check Wi-Fi connection before starting downloads
+    wifi_connected = is_connected_to_wifi()
+    downloads_skipped = False
+
+    if wifi_only and not wifi_connected:
+        downloads_skipped = True
+        log_message("Not connected to Wi-Fi. Skipping all downloads.")
+
+    # Initialize variables
     downloaded_firmwares = []
     downloaded_apks = []
-    downloads_skipped = False
     new_firmware_versions = []
     new_apk_versions = []
 
@@ -246,19 +245,28 @@ def main():
     if save_firmware and selected_firmware_patterns:
         versions_to_download = firmware_versions_to_keep
         latest_firmware_releases = get_latest_releases(firmware_releases_url, releases_to_scan)
-        fw_downloaded, fw_skipped, fw_new_versions = check_and_download(
-            latest_firmware_releases,
-            latest_firmware_release_file,
-            "Firmware",
-            firmware_dir,
-            firmware_versions_to_keep,
-            extract_patterns,
-            selected_patterns=selected_firmware_patterns
-        )
-        downloaded_firmwares.extend(fw_downloaded)
-        if fw_skipped:
-            downloads_skipped = True
-        new_firmware_versions.extend(fw_new_versions)
+        if not downloads_skipped:
+            fw_downloaded, fw_new_versions = check_and_download(
+                latest_firmware_releases,
+                latest_firmware_release_file,
+                "Firmware",
+                firmware_dir,
+                firmware_versions_to_keep,
+                extract_patterns,
+                selected_patterns=selected_firmware_patterns
+            )
+            downloaded_firmwares.extend(fw_downloaded)
+        else:
+            # Collect new versions available
+            saved_release_tag = None
+            if os.path.exists(latest_firmware_release_file):
+                with open(latest_firmware_release_file, 'r') as f:
+                    saved_release_tag = f.read().strip()
+            releases_to_download = latest_firmware_releases[:versions_to_download]
+            for release in releases_to_download:
+                release_tag = release['tag_name']
+                if release_tag != saved_release_tag:
+                    new_firmware_versions.append(release_tag)
         log_message(f"Latest Firmware releases: {', '.join(release['tag_name'] for release in latest_firmware_releases[:versions_to_download])}")
     elif not selected_firmware_patterns:
         log_message("No firmware assets selected. Skipping firmware download.")
@@ -266,19 +274,28 @@ def main():
     if save_apks and selected_apk_patterns:
         versions_to_download = android_versions_to_keep
         latest_android_releases = get_latest_releases(android_releases_url, releases_to_scan)
-        apk_downloaded, apk_skipped, apk_new_versions = check_and_download(
-            latest_android_releases,
-            latest_android_release_file,
-            "Android APK",
-            apks_dir,
-            android_versions_to_keep,
-            extract_patterns,
-            selected_patterns=selected_apk_patterns
-        )
-        downloaded_apks.extend(apk_downloaded)
-        if apk_skipped:
-            downloads_skipped = True
-        new_apk_versions.extend(apk_new_versions)
+        if not downloads_skipped:
+            apk_downloaded, apk_new_versions = check_and_download(
+                latest_android_releases,
+                latest_android_release_file,
+                "Android APK",
+                apks_dir,
+                android_versions_to_keep,
+                extract_patterns,
+                selected_patterns=selected_apk_patterns
+            )
+            downloaded_apks.extend(apk_downloaded)
+        else:
+            # Collect new versions available
+            saved_release_tag = None
+            if os.path.exists(latest_android_release_file):
+                with open(latest_android_release_file, 'r') as f:
+                    saved_release_tag = f.read().strip()
+            releases_to_download = latest_android_releases[:versions_to_download]
+            for release in releases_to_download:
+                release_tag = release['tag_name']
+                if release_tag != saved_release_tag:
+                    new_apk_versions.append(release_tag)
         log_message(f"Latest Android APK releases: {', '.join(release['tag_name'] for release in latest_android_releases[:versions_to_download])}")
     elif not selected_apk_patterns:
         log_message("No APK assets selected. Skipping APK download.")
@@ -298,7 +315,7 @@ def main():
             message = f"Downloaded Android APK versions: {', '.join(downloaded_apks)}"
             notification_messages.append(message)
         notification_message = '\n'.join(notification_messages) + f"\n{datetime.now()}"
-        send_ntfy_notification(notification_message)
+        send_ntfy_notification(notification_message, title="Fetchtastic Download Completed")
     elif downloads_skipped:
         # Downloads were skipped due to Wi-Fi constraints
         message_lines = ["New releases are available but downloads were skipped because the device is not connected to Wi-Fi."]
@@ -307,7 +324,7 @@ def main():
         if new_apk_versions:
             message_lines.append(f"Android APK versions available: {', '.join(new_apk_versions)}")
         notification_message = '\n'.join(message_lines) + f"\n{datetime.now()}"
-        send_ntfy_notification(notification_message)
+        send_ntfy_notification(notification_message, title="Fetchtastic Downloads Skipped")
         log_message(notification_message)
     else:
         # No new downloads; everything is up to date
@@ -315,7 +332,7 @@ def main():
             f"No new downloads. All Firmware and Android APK versions are up to date.\n"
             f"{datetime.now()}"
         )
-        send_ntfy_notification(message)
+        send_ntfy_notification(message, title="Fetchtastic Up to Date")
         log_message(message)
 
 if __name__ == "__main__":

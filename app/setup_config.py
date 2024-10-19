@@ -210,7 +210,6 @@ def run_setup():
         else:
             print("You can copy the topic name from above.")
 
-        print("Run 'fetchtastic topic' to view your current topic.")
     else:
         config['NTFY_TOPIC'] = ''
         config['NTFY_SERVER'] = ''
