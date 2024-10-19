@@ -76,20 +76,11 @@ def run_setup():
         # Load existing configuration
         config = load_config()
         print("Existing configuration found. You can keep current settings or change them.")
-
     else:
         # Initialize default configuration
         config = {}
 
     # Prompt to save APKs, firmware, or both
-    current_choice = 'both'
-    if config.get('SAVE_APKS') and config.get('SAVE_FIRMWARE'):
-        current_choice = 'both'
-    elif config.get('SAVE_APKS'):
-        current_choice = 'a'
-    elif config.get('SAVE_FIRMWARE'):
-        current_choice = 'f'
-
     save_choice = input(f"Would you like to download APKs, firmware, or both? [a/f/b] (default: both): ").strip().lower() or 'both'
     if save_choice == 'a':
         save_apks = True
@@ -138,16 +129,16 @@ def run_setup():
         config['FIRMWARE_VERSIONS_TO_KEEP'] = int(firmware_versions_to_keep)
 
         # Prompt for automatic extraction
-        auto_extract_default = 'yes' if config.get('AUTO_EXTRACT', False) else 'no'
+        auto_extract_default = 'yes' if config.get('AUTO_EXTRACT', True) else 'no'
         auto_extract = input(f"Would you like to automatically extract specific files from firmware zip archives? [y/n] (default: {auto_extract_default}): ").strip().lower() or auto_extract_default[0]
         if auto_extract == 'y':
+            print("Enter the keywords to match for extraction from the firmware zip files, separated by spaces.")
+            print("Example: rak4631- tbeam-2 t1000-e- tlora-v2-1-1_6-")
             if config.get('EXTRACT_PATTERNS'):
                 current_patterns = ' '.join(config.get('EXTRACT_PATTERNS', []))
                 print(f"Current patterns: {current_patterns}")
             else:
                 current_patterns = ''
-            print("Enter the keywords to match for extraction from the firmware zip files, separated by spaces.")
-            print("Example: rak4631- tbeam-2 t1000-e- tlora-v2-1-1_6-")
             extract_patterns = input("Extraction patterns (leave blank to keep current): ").strip() or current_patterns
             if extract_patterns:
                 config['AUTO_EXTRACT'] = True
@@ -171,7 +162,7 @@ def run_setup():
         yaml.dump(config, f)
 
     # Ask if the user wants to set up a cron job
-    cron_default = 'yes' if not config_exists() else ('yes' if is_cron_job_set() else 'no')
+    cron_default = 'yes'  # Default to 'yes'
     setup_cron = input(f"Would you like to schedule Fetchtastic to run daily at 3 AM? [y/n] (default: {cron_default}): ").strip().lower() or cron_default[0]
     if setup_cron == 'y':
         install_crond()
@@ -182,7 +173,7 @@ def run_setup():
 
     # Ask if the user wants to run Fetchtastic on boot
     boot_script = os.path.expanduser("~/.termux/boot/fetchtastic.sh")
-    boot_default = 'yes' if not config_exists() else ('yes' if os.path.exists(boot_script) else 'no')
+    boot_default = 'yes'  # Default to 'yes'
     run_on_boot = input(f"Do you want Fetchtastic to run on device boot? [y/n] (default: {boot_default}): ").strip().lower() or boot_default[0]
     if run_on_boot == 'y':
         setup_boot_script()
@@ -191,7 +182,7 @@ def run_setup():
         print("Boot script has been removed.")
 
     # Prompt for NTFY server configuration
-    notifications_default = 'yes' if config.get('NTFY_TOPIC') else 'no'
+    notifications_default = 'yes' if config.get('NTFY_TOPIC', True) else 'no'
     notifications = input(f"Would you like to set up notifications via NTFY? [y/n] (default: {notifications_default}): ").strip().lower() or notifications_default[0]
     if notifications == 'y':
         ntfy_server = input(f"Enter the NTFY server (current: {config.get('NTFY_SERVER', 'ntfy.sh')}): ").strip() or config.get('NTFY_SERVER', 'ntfy.sh')
@@ -332,13 +323,14 @@ def setup_boot_script():
     boot_dir = os.path.expanduser("~/.termux/boot")
     boot_script = os.path.join(boot_dir, "fetchtastic.sh")
     if not os.path.exists(boot_dir):
-        os.makedirs(boot_dir)
+        print("It seems that Termux:Boot is not installed or hasn't been run yet.")
+        print("Please install Termux:Boot from the Play Store or F-Droid and run it once to create the necessary directories.")
+        return
     with open(boot_script, 'w') as f:
         f.write("#!/data/data/com.termux/files/usr/bin/sh\n")
         f.write("fetchtastic download\n")
     os.chmod(boot_script, 0o700)
     print("Boot script created to run Fetchtastic on device boot.")
-    print("Ensure that the Termux:Boot app is installed to enable this feature.")
 
 def remove_boot_script():
     boot_script = os.path.expanduser("~/.termux/boot/fetchtastic.sh")
