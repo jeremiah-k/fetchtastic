@@ -72,9 +72,25 @@ def run_setup():
         os.makedirs(DEFAULT_CONFIG_DIR)
 
     config = {}
+    if config_exists():
+        # Load existing configuration
+        config = load_config()
+        print("Existing configuration found. You can keep current settings or change them.")
+
+    else:
+        # Initialize default configuration
+        config = {}
 
     # Prompt to save APKs, firmware, or both
-    save_choice = input("Would you like to download APKs, firmware, or both? [a/f/b] (default: both): ").strip().lower() or 'b'
+    current_choice = 'both'
+    if config.get('SAVE_APKS') and config.get('SAVE_FIRMWARE'):
+        current_choice = 'both'
+    elif config.get('SAVE_APKS'):
+        current_choice = 'a'
+    elif config.get('SAVE_FIRMWARE'):
+        current_choice = 'f'
+
+    save_choice = input(f"Would you like to download APKs, firmware, or both? [a/f/b] (current: {current_choice}): ").strip().lower() or current_choice
     if save_choice == 'a':
         save_apks = True
         save_firmware = False
@@ -113,18 +129,22 @@ def run_setup():
 
     # Prompt for number of versions to keep
     if save_apks:
-        android_versions_to_keep = input("How many versions of the Android app would you like to keep? (default is 2): ").strip() or '2'
+        current_versions = config.get('ANDROID_VERSIONS_TO_KEEP', 2)
+        android_versions_to_keep = input(f"How many versions of the Android app would you like to keep? (current: {current_versions}): ").strip() or str(current_versions)
         config['ANDROID_VERSIONS_TO_KEEP'] = int(android_versions_to_keep)
     if save_firmware:
-        firmware_versions_to_keep = input("How many versions of the firmware would you like to keep? (default is 2): ").strip() or '2'
+        current_versions = config.get('FIRMWARE_VERSIONS_TO_KEEP', 2)
+        firmware_versions_to_keep = input(f"How many versions of the firmware would you like to keep? (current: {current_versions}): ").strip() or str(current_versions)
         config['FIRMWARE_VERSIONS_TO_KEEP'] = int(firmware_versions_to_keep)
 
         # Prompt for automatic extraction
-        auto_extract = input("Would you like to automatically extract specific files from firmware zip archives? [y/n] (default: no): ").strip().lower() or 'n'
+        current_auto_extract = 'yes' if config.get('AUTO_EXTRACT', False) else 'no'
+        auto_extract = input(f"Would you like to automatically extract specific files from firmware zip archives? [y/n] (current: {current_auto_extract}): ").strip().lower() or current_auto_extract[0]
         if auto_extract == 'y':
+            current_patterns = ' '.join(config.get('EXTRACT_PATTERNS', []))
             print("Enter the keywords to match for extraction from the firmware zip files, separated by spaces.")
-            print("Example: rak4631- tbeam-2 t1000-e- tlora-v2-1-1_6-")
-            extract_patterns = input("Extraction patterns: ").strip()
+            print(f"Current patterns: {current_patterns}")
+            extract_patterns = input("Extraction patterns (leave blank to keep current): ").strip() or current_patterns
             if extract_patterns:
                 config['AUTO_EXTRACT'] = True
                 config['EXTRACT_PATTERNS'] = extract_patterns.split()
@@ -134,7 +154,8 @@ def run_setup():
             config['AUTO_EXTRACT'] = False
 
     # Ask if the user wants to only download when connected to Wi-Fi
-    wifi_only = input("Do you want to only download when connected to Wi-Fi? [y/n] (default: yes): ").strip().lower() or 'y'
+    current_wifi_only = 'yes' if config.get('WIFI_ONLY', True) else 'no'
+    wifi_only = input(f"Do you want to only download when connected to Wi-Fi? [y/n] (current: {current_wifi_only}): ").strip().lower() or current_wifi_only[0]
     config['WIFI_ONLY'] = True if wifi_only == 'y' else False
 
     # Set the download directory to the same as the config directory
@@ -146,22 +167,35 @@ def run_setup():
         yaml.dump(config, f)
 
     # Ask if the user wants to set up a cron job
-    setup_cron = input("Would you like to schedule Fetchtastic to run daily at 3 AM? [y/n] (default: yes): ").strip().lower() or 'y'
+    current_cron = 'yes' if is_cron_job_set() else 'no'
+    setup_cron = input(f"Would you like to schedule Fetchtastic to run daily at 3 AM? [y/n] (current: {current_cron}): ").strip().lower() or current_cron[0]
     if setup_cron == 'y':
         install_crond()
         setup_cron_job()
     else:
-        print("Skipping cron job setup.")
+        remove_cron_job()
+        print("Cron job has been removed.")
+
+    # Ask if the user wants to run Fetchtastic on boot
+    boot_script = os.path.expanduser("~/.termux/boot/fetchtastic.sh")
+    current_boot = 'yes' if os.path.exists(boot_script) else 'no'
+    run_on_boot = input(f"Do you want Fetchtastic to run on device boot? [y/n] (current: {current_boot}): ").strip().lower() or current_boot[0]
+    if run_on_boot == 'y':
+        setup_boot_script()
+    else:
+        remove_boot_script()
+        print("Boot script has been removed.")
 
     # Prompt for NTFY server configuration
-    notifications = input("Would you like to set up notifications via NTFY? [y/n] (default: yes): ").strip().lower() or 'y'
+    current_notifications = 'yes' if config.get('NTFY_TOPIC') else 'no'
+    notifications = input(f"Would you like to set up notifications via NTFY? [y/n] (current: {current_notifications}): ").strip().lower() or current_notifications[0]
     if notifications == 'y':
-        ntfy_server = input("Enter the NTFY server (default: ntfy.sh): ").strip() or 'ntfy.sh'
+        ntfy_server = input(f"Enter the NTFY server (current: {config.get('NTFY_SERVER', 'ntfy.sh')}): ").strip() or config.get('NTFY_SERVER', 'ntfy.sh')
         if not ntfy_server.startswith('http://') and not ntfy_server.startswith('https://'):
             ntfy_server = 'https://' + ntfy_server
 
-        default_topic = 'fetchtastic-' + ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
-        topic_name = input(f"Enter a unique topic name (default: {default_topic}): ").strip() or default_topic
+        current_topic = config.get('NTFY_TOPIC', 'fetchtastic-' + ''.join(random.choices(string.ascii_lowercase + string.digits, k=6)))
+        topic_name = input(f"Enter a unique topic name (current: {current_topic}): ").strip() or current_topic
 
         config['NTFY_TOPIC'] = topic_name
         config['NTFY_SERVER'] = ntfy_server
@@ -182,13 +216,12 @@ def run_setup():
             print("You can copy the topic name from above.")
 
         print("Run 'fetchtastic topic' to view your current topic.")
-        print("Run 'fetchtastic setup' again or edit the YAML file to change the topic.")
     else:
         config['NTFY_TOPIC'] = ''
         config['NTFY_SERVER'] = ''
         with open(CONFIG_FILE, 'w') as f:
             yaml.dump(config, f)
-        print("Notifications have not been set up.")
+        print("Notifications have been disabled.")
 
     # Ask if the user wants to perform a first run
     perform_first_run = input("Would you like to start the first run now? [y/n] (default: yes): ").strip().lower() or 'y'
@@ -255,31 +288,59 @@ def setup_cron_job():
         else:
             existing_cron = result.stdout
 
-        # Check for existing cron jobs related to fetchtastic
-        if 'fetchtastic download' in existing_cron:
-            print("An existing cron job for Fetchtastic was found:")
-            print(existing_cron)
-            keep_cron = input("Do you want to keep the existing crontab entry? [y/n] (default: yes): ").strip().lower() or 'y'
-            if keep_cron == 'n':
-                # Remove existing fetchtastic cron jobs
-                new_cron = '\n'.join([line for line in existing_cron.split('\n') if 'fetchtastic download' not in line])
-                # Add new cron job
-                new_cron += f"\n0 3 * * * fetchtastic download\n"
-                # Update crontab
-                process = subprocess.Popen(['crontab', '-'], stdin=subprocess.PIPE, text=True)
-                process.communicate(input=new_cron)
-                print("Cron job updated.")
-            else:
-                print("Keeping existing crontab entry.")
-        else:
-            # Add new cron job
-            new_cron = existing_cron.strip() + f"\n0 3 * * * fetchtastic download\n"
+        # Remove existing fetchtastic cron jobs
+        new_cron = '\n'.join([line for line in existing_cron.split('\n') if 'fetchtastic download' not in line])
+        # Add new cron job
+        new_cron += f"\n0 3 * * * fetchtastic download\n"
+        # Update crontab
+        process = subprocess.Popen(['crontab', '-'], stdin=subprocess.PIPE, text=True)
+        process.communicate(input=new_cron)
+        print("Cron job added to run Fetchtastic daily at 3 AM.")
+    except Exception as e:
+        print(f"An error occurred while setting up the cron job: {e}")
+
+def remove_cron_job():
+    try:
+        # Get current crontab entries
+        result = subprocess.run(['crontab', '-l'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if result.returncode == 0:
+            existing_cron = result.stdout
+            # Remove existing fetchtastic cron jobs
+            new_cron = '\n'.join([line for line in existing_cron.split('\n') if 'fetchtastic download' not in line])
             # Update crontab
             process = subprocess.Popen(['crontab', '-'], stdin=subprocess.PIPE, text=True)
             process.communicate(input=new_cron)
-            print("Cron job added to run Fetchtastic daily at 3 AM.")
+            print("Cron job removed.")
     except Exception as e:
-        print(f"An error occurred while setting up the cron job: {e}")
+        print(f"An error occurred while removing the cron job: {e}")
+
+def is_cron_job_set():
+    try:
+        result = subprocess.run(['crontab', '-l'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if result.returncode == 0 and 'fetchtastic download' in result.stdout:
+            return True
+        else:
+            return False
+    except Exception:
+        return False
+
+def setup_boot_script():
+    boot_dir = os.path.expanduser("~/.termux/boot")
+    boot_script = os.path.join(boot_dir, "fetchtastic.sh")
+    if not os.path.exists(boot_dir):
+        os.makedirs(boot_dir)
+    with open(boot_script, 'w') as f:
+        f.write("#!/data/data/com.termux/files/usr/bin/sh\n")
+        f.write("fetchtastic download\n")
+    os.chmod(boot_script, 0o700)
+    print("Boot script created to run Fetchtastic on device boot.")
+    print("Ensure that the Termux:Boot app is installed to enable this feature.")
+
+def remove_boot_script():
+    boot_script = os.path.expanduser("~/.termux/boot/fetchtastic.sh")
+    if os.path.exists(boot_script):
+        os.remove(boot_script)
+        print("Boot script removed.")
 
 def load_config():
     if not config_exists():

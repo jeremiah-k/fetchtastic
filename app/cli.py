@@ -33,8 +33,9 @@ def main():
         if not setup_config.config_exists():
             print("No configuration found. Running setup.")
             setup_config.run_setup()
-        # Run the downloader
-        downloader.main()
+        else:
+            # Run the downloader
+            downloader.main()
     elif args.command == 'topic':
         # Display the NTFY topic and prompt to copy to clipboard
         config = setup_config.load_config()

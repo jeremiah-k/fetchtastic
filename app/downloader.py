@@ -162,6 +162,13 @@ def main():
         # Determine which releases to download
         releases_to_download = releases[:versions_to_keep]
 
+        # Check Wi-Fi connection before starting downloads
+        wifi_connected = is_connected_to_wifi()
+        if wifi_only and not wifi_connected:
+            downloads_skipped = True
+            log_message("Not connected to Wi-Fi. Skipping all downloads.")
+            return downloaded_versions, downloads_skipped
+
         for release in releases_to_download:
             release_tag = release['tag_name']
             release_dir = os.path.join(download_dir, release_tag)
@@ -169,12 +176,6 @@ def main():
             if os.path.exists(release_dir) or release_tag == saved_release_tag:
                 log_message(f"Skipping version {release_tag}, already exists.")
             else:
-                # Check Wi-Fi connection before downloading
-                if wifi_only and not is_connected_to_wifi():
-                    downloads_skipped = True
-                    log_message(f"Not connected to Wi-Fi. Skipping download of {release_type} version {release_tag}.")
-                    continue  # Skip downloading this release
-
                 # Proceed to download this version
                 os.makedirs(release_dir, exist_ok=True)
                 log_message(f"Downloading new {release_type} version: {release_tag}")
@@ -282,6 +283,7 @@ def main():
         # Downloads were skipped due to Wi-Fi constraints
         message = "New releases are available but downloads were skipped because the device is not connected to Wi-Fi."
         send_ntfy_notification(f"{message}\n{datetime.now()}")
+        log_message(message)
     else:
         # No new downloads; everything is up to date
         message = (
@@ -289,6 +291,7 @@ def main():
             f"{datetime.now()}"
         )
         send_ntfy_notification(message)
+        log_message(message)
 
 if __name__ == "__main__":
     main()
