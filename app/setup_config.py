@@ -1,6 +1,7 @@
 # app/setup_config.py
 
 import os
+import sys
 import yaml
 import subprocess
 import random
@@ -37,20 +38,36 @@ def config_exists():
 def is_termux():
     return 'com.termux' in os.environ.get('PREFIX', '')
 
+def check_storage_setup():
+    # Check if the Termux storage directory and Downloads are set up and writable
+    storage_dir = os.path.expanduser("~/storage")
+    storage_downloads = os.path.expanduser("~/storage/downloads")
+
+    if os.path.exists(storage_dir) and os.path.exists(storage_downloads) and os.access(storage_downloads, os.W_OK):
+        print("Termux storage access is already set up.")
+        return True
+    else:
+        print("Termux storage access is not set up.")
+        return False
+
 def run_setup():
     print("Running Fetchtastic Setup...")
 
     # Install required Termux packages first
     if is_termux():
         install_termux_packages()
-        # Run termux-setup-storage
-        setup_storage()
-        # After setting up storage, inform the user and exit
-        print("Termux storage has been set up, and required packages have been installed.")
-        print("Please restart Termux and run 'fetchtastic setup' again to continue.")
-        exit()
+        # Check if storage is set up
+        if not check_storage_setup():
+            # Run termux-setup-storage
+            setup_storage()
+            # After setting up storage, inform the user and exit
+            print("Termux storage has been set up, and required packages have been installed.")
+            print("Please restart Termux and run 'fetchtastic setup' again to continue.")
+            sys.exit()
+        else:
+            print("Termux storage is already set up.")
 
-    # The rest of your setup process continues here
+    # Proceed with the rest of the setup
     if not os.path.exists(DEFAULT_CONFIG_DIR):
         os.makedirs(DEFAULT_CONFIG_DIR)
 
@@ -206,7 +223,12 @@ def install_termux_packages():
 def setup_storage():
     # Run termux-setup-storage
     print("Setting up Termux storage access...")
-    subprocess.run(['termux-setup-storage'], check=True)
+    try:
+        subprocess.run(['termux-setup-storage'], check=True)
+    except subprocess.CalledProcessError as e:
+        print("An error occurred while setting up Termux storage.")
+        print("Please grant storage permissions when prompted.")
+        sys.exit()
 
 def install_crond():
     try:
@@ -258,41 +280,6 @@ def setup_cron_job():
             print("Cron job added to run Fetchtastic daily at 3 AM.")
     except Exception as e:
         print(f"An error occurred while setting up the cron job: {e}")
-
-def run_clean():
-    print("This will remove Fetchtastic configuration files, downloaded files, and cron job entries.")
-    confirm = input("Are you sure you want to proceed? [y/n] (default: no): ").strip().lower() or 'n'
-    if confirm != 'y':
-        print("Clean operation cancelled.")
-        return
-
-    # Remove configuration file
-    if os.path.exists(CONFIG_FILE):
-        os.remove(CONFIG_FILE)
-        print(f"Removed configuration file: {CONFIG_FILE}")
-
-    # Remove download directory
-    if os.path.exists(DEFAULT_CONFIG_DIR):
-        shutil.rmtree(DEFAULT_CONFIG_DIR)
-        print(f"Removed download directory: {DEFAULT_CONFIG_DIR}")
-
-    # Remove cron job entries
-    try:
-        # Get current crontab entries
-        result = subprocess.run(['crontab', '-l'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        if result.returncode == 0:
-            existing_cron = result.stdout
-            # Remove existing fetchtastic cron jobs
-            new_cron = '\n'.join([line for line in existing_cron.split('\n') if 'fetchtastic download' not in line])
-            # Update crontab
-            process = subprocess.Popen(['crontab', '-'], stdin=subprocess.PIPE, text=True)
-            process.communicate(input=new_cron)
-            print("Removed Fetchtastic cron job entries.")
-    except Exception as e:
-        print(f"An error occurred while removing cron jobs: {e}")
-
-    print("Fetchtastic has been cleaned from your system.")
-    print("If you installed Fetchtastic via pip and wish to uninstall it, run 'pip uninstall fetchtastic'.")
 
 def load_config():
     if not config_exists():
