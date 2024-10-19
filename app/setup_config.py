@@ -129,7 +129,7 @@ def run_setup():
         config['FIRMWARE_VERSIONS_TO_KEEP'] = int(firmware_versions_to_keep)
 
         # Prompt for automatic extraction
-        auto_extract_default = 'yes' if config.get('AUTO_EXTRACT', True) else 'no'
+        auto_extract_default = 'yes' if config.get('AUTO_EXTRACT', False) else 'no'
         auto_extract = input(f"Would you like to automatically extract specific files from firmware zip archives? [y/n] (default: {auto_extract_default}): ").strip().lower() or auto_extract_default[0]
         if auto_extract == 'y':
             print("Enter the keywords to match for extraction from the firmware zip files, separated by spaces.")
@@ -137,14 +137,22 @@ def run_setup():
             if config.get('EXTRACT_PATTERNS'):
                 current_patterns = ' '.join(config.get('EXTRACT_PATTERNS', []))
                 print(f"Current patterns: {current_patterns}")
+                extract_patterns = input("Extraction patterns (leave blank to keep current): ").strip()
+                if extract_patterns:
+                    config['AUTO_EXTRACT'] = True
+                    config['EXTRACT_PATTERNS'] = extract_patterns.split()
+                else:
+                    # Keep existing patterns
+                    config['AUTO_EXTRACT'] = True
             else:
-                current_patterns = ''
-            extract_patterns = input("Extraction patterns (leave blank to keep current): ").strip() or current_patterns
-            if extract_patterns:
-                config['AUTO_EXTRACT'] = True
-                config['EXTRACT_PATTERNS'] = extract_patterns.split()
-            else:
-                config['AUTO_EXTRACT'] = False
+                extract_patterns = input("Extraction patterns: ").strip()
+                if extract_patterns:
+                    config['AUTO_EXTRACT'] = True
+                    config['EXTRACT_PATTERNS'] = extract_patterns.split()
+                else:
+                    config['AUTO_EXTRACT'] = False
+                    print("No extraction patterns provided. Extraction will be skipped.")
+                    print("You can run 'fetchtastic setup' again to set extraction patterns.")
         else:
             config['AUTO_EXTRACT'] = False
 
@@ -172,7 +180,6 @@ def run_setup():
         print("Cron job has been removed.")
 
     # Ask if the user wants to run Fetchtastic on boot
-    boot_script = os.path.expanduser("~/.termux/boot/fetchtastic.sh")
     boot_default = 'yes'  # Default to 'yes'
     run_on_boot = input(f"Do you want Fetchtastic to run on device boot? [y/n] (default: {boot_default}): ").strip().lower() or boot_default[0]
     if run_on_boot == 'y':
@@ -182,7 +189,7 @@ def run_setup():
         print("Boot script has been removed.")
 
     # Prompt for NTFY server configuration
-    notifications_default = 'yes' if config.get('NTFY_TOPIC', True) else 'no'
+    notifications_default = 'yes' if config.get('NTFY_TOPIC') else 'no'
     notifications = input(f"Would you like to set up notifications via NTFY? [y/n] (default: {notifications_default}): ").strip().lower() or notifications_default[0]
     if notifications == 'y':
         ntfy_server = input(f"Enter the NTFY server (current: {config.get('NTFY_SERVER', 'ntfy.sh')}): ").strip() or config.get('NTFY_SERVER', 'ntfy.sh')
