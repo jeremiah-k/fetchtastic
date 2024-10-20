@@ -43,12 +43,18 @@ def check_storage_setup():
     storage_dir = os.path.expanduser("~/storage")
     storage_downloads = os.path.expanduser("~/storage/downloads")
 
-    if os.path.exists(storage_dir) and os.path.exists(storage_downloads) and os.access(storage_downloads, os.W_OK):
-        print("Termux storage access is already set up.")
-        return True
-    else:
-        print("Termux storage access is not set up.")
-        return False
+    while True:
+        if os.path.exists(storage_dir) and os.path.exists(storage_downloads) and os.access(storage_downloads, os.W_OK):
+            print("Termux storage access is already set up.")
+            return True
+        else:
+            print("Termux storage access is not set up or permission was denied.")
+            # Run termux-setup-storage
+            setup_storage()
+            print("Please grant storage permissions when prompted.")
+            input("Press Enter after granting storage permissions to continue...")
+            # Re-check if storage is set up
+            continue
 
 def run_setup():
     print("Running Fetchtastic Setup...")
@@ -57,15 +63,8 @@ def run_setup():
     if is_termux():
         install_termux_packages()
         # Check if storage is set up
-        if not check_storage_setup():
-            # Run termux-setup-storage
-            setup_storage()
-            # After setting up storage, inform the user and exit
-            print("Termux storage has been set up, and required packages have been installed.")
-            print("Please restart Termux and run 'fetchtastic setup' again to continue.")
-            sys.exit()
-        else:
-            print("Termux storage is already set up.")
+        check_storage_setup()
+        print("Termux storage is set up.")
 
     # Proceed with the rest of the setup
     if not os.path.exists(DEFAULT_CONFIG_DIR):
@@ -239,11 +238,14 @@ def copy_to_clipboard_termux(text):
         print(f"An error occurred while copying to clipboard: {e}")
 
 def install_termux_packages():
-    # Install termux-api and cronie if they are not installed
+    # Install termux-api, termux-services, and cronie if they are not installed
     packages_to_install = []
     # Check for termux-api
     if shutil.which('termux-battery-status') is None:
         packages_to_install.append('termux-api')
+    # Check for termux-services
+    if shutil.which('sv-enable') is None:
+        packages_to_install.append('termux-services')
     # Check for cronie
     if shutil.which('crond') is None:
         packages_to_install.append('cronie')
@@ -262,7 +264,6 @@ def setup_storage():
     except subprocess.CalledProcessError as e:
         print("An error occurred while setting up Termux storage.")
         print("Please grant storage permissions when prompted.")
-        sys.exit()
 
 def install_crond():
     try:
@@ -274,11 +275,11 @@ def install_crond():
             print("cronie installed.")
         else:
             print("cronie is already installed.")
-        # Start crond service
-        subprocess.run(['crond'], check=True)
-        print("crond service started.")
+        # Enable crond service
+        subprocess.run(['sv-enable', 'crond'], check=True)
+        print("crond service enabled.")
     except Exception as e:
-        print(f"An error occurred while installing or starting crond: {e}")
+        print(f"An error occurred while installing or enabling crond: {e}")
 
 def setup_cron_job():
     try:
@@ -329,14 +330,16 @@ def setup_boot_script():
     boot_dir = os.path.expanduser("~/.termux/boot")
     boot_script = os.path.join(boot_dir, "fetchtastic.sh")
     if not os.path.exists(boot_dir):
+        os.makedirs(boot_dir)
+        print("Created the Termux:Boot directory.")
         print("It seems that Termux:Boot is not installed or hasn't been run yet.")
-        print("Please install Termux:Boot from the Play Store or F-Droid and run it once to create the necessary directories.")
-        return
+        print("Please install Termux:Boot from F-Droid and run it once to enable boot scripts.")
     with open(boot_script, 'w') as f:
         f.write("#!/data/data/com.termux/files/usr/bin/sh\n")
         f.write("fetchtastic download\n")
     os.chmod(boot_script, 0o700)
     print("Boot script created to run Fetchtastic on device boot.")
+    print("Note: The script may not run on boot until you have installed and run Termux:Boot at least once.")
 
 def remove_boot_script():
     boot_script = os.path.expanduser("~/.termux/boot/fetchtastic.sh")
