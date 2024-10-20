@@ -1,6 +1,6 @@
 # Fetchtastic Termux Setup
 
-Fetchtastic is a tool to download the latest Meshtastic Android app and Firmware releases to your phone via Termux. It also provides optional notifications via an NTFY server.
+Fetchtastic is a utility for downloading and managing the latest Meshtastic Android app and Firmware releases on your phone using Termux. It also provides optional notifications via NTFY.
 
 ## Prerequisites
 
