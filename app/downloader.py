@@ -27,6 +27,7 @@ def main():
     firmware_versions_to_keep = config.get("FIRMWARE_VERSIONS_TO_KEEP", 2)
     auto_extract = config.get("AUTO_EXTRACT", False)
     extract_patterns = config.get("EXTRACT_PATTERNS", [])
+    exclude_patterns = config.get("EXCLUDE_PATTERNS", [])
     wifi_only = config.get("WIFI_ONLY", True)
 
     selected_apk_patterns = config.get('SELECTED_APK_ASSETS', [])
@@ -118,13 +119,16 @@ def main():
             return False
 
     # Function to extract files from zip archives
-    def extract_files(zip_path, extract_dir, patterns):
+    def extract_files(zip_path, extract_dir, patterns, exclude_patterns):
         try:
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                 matched_files = []
                 for file_info in zip_ref.infolist():
                     file_name = file_info.filename
                     base_name = os.path.basename(file_name)
+                    # Check if file matches exclude patterns
+                    if any(exclude in base_name for exclude in exclude_patterns):
+                        continue
                     for pattern in patterns:
                         if pattern in base_name:
                             # Extract and flatten directory structure
@@ -201,7 +205,7 @@ def main():
                     download_path = os.path.join(release_dir, file_name)
                     download_file(asset['browser_download_url'], download_path)
                     if auto_extract and file_name.endswith('.zip') and release_type == "Firmware":
-                        extract_files(download_path, release_dir, extract_patterns)
+                        extract_files(download_path, release_dir, extract_patterns, exclude_patterns)
                 downloaded_versions.append(release_tag)
 
         # Only update latest_release_file if downloads occurred
