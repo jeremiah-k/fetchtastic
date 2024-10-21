@@ -64,7 +64,7 @@ This will download the latest versions of the selected assets and store them in 
 
 ### Files and Directories
 
-By default, Fetchtastic saves files and configuration in the `Downloads/Fetchtastic` directory:
+By default, Fetchtastic saves files and configuration in the `Downloads/Meshtastic` directory:
 
  - **Configuration File**: `Downloads/Meshtastic/fetchtastic.yaml`
  - **Log File**: `Downloads/Meshtastic/fetchtastic.log`
