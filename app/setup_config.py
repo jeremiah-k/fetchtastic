@@ -136,8 +136,12 @@ def run_setup():
             if config.get('EXTRACT_PATTERNS'):
                 current_patterns = ' '.join(config.get('EXTRACT_PATTERNS', []))
                 print(f"Current patterns: {current_patterns}")
-                extract_patterns = input("Extraction patterns (leave blank to keep current): ").strip()
-                if extract_patterns:
+                extract_patterns = input("Extraction patterns (leave blank to keep current, enter '!' to clear): ").strip()
+                if extract_patterns == '!':
+                    config['AUTO_EXTRACT'] = False
+                    config['EXTRACT_PATTERNS'] = []
+                    print("Extraction patterns cleared. No files will be extracted.")
+                elif extract_patterns:
                     config['AUTO_EXTRACT'] = True
                     config['EXTRACT_PATTERNS'] = extract_patterns.split()
                 else:
@@ -150,10 +154,43 @@ def run_setup():
                     config['EXTRACT_PATTERNS'] = extract_patterns.split()
                 else:
                     config['AUTO_EXTRACT'] = False
-                    print("No extraction patterns provided. Extraction will be skipped.")
-                    print("You can run 'fetchtastic setup' again to set extraction patterns.")
+                    print("No patterns selected, no files will be extracted. Run setup again if you wish to change this.")
+                    # Skip exclude patterns prompt
+                    config['EXCLUDE_PATTERNS'] = []
+            # Prompt for exclude patterns if extraction is enabled
+            if config.get('AUTO_EXTRACT', False) and config.get('EXTRACT_PATTERNS'):
+                exclude_prompt = "Would you like to exclude any patterns from extraction? [y/n] (default: no): "
+                exclude_choice = input(exclude_prompt).strip().lower() or 'n'
+                if exclude_choice == 'y':
+                    print("Enter the keywords to exclude from extraction, separated by spaces.")
+                    print("Example: .hex tcxo")
+                    if config.get('EXCLUDE_PATTERNS'):
+                        current_excludes = ' '.join(config.get('EXCLUDE_PATTERNS', []))
+                        print(f"Current exclude patterns: {current_excludes}")
+                        exclude_patterns = input("Exclude patterns (leave blank to keep current, enter '!' to clear): ").strip()
+                        if exclude_patterns == '!':
+                            config['EXCLUDE_PATTERNS'] = []
+                            print("Exclude patterns cleared. No files will be excluded.")
+                        elif exclude_patterns:
+                            config['EXCLUDE_PATTERNS'] = exclude_patterns.split()
+                        else:
+                            # Keep existing patterns
+                            pass
+                    else:
+                        exclude_patterns = input("Exclude patterns: ").strip()
+                        if exclude_patterns:
+                            config['EXCLUDE_PATTERNS'] = exclude_patterns.split()
+                        else:
+                            config['EXCLUDE_PATTERNS'] = []
+                else:
+                    # User chose not to exclude patterns
+                    config['EXCLUDE_PATTERNS'] = []
+            else:
+                config['EXCLUDE_PATTERNS'] = []
         else:
             config['AUTO_EXTRACT'] = False
+            config['EXTRACT_PATTERNS'] = []
+            config['EXCLUDE_PATTERNS'] = []
 
     # Ask if the user wants to only download when connected to Wi-Fi
     wifi_only_default = 'yes' if config.get('WIFI_ONLY', True) else 'no'
@@ -316,26 +353,17 @@ def remove_cron_job():
     except Exception as e:
         print(f"An error occurred while removing the cron job: {e}")
 
-def is_cron_job_set():
-    try:
-        result = subprocess.run(['crontab', '-l'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        if result.returncode == 0 and 'fetchtastic download' in result.stdout:
-            return True
-        else:
-            return False
-    except Exception:
-        return False
-
 def setup_boot_script():
     boot_dir = os.path.expanduser("~/.termux/boot")
     boot_script = os.path.join(boot_dir, "fetchtastic.sh")
     if not os.path.exists(boot_dir):
         os.makedirs(boot_dir)
         print("Created the Termux:Boot directory.")
-        print("It seems that Termux:Boot is not installed or hasn't been run yet.")
         print("Please install Termux:Boot from F-Droid and run it once to enable boot scripts.")
+    # Write the boot script
     with open(boot_script, 'w') as f:
         f.write("#!/data/data/com.termux/files/usr/bin/sh\n")
+        f.write("sleep 30\n")
         f.write("fetchtastic download\n")
     os.chmod(boot_script, 0o700)
     print("Boot script created to run Fetchtastic on device boot.")
