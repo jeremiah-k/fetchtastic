@@ -44,16 +44,6 @@ During setup, you will be able to:
 - Set up notifications via NTFY. (Optional)
 - Add a cron job to run Fetchtastic regularly. (Optional)
 
-### Perform Downloads
-
-To manually start the download process, run:
-
-```bash
-fetchtastic download
-```
-
-This will download the latest versions of the selected assets and store them in the specified directories.
-
 ### Command list
 
 - **setup**: Run the setup process.
@@ -72,7 +62,6 @@ By default, Fetchtastic saves files and configuration in the `Downloads/Meshtast
  - **Firmware**: `Downloads/Meshtastic/firmware`
 
 You can manually edit the configuration file to change the settings.
-
 
 ### Scheduling with Cron
 
