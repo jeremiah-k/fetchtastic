@@ -9,7 +9,7 @@ Fetchtastic is a utility for downloading and managing the latest Meshtastic Andr
 1. **Install Termux**: Download and install [Termux](https://f-droid.org/en/packages/com.termux/) from F-Droid.
 2. **Install Termux Boot**: Download and install [Termux Boot](https://f-droid.org/en/packages/com.termux.boot/) from F-Droid.
 3. **Install Termux API**: Download and install [Termux API](https://f-droid.org/en/packages/com.termux.api/) from F-Droid.
-4. *(Optional)* **Install ntfy**: Download and install [ntfy](https://f-droid.org/en/packages/io.heckel.ntfy/) from F-Droid.
+4. _(Optional)_ **Install ntfy**: Download and install [ntfy](https://f-droid.org/en/packages/io.heckel.ntfy/) from F-Droid.
 
 ## Installation
 
@@ -56,10 +56,10 @@ During setup, you will be able to:
 
 By default, Fetchtastic saves files and configuration in the `Downloads/Meshtastic` directory:
 
- - **Configuration File**: `Downloads/Meshtastic/fetchtastic.yaml`
- - **Log File**: `Downloads/Meshtastic/fetchtastic.log`
- - **APKs**: `Downloads/Meshtastic/apks`
- - **Firmware**: `Downloads/Meshtastic/firmware`
+- **Configuration File**: `Downloads/Meshtastic/fetchtastic.yaml`
+- **Log File**: `Downloads/Meshtastic/fetchtastic.log`
+- **APKs**: `Downloads/Meshtastic/apks`
+- **Firmware**: `Downloads/Meshtastic/firmware`
 
 You can manually edit the configuration file to change the settings.
 
@@ -68,6 +68,7 @@ You can manually edit the configuration file to change the settings.
 During setup, you have the option to add a cron job that runs Fetchtastic daily at 3 AM.
 
 To modify the cron job, you can run:
+
 ```bash
 crontab -e
 ```

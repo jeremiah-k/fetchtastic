@@ -4,21 +4,22 @@ on:
   release:
     types: [created]
 
+permissions:
+  contents: read
+  packages: read
+
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
     environment: release
 
-    permissions:
-      id-token: write 
-
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v3
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.x'
+          python-version: 3.x
 
       - name: Install build dependencies
         run: |
@@ -30,3 +31,5 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_TOKEN }}
