@@ -80,7 +80,7 @@ def main():
 
     # Function to get the latest releases and sort by date
     def get_latest_releases(url, scan_count=10):
-        response = requests.get(url)
+        response = requests.get(url, timeout=10)
         response.raise_for_status()
         releases = response.json()
         # Sort releases by published date, descending order

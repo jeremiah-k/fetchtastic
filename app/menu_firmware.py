@@ -8,7 +8,7 @@ from pick import pick
 
 def fetch_firmware_assets():
     firmware_releases_url = "https://api.github.com/repos/meshtastic/firmware/releases"
-    response = requests.get(firmware_releases_url)
+    response = requests.get(firmware_releases_url, timeout=10)
     response.raise_for_status()
     releases = response.json()
     # Get the latest release
