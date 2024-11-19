@@ -52,7 +52,8 @@ It's recommended to use `pipx` to install Fetchtastic in an isolated environment
 
 1. **Install pipx**:
 
-   Follow the instructions for your platform: [https://github.com/pypa/pipx](https://github.com/pypa/pipx)
+   Follow the installation instructions for your platform on the [pipx documentation page](https://pypa.github.io/pipx/installation/).
+
    Restart your terminal or command prompt after installing pipx.
 
 3. **Install Fetchtastic with pipx**:
