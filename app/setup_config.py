@@ -1,11 +1,11 @@
 # app/setup_config.py
 
 import os
+import platform
 import random
 import shutil
 import string
 import subprocess
-import platform
 
 import yaml
 
@@ -157,7 +157,9 @@ def run_setup():
 
     # Prompt for number of versions to keep
     if save_apks:
-        current_versions = config.get("ANDROID_VERSIONS_TO_KEEP", default_versions_to_keep)
+        current_versions = config.get(
+            "ANDROID_VERSIONS_TO_KEEP", default_versions_to_keep
+        )
         if is_first_run:
             prompt_text = f"How many versions of the Android app would you like to keep? (default is {current_versions}): "
         else:
@@ -165,7 +167,9 @@ def run_setup():
         android_versions_to_keep = input(prompt_text).strip() or str(current_versions)
         config["ANDROID_VERSIONS_TO_KEEP"] = int(android_versions_to_keep)
     if save_firmware:
-        current_versions = config.get("FIRMWARE_VERSIONS_TO_KEEP", default_versions_to_keep)
+        current_versions = config.get(
+            "FIRMWARE_VERSIONS_TO_KEEP", default_versions_to_keep
+        )
         if is_first_run:
             prompt_text = f"How many versions of the firmware would you like to keep? (default is {current_versions}): "
         else:
@@ -215,11 +219,11 @@ def run_setup():
                     config["EXCLUDE_PATTERNS"] = []
             # Prompt for exclude patterns if extraction is enabled
             if config.get("AUTO_EXTRACT", False) and config.get("EXTRACT_PATTERNS"):
-                exclude_default = (
-                    "yes" if config.get("EXCLUDE_PATTERNS") else "no"
-                )
+                exclude_default = "yes" if config.get("EXCLUDE_PATTERNS") else "no"
                 exclude_prompt = f"Would you like to exclude any patterns from extraction? [y/n] (default: {exclude_default}): "
-                exclude_choice = input(exclude_prompt).strip().lower() or exclude_default[0]
+                exclude_choice = (
+                    input(exclude_prompt).strip().lower() or exclude_default[0]
+                )
                 if exclude_choice == "y":
                     print(
                         "Enter the keywords to exclude from extraction, separated by spaces."
@@ -358,7 +362,9 @@ def run_setup():
         if is_termux():
             print("Subscribe by pasting the topic name in the ntfy app.")
         else:
-            print("Subscribe by visiting the full topic URL in your browser or ntfy app.")
+            print(
+                "Subscribe by visiting the full topic URL in your browser or ntfy app."
+            )
         print(f"Full topic URL: {full_topic_url}")
 
         if is_termux():
@@ -368,12 +374,7 @@ def run_setup():
             copy_prompt_text = "Do you want to copy the topic URL to the clipboard? [y/n] (default: yes): "
             text_to_copy = full_topic_url
 
-        copy_to_clipboard = (
-            input(copy_prompt_text)
-            .strip()
-            .lower()
-            or "y"
-        )
+        copy_to_clipboard = input(copy_prompt_text).strip().lower() or "y"
         if copy_to_clipboard == "y":
             success = copy_to_clipboard_func(text_to_copy)
             if success:
@@ -387,7 +388,9 @@ def run_setup():
             print("You can copy the topic information from above.")
 
         # Ask if the user wants notifications only when new files are downloaded
-        notify_on_download_only_default = "yes" if config.get("NOTIFY_ON_DOWNLOAD_ONLY", False) else "yes"
+        notify_on_download_only_default = (
+            "yes" if config.get("NOTIFY_ON_DOWNLOAD_ONLY", False) else "yes"
+        )
         notify_on_download_only = (
             input(
                 f"Do you want to receive notifications only when new files are downloaded? [y/n] (default: {notify_on_download_only_default}): "
@@ -396,7 +399,9 @@ def run_setup():
             .lower()
             or notify_on_download_only_default[0]
         )
-        config["NOTIFY_ON_DOWNLOAD_ONLY"] = True if notify_on_download_only == "y" else False
+        config["NOTIFY_ON_DOWNLOAD_ONLY"] = (
+            True if notify_on_download_only == "y" else False
+        )
 
         # Save configuration with the new setting
         with open(CONFIG_FILE, "w") as f:
@@ -428,7 +433,9 @@ def copy_to_clipboard_func(text):
     if is_termux():
         # Termux environment
         try:
-            subprocess.run(["termux-clipboard-set"], input=text.encode("utf-8"), check=True)
+            subprocess.run(
+                ["termux-clipboard-set"], input=text.encode("utf-8"), check=True
+            )
             return True
         except Exception as e:
             print(f"An error occurred while copying to clipboard: {e}")
@@ -549,9 +556,7 @@ def setup_cron_job():
             existing_cron = result.stdout.strip()
 
         # Remove existing Fetchtastic cron jobs (excluding @reboot ones)
-        cron_lines = [
-            line for line in existing_cron.splitlines() if line.strip()
-        ]
+        cron_lines = [line for line in existing_cron.splitlines() if line.strip()]
         cron_lines = [
             line
             for line in cron_lines
@@ -572,9 +577,7 @@ def setup_cron_job():
             new_cron += "\n"
 
         # Update crontab
-        process = subprocess.Popen(
-            ["crontab", "-"], stdin=subprocess.PIPE, text=True
-        )
+        process = subprocess.Popen(["crontab", "-"], stdin=subprocess.PIPE, text=True)
         process.communicate(input=new_cron)
         print("Cron job added to run Fetchtastic daily at 3 AM.")
     except Exception as e:
@@ -593,9 +596,7 @@ def remove_cron_job():
         if result.returncode == 0:
             existing_cron = result.stdout.strip()
             # Remove existing Fetchtastic cron jobs (excluding @reboot)
-            cron_lines = [
-                line for line in existing_cron.splitlines() if line.strip()
-            ]
+            cron_lines = [line for line in existing_cron.splitlines() if line.strip()]
             cron_lines = [
                 line
                 for line in cron_lines
@@ -662,15 +663,13 @@ def setup_reboot_cron_job():
             existing_cron = result.stdout.strip()
 
         # Remove existing @reboot Fetchtastic cron jobs
-        cron_lines = [
-            line for line in existing_cron.splitlines() if line.strip()
-        ]
+        cron_lines = [line for line in existing_cron.splitlines() if line.strip()]
         cron_lines = [
             line
             for line in cron_lines
             if not (
-                    ("# fetchtastic" in line or "fetchtastic download" in line)
-                    and line.strip().startswith("@reboot")
+                ("# fetchtastic" in line or "fetchtastic download" in line)
+                and line.strip().startswith("@reboot")
             )
         ]
 
@@ -685,9 +684,7 @@ def setup_reboot_cron_job():
             new_cron += "\n"
 
         # Update crontab
-        process = subprocess.Popen(
-            ["crontab", "-"], stdin=subprocess.PIPE, text=True
-        )
+        process = subprocess.Popen(["crontab", "-"], stdin=subprocess.PIPE, text=True)
         process.communicate(input=new_cron)
         print("Reboot cron job added to run Fetchtastic on system startup.")
     except Exception as e:
@@ -706,15 +703,13 @@ def remove_reboot_cron_job():
         if result.returncode == 0:
             existing_cron = result.stdout.strip()
             # Remove existing @reboot Fetchtastic cron jobs
-            cron_lines = [
-                line for line in existing_cron.splitlines() if line.strip()
-            ]
+            cron_lines = [line for line in existing_cron.splitlines() if line.strip()]
             cron_lines = [
                 line
                 for line in cron_lines
                 if not (
-                        ("# fetchtastic" in line or "fetchtastic download" in line)
-                        and line.strip().startswith("@reboot")
+                    ("# fetchtastic" in line or "fetchtastic download" in line)
+                    and line.strip().startswith("@reboot")
                 )
             ]
             # Join cron lines
