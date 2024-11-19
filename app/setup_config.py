@@ -152,9 +152,12 @@ def run_setup():
         print("Run 'fetchtastic setup' again and select at least one asset.")
         return
 
+    # Determine default number of versions to keep based on platform
+    default_versions_to_keep = 2 if is_termux() else 3
+
     # Prompt for number of versions to keep
     if save_apks:
-        current_versions = config.get("ANDROID_VERSIONS_TO_KEEP", 2)
+        current_versions = config.get("ANDROID_VERSIONS_TO_KEEP", default_versions_to_keep)
         if is_first_run:
             prompt_text = f"How many versions of the Android app would you like to keep? (default is {current_versions}): "
         else:
@@ -162,7 +165,7 @@ def run_setup():
         android_versions_to_keep = input(prompt_text).strip() or str(current_versions)
         config["ANDROID_VERSIONS_TO_KEEP"] = int(android_versions_to_keep)
     if save_firmware:
-        current_versions = config.get("FIRMWARE_VERSIONS_TO_KEEP", 2)
+        current_versions = config.get("FIRMWARE_VERSIONS_TO_KEEP", default_versions_to_keep)
         if is_first_run:
             prompt_text = f"How many versions of the firmware would you like to keep? (default is {current_versions}): "
         else:
@@ -346,6 +349,7 @@ def run_setup():
         config["NTFY_TOPIC"] = topic_name
         config["NTFY_SERVER"] = ntfy_server
 
+        # Save configuration with NTFY settings
         with open(CONFIG_FILE, "w") as f:
             yaml.dump(config, f)
 
@@ -382,9 +386,26 @@ def run_setup():
         else:
             print("You can copy the topic information from above.")
 
+        # Ask if the user wants notifications only when new files are downloaded
+        notify_on_download_only_default = "yes" if config.get("NOTIFY_ON_DOWNLOAD_ONLY", False) else "no"
+        notify_on_download_only = (
+            input(
+                f"Do you want to receive notifications only when new files are downloaded? [y/n] (default: {notify_on_download_only_default}): "
+            )
+            .strip()
+            .lower()
+            or notify_on_download_only_default[0]
+        )
+        config["NOTIFY_ON_DOWNLOAD_ONLY"] = True if notify_on_download_only == "y" else False
+
+        # Save configuration with the new setting
+        with open(CONFIG_FILE, "w") as f:
+            yaml.dump(config, f)
+
     else:
         config["NTFY_TOPIC"] = ""
         config["NTFY_SERVER"] = ""
+        config["NOTIFY_ON_DOWNLOAD_ONLY"] = False
         with open(CONFIG_FILE, "w") as f:
             yaml.dump(config, f)
         print("Notifications have been disabled.")
@@ -527,17 +548,16 @@ def setup_cron_job():
         else:
             existing_cron = result.stdout.strip()
 
-        # Remove existing fetchtastic cron jobs (excluding @reboot ones)
+        # Remove existing Fetchtastic cron jobs (excluding @reboot ones)
         cron_lines = [
             line for line in existing_cron.splitlines() if line.strip()
         ]
         cron_lines = [
             line
             for line in cron_lines
-            if "# fetchtastic" not in line
-            and not (
-                line.strip().startswith("0 3 * * *")
-                and "fetchtastic download" in line
+            if not (
+                ("# fetchtastic" in line or "fetchtastic download" in line)
+                and not line.strip().startswith("@reboot")
             )
         ]
 
@@ -572,17 +592,16 @@ def remove_cron_job():
         )
         if result.returncode == 0:
             existing_cron = result.stdout.strip()
-            # Remove existing fetchtastic cron jobs
+            # Remove existing Fetchtastic cron jobs (excluding @reboot)
             cron_lines = [
                 line for line in existing_cron.splitlines() if line.strip()
             ]
             cron_lines = [
                 line
                 for line in cron_lines
-                if "# fetchtastic" not in line
-                and not (
-                    line.strip().startswith("0 3 * * *")
-                    and "fetchtastic download" in line
+                if not (
+                    ("# fetchtastic" in line or "fetchtastic download" in line)
+                    and not line.strip().startswith("@reboot")
                 )
             ]
             # Join cron lines
@@ -642,17 +661,16 @@ def setup_reboot_cron_job():
         else:
             existing_cron = result.stdout.strip()
 
-        # Remove existing @reboot fetchtastic cron jobs
+        # Remove existing @reboot Fetchtastic cron jobs
         cron_lines = [
             line for line in existing_cron.splitlines() if line.strip()
         ]
         cron_lines = [
             line
             for line in cron_lines
-            if "# fetchtastic" not in line
-            and not (
-                line.strip().startswith("@reboot")
-                and "fetchtastic download" in line
+            if not (
+                    ("# fetchtastic" in line or "fetchtastic download" in line)
+                    and line.strip().startswith("@reboot")
             )
         ]
 
@@ -687,17 +705,16 @@ def remove_reboot_cron_job():
         )
         if result.returncode == 0:
             existing_cron = result.stdout.strip()
-            # Remove existing @reboot fetchtastic cron jobs
+            # Remove existing @reboot Fetchtastic cron jobs
             cron_lines = [
                 line for line in existing_cron.splitlines() if line.strip()
             ]
             cron_lines = [
                 line
                 for line in cron_lines
-                if "# fetchtastic" not in line
-                and not (
-                    line.strip().startswith("@reboot")
-                    and "fetchtastic download" in line
+                if not (
+                        ("# fetchtastic" in line or "fetchtastic download" in line)
+                        and line.strip().startswith("@reboot")
                 )
             ]
             # Join cron lines
