@@ -103,6 +103,7 @@ def main():
 
 def copy_to_clipboard_func(text):
     if setup_config.is_termux():
+        # Termux environment
         try:
             subprocess.run(["termux-clipboard-set"], input=text.encode("utf-8"), check=True)
             return True
@@ -110,6 +111,7 @@ def copy_to_clipboard_func(text):
             print(f"An error occurred while copying to clipboard: {e}")
             return False
     else:
+        # Other platforms
         system = platform.system()
         try:
             if system == "Darwin":
@@ -120,16 +122,16 @@ def copy_to_clipboard_func(text):
                 # Linux
                 if shutil.which("xclip"):
                     subprocess.run(
-                        "xclip -selection clipboard",
+                        ["xclip", "-selection", "clipboard"],
                         input=text.encode("utf-8"),
-                        shell=True,
+                        check=True,
                     )
                     return True
                 elif shutil.which("xsel"):
                     subprocess.run(
-                        "xsel --clipboard --input",
+                        ["xsel", "--clipboard", "--input"],
                         input=text.encode("utf-8"),
-                        shell=True,
+                        check=True,
                     )
                     return True
                 else:
@@ -138,22 +140,17 @@ def copy_to_clipboard_func(text):
                     )
                     return False
             elif system == "Windows":
+                # Windows
                 try:
-                    import ctypes
+                    import win32clipboard
 
-                    ctypes.windll.user32.OpenClipboard(0)
-                    ctypes.windll.user32.EmptyClipboard()
-                    hCd = ctypes.windll.kernel32.GlobalAlloc(0x2000, len(text) + 1)
-                    pchData = ctypes.windll.kernel32.GlobalLock(hCd)
-                    ctypes.cdll.msvcrt.strcpy(ctypes.c_char_p(pchData), text.encode("utf-8"))
-                    ctypes.windll.kernel32.GlobalUnlock(hCd)
-                    ctypes.windll.user32.SetClipboardData(1, hCd)
-                    ctypes.windll.user32.CloseClipboard()
+                    win32clipboard.OpenClipboard()
+                    win32clipboard.EmptyClipboard()
+                    win32clipboard.SetClipboardText(text)
+                    win32clipboard.CloseClipboard()
                     return True
                 except Exception as e:
-                    print(
-                        "Clipboard functionality is not available. Install 'pywin32' package if you require this."
-                    )
+                    print(f"An error occurred while copying to clipboard: {e}")
                     return False
             else:
                 print("Clipboard functionality is not supported on this platform.")
