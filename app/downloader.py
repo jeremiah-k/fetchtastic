@@ -5,6 +5,7 @@ import os
 import time
 import zipfile
 from datetime import datetime
+import platform
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -113,21 +114,26 @@ def main():
             log_message(f"Error downloading {url}: {e}")
 
     def is_connected_to_wifi():
-        try:
-            result = os.popen("termux-wifi-connectioninfo").read()
-            if not result:
-                # If result is empty, assume not connected
+        if setup_config.is_termux():
+            # Termux-specific Wi-Fi check
+            try:
+                result = os.popen("termux-wifi-connectioninfo").read()
+                if not result:
+                    # If result is empty, assume not connected
+                    return False
+                data = json.loads(result)
+                supplicant_state = data.get("supplicant_state", "")
+                ip_address = data.get("ip", "")
+                if supplicant_state == "COMPLETED" and ip_address != "":
+                    return True
+                else:
+                    return False
+            except Exception as e:
+                log_message(f"Error checking Wi-Fi connection: {e}")
                 return False
-            data = json.loads(result)
-            supplicant_state = data.get("supplicant_state", "")
-            ip_address = data.get("ip", "")
-            if supplicant_state == "COMPLETED" and ip_address != "":
-                return True
-            else:
-                return False
-        except Exception as e:
-            log_message(f"Error checking Wi-Fi connection: {e}")
-            return False
+        else:
+            # For non-Termux environments, assume connected
+            return True
 
     # Function to extract files from zip archives
     def extract_files(zip_path, extract_dir, patterns, exclude_patterns):

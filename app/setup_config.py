@@ -5,6 +5,7 @@ import random
 import shutil
 import string
 import subprocess
+import platform  # Added to check the environment
 
 import yaml
 
@@ -14,7 +15,7 @@ from . import menu_apk, menu_firmware
 
 def get_downloads_dir():
     # For Termux, use ~/storage/downloads
-    if "com.termux" in os.environ.get("PREFIX", ""):
+    if is_termux():
         storage_downloads = os.path.expanduser("~/storage/downloads")
         if os.path.exists(storage_downloads):
             return storage_downloads
@@ -41,6 +42,19 @@ def config_exists():
 
 def is_termux():
     return "com.termux" in os.environ.get("PREFIX", "")
+
+
+def get_platform():
+    if is_termux():
+        return "termux"
+    elif platform.system() == "Windows":
+        return "windows"
+    elif platform.system() == "Darwin":
+        return "mac"
+    elif platform.system() == "Linux":
+        return "linux"
+    else:
+        return "unknown"
 
 
 def check_storage_setup():
@@ -235,7 +249,11 @@ def run_setup():
             config["EXCLUDE_PATTERNS"] = []
 
     # Ask if the user wants to only download when connected to Wi-Fi
-    wifi_only_default = "yes" if config.get("WIFI_ONLY", True) else "no"
+    # For non-Termux environments, default to 'no' since Wi-Fi check is not implemented
+    if is_termux():
+        wifi_only_default = "yes" if config.get("WIFI_ONLY", True) else "no"
+    else:
+        wifi_only_default = "no"
     wifi_only = (
         input(
             f"Do you want to only download when connected to Wi-Fi? [y/n] (default: {wifi_only_default}): "
@@ -265,7 +283,8 @@ def run_setup():
         or cron_default[0]
     )
     if setup_cron == "y":
-        install_crond()
+        if is_termux():
+            install_crond()
         setup_cron_job()
     else:
         remove_cron_job()
@@ -282,10 +301,17 @@ def run_setup():
         or boot_default[0]
     )
     if run_on_boot == "y":
-        setup_boot_script()
+        if is_termux():
+            setup_boot_script()
+        else:
+            setup_reboot_cron_job()
     else:
-        remove_boot_script()
-        print("Boot script has been removed.")
+        if is_termux():
+            remove_boot_script()
+            print("Boot script has been removed.")
+        else:
+            remove_reboot_cron_job()
+            print("Reboot cron job has been removed.")
 
     # Prompt for NTFY server configuration
     notifications_default = "yes"  # Default to 'yes'
@@ -336,7 +362,7 @@ def run_setup():
             or "y"
         )
         if copy_to_clipboard == "y":
-            copy_to_clipboard_termux(topic_name)
+            copy_to_clipboard_func(topic_name)
             print("Topic name copied to clipboard.")
         else:
             print("You can copy the topic name from above.")
@@ -362,11 +388,37 @@ def run_setup():
         print("Setup complete. Run 'fetchtastic download' to start downloading.")
 
 
-def copy_to_clipboard_termux(text):
-    try:
-        subprocess.run(["termux-clipboard-set"], input=text.encode("utf-8"), check=True)
-    except Exception as e:
-        print(f"An error occurred while copying to clipboard: {e}")
+def copy_to_clipboard_func(text):
+    if is_termux():
+        try:
+            subprocess.run(["termux-clipboard-set"], input=text.encode("utf-8"), check=True)
+        except Exception as e:
+            print(f"An error occurred while copying to clipboard: {e}")
+    else:
+        system = platform.system()
+        try:
+            if system == "Darwin":
+                # macOS
+                subprocess.run("pbcopy", text=True, input=text, check=True)
+            elif system == "Linux":
+                # Linux
+                if shutil.which("xclip"):
+                    subprocess.run("xclip -selection clipboard", input=text.encode("utf-8"), shell=True)
+                elif shutil.which("xsel"):
+                    subprocess.run("xsel --clipboard --input", input=text.encode("utf-8"), shell=True)
+                else:
+                    print("xclip or xsel not found. Install xclip or xsel to use clipboard functionality.")
+            elif system == "Windows":
+                try:
+                    import ctypes
+                    command = f'echo {text.strip()}|clip'
+                    os.system(command)
+                except Exception as e:
+                    print("Clipboard functionality is not available. Install 'pywin32' package.")
+            else:
+                print("Clipboard functionality is not supported on this platform.")
+        except Exception as e:
+            print(f"An error occurred while copying to clipboard: {e}")
 
 
 def install_termux_packages():
@@ -400,20 +452,24 @@ def setup_storage():
 
 
 def install_crond():
-    try:
-        crond_path = shutil.which("crond")
-        if crond_path is None:
-            print("Installing cronie...")
-            # Install cronie
-            subprocess.run(["pkg", "install", "cronie", "-y"], check=True)
-            print("cronie installed.")
-        else:
-            print("cronie is already installed.")
-        # Enable crond service
-        subprocess.run(["sv-enable", "crond"], check=True)
-        print("crond service enabled.")
-    except Exception as e:
-        print(f"An error occurred while installing or enabling crond: {e}")
+    if is_termux():
+        try:
+            crond_path = shutil.which("crond")
+            if crond_path is None:
+                print("Installing cronie...")
+                # Install cronie
+                subprocess.run(["pkg", "install", "cronie", "-y"], check=True)
+                print("cronie installed.")
+            else:
+                print("cronie is already installed.")
+            # Enable crond service
+            subprocess.run(["sv-enable", "crond"], check=True)
+            print("crond service enabled.")
+        except Exception as e:
+            print(f"An error occurred while installing or enabling crond: {e}")
+    else:
+        # For non-Termux environments, crond installation is not needed
+        pass
 
 
 def setup_cron_job():
@@ -432,7 +488,7 @@ def setup_cron_job():
             [
                 line
                 for line in existing_cron.split("\n")
-                if "fetchtastic download" not in line
+                if "fetchtastic download" not in line or line.strip().startswith("@reboot")
             ]
         )
         # Add new cron job
@@ -458,7 +514,7 @@ def remove_cron_job():
                 [
                     line
                     for line in existing_cron.split("\n")
-                    if "fetchtastic download" not in line
+                    if "fetchtastic download" not in line or line.strip().startswith("@reboot")
                 ]
             )
             # Update crontab
@@ -497,6 +553,61 @@ def remove_boot_script():
     if os.path.exists(boot_script):
         os.remove(boot_script)
         print("Boot script removed.")
+
+
+def setup_reboot_cron_job():
+    try:
+        # Get current crontab entries
+        result = subprocess.run(
+            ["crontab", "-l"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        )
+        if result.returncode != 0:
+            existing_cron = ""
+        else:
+            existing_cron = result.stdout
+
+        # Remove existing @reboot fetchtastic cron jobs
+        new_cron = "\n".join(
+            [
+                line
+                for line in existing_cron.split("\n")
+                if not (line.strip().startswith("@reboot") and "fetchtastic download" in line)
+            ]
+        )
+        # Add new @reboot cron job
+        new_cron += "\n@reboot fetchtastic download\n"
+        # Update crontab
+        process = subprocess.Popen(["crontab", "-"], stdin=subprocess.PIPE, text=True)
+        process.communicate(input=new_cron)
+        print("Reboot cron job added to run Fetchtastic on system startup.")
+    except Exception as e:
+        print(f"An error occurred while setting up the reboot cron job: {e}")
+
+
+def remove_reboot_cron_job():
+    try:
+        # Get current crontab entries
+        result = subprocess.run(
+            ["crontab", "-l"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        )
+        if result.returncode == 0:
+            existing_cron = result.stdout
+            # Remove existing @reboot fetchtastic cron jobs
+            new_cron = "\n".join(
+                [
+                    line
+                    for line in existing_cron.split("\n")
+                    if not (line.strip().startswith("@reboot") and "fetchtastic download" in line)
+                ]
+            )
+            # Update crontab
+            process = subprocess.Popen(
+                ["crontab", "-"], stdin=subprocess.PIPE, text=True
+            )
+            process.communicate(input=new_cron)
+            print("Reboot cron job removed.")
+    except Exception as e:
+        print(f"An error occurred while removing the reboot cron job: {e}")
 
 
 def load_config():
