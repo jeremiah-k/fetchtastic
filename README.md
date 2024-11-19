@@ -1,25 +1,82 @@
-# Fetchtastic Termux Setup
+# Fetchtastic
 
-Fetchtastic is a utility for downloading and managing the latest Meshtastic Android app and Firmware releases on your phone using Termux. It also provides optional notifications via NTFY.
+Fetchtastic is a utility for downloading and managing the latest Meshtastic Android app and Firmware releases. It also provides optional notifications via NTFY.
 
-## Prerequisites
+## Table of Contents
 
-### Install Termux and Add-ons
+- [Installation](#installation)
+  - [Termux Installation (Android)](#termux-installation-android)
+  - [Windows/Mac/Linux Installation](#windowsmaclinux-installation)
+- [Usage](#usage)
+  - [Setup Process](#setup-process)
+  - [Command List](#command-list)
+  - [Files and Directories](#files-and-directories)
+  - [Scheduling with Cron](#scheduling-with-cron)
+  - [Notifications via NTFY](#notifications-via-ntfy)
+- [Contributing](#contributing)
+
+## Installation
+
+### Termux Installation (Android)
+
+Fetchtastic can be installed on your Android device using Termux.
+
+#### Prerequisites
 
 1. **Install Termux**: Download and install [Termux](https://f-droid.org/en/packages/com.termux/) from F-Droid.
 2. **Install Termux Boot**: Download and install [Termux Boot](https://f-droid.org/en/packages/com.termux.boot/) from F-Droid.
 3. **Install Termux API**: Download and install [Termux API](https://f-droid.org/en/packages/com.termux.api/) from F-Droid.
 4. _(Optional)_ **Install ntfy**: Download and install [ntfy](https://f-droid.org/en/packages/io.heckel.ntfy/) from F-Droid.
 
-## Installation
+#### Install Dependencies
 
-### Step 1: Install Dependencies
+Open Termux and run:
 
 ```bash
 pkg install python python-pip openssl -y
 ```
 
-### Step 2: Install Fetchtastic
+#### Install Fetchtastic
+
+```bash
+pip install fetchtastic
+```
+
+### Windows/Mac/Linux Installation
+
+Fetchtastic can also be installed on Windows, macOS, or Linux systems.
+
+#### Install with pipx (Recommended)
+
+It's recommended to use `pipx` to install Fetchtastic in an isolated environment.
+
+1. **Install pipx**:
+
+   - **On macOS/Linux**:
+
+     ```bash
+     python3 -m pip install --user pipx
+     python3 -m pipx ensurepath
+     ```
+
+   - **On Windows**:
+
+     ```powershell
+     python -m pip install --user pipx
+     python -m pipx ensurepath
+     ```
+
+   Restart your terminal or command prompt after installing pipx.
+
+2. **Install Fetchtastic with pipx**:
+
+   ```bash
+   pipx install fetchtastic
+   ```
+
+#### Install with pip
+
+Alternatively, you can install Fetchtastic using pip:
 
 ```bash
 pip install fetchtastic
@@ -27,7 +84,7 @@ pip install fetchtastic
 
 ## Usage
 
-### Run the Setup Process
+### Setup Process
 
 Run the setup command and follow the prompts to configure Fetchtastic:
 
@@ -39,18 +96,22 @@ During setup, you will be able to:
 
 - Choose whether to download APKs, firmware, or both.
 - Select specific assets to download.
-- Set the number of versions to keep.
+- Set the number of versions to keep (default is 2 on Termux, 3 on desktop platforms).
 - Configure automatic extraction of firmware files. (Optional)
 - Set up notifications via NTFY. (Optional)
+  - Choose to receive notifications only when new files are downloaded. (Optional)
 - Add a cron job to run Fetchtastic regularly. (Optional)
+  - On Termux, Fetchtastic can be scheduled to run daily at 3 AM using Termux's cron.
+  - On Windows/Mac/Linux, Fetchtastic can be scheduled using the system's cron scheduler.
 
-### Command list
+### Command List
 
 - **setup**: Run the setup process.
 - **download**: Download firmware and APKs.
 - **topic**: Display the current NTFY topic.
 - **clean**: Remove configuration, downloads, and cron jobs.
-- **--help**: Show help and usage instructions.
+- **version**: Display Fetchtastic version.
+- **help**: Show help and usage instructions.
 
 ### Files and Directories
 
@@ -67,6 +128,28 @@ You can manually edit the configuration file to change the settings.
 
 During setup, you have the option to add a cron job that runs Fetchtastic daily at 3 AM.
 
+#### Termux
+
+The setup process will configure the cron job using Termux's cron implementation.
+
+To modify the cron job, you can run:
+
+```bash
+crontab -e
+```
+
+#### Windows
+
+You can schedule Fetchtastic to run automatically using the Task Scheduler.
+
+1. Open **Task Scheduler**.
+2. Create a new **Basic Task**.
+3. Set the action to **Start a program** and enter `fetchtastic download`.
+
+#### macOS/Linux
+
+The setup process will configure the cron job using the system's cron scheduler.
+
 To modify the cron job, you can run:
 
 ```bash
@@ -77,6 +160,9 @@ crontab -e
 
 If you choose to set up notifications, Fetchtastic will send updates to your specified NTFY topic.
 
-### Contributing
+- You can subscribe to the topic using the ntfy app or by visiting the topic URL in a browser.
+- You can choose to receive notifications **only when new files are downloaded**.
+
+## Contributing
 
 Contributions are welcome! Feel free to open issues or submit pull requests.

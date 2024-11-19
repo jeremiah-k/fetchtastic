@@ -231,10 +231,7 @@ def run_clean():
         os.remove(boot_script)
         print(f"Removed boot script: {boot_script}")
 
-    print("Fetchtastic has been cleaned from your system.")
-    print(
-        "If you installed Fetchtastic via pip and wish to uninstall it, run 'pip uninstall fetchtastic'."
-    )
+    print("The downloaded files and Fetchtastic configuration have been removed from your system.")
 
 
 def get_fetchtastic_version():
