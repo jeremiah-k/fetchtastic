@@ -16,7 +16,7 @@ def fetch_apk_assets():
     # Get the latest release
     latest_release = releases[0]
     assets = latest_release["assets"]
-    asset_names = [asset["name"] for asset in assets if asset["name"].endswith(".apk")]
+    asset_names = sorted([asset["name"] for asset in assets if asset["name"].endswith(".apk")])  # Sorted alphabetically
     return asset_names
 
 

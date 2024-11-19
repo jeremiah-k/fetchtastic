@@ -14,7 +14,7 @@ def fetch_firmware_assets():
     # Get the latest release
     latest_release = releases[0]
     assets = latest_release["assets"]
-    asset_names = [asset["name"] for asset in assets]
+    asset_names = sorted([asset["name"] for asset in assets])  # Sorted alphabetically
     return asset_names
 
 
@@ -56,3 +56,4 @@ def run_menu():
     except Exception as e:
         print(f"An error occurred: {e}")
         return None
+
