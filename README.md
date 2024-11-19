@@ -62,14 +62,6 @@ It's recommended to use `pipx` to install Fetchtastic in an isolated environment
    pipx install fetchtastic
    ```
 
-#### Install with pip
-
-Alternatively, you can install Fetchtastic using pip:
-
-```bash
-pip install fetchtastic
-```
-
 ## Usage
 
 ### Setup Process
@@ -116,9 +108,9 @@ You can manually edit the configuration file to change the settings.
 
 During setup, you have the option to add a cron job that runs Fetchtastic daily at 3 AM.
 
-#### Termux
+#### Termux/Linux/Mac OS
 
-The setup process will configure the cron job using Termux's cron implementation.
+The setup process will configure the cron job using the system's cron implementation.
 
 To modify the cron job, you can run:
 
@@ -133,16 +125,6 @@ You can schedule Fetchtastic to run automatically using the Task Scheduler.
 1. Open **Task Scheduler**.
 2. Create a new **Basic Task**.
 3. Set the action to **Start a program** and enter `fetchtastic download`.
-
-#### macOS/Linux
-
-The setup process will configure the cron job using the system's cron scheduler.
-
-To modify the cron job, you can run:
-
-```bash
-crontab -e
-```
 
 ### Notifications via NTFY
 
