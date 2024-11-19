@@ -2,10 +2,9 @@
 
 import argparse
 import os
+import platform
 import shutil
 import subprocess
-import platform
-import sys
 
 from . import downloader, setup_config
 
@@ -66,12 +65,7 @@ def main():
                 copy_prompt_text = "Do you want to copy the topic URL to the clipboard? [y/n] (default: yes): "
                 text_to_copy = full_url
 
-            copy_to_clipboard = (
-                input(copy_prompt_text)
-                .strip()
-                .lower()
-                or "y"
-            )
+            copy_to_clipboard = input(copy_prompt_text).strip().lower() or "y"
             if copy_to_clipboard == "y":
                 success = copy_to_clipboard_func(text_to_copy)
                 if success:
@@ -105,7 +99,9 @@ def copy_to_clipboard_func(text):
     if setup_config.is_termux():
         # Termux environment
         try:
-            subprocess.run(["termux-clipboard-set"], input=text.encode("utf-8"), check=True)
+            subprocess.run(
+                ["termux-clipboard-set"], input=text.encode("utf-8"), check=True
+            )
             return True
         except Exception as e:
             print(f"An error occurred while copying to clipboard: {e}")
@@ -203,9 +199,7 @@ def run_clean():
         if result.returncode == 0:
             existing_cron = result.stdout.strip()
             # Remove existing fetchtastic cron jobs
-            cron_lines = [
-                line for line in existing_cron.splitlines() if line.strip()
-            ]
+            cron_lines = [line for line in existing_cron.splitlines() if line.strip()]
             cron_lines = [
                 line
                 for line in cron_lines
@@ -231,7 +225,9 @@ def run_clean():
         os.remove(boot_script)
         print(f"Removed boot script: {boot_script}")
 
-    print("The downloaded files and Fetchtastic configuration have been removed from your system.")
+    print(
+        "The downloaded files and Fetchtastic configuration have been removed from your system."
+    )
 
 
 def get_fetchtastic_version():

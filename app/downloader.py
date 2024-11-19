@@ -5,7 +5,6 @@ import os
 import time
 import zipfile
 from datetime import datetime
-import platform
 
 import requests
 from requests.adapters import HTTPAdapter
