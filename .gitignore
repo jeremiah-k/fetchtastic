@@ -2,3 +2,5 @@
 topic.txt
 fetchtastic.log
 .aider*
+app/__pycache__/
+fetchtastic.egg-info/

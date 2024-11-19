@@ -7,5 +7,3 @@ plugins
 user_trunk.yaml
 user.yaml
 tmp
-app/__pycache__
-fetchtastic.egg-info
