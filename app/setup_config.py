@@ -5,12 +5,29 @@ import random
 import shutil
 import string
 import subprocess
-import platform  # Added to check the environment
+import platform
 
 import yaml
 
 from . import downloader  # Import downloader to perform first run
 from . import menu_apk, menu_firmware
+
+
+def is_termux():
+    return "com.termux" in os.environ.get("PREFIX", "")
+
+
+def get_platform():
+    if is_termux():
+        return "termux"
+    elif platform.system() == "Windows":
+        return "windows"
+    elif platform.system() == "Darwin":
+        return "mac"
+    elif platform.system() == "Linux":
+        return "linux"
+    else:
+        return "unknown"
 
 
 def get_downloads_dir():
@@ -38,23 +55,6 @@ CONFIG_FILE = os.path.join(DEFAULT_CONFIG_DIR, "fetchtastic.yaml")
 
 def config_exists():
     return os.path.exists(CONFIG_FILE)
-
-
-def is_termux():
-    return "com.termux" in os.environ.get("PREFIX", "")
-
-
-def get_platform():
-    if is_termux():
-        return "termux"
-    elif platform.system() == "Windows":
-        return "windows"
-    elif platform.system() == "Darwin":
-        return "mac"
-    elif platform.system() == "Linux":
-        return "linux"
-    else:
-        return "unknown"
 
 
 def check_storage_setup():
@@ -101,9 +101,11 @@ def run_setup():
         print(
             "Existing configuration found. You can keep current settings or change them."
         )
+        is_first_run = False
     else:
         # Initialize default configuration
         config = {}
+        is_first_run = True
 
     # Prompt to save APKs, firmware, or both
     save_choice = (
@@ -153,19 +155,24 @@ def run_setup():
     # Prompt for number of versions to keep
     if save_apks:
         current_versions = config.get("ANDROID_VERSIONS_TO_KEEP", 2)
-        android_versions_to_keep = input(
-            f"How many versions of the Android app would you like to keep? (default is {current_versions}): "
-        ).strip() or str(current_versions)
+        if is_first_run:
+            prompt_text = f"How many versions of the Android app would you like to keep? (default is {current_versions}): "
+        else:
+            prompt_text = f"How many versions of the Android app would you like to keep? (current: {current_versions}): "
+        android_versions_to_keep = input(prompt_text).strip() or str(current_versions)
         config["ANDROID_VERSIONS_TO_KEEP"] = int(android_versions_to_keep)
     if save_firmware:
         current_versions = config.get("FIRMWARE_VERSIONS_TO_KEEP", 2)
-        firmware_versions_to_keep = input(
-            f"How many versions of the firmware would you like to keep? (default is {current_versions}): "
-        ).strip() or str(current_versions)
+        if is_first_run:
+            prompt_text = f"How many versions of the firmware would you like to keep? (default is {current_versions}): "
+        else:
+            prompt_text = f"How many versions of the firmware would you like to keep? (current: {current_versions}): "
+        firmware_versions_to_keep = input(prompt_text).strip() or str(current_versions)
         config["FIRMWARE_VERSIONS_TO_KEEP"] = int(firmware_versions_to_keep)
 
         # Prompt for automatic extraction
-        auto_extract_default = "yes" if config.get("AUTO_EXTRACT", False) else "no"
+        auto_extract_current = config.get("AUTO_EXTRACT", False)
+        auto_extract_default = "yes" if auto_extract_current else "no"
         auto_extract = (
             input(
                 f"Would you like to automatically extract specific files from firmware zip archives? [y/n] (default: {auto_extract_default}): "
@@ -183,18 +190,14 @@ def run_setup():
                 current_patterns = " ".join(config.get("EXTRACT_PATTERNS", []))
                 print(f"Current patterns: {current_patterns}")
                 extract_patterns = input(
-                    "Extraction patterns (leave blank to keep current, enter '!' to clear): "
+                    "Extraction patterns (leave blank to keep current): "
                 ).strip()
-                if extract_patterns == "!":
-                    config["AUTO_EXTRACT"] = False
-                    config["EXTRACT_PATTERNS"] = []
-                    print("Extraction patterns cleared. No files will be extracted.")
-                elif extract_patterns:
+                if extract_patterns:
                     config["AUTO_EXTRACT"] = True
                     config["EXTRACT_PATTERNS"] = extract_patterns.split()
                 else:
                     # Keep existing patterns
-                    config["AUTO_EXTRACT"] = True
+                    pass
             else:
                 extract_patterns = input("Extraction patterns: ").strip()
                 if extract_patterns:
@@ -209,8 +212,11 @@ def run_setup():
                     config["EXCLUDE_PATTERNS"] = []
             # Prompt for exclude patterns if extraction is enabled
             if config.get("AUTO_EXTRACT", False) and config.get("EXTRACT_PATTERNS"):
-                exclude_prompt = "Would you like to exclude any patterns from extraction? [y/n] (default: no): "
-                exclude_choice = input(exclude_prompt).strip().lower() or "n"
+                exclude_default = (
+                    "yes" if config.get("EXCLUDE_PATTERNS") else "no"
+                )
+                exclude_prompt = f"Would you like to exclude any patterns from extraction? [y/n] (default: {exclude_default}): "
+                exclude_choice = input(exclude_prompt).strip().lower() or exclude_default[0]
                 if exclude_choice == "y":
                     print(
                         "Enter the keywords to exclude from extraction, separated by spaces."
@@ -220,14 +226,9 @@ def run_setup():
                         current_excludes = " ".join(config.get("EXCLUDE_PATTERNS", []))
                         print(f"Current exclude patterns: {current_excludes}")
                         exclude_patterns = input(
-                            "Exclude patterns (leave blank to keep current, enter '!' to clear): "
+                            "Exclude patterns (leave blank to keep current): "
                         ).strip()
-                        if exclude_patterns == "!":
-                            config["EXCLUDE_PATTERNS"] = []
-                            print(
-                                "Exclude patterns cleared. No files will be excluded."
-                            )
-                        elif exclude_patterns:
+                        if exclude_patterns:
                             config["EXCLUDE_PATTERNS"] = exclude_patterns.split()
                         else:
                             # Keep existing patterns
@@ -248,21 +249,21 @@ def run_setup():
             config["EXTRACT_PATTERNS"] = []
             config["EXCLUDE_PATTERNS"] = []
 
-    # Ask if the user wants to only download when connected to Wi-Fi
-    # For non-Termux environments, default to 'no' since Wi-Fi check is not implemented
+    # Ask if the user wants to only download when connected to Wi-Fi (Termux only)
     if is_termux():
         wifi_only_default = "yes" if config.get("WIFI_ONLY", True) else "no"
-    else:
-        wifi_only_default = "no"
-    wifi_only = (
-        input(
-            f"Do you want to only download when connected to Wi-Fi? [y/n] (default: {wifi_only_default}): "
+        wifi_only = (
+            input(
+                f"Do you want to only download when connected to Wi-Fi? [y/n] (default: {wifi_only_default}): "
+            )
+            .strip()
+            .lower()
+            or wifi_only_default[0]
         )
-        .strip()
-        .lower()
-        or wifi_only_default[0]
-    )
-    config["WIFI_ONLY"] = True if wifi_only == "y" else False
+        config["WIFI_ONLY"] = True if wifi_only == "y" else False
+    else:
+        # For non-Termux environments, set WIFI_ONLY to False
+        config["WIFI_ONLY"] = False
 
     # Set the download directory to the same as the config directory
     download_dir = DEFAULT_CONFIG_DIR
@@ -350,22 +351,35 @@ def run_setup():
 
         full_topic_url = f"{ntfy_server.rstrip('/')}/{topic_name}"
         print(f"Notifications set up using topic: {topic_name}")
-        print("Subscribe by pasting the topic name in the ntfy app.")
+        if is_termux():
+            print("Subscribe by pasting the topic name in the ntfy app.")
+        else:
+            print("Subscribe by visiting the full topic URL in your browser or ntfy app.")
         print(f"Full topic URL: {full_topic_url}")
 
+        if is_termux():
+            copy_prompt_text = "Do you want to copy the topic name to the clipboard? [y/n] (default: yes): "
+        else:
+            copy_prompt_text = "Do you want to copy the topic URL to the clipboard? [y/n] (default: yes): "
         copy_to_clipboard = (
-            input(
-                "Do you want to copy the topic name to the clipboard? [y/n] (default: yes): "
-            )
+            input(copy_prompt_text)
             .strip()
             .lower()
             or "y"
         )
         if copy_to_clipboard == "y":
-            copy_to_clipboard_func(topic_name)
-            print("Topic name copied to clipboard.")
+            success = copy_to_clipboard_func(
+                full_topic_url if not is_termux() else topic_name
+            )
+            if success:
+                if is_termux():
+                    print("Topic name copied to clipboard.")
+                else:
+                    print("Topic URL copied to clipboard.")
+            else:
+                print("Failed to copy to clipboard.")
         else:
-            print("You can copy the topic name from above.")
+            print("You can copy the topic information from above.")
 
     else:
         config["NTFY_TOPIC"] = ""
@@ -392,33 +406,62 @@ def copy_to_clipboard_func(text):
     if is_termux():
         try:
             subprocess.run(["termux-clipboard-set"], input=text.encode("utf-8"), check=True)
+            return True
         except Exception as e:
             print(f"An error occurred while copying to clipboard: {e}")
+            return False
     else:
         system = platform.system()
         try:
             if system == "Darwin":
                 # macOS
                 subprocess.run("pbcopy", text=True, input=text, check=True)
+                return True
             elif system == "Linux":
                 # Linux
                 if shutil.which("xclip"):
-                    subprocess.run("xclip -selection clipboard", input=text.encode("utf-8"), shell=True)
+                    subprocess.run(
+                        "xclip -selection clipboard",
+                        input=text.encode("utf-8"),
+                        shell=True,
+                    )
+                    return True
                 elif shutil.which("xsel"):
-                    subprocess.run("xsel --clipboard --input", input=text.encode("utf-8"), shell=True)
+                    subprocess.run(
+                        "xsel --clipboard --input",
+                        input=text.encode("utf-8"),
+                        shell=True,
+                    )
+                    return True
                 else:
-                    print("xclip or xsel not found. Install xclip or xsel to use clipboard functionality.")
+                    print(
+                        "xclip or xsel not found. Install xclip or xsel to use clipboard functionality."
+                    )
+                    return False
             elif system == "Windows":
                 try:
                     import ctypes
-                    command = f'echo {text.strip()}|clip'
-                    os.system(command)
+
+                    ctypes.windll.user32.OpenClipboard(0)
+                    ctypes.windll.user32.EmptyClipboard()
+                    hCd = ctypes.windll.kernel32.GlobalAlloc(0x2000, len(text) + 1)
+                    pchData = ctypes.windll.kernel32.GlobalLock(hCd)
+                    ctypes.cdll.msvcrt.strcpy(ctypes.c_char_p(pchData), text.encode("utf-8"))
+                    ctypes.windll.kernel32.GlobalUnlock(hCd)
+                    ctypes.windll.user32.SetClipboardData(1, hCd)
+                    ctypes.windll.user32.CloseClipboard()
+                    return True
                 except Exception as e:
-                    print("Clipboard functionality is not available. Install 'pywin32' package.")
+                    print(
+                        "Clipboard functionality is not available. Install 'pywin32' package."
+                    )
+                    return False
             else:
                 print("Clipboard functionality is not supported on this platform.")
+                return False
         except Exception as e:
             print(f"An error occurred while copying to clipboard: {e}")
+            return False
 
 
 def install_termux_packages():
@@ -476,25 +519,44 @@ def setup_cron_job():
     try:
         # Get current crontab entries
         result = subprocess.run(
-            ["crontab", "-l"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            ["crontab", "-l"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
         )
         if result.returncode != 0:
             existing_cron = ""
         else:
-            existing_cron = result.stdout
+            existing_cron = result.stdout.strip()
 
-        # Remove existing fetchtastic cron jobs
-        new_cron = "\n".join(
-            [
-                line
-                for line in existing_cron.split("\n")
-                if "fetchtastic download" not in line or line.strip().startswith("@reboot")
-            ]
-        )
+        # Remove existing fetchtastic cron jobs (excluding @reboot ones)
+        cron_lines = [
+            line for line in existing_cron.splitlines() if line.strip()
+        ]
+        cron_lines = [
+            line
+            for line in cron_lines
+            if "# fetchtastic" not in line
+            and not (
+                line.strip().startswith("0 3 * * *")
+                and "fetchtastic download" in line
+            )
+        ]
+
         # Add new cron job
-        new_cron += "\n0 3 * * * fetchtastic download\n"
+        cron_lines.append("0 3 * * * fetchtastic download  # fetchtastic")
+
+        # Join cron lines
+        new_cron = "\n".join(cron_lines)
+
+        # Ensure new_cron ends with a newline
+        if not new_cron.endswith("\n"):
+            new_cron += "\n"
+
         # Update crontab
-        process = subprocess.Popen(["crontab", "-"], stdin=subprocess.PIPE, text=True)
+        process = subprocess.Popen(
+            ["crontab", "-"], stdin=subprocess.PIPE, text=True
+        )
         process.communicate(input=new_cron)
         print("Cron job added to run Fetchtastic daily at 3 AM.")
     except Exception as e:
@@ -505,18 +567,31 @@ def remove_cron_job():
     try:
         # Get current crontab entries
         result = subprocess.run(
-            ["crontab", "-l"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            ["crontab", "-l"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
         )
         if result.returncode == 0:
-            existing_cron = result.stdout
+            existing_cron = result.stdout.strip()
             # Remove existing fetchtastic cron jobs
-            new_cron = "\n".join(
-                [
-                    line
-                    for line in existing_cron.split("\n")
-                    if "fetchtastic download" not in line or line.strip().startswith("@reboot")
-                ]
-            )
+            cron_lines = [
+                line for line in existing_cron.splitlines() if line.strip()
+            ]
+            cron_lines = [
+                line
+                for line in cron_lines
+                if "# fetchtastic" not in line
+                and not (
+                    line.strip().startswith("0 3 * * *")
+                    and "fetchtastic download" in line
+                )
+            ]
+            # Join cron lines
+            new_cron = "\n".join(cron_lines)
+            # Ensure new_cron ends with a newline
+            if not new_cron.endswith("\n"):
+                new_cron += "\n"
             # Update crontab
             process = subprocess.Popen(
                 ["crontab", "-"], stdin=subprocess.PIPE, text=True
@@ -559,25 +634,44 @@ def setup_reboot_cron_job():
     try:
         # Get current crontab entries
         result = subprocess.run(
-            ["crontab", "-l"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            ["crontab", "-l"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
         )
         if result.returncode != 0:
             existing_cron = ""
         else:
-            existing_cron = result.stdout
+            existing_cron = result.stdout.strip()
 
         # Remove existing @reboot fetchtastic cron jobs
-        new_cron = "\n".join(
-            [
-                line
-                for line in existing_cron.split("\n")
-                if not (line.strip().startswith("@reboot") and "fetchtastic download" in line)
-            ]
-        )
+        cron_lines = [
+            line for line in existing_cron.splitlines() if line.strip()
+        ]
+        cron_lines = [
+            line
+            for line in cron_lines
+            if "# fetchtastic" not in line
+            and not (
+                line.strip().startswith("@reboot")
+                and "fetchtastic download" in line
+            )
+        ]
+
         # Add new @reboot cron job
-        new_cron += "\n@reboot fetchtastic download\n"
+        cron_lines.append("@reboot fetchtastic download  # fetchtastic")
+
+        # Join cron lines
+        new_cron = "\n".join(cron_lines)
+
+        # Ensure new_cron ends with a newline
+        if not new_cron.endswith("\n"):
+            new_cron += "\n"
+
         # Update crontab
-        process = subprocess.Popen(["crontab", "-"], stdin=subprocess.PIPE, text=True)
+        process = subprocess.Popen(
+            ["crontab", "-"], stdin=subprocess.PIPE, text=True
+        )
         process.communicate(input=new_cron)
         print("Reboot cron job added to run Fetchtastic on system startup.")
     except Exception as e:
@@ -588,18 +682,31 @@ def remove_reboot_cron_job():
     try:
         # Get current crontab entries
         result = subprocess.run(
-            ["crontab", "-l"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            ["crontab", "-l"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
         )
         if result.returncode == 0:
-            existing_cron = result.stdout
+            existing_cron = result.stdout.strip()
             # Remove existing @reboot fetchtastic cron jobs
-            new_cron = "\n".join(
-                [
-                    line
-                    for line in existing_cron.split("\n")
-                    if not (line.strip().startswith("@reboot") and "fetchtastic download" in line)
-                ]
-            )
+            cron_lines = [
+                line for line in existing_cron.splitlines() if line.strip()
+            ]
+            cron_lines = [
+                line
+                for line in cron_lines
+                if "# fetchtastic" not in line
+                and not (
+                    line.strip().startswith("@reboot")
+                    and "fetchtastic download" in line
+                )
+            ]
+            # Join cron lines
+            new_cron = "\n".join(cron_lines)
+            # Ensure new_cron ends with a newline
+            if not new_cron.endswith("\n"):
+                new_cron += "\n"
             # Update crontab
             process = subprocess.Popen(
                 ["crontab", "-"], stdin=subprocess.PIPE, text=True
