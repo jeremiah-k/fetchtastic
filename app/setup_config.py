@@ -387,7 +387,7 @@ def run_setup():
             print("You can copy the topic information from above.")
 
         # Ask if the user wants notifications only when new files are downloaded
-        notify_on_download_only_default = "yes" if config.get("NOTIFY_ON_DOWNLOAD_ONLY", False) else "no"
+        notify_on_download_only_default = "yes" if config.get("NOTIFY_ON_DOWNLOAD_ONLY", False) else "yes"
         notify_on_download_only = (
             input(
                 f"Do you want to receive notifications only when new files are downloaded? [y/n] (default: {notify_on_download_only_default}): "
