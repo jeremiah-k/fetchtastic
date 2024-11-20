@@ -143,6 +143,9 @@ def main():
                 for file_info in zip_ref.infolist():
                     file_name = file_info.filename
                     base_name = os.path.basename(file_name)
+                    # Skip directories
+                    if not base_name:
+                        continue
                     # Check if file matches exclude patterns
                     if any(exclude in base_name for exclude in exclude_patterns):
                         continue
@@ -238,7 +241,7 @@ def main():
             if os.path.exists(release_dir) or release_tag == saved_release_tag:
                 log_message(f"Processing existing version {release_tag}.")
 
-                # Check if re-extraction is needed due to changed extraction patterns
+                # Check if extraction is needed
                 if auto_extract and release_type == "Firmware":
                     for asset in release["assets"]:
                         file_name = asset["name"]
@@ -246,18 +249,19 @@ def main():
                             zip_path = os.path.join(release_dir, file_name)
                             if os.path.exists(zip_path):
                                 extraction_needed = check_extraction_needed(
-                                    zip_path, extract_patterns
+                                    zip_path, release_dir, extract_patterns
                                 )
                                 if extraction_needed:
-                                    log_message(
-                                        f"Re-extracting files from {zip_path} due to updated extraction patterns."
-                                    )
+                                    log_message(f"Extracting files from {zip_path}...")
                                     extract_files(
                                         zip_path,
                                         release_dir,
                                         extract_patterns,
                                         exclude_patterns,
                                     )
+                                else:
+                                    # Files are already extracted
+                                    pass
                 continue  # Skip to the next release
             else:
                 # Proceed to download this version
@@ -311,21 +315,23 @@ def main():
 
         return downloaded_versions, new_versions_available
 
-    def check_extraction_needed(zip_path, patterns):
+    def check_extraction_needed(zip_path, extract_dir, patterns):
         """
         Checks if extraction is needed based on the current extraction patterns.
         Returns True if any files matching the patterns are not already extracted.
         """
         with zipfile.ZipFile(zip_path, "r") as zip_ref:
             for file_info in zip_ref.infolist():
-                file_name = os.path.basename(file_info.filename)
+                file_name = file_info.filename
+                base_name = os.path.basename(file_name)
+                # Skip directories
+                if not base_name:
+                    continue
                 # Strip version numbers from the file name
-                stripped_file_name = strip_version_numbers(file_name)
+                stripped_base_name = strip_version_numbers(base_name)
                 for pattern in patterns:
-                    if pattern in stripped_file_name:
-                        extracted_file_path = os.path.join(
-                            os.path.dirname(zip_path), file_name
-                        )
+                    if pattern in stripped_base_name:
+                        extracted_file_path = os.path.join(extract_dir, base_name)
                         if not os.path.exists(extracted_file_path):
                             return True  # Extraction needed
         return False  # All files already extracted
