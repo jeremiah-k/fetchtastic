@@ -190,7 +190,7 @@ def run_setup():
             print(
                 "Enter the keywords to match for extraction from the firmware zip files, separated by spaces."
             )
-            print("Example: rak4631- tbeam-2 t1000-e- tlora-v2-1-1_6-")
+            print("Example: rak4631- tbeam-2 t1000-e- tlora-v2-1-1_6- device-")
             if config.get("EXTRACT_PATTERNS"):
                 current_patterns = " ".join(config.get("EXTRACT_PATTERNS", []))
                 print(f"Current patterns: {current_patterns}")
@@ -267,8 +267,8 @@ def run_setup():
         )
         config["WIFI_ONLY"] = True if wifi_only == "y" else False
     else:
-        # For non-Termux environments, set WIFI_ONLY to False
-        config["WIFI_ONLY"] = False
+        # For non-Termux environments, remove WIFI_ONLY from config if it exists
+        config.pop("WIFI_ONLY", None)
 
     # Set the download directory to the same as the config directory
     download_dir = DEFAULT_CONFIG_DIR
@@ -552,7 +552,11 @@ def setup_cron_job():
         ]
 
         # Add new cron job
-        cron_lines.append("0 3 * * * fetchtastic download  # fetchtastic")
+        if is_termux():
+            cron_lines.append("0 3 * * * fetchtastic download  # fetchtastic")
+        else:
+            # Non-Termux environments
+            cron_lines.append("0 3 * * * fetchtastic download  # fetchtastic")
 
         # Join cron lines
         new_cron = "\n".join(cron_lines)

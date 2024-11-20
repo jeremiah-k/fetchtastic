@@ -20,9 +20,8 @@ def fetch_firmware_assets():
 
 def extract_base_name(filename):
     # Remove version numbers and extensions from filename to get base pattern
-    # Example: 'firmware-esp32-2.5.6.d55c08d.zip' -> 'firmware-esp32-'
-    base_name = re.sub(r"-\d+\.\d+\.\d+.*", "-", filename)
-    base_name = re.sub(r"\.zip$", "", base_name)
+    # Example: 'firmware-esp32-2.5.13.1a06f88.zip' -> 'firmware-esp32-.zip'
+    base_name = re.sub(r"([-_])\d[\d\.\w]*", r"\1", filename)
     return base_name
 
 

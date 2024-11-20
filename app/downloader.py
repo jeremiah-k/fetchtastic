@@ -5,6 +5,7 @@ import os
 import time
 import zipfile
 from datetime import datetime
+import re
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -30,7 +31,7 @@ def main():
     auto_extract = config.get("AUTO_EXTRACT", False)
     extract_patterns = config.get("EXTRACT_PATTERNS", [])
     exclude_patterns = config.get("EXCLUDE_PATTERNS", [])
-    wifi_only = config.get("WIFI_ONLY", True)
+    wifi_only = config.get("WIFI_ONLY", False) if setup_config.is_termux() else False
 
     selected_apk_patterns = config.get("SELECTED_APK_ASSETS", [])
     selected_firmware_patterns = config.get("SELECTED_FIRMWARE_ASSETS", [])
@@ -145,8 +146,10 @@ def main():
                     # Check if file matches exclude patterns
                     if any(exclude in base_name for exclude in exclude_patterns):
                         continue
+                    # Strip version numbers from the file name
+                    stripped_base_name = strip_version_numbers(base_name)
                     for pattern in patterns:
-                        if pattern in base_name:
+                        if pattern in stripped_base_name:
                             # Extract and flatten directory structure
                             source = zip_ref.open(file_info)
                             target_path = os.path.join(extract_dir, base_name)
@@ -165,6 +168,11 @@ def main():
             log_message(
                 f"Error: An unexpected error occurred while extracting files from {zip_path}: {e}"
             )
+
+    # Function to strip version numbers from filenames
+    def strip_version_numbers(filename):
+        # Remove version numbers like -2.5.13.1a06f88 or _2.5.13.1a06f88
+        return re.sub(r"[-_]\d[\d\.\w]*", "", filename)
 
     # Cleanup function to keep only specific versions based on release tags
     def cleanup_old_versions(directory, releases_to_keep):
@@ -230,10 +238,13 @@ def main():
                 log_message(f"Downloading new {release_type} version: {release_tag}")
                 for asset in release["assets"]:
                     file_name = asset["name"]
+                    # Strip version numbers from the file name
+                    stripped_file_name = strip_version_numbers(file_name)
                     # Matching logic
                     if selected_patterns:
                         if not any(
-                            pattern in file_name for pattern in selected_patterns
+                            pattern in stripped_file_name
+                            for pattern in selected_patterns
                         ):
                             continue  # Skip this asset
                     download_path = os.path.join(release_dir, file_name)
@@ -276,12 +287,11 @@ def main():
     start_time = time.time()
     log_message("Starting Fetchtastic...")
 
-    # Check Wi-Fi connection before starting downloads
-    wifi_connected = is_connected_to_wifi()
+    # Check Wi-Fi connection before starting downloads (Termux only)
     downloads_skipped = False
-
-    if wifi_only and not wifi_connected:
-        downloads_skipped = True
+    if setup_config.is_termux():
+        if wifi_only and not is_connected_to_wifi():
+            downloads_skipped = True
 
     # Initialize variables
     downloaded_firmwares = []
