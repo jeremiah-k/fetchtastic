@@ -19,9 +19,12 @@ def fetch_firmware_assets():
 
 
 def extract_base_name(filename):
-    # Remove version numbers and extensions from filename to get base pattern
+    # Remove version numbers but keep architecture and other identifiers
+    # For meshtasticd files, preserve architecture
+    # Example: 'meshtasticd_2.5.13.1a06f88_amd64.deb' -> 'meshtasticd__amd64.deb'
     # Example: 'firmware-esp32-2.5.13.1a06f88.zip' -> 'firmware-esp32-.zip'
-    base_name = re.sub(r"([-_])\d[\d\.\w]*", r"\1", filename)
+    # Adjusted regex to be more precise
+    base_name = re.sub(r"([_-])\d+\.\d+\.\d+[\w\.\-]*", r"\1", filename)
     return base_name
 
 
@@ -42,16 +45,16 @@ Note: These are files from the latest release. Version numbers may change in oth
     for asset_name in selected_assets:
         pattern = extract_base_name(asset_name)
         base_patterns.append(pattern)
-    return base_patterns
+    return {"selected_assets": base_patterns}
 
 
 def run_menu():
     try:
         assets = fetch_firmware_assets()
-        selected_patterns = select_assets(assets)
-        if selected_patterns is None:
+        selection = select_assets(assets)
+        if selection is None:
             return None
-        return {"selected_assets": selected_patterns}
+        return selection
     except Exception as e:
         print(f"An error occurred: {e}")
         return None

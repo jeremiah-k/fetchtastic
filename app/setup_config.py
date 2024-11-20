@@ -556,7 +556,11 @@ def setup_cron_job():
             cron_lines.append("0 3 * * * fetchtastic download  # fetchtastic")
         else:
             # Non-Termux environments
-            cron_lines.append("0 3 * * * fetchtastic download  # fetchtastic")
+            fetchtastic_path = shutil.which("fetchtastic")
+            if not fetchtastic_path:
+                print("Error: fetchtastic executable not found in PATH.")
+                return
+            cron_lines.append(f"0 3 * * * {fetchtastic_path} download  # fetchtastic")
 
         # Join cron lines
         new_cron = "\n".join(cron_lines)
@@ -663,7 +667,15 @@ def setup_reboot_cron_job():
         ]
 
         # Add new @reboot cron job
-        cron_lines.append("@reboot fetchtastic download  # fetchtastic")
+        if is_termux():
+            cron_lines.append("@reboot fetchtastic download  # fetchtastic")
+        else:
+            # Non-Termux environments
+            fetchtastic_path = shutil.which("fetchtastic")
+            if not fetchtastic_path:
+                print("Error: fetchtastic executable not found in PATH.")
+                return
+            cron_lines.append(f"@reboot {fetchtastic_path} download  # fetchtastic")
 
         # Join cron lines
         new_cron = "\n".join(cron_lines)
