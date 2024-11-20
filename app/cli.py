@@ -135,19 +135,6 @@ def copy_to_clipboard_func(text):
                         "xclip or xsel not found. Install xclip or xsel to use clipboard functionality."
                     )
                     return False
-            elif system == "Windows":
-                # Windows
-                try:
-                    import win32clipboard
-
-                    win32clipboard.OpenClipboard()
-                    win32clipboard.EmptyClipboard()
-                    win32clipboard.SetClipboardText(text)
-                    win32clipboard.CloseClipboard()
-                    return True
-                except Exception as e:
-                    print(f"An error occurred while copying to clipboard: {e}")
-                    return False
             else:
                 print("Clipboard functionality is not supported on this platform.")
                 return False

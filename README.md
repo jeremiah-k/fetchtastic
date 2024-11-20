@@ -6,7 +6,7 @@ Fetchtastic is a utility for downloading and managing the latest Meshtastic Andr
 
 - [Installation](#installation)
   - [Termux Installation (Android)](#termux-installation-android)
-  - [Windows/Mac/Linux Installation](#windowsmaclinux-installation)
+  - [Linux/Mac Installation](#linuxmac-installation)
 - [Usage](#usage)
   - [Setup Process](#setup-process)
   - [Command List](#command-list)
@@ -42,21 +42,21 @@ pkg install python python-pip openssl -y
 pip install fetchtastic
 ```
 
-### Windows/Mac/Linux Installation
+### Linux/Mac Installation
 
-Fetchtastic can also be installed on Windows, macOS, or Linux systems.
+Fetchtastic can also be installed on Linux or macOS systems.
 
 #### Install with pipx (Recommended)
 
-It's recommended to use `pipx` to install Fetchtastic in an isolated environment.
+It's recommended to use `pipx` to install Fetchtastic in an isolated environment. (If you prefer, you can use `pip` too.)
 
 1. **Install pipx**:
 
    Follow the installation instructions for your platform on the [pipx documentation page](https://pypa.github.io/pipx/installation/).
 
-   Restart your terminal or command prompt after installing pipx.
+   Restart your terminal after installing pipx.
 
-3. **Install Fetchtastic with pipx**:
+2. **Install Fetchtastic with pipx**:
 
    ```bash
    pipx install fetchtastic
@@ -82,7 +82,7 @@ During setup, you will be able to:
   - Choose to receive notifications only when new files are downloaded. (Optional)
 - Add a cron job to run Fetchtastic regularly. (Optional)
   - On Termux, Fetchtastic can be scheduled to run daily at 3 AM using Termux's cron.
-  - On Windows/Mac/Linux, Fetchtastic can be scheduled using the system's cron scheduler.
+  - On Linux/Mac, Fetchtastic can be scheduled using the system's cron scheduler.
 
 ### Command List
 
@@ -108,23 +108,13 @@ You can manually edit the configuration file to change the settings.
 
 During setup, you have the option to add a cron job that runs Fetchtastic daily at 3 AM.
 
-#### Termux/Linux/Mac OS
-
-The setup process will configure the cron job using the system's cron implementation.
+The setup process will configure the cron job using Termux's cron implementation.
 
 To modify the cron job, you can run:
 
 ```bash
 crontab -e
 ```
-
-#### Windows
-
-You can schedule Fetchtastic to run automatically using the Task Scheduler.
-
-1. Open **Task Scheduler**.
-2. Create a new **Basic Task**.
-3. Set the action to **Start a program** and enter `fetchtastic download`.
 
 ### Notifications via NTFY
 
