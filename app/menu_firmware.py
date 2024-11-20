@@ -1,12 +1,14 @@
 # app/menu_firmware.py
 
 import re
-
 import requests
 from pick import pick
 
 
 def fetch_firmware_assets():
+    """
+    Fetches the list of firmware assets from the latest release on GitHub.
+    """
     firmware_releases_url = "https://api.github.com/repos/meshtastic/firmware/releases"
     response = requests.get(firmware_releases_url, timeout=10)
     response.raise_for_status()
@@ -14,21 +16,31 @@ def fetch_firmware_assets():
     # Get the latest release
     latest_release = releases[0]
     assets = latest_release["assets"]
-    asset_names = sorted([asset["name"] for asset in assets])  # Sorted alphabetically
+    # Sorted alphabetically
+    asset_names = sorted([asset["name"] for asset in assets])
     return asset_names
 
 
 def extract_base_name(filename):
-    # Remove version numbers but keep architecture and other identifiers
-    # For meshtasticd files, preserve architecture
-    # Example: 'meshtasticd_2.5.13.1a06f88_amd64.deb' -> 'meshtasticd__amd64.deb'
-    # Example: 'firmware-esp32-2.5.13.1a06f88.zip' -> 'firmware-esp32-.zip'
-    # Adjusted regex to be more precise
-    base_name = re.sub(r"([_-])\d+\.\d+\.\d+[\w\.\-]*", r"\1", filename)
+    """
+    Removes version numbers and commit hashes from the filename to get a base pattern.
+    Preserves architecture identifiers and other important parts of the filename.
+
+    Example:
+    - 'meshtasticd_2.5.13.1a06f88_amd64.deb' -> 'meshtasticd__amd64.deb'
+    - 'firmware-rak4631-2.5.13.1a06f88-ota.zip' -> 'firmware-rak4631--ota.zip'
+    """
+    # Regular expression to match version numbers and commit hashes
+    # Matches patterns like '-2.5.13.1a06f88' or '_2.5.13.1a06f88'
+    base_name = re.sub(r'([_-])\d+\.\d+\.\d+(?:\.[\da-f]+)?', r'\1', filename)
     return base_name
 
 
 def select_assets(assets):
+    """
+    Displays a menu for the user to select firmware assets to download.
+    Returns a dictionary containing the selected base patterns.
+    """
     title = """Select the firmware files you want to download (press SPACE to select, ENTER to confirm):
 Note: These are files from the latest release. Version numbers may change in other releases."""
     options = assets
@@ -49,6 +61,9 @@ Note: These are files from the latest release. Version numbers may change in oth
 
 
 def run_menu():
+    """
+    Runs the firmware selection menu and returns the selected patterns.
+    """
     try:
         assets = fetch_firmware_assets()
         selection = select_assets(assets)

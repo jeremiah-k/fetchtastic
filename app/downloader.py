@@ -171,8 +171,13 @@ def main():
 
     # Function to strip version numbers from filenames
     def strip_version_numbers(filename):
-        # Remove version numbers like -2.5.13.1a06f88 or _2.5.13.1a06f88
-        return re.sub(r"[-_]\d[\d\.\w]*", "", filename)
+        """
+        Removes version numbers and commit hashes from the filename.
+        Uses the same regex as in menu_firmware.py to ensure consistency.
+        """
+        # Regular expression matching version numbers and commit hashes
+        base_name = re.sub(r'([_-])\d+\.\d+\.\d+(?:\.[\da-f]+)?', r'\1', filename)
+        return base_name
 
     # Cleanup function to keep only specific versions based on release tags
     def cleanup_old_versions(directory, releases_to_keep):
@@ -231,7 +236,29 @@ def main():
             release_dir = os.path.join(download_dir, release_tag)
 
             if os.path.exists(release_dir) or release_tag == saved_release_tag:
-                log_message(f"Skipping version {release_tag}, already exists.")
+                log_message(f"Processing existing version {release_tag}.")
+
+                # Check if re-extraction is needed due to changed extraction patterns
+                if auto_extract and release_type == "Firmware":
+                    for asset in release["assets"]:
+                        file_name = asset["name"]
+                        if file_name.endswith(".zip"):
+                            zip_path = os.path.join(release_dir, file_name)
+                            if os.path.exists(zip_path):
+                                extraction_needed = check_extraction_needed(
+                                    zip_path, extract_patterns
+                                )
+                                if extraction_needed:
+                                    log_message(
+                                        f"Re-extracting files from {zip_path} due to updated extraction patterns."
+                                    )
+                                    extract_files(
+                                        zip_path,
+                                        release_dir,
+                                        extract_patterns,
+                                        exclude_patterns,
+                                    )
+                continue  # Skip to the next release
             else:
                 # Proceed to download this version
                 os.makedirs(release_dir, exist_ok=True)
@@ -283,6 +310,25 @@ def main():
                 new_versions_available.append(release_tag)
 
         return downloaded_versions, new_versions_available
+
+    def check_extraction_needed(zip_path, patterns):
+        """
+        Checks if extraction is needed based on the current extraction patterns.
+        Returns True if any files matching the patterns are not already extracted.
+        """
+        with zipfile.ZipFile(zip_path, "r") as zip_ref:
+            for file_info in zip_ref.infolist():
+                file_name = os.path.basename(file_info.filename)
+                # Strip version numbers from the file name
+                stripped_file_name = strip_version_numbers(file_name)
+                for pattern in patterns:
+                    if pattern in stripped_file_name:
+                        extracted_file_path = os.path.join(
+                            os.path.dirname(zip_path), file_name
+                        )
+                        if not os.path.exists(extracted_file_path):
+                            return True  # Extraction needed
+        return False  # All files already extracted
 
     start_time = time.time()
     log_message("Starting Fetchtastic...")
@@ -344,7 +390,7 @@ def main():
             "Android APK",
             apks_dir,
             android_versions_to_keep,
-            extract_patterns,
+            extract_patterns,  # Assuming extract_patterns is needed here
             selected_patterns=selected_apk_patterns,
         )
         downloaded_apks.extend(apk_downloaded)

@@ -14,10 +14,16 @@ from . import menu_apk, menu_firmware
 
 
 def is_termux():
+    """
+    Check if the script is running in a Termux environment.
+    """
     return "com.termux" in os.environ.get("PREFIX", "")
 
 
 def get_platform():
+    """
+    Determine the platform on which the script is running.
+    """
     if is_termux():
         return "termux"
     elif platform.system() == "Darwin":
@@ -29,6 +35,9 @@ def get_platform():
 
 
 def get_downloads_dir():
+    """
+    Get the default downloads directory based on the platform.
+    """
     # For Termux, use ~/storage/downloads
     if is_termux():
         storage_downloads = os.path.expanduser("~/storage/downloads")
@@ -52,10 +61,16 @@ CONFIG_FILE = os.path.join(DEFAULT_CONFIG_DIR, "fetchtastic.yaml")
 
 
 def config_exists():
+    """
+    Check if the configuration file exists.
+    """
     return os.path.exists(CONFIG_FILE)
 
 
 def check_storage_setup():
+    """
+    For Termux: Check if the storage is set up and accessible.
+    """
     # Check if the Termux storage directory and Downloads are set up and writable
     storage_dir = os.path.expanduser("~/storage")
     storage_downloads = os.path.expanduser("~/storage/downloads")
@@ -278,46 +293,150 @@ def run_setup():
     with open(CONFIG_FILE, "w") as f:
         yaml.dump(config, f)
 
-    # Ask if the user wants to set up a cron job
-    cron_default = "yes"  # Default to 'yes'
-    setup_cron = (
-        input(
-            f"Would you like to schedule Fetchtastic to run daily at 3 AM? [y/n] (default: {cron_default}): "
-        )
-        .strip()
-        .lower()
-        or cron_default[0]
-    )
-    if setup_cron == "y":
-        if is_termux():
-            install_crond()
-        setup_cron_job()
-    else:
-        remove_cron_job()
-        print("Cron job has been removed.")
+    # Cron job setup
+    if is_termux():
+        # Termux: Ask about cron job and boot script individually
+        # Check if cron job already exists
+        cron_job_exists = check_cron_job_exists()
+        if cron_job_exists:
+            cron_prompt = (
+                input(
+                    "A cron job is already set up. Do you want to reconfigure it? [y/n] (default: no): "
+                )
+                .strip()
+                .lower()
+                or "n"
+            )
+            if cron_prompt == "y":
+                install_crond()
+                setup_cron_job()
+            else:
+                print("Cron job configuration left unchanged.")
+        else:
+            # Ask if the user wants to set up a cron job
+            cron_default = "yes"  # Default to 'yes'
+            setup_cron = (
+                input(
+                    f"Would you like to schedule Fetchtastic to run daily at 3 AM? [y/n] (default: {cron_default}): "
+                )
+                .strip()
+                .lower()
+                or cron_default[0]
+            )
+            if setup_cron == "y":
+                install_crond()
+                setup_cron_job()
+            else:
+                print("Cron job has not been set up.")
 
-    # Ask if the user wants to run Fetchtastic on boot
-    boot_default = "yes"  # Default to 'yes'
-    run_on_boot = (
-        input(
-            f"Do you want Fetchtastic to run on device boot? [y/n] (default: {boot_default}): "
-        )
-        .strip()
-        .lower()
-        or boot_default[0]
-    )
-    if run_on_boot == "y":
-        if is_termux():
-            setup_boot_script()
+        # Check if boot script already exists
+        boot_script_exists = check_boot_script_exists()
+        if boot_script_exists:
+            boot_prompt = (
+                input(
+                    "A boot script is already set up. Do you want to reconfigure it? [y/n] (default: no): "
+                )
+                .strip()
+                .lower()
+                or "n"
+            )
+            if boot_prompt == "y":
+                setup_boot_script()
+            else:
+                print("Boot script configuration left unchanged.")
         else:
-            setup_reboot_cron_job()
+            # Ask if the user wants to set up a boot script
+            boot_default = "yes"  # Default to 'yes'
+            setup_boot = (
+                input(
+                    f"Do you want Fetchtastic to run on device boot? [y/n] (default: {boot_default}): "
+                )
+                .strip()
+                .lower()
+                or boot_default[0]
+            )
+            if setup_boot == "y":
+                setup_boot_script()
+            else:
+                print("Boot script has not been set up.")
+
     else:
-        if is_termux():
-            remove_boot_script()
-            print("Boot script has been removed.")
+        # Linux/Mac: Check if any Fetchtastic cron jobs exist
+        any_cron_jobs_exist = check_any_cron_jobs_exist()
+        if any_cron_jobs_exist:
+            cron_prompt = (
+                input(
+                    "Fetchtastic cron jobs are already set up. Do you want to reconfigure them? [y/n] (default: no): "
+                )
+                .strip()
+                .lower()
+                or "n"
+            )
+            if cron_prompt == "y":
+                # Ask if they want to set up daily cron job
+                cron_default = "yes"
+                setup_cron = (
+                    input(
+                        f"Would you like to schedule Fetchtastic to run daily at 3 AM? [y/n] (default: {cron_default}): "
+                    )
+                    .strip()
+                    .lower()
+                    or cron_default[0]
+                )
+                if setup_cron == "y":
+                    setup_cron_job()
+                else:
+                    remove_cron_job()
+                    print("Daily cron job has been removed.")
+
+                # Ask if they want to set up a reboot cron job
+                boot_default = "yes"
+                setup_reboot = (
+                    input(
+                        f"Do you want Fetchtastic to run on system startup? [y/n] (default: {boot_default}): "
+                    )
+                    .strip()
+                    .lower()
+                    or boot_default[0]
+                )
+                if setup_reboot == "y":
+                    setup_reboot_cron_job()
+                else:
+                    remove_reboot_cron_job()
+                    print("Reboot cron job has been removed.")
+            else:
+                print("Cron job configurations left unchanged.")
         else:
-            remove_reboot_cron_job()
-            print("Reboot cron job has been removed.")
+            # No existing cron jobs, ask if they want to set them up
+            # Ask if they want to set up daily cron job
+            cron_default = "yes"
+            setup_cron = (
+                input(
+                    f"Would you like to schedule Fetchtastic to run daily at 3 AM? [y/n] (default: {cron_default}): "
+                )
+                .strip()
+                .lower()
+                or cron_default[0]
+            )
+            if setup_cron == "y":
+                setup_cron_job()
+            else:
+                print("Daily cron job has not been set up.")
+
+            # Ask if they want to set up a reboot cron job
+            boot_default = "yes"
+            setup_reboot = (
+                input(
+                    f"Do you want Fetchtastic to run on system startup? [y/n] (default: {boot_default}): "
+                )
+                .strip()
+                .lower()
+                or boot_default[0]
+            )
+            if setup_reboot == "y":
+                setup_reboot_cron_job()
+            else:
+                print("Reboot cron job has not been set up.")
 
     # Prompt for NTFY server configuration
     notifications_default = "yes"  # Default to 'yes'
@@ -428,6 +547,9 @@ def run_setup():
 
 
 def copy_to_clipboard_func(text):
+    """
+    Copies the provided text to the clipboard, depending on the platform.
+    """
     if is_termux():
         # Termux environment
         try:
@@ -476,6 +598,9 @@ def copy_to_clipboard_func(text):
 
 
 def install_termux_packages():
+    """
+    Installs required packages in the Termux environment.
+    """
     # Install termux-api, termux-services, and cronie if they are not installed
     packages_to_install = []
     # Check for termux-api
@@ -496,6 +621,9 @@ def install_termux_packages():
 
 
 def setup_storage():
+    """
+    Runs termux-setup-storage to set up storage access in Termux.
+    """
     # Run termux-setup-storage
     print("Setting up Termux storage access...")
     try:
@@ -506,6 +634,9 @@ def setup_storage():
 
 
 def install_crond():
+    """
+    Installs and enables the crond service in Termux.
+    """
     if is_termux():
         try:
             crond_path = shutil.which("crond")
@@ -527,6 +658,9 @@ def install_crond():
 
 
 def setup_cron_job():
+    """
+    Sets up the cron job to run Fetchtastic at scheduled times.
+    """
     try:
         # Get current crontab entries
         result = subprocess.run(
@@ -578,6 +712,9 @@ def setup_cron_job():
 
 
 def remove_cron_job():
+    """
+    Removes the Fetchtastic daily cron job from the crontab.
+    """
     try:
         # Get current crontab entries
         result = subprocess.run(
@@ -608,12 +745,15 @@ def remove_cron_job():
                 ["crontab", "-"], stdin=subprocess.PIPE, text=True
             )
             process.communicate(input=new_cron)
-            print("Cron job removed.")
+            print("Daily cron job removed.")
     except Exception as e:
         print(f"An error occurred while removing the cron job: {e}")
 
 
 def setup_boot_script():
+    """
+    Sets up a boot script in Termux to run Fetchtastic on device boot.
+    """
     boot_dir = os.path.expanduser("~/.termux/boot")
     boot_script = os.path.join(boot_dir, "fetchtastic.sh")
     if not os.path.exists(boot_dir):
@@ -635,6 +775,9 @@ def setup_boot_script():
 
 
 def remove_boot_script():
+    """
+    Removes the boot script from Termux.
+    """
     boot_script = os.path.expanduser("~/.termux/boot/fetchtastic.sh")
     if os.path.exists(boot_script):
         os.remove(boot_script)
@@ -642,6 +785,9 @@ def remove_boot_script():
 
 
 def setup_reboot_cron_job():
+    """
+    Sets up a cron job to run Fetchtastic on system startup (non-Termux).
+    """
     try:
         # Get current crontab entries
         result = subprocess.run(
@@ -667,15 +813,11 @@ def setup_reboot_cron_job():
         ]
 
         # Add new @reboot cron job
-        if is_termux():
-            cron_lines.append("@reboot fetchtastic download  # fetchtastic")
-        else:
-            # Non-Termux environments
-            fetchtastic_path = shutil.which("fetchtastic")
-            if not fetchtastic_path:
-                print("Error: fetchtastic executable not found in PATH.")
-                return
-            cron_lines.append(f"@reboot {fetchtastic_path} download  # fetchtastic")
+        fetchtastic_path = shutil.which("fetchtastic")
+        if not fetchtastic_path:
+            print("Error: fetchtastic executable not found in PATH.")
+            return
+        cron_lines.append(f"@reboot {fetchtastic_path} download  # fetchtastic")
 
         # Join cron lines
         new_cron = "\n".join(cron_lines)
@@ -693,6 +835,9 @@ def setup_reboot_cron_job():
 
 
 def remove_reboot_cron_job():
+    """
+    Removes the reboot cron job from the crontab.
+    """
     try:
         # Get current crontab entries
         result = subprocess.run(
@@ -728,7 +873,65 @@ def remove_reboot_cron_job():
         print(f"An error occurred while removing the reboot cron job: {e}")
 
 
+def check_cron_job_exists():
+    """
+    Checks if a Fetchtastic daily cron job already exists.
+    """
+    try:
+        result = subprocess.run(
+            ["crontab", "-l"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        if result.returncode != 0:
+            return False
+        existing_cron = result.stdout.strip()
+        return any(
+            ("# fetchtastic" in line or "fetchtastic download" in line)
+            for line in existing_cron.splitlines()
+            if not line.strip().startswith("@reboot")
+        )
+    except Exception as e:
+        print(f"An error occurred while checking for existing cron jobs: {e}")
+        return False
+
+
+def check_boot_script_exists():
+    """
+    Checks if a Fetchtastic boot script already exists (Termux).
+    """
+    boot_script = os.path.expanduser("~/.termux/boot/fetchtastic.sh")
+    return os.path.exists(boot_script)
+
+
+def check_any_cron_jobs_exist():
+    """
+    Checks if any Fetchtastic cron jobs (daily or reboot) already exist.
+    """
+    try:
+        result = subprocess.run(
+            ["crontab", "-l"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        if result.returncode != 0:
+            return False
+        existing_cron = result.stdout.strip()
+        return any(
+            ("# fetchtastic" in line or "fetchtastic download" in line)
+            for line in existing_cron.splitlines()
+        )
+    except Exception as e:
+        print(f"An error occurred while checking for existing cron jobs: {e}")
+        return False
+
+
 def load_config():
+    """
+    Loads the configuration from the YAML file.
+    """
     if not config_exists():
         return None
     with open(CONFIG_FILE, "r") as f:
