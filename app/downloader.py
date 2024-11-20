@@ -32,6 +32,7 @@ def main():
     extract_patterns = config.get("EXTRACT_PATTERNS", [])
     exclude_patterns = config.get("EXCLUDE_PATTERNS", [])
     wifi_only = config.get("WIFI_ONLY", False) if setup_config.is_termux() else False
+    notify_on_download_only = config.get("NOTIFY_ON_DOWNLOAD_ONLY", False)  # Added this line
 
     selected_apk_patterns = config.get("SELECTED_APK_ASSETS", [])
     selected_firmware_patterns = config.get("SELECTED_FIRMWARE_ASSETS", [])
@@ -452,7 +453,8 @@ def main():
             f"{datetime.now()}"
         )
         log_message(message)
-        send_ntfy_notification(message, title="Fetchtastic Up to Date")
+        if not notify_on_download_only:  # Added this condition
+            send_ntfy_notification(message, title="Fetchtastic Up to Date")
 
 
 if __name__ == "__main__":
