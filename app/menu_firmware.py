@@ -1,6 +1,7 @@
 # app/menu_firmware.py
 
 import re
+
 import requests
 from pick import pick
 
@@ -32,7 +33,7 @@ def extract_base_name(filename):
     """
     # Regular expression to match version numbers and commit hashes
     # Matches patterns like '-2.5.13.1a06f88' or '_2.5.13.1a06f88'
-    base_name = re.sub(r'([_-])\d+\.\d+\.\d+(?:\.[\da-f]+)?', r'\1', filename)
+    base_name = re.sub(r"([_-])\d+\.\d+\.\d+(?:\.[\da-f]+)?", r"\1", filename)
     return base_name
 
 

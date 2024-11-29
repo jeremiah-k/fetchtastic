@@ -2,10 +2,10 @@
 
 import json
 import os
+import re
 import time
 import zipfile
 from datetime import datetime
-import re
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -32,7 +32,9 @@ def main():
     extract_patterns = config.get("EXTRACT_PATTERNS", [])
     exclude_patterns = config.get("EXCLUDE_PATTERNS", [])
     wifi_only = config.get("WIFI_ONLY", False) if setup_config.is_termux() else False
-    notify_on_download_only = config.get("NOTIFY_ON_DOWNLOAD_ONLY", False)  # Added this line
+    notify_on_download_only = config.get(
+        "NOTIFY_ON_DOWNLOAD_ONLY", False
+    )  # Added this line
 
     selected_apk_patterns = config.get("SELECTED_APK_ASSETS", [])
     selected_firmware_patterns = config.get("SELECTED_FIRMWARE_ASSETS", [])
@@ -180,7 +182,7 @@ def main():
         Uses the same regex as in menu_firmware.py to ensure consistency.
         """
         # Regular expression matching version numbers and commit hashes
-        base_name = re.sub(r'([_-])\d+\.\d+\.\d+(?:\.[\da-f]+)?', r'\1', filename)
+        base_name = re.sub(r"([_-])\d+\.\d+\.\d+(?:\.[\da-f]+)?", r"\1", filename)
         return base_name
 
     # Cleanup function to keep only specific versions based on release tags
