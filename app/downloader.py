@@ -164,6 +164,12 @@ def main():
                                 with open(target_path, "wb") as target_file:
                                     target_file.write(source.read())
                                 log_message(f"Extracted {base_name} to {extract_dir}")
+                                # Set executable permissions if the file is a .sh script
+                                if base_name.endswith(".sh"):
+                                    os.chmod(target_path, 0o755)
+                                    log_message(
+                                        f"Set executable permissions for {base_name}"
+                                    )
                             else:
                                 log_message(
                                     f"{base_name} already exists, skipping extraction."
@@ -267,9 +273,7 @@ def main():
                                         extract_patterns,
                                         exclude_patterns,
                                     )
-                                else:
-                                    # Files are already extracted
-                                    pass
+                                    # No need to log that files are already extracted
             else:
                 # Proceed to download this version
                 os.makedirs(release_dir, exist_ok=True)
