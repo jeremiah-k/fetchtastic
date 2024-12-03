@@ -170,10 +170,6 @@ def main():
                                 )
                             matched_files.append(base_name)
                             break  # Stop checking patterns for this file
-                if not matched_files:
-                    log_message(
-                        f"No files matched the extraction patterns in {zip_path}."
-                    )
         except zipfile.BadZipFile:
             log_message(f"Error: {zip_path} is a bad zip file and cannot be opened.")
         except Exception as e:
@@ -247,7 +243,7 @@ def main():
             release_tag = release["tag_name"]
             release_dir = os.path.join(download_dir, release_tag)
 
-            if os.path.exists(release_dir) or release_tag == saved_release_tag:
+            if os.path.exists(release_dir):
                 log_message(f"Processing existing version {release_tag}.")
 
                 # Check if extraction is needed
@@ -274,7 +270,6 @@ def main():
                                 else:
                                     # Files are already extracted
                                     pass
-                continue  # Skip to the next release
             else:
                 # Proceed to download this version
                 os.makedirs(release_dir, exist_ok=True)
