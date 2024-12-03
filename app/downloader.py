@@ -333,7 +333,7 @@ def main():
         """
         Sets executable permissions on .sh files if they do not already have them.
         """
-        for root, dirs, files in os.walk(directory):
+        for root, _dirs, files in os.walk(directory):
             for file in files:
                 if file.endswith(".sh"):
                     file_path = os.path.join(root, file)
