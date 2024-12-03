@@ -156,12 +156,18 @@ def main():
                     stripped_base_name = strip_version_numbers(base_name)
                     for pattern in patterns:
                         if pattern in stripped_base_name:
-                            # Extract and flatten directory structure
-                            source = zip_ref.open(file_info)
+                            # Check if the file already exists
                             target_path = os.path.join(extract_dir, base_name)
-                            with open(target_path, "wb") as target_file:
-                                target_file.write(source.read())
-                            log_message(f"Extracted {base_name} to {extract_dir}")
+                            if not os.path.exists(target_path):  # Added check here
+                                # Extract and flatten directory structure
+                                source = zip_ref.open(file_info)
+                                with open(target_path, "wb") as target_file:
+                                    target_file.write(source.read())
+                                log_message(f"Extracted {base_name} to {extract_dir}")
+                            else:
+                                log_message(
+                                    f"{base_name} already exists, skipping extraction."
+                                )
                             matched_files.append(base_name)
                             break  # Stop checking patterns for this file
                 if not matched_files:
@@ -252,7 +258,10 @@ def main():
                             zip_path = os.path.join(release_dir, file_name)
                             if os.path.exists(zip_path):
                                 extraction_needed = check_extraction_needed(
-                                    zip_path, release_dir, extract_patterns
+                                    zip_path,
+                                    release_dir,
+                                    extract_patterns,
+                                    exclude_patterns,  # Added exclude_patterns here
                                 )
                                 if extraction_needed:
                                     log_message(f"Extracting files from {zip_path}...")
@@ -318,11 +327,12 @@ def main():
 
         return downloaded_versions, new_versions_available
 
-    def check_extraction_needed(zip_path, extract_dir, patterns):
+    def check_extraction_needed(zip_path, extract_dir, patterns, exclude_patterns):
         """
         Checks if extraction is needed based on the current extraction patterns.
         Returns True if any files matching the patterns are not already extracted.
         """
+        files_to_extract = []  # Modified to collect files to extract
         with zipfile.ZipFile(zip_path, "r") as zip_ref:
             for file_info in zip_ref.infolist():
                 file_name = file_info.filename
@@ -330,13 +340,20 @@ def main():
                 # Skip directories
                 if not base_name:
                     continue
+                # Check if file matches exclude patterns
+                if any(exclude in base_name for exclude in exclude_patterns):
+                    continue
                 # Strip version numbers from the file name
                 stripped_base_name = strip_version_numbers(base_name)
                 for pattern in patterns:
                     if pattern in stripped_base_name:
-                        extracted_file_path = os.path.join(extract_dir, base_name)
-                        if not os.path.exists(extracted_file_path):
-                            return True  # Extraction needed
+                        files_to_extract.append(base_name)
+                        break  # Stop checking patterns for this file
+        # Now check if any of the files to extract are missing
+        for base_name in files_to_extract:
+            extracted_file_path = os.path.join(extract_dir, base_name)
+            if not os.path.exists(extracted_file_path):
+                return True  # Extraction needed
         return False  # All files already extracted
 
     start_time = time.time()
