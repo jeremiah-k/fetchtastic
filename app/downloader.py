@@ -398,7 +398,6 @@ def main():
     latest_android_releases = []
 
     if save_firmware and selected_firmware_patterns:
-        versions_to_download = firmware_versions_to_keep
         latest_firmware_releases = get_latest_releases(
             firmware_releases_url, releases_to_scan
         )
@@ -419,7 +418,6 @@ def main():
         log_message("No firmware assets selected. Skipping firmware download.")
 
     if save_apks and selected_apk_patterns:
-        versions_to_download = android_versions_to_keep
         latest_android_releases = get_latest_releases(
             android_releases_url, releases_to_scan
         )
