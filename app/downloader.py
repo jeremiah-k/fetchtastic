@@ -32,9 +32,7 @@ def main():
     extract_patterns = config.get("EXTRACT_PATTERNS", [])
     exclude_patterns = config.get("EXCLUDE_PATTERNS", [])
     wifi_only = config.get("WIFI_ONLY", False) if setup_config.is_termux() else False
-    notify_on_download_only = config.get(
-        "NOTIFY_ON_DOWNLOAD_ONLY", False
-    )  # Added this line
+    notify_on_download_only = config.get("NOTIFY_ON_DOWNLOAD_ONLY", False)
 
     selected_apk_patterns = config.get("SELECTED_APK_ASSETS", [])
     selected_firmware_patterns = config.get("SELECTED_FIRMWARE_ASSETS", [])
@@ -80,7 +78,8 @@ def main():
             except requests.exceptions.RequestException as e:
                 log_message(f"Error sending notification to {ntfy_url}: {e}")
         else:
-            log_message("Notifications are not configured.")
+            # Don't log when notifications are not configured
+            pass
 
     # Function to get the latest releases and sort by date
     def get_latest_releases(url, scan_count=10):
@@ -112,7 +111,8 @@ def main():
                         file.write(chunk)
                 log_message(f"Downloaded {download_path}")
             else:
-                log_message(f"{download_path} already exists, skipping download.")
+                # Don't log when the file already exists
+                pass
         except requests.exceptions.RequestException as e:
             log_message(f"Error downloading {url}: {e}")
 
@@ -158,22 +158,20 @@ def main():
                         if pattern in stripped_base_name:
                             # Check if the file already exists
                             target_path = os.path.join(extract_dir, base_name)
-                            if not os.path.exists(target_path):  # Added check here
+                            if not os.path.exists(target_path):
                                 # Extract and flatten directory structure
                                 source = zip_ref.open(file_info)
                                 with open(target_path, "wb") as target_file:
                                     target_file.write(source.read())
                                 log_message(f"Extracted {base_name} to {extract_dir}")
-                                # Set executable permissions if the file is a .sh script
-                                if base_name.endswith(".sh"):
+                            # If the file is a .sh script, check permissions
+                            if base_name.endswith(".sh"):
+                                # Check if the file has executable permissions
+                                if not os.access(target_path, os.X_OK):
                                     os.chmod(target_path, 0o755)
                                     log_message(
                                         f"Set executable permissions for {base_name}"
                                     )
-                            else:
-                                log_message(
-                                    f"{base_name} already exists, skipping extraction."
-                                )
                             matched_files.append(base_name)
                             break  # Stop checking patterns for this file
         except zipfile.BadZipFile:
@@ -224,6 +222,7 @@ def main():
     ):
         downloaded_versions = []
         new_versions_available = []
+        actions_taken = False  # Track if any actions were taken
 
         if not os.path.exists(download_dir):
             os.makedirs(download_dir)
@@ -249,10 +248,35 @@ def main():
             release_tag = release["tag_name"]
             release_dir = os.path.join(download_dir, release_tag)
 
-            if os.path.exists(release_dir):
-                log_message(f"Processing existing version {release_tag}.")
+            # Create release directory if it doesn't exist
+            if not os.path.exists(release_dir):
+                os.makedirs(release_dir, exist_ok=True)
 
-                # Check if extraction is needed
+            assets_to_download = []
+            for asset in release["assets"]:
+                file_name = asset["name"]
+                # Strip version numbers from the file name
+                stripped_file_name = strip_version_numbers(file_name)
+                # Matching logic
+                if selected_patterns:
+                    if not any(
+                        pattern in stripped_file_name for pattern in selected_patterns
+                    ):
+                        continue  # Skip this asset
+                download_path = os.path.join(release_dir, file_name)
+                if not os.path.exists(download_path):
+                    assets_to_download.append(
+                        (asset["browser_download_url"], download_path)
+                    )
+
+            if assets_to_download:
+                actions_taken = True
+                log_message(f"Downloading missing assets for version {release_tag}.")
+                for url, path in assets_to_download:
+                    download_file(url, path)
+                downloaded_versions.append(release_tag)
+
+                # Extraction logic
                 if auto_extract and release_type == "Firmware":
                     for asset in release["assets"]:
                         file_name = asset["name"]
@@ -263,7 +287,7 @@ def main():
                                     zip_path,
                                     release_dir,
                                     extract_patterns,
-                                    exclude_patterns,  # Added exclude_patterns here
+                                    exclude_patterns,
                                 )
                                 if extraction_needed:
                                     log_message(f"Extracting files from {zip_path}...")
@@ -273,36 +297,12 @@ def main():
                                         extract_patterns,
                                         exclude_patterns,
                                     )
-                                    # No need to log that files are already extracted
             else:
-                # Proceed to download this version
-                os.makedirs(release_dir, exist_ok=True)
-                log_message(f"Downloading new {release_type} version: {release_tag}")
-                for asset in release["assets"]:
-                    file_name = asset["name"]
-                    # Strip version numbers from the file name
-                    stripped_file_name = strip_version_numbers(file_name)
-                    # Matching logic
-                    if selected_patterns:
-                        if not any(
-                            pattern in stripped_file_name
-                            for pattern in selected_patterns
-                        ):
-                            continue  # Skip this asset
-                    download_path = os.path.join(release_dir, file_name)
-                    download_file(asset["browser_download_url"], download_path)
-                    if (
-                        auto_extract
-                        and file_name.endswith(".zip")
-                        and release_type == "Firmware"
-                    ):
-                        extract_files(
-                            download_path,
-                            release_dir,
-                            extract_patterns,
-                            exclude_patterns,
-                        )
-                downloaded_versions.append(release_tag)
+                # No action needed for this release
+                pass
+
+            # Set permissions on .sh files if needed
+            set_permissions_on_sh_files(release_dir)
 
         # Only update latest_release_file if downloads occurred
         if downloaded_versions:
@@ -315,6 +315,9 @@ def main():
         # Clean up old versions
         cleanup_old_versions(download_dir, release_tags_to_keep)
 
+        if not actions_taken:
+            log_message(f"All {release_type} assets are up to date.")
+
         # Collect new versions available
         for release in releases_to_download:
             release_tag = release["tag_name"]
@@ -326,12 +329,24 @@ def main():
 
         return downloaded_versions, new_versions_available
 
+    def set_permissions_on_sh_files(directory):
+        """
+        Sets executable permissions on .sh files if they do not already have them.
+        """
+        for root, dirs, files in os.walk(directory):
+            for file in files:
+                if file.endswith(".sh"):
+                    file_path = os.path.join(root, file)
+                    if not os.access(file_path, os.X_OK):
+                        os.chmod(file_path, 0o755)
+                        log_message(f"Set executable permissions for {file}")
+
     def check_extraction_needed(zip_path, extract_dir, patterns, exclude_patterns):
         """
         Checks if extraction is needed based on the current extraction patterns.
         Returns True if any files matching the patterns are not already extracted.
         """
-        files_to_extract = []  # Modified to collect files to extract
+        files_to_extract = []
         with zipfile.ZipFile(zip_path, "r") as zip_ref:
             for file_info in zip_ref.infolist():
                 file_name = file_info.filename
@@ -398,9 +413,8 @@ def main():
         )
         downloaded_firmwares.extend(fw_downloaded)
         new_firmware_versions.extend(fw_new_versions)
-        log_message(
-            f"Latest Firmware releases: {', '.join(release['tag_name'] for release in latest_firmware_releases[:versions_to_download])}"
-        )
+        if fw_downloaded:
+            log_message(f"Downloaded Firmware versions: {', '.join(fw_downloaded)}")
     elif not selected_firmware_patterns:
         log_message("No firmware assets selected. Skipping firmware download.")
 
@@ -420,9 +434,8 @@ def main():
         )
         downloaded_apks.extend(apk_downloaded)
         new_apk_versions.extend(apk_new_versions)
-        log_message(
-            f"Latest Android APK releases: {', '.join(release['tag_name'] for release in latest_android_releases[:versions_to_download])}"
-        )
+        if apk_downloaded:
+            log_message(f"Downloaded Android APK versions: {', '.join(apk_downloaded)}")
     elif not selected_apk_patterns:
         log_message("No APK assets selected. Skipping APK download.")
 
@@ -466,12 +479,9 @@ def main():
         )
     else:
         # No new downloads; everything is up to date
-        message = (
-            f"No new downloads. All Firmware and Android APK versions are up to date.\n"
-            f"{datetime.now()}"
-        )
+        message = f"All assets are up to date.\n" f"{datetime.now()}"
         log_message(message)
-        if not notify_on_download_only:  # Added this condition
+        if not notify_on_download_only:
             send_ntfy_notification(message, title="Fetchtastic Up to Date")
 
 
