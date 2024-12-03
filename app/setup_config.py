@@ -205,7 +205,7 @@ def run_setup():
             print(
                 "Enter the keywords to match for extraction from the firmware zip files, separated by spaces."
             )
-            print("Example: rak4631- tbeam-2 t1000-e- tlora-v2-1-1_6- device-")
+            print("Example: rak4631- tbeam t1000-e- tlora-v2-1-1_6- device-")
             if config.get("EXTRACT_PATTERNS"):
                 current_patterns = " ".join(config.get("EXTRACT_PATTERNS", []))
                 print(f"Current patterns: {current_patterns}")
