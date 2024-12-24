@@ -210,6 +210,15 @@ def main():
                 os.rmdir(version_path)
                 log_message(f"Removed directory: {version_path}")
 
+    # Function to strip out non-printable characters and emojis
+    def strip_unwanted_chars(text):
+        """
+        Strips out non-printable characters and emojis from a string.
+        """
+        # Regex for printable characters (including some extended ASCII)
+        printable_regex = re.compile(r"[^\x00-\x7F]+")
+        return printable_regex.sub("", text)
+
     # Function to check for missing releases and download them if necessary
     def check_and_download(
         releases,
@@ -247,7 +256,9 @@ def main():
         for release in releases_to_download:
             release_tag = release["tag_name"]
             release_dir = os.path.join(download_dir, release_tag)
-            release_notes_file = os.path.join(release_dir, "release_notes.md")
+            release_notes_file = os.path.join(
+                release_dir, f"release_notes-{release_tag}.md"
+            )
 
             # Create release directory if it doesn't exist
             if not os.path.exists(release_dir):
@@ -256,8 +267,9 @@ def main():
             # Download release notes if missing
             if not os.path.exists(release_notes_file) and release.get("body"):
                 log_message(f"Downloading release notes for version {release_tag}.")
+                release_notes_content = strip_unwanted_chars(release["body"])
                 with open(release_notes_file, "w", encoding="utf-8") as notes_file:
-                    notes_file.write(release["body"])
+                    notes_file.write(release_notes_content)
                 log_message(f"Saved release notes to {release_notes_file}")
 
             assets_to_download = []
