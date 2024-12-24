@@ -247,10 +247,18 @@ def main():
         for release in releases_to_download:
             release_tag = release["tag_name"]
             release_dir = os.path.join(download_dir, release_tag)
+            release_notes_file = os.path.join(release_dir, "release_notes.md")
 
             # Create release directory if it doesn't exist
             if not os.path.exists(release_dir):
                 os.makedirs(release_dir, exist_ok=True)
+
+            # Download release notes if missing
+            if not os.path.exists(release_notes_file) and release.get("body"):
+                log_message(f"Downloading release notes for version {release_tag}.")
+                with open(release_notes_file, "w", encoding="utf-8") as notes_file:
+                    notes_file.write(release["body"])
+                log_message(f"Saved release notes to {release_notes_file}")
 
             assets_to_download = []
             for asset in release["assets"]:
