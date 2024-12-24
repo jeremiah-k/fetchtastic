@@ -5,8 +5,8 @@ Fetchtastic is a utility for downloading and managing the latest Meshtastic Andr
 ## Table of Contents
 
 - [Installation](#installation)
-  - [Termux Installation (Android)](#termux-installation-android)
   - [Linux/Mac Installation](#linuxmac-installation)
+  - [Termux Installation (Android)](#termux-installation-android)
 - [Usage](#usage)
   - [Setup Process](#setup-process)
   - [Command List](#command-list)
@@ -16,6 +16,26 @@ Fetchtastic is a utility for downloading and managing the latest Meshtastic Andr
 - [Contributing](#contributing)
 
 ## Installation
+
+### Linux/Mac Installation
+
+Fetchtastic can also be installed on Linux or macOS systems.
+
+#### Install with pipx (Recommended)
+
+It's recommended to use `pipx` to install Fetchtastic in an isolated environment. (If you prefer, you can use `pip` too.)
+
+1. **Install pipx**:
+
+   Follow the installation instructions for your platform on the [pipx documentation page](https://pypa.github.io/pipx/installation/).
+
+   Restart your terminal after installing pipx.
+
+2. **Install Fetchtastic with pipx**:
+
+   ```bash
+   pipx install fetchtastic
+   ```
 
 ### Termux Installation (Android)
 
@@ -41,26 +61,6 @@ pkg install python python-pip openssl -y
 ```bash
 pip install fetchtastic
 ```
-
-### Linux/Mac Installation
-
-Fetchtastic can also be installed on Linux or macOS systems.
-
-#### Install with pipx (Recommended)
-
-It's recommended to use `pipx` to install Fetchtastic in an isolated environment. (If you prefer, you can use `pip` too.)
-
-1. **Install pipx**:
-
-   Follow the installation instructions for your platform on the [pipx documentation page](https://pypa.github.io/pipx/installation/).
-
-   Restart your terminal after installing pipx.
-
-2. **Install Fetchtastic with pipx**:
-
-   ```bash
-   pipx install fetchtastic
-   ```
 
 ## Usage
 
