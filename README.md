@@ -19,7 +19,7 @@ Fetchtastic is a utility for downloading and managing the latest Meshtastic Andr
 
 ### Linux/Mac Installation
 
-Fetchtastic can also be installed on Linux or macOS systems.
+Fetchtastic is able to be installed on Linux or macOS systems.
 
 #### Install with pipx (Recommended)
 
@@ -39,7 +39,7 @@ It's recommended to use `pipx` to install Fetchtastic in an isolated environment
 
 ### Termux Installation (Android)
 
-Fetchtastic can be installed on your Android device using Termux.
+Fetchtastic can also be installed on your Android device using Termux.
 
 #### Prerequisites
 
