@@ -19,7 +19,7 @@ Fetchtastic is a utility for downloading and managing the latest Meshtastic Andr
 
 ### Linux/Mac Installation
 
-Fetchtastic is able to be installed on Linux or macOS systems.
+Fetchtastic can be installed on Linux or macOS systems.
 
 #### Install with pipx (Recommended)
 
