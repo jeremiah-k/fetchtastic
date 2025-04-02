@@ -2,12 +2,12 @@
 # To learn more about the format of this file, see https://docs.trunk.io/reference/trunk-yaml
 version: 0.1
 cli:
-  version: 1.22.8
+  version: 1.22.11
 # Trunk provides extensibility via plugins. (https://docs.trunk.io/plugins)
 plugins:
   sources:
     - id: trunk
-      ref: v1.6.6
+      ref: v1.6.7
       uri: https://github.com/trunk-io/plugins
 # Many linters and tools depend on runtimes - configure them here. (https://docs.trunk.io/runtimes)
 runtimes:
@@ -17,19 +17,19 @@ runtimes:
 # This is the section where you manage your linters. (https://docs.trunk.io/check/configuration)
 lint:
   enabled:
-    - actionlint@1.7.4
-    - bandit@1.8.0
-    - black@24.10.0
-    - checkov@3.2.344
+    - actionlint@1.7.7
+    - bandit@1.8.3
+    - black@25.1.0
+    - checkov@3.2.395
     - git-diff-check
-    - isort@5.13.2
-    - markdownlint@0.43.0
-    - osv-scanner@1.9.2
-    - prettier@3.4.2
-    - ruff@0.8.4
+    - isort@6.0.1
+    - markdownlint@0.44.0
+    - osv-scanner@2.0.0
+    - prettier@3.5.3
+    - ruff@0.11.2
     - taplo@0.9.3
-    - trufflehog@3.88.0
-    - yamllint@1.35.1
+    - trufflehog@3.88.20
+    - yamllint@1.37.0
 actions:
   enabled:
     - trunk-announce
