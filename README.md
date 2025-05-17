@@ -87,15 +87,40 @@ During setup, you will be able to:
 
 ### Command List
 
-- **setup**: Run the setup process.
-- **download**: Download firmware and APKs from GitHub releases.
-- **repo**: Interact with the meshtastic.github.io repository.
-  - **repo download**: Browse and download files from the meshtastic.github.io repository.
-  - **repo clean**: Clean the repository download directory.
-- **topic**: Display the current NTFY topic.
-- **clean**: Remove configuration, downloads, and cron jobs.
-- **version**: Display Fetchtastic version.
-- **help**: Show help and usage instructions.
+Fetchtastic provides several commands to manage your Meshtastic firmware and APK downloads:
+
+```bash
+usage: fetchtastic [-h] {setup,download,topic,clean,version,help,repo} ...
+
+Fetchtastic - Meshtastic Firmware and APK Downloader
+
+positional arguments:
+  {setup,download,topic,clean,version,help,repo}
+    setup               Run the setup process
+    download            Download firmware and APKs from GitHub releases
+    topic               Display the current NTFY topic
+    clean               Remove Fetchtastic configuration, downloads, and cron jobs
+    version             Display Fetchtastic version
+    help                Display help information
+    repo                Interact with the meshtastic.github.io repository
+
+options:
+  -h, --help            Show this help message and exit
+```
+
+The `repo` command has additional subcommands:
+
+```bash
+usage: fetchtastic repo [-h] {download,clean} ...
+
+positional arguments:
+  {download,clean}
+    download        Browse and download files from the meshtastic.github.io repository
+    clean           Clean the repository download directory
+
+options:
+  -h, --help        Show this help message and exit
+```
 
 ### Files and Directories
 

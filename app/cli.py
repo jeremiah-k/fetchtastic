@@ -5,6 +5,7 @@ import os
 import platform
 import shutil
 import subprocess
+import sys
 
 from . import downloader, repo_downloader, setup_config
 
@@ -37,7 +38,9 @@ def main():
 
     # Command to interact with the meshtastic.github.io repository
     repo_parser = subparsers.add_parser(
-        "repo", help="Interact with the meshtastic.github.io repository"
+        "repo",
+        help="Interact with the meshtastic.github.io repository",
+        description="Browse and download files from the meshtastic.github.io repository or clean the repository download directory.",
     )
     repo_subparsers = repo_parser.add_subparsers(dest="repo_command")
 
@@ -45,10 +48,15 @@ def main():
     repo_subparsers.add_parser(
         "download",
         help="Browse and download files from the meshtastic.github.io repository",
+        description="Browse directories in the meshtastic.github.io repository, select files, and download them to the repo directory.",
     )
 
     # Repo clean command
-    repo_subparsers.add_parser("clean", help="Clean the repository download directory")
+    repo_subparsers.add_parser(
+        "clean",
+        help="Clean the repository download directory",
+        description="Remove all files and directories from the repository download directory (firmware/repo).",
+    )
 
     args = parser.parse_args()
 
@@ -102,7 +110,39 @@ def main():
     elif args.command == "version":
         print(f"Fetchtastic version {get_fetchtastic_version()}")
     elif args.command == "help":
-        parser.print_help()
+        # Check if a subcommand was specified
+        if len(sys.argv) > 2:
+            help_command = sys.argv[2]
+            if help_command == "repo":
+                # Show help for repo command
+                repo_parser.print_help()
+                # Check if there's a repo subcommand specified
+                if len(sys.argv) > 3:
+                    repo_subcommand = sys.argv[3]
+                    if repo_subcommand == "download":
+                        # Find the download subparser and print its help
+                        for action in repo_subparsers._actions:
+                            if isinstance(action, argparse._SubParsersAction):
+                                download_parser = action.choices.get("download")
+                                if download_parser:
+                                    print("\nRepo download command help:")
+                                    download_parser.print_help()
+                                break
+                    elif repo_subcommand == "clean":
+                        # Find the clean subparser and print its help
+                        for action in repo_subparsers._actions:
+                            if isinstance(action, argparse._SubParsersAction):
+                                clean_parser = action.choices.get("clean")
+                                if clean_parser:
+                                    print("\nRepo clean command help:")
+                                    clean_parser.print_help()
+                                break
+            else:
+                # Show general help
+                parser.print_help()
+        else:
+            # No subcommand specified, show general help
+            parser.print_help()
     elif args.command == "repo":
         # Handle repo subcommands
         if not setup_config.config_exists():
