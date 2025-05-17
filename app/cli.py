@@ -6,7 +6,7 @@ import platform
 import shutil
 import subprocess
 
-from . import downloader, setup_config
+from . import downloader, repo_downloader, setup_config
 
 
 def main():
@@ -34,6 +34,21 @@ def main():
 
     # Command to display help
     subparsers.add_parser("help", help="Display help information")
+
+    # Command to interact with the meshtastic.github.io repository
+    repo_parser = subparsers.add_parser(
+        "repo", help="Interact with the meshtastic.github.io repository"
+    )
+    repo_subparsers = repo_parser.add_subparsers(dest="repo_command")
+
+    # Repo download command
+    repo_subparsers.add_parser(
+        "download",
+        help="Browse and download files from the meshtastic.github.io repository",
+    )
+
+    # Repo clean command
+    repo_subparsers.add_parser("clean", help="Clean the repository download directory")
 
     args = parser.parse_args()
 
@@ -88,6 +103,26 @@ def main():
         print(f"Fetchtastic version {get_fetchtastic_version()}")
     elif args.command == "help":
         parser.print_help()
+    elif args.command == "repo":
+        # Handle repo subcommands
+        if not setup_config.config_exists():
+            print("No configuration found. Running setup.")
+            setup_config.run_setup()
+
+        config = setup_config.load_config()
+        if not config:
+            print("Configuration not found. Please run 'fetchtastic setup' first.")
+            return
+
+        if args.repo_command == "download":
+            # Run the repository downloader
+            repo_downloader.main(config)
+        elif args.repo_command == "clean":
+            # Clean the repository directory
+            run_repo_clean(config)
+        else:
+            # No repo subcommand provided
+            repo_parser.print_help()
     elif args.command is None:
         # No command provided
         parser.print_help()
@@ -215,6 +250,34 @@ def run_clean():
     print(
         "The downloaded files and Fetchtastic configuration have been removed from your system."
     )
+
+
+def run_repo_clean(config):
+    """
+    Cleans the repository download directory.
+    """
+    print(
+        "This will remove all files downloaded from the meshtastic.github.io repository."
+    )
+    confirm = (
+        input("Are you sure you want to proceed? [y/n] (default: no): ").strip().lower()
+        or "n"
+    )
+    if confirm != "y":
+        print("Clean operation cancelled.")
+        return
+
+    # Clean the repo directory
+    download_dir = config.get("DOWNLOAD_DIR")
+    if not download_dir:
+        print("Download directory not configured.")
+        return
+
+    success = repo_downloader.clean_repo_directory(download_dir)
+    if success:
+        print("Repository directory cleaned successfully.")
+    else:
+        print("Failed to clean repository directory.")
 
 
 def get_fetchtastic_version():

@@ -13,6 +13,7 @@ Fetchtastic is a utility for downloading and managing the latest Meshtastic Andr
   - [Files and Directories](#files-and-directories)
   - [Scheduling with Cron](#scheduling-with-cron)
   - [Notifications via NTFY](#notifications-via-ntfy)
+  - [Repository Browser](#repository-browser)
 - [Contributing](#contributing)
 
 ## Installation
@@ -87,7 +88,10 @@ During setup, you will be able to:
 ### Command List
 
 - **setup**: Run the setup process.
-- **download**: Download firmware and APKs.
+- **download**: Download firmware and APKs from GitHub releases.
+- **repo**: Interact with the meshtastic.github.io repository.
+  - **repo download**: Browse and download files from the meshtastic.github.io repository.
+  - **repo clean**: Clean the repository download directory.
 - **topic**: Display the current NTFY topic.
 - **clean**: Remove configuration, downloads, and cron jobs.
 - **version**: Display Fetchtastic version.
@@ -101,6 +105,8 @@ By default, Fetchtastic saves files and configuration in the `Downloads/Meshtast
 - **Log File**: `Downloads/Meshtastic/fetchtastic.log`
 - **APKs**: `Downloads/Meshtastic/apks`
 - **Firmware**: `Downloads/Meshtastic/firmware`
+  - **GitHub Releases**: `Downloads/Meshtastic/firmware/<version>` (managed by `download` command)
+  - **Repository Files**: `Downloads/Meshtastic/firmware/repo` (managed by `repo download` command)
 
 You can manually edit the configuration file to change the settings.
 
@@ -122,6 +128,35 @@ If you choose to set up notifications, Fetchtastic will send updates to your spe
 
 - You can subscribe to the topic using the ntfy app or by visiting the topic URL in a browser.
 - You can choose to receive notifications **only when new files are downloaded**.
+
+### Repository Browser
+
+Fetchtastic can browse and download files directly from the [meshtastic.github.io](https://github.com/meshtastic/meshtastic.github.io/) repository.
+
+#### Using the Repository Browser
+
+1. Run the repository browser:
+
+   ```bash
+   fetchtastic repo download
+   ```
+
+2. Navigate through the menu:
+
+   - First, select a firmware directory (e.g., `firmware-2.6.8.ef9d0d7`)
+   - Then, select one or more files to download (press SPACE to select, ENTER to confirm)
+
+3. The selected files will be downloaded to the `Downloads/Meshtastic/firmware/repo/<directory>` folder.
+
+4. To clean the repository download directory:
+   ```bash
+   fetchtastic repo clean
+   ```
+
+#### Differences from Regular Downloads
+
+- The `download` command gets firmware and APKs from GitHub releases and manages version rotation.
+- The `repo download` command gets specific files from the meshtastic.github.io repository and keeps them until manually deleted.
 
 ## Contributing
 
