@@ -378,20 +378,71 @@ def main():
         session.mount("https://", adapter)
         session.mount("http://", adapter)
 
-        try:
-            if not os.path.exists(download_path):
-                log_message(f"Downloading {url}")
-                response = session.get(url, stream=True)
-                response.raise_for_status()
-                with open(download_path, "wb") as file:
-                    for chunk in response.iter_content(1024):
-                        file.write(chunk)
-                log_message(f"Downloaded {download_path}")
+        # Remove file if it exists but is corrupted (e.g., from a previous interrupted download)
+        if os.path.exists(download_path):
+            if download_path.endswith(".zip"):
+                try:
+                    # Try to open the zip file to verify it's valid
+                    with zipfile.ZipFile(download_path, "r"):
+                        # If we get here, the zip file is valid
+                        return  # File exists and is valid, no need to download again
+                except zipfile.BadZipFile:
+                    # File is corrupted, remove it
+                    log_message(f"Removing corrupted zip file: {download_path}")
+                    os.remove(download_path)
+                except Exception as e:
+                    # Some other error occurred, remove the file to be safe
+                    log_message(
+                        f"Error checking zip file {download_path}: {e}. Removing file."
+                    )
+                    os.remove(download_path)
             else:
-                # Don't log when the file already exists
-                pass
+                # For non-zip files, just check if the file size is > 0
+                if os.path.getsize(download_path) > 0:
+                    return  # File exists and has content, no need to download again
+                else:
+                    # Empty file, remove it
+                    log_message(f"Removing empty file: {download_path}")
+                    os.remove(download_path)
+
+        # Download the file
+        try:
+            log_message(f"Downloading {url}")
+            response = session.get(url, stream=True)
+            response.raise_for_status()
+
+            # Use a temporary file for downloading
+            temp_path = download_path + ".tmp"
+            with open(temp_path, "wb") as file:
+                for chunk in response.iter_content(1024):
+                    file.write(chunk)
+
+            # If it's a zip file, verify it's valid before moving
+            if download_path.endswith(".zip"):
+                try:
+                    with zipfile.ZipFile(temp_path, "r"):
+                        # Zip file is valid, move it to the final location
+                        os.replace(temp_path, download_path)
+                        log_message(f"Downloaded {download_path}")
+                except zipfile.BadZipFile:
+                    # Zip file is corrupted
+                    os.remove(temp_path)
+                    log_message(f"Error: Downloaded zip file is corrupted: {url}")
+                    raise Exception("Downloaded zip file is corrupted")
+            else:
+                # For non-zip files, just move the temp file to the final location
+                os.replace(temp_path, download_path)
+                log_message(f"Downloaded {download_path}")
         except requests.exceptions.RequestException as e:
             log_message(f"Error downloading {url}: {e}")
+            # Clean up temp file if it exists
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+        except Exception as e:
+            log_message(f"Error processing download {url}: {e}")
+            # Clean up temp file if it exists
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
 
     def is_connected_to_wifi():
         if setup_config.is_termux():
@@ -452,7 +503,14 @@ def main():
                             matched_files.append(base_name)
                             break  # Stop checking patterns for this file
         except zipfile.BadZipFile:
-            log_message(f"Error: {zip_path} is a bad zip file and cannot be opened.")
+            log_message(
+                f"Error: {zip_path} is a bad zip file and cannot be opened. Removing file."
+            )
+            try:
+                os.remove(zip_path)
+                log_message(f"Removed corrupted zip file: {zip_path}")
+            except Exception as e:
+                log_message(f"Error removing corrupted zip file {zip_path}: {e}")
         except Exception as e:
             log_message(
                 f"Error: An unexpected error occurred while extracting files from {zip_path}: {e}"
@@ -651,28 +709,43 @@ def main():
         Returns True if any files matching the patterns are not already extracted.
         """
         files_to_extract = []
-        with zipfile.ZipFile(zip_path, "r") as zip_ref:
-            for file_info in zip_ref.infolist():
-                file_name = file_info.filename
-                base_name = os.path.basename(file_name)
-                # Skip directories
-                if not base_name:
-                    continue
-                # Check if file matches exclude patterns
-                if any(exclude in base_name for exclude in exclude_patterns):
-                    continue
-                # Strip version numbers from the file name
-                stripped_base_name = strip_version_numbers(base_name)
-                for pattern in patterns:
-                    if pattern in stripped_base_name:
-                        files_to_extract.append(base_name)
-                        break  # Stop checking patterns for this file
-        # Now check if any of the files to extract are missing
-        for base_name in files_to_extract:
-            extracted_file_path = os.path.join(extract_dir, base_name)
-            if not os.path.exists(extracted_file_path):
-                return True  # Extraction needed
-        return False  # All files already extracted
+        try:
+            with zipfile.ZipFile(zip_path, "r") as zip_ref:
+                for file_info in zip_ref.infolist():
+                    file_name = file_info.filename
+                    base_name = os.path.basename(file_name)
+                    # Skip directories
+                    if not base_name:
+                        continue
+                    # Check if file matches exclude patterns
+                    if any(exclude in base_name for exclude in exclude_patterns):
+                        continue
+                    # Strip version numbers from the file name
+                    stripped_base_name = strip_version_numbers(base_name)
+                    for pattern in patterns:
+                        if pattern in stripped_base_name:
+                            files_to_extract.append(base_name)
+                            break  # Stop checking patterns for this file
+            # Now check if any of the files to extract are missing
+            for base_name in files_to_extract:
+                extracted_file_path = os.path.join(extract_dir, base_name)
+                if not os.path.exists(extracted_file_path):
+                    return True  # Extraction needed
+            return False  # All files already extracted
+        except zipfile.BadZipFile:
+            # If the zip file is corrupted, remove it and return False
+            log_message(
+                f"Error: {zip_path} is a bad zip file and cannot be opened. Removing file."
+            )
+            try:
+                os.remove(zip_path)
+                log_message(f"Removed corrupted zip file: {zip_path}")
+            except Exception as e:
+                log_message(f"Error removing corrupted zip file {zip_path}: {e}")
+            return False
+        except Exception as e:
+            log_message(f"Error checking extraction needed for {zip_path}: {e}")
+            return False
 
     start_time = time.time()
     log_message("Starting Fetchtastic...")
