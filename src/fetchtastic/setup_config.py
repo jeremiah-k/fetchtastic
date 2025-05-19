@@ -319,29 +319,48 @@ def run_setup():
             or auto_extract_default[0]
         )
         if auto_extract == "y":
+            config["AUTO_EXTRACT"] = True
             print(
                 "Enter the keywords to match for extraction from the firmware zip files, separated by spaces."
             )
             print("Example: rak4631- tbeam t1000-e- tlora-v2-1-1_6- device-")
+
+            # Check if there are existing patterns
             if config.get("EXTRACT_PATTERNS"):
                 current_patterns = " ".join(config.get("EXTRACT_PATTERNS", []))
                 print(f"Current patterns: {current_patterns}")
-                extract_patterns = input(
-                    "Extraction patterns (leave blank to keep current): "
-                ).strip()
-                if extract_patterns:
-                    config["AUTO_EXTRACT"] = True
-                    config["EXTRACT_PATTERNS"] = extract_patterns.split()
-                else:
+
+                # Ask if user wants to keep or change patterns
+                keep_patterns_default = "yes"
+                keep_patterns = (
+                    input(
+                        f"Do you want to keep the current extraction patterns? [y/n] (default: {keep_patterns_default}): "
+                    )
+                    .strip()
+                    .lower()
+                    or keep_patterns_default[0]
+                )
+
+                if keep_patterns == "y":
                     # Keep existing patterns
-                    pass
+                    print(f"Keeping current extraction patterns: {current_patterns}")
+                else:
+                    # Get new patterns
+                    extract_patterns = input("Enter new extraction patterns: ").strip()
+                    if extract_patterns:
+                        config["EXTRACT_PATTERNS"] = extract_patterns.split()
+                        print(f"Extraction patterns updated to: {extract_patterns}")
+                    else:
+                        print("No patterns entered. Keeping current patterns.")
             else:
+                # No existing patterns, get new ones
                 extract_patterns = input("Extraction patterns: ").strip()
                 if extract_patterns:
-                    config["AUTO_EXTRACT"] = True
                     config["EXTRACT_PATTERNS"] = extract_patterns.split()
+                    print(f"Extraction patterns set to: {extract_patterns}")
                 else:
                     config["AUTO_EXTRACT"] = False
+                    config["EXTRACT_PATTERNS"] = []
                     print(
                         "No patterns selected, no files will be extracted. Run setup again if you wish to change this."
                     )
@@ -359,26 +378,60 @@ def run_setup():
                         "Enter the keywords to exclude from extraction, separated by spaces."
                     )
                     print("Example: .hex tcxo")
+
+                    # Check if there are existing exclude patterns
                     if config.get("EXCLUDE_PATTERNS"):
                         current_excludes = " ".join(config.get("EXCLUDE_PATTERNS", []))
                         print(f"Current exclude patterns: {current_excludes}")
-                        exclude_patterns = input(
-                            "Exclude patterns (leave blank to keep current): "
-                        ).strip()
-                        if exclude_patterns:
-                            config["EXCLUDE_PATTERNS"] = exclude_patterns.split()
+
+                        # Ask if user wants to keep or change exclude patterns
+                        keep_excludes_default = "yes"
+                        keep_excludes = (
+                            input(
+                                f"Do you want to keep the current exclude patterns? [y/n] (default: {keep_excludes_default}): "
+                            )
+                            .strip()
+                            .lower()
+                            or keep_excludes_default[0]
+                        )
+
+                        if keep_excludes == "y":
+                            # Keep existing exclude patterns
+                            print(
+                                f"Keeping current exclude patterns: {current_excludes}"
+                            )
                         else:
-                            # Keep existing patterns
-                            pass
+                            # Get new exclude patterns
+                            exclude_patterns = input(
+                                "Enter new exclude patterns: "
+                            ).strip()
+                            if exclude_patterns:
+                                config["EXCLUDE_PATTERNS"] = exclude_patterns.split()
+                                print(
+                                    f"Exclude patterns updated to: {exclude_patterns}"
+                                )
+                            else:
+                                config["EXCLUDE_PATTERNS"] = []
+                                print(
+                                    "No exclude patterns entered. All matching files will be extracted."
+                                )
                     else:
+                        # No existing exclude patterns, get new ones
                         exclude_patterns = input("Exclude patterns: ").strip()
                         if exclude_patterns:
                             config["EXCLUDE_PATTERNS"] = exclude_patterns.split()
+                            print(f"Exclude patterns set to: {exclude_patterns}")
                         else:
                             config["EXCLUDE_PATTERNS"] = []
+                            print(
+                                "No exclude patterns entered. All matching files will be extracted."
+                            )
                 else:
                     # User chose not to exclude patterns
                     config["EXCLUDE_PATTERNS"] = []
+                    print(
+                        "No exclude patterns will be used. All matching files will be extracted."
+                    )
             else:
                 config["EXCLUDE_PATTERNS"] = []
         else:
@@ -434,8 +487,14 @@ def run_setup():
                 or "n"
             )
             if cron_prompt == "y":
+                # First, remove existing cron job
+                remove_cron_job()
+                print("Existing cron job removed for reconfiguration.")
+
+                # Then set up new cron job
                 install_crond()
                 setup_cron_job()
+                print("Cron job has been reconfigured.")
             else:
                 print("Cron job configuration left unchanged.")
         else:
@@ -467,7 +526,13 @@ def run_setup():
                 or "n"
             )
             if boot_prompt == "y":
+                # First, remove existing boot script
+                remove_boot_script()
+                print("Existing boot script removed for reconfiguration.")
+
+                # Then set up new boot script
                 setup_boot_script()
+                print("Boot script has been reconfigured.")
             else:
                 print("Boot script configuration left unchanged.")
         else:
@@ -499,6 +564,11 @@ def run_setup():
                 or "n"
             )
             if cron_prompt == "y":
+                # First, remove existing cron jobs
+                remove_cron_job()
+                remove_reboot_cron_job()
+                print("Existing cron jobs removed for reconfiguration.")
+
                 # Ask if they want to set up daily cron job
                 cron_default = "yes"
                 setup_cron = (
@@ -511,9 +581,9 @@ def run_setup():
                 )
                 if setup_cron == "y":
                     setup_cron_job()
+                    print("Daily cron job has been set up.")
                 else:
-                    remove_cron_job()
-                    print("Daily cron job has been removed.")
+                    print("Daily cron job will not be set up.")
 
                 # Ask if they want to set up a reboot cron job
                 boot_default = "yes"
@@ -527,9 +597,9 @@ def run_setup():
                 )
                 if setup_reboot == "y":
                     setup_reboot_cron_job()
+                    print("Reboot cron job has been set up.")
                 else:
-                    remove_reboot_cron_job()
-                    print("Reboot cron job has been removed.")
+                    print("Reboot cron job will not be set up.")
             else:
                 print("Cron job configurations left unchanged.")
         else:
@@ -565,34 +635,45 @@ def run_setup():
                 print("Reboot cron job has not been set up.")
 
     # Prompt for NTFY server configuration
-    notifications_default = "yes"  # Default to 'yes'
+    has_ntfy_config = bool(config.get("NTFY_TOPIC")) and bool(config.get("NTFY_SERVER"))
+    notifications_default = "yes" if has_ntfy_config else "no"
+
     notifications = (
         input(
             f"Would you like to set up notifications via NTFY? [y/n] (default: {notifications_default}): "
         )
         .strip()
         .lower()
-        or "y"
+        or notifications_default[0]
     )
+
     if notifications == "y":
-        ntfy_server = input(
-            f"Enter the NTFY server (current: {config.get('NTFY_SERVER', 'ntfy.sh')}): "
-        ).strip() or config.get("NTFY_SERVER", "ntfy.sh")
+        # Get NTFY server
+        current_server = config.get("NTFY_SERVER", "ntfy.sh")
+        ntfy_server = (
+            input(f"Enter the NTFY server (current: {current_server}): ").strip()
+            or current_server
+        )
+
         if not ntfy_server.startswith("http://") and not ntfy_server.startswith(
             "https://"
         ):
             ntfy_server = "https://" + ntfy_server
 
-        current_topic = config.get(
-            "NTFY_TOPIC",
-            "fetchtastic-"
-            + "".join(random.choices(string.ascii_lowercase + string.digits, k=6)),
-        )
+        # Get topic name
+        if config.get("NTFY_TOPIC"):
+            current_topic = config.get("NTFY_TOPIC")
+        else:
+            current_topic = "fetchtastic-" + "".join(
+                random.choices(string.ascii_lowercase + string.digits, k=6)
+            )
+
         topic_name = (
             input(f"Enter a unique topic name (current: {current_topic}): ").strip()
             or current_topic
         )
 
+        # Update config
         config["NTFY_TOPIC"] = topic_name
         config["NTFY_SERVER"] = ntfy_server
 
@@ -600,8 +681,9 @@ def run_setup():
         with open(CONFIG_FILE, "w") as f:
             yaml.dump(config, f)
 
+        # Display information
         full_topic_url = f"{ntfy_server.rstrip('/')}/{topic_name}"
-        print(f"Notifications set up using topic: {topic_name}")
+        print(f"Notifications enabled using topic: {topic_name}")
         if is_termux():
             print("Subscribe by pasting the topic name in the ntfy app.")
         else:
@@ -610,6 +692,7 @@ def run_setup():
             )
         print(f"Full topic URL: {full_topic_url}")
 
+        # Offer to copy to clipboard
         if is_termux():
             copy_prompt_text = "Do you want to copy the topic name to the clipboard? [y/n] (default: yes): "
             text_to_copy = topic_name
@@ -630,7 +713,7 @@ def run_setup():
 
         # Ask if the user wants notifications only when new files are downloaded
         notify_on_download_only_default = (
-            "yes" if config.get("NOTIFY_ON_DOWNLOAD_ONLY", False) else "yes"
+            "yes" if config.get("NOTIFY_ON_DOWNLOAD_ONLY", False) else "no"
         )
         notify_on_download_only = (
             input(
@@ -648,13 +731,38 @@ def run_setup():
         with open(CONFIG_FILE, "w") as f:
             yaml.dump(config, f)
 
+        print("Notification settings have been saved.")
+
     else:
-        config["NTFY_TOPIC"] = ""
-        config["NTFY_SERVER"] = ""
-        config["NOTIFY_ON_DOWNLOAD_ONLY"] = False
-        with open(CONFIG_FILE, "w") as f:
-            yaml.dump(config, f)
-        print("Notifications have been disabled.")
+        # User chose not to use notifications
+        if has_ntfy_config:
+            # Ask for confirmation to disable existing notifications
+            disable_confirm = (
+                input(
+                    "You currently have notifications enabled. Are you sure you want to disable them? [y/n] (default: no): "
+                )
+                .strip()
+                .lower()
+                or "n"
+            )
+
+            if disable_confirm == "y":
+                config["NTFY_TOPIC"] = ""
+                config["NTFY_SERVER"] = ""
+                config["NOTIFY_ON_DOWNLOAD_ONLY"] = False
+                with open(CONFIG_FILE, "w") as f:
+                    yaml.dump(config, f)
+                print("Notifications have been disabled.")
+            else:
+                print("Keeping existing notification settings.")
+        else:
+            # No existing notifications, just confirm they're disabled
+            config["NTFY_TOPIC"] = ""
+            config["NTFY_SERVER"] = ""
+            config["NOTIFY_ON_DOWNLOAD_ONLY"] = False
+            with open(CONFIG_FILE, "w") as f:
+                yaml.dump(config, f)
+            print("Notifications will remain disabled.")
 
     # Ask if the user wants to perform a first run
     perform_first_run = (
