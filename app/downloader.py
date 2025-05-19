@@ -191,8 +191,6 @@ def check_for_prereleases(
     else:
         latest_release_version = latest_release_tag
 
-    log_message_func("Checking for pre-release firmware...")
-
     # Fetch directories from the meshtastic.github.io repository
     directories = menu_repo.fetch_repo_directories()
 
@@ -212,7 +210,6 @@ def check_for_prereleases(
                 prerelease_dirs.append(dir_name)
 
     if not prerelease_dirs:
-        log_message_func("No pre-release firmware found.")
         return False, []
 
     # Create prerelease directory if it doesn't exist
