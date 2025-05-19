@@ -64,10 +64,16 @@ BASE_DIR = DEFAULT_BASE_DIR
 CONFIG_FILE = os.path.join(DEFAULT_BASE_DIR, "fetchtastic.yaml")
 
 
-def config_exists():
+def config_exists(directory=None):
     """
     Check if the configuration file exists.
+
+    Args:
+        directory: Optional directory to check for config file. If None, uses the current BASE_DIR.
     """
+    if directory:
+        config_path = os.path.join(directory, "fetchtastic.yaml")
+        return os.path.exists(config_path)
     return os.path.exists(CONFIG_FILE)
 
 
@@ -110,7 +116,9 @@ def run_setup():
 
     # Ask for base directory as the first question
     config = {}
-    if config_exists():
+    existing_config_found = config_exists()
+
+    if existing_config_found:
         # Load existing configuration
         config = load_config()
         print(
@@ -130,18 +138,35 @@ def run_setup():
         )
 
     # Prompt for base directory
-    base_dir = input(base_dir_prompt).strip() or (
-        config.get("BASE_DIR", DEFAULT_BASE_DIR)
-        if not is_first_run
-        else DEFAULT_BASE_DIR
-    )
+    base_dir_input = input(base_dir_prompt).strip()
 
-    # Expand user directory if needed (e.g., ~/Downloads/Meshtastic)
-    base_dir = os.path.expanduser(base_dir)
+    if base_dir_input:
+        # User entered a custom directory
+        base_dir = os.path.expanduser(base_dir_input)
 
-    # Update global variables
-    BASE_DIR = base_dir
-    CONFIG_FILE = os.path.join(BASE_DIR, "fetchtastic.yaml")
+        # Check if there's a config file in the specified directory
+        if config_exists(base_dir) and base_dir != BASE_DIR:
+            print(f"Found existing configuration in {base_dir}")
+            # Load the configuration from the specified directory
+            config = load_config(base_dir)
+            is_first_run = False
+        else:
+            # No config in the specified directory or it's the same as current
+            BASE_DIR = base_dir
+            CONFIG_FILE = os.path.join(BASE_DIR, "fetchtastic.yaml")
+    else:
+        # User accepted the default/current directory
+        if is_first_run:
+            base_dir = DEFAULT_BASE_DIR
+        else:
+            base_dir = config.get("BASE_DIR", DEFAULT_BASE_DIR)
+
+        # Expand user directory if needed (e.g., ~/Downloads/Meshtastic)
+        base_dir = os.path.expanduser(base_dir)
+
+        # Update global variables
+        BASE_DIR = base_dir
+        CONFIG_FILE = os.path.join(BASE_DIR, "fetchtastic.yaml")
 
     # Store the base directory in the config
     config["BASE_DIR"] = BASE_DIR
@@ -969,24 +994,41 @@ def check_any_cron_jobs_exist():
         return False
 
 
-def load_config():
+def load_config(directory=None):
     """
     Loads the configuration from the YAML file.
     Updates global variables based on the loaded configuration.
+
+    Args:
+        directory: Optional directory to load config from. If None, uses the current BASE_DIR.
     """
     global BASE_DIR, CONFIG_FILE
 
-    if not config_exists():
-        return None
+    if directory:
+        config_path = os.path.join(directory, "fetchtastic.yaml")
+        if not os.path.exists(config_path):
+            return None
 
-    with open(CONFIG_FILE, "r") as f:
-        config = yaml.safe_load(f)
+        with open(config_path, "r") as f:
+            config = yaml.safe_load(f)
 
-    # Update global variables if BASE_DIR is in the config
-    if "BASE_DIR" in config:
-        BASE_DIR = config["BASE_DIR"]
-        # Only update CONFIG_FILE if it's in a different location
-        if CONFIG_FILE != os.path.join(BASE_DIR, "fetchtastic.yaml"):
-            CONFIG_FILE = os.path.join(BASE_DIR, "fetchtastic.yaml")
+        # Update global variables
+        BASE_DIR = directory
+        CONFIG_FILE = config_path
 
-    return config
+        return config
+    else:
+        if not config_exists():
+            return None
+
+        with open(CONFIG_FILE, "r") as f:
+            config = yaml.safe_load(f)
+
+        # Update global variables if BASE_DIR is in the config
+        if "BASE_DIR" in config:
+            BASE_DIR = config["BASE_DIR"]
+            # Only update CONFIG_FILE if it's in a different location
+            if CONFIG_FILE != os.path.join(BASE_DIR, "fetchtastic.yaml"):
+                CONFIG_FILE = os.path.join(BASE_DIR, "fetchtastic.yaml")
+
+        return config
