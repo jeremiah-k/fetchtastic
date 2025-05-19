@@ -200,7 +200,8 @@ def run_setup():
         else:
             # No config in the specified directory or it's the same as current
             BASE_DIR = base_dir
-            CONFIG_FILE = os.path.join(BASE_DIR, "fetchtastic.yaml")
+            # Keep CONFIG_FILE in the platformdirs location
+            # CONFIG_FILE should not be changed here
     else:
         # User accepted the default/current directory
         if is_first_run:
@@ -213,7 +214,8 @@ def run_setup():
 
         # Update global variables
         BASE_DIR = base_dir
-        CONFIG_FILE = os.path.join(BASE_DIR, "fetchtastic.yaml")
+        # Keep CONFIG_FILE in the platformdirs location
+        # CONFIG_FILE should not be changed here
 
     # Store the base directory in the config
     config["BASE_DIR"] = BASE_DIR
@@ -1206,11 +1208,13 @@ def load_config(directory=None):
     Updates global variables based on the loaded configuration.
 
     Args:
-        directory: Optional directory to load config from. If None, uses the current BASE_DIR.
+        directory: Optional directory to load config from. If None, uses the platformdirs location
+                  or falls back to the old location.
     """
     global BASE_DIR
 
     if directory:
+        # This is for backward compatibility or when explicitly loading from a specific directory
         config_path = os.path.join(directory, "fetchtastic.yaml")
         if not os.path.exists(config_path):
             return None
@@ -1221,17 +1225,39 @@ def load_config(directory=None):
         # Update global variables
         BASE_DIR = directory
 
+        # If we're loading from a non-standard location, check if we should migrate
+        if config_path != CONFIG_FILE and config_path != OLD_CONFIG_FILE:
+            print(f"Found configuration in non-standard location: {config_path}")
+            print(f"Consider migrating to the standard location: {CONFIG_FILE}")
+
         return config
     else:
-        exists, config_path = config_exists()
-        if not exists:
-            return None
+        # First check if config exists in the platformdirs location
+        if os.path.exists(CONFIG_FILE):
+            with open(CONFIG_FILE, "r") as f:
+                config = yaml.safe_load(f)
 
-        with open(config_path, "r") as f:
-            config = yaml.safe_load(f)
+            # Update BASE_DIR from config
+            if "BASE_DIR" in config:
+                BASE_DIR = config["BASE_DIR"]
 
-        # Update global variables if BASE_DIR is in the config
-        if "BASE_DIR" in config:
-            BASE_DIR = config["BASE_DIR"]
+            return config
 
-        return config
+        # Then check the old location
+        elif os.path.exists(OLD_CONFIG_FILE):
+            with open(OLD_CONFIG_FILE, "r") as f:
+                config = yaml.safe_load(f)
+
+            # Update BASE_DIR from config
+            if "BASE_DIR" in config:
+                BASE_DIR = config["BASE_DIR"]
+
+            # Suggest migration
+            print(f"Using configuration from old location: {OLD_CONFIG_FILE}")
+            print(
+                f"Consider running setup to migrate to the new location: {CONFIG_FILE}"
+            )
+
+            return config
+
+        return None

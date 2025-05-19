@@ -95,6 +95,8 @@ def main():
                         print(
                             "Configuration successfully migrated to the new location."
                         )
+                        # Update config_path to the new location
+                        config_path = setup_config.CONFIG_FILE
                     else:
                         print(
                             "Failed to migrate configuration. Continuing with old location."
@@ -102,6 +104,9 @@ def main():
                 else:
                     print("Continuing with configuration at old location.")
                 print("=" * 80 + "\n")
+
+            # Display the config file location
+            print(f"Using configuration from: {config_path}")
 
             # Run the downloader
             downloader.main()
