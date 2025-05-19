@@ -55,9 +55,13 @@ def get_downloads_dir():
     return home_dir
 
 
+# Default directories
 DOWNLOADS_DIR = get_downloads_dir()
-DEFAULT_CONFIG_DIR = os.path.join(DOWNLOADS_DIR, "Meshtastic")
-CONFIG_FILE = os.path.join(DEFAULT_CONFIG_DIR, "fetchtastic.yaml")
+DEFAULT_BASE_DIR = os.path.join(DOWNLOADS_DIR, "Meshtastic")
+
+# These will be set during setup or when loading config
+BASE_DIR = DEFAULT_BASE_DIR
+CONFIG_FILE = os.path.join(DEFAULT_BASE_DIR, "fetchtastic.yaml")
 
 
 def config_exists():
@@ -94,6 +98,7 @@ def check_storage_setup():
 
 
 def run_setup():
+    global BASE_DIR, CONFIG_FILE
     print("Running Fetchtastic Setup...")
 
     # Install required Termux packages first
@@ -103,10 +108,7 @@ def run_setup():
         check_storage_setup()
         print("Termux storage is set up.")
 
-    # Proceed with the rest of the setup
-    if not os.path.exists(DEFAULT_CONFIG_DIR):
-        os.makedirs(DEFAULT_CONFIG_DIR)
-
+    # Ask for base directory as the first question
     config = {}
     if config_exists():
         # Load existing configuration
@@ -115,10 +117,38 @@ def run_setup():
             "Existing configuration found. You can keep current settings or change them."
         )
         is_first_run = False
+        current_base_dir = config.get("BASE_DIR", DEFAULT_BASE_DIR)
+        base_dir_prompt = (
+            f"Enter the base directory for Fetchtastic (current: {current_base_dir}): "
+        )
     else:
         # Initialize default configuration
         config = {}
         is_first_run = True
+        base_dir_prompt = (
+            f"Enter the base directory for Fetchtastic (default: {DEFAULT_BASE_DIR}): "
+        )
+
+    # Prompt for base directory
+    base_dir = input(base_dir_prompt).strip() or (
+        config.get("BASE_DIR", DEFAULT_BASE_DIR)
+        if not is_first_run
+        else DEFAULT_BASE_DIR
+    )
+
+    # Expand user directory if needed (e.g., ~/Downloads/Meshtastic)
+    base_dir = os.path.expanduser(base_dir)
+
+    # Update global variables
+    BASE_DIR = base_dir
+    CONFIG_FILE = os.path.join(BASE_DIR, "fetchtastic.yaml")
+
+    # Store the base directory in the config
+    config["BASE_DIR"] = BASE_DIR
+
+    # Create the base directory if it doesn't exist
+    if not os.path.exists(BASE_DIR):
+        os.makedirs(BASE_DIR)
 
     # Prompt to save APKs, firmware, or both
     save_choice = (
@@ -298,8 +328,8 @@ def run_setup():
         # For non-Termux environments, remove WIFI_ONLY from config if it exists
         config.pop("WIFI_ONLY", None)
 
-    # Set the download directory to the same as the config directory
-    download_dir = DEFAULT_CONFIG_DIR
+    # Set the download directory to the same as the base directory
+    download_dir = BASE_DIR
     config["DOWNLOAD_DIR"] = download_dir
 
     # Save configuration to YAML file before proceeding
@@ -942,9 +972,21 @@ def check_any_cron_jobs_exist():
 def load_config():
     """
     Loads the configuration from the YAML file.
+    Updates global variables based on the loaded configuration.
     """
+    global BASE_DIR, CONFIG_FILE
+
     if not config_exists():
         return None
+
     with open(CONFIG_FILE, "r") as f:
         config = yaml.safe_load(f)
+
+    # Update global variables if BASE_DIR is in the config
+    if "BASE_DIR" in config:
+        BASE_DIR = config["BASE_DIR"]
+        # Only update CONFIG_FILE if it's in a different location
+        if CONFIG_FILE != os.path.join(BASE_DIR, "fetchtastic.yaml"):
+            CONFIG_FILE = os.path.join(BASE_DIR, "fetchtastic.yaml")
+
     return config

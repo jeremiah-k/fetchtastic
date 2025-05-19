@@ -237,7 +237,7 @@ def run_clean():
         print(f"Removed configuration file: {config_file}")
 
     # Remove contents of download directory
-    download_dir = setup_config.DEFAULT_CONFIG_DIR
+    download_dir = setup_config.BASE_DIR
     if os.path.exists(download_dir):
         for item in os.listdir(download_dir):
             item_path = os.path.join(download_dir, item)
