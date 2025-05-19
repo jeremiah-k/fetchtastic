@@ -372,6 +372,17 @@ def main():
 
     # Function to download a file with retry mechanism
     def download_file(url, download_path):
+        """
+        Downloads a file with retry mechanism.
+
+        Args:
+            url: URL to download from
+            download_path: Path to save the file to
+
+        Returns:
+            bool: True if the file was downloaded or already exists and is valid,
+                  False if the download failed
+        """
         session = requests.Session()
         retry = Retry(connect=3, backoff_factor=1, status_forcelist=[502, 503, 504])
         adapter = HTTPAdapter(max_retries=retry)
@@ -385,34 +396,41 @@ def main():
                     # Try to open the zip file to verify it's valid
                     with zipfile.ZipFile(download_path, "r"):
                         # If we get here, the zip file is valid
-                        return  # File exists and is valid, no need to download again
+                        return (
+                            True  # File exists and is valid, no need to download again
+                        )
                 except zipfile.BadZipFile:
                     # File is corrupted, remove it
                     log_message(f"Removing corrupted zip file: {download_path}")
                     os.remove(download_path)
+                    # Continue with download
                 except Exception as e:
                     # Some other error occurred, remove the file to be safe
                     log_message(
                         f"Error checking zip file {download_path}: {e}. Removing file."
                     )
                     os.remove(download_path)
+                    # Continue with download
             else:
                 # For non-zip files, just check if the file size is > 0
                 if os.path.getsize(download_path) > 0:
-                    return  # File exists and has content, no need to download again
+                    return (
+                        True  # File exists and has content, no need to download again
+                    )
                 else:
                     # Empty file, remove it
                     log_message(f"Removing empty file: {download_path}")
                     os.remove(download_path)
+                    # Continue with download
 
         # Download the file
+        temp_path = download_path + ".tmp"
         try:
             log_message(f"Downloading {url}")
             response = session.get(url, stream=True)
             response.raise_for_status()
 
             # Use a temporary file for downloading
-            temp_path = download_path + ".tmp"
             with open(temp_path, "wb") as file:
                 for chunk in response.iter_content(1024):
                     file.write(chunk)
@@ -424,25 +442,29 @@ def main():
                         # Zip file is valid, move it to the final location
                         os.replace(temp_path, download_path)
                         log_message(f"Downloaded {download_path}")
+                        return True  # Successfully downloaded
                 except zipfile.BadZipFile:
                     # Zip file is corrupted
                     os.remove(temp_path)
                     log_message(f"Error: Downloaded zip file is corrupted: {url}")
-                    raise Exception("Downloaded zip file is corrupted")
+                    return False  # Failed to download
             else:
                 # For non-zip files, just move the temp file to the final location
                 os.replace(temp_path, download_path)
                 log_message(f"Downloaded {download_path}")
+                return True  # Successfully downloaded
         except requests.exceptions.RequestException as e:
             log_message(f"Error downloading {url}: {e}")
             # Clean up temp file if it exists
             if os.path.exists(temp_path):
                 os.remove(temp_path)
+            return False  # Failed to download
         except Exception as e:
             log_message(f"Error processing download {url}: {e}")
             # Clean up temp file if it exists
             if os.path.exists(temp_path):
                 os.remove(temp_path)
+            return False  # Failed to download
 
     def is_connected_to_wifi():
         if setup_config.is_termux():
@@ -614,6 +636,29 @@ def main():
                     notes_file.write(release_notes_content)
                 log_message(f"Saved release notes to {release_notes_file}")
 
+            # First pass: check for corrupted zip files and remove them
+            for asset in release["assets"]:
+                file_name = asset["name"]
+                if file_name.endswith(".zip"):
+                    download_path = os.path.join(release_dir, file_name)
+                    if os.path.exists(download_path):
+                        try:
+                            # Try to open the zip file to verify it's valid
+                            with zipfile.ZipFile(download_path, "r"):
+                                # File is valid, nothing to do
+                                pass
+                        except zipfile.BadZipFile:
+                            # File is corrupted, remove it
+                            log_message(f"Removing corrupted zip file: {download_path}")
+                            os.remove(download_path)
+                        except Exception as e:
+                            # Some other error occurred, remove the file to be safe
+                            log_message(
+                                f"Error checking zip file {download_path}: {e}. Removing file."
+                            )
+                            os.remove(download_path)
+
+            # Second pass: build list of files to download
             assets_to_download = []
             for asset in release["assets"]:
                 file_name = asset["name"]
@@ -634,9 +679,18 @@ def main():
             if assets_to_download:
                 actions_taken = True
                 log_message(f"Downloading missing assets for version {release_tag}.")
+
+                # Track if any files were successfully downloaded for this release
+                any_downloaded = False
+
                 for url, path in assets_to_download:
-                    download_file(url, path)
-                downloaded_versions.append(release_tag)
+                    # download_file now returns a boolean indicating success
+                    if download_file(url, path):
+                        any_downloaded = True
+
+                # Only mark the version as downloaded if at least one file was successfully downloaded
+                if any_downloaded:
+                    downloaded_versions.append(release_tag)
 
                 # Extraction logic
                 if auto_extract and release_type == "Firmware":
