@@ -13,6 +13,13 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from fetchtastic import menu_repo, setup_config
+from fetchtastic.log_utils import (
+    log_debug,
+    log_error,
+    log_info,
+    log_warning,
+    setup_logging,
+)
 from fetchtastic.setup_config import display_version_info
 
 
@@ -327,13 +334,12 @@ def main():
         if not os.path.exists(dir_path):
             os.makedirs(dir_path)
 
-    # Logging setup
-    log_file = os.path.join(download_dir, "fetchtastic.log")
+    # Set up logging
+    logger = setup_logging(download_dir)
 
     def log_message(message):
-        with open(log_file, "a") as log:
-            log.write(f"{datetime.now()}: {message}\n")
-        print(message)
+        """Legacy log_message function that now uses the new logging system"""
+        log_info(message)
 
     def send_ntfy_notification(message, title=None):
         if ntfy_server and ntfy_topic:

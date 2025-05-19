@@ -8,10 +8,14 @@ import subprocess
 import sys
 
 from fetchtastic import downloader, repo_downloader, setup_config
+from fetchtastic.log_utils import log_error, log_info, log_warning, setup_logging
 from fetchtastic.setup_config import display_version_info
 
 
 def main():
+    # Set up logging (console only for CLI commands)
+    logger = setup_logging()
+
     parser = argparse.ArgumentParser(
         description="Fetchtastic - Meshtastic Firmware and APK Downloader"
     )
@@ -80,33 +84,34 @@ def main():
         # Check if configuration exists
         exists, config_path = setup_config.config_exists()
         if not exists:
-            print("No configuration found. Running setup.")
+            log_info("No configuration found. Running setup.")
             setup_config.run_setup()
         else:
             # Check if config is in old location and needs migration
             if config_path == setup_config.OLD_CONFIG_FILE and not os.path.exists(
                 setup_config.CONFIG_FILE
             ):
-                print("\n" + "=" * 80)
-                print("Configuration Migration")
-                print("=" * 80)
+                separator = "=" * 80
+                log_info(f"\n{separator}")
+                log_info("Configuration Migration")
+                log_info(separator)
                 if setup_config.prompt_for_migration():
                     if setup_config.migrate_config():
-                        print(
+                        log_info(
                             "Configuration successfully migrated to the new location."
                         )
                         # Update config_path to the new location
                         config_path = setup_config.CONFIG_FILE
                     else:
-                        print(
+                        log_error(
                             "Failed to migrate configuration. Continuing with old location."
                         )
                 else:
-                    print("Continuing with configuration at old location.")
-                print("=" * 80 + "\n")
+                    log_info("Continuing with configuration at old location.")
+                log_info(f"{separator}\n")
 
             # Display the config file location
-            print(f"Using configuration from: {config_path}")
+            log_info(f"Using configuration from: {config_path}")
 
             # Run the downloader
             downloader.main()
