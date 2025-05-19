@@ -17,7 +17,7 @@ from fetchtastic.log_utils import (
     log_info,
     setup_logging,
 )
-from fetchtastic.setup_config import display_version_info
+from fetchtastic.setup_config import display_version_info, get_upgrade_command
 
 
 def compare_versions(version1, version2):
@@ -309,7 +309,8 @@ def main():
     log_info(f"Fetchtastic v{current_version}")
     if update_available and latest_version:
         log_info(f"A newer version (v{latest_version}) is available!")
-        log_info("Run 'pipx upgrade fetchtastic' to upgrade.")
+        upgrade_cmd = get_upgrade_command()
+        log_info(f"Run '{upgrade_cmd}' to upgrade.")
 
     # Configuration file location is already displayed in cli.py
 
@@ -927,12 +928,11 @@ def main():
 
     # Display version information again at the end of the run
     if update_available:
-        print("\n" + "=" * 80)
-        print(
-            f"Reminder: A newer version (v{latest_version}) of Fetchtastic is available!"
-        )
-        print("Run 'pipx upgrade fetchtastic' to upgrade.")
-        print("=" * 80)
+        upgrade_cmd = get_upgrade_command()
+        # Add a newline before the message to separate it from previous output
+        log_info("\nUpdate Available")
+        log_info(f"A newer version (v{latest_version}) of Fetchtastic is available!")
+        log_info(f"Run '{upgrade_cmd}' to upgrade.")
 
     if downloads_skipped:
         log_message("Not connected to Wi-Fi. Skipping all downloads.")
