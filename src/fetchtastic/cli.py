@@ -8,13 +8,13 @@ import subprocess
 import sys
 
 from fetchtastic import downloader, repo_downloader, setup_config
-from fetchtastic.log_utils import log_error, log_info, log_warning, setup_logging
+from fetchtastic.log_utils import log_error, log_info, setup_logging
 from fetchtastic.setup_config import display_version_info
 
 
 def main():
     # Set up logging (console only for CLI commands)
-    logger = setup_logging()
+    setup_logging()
 
     parser = argparse.ArgumentParser(
         description="Fetchtastic - Meshtastic Firmware and APK Downloader"
