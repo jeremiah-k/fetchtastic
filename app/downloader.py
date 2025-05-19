@@ -198,7 +198,7 @@ def check_for_prereleases(
 
     if not directories:
         log_message_func("No firmware directories found in the repository.")
-        return False
+        return False, []
 
     # Find directories that are newer than the latest release
     prerelease_dirs = []
@@ -213,7 +213,7 @@ def check_for_prereleases(
 
     if not prerelease_dirs:
         log_message_func("No pre-release firmware found.")
-        return False
+        return False, []
 
     # Create prerelease directory if it doesn't exist
     prerelease_dir = os.path.join(download_dir, "firmware", "prerelease")

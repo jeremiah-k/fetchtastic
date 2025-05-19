@@ -553,7 +553,7 @@ def run_setup():
         or "y"
     )
     if perform_first_run == "y":
-        print("Starting first run, this may take a few minutes...")
+        print("Setup complete. Starting first run, this may take a few minutes...")
         downloader.main()
     else:
         print("Setup complete. Run 'fetchtastic download' to start downloading.")
