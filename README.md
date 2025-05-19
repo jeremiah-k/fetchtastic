@@ -183,7 +183,7 @@ Fetchtastic can browse and download files directly from the [meshtastic.github.i
 
 - The `download` command gets firmware and APKs from GitHub releases and manages version rotation.
 - The `repo browse` command gets specific files from the meshtastic.github.io repository and keeps them until manually deleted.
-- If pre-releases are enabled, Fetchtastic will also check for and download firmware from pre-release directories in the meshtastic.github.io repository.
+- If pre-releases are enabled, Fetchtastic will also check the meshtastic.github.io repository for firmware versions newer than the latest official release.
 
 ## Contributing
 
