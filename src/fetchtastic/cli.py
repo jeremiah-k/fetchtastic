@@ -65,10 +65,31 @@ def main():
         setup_config.run_setup()
     elif args.command == "download":
         # Check if configuration exists
-        if not setup_config.config_exists():
+        exists, config_path = setup_config.config_exists()
+        if not exists:
             print("No configuration found. Running setup.")
             setup_config.run_setup()
         else:
+            # Check if config is in old location and needs migration
+            if config_path == setup_config.OLD_CONFIG_FILE and not os.path.exists(
+                setup_config.CONFIG_FILE
+            ):
+                print("\n" + "=" * 80)
+                print("Configuration Migration")
+                print("=" * 80)
+                if setup_config.prompt_for_migration():
+                    if setup_config.migrate_config():
+                        print(
+                            "Configuration successfully migrated to the new location."
+                        )
+                    else:
+                        print(
+                            "Failed to migrate configuration. Continuing with old location."
+                        )
+                else:
+                    print("Continuing with configuration at old location.")
+                print("=" * 80 + "\n")
+
             # Run the downloader
             downloader.main()
     elif args.command == "topic":
@@ -145,7 +166,8 @@ def main():
             parser.print_help()
     elif args.command == "repo":
         # Handle repo subcommands
-        if not setup_config.config_exists():
+        exists, _ = setup_config.config_exists()
+        if not exists:
             print("No configuration found. Running setup.")
             setup_config.run_setup()
 
@@ -230,11 +252,23 @@ def run_clean():
         print("Clean operation cancelled.")
         return
 
-    # Remove configuration file
+    # Remove configuration files (both old and new locations)
     config_file = setup_config.CONFIG_FILE
+    old_config_file = setup_config.OLD_CONFIG_FILE
+
     if os.path.exists(config_file):
         os.remove(config_file)
         print(f"Removed configuration file: {config_file}")
+
+    if os.path.exists(old_config_file):
+        os.remove(old_config_file)
+        print(f"Removed old configuration file: {old_config_file}")
+
+    # Remove config directory if empty
+    config_dir = setup_config.CONFIG_DIR
+    if os.path.exists(config_dir) and not os.listdir(config_dir):
+        os.rmdir(config_dir)
+        print(f"Removed empty config directory: {config_dir}")
 
     # Remove contents of download directory
     download_dir = setup_config.BASE_DIR

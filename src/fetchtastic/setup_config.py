@@ -6,7 +6,9 @@ import random
 import shutil
 import string
 import subprocess
+import time
 
+import platformdirs
 import yaml
 
 from fetchtastic import downloader  # Import downloader to perform first run
@@ -59,9 +61,17 @@ def get_downloads_dir():
 DOWNLOADS_DIR = get_downloads_dir()
 DEFAULT_BASE_DIR = os.path.join(DOWNLOADS_DIR, "Meshtastic")
 
+# Get the config directory using platformdirs
+CONFIG_DIR = platformdirs.user_config_dir("fetchtastic")
+
+# Old config file location (for migration)
+OLD_CONFIG_FILE = os.path.join(DEFAULT_BASE_DIR, "fetchtastic.yaml")
+
+# New config file location using platformdirs
+CONFIG_FILE = os.path.join(CONFIG_DIR, "fetchtastic.yaml")
+
 # These will be set during setup or when loading config
 BASE_DIR = DEFAULT_BASE_DIR
-CONFIG_FILE = os.path.join(DEFAULT_BASE_DIR, "fetchtastic.yaml")
 
 
 def config_exists(directory=None):
@@ -69,12 +79,28 @@ def config_exists(directory=None):
     Check if the configuration file exists.
 
     Args:
-        directory: Optional directory to check for config file. If None, uses the current BASE_DIR.
+        directory: Optional directory to check for config file. If None, checks both the new
+                  platformdirs location and the old location.
+
+    Returns:
+        tuple: (exists, path) where exists is a boolean indicating if the config exists,
+               and path is the path to the config file if it exists, otherwise None.
     """
     if directory:
         config_path = os.path.join(directory, "fetchtastic.yaml")
-        return os.path.exists(config_path)
-    return os.path.exists(CONFIG_FILE)
+        if os.path.exists(config_path):
+            return True, config_path
+        return False, None
+
+    # Check new location first
+    if os.path.exists(CONFIG_FILE):
+        return True, CONFIG_FILE
+
+    # Then check old location
+    if os.path.exists(OLD_CONFIG_FILE):
+        return True, OLD_CONFIG_FILE
+
+    return False, None
 
 
 def check_storage_setup():
@@ -114,11 +140,32 @@ def run_setup():
         check_storage_setup()
         print("Termux storage is set up.")
 
+    # Check if config directory exists, create if not
+    if not os.path.exists(CONFIG_DIR):
+        try:
+            os.makedirs(CONFIG_DIR, exist_ok=True)
+        except Exception as e:
+            print(f"Error creating config directory: {e}")
+
+    # Check for configuration in old location
+    if os.path.exists(OLD_CONFIG_FILE) and not os.path.exists(CONFIG_FILE):
+        print("\n" + "=" * 80)
+        print("Configuration Migration")
+        print("=" * 80)
+        if prompt_for_migration():
+            if migrate_config():
+                print("Configuration successfully migrated to the new location.")
+            else:
+                print("Failed to migrate configuration. Continuing with old location.")
+        else:
+            print("Continuing with configuration at old location.")
+        print("=" * 80 + "\n")
+
     # Ask for base directory as the first question
     config = {}
-    existing_config_found = config_exists()
+    exists, config_path = config_exists()
 
-    if existing_config_found:
+    if exists:
         # Load existing configuration
         config = load_config()
         print(
@@ -612,6 +659,92 @@ def run_setup():
         print("Setup complete. Run 'fetchtastic download' to start downloading.")
 
 
+def migrate_config():
+    """
+    Migrates the configuration from the old location to the new location.
+
+    Returns:
+        bool: True if migration was successful, False otherwise.
+    """
+    # Check if old config exists
+    if not os.path.exists(OLD_CONFIG_FILE):
+        return False
+
+    # Check if new config directory exists, create if not
+    if not os.path.exists(CONFIG_DIR):
+        try:
+            os.makedirs(CONFIG_DIR, exist_ok=True)
+        except Exception as e:
+            print(f"Error creating config directory: {e}")
+            return False
+
+    # Load the old config
+    try:
+        with open(OLD_CONFIG_FILE, "r") as f:
+            config = yaml.safe_load(f)
+    except Exception as e:
+        print(f"Error loading old config: {e}")
+        return False
+
+    # Save to new location
+    try:
+        with open(CONFIG_FILE, "w") as f:
+            yaml.dump(config, f)
+        print(f"Configuration migrated to {CONFIG_FILE}")
+        return True
+    except Exception as e:
+        print(f"Error saving config to new location: {e}")
+        return False
+
+
+def prompt_for_migration(timeout=10):
+    """
+    Prompts the user to migrate the configuration from the old location to the new location.
+    Waits for a specified timeout for user input.
+
+    Args:
+        timeout: Number of seconds to wait for user input.
+
+    Returns:
+        bool: True if user chose to migrate, False otherwise.
+    """
+    print(f"Found configuration file at old location: {OLD_CONFIG_FILE}")
+    print(f"It is recommended to migrate to the new location: {CONFIG_FILE}")
+    print(
+        f"Would you like to migrate? [y/n] (default: y, continuing in {timeout} seconds)"
+    )
+
+    # Start timer
+    start_time = time.time()
+
+    # Wait for input with timeout
+    while time.time() - start_time < timeout:
+        # Check if there's input available
+        import select
+        import sys
+
+        # Use select to check if there's input available (Unix-like systems)
+        if select.select([sys.stdin], [], [], 0.1)[0]:
+            user_input = input().strip().lower()
+            if user_input == "n":
+                return False
+            else:
+                return True
+
+        # Update countdown every second
+        elapsed = int(time.time() - start_time)
+        remaining = timeout - elapsed
+        if remaining >= 0:
+            print(
+                f"\rContinuing in {remaining} seconds... Press 'y' to migrate or 'n' to skip.",
+                end="",
+            )
+        time.sleep(0.1)
+
+    print("\nNo input received, proceeding with migration...")
+    return True
+
+
 def copy_to_clipboard_func(text):
     """
     Copies the provided text to the clipboard, depending on the platform.
@@ -1002,7 +1135,7 @@ def load_config(directory=None):
     Args:
         directory: Optional directory to load config from. If None, uses the current BASE_DIR.
     """
-    global BASE_DIR, CONFIG_FILE
+    global BASE_DIR
 
     if directory:
         config_path = os.path.join(directory, "fetchtastic.yaml")
@@ -1014,21 +1147,18 @@ def load_config(directory=None):
 
         # Update global variables
         BASE_DIR = directory
-        CONFIG_FILE = config_path
 
         return config
     else:
-        if not config_exists():
+        exists, config_path = config_exists()
+        if not exists:
             return None
 
-        with open(CONFIG_FILE, "r") as f:
+        with open(config_path, "r") as f:
             config = yaml.safe_load(f)
 
         # Update global variables if BASE_DIR is in the config
         if "BASE_DIR" in config:
             BASE_DIR = config["BASE_DIR"]
-            # Only update CONFIG_FILE if it's in a different location
-            if CONFIG_FILE != os.path.join(BASE_DIR, "fetchtastic.yaml"):
-                CONFIG_FILE = os.path.join(BASE_DIR, "fetchtastic.yaml")
 
         return config
