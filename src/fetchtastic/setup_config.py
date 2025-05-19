@@ -377,7 +377,7 @@ def run_setup():
                     print(
                         "Enter the keywords to exclude from extraction, separated by spaces."
                     )
-                    print("Example: .hex tcxo")
+                    print("Example: .hex tcxo request s3-core")
 
                     # Check if there are existing exclude patterns
                     if config.get("EXCLUDE_PATTERNS"):
