@@ -22,29 +22,37 @@ def fetch_repo_contents(path=""):
         response.raise_for_status()
         contents = response.json()
 
-        # Filter for directories and files, excluding common hidden directories
+        # Filter for directories and files, excluding specific directories and files
         repo_items = []
-        excluded_dirs = [".github", ".git", "node_modules", "__pycache__", ".vscode"]
+        excluded_dirs = [".git", "node_modules", "__pycache__", ".vscode"]
+        excluded_files = [
+            ".gitignore",
+            "LICENSE",
+            "README.md",
+            "meshtastic-deb.asc",
+            "meshtastic-deb.gpg",
+        ]
 
         for item in contents:
             if item["type"] == "dir":
-                if item["name"] not in excluded_dirs and not item["name"].startswith(
-                    "."
+                if item["name"] not in excluded_dirs and (
+                    not item["name"].startswith(".") or item["name"] == ".github"
                 ):
                     # Store directory info
                     repo_items.append(
                         {"name": item["name"], "path": item["path"], "type": "dir"}
                     )
             elif item["type"] == "file":
-                # Store file info
-                repo_items.append(
-                    {
-                        "name": item["name"],
-                        "path": item["path"],
-                        "type": "file",
-                        "download_url": item["download_url"],
-                    }
-                )
+                if item["name"] not in excluded_files:
+                    # Store file info
+                    repo_items.append(
+                        {
+                            "name": item["name"],
+                            "path": item["path"],
+                            "type": "file",
+                            "download_url": item["download_url"],
+                        }
+                    )
 
         # Sort items: directories first, then files
         dirs = [d for d in repo_items if d["type"] == "dir"]
@@ -121,9 +129,12 @@ def select_item(items, current_path=""):
         else:
             display_names.append(f"📄 {item['name']}")
 
-    # Add a "Go back" option if we're in a subdirectory
+    # Add navigation options
     if current_path:
         display_names.insert(0, "⬆️ Go back to parent directory")
+
+    # Always add a quit option
+    display_names.append("❌ Quit")
 
     # Add a title that shows the current path
     path_display = f" - {current_path}" if current_path else ""
@@ -136,9 +147,19 @@ def select_item(items, current_path=""):
         # Return a special value to indicate going back
         return {"type": "back"}
 
+    # Handle "Quit" option
+    if option == "❌ Quit":
+        # Return a special value to indicate quitting
+        return {"type": "quit"}
+
     # Adjust index if we added a "Go back" option
     if current_path:
         index -= 1
+
+    # Adjust for the quit option which is always at the end
+    if index == len(items):
+        # This shouldn't happen as we already handled the quit option above
+        return {"type": "quit"}
 
     return items[index]
 
@@ -155,8 +176,12 @@ def select_files(files):
     # Create a list of file names for the menu
     file_names = [file["name"] for file in files]
 
+    # Add a quit option
+    file_names.append("❌ Quit")
+
     title = """Select the files you want to download (press SPACE to select, ENTER to confirm):
-Note: Selected files will be downloaded to the repo-dls directory."""
+Note: Selected files will be downloaded to the repo-dls directory.
+Select "❌ Quit" to exit without downloading."""
 
     selected_options = pick(
         file_names, title, multiselect=True, min_selection_count=0, indicator="*"
@@ -165,6 +190,12 @@ Note: Selected files will be downloaded to the repo-dls directory."""
     if not selected_options:
         print("No files selected for download.")
         return None
+
+    # Check if the quit option was selected
+    for option in selected_options:
+        if option[0] == "❌ Quit":
+            print("Exiting without downloading.")
+            return None
 
     # Get the full file information for selected files
     selected_files = []
@@ -208,6 +239,11 @@ def run_menu():
                 else:
                     current_path = ""
                 continue
+
+            # Handle quit option
+            if selected_item.get("type") == "quit":
+                print("Exiting repository browser.")
+                return None
 
             if selected_item["type"] == "dir":
                 # Navigate into the directory
