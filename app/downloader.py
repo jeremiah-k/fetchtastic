@@ -458,12 +458,19 @@ def main():
 
     # Cleanup function to keep only specific versions based on release tags
     def cleanup_old_versions(directory, releases_to_keep):
+        # Directories to exclude from cleanup
+        excluded_dirs = ["repo-dls", "prerelease"]
+
         versions = [
             d
             for d in os.listdir(directory)
             if os.path.isdir(os.path.join(directory, d))
         ]
         for version in versions:
+            # Skip excluded directories
+            if version in excluded_dirs:
+                continue
+
             if version not in releases_to_keep:
                 version_path = os.path.join(directory, version)
                 for root, dirs, files in os.walk(version_path, topdown=False):
