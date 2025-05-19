@@ -111,11 +111,11 @@ options:
 The `repo` command has additional subcommands:
 
 ```bash
-usage: fetchtastic repo [-h] {download,clean} ...
+usage: fetchtastic repo [-h] {browse,clean} ...
 
 positional arguments:
-  {download,clean}
-    download        Browse and download files from the meshtastic.github.io repository
+  {browse,clean}
+    browse          Browse and download files from the meshtastic.github.io repository
     clean           Clean the repository download directory
 
 options:
@@ -131,7 +131,8 @@ By default, Fetchtastic saves files and configuration in the `Downloads/Meshtast
 - **APKs**: `Downloads/Meshtastic/apks`
 - **Firmware**: `Downloads/Meshtastic/firmware`
   - **GitHub Releases**: `Downloads/Meshtastic/firmware/<version>` (managed by `download` command)
-  - **Repository Files**: `Downloads/Meshtastic/firmware/repo` (managed by `repo download` command)
+  - **Repository Files**: `Downloads/Meshtastic/firmware/repo-dls` (managed by `repo browse` command)
+  - **Pre-releases**: `Downloads/Meshtastic/firmware/prerelease` (if enabled in setup)
 
 You can manually edit the configuration file to change the settings.
 
@@ -163,7 +164,7 @@ Fetchtastic can browse and download files directly from the [meshtastic.github.i
 1. Run the repository browser:
 
    ```bash
-   fetchtastic repo download
+   fetchtastic repo browse
    ```
 
 2. Navigate through the menu:
@@ -171,7 +172,7 @@ Fetchtastic can browse and download files directly from the [meshtastic.github.i
    - First, select a firmware directory (e.g., `firmware-2.6.8.ef9d0d7`)
    - Then, select one or more files to download (press SPACE to select, ENTER to confirm)
 
-3. The selected files will be downloaded to the `Downloads/Meshtastic/firmware/repo/<directory>` folder.
+3. The selected files will be downloaded to the `Downloads/Meshtastic/firmware/repo-dls/<directory>` folder.
 
 4. To clean the repository download directory:
    ```bash
@@ -181,7 +182,8 @@ Fetchtastic can browse and download files directly from the [meshtastic.github.i
 #### Differences from Regular Downloads
 
 - The `download` command gets firmware and APKs from GitHub releases and manages version rotation.
-- The `repo download` command gets specific files from the meshtastic.github.io repository and keeps them until manually deleted.
+- The `repo browse` command gets specific files from the meshtastic.github.io repository and keeps them until manually deleted.
+- If pre-releases are enabled, Fetchtastic will also check for and download firmware from pre-release directories in the meshtastic.github.io repository.
 
 ## Contributing
 

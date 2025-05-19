@@ -44,18 +44,18 @@ def main():
     )
     repo_subparsers = repo_parser.add_subparsers(dest="repo_command")
 
-    # Repo download command
+    # Repo browse command
     repo_subparsers.add_parser(
-        "download",
+        "browse",
         help="Browse and download files from the meshtastic.github.io repository",
-        description="Browse directories in the meshtastic.github.io repository, select files, and download them to the repo directory.",
+        description="Browse directories in the meshtastic.github.io repository, select files, and download them to the repo-dls directory.",
     )
 
     # Repo clean command
     repo_subparsers.add_parser(
         "clean",
         help="Clean the repository download directory",
-        description="Remove all files and directories from the repository download directory (firmware/repo).",
+        description="Remove all files and directories from the repository download directory (firmware/repo-dls).",
     )
 
     args = parser.parse_args()
@@ -119,14 +119,14 @@ def main():
                 # Check if there's a repo subcommand specified
                 if len(sys.argv) > 3:
                     repo_subcommand = sys.argv[3]
-                    if repo_subcommand == "download":
-                        # Find the download subparser and print its help
+                    if repo_subcommand == "browse":
+                        # Find the browse subparser and print its help
                         for action in repo_subparsers._actions:
                             if isinstance(action, argparse._SubParsersAction):
-                                download_parser = action.choices.get("download")
-                                if download_parser:
-                                    print("\nRepo download command help:")
-                                    download_parser.print_help()
+                                browse_parser = action.choices.get("browse")
+                                if browse_parser:
+                                    print("\nRepo browse command help:")
+                                    browse_parser.print_help()
                                 break
                     elif repo_subcommand == "clean":
                         # Find the clean subparser and print its help
@@ -154,7 +154,7 @@ def main():
             print("Configuration not found. Please run 'fetchtastic setup' first.")
             return
 
-        if args.repo_command == "download":
+        if args.repo_command == "browse":
             # Run the repository downloader
             repo_downloader.main(config)
         elif args.repo_command == "clean":

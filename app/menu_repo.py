@@ -92,7 +92,7 @@ def select_files(files):
     file_names = [file["name"] for file in files]
 
     title = """Select the files you want to download (press SPACE to select, ENTER to confirm):
-Note: Selected files will be downloaded to the repo directory."""
+Note: Selected files will be downloaded to the repo-dls directory."""
 
     selected_options = pick(
         file_names, title, multiselect=True, min_selection_count=0, indicator="*"

@@ -11,7 +11,163 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from . import setup_config
+from . import menu_repo, setup_config
+
+
+def compare_versions(version1, version2):
+    """
+    Compares two version strings (e.g., 2.6.9.f93d031 vs 2.6.8.ef9d0d7).
+
+    Returns:
+        1 if version1 > version2
+        0 if version1 == version2
+        -1 if version1 < version2
+    """
+    # Split versions into components
+    v1_parts = version1.split(".")
+    v2_parts = version2.split(".")
+
+    # Compare major, minor, patch versions
+    for i in range(min(len(v1_parts), len(v2_parts))):
+        if i < 3:  # Major, minor, patch are numeric
+            try:
+                v1_num = int(v1_parts[i])
+                v2_num = int(v2_parts[i])
+                if v1_num > v2_num:
+                    return 1
+                elif v1_num < v2_num:
+                    return -1
+            except ValueError:
+                # If conversion fails, fall back to string comparison
+                if v1_parts[i] > v2_parts[i]:
+                    return 1
+                elif v1_parts[i] < v2_parts[i]:
+                    return -1
+        else:
+            # For commit hash, just do string comparison
+            if v1_parts[i] > v2_parts[i]:
+                return 1
+            elif v1_parts[i] < v2_parts[i]:
+                return -1
+
+    # If we get here and versions have different lengths, the longer one is newer
+    if len(v1_parts) > len(v2_parts):
+        return 1
+    elif len(v1_parts) < len(v2_parts):
+        return -1
+
+    # Versions are equal
+    return 0
+
+
+def check_for_prereleases(
+    download_dir, latest_release_tag, selected_patterns, log_message_func=None
+):
+    """
+    Checks for pre-release firmware in the meshtastic.github.io repository.
+
+    Args:
+        download_dir: Base download directory
+        latest_release_tag: The latest official release tag (e.g., v2.6.8.ef9d0d7)
+        selected_patterns: List of firmware patterns to download
+        log_message_func: Function to log messages (optional)
+
+    Returns:
+        Boolean indicating if any pre-releases were found and downloaded
+    """
+    if log_message_func is None:
+
+        def log_message_func(message):
+            print(message)
+
+    # Strip the 'v' prefix if present
+    if latest_release_tag.startswith("v"):
+        latest_release_version = latest_release_tag[1:]
+    else:
+        latest_release_version = latest_release_tag
+
+    log_message_func("Checking for pre-release firmware...")
+
+    # Fetch directories from the meshtastic.github.io repository
+    directories = menu_repo.fetch_repo_directories()
+
+    if not directories:
+        log_message_func("No firmware directories found in the repository.")
+        return False
+
+    # Find directories that are newer than the latest release
+    prerelease_dirs = []
+    for dir_name in directories:
+        # Extract version from directory name (e.g., firmware-2.6.9.f93d031)
+        if dir_name.startswith("firmware-"):
+            dir_version = dir_name[9:]  # Remove 'firmware-' prefix
+
+            # Compare versions (assuming format x.y.z.commit)
+            if compare_versions(dir_version, latest_release_version) > 0:
+                prerelease_dirs.append(dir_name)
+
+    if not prerelease_dirs:
+        log_message_func("No pre-release firmware found.")
+        return False
+
+    # Create prerelease directory if it doesn't exist
+    prerelease_dir = os.path.join(download_dir, "firmware", "prerelease")
+    if not os.path.exists(prerelease_dir):
+        os.makedirs(prerelease_dir)
+
+    downloaded_files = []
+
+    # Process each pre-release directory
+    for dir_name in prerelease_dirs:
+        log_message_func(f"Found pre-release: {dir_name}")
+
+        # Fetch files from the directory
+        files = menu_repo.fetch_directory_contents(dir_name)
+
+        if not files:
+            log_message_func(f"No files found in {dir_name}.")
+            continue
+
+        # Create directory for this pre-release
+        dir_path = os.path.join(prerelease_dir, dir_name)
+        if not os.path.exists(dir_path):
+            os.makedirs(dir_path)
+
+        # Filter files based on selected patterns
+        for file in files:
+            file_name = file["name"]
+            download_url = file["download_url"]
+            file_path = os.path.join(dir_path, file_name)
+
+            if not os.path.exists(file_path):
+                try:
+                    log_message_func(f"Downloading pre-release file: {file_name}")
+                    response = requests.get(download_url, stream=True, timeout=30)
+                    response.raise_for_status()
+
+                    with open(file_path, "wb") as f:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            if chunk:
+                                f.write(chunk)
+
+                    # Set executable permissions for .sh files
+                    if file_name.endswith(".sh"):
+                        os.chmod(file_path, 0o755)
+                        log_message_func(f"Set executable permissions for {file_name}")
+
+                    log_message_func(f"Downloaded {file_name} to {file_path}")
+                    downloaded_files.append(file_path)
+                except Exception as e:
+                    log_message_func(f"Error downloading {file_name}: {e}")
+
+    if downloaded_files:
+        log_message_func(
+            f"Successfully downloaded {len(downloaded_files)} pre-release files."
+        )
+        return True
+    else:
+        log_message_func("No new pre-release files were downloaded.")
+        return False
 
 
 def main():
@@ -33,6 +189,7 @@ def main():
     exclude_patterns = config.get("EXCLUDE_PATTERNS", [])
     wifi_only = config.get("WIFI_ONLY", False) if setup_config.is_termux() else False
     notify_on_download_only = config.get("NOTIFY_ON_DOWNLOAD_ONLY", False)
+    check_prereleases = config.get("CHECK_PRERELEASES", False)
 
     selected_apk_patterns = config.get("SELECTED_APK_ASSETS", [])
     selected_firmware_patterns = config.get("SELECTED_FIRMWARE_ASSETS", [])
@@ -434,6 +591,31 @@ def main():
         new_firmware_versions.extend(fw_new_versions)
         if fw_downloaded:
             log_message(f"Downloaded Firmware versions: {', '.join(fw_downloaded)}")
+
+        # Check for pre-releases if enabled
+        if check_prereleases and not downloads_skipped:
+            # Get the latest release tag
+            latest_release_tag = None
+            if os.path.exists(latest_firmware_release_file):
+                with open(latest_firmware_release_file, "r") as f:
+                    latest_release_tag = f.read().strip()
+
+            if latest_release_tag:
+                log_message("Checking for pre-release firmware...")
+                prerelease_found = check_for_prereleases(
+                    download_dir,
+                    latest_release_tag,
+                    selected_firmware_patterns,
+                    log_message,
+                )
+                if prerelease_found:
+                    log_message("Pre-release firmware downloaded successfully.")
+                    # Add to notification messages
+                    downloaded_firmwares.append("pre-release")
+                else:
+                    log_message("No new pre-release firmware found or downloaded.")
+            else:
+                log_message("No latest release tag found. Skipping pre-release check.")
     elif not selected_firmware_patterns:
         log_message("No firmware assets selected. Skipping firmware download.")
 

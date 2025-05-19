@@ -34,8 +34,8 @@ def download_repo_files(selected_files, download_dir, log_message_func=None):
     directory = selected_files["directory"]
     files = selected_files["files"]
 
-    # Create repo directory if it doesn't exist
-    repo_dir = os.path.join(download_dir, "firmware", "repo")
+    # Create repo-dls directory if it doesn't exist
+    repo_dir = os.path.join(download_dir, "firmware", "repo-dls")
     if not os.path.exists(repo_dir):
         os.makedirs(repo_dir)
 
@@ -91,10 +91,10 @@ def clean_repo_directory(download_dir, log_message_func=None):
         def log_message_func(message):
             print(message)
 
-    repo_dir = os.path.join(download_dir, "firmware", "repo")
+    repo_dir = os.path.join(download_dir, "firmware", "repo-dls")
 
     if not os.path.exists(repo_dir):
-        log_message_func("Repo directory does not exist. Nothing to clean.")
+        log_message_func("Repo-dls directory does not exist. Nothing to clean.")
         return True
 
     try:
