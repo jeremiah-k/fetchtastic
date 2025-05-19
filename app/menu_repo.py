@@ -125,20 +125,20 @@ def select_item(items, current_path=""):
     display_names = []
     for item in items:
         if item["type"] == "dir":
-            display_names.append(f"📁 {item['name']}/")
+            display_names.append(f"{item['name']}/")
         else:
-            display_names.append(f"📄 {item['name']}")
+            display_names.append(item["name"])
 
     # Add navigation options
     if current_path:
-        display_names.insert(0, "⬆️ Go back to parent directory")
+        display_names.insert(0, "[Go back to parent directory]")
 
     # Always add a quit option
-    display_names.append("❌ Quit")
+    display_names.append("[Quit]")
 
     # Add a title that shows the current path
     path_display = f" - {current_path}" if current_path else ""
-    title = f"Select an item to browse{path_display} (press ENTER to confirm):"
+    title = f"Select an item to browse{path_display} (press ENTER to navigate, find a directory with files to select and download):"
 
     option, index = pick(display_names, title, indicator="*")
 
@@ -148,7 +148,7 @@ def select_item(items, current_path=""):
         return {"type": "back"}
 
     # Handle "Quit" option
-    if option == "❌ Quit":
+    if option == "[Quit]":
         # Return a special value to indicate quitting
         return {"type": "quit"}
 
@@ -177,11 +177,11 @@ def select_files(files):
     file_names = [file["name"] for file in files]
 
     # Add a quit option
-    file_names.append("❌ Quit")
+    file_names.append("[Quit]")
 
     title = """Select the files you want to download (press SPACE to select, ENTER to confirm):
 Note: Selected files will be downloaded to the repo-dls directory.
-Select "❌ Quit" to exit without downloading."""
+Select "[Quit]" to exit without downloading."""
 
     selected_options = pick(
         file_names, title, multiselect=True, min_selection_count=0, indicator="*"
@@ -193,7 +193,7 @@ Select "❌ Quit" to exit without downloading."""
 
     # Check if the quit option was selected
     for option in selected_options:
-        if option[0] == "❌ Quit":
+        if option[0] == "[Quit]":
             print("Exiting without downloading.")
             return None
 
