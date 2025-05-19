@@ -1,4 +1,4 @@
-# app/menu_apk.py
+# src/fetchtastic/menu_apk.py
 
 import re
 

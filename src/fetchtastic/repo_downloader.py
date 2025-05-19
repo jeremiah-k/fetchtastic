@@ -1,4 +1,4 @@
-# app/repo_downloader.py
+# src/fetchtastic/repo_downloader.py
 
 import os
 import shutil
@@ -135,7 +135,7 @@ def main(config, log_message_func=None):
         def log_message_func(message):
             print(message)
 
-    from . import menu_repo
+    from fetchtastic import menu_repo
 
     download_dir = config.get("DOWNLOAD_DIR")
     if not download_dir:

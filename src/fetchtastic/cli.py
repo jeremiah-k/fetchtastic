@@ -1,4 +1,4 @@
-# app/cli.py
+# src/fetchtastic/cli.py
 
 import argparse
 import os
@@ -7,7 +7,8 @@ import shutil
 import subprocess
 import sys
 
-from . import downloader, repo_downloader, setup_config
+from fetchtastic import downloader, repo_downloader, setup_config
+from fetchtastic.setup_config import display_version_info
 
 
 def main():
@@ -61,14 +62,47 @@ def main():
     args = parser.parse_args()
 
     if args.command == "setup":
+        # Display version information
+        current_version, latest_version, update_available = display_version_info()
+
         # Run the setup process
         setup_config.run_setup()
+
+        # Remind about updates at the end if available
+        if update_available:
+            print("\n" + "=" * 80)
+            print(
+                f"Reminder: A newer version (v{latest_version}) of Fetchtastic is available!"
+            )
+            print("Run 'pipx upgrade fetchtastic' to upgrade.")
+            print("=" * 80)
     elif args.command == "download":
         # Check if configuration exists
-        if not setup_config.config_exists():
+        exists, config_path = setup_config.config_exists()
+        if not exists:
             print("No configuration found. Running setup.")
             setup_config.run_setup()
         else:
+            # Check if config is in old location and needs migration
+            if config_path == setup_config.OLD_CONFIG_FILE and not os.path.exists(
+                setup_config.CONFIG_FILE
+            ):
+                print("\n" + "=" * 80)
+                print("Configuration Migration")
+                print("=" * 80)
+                if setup_config.prompt_for_migration():
+                    if setup_config.migrate_config():
+                        print(
+                            "Configuration successfully migrated to the new location."
+                        )
+                    else:
+                        print(
+                            "Failed to migrate configuration. Continuing with old location."
+                        )
+                else:
+                    print("Continuing with configuration at old location.")
+                print("=" * 80 + "\n")
+
             # Run the downloader
             downloader.main()
     elif args.command == "topic":
@@ -108,7 +142,8 @@ def main():
         # Run the clean process
         run_clean()
     elif args.command == "version":
-        print(f"Fetchtastic version {get_fetchtastic_version()}")
+        # Use the display_version_info function to show version and update information
+        display_version_info()
     elif args.command == "help":
         # Check if a subcommand was specified
         if len(sys.argv) > 2:
@@ -144,8 +179,12 @@ def main():
             # No subcommand specified, show general help
             parser.print_help()
     elif args.command == "repo":
+        # Display version information
+        current_version, latest_version, update_available = display_version_info()
+
         # Handle repo subcommands
-        if not setup_config.config_exists():
+        exists, _ = setup_config.config_exists()
+        if not exists:
             print("No configuration found. Running setup.")
             setup_config.run_setup()
 
@@ -157,9 +196,27 @@ def main():
         if args.repo_command == "browse":
             # Run the repository downloader
             repo_downloader.main(config)
+
+            # Remind about updates at the end if available
+            if update_available:
+                print("\n" + "=" * 80)
+                print(
+                    f"Reminder: A newer version (v{latest_version}) of Fetchtastic is available!"
+                )
+                print("Run 'pipx upgrade fetchtastic' to upgrade.")
+                print("=" * 80)
         elif args.repo_command == "clean":
             # Clean the repository directory
             run_repo_clean(config)
+
+            # Remind about updates at the end if available
+            if update_available:
+                print("\n" + "=" * 80)
+                print(
+                    f"Reminder: A newer version (v{latest_version}) of Fetchtastic is available!"
+                )
+                print("Run 'pipx upgrade fetchtastic' to upgrade.")
+                print("=" * 80)
         else:
             # No repo subcommand provided
             repo_parser.print_help()
@@ -230,14 +287,26 @@ def run_clean():
         print("Clean operation cancelled.")
         return
 
-    # Remove configuration file
+    # Remove configuration files (both old and new locations)
     config_file = setup_config.CONFIG_FILE
+    old_config_file = setup_config.OLD_CONFIG_FILE
+
     if os.path.exists(config_file):
         os.remove(config_file)
         print(f"Removed configuration file: {config_file}")
 
+    if os.path.exists(old_config_file):
+        os.remove(old_config_file)
+        print(f"Removed old configuration file: {old_config_file}")
+
+    # Remove config directory if empty
+    config_dir = setup_config.CONFIG_DIR
+    if os.path.exists(config_dir) and not os.listdir(config_dir):
+        os.rmdir(config_dir)
+        print(f"Removed empty config directory: {config_dir}")
+
     # Remove contents of download directory
-    download_dir = setup_config.DEFAULT_CONFIG_DIR
+    download_dir = setup_config.BASE_DIR
     if os.path.exists(download_dir):
         for item in os.listdir(download_dir):
             item_path = os.path.join(download_dir, item)

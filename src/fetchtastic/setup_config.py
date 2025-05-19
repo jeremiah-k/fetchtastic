@@ -1,4 +1,4 @@
-# app/setup_config.py
+# src/fetchtastic/setup_config.py
 
 import os
 import platform
@@ -6,11 +6,13 @@ import random
 import shutil
 import string
 import subprocess
+import time
 
+import platformdirs
 import yaml
 
-from . import downloader  # Import downloader to perform first run
-from . import menu_apk, menu_firmware
+from fetchtastic import downloader  # Import downloader to perform first run
+from fetchtastic import menu_apk, menu_firmware
 
 
 def is_termux():
@@ -55,16 +57,50 @@ def get_downloads_dir():
     return home_dir
 
 
+# Default directories
 DOWNLOADS_DIR = get_downloads_dir()
-DEFAULT_CONFIG_DIR = os.path.join(DOWNLOADS_DIR, "Meshtastic")
-CONFIG_FILE = os.path.join(DEFAULT_CONFIG_DIR, "fetchtastic.yaml")
+DEFAULT_BASE_DIR = os.path.join(DOWNLOADS_DIR, "Meshtastic")
+
+# Get the config directory using platformdirs
+CONFIG_DIR = platformdirs.user_config_dir("fetchtastic")
+
+# Old config file location (for migration)
+OLD_CONFIG_FILE = os.path.join(DEFAULT_BASE_DIR, "fetchtastic.yaml")
+
+# New config file location using platformdirs
+CONFIG_FILE = os.path.join(CONFIG_DIR, "fetchtastic.yaml")
+
+# These will be set during setup or when loading config
+BASE_DIR = DEFAULT_BASE_DIR
 
 
-def config_exists():
+def config_exists(directory=None):
     """
     Check if the configuration file exists.
+
+    Args:
+        directory: Optional directory to check for config file. If None, checks both the new
+                  platformdirs location and the old location.
+
+    Returns:
+        tuple: (exists, path) where exists is a boolean indicating if the config exists,
+               and path is the path to the config file if it exists, otherwise None.
     """
-    return os.path.exists(CONFIG_FILE)
+    if directory:
+        config_path = os.path.join(directory, "fetchtastic.yaml")
+        if os.path.exists(config_path):
+            return True, config_path
+        return False, None
+
+    # Check new location first
+    if os.path.exists(CONFIG_FILE):
+        return True, CONFIG_FILE
+
+    # Then check old location
+    if os.path.exists(OLD_CONFIG_FILE):
+        return True, OLD_CONFIG_FILE
+
+    return False, None
 
 
 def check_storage_setup():
@@ -94,6 +130,7 @@ def check_storage_setup():
 
 
 def run_setup():
+    global BASE_DIR, CONFIG_FILE
     print("Running Fetchtastic Setup...")
 
     # Install required Termux packages first
@@ -103,22 +140,87 @@ def run_setup():
         check_storage_setup()
         print("Termux storage is set up.")
 
-    # Proceed with the rest of the setup
-    if not os.path.exists(DEFAULT_CONFIG_DIR):
-        os.makedirs(DEFAULT_CONFIG_DIR)
+    # Check if config directory exists, create if not
+    if not os.path.exists(CONFIG_DIR):
+        try:
+            os.makedirs(CONFIG_DIR, exist_ok=True)
+        except Exception as e:
+            print(f"Error creating config directory: {e}")
 
+    # Check for configuration in old location
+    if os.path.exists(OLD_CONFIG_FILE) and not os.path.exists(CONFIG_FILE):
+        print("\n" + "=" * 80)
+        print("Configuration Migration")
+        print("=" * 80)
+        if prompt_for_migration():
+            if migrate_config():
+                print("Configuration successfully migrated to the new location.")
+            else:
+                print("Failed to migrate configuration. Continuing with old location.")
+        else:
+            print("Continuing with configuration at old location.")
+        print("=" * 80 + "\n")
+
+    # Ask for base directory as the first question
     config = {}
-    if config_exists():
+    exists, config_path = config_exists()
+
+    if exists:
         # Load existing configuration
         config = load_config()
         print(
             "Existing configuration found. You can keep current settings or change them."
         )
         is_first_run = False
+        current_base_dir = config.get("BASE_DIR", DEFAULT_BASE_DIR)
+        base_dir_prompt = (
+            f"Enter the base directory for Fetchtastic (current: {current_base_dir}): "
+        )
     else:
         # Initialize default configuration
         config = {}
         is_first_run = True
+        base_dir_prompt = (
+            f"Enter the base directory for Fetchtastic (default: {DEFAULT_BASE_DIR}): "
+        )
+
+    # Prompt for base directory
+    base_dir_input = input(base_dir_prompt).strip()
+
+    if base_dir_input:
+        # User entered a custom directory
+        base_dir = os.path.expanduser(base_dir_input)
+
+        # Check if there's a config file in the specified directory
+        if config_exists(base_dir) and base_dir != BASE_DIR:
+            print(f"Found existing configuration in {base_dir}")
+            # Load the configuration from the specified directory
+            config = load_config(base_dir)
+            is_first_run = False
+        else:
+            # No config in the specified directory or it's the same as current
+            BASE_DIR = base_dir
+            CONFIG_FILE = os.path.join(BASE_DIR, "fetchtastic.yaml")
+    else:
+        # User accepted the default/current directory
+        if is_first_run:
+            base_dir = DEFAULT_BASE_DIR
+        else:
+            base_dir = config.get("BASE_DIR", DEFAULT_BASE_DIR)
+
+        # Expand user directory if needed (e.g., ~/Downloads/Meshtastic)
+        base_dir = os.path.expanduser(base_dir)
+
+        # Update global variables
+        BASE_DIR = base_dir
+        CONFIG_FILE = os.path.join(BASE_DIR, "fetchtastic.yaml")
+
+    # Store the base directory in the config
+    config["BASE_DIR"] = BASE_DIR
+
+    # Create the base directory if it doesn't exist
+    if not os.path.exists(BASE_DIR):
+        os.makedirs(BASE_DIR)
 
     # Prompt to save APKs, firmware, or both
     save_choice = (
@@ -298,13 +400,22 @@ def run_setup():
         # For non-Termux environments, remove WIFI_ONLY from config if it exists
         config.pop("WIFI_ONLY", None)
 
-    # Set the download directory to the same as the config directory
-    download_dir = DEFAULT_CONFIG_DIR
+    # Set the download directory to the same as the base directory
+    download_dir = BASE_DIR
     config["DOWNLOAD_DIR"] = download_dir
+
+    # Make sure the config directory exists
+    if not os.path.exists(CONFIG_DIR):
+        try:
+            os.makedirs(CONFIG_DIR, exist_ok=True)
+        except Exception as e:
+            print(f"Error creating config directory: {e}")
 
     # Save configuration to YAML file before proceeding
     with open(CONFIG_FILE, "w") as f:
         yaml.dump(config, f)
+
+    print(f"Configuration saved to: {CONFIG_FILE}")
 
     # Cron job setup
     if is_termux():
@@ -555,6 +666,156 @@ def run_setup():
         downloader.main()
     else:
         print("Setup complete. Run 'fetchtastic download' to start downloading.")
+
+
+def check_for_updates():
+    """
+    Check if a newer version of fetchtastic is available.
+
+    Returns:
+        tuple: (current_version, latest_version, update_available)
+    """
+    try:
+        # Get current version
+        from importlib.metadata import version
+
+        current_version = version("fetchtastic")
+
+        # Get latest version from PyPI
+        import requests
+
+        response = requests.get("https://pypi.org/pypi/fetchtastic/json", timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            latest_version = data["info"]["version"]
+            # Use packaging.version for proper version comparison
+            from packaging import version as pkg_version
+
+            current_ver = pkg_version.parse(current_version)
+            latest_ver = pkg_version.parse(latest_version)
+            return current_version, latest_version, latest_ver > current_ver
+        return current_version, None, False
+    except Exception:
+        # If anything fails, just return that no update is available
+        try:
+            from importlib.metadata import version
+
+            return version("fetchtastic"), None, False
+        except Exception:
+            return "unknown", None, False
+
+
+def display_version_info(show_update_message=True):
+    """
+    Display version information and update message if a newer version is available.
+
+    Args:
+        show_update_message: Whether to show the update message if a newer version is available.
+    """
+    current_version, latest_version, update_available = check_for_updates()
+
+    # Print version information
+    print(f"Fetchtastic v{current_version}")
+    if update_available and latest_version and show_update_message:
+        print(f"A newer version (v{latest_version}) is available!")
+        print("Run 'pipx upgrade fetchtastic' to upgrade.")
+
+    return current_version, latest_version, update_available
+
+
+def migrate_config():
+    """
+    Migrates the configuration from the old location to the new location.
+
+    Returns:
+        bool: True if migration was successful, False otherwise.
+    """
+    # Check if old config exists
+    if not os.path.exists(OLD_CONFIG_FILE):
+        return False
+
+    # Check if new config directory exists, create if not
+    if not os.path.exists(CONFIG_DIR):
+        try:
+            os.makedirs(CONFIG_DIR, exist_ok=True)
+        except Exception as e:
+            print(f"Error creating config directory: {e}")
+            return False
+
+    # Load the old config
+    try:
+        with open(OLD_CONFIG_FILE, "r") as f:
+            config = yaml.safe_load(f)
+    except Exception as e:
+        print(f"Error loading old config: {e}")
+        return False
+
+    # Save to new location
+    try:
+        with open(CONFIG_FILE, "w") as f:
+            yaml.dump(config, f)
+
+        # Remove the old file after successful migration
+        try:
+            os.remove(OLD_CONFIG_FILE)
+            print(f"Configuration migrated to {CONFIG_FILE} and old file removed")
+        except Exception as e:
+            print(
+                f"Configuration migrated to {CONFIG_FILE} but failed to remove old file: {e}"
+            )
+
+        return True
+    except Exception as e:
+        print(f"Error saving config to new location: {e}")
+        return False
+
+
+def prompt_for_migration(timeout=10):
+    """
+    Prompts the user to migrate the configuration from the old location to the new location.
+    Waits for a specified timeout for user input.
+
+    Args:
+        timeout: Number of seconds to wait for user input.
+
+    Returns:
+        bool: True if user chose to migrate, False otherwise.
+    """
+    print(f"Found configuration file at old location: {OLD_CONFIG_FILE}")
+    print(f"It is recommended to migrate to the new location: {CONFIG_FILE}")
+    print(
+        f"Would you like to migrate? [y/n] (default: y, continuing in {timeout} seconds)"
+    )
+
+    # Start timer
+    start_time = time.time()
+
+    # Wait for input with timeout
+    while time.time() - start_time < timeout:
+        # Check if there's input available
+        import select
+        import sys
+
+        # Use select to check if there's input available (Unix-like systems)
+        if select.select([sys.stdin], [], [], 0.1)[0]:
+            user_input = input().strip().lower()
+            if user_input == "n":
+                return False
+            else:
+                return True
+
+        # Update countdown every second
+        elapsed = int(time.time() - start_time)
+        remaining = timeout - elapsed
+        if remaining >= 0:
+            print(
+                f"\rContinuing in {remaining} seconds... Press 'y' to migrate or 'n' to skip.",
+                end="",
+            )
+        time.sleep(0.1)
+
+    print("\nNo input received, proceeding with migration...")
+    return True
 
 
 def copy_to_clipboard_func(text):
@@ -939,12 +1200,38 @@ def check_any_cron_jobs_exist():
         return False
 
 
-def load_config():
+def load_config(directory=None):
     """
     Loads the configuration from the YAML file.
+    Updates global variables based on the loaded configuration.
+
+    Args:
+        directory: Optional directory to load config from. If None, uses the current BASE_DIR.
     """
-    if not config_exists():
-        return None
-    with open(CONFIG_FILE, "r") as f:
-        config = yaml.safe_load(f)
-    return config
+    global BASE_DIR
+
+    if directory:
+        config_path = os.path.join(directory, "fetchtastic.yaml")
+        if not os.path.exists(config_path):
+            return None
+
+        with open(config_path, "r") as f:
+            config = yaml.safe_load(f)
+
+        # Update global variables
+        BASE_DIR = directory
+
+        return config
+    else:
+        exists, config_path = config_exists()
+        if not exists:
+            return None
+
+        with open(config_path, "r") as f:
+            config = yaml.safe_load(f)
+
+        # Update global variables if BASE_DIR is in the config
+        if "BASE_DIR" in config:
+            BASE_DIR = config["BASE_DIR"]
+
+        return config
