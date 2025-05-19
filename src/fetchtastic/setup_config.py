@@ -404,9 +404,18 @@ def run_setup():
     download_dir = BASE_DIR
     config["DOWNLOAD_DIR"] = download_dir
 
+    # Make sure the config directory exists
+    if not os.path.exists(CONFIG_DIR):
+        try:
+            os.makedirs(CONFIG_DIR, exist_ok=True)
+        except Exception as e:
+            print(f"Error creating config directory: {e}")
+
     # Save configuration to YAML file before proceeding
     with open(CONFIG_FILE, "w") as f:
         yaml.dump(config, f)
+
+    print(f"Configuration saved to: {CONFIG_FILE}")
 
     # Cron job setup
     if is_termux():
@@ -690,7 +699,16 @@ def migrate_config():
     try:
         with open(CONFIG_FILE, "w") as f:
             yaml.dump(config, f)
-        print(f"Configuration migrated to {CONFIG_FILE}")
+
+        # Remove the old file after successful migration
+        try:
+            os.remove(OLD_CONFIG_FILE)
+            print(f"Configuration migrated to {CONFIG_FILE} and old file removed")
+        except Exception as e:
+            print(
+                f"Configuration migrated to {CONFIG_FILE} but failed to remove old file: {e}"
+            )
+
         return True
     except Exception as e:
         print(f"Error saving config to new location: {e}")

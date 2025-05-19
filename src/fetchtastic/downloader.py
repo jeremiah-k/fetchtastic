@@ -278,12 +278,59 @@ def check_for_prereleases(
         return False, []
 
 
+def check_for_updates():
+    """
+    Check if a newer version of fetchtastic is available.
+
+    Returns:
+        tuple: (current_version, latest_version, update_available)
+    """
+    try:
+        # Get current version
+        from importlib.metadata import version
+
+        current_version = version("fetchtastic")
+
+        # Get latest version from PyPI
+        import requests
+
+        response = requests.get("https://pypi.org/pypi/fetchtastic/json", timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            latest_version = data["info"]["version"]
+            return current_version, latest_version, current_version != latest_version
+        return current_version, None, False
+    except Exception:
+        # If anything fails, just return that no update is available
+        try:
+            from importlib.metadata import version
+
+            return version("fetchtastic"), None, False
+        except Exception:
+            return "unknown", None, False
+
+
 def main():
+    # Get version information
+    current_version, latest_version, update_available = check_for_updates()
+
+    # Print version information
+    print(f"Fetchtastic v{current_version}")
+    if update_available and latest_version:
+        print(
+            f"A newer version (v{latest_version}) is available! Run 'pipx upgrade fetchtastic' to upgrade."
+        )
+
     # Load configuration
     config = setup_config.load_config()
     if not config:
         print("Configuration not found. Please run 'fetchtastic setup' first.")
         return
+
+    # Show configuration file location
+    exists, config_path = setup_config.config_exists()
+    if exists:
+        print(f"Using configuration from: {config_path}")
 
     # Get configuration values
     save_apks = config.get("SAVE_APKS", False)
