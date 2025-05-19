@@ -39,8 +39,12 @@ def download_repo_files(selected_files, download_dir, log_message_func=None):
     if not os.path.exists(repo_dir):
         os.makedirs(repo_dir)
 
-    # Create directory-specific folder
-    dir_path = os.path.join(repo_dir, directory)
+    # Create directory structure matching the repository path
+    if directory:
+        dir_path = os.path.join(repo_dir, directory)
+    else:
+        dir_path = repo_dir
+
     if not os.path.exists(dir_path):
         os.makedirs(dir_path)
 
@@ -52,7 +56,7 @@ def download_repo_files(selected_files, download_dir, log_message_func=None):
         file_path = os.path.join(dir_path, file_name)
 
         try:
-            log_message_func(f"Downloading {file_name} from {directory}...")
+            log_message_func(f"Downloading {file_name} from {directory or 'root'}...")
             response = requests.get(download_url, stream=True, timeout=30)
             response.raise_for_status()
 
