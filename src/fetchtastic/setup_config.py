@@ -1,4 +1,4 @@
-# app/setup_config.py
+# src/fetchtastic/setup_config.py
 
 import os
 import platform
@@ -9,8 +9,8 @@ import subprocess
 
 import yaml
 
-from . import downloader  # Import downloader to perform first run
-from . import menu_apk, menu_firmware
+from fetchtastic import downloader  # Import downloader to perform first run
+from fetchtastic import menu_apk, menu_firmware
 
 
 def is_termux():

@@ -1,4 +1,4 @@
-# app/menu_firmware.py
+# src/fetchtastic/menu_firmware.py
 
 import re
 

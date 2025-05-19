@@ -1,4 +1,4 @@
-# app/downloader.py
+# src/fetchtastic/downloader.py
 
 import json
 import os
@@ -12,7 +12,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from . import menu_repo, setup_config
+from fetchtastic import menu_repo, setup_config
 
 
 def compare_versions(version1, version2):

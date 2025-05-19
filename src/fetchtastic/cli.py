@@ -1,4 +1,4 @@
-# app/cli.py
+# src/fetchtastic/cli.py
 
 import argparse
 import os
@@ -7,7 +7,7 @@ import shutil
 import subprocess
 import sys
 
-from . import downloader, repo_downloader, setup_config
+from fetchtastic import downloader, repo_downloader, setup_config
 
 
 def main():
