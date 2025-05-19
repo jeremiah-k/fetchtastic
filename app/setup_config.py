@@ -514,8 +514,6 @@ def run_setup():
                     print("Topic URL copied to clipboard.")
             else:
                 print("Failed to copy to clipboard.")
-        else:
-            print("You can copy the topic information from above.")
 
         # Ask if the user wants notifications only when new files are downloaded
         notify_on_download_only_default = (
