@@ -13,7 +13,11 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from fetchtastic import menu_repo, setup_config
-from fetchtastic.setup_config import check_for_updates, display_version_info
+from fetchtastic.log_utils import (
+    log_info,
+    setup_logging,
+)
+from fetchtastic.setup_config import display_version_info
 
 
 def compare_versions(version1, version2):
@@ -283,7 +287,7 @@ def check_for_prereleases(
 
 
 def main():
-    # Display version information at startup
+    # Get version information
     current_version, latest_version, update_available = display_version_info()
 
     # Load configuration
@@ -292,10 +296,22 @@ def main():
         print("Configuration not found. Please run 'fetchtastic setup' first.")
         return
 
-    # Show configuration file location
-    exists, config_path = setup_config.config_exists()
-    if exists:
-        print(f"Using configuration from: {config_path}")
+    # Get download directory from config
+    download_dir = config.get(
+        "DOWNLOAD_DIR",
+        os.path.join(os.path.expanduser("~"), "storage", "downloads", "Meshtastic"),
+    )
+
+    # Set up logging
+    setup_logging(download_dir)
+
+    # Log version information at startup
+    log_info(f"Fetchtastic v{current_version}")
+    if update_available and latest_version:
+        log_info(f"A newer version (v{latest_version}) is available!")
+        log_info("Run 'pipx upgrade fetchtastic' to upgrade.")
+
+    # Configuration file location is already displayed in cli.py
 
     # Get configuration values
     save_apks = config.get("SAVE_APKS", False)
@@ -330,13 +346,9 @@ def main():
         if not os.path.exists(dir_path):
             os.makedirs(dir_path)
 
-    # Logging setup
-    log_file = os.path.join(download_dir, "fetchtastic.log")
-
     def log_message(message):
-        with open(log_file, "a") as log:
-            log.write(f"{datetime.now()}: {message}\n")
-        print(message)
+        """Legacy log_message function that now uses the new logging system"""
+        log_info(message)
 
     def send_ntfy_notification(message, title=None):
         if ntfy_server and ntfy_topic:
