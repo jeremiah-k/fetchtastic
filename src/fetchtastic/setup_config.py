@@ -716,12 +716,8 @@ def display_version_info(show_update_message=True):
     """
     current_version, latest_version, update_available = check_for_updates()
 
-    # Print version information
-    print(f"Fetchtastic v{current_version}")
-    if update_available and latest_version and show_update_message:
-        print(f"A newer version (v{latest_version}) is available!")
-        print("Run 'pipx upgrade fetchtastic' to upgrade.")
-
+    # Return version information without printing
+    # The caller will handle logging/printing as appropriate
     return current_version, latest_version, update_available
 
 

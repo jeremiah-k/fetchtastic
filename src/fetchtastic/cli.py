@@ -152,8 +152,14 @@ def main():
         # Run the clean process
         run_clean()
     elif args.command == "version":
-        # Use the display_version_info function to show version and update information
-        display_version_info()
+        # Get version information
+        current_version, latest_version, update_available = display_version_info()
+
+        # Log version information
+        log_info(f"Fetchtastic v{current_version}")
+        if update_available and latest_version:
+            log_info(f"A newer version (v{latest_version}) is available!")
+            log_info("Run 'pipx upgrade fetchtastic' to upgrade.")
     elif args.command == "help":
         # Check if a subcommand was specified
         if len(sys.argv) > 2:

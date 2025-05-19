@@ -287,7 +287,7 @@ def check_for_prereleases(
 
 
 def main():
-    # Display version information at startup
+    # Get version information
     current_version, latest_version, update_available = display_version_info()
 
     # Load configuration
@@ -295,6 +295,21 @@ def main():
     if not config:
         print("Configuration not found. Please run 'fetchtastic setup' first.")
         return
+
+    # Get download directory from config
+    download_dir = config.get(
+        "DOWNLOAD_DIR",
+        os.path.join(os.path.expanduser("~"), "storage", "downloads", "Meshtastic"),
+    )
+
+    # Set up logging
+    setup_logging(download_dir)
+
+    # Log version information at startup
+    log_info(f"Fetchtastic v{current_version}")
+    if update_available and latest_version:
+        log_info(f"A newer version (v{latest_version}) is available!")
+        log_info("Run 'pipx upgrade fetchtastic' to upgrade.")
 
     # Configuration file location is already displayed in cli.py
 
@@ -330,9 +345,6 @@ def main():
     for dir_path in [download_dir, firmware_dir, apks_dir]:
         if not os.path.exists(dir_path):
             os.makedirs(dir_path)
-
-    # Set up logging
-    setup_logging(download_dir)
 
     def log_message(message):
         """Legacy log_message function that now uses the new logging system"""
