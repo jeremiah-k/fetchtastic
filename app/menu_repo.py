@@ -24,7 +24,7 @@ def fetch_repo_contents(path=""):
 
         # Filter for directories and files, excluding specific directories and files
         repo_items = []
-        excluded_dirs = [".git", "node_modules", "__pycache__", ".vscode"]
+        excluded_dirs = [".git", ".github", "node_modules", "__pycache__", ".vscode"]
         excluded_files = [
             ".gitignore",
             "LICENSE",
@@ -35,8 +35,8 @@ def fetch_repo_contents(path=""):
 
         for item in contents:
             if item["type"] == "dir":
-                if item["name"] not in excluded_dirs and (
-                    not item["name"].startswith(".") or item["name"] == ".github"
+                if item["name"] not in excluded_dirs and not item["name"].startswith(
+                    "."
                 ):
                     # Store directory info
                     repo_items.append(
@@ -250,19 +250,22 @@ def run_menu():
                 current_path = selected_item["path"]
                 continue
 
-            # If we get here, a file was selected
-            # Ask if the user wants to download this file
-            print(f"Selected file: {selected_item['name']}")
-            download_prompt = (
-                "Do you want to download this file? [y/n] (default: yes): "
-            )
-            download_choice = input(download_prompt).strip().lower() or "y"
+            # If we get here, we're in a directory with files
+            # Get all files in the current directory
+            files_in_dir = [item for item in items if item["type"] == "file"]
 
-            if download_choice == "y":
-                selected_files = [selected_item]
-                break
+            if files_in_dir:
+                # Use the select_files function to allow multi-selection
+                selected_files = select_files(files_in_dir)
+                if selected_files:
+                    break
+                else:
+                    # User didn't select any files or chose to quit
+                    # Go back to the current directory listing
+                    continue
             else:
-                # Go back to the current directory listing
+                # No files in this directory, go back to directory listing
+                print("No files found in this directory.")
                 continue
 
         if not selected_files:
