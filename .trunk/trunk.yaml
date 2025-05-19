@@ -20,15 +20,15 @@ lint:
     - actionlint@1.7.7
     - bandit@1.8.3
     - black@25.1.0
-    - checkov@3.2.424
+    - checkov@3.2.425
     - git-diff-check
     - isort@6.0.1
-    - markdownlint@0.44.0
+    - markdownlint@0.45.0
     - osv-scanner@2.0.2
     - prettier@3.5.3
     - ruff@0.11.10
     - taplo@0.9.3
-    - trufflehog@3.88.29
+    - trufflehog@3.88.30
     - yamllint@1.37.1
 actions:
   enabled:
