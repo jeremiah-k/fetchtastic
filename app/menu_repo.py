@@ -7,8 +7,8 @@ from pick import pick
 
 def fetch_repo_directories():
     """
-    Fetches directories from the meshtastic.github.io repository that start with 'firmware-'.
-    Returns a list of directory names.
+    Fetches directories from the meshtastic.github.io repository.
+    Returns a list of directory names, excluding common hidden directories.
     """
     # GitHub API URL for the repository contents
     api_url = "https://api.github.com/repos/meshtastic/meshtastic.github.io/contents"
@@ -18,16 +18,31 @@ def fetch_repo_directories():
         response.raise_for_status()
         contents = response.json()
 
-        # Filter for directories that start with 'firmware-'
-        firmware_dirs = []
+        # Filter for directories, excluding common hidden directories
+        repo_dirs = []
+        excluded_dirs = [".github", ".git"]
+
         for item in contents:
-            if item["type"] == "dir" and item["name"].startswith("firmware-"):
-                firmware_dirs.append(item["name"])
+            if (
+                item["type"] == "dir"
+                and item["name"] not in excluded_dirs
+                and not item["name"].startswith(".")
+            ):
+                repo_dirs.append(item["name"])
 
-        # Sort directories by version (assuming format firmware-x.y.z.commit)
+        # Sort directories alphabetically, but put firmware directories first
+        firmware_dirs = [d for d in repo_dirs if d.startswith("firmware-")]
+        other_dirs = [d for d in repo_dirs if not d.startswith("firmware-")]
+
+        # Sort firmware directories by version (assuming format firmware-x.y.z.commit)
         firmware_dirs.sort(reverse=True)
+        # Sort other directories alphabetically
+        other_dirs.sort()
 
-        return firmware_dirs
+        # Combine the sorted lists
+        sorted_dirs = firmware_dirs + other_dirs
+
+        return sorted_dirs
     except Exception as e:
         print(f"Error fetching repository directories: {e}")
         return []
@@ -67,14 +82,14 @@ def fetch_directory_contents(directory):
 
 def select_directory(directories):
     """
-    Displays a menu for the user to select a firmware directory.
+    Displays a menu for the user to select a repository directory.
     Returns the selected directory name.
     """
     if not directories:
-        print("No firmware directories found in the repository.")
+        print("No directories found in the repository.")
         return None
 
-    title = "Select a firmware directory to browse (press ENTER to confirm):"
+    title = "Select a directory to browse (press ENTER to confirm):"
     option, index = pick(directories, title, indicator="*")
     return option
 
@@ -119,11 +134,11 @@ def run_menu():
     Runs the repository browsing menu and returns the selected files.
     """
     try:
-        print("Fetching firmware directories from meshtastic.github.io repository...")
+        print("Fetching directories from meshtastic.github.io repository...")
         directories = fetch_repo_directories()
 
         if not directories:
-            print("No firmware directories found. Exiting.")
+            print("No directories found in the repository. Exiting.")
             return None
 
         selected_dir = select_directory(directories)
