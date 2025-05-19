@@ -14,10 +14,7 @@ from urllib3.util.retry import Retry
 
 from fetchtastic import menu_repo, setup_config
 from fetchtastic.log_utils import (
-    log_debug,
-    log_error,
     log_info,
-    log_warning,
     setup_logging,
 )
 from fetchtastic.setup_config import display_version_info
@@ -335,7 +332,7 @@ def main():
             os.makedirs(dir_path)
 
     # Set up logging
-    logger = setup_logging(download_dir)
+    setup_logging(download_dir)
 
     def log_message(message):
         """Legacy log_message function that now uses the new logging system"""
