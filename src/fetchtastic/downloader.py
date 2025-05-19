@@ -13,6 +13,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from fetchtastic import menu_repo, setup_config
+from fetchtastic.setup_config import check_for_updates, display_version_info
 
 
 def compare_versions(version1, version2):
@@ -278,48 +279,12 @@ def check_for_prereleases(
         return False, []
 
 
-def check_for_updates():
-    """
-    Check if a newer version of fetchtastic is available.
-
-    Returns:
-        tuple: (current_version, latest_version, update_available)
-    """
-    try:
-        # Get current version
-        from importlib.metadata import version
-
-        current_version = version("fetchtastic")
-
-        # Get latest version from PyPI
-        import requests
-
-        response = requests.get("https://pypi.org/pypi/fetchtastic/json", timeout=5)
-        if response.status_code == 200:
-            data = response.json()
-            latest_version = data["info"]["version"]
-            return current_version, latest_version, current_version != latest_version
-        return current_version, None, False
-    except Exception:
-        # If anything fails, just return that no update is available
-        try:
-            from importlib.metadata import version
-
-            return version("fetchtastic"), None, False
-        except Exception:
-            return "unknown", None, False
+# Use the version check function from setup_config
 
 
 def main():
-    # Get version information
-    current_version, latest_version, update_available = check_for_updates()
-
-    # Print version information
-    print(f"Fetchtastic v{current_version}")
-    if update_available and latest_version:
-        print(
-            f"A newer version (v{latest_version}) is available! Run 'pipx upgrade fetchtastic' to upgrade."
-        )
+    # Display version information at startup
+    current_version, latest_version, update_available = display_version_info()
 
     # Load configuration
     config = setup_config.load_config()
@@ -820,6 +785,15 @@ def main():
     log_message(
         f"Finished the Meshtastic downloader. Total time taken: {total_time:.2f} seconds"
     )
+
+    # Display version information again at the end of the run
+    if update_available:
+        print("\n" + "=" * 80)
+        print(
+            f"Reminder: A newer version (v{latest_version}) of Fetchtastic is available!"
+        )
+        print("Run 'pipx upgrade fetchtastic' to upgrade.")
+        print("=" * 80)
 
     if downloads_skipped:
         log_message("Not connected to Wi-Fi. Skipping all downloads.")

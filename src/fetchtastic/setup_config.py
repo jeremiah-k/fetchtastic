@@ -668,6 +668,61 @@ def run_setup():
         print("Setup complete. Run 'fetchtastic download' to start downloading.")
 
 
+def check_for_updates():
+    """
+    Check if a newer version of fetchtastic is available.
+
+    Returns:
+        tuple: (current_version, latest_version, update_available)
+    """
+    try:
+        # Get current version
+        from importlib.metadata import version
+
+        current_version = version("fetchtastic")
+
+        # Get latest version from PyPI
+        import requests
+
+        response = requests.get("https://pypi.org/pypi/fetchtastic/json", timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            latest_version = data["info"]["version"]
+            # Use packaging.version for proper version comparison
+            from packaging import version as pkg_version
+
+            current_ver = pkg_version.parse(current_version)
+            latest_ver = pkg_version.parse(latest_version)
+            return current_version, latest_version, latest_ver > current_ver
+        return current_version, None, False
+    except Exception:
+        # If anything fails, just return that no update is available
+        try:
+            from importlib.metadata import version
+
+            return version("fetchtastic"), None, False
+        except Exception:
+            return "unknown", None, False
+
+
+def display_version_info(show_update_message=True):
+    """
+    Display version information and update message if a newer version is available.
+
+    Args:
+        show_update_message: Whether to show the update message if a newer version is available.
+    """
+    current_version, latest_version, update_available = check_for_updates()
+
+    # Print version information
+    print(f"Fetchtastic v{current_version}")
+    if update_available and latest_version and show_update_message:
+        print(f"A newer version (v{latest_version}) is available!")
+        print("Run 'pipx upgrade fetchtastic' to upgrade.")
+
+    return current_version, latest_version, update_available
+
+
 def migrate_config():
     """
     Migrates the configuration from the old location to the new location.
