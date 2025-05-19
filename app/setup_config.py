@@ -190,6 +190,19 @@ def run_setup():
         firmware_versions_to_keep = input(prompt_text).strip() or str(current_versions)
         config["FIRMWARE_VERSIONS_TO_KEEP"] = int(firmware_versions_to_keep)
 
+        # Prompt for pre-release downloads
+        check_prereleases_current = config.get("CHECK_PRERELEASES", False)
+        check_prereleases_default = "yes" if check_prereleases_current else "no"
+        check_prereleases = (
+            input(
+                f"Would you like to check for and download pre-release firmware from meshtastic.github.io? [y/n] (default: {check_prereleases_default}): "
+            )
+            .strip()
+            .lower()
+            or check_prereleases_default[0]
+        )
+        config["CHECK_PRERELEASES"] = True if check_prereleases == "y" else False
+
         # Prompt for automatic extraction
         auto_extract_current = config.get("AUTO_EXTRACT", False)
         auto_extract_default = "yes" if auto_extract_current else "no"
@@ -501,8 +514,6 @@ def run_setup():
                     print("Topic URL copied to clipboard.")
             else:
                 print("Failed to copy to clipboard.")
-        else:
-            print("You can copy the topic information from above.")
 
         # Ask if the user wants notifications only when new files are downloaded
         notify_on_download_only_default = (
@@ -540,7 +551,7 @@ def run_setup():
         or "y"
     )
     if perform_first_run == "y":
-        print("Starting first run, this may take a few minutes...")
+        print("Setup complete. Starting first run, this may take a few minutes...")
         downloader.main()
     else:
         print("Setup complete. Run 'fetchtastic download' to start downloading.")

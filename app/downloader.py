@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import shutil
 import time
 import zipfile
 from datetime import datetime
@@ -11,7 +12,270 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from . import setup_config
+from . import menu_repo, setup_config
+
+
+def compare_versions(version1, version2):
+    """
+    Compares two version strings (e.g., 2.6.9.f93d031 vs 2.6.8.ef9d0d7).
+
+    Returns:
+        1 if version1 > version2
+        0 if version1 == version2
+        -1 if version1 < version2
+    """
+    # Split versions into components
+    v1_parts = version1.split(".")
+    v2_parts = version2.split(".")
+
+    # Compare major, minor, patch versions
+    for i in range(min(len(v1_parts), len(v2_parts))):
+        if i < 3:  # Major, minor, patch are numeric
+            try:
+                v1_num = int(v1_parts[i])
+                v2_num = int(v2_parts[i])
+                if v1_num > v2_num:
+                    return 1
+                elif v1_num < v2_num:
+                    return -1
+            except ValueError:
+                # If conversion fails, fall back to string comparison
+                if v1_parts[i] > v2_parts[i]:
+                    return 1
+                elif v1_parts[i] < v2_parts[i]:
+                    return -1
+        else:
+            # For commit hash, just do string comparison
+            if v1_parts[i] > v2_parts[i]:
+                return 1
+            elif v1_parts[i] < v2_parts[i]:
+                return -1
+
+    # If we get here and versions have different lengths, the longer one is newer
+    if len(v1_parts) > len(v2_parts):
+        return 1
+    elif len(v1_parts) < len(v2_parts):
+        return -1
+
+    # Versions are equal
+    return 0
+
+
+def check_promoted_prereleases(download_dir, latest_release_tag, log_message_func=None):
+    """
+    Checks if any pre-releases have been promoted to regular releases.
+    If a pre-release matches the latest release, it verifies the files match
+    and either moves them to the regular release directory or deletes them.
+
+    Args:
+        download_dir: Base download directory
+        latest_release_tag: The latest official release tag (e.g., v2.6.8.ef9d0d7)
+        log_message_func: Function to log messages (optional)
+
+    Returns:
+        Boolean indicating if any pre-releases were promoted
+    """
+    if log_message_func is None:
+
+        def log_message_func(message):
+            print(message)
+
+    # Strip the 'v' prefix if present
+    if latest_release_tag.startswith("v"):
+        latest_release_version = latest_release_tag[1:]
+    else:
+        latest_release_version = latest_release_tag
+
+    # Path to prerelease directory
+    prerelease_dir = os.path.join(download_dir, "firmware", "prerelease")
+    if not os.path.exists(prerelease_dir):
+        return False
+
+    # Path to regular release directory
+    release_dir = os.path.join(download_dir, "firmware", latest_release_tag)
+    if not os.path.exists(release_dir):
+        return False
+
+    # Check for matching pre-release directories
+    promoted = False
+    for dir_name in os.listdir(prerelease_dir):
+        if dir_name.startswith("firmware-"):
+            dir_version = dir_name[9:]  # Remove 'firmware-' prefix
+
+            # If this pre-release matches the latest release version
+            if dir_version == latest_release_version:
+                log_message_func(
+                    f"Found pre-release {dir_name} that matches latest release {latest_release_tag}"
+                )
+                prerelease_path = os.path.join(prerelease_dir, dir_name)
+
+                # Verify files match by comparing hashes
+                files_match = True
+                for file_name in os.listdir(prerelease_path):
+                    prerelease_file = os.path.join(prerelease_path, file_name)
+                    release_file = os.path.join(release_dir, file_name)
+
+                    if os.path.exists(release_file):
+                        # Compare file hashes
+                        if not compare_file_hashes(prerelease_file, release_file):
+                            files_match = False
+                            log_message_func(
+                                f"File {file_name} in pre-release doesn't match the release version"
+                            )
+                            break
+
+                if files_match:
+                    log_message_func(
+                        f"Pre-release {dir_name} has been promoted to release {latest_release_tag}"
+                    )
+                    # Remove the pre-release directory since it's now a regular release
+                    shutil.rmtree(prerelease_path)
+                    log_message_func(
+                        f"Removed pre-release directory: {prerelease_path}"
+                    )
+                    promoted = True
+
+    return promoted
+
+
+def compare_file_hashes(file1, file2):
+    """
+    Compares the SHA-256 hashes of two files to check if they are identical.
+
+    Args:
+        file1: Path to first file
+        file2: Path to second file
+
+    Returns:
+        Boolean indicating if the files have the same hash
+    """
+    import hashlib
+
+    def get_file_hash(file_path):
+        sha256_hash = hashlib.sha256()
+        with open(file_path, "rb") as f:
+            # Read and update hash in chunks of 4K
+            for byte_block in iter(lambda: f.read(4096), b""):
+                sha256_hash.update(byte_block)
+        return sha256_hash.hexdigest()
+
+    hash1 = get_file_hash(file1)
+    hash2 = get_file_hash(file2)
+
+    return hash1 == hash2
+
+
+def check_for_prereleases(
+    download_dir, latest_release_tag, selected_patterns, log_message_func=None
+):
+    """
+    Checks for pre-release firmware in the meshtastic.github.io repository.
+
+    Args:
+        download_dir: Base download directory
+        latest_release_tag: The latest official release tag (e.g., v2.6.8.ef9d0d7)
+        selected_patterns: List of firmware patterns to download
+        log_message_func: Function to log messages (optional)
+
+    Returns:
+        Tuple of (boolean indicating if any pre-releases were found and downloaded,
+                 list of pre-release versions that were downloaded)
+    """
+    if log_message_func is None:
+
+        def log_message_func(message):
+            print(message)
+
+    # Strip the 'v' prefix if present
+    if latest_release_tag.startswith("v"):
+        latest_release_version = latest_release_tag[1:]
+    else:
+        latest_release_version = latest_release_tag
+
+    # Fetch directories from the meshtastic.github.io repository
+    directories = menu_repo.fetch_repo_directories()
+
+    if not directories:
+        log_message_func("No firmware directories found in the repository.")
+        return False, []
+
+    # Find directories that are newer than the latest release
+    prerelease_dirs = []
+    for dir_name in directories:
+        # Extract version from directory name (e.g., firmware-2.6.9.f93d031)
+        if dir_name.startswith("firmware-"):
+            dir_version = dir_name[9:]  # Remove 'firmware-' prefix
+
+            # Compare versions (assuming format x.y.z.commit)
+            if compare_versions(dir_version, latest_release_version) > 0:
+                prerelease_dirs.append(dir_name)
+
+    if not prerelease_dirs:
+        return False, []
+
+    # Create prerelease directory if it doesn't exist
+    prerelease_dir = os.path.join(download_dir, "firmware", "prerelease")
+    if not os.path.exists(prerelease_dir):
+        os.makedirs(prerelease_dir)
+
+    downloaded_files = []
+
+    # Process each pre-release directory
+    for dir_name in prerelease_dirs:
+        log_message_func(f"Found pre-release: {dir_name}")
+
+        # Fetch files from the directory
+        files = menu_repo.fetch_directory_contents(dir_name)
+
+        if not files:
+            log_message_func(f"No files found in {dir_name}.")
+            continue
+
+        # Create directory for this pre-release
+        dir_path = os.path.join(prerelease_dir, dir_name)
+        if not os.path.exists(dir_path):
+            os.makedirs(dir_path)
+
+        # Filter files based on selected patterns
+        for file in files:
+            file_name = file["name"]
+            download_url = file["download_url"]
+            file_path = os.path.join(dir_path, file_name)
+
+            if not os.path.exists(file_path):
+                try:
+                    log_message_func(f"Downloading pre-release file: {file_name}")
+                    response = requests.get(download_url, stream=True, timeout=30)
+                    response.raise_for_status()
+
+                    with open(file_path, "wb") as f:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            if chunk:
+                                f.write(chunk)
+
+                    # Set executable permissions for .sh files
+                    if file_name.endswith(".sh"):
+                        os.chmod(file_path, 0o755)
+                        log_message_func(f"Set executable permissions for {file_name}")
+
+                    log_message_func(f"Downloaded {file_name} to {file_path}")
+                    downloaded_files.append(file_path)
+                except Exception as e:
+                    log_message_func(f"Error downloading {file_name}: {e}")
+
+    downloaded_versions = []
+    if downloaded_files:
+        log_message_func(
+            f"Successfully downloaded {len(downloaded_files)} pre-release files."
+        )
+        # Extract unique directory names from downloaded files
+        for dir_name in prerelease_dirs:
+            if any(dir_name in file_path for file_path in downloaded_files):
+                downloaded_versions.append(dir_name)
+        return True, downloaded_versions
+    else:
+        log_message_func("No new pre-release files were downloaded.")
+        return False, []
 
 
 def main():
@@ -33,6 +297,7 @@ def main():
     exclude_patterns = config.get("EXCLUDE_PATTERNS", [])
     wifi_only = config.get("WIFI_ONLY", False) if setup_config.is_termux() else False
     notify_on_download_only = config.get("NOTIFY_ON_DOWNLOAD_ONLY", False)
+    check_prereleases = config.get("CHECK_PRERELEASES", False)
 
     selected_apk_patterns = config.get("SELECTED_APK_ASSETS", [])
     selected_firmware_patterns = config.get("SELECTED_FIRMWARE_ASSETS", [])
@@ -193,12 +458,19 @@ def main():
 
     # Cleanup function to keep only specific versions based on release tags
     def cleanup_old_versions(directory, releases_to_keep):
+        # Directories to exclude from cleanup
+        excluded_dirs = ["repo-dls", "prerelease"]
+
         versions = [
             d
             for d in os.listdir(directory)
             if os.path.isdir(os.path.join(directory, d))
         ]
         for version in versions:
+            # Skip excluded directories
+            if version in excluded_dirs:
+                continue
+
             if version not in releases_to_keep:
                 version_path = os.path.join(directory, version)
                 for root, dirs, files in os.walk(version_path, topdown=False):
@@ -434,6 +706,45 @@ def main():
         new_firmware_versions.extend(fw_new_versions)
         if fw_downloaded:
             log_message(f"Downloaded Firmware versions: {', '.join(fw_downloaded)}")
+
+        # Check if any pre-releases have been promoted to regular releases
+        latest_release_tag = None
+        if os.path.exists(latest_firmware_release_file):
+            with open(latest_firmware_release_file, "r") as f:
+                latest_release_tag = f.read().strip()
+
+        if latest_release_tag:
+            # Check if any pre-releases have been promoted to regular releases
+            promoted = check_promoted_prereleases(
+                download_dir, latest_release_tag, log_message
+            )
+            if promoted:
+                log_message(
+                    "Detected pre-release(s) that have been promoted to regular release."
+                )
+
+        # Check for pre-releases if enabled
+        if check_prereleases and not downloads_skipped:
+            # We already have the latest release tag from above
+            if latest_release_tag:
+                log_message("Checking for pre-release firmware...")
+                prerelease_found, prerelease_versions = check_for_prereleases(
+                    download_dir,
+                    latest_release_tag,
+                    selected_firmware_patterns,
+                    log_message,
+                )
+                if prerelease_found:
+                    log_message(
+                        f"Pre-release firmware downloaded successfully: {', '.join(prerelease_versions)}"
+                    )
+                    # Add specific pre-release versions to notification messages
+                    for version in prerelease_versions:
+                        downloaded_firmwares.append(f"pre-release {version}")
+                else:
+                    log_message("No new pre-release firmware found or downloaded.")
+            else:
+                log_message("No latest release tag found. Skipping pre-release check.")
     elif not selected_firmware_patterns:
         log_message("No firmware assets selected. Skipping firmware download.")
 

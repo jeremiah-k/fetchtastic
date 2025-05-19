@@ -34,13 +34,17 @@ def download_repo_files(selected_files, download_dir, log_message_func=None):
     directory = selected_files["directory"]
     files = selected_files["files"]
 
-    # Create repo directory if it doesn't exist
-    repo_dir = os.path.join(download_dir, "firmware", "repo")
+    # Create repo-dls directory if it doesn't exist
+    repo_dir = os.path.join(download_dir, "firmware", "repo-dls")
     if not os.path.exists(repo_dir):
         os.makedirs(repo_dir)
 
-    # Create directory-specific folder
-    dir_path = os.path.join(repo_dir, directory)
+    # Create directory structure matching the repository path
+    if directory:
+        dir_path = os.path.join(repo_dir, directory)
+    else:
+        dir_path = repo_dir
+
     if not os.path.exists(dir_path):
         os.makedirs(dir_path)
 
@@ -52,7 +56,7 @@ def download_repo_files(selected_files, download_dir, log_message_func=None):
         file_path = os.path.join(dir_path, file_name)
 
         try:
-            log_message_func(f"Downloading {file_name} from {directory}...")
+            log_message_func(f"Downloading {file_name} from {directory or 'root'}...")
             response = requests.get(download_url, stream=True, timeout=30)
             response.raise_for_status()
 
@@ -91,10 +95,10 @@ def clean_repo_directory(download_dir, log_message_func=None):
         def log_message_func(message):
             print(message)
 
-    repo_dir = os.path.join(download_dir, "firmware", "repo")
+    repo_dir = os.path.join(download_dir, "firmware", "repo-dls")
 
     if not os.path.exists(repo_dir):
-        log_message_func("Repo directory does not exist. Nothing to clean.")
+        log_message_func("Repo-dls directory does not exist. Nothing to clean.")
         return True
 
     try:
