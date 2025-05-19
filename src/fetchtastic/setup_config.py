@@ -815,6 +815,19 @@ def check_for_updates():
             return "unknown", None, False
 
 
+def get_upgrade_command():
+    """
+    Returns the appropriate upgrade command based on the environment.
+
+    Returns:
+        str: The command to upgrade fetchtastic
+    """
+    if is_termux():
+        return "pip install --upgrade fetchtastic"
+    else:
+        return "pipx upgrade fetchtastic"
+
+
 def display_version_info(show_update_message=True):
     """
     Display version information and update message if a newer version is available.

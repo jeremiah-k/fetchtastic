@@ -9,7 +9,7 @@ import sys
 
 from fetchtastic import downloader, repo_downloader, setup_config
 from fetchtastic.log_utils import log_error, log_info, setup_logging
-from fetchtastic.setup_config import display_version_info
+from fetchtastic.setup_config import display_version_info, get_upgrade_command
 
 
 def main():
@@ -74,12 +74,12 @@ def main():
 
         # Remind about updates at the end if available
         if update_available:
-            print("\n" + "=" * 80)
-            print(
-                f"Reminder: A newer version (v{latest_version}) of Fetchtastic is available!"
+            upgrade_cmd = get_upgrade_command()
+            log_info("\nUpdate Available")
+            log_info(
+                f"A newer version (v{latest_version}) of Fetchtastic is available!"
             )
-            print("Run 'pipx upgrade fetchtastic' to upgrade.")
-            print("=" * 80)
+            log_info(f"Run '{upgrade_cmd}' to upgrade.")
     elif args.command == "download":
         # Check if configuration exists
         exists, config_path = setup_config.config_exists()
@@ -158,8 +158,9 @@ def main():
         # Log version information
         log_info(f"Fetchtastic v{current_version}")
         if update_available and latest_version:
+            upgrade_cmd = get_upgrade_command()
             log_info(f"A newer version (v{latest_version}) is available!")
-            log_info("Run 'pipx upgrade fetchtastic' to upgrade.")
+            log_info(f"Run '{upgrade_cmd}' to upgrade.")
     elif args.command == "help":
         # Check if a subcommand was specified
         if len(sys.argv) > 2:
@@ -215,24 +216,24 @@ def main():
 
             # Remind about updates at the end if available
             if update_available:
-                print("\n" + "=" * 80)
-                print(
-                    f"Reminder: A newer version (v{latest_version}) of Fetchtastic is available!"
+                upgrade_cmd = get_upgrade_command()
+                log_info("\nUpdate Available")
+                log_info(
+                    f"A newer version (v{latest_version}) of Fetchtastic is available!"
                 )
-                print("Run 'pipx upgrade fetchtastic' to upgrade.")
-                print("=" * 80)
+                log_info(f"Run '{upgrade_cmd}' to upgrade.")
         elif args.repo_command == "clean":
             # Clean the repository directory
             run_repo_clean(config)
 
             # Remind about updates at the end if available
             if update_available:
-                print("\n" + "=" * 80)
-                print(
-                    f"Reminder: A newer version (v{latest_version}) of Fetchtastic is available!"
+                upgrade_cmd = get_upgrade_command()
+                log_info("\nUpdate Available")
+                log_info(
+                    f"A newer version (v{latest_version}) of Fetchtastic is available!"
                 )
-                print("Run 'pipx upgrade fetchtastic' to upgrade.")
-                print("=" * 80)
+                log_info(f"Run '{upgrade_cmd}' to upgrade.")
         else:
             # No repo subcommand provided
             repo_parser.print_help()
