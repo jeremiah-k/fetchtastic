@@ -13,7 +13,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from fetchtastic import menu_repo, setup_config
-from fetchtastic.setup_config import check_for_updates, display_version_info
+from fetchtastic.setup_config import display_version_info
 
 
 def compare_versions(version1, version2):
@@ -292,10 +292,7 @@ def main():
         print("Configuration not found. Please run 'fetchtastic setup' first.")
         return
 
-    # Show configuration file location
-    exists, config_path = setup_config.config_exists()
-    if exists:
-        print(f"Using configuration from: {config_path}")
+    # Configuration file location is already displayed in cli.py
 
     # Get configuration values
     save_apks = config.get("SAVE_APKS", False)
