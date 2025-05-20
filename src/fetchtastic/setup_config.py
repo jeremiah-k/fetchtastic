@@ -265,15 +265,26 @@ def run_setup():
             create_config_shortcut(CONFIG_FILE, BASE_DIR)
             print(f"Created shortcut to configuration file in {BASE_DIR}")
 
-            # Ask about Windows Start Menu shortcuts
-            create_menu = (
-                input(
-                    "Would you like to create Fetchtastic shortcuts in the Start Menu? (recommended) [y/n] (default: yes): "
+            # Check if Start Menu shortcuts already exist
+            if os.path.exists(WINDOWS_START_MENU_FOLDER):
+                create_menu = (
+                    input(
+                        "Fetchtastic shortcuts already exist in the Start Menu. Would you like to update them? [y/n] (default: yes): "
+                    )
+                    .strip()
+                    .lower()
+                    or "y"
                 )
-                .strip()
-                .lower()
-                or "y"
-            )
+            else:
+                create_menu = (
+                    input(
+                        "Would you like to create Fetchtastic shortcuts in the Start Menu? (recommended) [y/n] (default: yes): "
+                    )
+                    .strip()
+                    .lower()
+                    or "y"
+                )
+
             if create_menu == "y":
                 create_windows_menu_shortcuts(CONFIG_FILE, BASE_DIR)
         else:
@@ -1047,12 +1058,28 @@ def create_windows_menu_shortcuts(config_file_path, base_dir):
     try:
         # Clear existing shortcuts by removing and recreating the folder
         if os.path.exists(WINDOWS_START_MENU_FOLDER):
-            import shutil
+            try:
+                import shutil
 
-            shutil.rmtree(WINDOWS_START_MENU_FOLDER)
+                # Try to remove the folder and its contents
+                shutil.rmtree(WINDOWS_START_MENU_FOLDER)
+                print(f"Removed existing shortcuts from {WINDOWS_START_MENU_FOLDER}")
+            except Exception as e:
+                print(f"Warning: Could not remove existing shortcuts folder: {e}")
+                # Try to remove individual files instead
+                try:
+                    for file in os.listdir(WINDOWS_START_MENU_FOLDER):
+                        file_path = os.path.join(WINDOWS_START_MENU_FOLDER, file)
+                        if os.path.isfile(file_path):
+                            os.remove(file_path)
+                    print("Removed individual shortcut files instead")
+                except Exception as e2:
+                    print(f"Warning: Could not remove existing shortcut files: {e2}")
+                    print("Will attempt to overwrite existing shortcuts")
 
-        # Create the Fetchtastic folder in the Start Menu
-        os.makedirs(WINDOWS_START_MENU_FOLDER)
+        # Create the Fetchtastic folder in the Start Menu if it doesn't exist
+        if not os.path.exists(WINDOWS_START_MENU_FOLDER):
+            os.makedirs(WINDOWS_START_MENU_FOLDER)
 
         # Get the path to the fetchtastic executable
         fetchtastic_path = shutil.which("fetchtastic")
@@ -1236,12 +1263,24 @@ def create_startup_shortcut():
         # Create the shortcut to the batch file
         shortcut_path = os.path.join(startup_folder, "Fetchtastic.lnk")
 
-        winshell.CreateShortcut(
-            Path=shortcut_path,
-            Target=batch_path,
-            Description="Run Fetchtastic on startup",
-            Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0),
-        )
+        # Use direct shortcut creation without WindowStyle parameter
+        try:
+            # First try with WindowStyle parameter (newer versions of winshell)
+            winshell.CreateShortcut(
+                Path=shortcut_path,
+                Target=batch_path,
+                Description="Run Fetchtastic on startup",
+                Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0),
+                WindowStyle=7,  # Minimized
+            )
+        except TypeError:
+            # If WindowStyle is not supported, use basic parameters
+            winshell.CreateShortcut(
+                Path=shortcut_path,
+                Target=batch_path,
+                Description="Run Fetchtastic on startup",
+                Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0),
+            )
 
         print(f"Created startup shortcut at: {shortcut_path}")
         return True
