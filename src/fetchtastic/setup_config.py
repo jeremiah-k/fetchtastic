@@ -1056,30 +1056,61 @@ def create_windows_menu_shortcuts(config_file_path, base_dir):
         return False
 
     try:
-        # Clear existing shortcuts by removing and recreating the folder
-        if os.path.exists(WINDOWS_START_MENU_FOLDER):
-            try:
-                import shutil
+        # Completely remove the Start Menu folder and recreate it
+        # This ensures we don't have any leftover shortcuts
+        import shutil
 
-                # Try to remove the folder and its contents
-                shutil.rmtree(WINDOWS_START_MENU_FOLDER)
-                print(f"Removed existing shortcuts from {WINDOWS_START_MENU_FOLDER}")
+        # First, make sure the parent directory exists
+        parent_dir = os.path.dirname(WINDOWS_START_MENU_FOLDER)
+        if not os.path.exists(parent_dir):
+            print(f"Warning: Parent directory {parent_dir} does not exist")
+            # Try to create the parent directory structure
+            try:
+                os.makedirs(parent_dir, exist_ok=True)
             except Exception as e:
-                print(f"Warning: Could not remove existing shortcuts folder: {e}")
-                # Try to remove individual files instead
+                print(f"Error creating parent directory: {e}")
+                return False
+
+        # Now handle the Fetchtastic folder
+        if os.path.exists(WINDOWS_START_MENU_FOLDER):
+            print(f"Removing existing Start Menu folder: {WINDOWS_START_MENU_FOLDER}")
+            try:
+                # Try to remove the entire folder
+                shutil.rmtree(WINDOWS_START_MENU_FOLDER)
+                print("Successfully removed existing shortcuts folder")
+            except Exception as e:
+                print(f"Warning: Could not remove shortcuts folder: {e}")
+                # Try to remove individual files as a fallback
                 try:
-                    for file in os.listdir(WINDOWS_START_MENU_FOLDER):
+                    # First list all files
+                    files = os.listdir(WINDOWS_START_MENU_FOLDER)
+                    print(f"Found {len(files)} files in shortcuts folder")
+
+                    # Try to remove each file
+                    for file in files:
                         file_path = os.path.join(WINDOWS_START_MENU_FOLDER, file)
-                        if os.path.isfile(file_path):
-                            os.remove(file_path)
-                    print("Removed individual shortcut files instead")
+                        try:
+                            if os.path.isfile(file_path):
+                                os.remove(file_path)
+                                print(f"Removed: {file}")
+                            elif os.path.isdir(file_path):
+                                shutil.rmtree(file_path)
+                                print(f"Removed directory: {file}")
+                        except Exception as e3:
+                            print(f"Could not remove {file}: {e3}")
+
+                    print("Attempted to remove individual files")
                 except Exception as e2:
-                    print(f"Warning: Could not remove existing shortcut files: {e2}")
+                    print(f"Warning: Could not clean shortcuts folder: {e2}")
                     print("Will attempt to overwrite existing shortcuts")
 
-        # Create the Fetchtastic folder in the Start Menu if it doesn't exist
-        if not os.path.exists(WINDOWS_START_MENU_FOLDER):
-            os.makedirs(WINDOWS_START_MENU_FOLDER)
+        # Create a fresh Fetchtastic folder in the Start Menu
+        print(f"Creating Start Menu folder: {WINDOWS_START_MENU_FOLDER}")
+        try:
+            os.makedirs(WINDOWS_START_MENU_FOLDER, exist_ok=True)
+        except Exception as e:
+            print(f"Error creating Start Menu folder: {e}")
+            return False
 
         # Get the path to the fetchtastic executable
         fetchtastic_path = shutil.which("fetchtastic")
@@ -1169,15 +1200,22 @@ def create_windows_menu_shortcuts(config_file_path, base_dir):
         )
 
         # Create shortcut to log file
-        log_dir = platformdirs.user_log_dir("fetchtastic")
-        log_file = os.path.join(log_dir, "fetchtastic.log")
-        # Create log directory if it doesn't exist
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir)
-        # Create an empty log file if it doesn't exist
-        if not os.path.exists(log_file):
-            with open(log_file, "w") as f:
-                f.write("# Fetchtastic log file\n")
+        # First check if there's a log file in the base directory (old location)
+        base_log_file = os.path.join(BASE_DIR, "fetchtastic.log")
+        if os.path.exists(base_log_file):
+            log_file = base_log_file
+        else:
+            # Use the platformdirs log location
+            log_dir = platformdirs.user_log_dir("fetchtastic")
+            log_file = os.path.join(log_dir, "fetchtastic.log")
+            # Create log directory if it doesn't exist
+            if not os.path.exists(log_dir):
+                os.makedirs(log_dir)
+            # Create an empty log file if it doesn't exist
+            if not os.path.exists(log_file):
+                with open(log_file, "w") as f:
+                    f.write("# Fetchtastic log file\n")
+                print(f"Created empty log file at: {log_file}")
 
         log_shortcut_path = os.path.join(
             WINDOWS_START_MENU_FOLDER, "Fetchtastic Log.lnk"
