@@ -17,7 +17,6 @@ from fetchtastic import menu_apk, menu_firmware
 # Import Windows-specific modules if on Windows
 if platform.system() == "Windows":
     try:
-        import win32com.client
         import winshell
 
         WINDOWS_MODULES_AVAILABLE = True
