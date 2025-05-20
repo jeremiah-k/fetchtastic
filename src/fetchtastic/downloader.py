@@ -98,8 +98,6 @@ def check_promoted_prereleases(download_dir, latest_release_tag, log_message_fun
 
     # Path to regular release directory
     release_dir = os.path.join(download_dir, "firmware", latest_release_tag)
-    if not os.path.exists(release_dir):
-        return False
 
     # Check for matching pre-release directories
     promoted = False
@@ -113,6 +111,20 @@ def check_promoted_prereleases(download_dir, latest_release_tag, log_message_fun
                     f"Found pre-release {dir_name} that matches latest release {latest_release_tag}"
                 )
                 prerelease_path = os.path.join(prerelease_dir, dir_name)
+
+                # If the release directory doesn't exist yet, we can't compare files
+                # We'll just remove the pre-release directory since it will be downloaded as a regular release
+                if not os.path.exists(release_dir):
+                    log_message_func(
+                        f"Pre-release {dir_name} has been promoted to release {latest_release_tag}, "
+                        f"but the release directory doesn't exist yet. Removing pre-release."
+                    )
+                    shutil.rmtree(prerelease_path)
+                    log_message_func(
+                        f"Removed pre-release directory: {prerelease_path}"
+                    )
+                    promoted = True
+                    continue
 
                 # Verify files match by comparing hashes
                 files_match = True
@@ -175,6 +187,7 @@ def check_for_prereleases(
 ):
     """
     Checks for pre-release firmware in the meshtastic.github.io repository.
+    Also cleans up stale pre-releases that no longer exist in the repository.
 
     Args:
         download_dir: Base download directory
@@ -221,6 +234,25 @@ def check_for_prereleases(
         for item in os.listdir(prerelease_dir):
             if os.path.isdir(os.path.join(prerelease_dir, item)):
                 existing_prerelease_dirs.append(item)
+
+    # Extract all firmware directory names from the repository
+    repo_firmware_dirs = [
+        dir_name for dir_name in directories if dir_name.startswith("firmware-")
+    ]
+
+    # Clean up stale pre-releases that no longer exist in the repository
+    if os.path.exists(prerelease_dir):
+        for dir_name in existing_prerelease_dirs:
+            if dir_name not in repo_firmware_dirs:
+                # This pre-release no longer exists in the repository
+                dir_path = os.path.join(prerelease_dir, dir_name)
+                try:
+                    log_message_func(
+                        f"Removing stale pre-release directory: {dir_name}"
+                    )
+                    shutil.rmtree(dir_path)
+                except Exception as e:
+                    log_message_func(f"Error removing directory {dir_path}: {e}")
 
     # Find directories that are newer than the latest release and don't already exist
     prerelease_dirs = []
