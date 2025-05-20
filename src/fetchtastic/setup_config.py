@@ -152,13 +152,12 @@ def run_setup():
         print("\n" + "=" * 80)
         print("Configuration Migration")
         print("=" * 80)
-        if prompt_for_migration():
-            if migrate_config():
-                print("Configuration successfully migrated to the new location.")
-            else:
-                print("Failed to migrate configuration. Continuing with old location.")
+        # Automatically migrate without prompting
+        prompt_for_migration()  # Just logs the migration message
+        if migrate_config():
+            print("Configuration successfully migrated to the new location.")
         else:
-            print("Continuing with configuration at old location.")
+            print("Failed to migrate configuration. Continuing with old location.")
         print("=" * 80 + "\n")
 
     # Ask for base directory as the first question
@@ -889,125 +888,17 @@ def migrate_config():
         return False
 
 
-def prompt_for_migration(timeout=10):
+def prompt_for_migration():
     """
-    Prompts the user to migrate the configuration from the old location to the new location.
-    Waits for a specified timeout for user input.
-
-    Args:
-        timeout: Number of seconds to wait for user input.
+    Automatically migrates the configuration from the old location to the new location
+    without prompting the user.
 
     Returns:
-        bool: True if user chose to migrate, False otherwise.
+        bool: Always returns True to indicate migration should proceed.
     """
     print(f"Found configuration file at old location: {OLD_CONFIG_FILE}")
-    print(f"It is recommended to migrate to the new location: {CONFIG_FILE}")
-    print(
-        f"Would you like to migrate? [y/n] (default: y, continuing in {timeout} seconds)"
-    )
-
-    # Platform-specific implementation for timed input
-    if platform.system() == "Windows":
-        # Windows implementation - doesn't use select.select()
-        import sys
-
-        try:
-            import msvcrt
-
-            # Start timer
-            start_time = time.time()
-
-            # Wait for input with timeout
-            while time.time() - start_time < timeout:
-                # Check if there's input available using msvcrt (Windows-specific)
-                if msvcrt.kbhit():
-                    # Read the key
-                    key = msvcrt.getch().decode("utf-8").lower()
-                    print()  # Move to next line after key press
-                    if key == "n":
-                        return False
-                    elif key == "y":
-                        return True
-                    # For any other key, continue waiting
-
-                # Update countdown every second
-                elapsed = int(time.time() - start_time)
-                remaining = timeout - elapsed
-                if remaining >= 0:
-                    print(
-                        f"\rContinuing in {remaining} seconds... Press 'y' to migrate or 'n' to skip.",
-                        end="",
-                    )
-                    sys.stdout.flush()  # Ensure output is displayed immediately
-                time.sleep(0.1)
-
-            print("\nNo input received, proceeding with migration...")
-            return True
-
-        except (ImportError, Exception) as e:
-            # If msvcrt is not available or fails, fall back to a simpler approach
-            print(f"\nError using Windows-specific input method: {e}")
-            print("Falling back to simple input...")
-            user_input = (
-                input("Would you like to migrate? [y/n] (default: y): ").strip().lower()
-                or "y"
-            )
-            return user_input != "n"
-    else:
-        # Unix-like systems implementation using select
-        import sys
-
-        try:
-            import select
-
-            # Start timer
-            start_time = time.time()
-
-            # Wait for input with timeout
-            while time.time() - start_time < timeout:
-                # Check if there's input available
-                try:
-                    # Use select to check if there's input available (Unix-like systems)
-                    if select.select([sys.stdin], [], [], 0.1)[0]:
-                        user_input = input().strip().lower()
-                        if user_input == "n":
-                            return False
-                        else:
-                            return True
-                except (OSError, ValueError) as e:
-                    # If select fails, fall back to a simpler approach
-                    print(f"\nError using select: {e}")
-                    print("Falling back to simple input...")
-                    user_input = (
-                        input("Would you like to migrate? [y/n] (default: y): ")
-                        .strip()
-                        .lower()
-                        or "y"
-                    )
-                    return user_input != "n"
-
-                # Update countdown every second
-                elapsed = int(time.time() - start_time)
-                remaining = timeout - elapsed
-                if remaining >= 0:
-                    print(
-                        f"\rContinuing in {remaining} seconds... Press 'y' to migrate or 'n' to skip.",
-                        end="",
-                    )
-                    sys.stdout.flush()  # Ensure output is displayed immediately
-                time.sleep(0.1)
-
-            print("\nNo input received, proceeding with migration...")
-            return True
-
-        except ImportError:
-            # If select is not available, fall back to a simpler approach
-            print("\nSelect module not available. Falling back to simple input...")
-            user_input = (
-                input("Would you like to migrate? [y/n] (default: y): ").strip().lower()
-                or "y"
-            )
-            return user_input != "n"
+    print(f"Automatically migrating to the new location: {CONFIG_FILE}")
+    return True
 
 
 def copy_to_clipboard_func(text):
