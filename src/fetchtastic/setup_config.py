@@ -20,8 +20,16 @@ if platform.system() == "Windows":
         import winshell
 
         WINDOWS_MODULES_AVAILABLE = True
+        print(
+            "Windows detected. For full Windows integration, install optional dependencies:"
+        )
+        print("pip install fetchtastic[windows]")
     except ImportError:
         WINDOWS_MODULES_AVAILABLE = False
+        print(
+            "Windows detected. For full Windows integration, install optional dependencies:"
+        )
+        print("pip install fetchtastic[windows]")
 else:
     WINDOWS_MODULES_AVAILABLE = False
 
@@ -253,31 +261,29 @@ def run_setup():
     if not os.path.exists(BASE_DIR):
         os.makedirs(BASE_DIR)
 
-    # On Windows, offer to create shortcuts
-    if platform.system() == "Windows" and WINDOWS_MODULES_AVAILABLE:
-        # First, ask about Windows Start Menu shortcuts
-        create_menu = (
-            input(
-                "Windows detected. Would you like to create Fetchtastic shortcuts in the Start Menu? (recommended) [y/n] (default: yes): "
-            )
-            .strip()
-            .lower()
-            or "y"
-        )
-        if create_menu == "y":
-            create_windows_menu_shortcuts(CONFIG_FILE, BASE_DIR)
-
-        # Then, ask about creating a shortcut in the base directory
-        create_shortcut = (
-            input(
-                "Would you like to create a shortcut to the configuration file in your base directory? [y/n] (default: yes): "
-            )
-            .strip()
-            .lower()
-            or "y"
-        )
-        if create_shortcut == "y":
+    # On Windows, handle shortcuts
+    if platform.system() == "Windows":
+        # Always create a shortcut to the config file in the base directory without asking
+        if WINDOWS_MODULES_AVAILABLE:
             create_config_shortcut(CONFIG_FILE, BASE_DIR)
+            print(f"Created shortcut to configuration file in {BASE_DIR}")
+
+            # Ask about Windows Start Menu shortcuts
+            create_menu = (
+                input(
+                    "Would you like to create Fetchtastic shortcuts in the Start Menu? (recommended) [y/n] (default: yes): "
+                )
+                .strip()
+                .lower()
+                or "y"
+            )
+            if create_menu == "y":
+                create_windows_menu_shortcuts(CONFIG_FILE, BASE_DIR)
+        else:
+            print(
+                "Windows shortcuts not available. Install optional dependencies for full Windows integration:"
+            )
+            print("pip install fetchtastic[windows]")
 
     # Prompt to save APKs, firmware, or both
     save_choice = (
@@ -533,40 +539,27 @@ def run_setup():
         if WINDOWS_MODULES_AVAILABLE:
             startup_option = (
                 input(
-                    "Would you like to run Fetchtastic automatically on Windows startup? [y/n] (default: no): "
+                    "Would you like to run Fetchtastic automatically on Windows startup? [y/n] (default: yes): "
                 )
                 .strip()
                 .lower()
-                or "n"
+                or "y"  # Changed default to yes
             )
             if startup_option == "y":
                 if create_startup_shortcut():
-                    print("Fetchtastic will now run automatically when Windows starts.")
+                    print(
+                        "✓ Fetchtastic will now run automatically when Windows starts."
+                    )
                 else:
                     print(
                         "Failed to create startup shortcut. You can manually set up Fetchtastic to run at startup."
                     )
-                    print(
-                        "See https://learn.microsoft.com/en-us/windows/win32/taskschd/using-the-task-scheduler for more information."
-                    )
+                    print("See Windows Task Scheduler for more information.")
             else:
                 print("Fetchtastic will not run automatically on startup.")
-                print(
-                    "You can use Windows Task Scheduler to run Fetchtastic automatically if needed."
-                )
-                print(
-                    "See https://learn.microsoft.com/en-us/windows/win32/taskschd/using-the-task-scheduler for more information."
-                )
         else:
-            print(
-                "Windows modules (pywin32/winshell) are not available. Cannot create startup shortcut."
-            )
-            print(
-                "You can use Windows Task Scheduler to run Fetchtastic automatically."
-            )
-            print(
-                "See https://learn.microsoft.com/en-us/windows/win32/taskschd/using-the-task-scheduler for more information."
-            )
+            # Don't show this message again since we already showed it earlier
+            pass
     elif is_termux():
         # Termux: Ask about cron job and boot script individually
         # Check if cron job already exists
@@ -859,17 +852,24 @@ def run_setup():
             print("Notifications will remain disabled.")
 
     # Ask if the user wants to perform a first run
-    perform_first_run = (
-        input("Would you like to start the first run now? [y/n] (default: yes): ")
-        .strip()
-        .lower()
-        or "y"
-    )
-    if perform_first_run == "y":
-        print("Setup complete. Starting first run, this may take a few minutes...")
-        downloader.main()
-    else:
+    if platform.system() == "Windows":
+        # On Windows, we'll just tell them how to run it
         print("Setup complete. Run 'fetchtastic download' to start downloading.")
+        if WINDOWS_MODULES_AVAILABLE:
+            print("You can also use the shortcuts created in the Start Menu.")
+    else:
+        # On other platforms, offer to run it now
+        perform_first_run = (
+            input("Would you like to start the first run now? [y/n] (default: yes): ")
+            .strip()
+            .lower()
+            or "y"
+        )
+        if perform_first_run == "y":
+            print("Setup complete. Starting first run, this may take a few minutes...")
+            downloader.main()
+        else:
+            print("Setup complete. Run 'fetchtastic download' to start downloading.")
 
 
 def check_for_updates():
