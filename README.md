@@ -47,7 +47,14 @@ Fetchtastic can be installed on Windows systems with enhanced Windows integratio
 
 1. **Install pipx**:
 
-   Follow the installation instructions for Windows on the [pipx documentation page](https://pypa.github.io/pipx/installation/).
+   Install Python from the [official Python website](https://www.python.org/downloads/) if you haven't already.
+
+   Then install pipx by running this command in PowerShell or Command Prompt:
+
+   ```powershell
+   python -m pip install --user pipx
+   python -m pipx ensurepath
+   ```
 
    Restart your command prompt or PowerShell after installing pipx.
 
@@ -61,6 +68,12 @@ Fetchtastic can be installed on Windows systems with enhanced Windows integratio
 
    ```powershell
    pipx install fetchtastic[win]
+   ```
+
+   If you're developing or want to install from the current directory:
+
+   ```powershell
+   pipx install -e .[win]
    ```
 
    This installs additional dependencies for Windows integration:

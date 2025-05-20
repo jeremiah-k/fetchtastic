@@ -1045,9 +1045,14 @@ def create_windows_menu_shortcuts(config_file_path, base_dir):
         return False
 
     try:
-        # Create the Fetchtastic folder in the Start Menu if it doesn't exist
-        if not os.path.exists(WINDOWS_START_MENU_FOLDER):
-            os.makedirs(WINDOWS_START_MENU_FOLDER)
+        # Clear existing shortcuts by removing and recreating the folder
+        if os.path.exists(WINDOWS_START_MENU_FOLDER):
+            import shutil
+
+            shutil.rmtree(WINDOWS_START_MENU_FOLDER)
+
+        # Create the Fetchtastic folder in the Start Menu
+        os.makedirs(WINDOWS_START_MENU_FOLDER)
 
         # Get the path to the fetchtastic executable
         fetchtastic_path = shutil.which("fetchtastic")
@@ -1236,8 +1241,6 @@ def create_startup_shortcut():
             Target=batch_path,
             Description="Run Fetchtastic on startup",
             Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0),
-            # Use minimized window state (7)
-            WindowStyle=7,
         )
 
         print(f"Created startup shortcut at: {shortcut_path}")
