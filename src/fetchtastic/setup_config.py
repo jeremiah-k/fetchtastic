@@ -393,8 +393,15 @@ def run_setup():
             .lower()
             or auto_extract_default[0]
         )
+
+        # Save the AUTO_EXTRACT setting immediately
+        config["AUTO_EXTRACT"] = auto_extract == "y"
+
+        # Save configuration to ensure this setting is preserved
+        with open(CONFIG_FILE, "w") as f:
+            yaml.dump(config, f)
+
         if auto_extract == "y":
-            config["AUTO_EXTRACT"] = True
             print(
                 "Enter the keywords to match for extraction from the firmware zip files, separated by spaces."
             )
@@ -441,6 +448,10 @@ def run_setup():
                     )
                     # Skip exclude patterns prompt
                     config["EXCLUDE_PATTERNS"] = []
+
+            # Save configuration again after updating patterns
+            with open(CONFIG_FILE, "w") as f:
+                yaml.dump(config, f)
             # Prompt for exclude patterns if extraction is enabled
             if config.get("AUTO_EXTRACT", False) and config.get("EXTRACT_PATTERNS"):
                 exclude_default = "yes" if config.get("EXCLUDE_PATTERNS") else "no"
@@ -566,6 +577,13 @@ def run_setup():
                 )
                 if startup_option == "y":
                     try:
+                        # Also remove the batch file if it exists
+                        batch_dir = os.path.join(CONFIG_DIR, "batch")
+                        batch_path = os.path.join(batch_dir, "fetchtastic_startup.bat")
+                        if os.path.exists(batch_path):
+                            os.remove(batch_path)
+
+                        # Remove the shortcut
                         os.remove(startup_shortcut_path)
                         print(
                             "✓ Startup shortcut removed. Fetchtastic will no longer run automatically at startup."
@@ -1123,23 +1141,26 @@ def create_windows_menu_shortcuts(config_file_path, base_dir):
             print("Error: fetchtastic executable not found in PATH.")
             return False
 
+        # Create batch files in the config directory instead of the Start Menu
+        batch_dir = os.path.join(CONFIG_DIR, "batch")
+        if not os.path.exists(batch_dir):
+            os.makedirs(batch_dir, exist_ok=True)
+
         # Create a batch file for download that pauses at the end
-        download_batch_path = os.path.join(
-            WINDOWS_START_MENU_FOLDER, "fetchtastic_download.bat"
-        )
+        download_batch_path = os.path.join(batch_dir, "fetchtastic_download.bat")
         with open(download_batch_path, "w") as f:
             f.write("@echo off\n")
+            f.write("title Fetchtastic Download\n")
             f.write(f'"{fetchtastic_path}" download\n')
             f.write("echo.\n")
             f.write("echo Press any key to close this window...\n")
             f.write("pause >nul\n")
 
         # Create a batch file for repo browse that pauses at the end
-        repo_batch_path = os.path.join(
-            WINDOWS_START_MENU_FOLDER, "fetchtastic_repo_browse.bat"
-        )
+        repo_batch_path = os.path.join(batch_dir, "fetchtastic_repo_browse.bat")
         with open(repo_batch_path, "w") as f:
             f.write("@echo off\n")
+            f.write("title Fetchtastic Repository Browser\n")
             f.write(f'"{fetchtastic_path}" repo browse\n')
             f.write("echo.\n")
             f.write("echo Press any key to close this window...\n")
@@ -1295,8 +1316,13 @@ def create_startup_shortcut():
         # Get the startup folder path
         startup_folder = winshell.startup()
 
-        # Create a batch file for download that runs silently
-        batch_path = os.path.join(startup_folder, "fetchtastic_startup.bat")
+        # Create batch files in the config directory instead of the startup folder
+        batch_dir = os.path.join(CONFIG_DIR, "batch")
+        if not os.path.exists(batch_dir):
+            os.makedirs(batch_dir, exist_ok=True)
+
+        # Create a batch file for startup that runs silently
+        batch_path = os.path.join(batch_dir, "fetchtastic_startup.bat")
         with open(batch_path, "w") as f:
             f.write("@echo off\n")
             f.write("title Fetchtastic Automatic Download\n")
