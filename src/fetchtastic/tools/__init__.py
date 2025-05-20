@@ -1,7 +1,6 @@
 """Tools and resources for Fetchtastic."""
 
 import importlib.resources
-import os
 import pathlib
 
 
