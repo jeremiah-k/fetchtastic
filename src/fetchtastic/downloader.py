@@ -37,40 +37,29 @@ def compare_versions(version1, version2):
     v1_parts = version1.split(".")
     v2_parts = version2.split(".")
 
+    # Make sure we have at least 3 parts for each version
+    if len(v1_parts) < 3 or len(v2_parts) < 3:
+        # If either version doesn't have at least 3 parts, do a simple string comparison
+        return 1 if version1 > version2 else (-1 if version1 < version2 else 0)
+
     # Compare major, minor, patch versions numerically
-    for i in range(min(len(v1_parts), len(v2_parts))):
-        if i < 3:  # Major, minor, patch are numeric
-            try:
-                v1_num = int(v1_parts[i])
-                v2_num = int(v2_parts[i])
-                if v1_num > v2_num:
-                    return 1
-                elif v1_num < v2_num:
-                    return -1
-            except ValueError:
-                # If conversion fails, fall back to string comparison
-                if v1_parts[i] > v2_parts[i]:
-                    return 1
-                elif v1_parts[i] < v2_parts[i]:
-                    return -1
-        else:
-            # For commit hash, just do string comparison
-            # This is the 4th part (index 3) which is the commit hash
-            # String comparison of commit hashes isn't reliable for determining version order
-            # But we need some deterministic comparison, so we'll use it
+    for i in range(3):  # Only compare the first 3 parts (major.minor.patch)
+        try:
+            v1_num = int(v1_parts[i])
+            v2_num = int(v2_parts[i])
+            if v1_num > v2_num:
+                return 1
+            elif v1_num < v2_num:
+                return -1
+        except ValueError:
+            # If conversion fails, fall back to string comparison
             if v1_parts[i] > v2_parts[i]:
                 return 1
             elif v1_parts[i] < v2_parts[i]:
                 return -1
 
-    # If we get here and versions have different lengths, the longer one is newer
-    # This should rarely happen with properly formatted version strings
-    if len(v1_parts) > len(v2_parts):
-        return 1
-    elif len(v1_parts) < len(v2_parts):
-        return -1
-
-    # Versions are equal (should have been caught by the exact match check at the top)
+    # If major.minor.patch are equal, versions are considered equal
+    # The commit hash (4th part) doesn't affect version ordering
     return 0
 
 
@@ -291,10 +280,6 @@ def check_for_prereleases(
                     )
                     if comparison_result > 0:
                         should_keep = True
-                    else:
-                        log_message_func(
-                            f"Pre-release {dir_name} is not newer than latest release {latest_release_version} (comparison result: {comparison_result})"
-                        )
 
             if not should_keep:
                 dir_path = os.path.join(prerelease_dir, dir_name)
@@ -316,9 +301,7 @@ def check_for_prereleases(
             # Check if this version is newer than the latest release
             comparison_result = compare_versions(dir_version, latest_release_version)
             if comparison_result > 0:
-                log_message_func(
-                    f"Pre-release {dir_name} is newer than latest release {latest_release_version} (comparison result: {comparison_result})"
-                )
+
                 # Refresh the list of existing prerelease directories after cleanup
                 existing_prerelease_dirs = []
                 if os.path.exists(prerelease_dir):
