@@ -375,7 +375,12 @@ def run_setup():
             .lower()
             or check_prereleases_default[0]
         )
-        config["CHECK_PRERELEASES"] = True if check_prereleases == "y" else False
+        # Make sure we're setting a boolean value, not a string
+        config["CHECK_PRERELEASES"] = check_prereleases == "y"
+
+        # Save configuration immediately to ensure this setting is preserved
+        with open(CONFIG_FILE, "w") as f:
+            yaml.dump(config, f)
 
         # Prompt for automatic extraction
         auto_extract_current = config.get("AUTO_EXTRACT", False)
