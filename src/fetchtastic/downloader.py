@@ -329,10 +329,6 @@ def check_for_prereleases(
                 # Only add if it doesn't already exist locally
                 if dir_name not in existing_prerelease_dirs:
                     prerelease_dirs.append(dir_name)
-            else:
-                log_message_func(
-                    f"Skipping {dir_name} as it's not newer than latest release {latest_release_version} (comparison result: {comparison_result})"
-                )
 
     if not prerelease_dirs:
         return False, []
