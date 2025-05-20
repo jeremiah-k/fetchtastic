@@ -6,7 +6,6 @@ import random
 import shutil
 import string
 import subprocess
-import time
 
 import platformdirs
 import yaml
