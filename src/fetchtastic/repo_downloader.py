@@ -1,6 +1,7 @@
 # src/fetchtastic/repo_downloader.py
 
 import os
+import platform
 import shutil
 
 import requests
@@ -160,5 +161,28 @@ def main(config, log_message_func=None):
         log_message_func(f"Successfully downloaded {len(downloaded_files)} files.")
         for file_path in downloaded_files:
             log_message_func(f"  - {os.path.basename(file_path)}")
+
+        # Show the download directory
+        download_folder = (
+            os.path.dirname(downloaded_files[0]) if downloaded_files else ""
+        )
+        if download_folder:
+            log_message_func(f"\nFiles were saved to: {download_folder}")
+
+            # If on Windows, offer to open the folder
+            if platform.system() == "Windows":
+                try:
+                    open_folder = (
+                        input(
+                            "\nWould you like to open this folder? [y/n] (default: yes): "
+                        )
+                        .strip()
+                        .lower()
+                        or "y"
+                    )
+                    if open_folder == "y":
+                        os.startfile(download_folder)
+                except Exception as e:
+                    log_message_func(f"Error opening folder: {e}")
     else:
         log_message_func("No files were downloaded.")

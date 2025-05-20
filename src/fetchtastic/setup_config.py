@@ -6,13 +6,39 @@ import random
 import shutil
 import string
 import subprocess
-import time
+import sys
 
 import platformdirs
 import yaml
 
 from fetchtastic import downloader  # Import downloader to perform first run
 from fetchtastic import menu_apk, menu_firmware
+
+# Import Windows-specific modules if on Windows
+if platform.system() == "Windows":
+    try:
+        import winshell
+
+        WINDOWS_MODULES_AVAILABLE = True
+    except ImportError:
+        WINDOWS_MODULES_AVAILABLE = False
+        print(
+            "Windows detected. For full Windows integration, install optional dependencies:"
+        )
+        print("pipx install -e .[win]")
+        print("or if using pip: pip install fetchtastic[win]")
+else:
+    WINDOWS_MODULES_AVAILABLE = False
+
+# Windows Start Menu folder for Fetchtastic
+WINDOWS_START_MENU_FOLDER = os.path.join(
+    os.environ.get("APPDATA", ""),
+    "Microsoft",
+    "Windows",
+    "Start Menu",
+    "Programs",
+    "Fetchtastic",
+)
 
 
 def is_termux():
@@ -149,17 +175,25 @@ def run_setup():
 
     # Check for configuration in old location
     if os.path.exists(OLD_CONFIG_FILE) and not os.path.exists(CONFIG_FILE):
-        print("\n" + "=" * 80)
-        print("Configuration Migration")
-        print("=" * 80)
-        if prompt_for_migration():
-            if migrate_config():
-                print("Configuration successfully migrated to the new location.")
-            else:
-                print("Failed to migrate configuration. Continuing with old location.")
+        # Import here to avoid circular imports
+        from fetchtastic.log_utils import log_error, log_info
+
+        separator = "=" * 80
+        log_info(f"\n{separator}")
+        log_info("Configuration Migration")
+        log_info(separator)
+        # Automatically migrate without prompting
+        prompt_for_migration()  # Just logs the migration message
+        if migrate_config():
+            log_info("Configuration successfully migrated to the new location.")
+            # Update config_path to the new location for subsequent operations
+            config_path = CONFIG_FILE
+            # Re-load the configuration from the new location if it exists
+            if os.path.exists(CONFIG_FILE):
+                exists = True
         else:
-            print("Continuing with configuration at old location.")
-        print("=" * 80 + "\n")
+            log_error("Failed to migrate configuration. Continuing with old location.")
+        log_info(f"{separator}\n")
 
     # Ask for base directory as the first question
     config = {}
@@ -223,6 +257,41 @@ def run_setup():
     # Create the base directory if it doesn't exist
     if not os.path.exists(BASE_DIR):
         os.makedirs(BASE_DIR)
+
+    # On Windows, handle shortcuts
+    if platform.system() == "Windows":
+        # Always create a shortcut to the config file in the base directory without asking
+        if WINDOWS_MODULES_AVAILABLE:
+            create_config_shortcut(CONFIG_FILE, BASE_DIR)
+
+            # Check if Start Menu shortcuts already exist
+            if os.path.exists(WINDOWS_START_MENU_FOLDER):
+                create_menu = (
+                    input(
+                        "Fetchtastic shortcuts already exist in the Start Menu. Would you like to update them? [y/n] (default: yes): "
+                    )
+                    .strip()
+                    .lower()
+                    or "y"
+                )
+            else:
+                create_menu = (
+                    input(
+                        "Would you like to create Fetchtastic shortcuts in the Start Menu? (recommended) [y/n] (default: yes): "
+                    )
+                    .strip()
+                    .lower()
+                    or "y"
+                )
+
+            if create_menu == "y":
+                create_windows_menu_shortcuts(CONFIG_FILE, BASE_DIR)
+        else:
+            print(
+                "Windows shortcuts not available. Install optional dependencies for full Windows integration:"
+            )
+            print("pipx install -e .[win]")
+            print("or if using pip: pip install fetchtastic[win]")
 
     # Prompt to save APKs, firmware, or both
     save_choice = (
@@ -305,7 +374,12 @@ def run_setup():
             .lower()
             or check_prereleases_default[0]
         )
-        config["CHECK_PRERELEASES"] = True if check_prereleases == "y" else False
+        # Make sure we're setting a boolean value, not a string
+        config["CHECK_PRERELEASES"] = check_prereleases == "y"
+
+        # Save configuration immediately to ensure this setting is preserved
+        with open(CONFIG_FILE, "w") as f:
+            yaml.dump(config, f)
 
         # Prompt for automatic extraction
         auto_extract_current = config.get("AUTO_EXTRACT", False)
@@ -318,8 +392,15 @@ def run_setup():
             .lower()
             or auto_extract_default[0]
         )
+
+        # Save the AUTO_EXTRACT setting immediately
+        config["AUTO_EXTRACT"] = auto_extract == "y"
+
+        # Save configuration to ensure this setting is preserved
+        with open(CONFIG_FILE, "w") as f:
+            yaml.dump(config, f)
+
         if auto_extract == "y":
-            config["AUTO_EXTRACT"] = True
             print(
                 "Enter the keywords to match for extraction from the firmware zip files, separated by spaces."
             )
@@ -366,6 +447,10 @@ def run_setup():
                     )
                     # Skip exclude patterns prompt
                     config["EXCLUDE_PATTERNS"] = []
+
+            # Save configuration again after updating patterns
+            with open(CONFIG_FILE, "w") as f:
+                yaml.dump(config, f)
             # Prompt for exclude patterns if extraction is enabled
             if config.get("AUTO_EXTRACT", False) and config.get("EXTRACT_PATTERNS"):
                 exclude_default = "yes" if config.get("EXCLUDE_PATTERNS") else "no"
@@ -473,7 +558,70 @@ def run_setup():
     print(f"Configuration saved to: {CONFIG_FILE}")
 
     # Cron job setup
-    if is_termux():
+    if platform.system() == "Windows":
+        # Windows doesn't support cron jobs, but we can offer to create a startup shortcut
+        if WINDOWS_MODULES_AVAILABLE:
+            # Check if startup shortcut already exists
+            startup_folder = winshell.startup()
+            startup_shortcut_path = os.path.join(startup_folder, "Fetchtastic.lnk")
+
+            if os.path.exists(startup_shortcut_path):
+                startup_option = (
+                    input(
+                        "Fetchtastic is already set to run at startup. Would you like to remove this? [y/n] (default: no): "
+                    )
+                    .strip()
+                    .lower()
+                    or "n"
+                )
+                if startup_option == "y":
+                    try:
+                        # Also remove the batch file if it exists
+                        batch_dir = os.path.join(CONFIG_DIR, "batch")
+                        batch_path = os.path.join(batch_dir, "fetchtastic_startup.bat")
+                        if os.path.exists(batch_path):
+                            os.remove(batch_path)
+
+                        # Remove the shortcut
+                        os.remove(startup_shortcut_path)
+                        print(
+                            "✓ Startup shortcut removed. Fetchtastic will no longer run automatically at startup."
+                        )
+                    except Exception as e:
+                        print(f"Failed to remove startup shortcut: {e}")
+                        print("You can manually remove it from: " + startup_folder)
+                else:
+                    print(
+                        "✓ Fetchtastic will continue to run automatically at startup."
+                    )
+            else:
+                startup_option = (
+                    input(
+                        "Would you like to run Fetchtastic automatically on Windows startup? [y/n] (default: yes): "
+                    )
+                    .strip()
+                    .lower()
+                    or "y"
+                )
+                if startup_option == "y":
+                    if create_startup_shortcut():
+                        print(
+                            "✓ Fetchtastic will now run automatically when Windows starts."
+                        )
+                    else:
+                        print(
+                            "Failed to create startup shortcut. You can manually set up Fetchtastic to run at startup."
+                        )
+                        print(
+                            "You can use Windows Task Scheduler or add a shortcut to: "
+                            + startup_folder
+                        )
+                else:
+                    print("Fetchtastic will not run automatically on startup.")
+        else:
+            # Don't show this message again since we already showed it earlier
+            pass
+    elif is_termux():
         # Termux: Ask about cron job and boot script individually
         # Check if cron job already exists
         cron_job_exists = check_cron_job_exists()
@@ -765,17 +913,31 @@ def run_setup():
             print("Notifications will remain disabled.")
 
     # Ask if the user wants to perform a first run
-    perform_first_run = (
-        input("Would you like to start the first run now? [y/n] (default: yes): ")
-        .strip()
-        .lower()
-        or "y"
-    )
-    if perform_first_run == "y":
-        print("Setup complete. Starting first run, this may take a few minutes...")
-        downloader.main()
-    else:
+    if platform.system() == "Windows":
+        # On Windows, we'll just tell them how to run it
         print("Setup complete. Run 'fetchtastic download' to start downloading.")
+        if WINDOWS_MODULES_AVAILABLE:
+            print("You can also use the shortcuts created in the Start Menu.")
+
+        # If running from a batch file or shortcut, pause at the end
+        if os.environ.get("PROMPT") is None or "cmd.exe" in os.environ.get(
+            "COMSPEC", ""
+        ):
+            print("\nPress Enter to close this window...")
+            input()
+    else:
+        # On other platforms, offer to run it now
+        perform_first_run = (
+            input("Would you like to start the first run now? [y/n] (default: yes): ")
+            .strip()
+            .lower()
+            or "y"
+        )
+        if perform_first_run == "y":
+            print("Setup complete. Starting first run, this may take a few minutes...")
+            downloader.main()
+        else:
+            print("Setup complete. Run 'fetchtastic download' to start downloading.")
 
 
 def check_for_updates():
@@ -849,6 +1011,9 @@ def migrate_config():
     Returns:
         bool: True if migration was successful, False otherwise.
     """
+    # Import here to avoid circular imports
+    from fetchtastic.log_utils import log_error, log_info
+
     # Check if old config exists
     if not os.path.exists(OLD_CONFIG_FILE):
         return False
@@ -858,7 +1023,7 @@ def migrate_config():
         try:
             os.makedirs(CONFIG_DIR, exist_ok=True)
         except Exception as e:
-            print(f"Error creating config directory: {e}")
+            log_error(f"Error creating config directory: {e}")
             return False
 
     # Load the old config
@@ -866,7 +1031,7 @@ def migrate_config():
         with open(OLD_CONFIG_FILE, "r") as f:
             config = yaml.safe_load(f)
     except Exception as e:
-        print(f"Error loading old config: {e}")
+        log_error(f"Error loading old config: {e}")
         return False
 
     # Save to new location
@@ -877,64 +1042,333 @@ def migrate_config():
         # Remove the old file after successful migration
         try:
             os.remove(OLD_CONFIG_FILE)
-            print(f"Configuration migrated to {CONFIG_FILE} and old file removed")
+            log_info(f"Configuration migrated to {CONFIG_FILE} and old file removed")
         except Exception as e:
-            print(
+            log_error(
                 f"Configuration migrated to {CONFIG_FILE} but failed to remove old file: {e}"
             )
 
         return True
     except Exception as e:
-        print(f"Error saving config to new location: {e}")
+        log_error(f"Error saving config to new location: {e}")
         return False
 
 
-def prompt_for_migration(timeout=10):
+def prompt_for_migration():
     """
-    Prompts the user to migrate the configuration from the old location to the new location.
-    Waits for a specified timeout for user input.
-
-    Args:
-        timeout: Number of seconds to wait for user input.
+    Automatically migrates the configuration from the old location to the new location
+    without prompting the user.
 
     Returns:
-        bool: True if user chose to migrate, False otherwise.
+        bool: Always returns True to indicate migration should proceed.
     """
-    print(f"Found configuration file at old location: {OLD_CONFIG_FILE}")
-    print(f"It is recommended to migrate to the new location: {CONFIG_FILE}")
-    print(
-        f"Would you like to migrate? [y/n] (default: y, continuing in {timeout} seconds)"
-    )
+    # Import here to avoid circular imports
+    from fetchtastic.log_utils import log_info
 
-    # Start timer
-    start_time = time.time()
-
-    # Wait for input with timeout
-    while time.time() - start_time < timeout:
-        # Check if there's input available
-        import select
-        import sys
-
-        # Use select to check if there's input available (Unix-like systems)
-        if select.select([sys.stdin], [], [], 0.1)[0]:
-            user_input = input().strip().lower()
-            if user_input == "n":
-                return False
-            else:
-                return True
-
-        # Update countdown every second
-        elapsed = int(time.time() - start_time)
-        remaining = timeout - elapsed
-        if remaining >= 0:
-            print(
-                f"\rContinuing in {remaining} seconds... Press 'y' to migrate or 'n' to skip.",
-                end="",
-            )
-        time.sleep(0.1)
-
-    print("\nNo input received, proceeding with migration...")
+    log_info(f"Found configuration file at old location: {OLD_CONFIG_FILE}")
+    log_info(f"Automatically migrating to the new location: {CONFIG_FILE}")
     return True
+
+
+def create_windows_menu_shortcuts(config_file_path, base_dir):
+    """
+    Creates Windows Start Menu shortcuts for fetchtastic.
+
+    Args:
+        config_file_path: Path to the configuration file
+        base_dir: Base directory for Meshtastic downloads
+
+    Returns:
+        bool: True if shortcuts were created successfully, False otherwise
+    """
+    if platform.system() != "Windows" or not WINDOWS_MODULES_AVAILABLE:
+        return False
+
+    try:
+        # Completely remove the Start Menu folder and recreate it
+        # This ensures we don't have any leftover shortcuts
+        import shutil
+
+        # First, make sure the parent directory exists
+        parent_dir = os.path.dirname(WINDOWS_START_MENU_FOLDER)
+        if not os.path.exists(parent_dir):
+            print(f"Warning: Parent directory {parent_dir} does not exist")
+            # Try to create the parent directory structure
+            try:
+                os.makedirs(parent_dir, exist_ok=True)
+            except Exception as e:
+                print(f"Error creating parent directory: {e}")
+                return False
+
+        # Now handle the Fetchtastic folder
+        if os.path.exists(WINDOWS_START_MENU_FOLDER):
+            print(f"Removing existing Start Menu folder: {WINDOWS_START_MENU_FOLDER}")
+            try:
+                # Try to remove the entire folder
+                shutil.rmtree(WINDOWS_START_MENU_FOLDER)
+                print("Successfully removed existing shortcuts folder")
+            except Exception as e:
+                print(f"Warning: Could not remove shortcuts folder: {e}")
+                # Try to remove individual files as a fallback
+                try:
+                    # First list all files
+                    files = os.listdir(WINDOWS_START_MENU_FOLDER)
+                    print(f"Found {len(files)} files in shortcuts folder")
+
+                    # Try to remove each file
+                    for file in files:
+                        file_path = os.path.join(WINDOWS_START_MENU_FOLDER, file)
+                        try:
+                            if os.path.isfile(file_path):
+                                os.remove(file_path)
+                                print(f"Removed: {file}")
+                            elif os.path.isdir(file_path):
+                                shutil.rmtree(file_path)
+                                print(f"Removed directory: {file}")
+                        except Exception as e3:
+                            print(f"Could not remove {file}: {e3}")
+
+                    print("Attempted to remove individual files")
+                except Exception as e2:
+                    print(f"Warning: Could not clean shortcuts folder: {e2}")
+                    print("Will attempt to overwrite existing shortcuts")
+
+        # Create a fresh Fetchtastic folder in the Start Menu
+        print(f"Creating Start Menu folder: {WINDOWS_START_MENU_FOLDER}")
+        try:
+            os.makedirs(WINDOWS_START_MENU_FOLDER, exist_ok=True)
+        except Exception as e:
+            print(f"Error creating Start Menu folder: {e}")
+            return False
+
+        # Get the path to the fetchtastic executable
+        fetchtastic_path = shutil.which("fetchtastic")
+        if not fetchtastic_path:
+            print("Error: fetchtastic executable not found in PATH.")
+            return False
+
+        # Create batch files in the config directory instead of the Start Menu
+        batch_dir = os.path.join(CONFIG_DIR, "batch")
+        if not os.path.exists(batch_dir):
+            os.makedirs(batch_dir, exist_ok=True)
+
+        # Create a batch file for download that pauses at the end
+        download_batch_path = os.path.join(batch_dir, "fetchtastic_download.bat")
+        with open(download_batch_path, "w") as f:
+            f.write("@echo off\n")
+            f.write("title Fetchtastic Download\n")
+            f.write(f'"{fetchtastic_path}" download\n')
+            f.write("echo.\n")
+            f.write("echo Press any key to close this window...\n")
+            f.write("pause >nul\n")
+
+        # Create a batch file for repo browse that pauses at the end
+        repo_batch_path = os.path.join(batch_dir, "fetchtastic_repo_browse.bat")
+        with open(repo_batch_path, "w") as f:
+            f.write("@echo off\n")
+            f.write("title Fetchtastic Repository Browser\n")
+            f.write(f'"{fetchtastic_path}" repo browse\n')
+            f.write("echo.\n")
+            f.write("echo Press any key to close this window...\n")
+            f.write("pause >nul\n")
+
+        # Create a batch file for setup that pauses at the end
+        setup_batch_path = os.path.join(batch_dir, "fetchtastic_setup.bat")
+        with open(setup_batch_path, "w") as f:
+            f.write("@echo off\n")
+            f.write("title Fetchtastic Setup\n")
+            f.write(f'"{fetchtastic_path}" setup\n')
+            f.write("echo.\n")
+            f.write("echo Press any key to close this window...\n")
+            f.write("pause >nul\n")
+
+        # Create shortcut for fetchtastic download (using batch file)
+        download_shortcut_path = os.path.join(
+            WINDOWS_START_MENU_FOLDER, "Fetchtastic Download.lnk"
+        )
+        winshell.CreateShortcut(
+            Path=download_shortcut_path,
+            Target=download_batch_path,
+            Description="Download Meshtastic firmware and APKs",
+            Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0),
+        )
+
+        # Create shortcut for fetchtastic setup (using batch file)
+        setup_shortcut_path = os.path.join(
+            WINDOWS_START_MENU_FOLDER, "Fetchtastic Setup.lnk"
+        )
+        winshell.CreateShortcut(
+            Path=setup_shortcut_path,
+            Target=setup_batch_path,
+            Description="Configure Fetchtastic settings",
+            Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0),
+        )
+
+        # Create shortcut for fetchtastic repo browse (using batch file)
+        repo_shortcut_path = os.path.join(
+            WINDOWS_START_MENU_FOLDER, "Fetchtastic Repository Browser.lnk"
+        )
+        winshell.CreateShortcut(
+            Path=repo_shortcut_path,
+            Target=repo_batch_path,
+            Description="Browse and download files from the Meshtastic repository",
+            Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0),
+        )
+
+        # Create shortcut to configuration file
+        config_shortcut_path = os.path.join(
+            WINDOWS_START_MENU_FOLDER, "Fetchtastic Configuration.lnk"
+        )
+        winshell.CreateShortcut(
+            Path=config_shortcut_path,
+            Target=config_file_path,
+            Description="Edit Fetchtastic Configuration File (fetchtastic.yaml)",
+            Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0),
+        )
+
+        # Create shortcut to Meshtastic base directory
+        base_dir_shortcut_path = os.path.join(
+            WINDOWS_START_MENU_FOLDER, "Meshtastic Downloads.lnk"
+        )
+        winshell.CreateShortcut(
+            Path=base_dir_shortcut_path,
+            Target=base_dir,
+            Description="Open Meshtastic Downloads Folder",
+            Icon=(
+                os.path.join(os.environ.get("WINDIR", "C:\\Windows"), "explorer.exe"),
+                0,
+            ),
+        )
+
+        # Create shortcut to log file
+        # First check if there's a log file in the base directory (old location)
+        base_log_file = os.path.join(BASE_DIR, "fetchtastic.log")
+        if os.path.exists(base_log_file):
+            log_file = base_log_file
+        else:
+            # Use the platformdirs log location
+            log_dir = platformdirs.user_log_dir("fetchtastic")
+            log_file = os.path.join(log_dir, "fetchtastic.log")
+            # Create log directory if it doesn't exist
+            if not os.path.exists(log_dir):
+                os.makedirs(log_dir)
+            # Create an empty log file if it doesn't exist
+            if not os.path.exists(log_file):
+                with open(log_file, "w") as f:
+                    f.write("# Fetchtastic log file\n")
+                print(f"Created empty log file at: {log_file}")
+
+        log_shortcut_path = os.path.join(
+            WINDOWS_START_MENU_FOLDER, "Fetchtastic Log.lnk"
+        )
+        winshell.CreateShortcut(
+            Path=log_shortcut_path,
+            Target=log_file,
+            Description="View Fetchtastic Log File",
+            Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0),
+        )
+
+        print("Shortcuts created in Start Menu")
+        return True
+    except Exception as e:
+        print(f"Failed to create Windows Start Menu shortcuts: {e}")
+        return False
+
+
+def create_config_shortcut(config_file_path, target_dir):
+    """
+    Creates a shortcut to the configuration file in the target directory.
+    Only works on Windows.
+
+    Args:
+        config_file_path: Path to the configuration file
+        target_dir: Directory where to create the shortcut
+
+    Returns:
+        bool: True if shortcut was created successfully, False otherwise
+    """
+    if platform.system() != "Windows" or not WINDOWS_MODULES_AVAILABLE:
+        return False
+
+    try:
+        shortcut_path = os.path.join(target_dir, "fetchtastic_yaml.lnk")
+
+        # Create the shortcut using winshell
+        winshell.CreateShortcut(
+            Path=shortcut_path,
+            Target=config_file_path,
+            Description="Fetchtastic Configuration File (fetchtastic.yaml)",
+            Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0),
+        )
+
+        print(f"Created shortcut to configuration file at: {shortcut_path}")
+        return True
+    except Exception as e:
+        print(f"Failed to create shortcut to configuration file: {e}")
+        return False
+
+
+def create_startup_shortcut():
+    """
+    Creates a shortcut to run fetchtastic on Windows startup.
+    Only works on Windows.
+
+    Returns:
+        bool: True if shortcut was created successfully, False otherwise
+    """
+    if platform.system() != "Windows" or not WINDOWS_MODULES_AVAILABLE:
+        return False
+
+    try:
+        # Get the path to the fetchtastic executable
+        fetchtastic_path = shutil.which("fetchtastic")
+        if not fetchtastic_path:
+            print("Error: fetchtastic executable not found in PATH.")
+            return False
+
+        # Get the startup folder path
+        startup_folder = winshell.startup()
+
+        # Create batch files in the config directory instead of the startup folder
+        batch_dir = os.path.join(CONFIG_DIR, "batch")
+        if not os.path.exists(batch_dir):
+            os.makedirs(batch_dir, exist_ok=True)
+
+        # Create a batch file for startup that runs silently
+        batch_path = os.path.join(batch_dir, "fetchtastic_startup.bat")
+        with open(batch_path, "w") as f:
+            f.write("@echo off\n")
+            f.write("title Fetchtastic Automatic Download\n")
+            f.write(f'"{fetchtastic_path}" download\n')
+            # Don't pause at the end for startup - we want it to run silently
+
+        # Create the shortcut to the batch file
+        shortcut_path = os.path.join(startup_folder, "Fetchtastic.lnk")
+
+        # Use direct shortcut creation without WindowStyle parameter
+        try:
+            # First try with WindowStyle parameter (newer versions of winshell)
+            winshell.CreateShortcut(
+                Path=shortcut_path,
+                Target=batch_path,
+                Description="Run Fetchtastic on startup",
+                Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0),
+                WindowStyle=7,  # Minimized
+            )
+        except TypeError:
+            # If WindowStyle is not supported, use basic parameters
+            winshell.CreateShortcut(
+                Path=shortcut_path,
+                Target=batch_path,
+                Description="Run Fetchtastic on startup",
+                Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0),
+            )
+
+        print(f"Created startup shortcut at: {shortcut_path}")
+        return True
+    except Exception as e:
+        print(f"Failed to create startup shortcut: {e}")
+        return False
 
 
 def copy_to_clipboard_func(text):
@@ -947,6 +1381,19 @@ def copy_to_clipboard_func(text):
             subprocess.run(
                 ["termux-clipboard-set"], input=text.encode("utf-8"), check=True
             )
+            return True
+        except Exception as e:
+            print(f"An error occurred while copying to clipboard: {e}")
+            return False
+    elif platform.system() == "Windows" and WINDOWS_MODULES_AVAILABLE:
+        # Windows environment with win32com available
+        try:
+            import win32clipboard
+
+            win32clipboard.OpenClipboard()
+            win32clipboard.EmptyClipboard()
+            win32clipboard.SetClipboardText(text)
+            win32clipboard.CloseClipboard()
             return True
         except Exception as e:
             print(f"An error occurred while copying to clipboard: {e}")
@@ -1051,7 +1498,13 @@ def install_crond():
 def setup_cron_job():
     """
     Sets up the cron job to run Fetchtastic at scheduled times.
+    On Windows, this function does nothing as cron jobs are not supported.
     """
+    # Skip cron job setup on Windows
+    if platform.system() == "Windows":
+        print("Cron jobs are not supported on Windows.")
+        return
+
     try:
         # Get current crontab entries
         result = subprocess.run(
@@ -1105,7 +1558,13 @@ def setup_cron_job():
 def remove_cron_job():
     """
     Removes the Fetchtastic daily cron job from the crontab.
+    On Windows, this function does nothing as cron jobs are not supported.
     """
+    # Skip cron job removal on Windows
+    if platform.system() == "Windows":
+        print("Cron jobs are not supported on Windows.")
+        return
+
     try:
         # Get current crontab entries
         result = subprocess.run(
@@ -1178,7 +1637,13 @@ def remove_boot_script():
 def setup_reboot_cron_job():
     """
     Sets up a cron job to run Fetchtastic on system startup (non-Termux).
+    On Windows, this function does nothing as cron jobs are not supported.
     """
+    # Skip cron job setup on Windows
+    if platform.system() == "Windows":
+        print("Cron jobs are not supported on Windows.")
+        return
+
     try:
         # Get current crontab entries
         result = subprocess.run(
@@ -1228,7 +1693,12 @@ def setup_reboot_cron_job():
 def remove_reboot_cron_job():
     """
     Removes the reboot cron job from the crontab.
+    On Windows, this function does nothing as cron jobs are not supported.
     """
+    # Skip cron job removal on Windows
+    if platform.system() == "Windows":
+        print("Cron jobs are not supported on Windows.")
+        return
     try:
         # Get current crontab entries
         result = subprocess.run(
@@ -1267,7 +1737,12 @@ def remove_reboot_cron_job():
 def check_cron_job_exists():
     """
     Checks if a Fetchtastic daily cron job already exists.
+    On Windows, always returns False as cron jobs are not supported.
     """
+    # Skip cron job check on Windows
+    if platform.system() == "Windows":
+        return False
+
     try:
         result = subprocess.run(
             ["crontab", "-l"],
@@ -1299,7 +1774,12 @@ def check_boot_script_exists():
 def check_any_cron_jobs_exist():
     """
     Checks if any Fetchtastic cron jobs (daily or reboot) already exist.
+    On Windows, always returns False as cron jobs are not supported.
     """
+    # Skip cron job check on Windows
+    if platform.system() == "Windows":
+        return False
+
     try:
         result = subprocess.run(
             ["crontab", "-l"],

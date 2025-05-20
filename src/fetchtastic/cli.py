@@ -95,19 +95,18 @@ def main():
                 log_info(f"\n{separator}")
                 log_info("Configuration Migration")
                 log_info(separator)
-                if setup_config.prompt_for_migration():
-                    if setup_config.migrate_config():
-                        log_info(
-                            "Configuration successfully migrated to the new location."
-                        )
-                        # Update config_path to the new location
-                        config_path = setup_config.CONFIG_FILE
-                    else:
-                        log_error(
-                            "Failed to migrate configuration. Continuing with old location."
-                        )
+                # Automatically migrate without prompting
+                setup_config.prompt_for_migration()  # Just logs the migration message
+                if setup_config.migrate_config():
+                    log_info("Configuration successfully migrated to the new location.")
+                    # Update config_path to the new location
+                    config_path = setup_config.CONFIG_FILE
+                    # Re-load the configuration from the new location
+                    config = setup_config.load_config(config_path)
                 else:
-                    log_info("Continuing with configuration at old location.")
+                    log_error(
+                        "Failed to migrate configuration. Continuing with old location."
+                    )
                 log_info(f"{separator}\n")
 
             # Display the config file location
