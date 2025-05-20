@@ -29,11 +29,15 @@ def compare_versions(version1, version2):
         0 if version1 == version2
         -1 if version1 < version2
     """
+    # Handle exact matches immediately
+    if version1 == version2:
+        return 0
+
     # Split versions into components
     v1_parts = version1.split(".")
     v2_parts = version2.split(".")
 
-    # Compare major, minor, patch versions
+    # Compare major, minor, patch versions numerically
     for i in range(min(len(v1_parts), len(v2_parts))):
         if i < 3:  # Major, minor, patch are numeric
             try:
@@ -51,18 +55,22 @@ def compare_versions(version1, version2):
                     return -1
         else:
             # For commit hash, just do string comparison
+            # This is the 4th part (index 3) which is the commit hash
+            # String comparison of commit hashes isn't reliable for determining version order
+            # But we need some deterministic comparison, so we'll use it
             if v1_parts[i] > v2_parts[i]:
                 return 1
             elif v1_parts[i] < v2_parts[i]:
                 return -1
 
     # If we get here and versions have different lengths, the longer one is newer
+    # This should rarely happen with properly formatted version strings
     if len(v1_parts) > len(v2_parts):
         return 1
     elif len(v1_parts) < len(v2_parts):
         return -1
 
-    # Versions are equal
+    # Versions are equal (should have been caught by the exact match check at the top)
     return 0
 
 
@@ -204,6 +212,16 @@ def check_for_prereleases(
         def log_message_func(message):
             print(message)
 
+    # Function to strip version numbers from filenames
+    def strip_version_numbers(filename):
+        """
+        Removes version numbers and commit hashes from the filename.
+        Uses the same regex as in menu_firmware.py to ensure consistency.
+        """
+        # Regular expression matching version numbers and commit hashes
+        base_name = re.sub(r"([_-])\d+\.\d+\.\d+(?:\.[\da-f]+)?", r"\1", filename)
+        return base_name
+
     # Strip the 'v' prefix if present
     if latest_release_tag.startswith("v"):
         latest_release_version = latest_release_tag[1:]
@@ -268,8 +286,15 @@ def check_for_prereleases(
                 # Check if it exists in the repository
                 if dir_name in repo_firmware_dirs:
                     # Check if it's newer than the latest release
-                    if compare_versions(dir_version, latest_release_version) > 0:
+                    comparison_result = compare_versions(
+                        dir_version, latest_release_version
+                    )
+                    if comparison_result > 0:
                         should_keep = True
+                    else:
+                        log_message_func(
+                            f"Pre-release {dir_name} is not newer than latest release {latest_release_version} (comparison result: {comparison_result})"
+                        )
 
             if not should_keep:
                 dir_path = os.path.join(prerelease_dir, dir_name)
@@ -289,7 +314,11 @@ def check_for_prereleases(
             dir_version = dir_name[9:]  # Remove 'firmware-' prefix
 
             # Check if this version is newer than the latest release
-            if compare_versions(dir_version, latest_release_version) > 0:
+            comparison_result = compare_versions(dir_version, latest_release_version)
+            if comparison_result > 0:
+                log_message_func(
+                    f"Pre-release {dir_name} is newer than latest release {latest_release_version} (comparison result: {comparison_result})"
+                )
                 # Refresh the list of existing prerelease directories after cleanup
                 existing_prerelease_dirs = []
                 if os.path.exists(prerelease_dir):
@@ -300,6 +329,10 @@ def check_for_prereleases(
                 # Only add if it doesn't already exist locally
                 if dir_name not in existing_prerelease_dirs:
                     prerelease_dirs.append(dir_name)
+            else:
+                log_message_func(
+                    f"Skipping {dir_name} as it's not newer than latest release {latest_release_version} (comparison result: {comparison_result})"
+                )
 
     if not prerelease_dirs:
         return False, []
@@ -331,6 +364,11 @@ def check_for_prereleases(
             file_name = file["name"]
             download_url = file["download_url"]
             file_path = os.path.join(dir_path, file_name)
+
+            # Only download files that match the selected patterns
+            stripped_file_name = strip_version_numbers(file_name)
+            if not any(pattern in stripped_file_name for pattern in selected_patterns):
+                continue  # Skip this file
 
             if not os.path.exists(file_path):
                 try:
