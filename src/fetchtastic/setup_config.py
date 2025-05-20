@@ -6,12 +6,35 @@ import random
 import shutil
 import string
 import subprocess
+import sys
 
 import platformdirs
 import yaml
 
 from fetchtastic import downloader  # Import downloader to perform first run
 from fetchtastic import menu_apk, menu_firmware
+
+# Import Windows-specific modules if on Windows
+if platform.system() == "Windows":
+    try:
+        import win32com.client
+        import winshell
+
+        WINDOWS_MODULES_AVAILABLE = True
+    except ImportError:
+        WINDOWS_MODULES_AVAILABLE = False
+else:
+    WINDOWS_MODULES_AVAILABLE = False
+
+# Windows Start Menu folder for Fetchtastic
+WINDOWS_START_MENU_FOLDER = os.path.join(
+    os.environ.get("APPDATA", ""),
+    "Microsoft",
+    "Windows",
+    "Start Menu",
+    "Programs",
+    "Fetchtastic",
+)
 
 
 def is_termux():
@@ -230,6 +253,32 @@ def run_setup():
     # Create the base directory if it doesn't exist
     if not os.path.exists(BASE_DIR):
         os.makedirs(BASE_DIR)
+
+    # On Windows, offer to create shortcuts
+    if platform.system() == "Windows" and WINDOWS_MODULES_AVAILABLE:
+        # First, ask about Windows Start Menu shortcuts
+        create_menu = (
+            input(
+                "Windows detected. Would you like to create Fetchtastic shortcuts in the Start Menu? (recommended) [y/n] (default: yes): "
+            )
+            .strip()
+            .lower()
+            or "y"
+        )
+        if create_menu == "y":
+            create_windows_menu_shortcuts(CONFIG_FILE, BASE_DIR)
+
+        # Then, ask about creating a shortcut in the base directory
+        create_shortcut = (
+            input(
+                "Would you like to create a shortcut to the configuration file in your base directory? [y/n] (default: yes): "
+            )
+            .strip()
+            .lower()
+            or "y"
+        )
+        if create_shortcut == "y":
+            create_config_shortcut(CONFIG_FILE, BASE_DIR)
 
     # Prompt to save APKs, firmware, or both
     save_choice = (
@@ -481,12 +530,44 @@ def run_setup():
 
     # Cron job setup
     if platform.system() == "Windows":
-        # Windows doesn't support cron jobs
-        print("Scheduled tasks are not supported on Windows.")
-        print("You can use Windows Task Scheduler to run Fetchtastic automatically.")
-        print(
-            "See https://learn.microsoft.com/en-us/windows/win32/taskschd/using-the-task-scheduler for more information."
-        )
+        # Windows doesn't support cron jobs, but we can offer to create a startup shortcut
+        if WINDOWS_MODULES_AVAILABLE:
+            startup_option = (
+                input(
+                    "Would you like to run Fetchtastic automatically on Windows startup? [y/n] (default: no): "
+                )
+                .strip()
+                .lower()
+                or "n"
+            )
+            if startup_option == "y":
+                if create_startup_shortcut():
+                    print("Fetchtastic will now run automatically when Windows starts.")
+                else:
+                    print(
+                        "Failed to create startup shortcut. You can manually set up Fetchtastic to run at startup."
+                    )
+                    print(
+                        "See https://learn.microsoft.com/en-us/windows/win32/taskschd/using-the-task-scheduler for more information."
+                    )
+            else:
+                print("Fetchtastic will not run automatically on startup.")
+                print(
+                    "You can use Windows Task Scheduler to run Fetchtastic automatically if needed."
+                )
+                print(
+                    "See https://learn.microsoft.com/en-us/windows/win32/taskschd/using-the-task-scheduler for more information."
+                )
+        else:
+            print(
+                "Windows modules (pywin32/winshell) are not available. Cannot create startup shortcut."
+            )
+            print(
+                "You can use Windows Task Scheduler to run Fetchtastic automatically."
+            )
+            print(
+                "See https://learn.microsoft.com/en-us/windows/win32/taskschd/using-the-task-scheduler for more information."
+            )
     elif is_termux():
         # Termux: Ask about cron job and boot script individually
         # Check if cron job already exists
@@ -922,6 +1003,173 @@ def prompt_for_migration():
     return True
 
 
+def create_windows_menu_shortcuts(config_file_path, base_dir):
+    """
+    Creates Windows Start Menu shortcuts for fetchtastic.
+
+    Args:
+        config_file_path: Path to the configuration file
+        base_dir: Base directory for Meshtastic downloads
+
+    Returns:
+        bool: True if shortcuts were created successfully, False otherwise
+    """
+    if platform.system() != "Windows" or not WINDOWS_MODULES_AVAILABLE:
+        return False
+
+    try:
+        # Create the Fetchtastic folder in the Start Menu if it doesn't exist
+        if not os.path.exists(WINDOWS_START_MENU_FOLDER):
+            os.makedirs(WINDOWS_START_MENU_FOLDER)
+
+        # Get the path to the fetchtastic executable
+        fetchtastic_path = shutil.which("fetchtastic")
+        if not fetchtastic_path:
+            print("Error: fetchtastic executable not found in PATH.")
+            return False
+
+        # Create shortcut for fetchtastic download
+        download_shortcut_path = os.path.join(
+            WINDOWS_START_MENU_FOLDER, "Fetchtastic Download.lnk"
+        )
+        winshell.CreateShortcut(
+            Path=download_shortcut_path,
+            Target=fetchtastic_path,
+            Arguments="download",
+            Description="Download Meshtastic firmware and APKs",
+            Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0),
+        )
+
+        # Create shortcut for fetchtastic setup
+        setup_shortcut_path = os.path.join(
+            WINDOWS_START_MENU_FOLDER, "Fetchtastic Setup.lnk"
+        )
+        winshell.CreateShortcut(
+            Path=setup_shortcut_path,
+            Target=fetchtastic_path,
+            Arguments="setup",
+            Description="Configure Fetchtastic settings",
+            Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0),
+        )
+
+        # Create shortcut for fetchtastic repo browse
+        repo_shortcut_path = os.path.join(
+            WINDOWS_START_MENU_FOLDER, "Fetchtastic Repository Browser.lnk"
+        )
+        winshell.CreateShortcut(
+            Path=repo_shortcut_path,
+            Target=fetchtastic_path,
+            Arguments="repo browse",
+            Description="Browse and download files from the Meshtastic repository",
+            Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0),
+        )
+
+        # Create shortcut to configuration file
+        config_shortcut_path = os.path.join(
+            WINDOWS_START_MENU_FOLDER, "Fetchtastic Configuration.lnk"
+        )
+        winshell.CreateShortcut(
+            Path=config_shortcut_path,
+            Target=config_file_path,
+            Description="Edit Fetchtastic Configuration File",
+            Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0),
+        )
+
+        # Create shortcut to Meshtastic base directory
+        base_dir_shortcut_path = os.path.join(
+            WINDOWS_START_MENU_FOLDER, "Meshtastic Downloads.lnk"
+        )
+        winshell.CreateShortcut(
+            Path=base_dir_shortcut_path,
+            Target=base_dir,
+            Description="Open Meshtastic Downloads Folder",
+            Icon=(
+                os.path.join(os.environ.get("WINDIR", "C:\\Windows"), "explorer.exe"),
+                0,
+            ),
+        )
+
+        print(
+            f"Created Fetchtastic shortcuts in Start Menu: {WINDOWS_START_MENU_FOLDER}"
+        )
+        return True
+    except Exception as e:
+        print(f"Failed to create Windows Start Menu shortcuts: {e}")
+        return False
+
+
+def create_config_shortcut(config_file_path, target_dir):
+    """
+    Creates a shortcut to the configuration file in the target directory.
+    Only works on Windows.
+
+    Args:
+        config_file_path: Path to the configuration file
+        target_dir: Directory where to create the shortcut
+
+    Returns:
+        bool: True if shortcut was created successfully, False otherwise
+    """
+    if platform.system() != "Windows" or not WINDOWS_MODULES_AVAILABLE:
+        return False
+
+    try:
+        shortcut_path = os.path.join(target_dir, "fetchtastic_config.lnk")
+
+        # Create the shortcut using winshell
+        winshell.CreateShortcut(
+            Path=shortcut_path,
+            Target=config_file_path,
+            Description="Fetchtastic Configuration File",
+            Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0),
+        )
+
+        print(f"Created shortcut to configuration file at: {shortcut_path}")
+        return True
+    except Exception as e:
+        print(f"Failed to create shortcut to configuration file: {e}")
+        return False
+
+
+def create_startup_shortcut():
+    """
+    Creates a shortcut to run fetchtastic on Windows startup.
+    Only works on Windows.
+
+    Returns:
+        bool: True if shortcut was created successfully, False otherwise
+    """
+    if platform.system() != "Windows" or not WINDOWS_MODULES_AVAILABLE:
+        return False
+
+    try:
+        # Get the path to the fetchtastic executable
+        fetchtastic_path = shutil.which("fetchtastic")
+        if not fetchtastic_path:
+            print("Error: fetchtastic executable not found in PATH.")
+            return False
+
+        # Get the startup folder path
+        startup_folder = winshell.startup()
+
+        # Create the shortcut
+        shortcut_path = os.path.join(startup_folder, "Fetchtastic.lnk")
+
+        winshell.CreateShortcut(
+            Path=shortcut_path,
+            Target=fetchtastic_path,
+            Arguments="download",
+            Description="Run Fetchtastic on startup",
+            Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0),
+        )
+
+        print(f"Created startup shortcut at: {shortcut_path}")
+        return True
+    except Exception as e:
+        print(f"Failed to create startup shortcut: {e}")
+        return False
+
+
 def copy_to_clipboard_func(text):
     """
     Copies the provided text to the clipboard, depending on the platform.
@@ -932,6 +1180,19 @@ def copy_to_clipboard_func(text):
             subprocess.run(
                 ["termux-clipboard-set"], input=text.encode("utf-8"), check=True
             )
+            return True
+        except Exception as e:
+            print(f"An error occurred while copying to clipboard: {e}")
+            return False
+    elif platform.system() == "Windows" and WINDOWS_MODULES_AVAILABLE:
+        # Windows environment with win32com available
+        try:
+            import win32clipboard
+
+            win32clipboard.OpenClipboard()
+            win32clipboard.EmptyClipboard()
+            win32clipboard.SetClipboardText(text)
+            win32clipboard.CloseClipboard()
             return True
         except Exception as e:
             print(f"An error occurred while copying to clipboard: {e}")
