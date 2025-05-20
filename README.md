@@ -6,12 +6,13 @@ Fetchtastic is a utility for downloading and managing the latest Meshtastic Andr
 
 - [Installation](#installation)
   - [Linux/Mac Installation](#linuxmac-installation)
+  - [Windows Installation](#windows-installation)
   - [Termux Installation (Android)](#termux-installation-android)
 - [Usage](#usage)
   - [Setup Process](#setup-process)
   - [Command List](#command-list)
   - [Files and Directories](#files-and-directories)
-  - [Scheduling with Cron](#scheduling-with-cron)
+  - [Scheduling](#scheduling)
   - [Notifications via NTFY](#notifications-via-ntfy)
   - [Repository Browser](#repository-browser)
 - [Contributing](#contributing)
@@ -37,6 +38,45 @@ It's recommended to use `pipx` to install Fetchtastic in an isolated environment
    ```bash
    pipx install fetchtastic
    ```
+
+### Windows Installation
+
+Fetchtastic can be installed on Windows systems with enhanced Windows integration.
+
+#### Install with pipx (Recommended)
+
+1. **Install pipx**:
+
+   Follow the installation instructions for Windows on the [pipx documentation page](https://pypa.github.io/pipx/installation/).
+
+   Restart your command prompt or PowerShell after installing pipx.
+
+2. **Install Fetchtastic with pipx**:
+
+   ```powershell
+   pipx install fetchtastic
+   ```
+
+3. **Install Windows integration features** (optional but recommended):
+
+   ```powershell
+   pipx install fetchtastic[win]
+   ```
+
+   This installs additional dependencies for Windows integration:
+
+   - Start Menu shortcuts
+   - Configuration file shortcuts
+   - Windows startup integration
+
+#### Windows Integration Features
+
+When you run `fetchtastic setup` on Windows with the Windows integration dependencies installed, you'll get:
+
+- Shortcuts in the Start Menu for common operations (download, setup, repo browse)
+- A shortcut to the configuration file for easy editing
+- A shortcut to the Meshtastic downloads folder
+- Option to run Fetchtastic automatically at Windows startup
 
 ### Termux Installation (Android)
 
@@ -124,29 +164,63 @@ options:
 
 ### Files and Directories
 
-By default, Fetchtastic saves files and configuration in the `Downloads/Meshtastic` directory:
+#### Default Locations
 
-- **Configuration File**: `Downloads/Meshtastic/fetchtastic.yaml`
-- **Log File**: `Downloads/Meshtastic/fetchtastic.log`
+By default, Fetchtastic saves downloaded files in the `Downloads/Meshtastic` directory:
+
 - **APKs**: `Downloads/Meshtastic/apks`
 - **Firmware**: `Downloads/Meshtastic/firmware`
   - **GitHub Releases**: `Downloads/Meshtastic/firmware/<version>` (managed by `download` command)
   - **Repository Files**: `Downloads/Meshtastic/firmware/repo-dls` (managed by `repo browse` command)
   - **Pre-releases**: `Downloads/Meshtastic/firmware/prerelease` (if enabled in setup)
 
-You can manually edit the configuration file to change the settings.
+#### Configuration and Log Files
 
-### Scheduling with Cron
+Fetchtastic uses standard platform-specific directories for configuration and log files:
 
-During setup, you have the option to add a cron job that runs Fetchtastic daily at 3 AM.
+- **Linux/Mac**:
 
-The setup process will configure the cron job using Termux's cron implementation.
+  - Configuration: `~/.config/fetchtastic/fetchtastic.yaml`
+  - Logs: `~/.local/share/fetchtastic/logs/fetchtastic.log`
+
+- **Windows**:
+
+  - Configuration: `C:\Users\<username>\AppData\Local\fetchtastic\fetchtastic\fetchtastic.yaml`
+  - Logs: `C:\Users\<username>\AppData\Local\fetchtastic\fetchtastic\logs\fetchtastic.log`
+  - Shortcuts: Created in Start Menu and base directory during setup
+
+- **Termux**:
+  - Configuration: `~/.config/fetchtastic/fetchtastic.yaml`
+  - Logs: `~/.local/share/fetchtastic/logs/fetchtastic.log`
+
+You can manually edit the configuration file to change the settings. On Windows with Windows integration enabled, you can access the configuration file through the shortcut created in the Start Menu.
+
+### Scheduling
+
+Fetchtastic can be scheduled to run automatically on different platforms:
+
+#### Linux/Mac Scheduling with Cron
+
+During setup on Linux or Mac, you have the option to add a cron job that runs Fetchtastic daily at 3 AM.
 
 To modify the cron job, you can run:
 
 ```bash
 crontab -e
 ```
+
+#### Windows Scheduling
+
+On Windows, Fetchtastic can be set to run automatically at startup:
+
+- During setup, you'll be asked if you want to run Fetchtastic automatically on Windows startup
+- This creates a shortcut in the Windows Startup folder
+- The shortcut runs in minimized mode to avoid disrupting your workflow
+- You can manually add or remove this shortcut from the Windows Startup folder
+
+#### Termux Scheduling
+
+On Termux, the setup process will configure a cron job using Termux's cron implementation.
 
 ### Notifications via NTFY
 
