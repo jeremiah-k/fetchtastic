@@ -60,7 +60,7 @@ function Ensure-Pipx {
 
 function Install-Fetchtastic {
     Write-Host "Installing Fetchtastic via pipx..."
-    pipx install fetchtastic
+    pipx install fetchtastic[win]
 }
 
 function Run-Setup {
