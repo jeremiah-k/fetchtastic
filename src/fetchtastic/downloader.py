@@ -835,10 +835,15 @@ def main():
             # Set permissions on .sh files if needed
             set_permissions_on_sh_files(release_dir)
 
-        # Only update latest_release_file if downloads occurred
-        if downloaded_versions:
-            with open(latest_release_file, "w") as f:
-                f.write(downloaded_versions[0])
+        # Always update latest_release_file with the most recent release tag
+        # This ensures we have the correct latest release for pre-release comparisons
+        if releases_to_download:
+            latest_release_tag = releases_to_download[0]["tag_name"]
+            # Only write if it's different from what's already there
+            if latest_release_tag != saved_release_tag:
+                with open(latest_release_file, "w") as f:
+                    f.write(latest_release_tag)
+                log_message(f"Updated latest release tag to {latest_release_tag}")
 
         # Create a list of all release tags to keep
         release_tags_to_keep = [release["tag_name"] for release in releases_to_download]
