@@ -23,7 +23,35 @@ Fetchtastic is a utility for downloading and managing the latest Meshtastic Andr
 
 Fetchtastic can be installed on Linux or macOS systems.
 
-#### Install with pipx (Recommended)
+#### Easy Installation (Recommended)
+
+1. **Download the Installer Script**:
+
+   Download the appropriate installer script from the [latest release](https://github.com/jeremiah-k/fetchtastic/releases/latest):
+
+   - For Linux: `install_linux.sh`
+   - For macOS: `install_mac.sh`
+
+2. **Make the script executable**:
+
+   ```bash
+   chmod +x install_linux.sh  # or install_mac.sh
+   ```
+
+3. **Run the Installer**:
+
+   ```bash
+   ./install_linux.sh  # or ./install_mac.sh
+   ```
+
+   The script will:
+
+   - Install Python if needed (macOS script will install Homebrew if needed)
+   - Install pipx
+   - Install Fetchtastic
+   - Run the Fetchtastic setup
+
+#### Manual Installation with pipx (Alternative)
 
 It's recommended to use `pipx` to install Fetchtastic in an isolated environment. (If you prefer, you can use `pip` too.)
 
@@ -43,7 +71,28 @@ It's recommended to use `pipx` to install Fetchtastic in an isolated environment
 
 Fetchtastic can be installed on Windows systems with enhanced Windows integration.
 
-#### Install on Windows
+#### Easy Installation (Recommended)
+
+1. **Download the Installer Script**:
+
+   Download the Windows installer script from the [latest release](https://github.com/jeremiah-k/fetchtastic/releases/latest).
+
+   Look for `install_windows.bat` in the release assets.
+
+2. **Run the Installer**:
+
+   Double-click the downloaded `install_windows.bat` file.
+
+   The script will:
+
+   - Install Python if needed
+   - Install pipx
+   - Install Fetchtastic with Windows integration
+   - Run the Fetchtastic setup
+
+#### Manual Installation
+
+If you prefer to install manually:
 
 1. **Install Python**:
 
@@ -60,7 +109,7 @@ Fetchtastic can be installed on Windows systems with enhanced Windows integratio
    pipx install fetchtastic[win]
    ```
 
-   This single command installs Fetchtastic with all Windows integration features.
+   This installs Fetchtastic with all Windows integration features.
 
    This installs additional dependencies for Windows integration:
 

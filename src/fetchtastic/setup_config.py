@@ -159,13 +159,6 @@ def run_setup():
     global BASE_DIR, CONFIG_FILE
     print("Running Fetchtastic Setup...")
 
-    # Add a warning for Windows users about running setup from shortcuts
-    if platform.system() == "Windows":
-        print("\nNOTE FOR WINDOWS USERS:")
-        print("If you're running this from a Start Menu shortcut and experience issues")
-        print("with updating shortcuts, please run 'fetchtastic setup' directly from a")
-        print("command prompt instead.\n")
-
     # Install required Termux packages first
     if is_termux():
         install_termux_packages()
@@ -270,7 +263,6 @@ def run_setup():
         # Always create a shortcut to the config file in the base directory without asking
         if WINDOWS_MODULES_AVAILABLE:
             create_config_shortcut(CONFIG_FILE, BASE_DIR)
-            print(f"Created shortcut to configuration file in {BASE_DIR}")
 
             # Check if Start Menu shortcuts already exist
             if os.path.exists(WINDOWS_START_MENU_FOLDER):
@@ -1276,9 +1268,7 @@ def create_windows_menu_shortcuts(config_file_path, base_dir):
             Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0),
         )
 
-        print(
-            f"Created Fetchtastic shortcuts in Start Menu: {WINDOWS_START_MENU_FOLDER}"
-        )
+        print("Shortcuts created in Start Menu")
         return True
     except Exception as e:
         print(f"Failed to create Windows Start Menu shortcuts: {e}")
