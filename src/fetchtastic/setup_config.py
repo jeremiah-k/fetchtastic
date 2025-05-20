@@ -480,7 +480,14 @@ def run_setup():
     print(f"Configuration saved to: {CONFIG_FILE}")
 
     # Cron job setup
-    if is_termux():
+    if platform.system() == "Windows":
+        # Windows doesn't support cron jobs
+        print("Scheduled tasks are not supported on Windows.")
+        print("You can use Windows Task Scheduler to run Fetchtastic automatically.")
+        print(
+            "See https://learn.microsoft.com/en-us/windows/win32/taskschd/using-the-task-scheduler for more information."
+        )
+    elif is_termux():
         # Termux: Ask about cron job and boot script individually
         # Check if cron job already exists
         cron_job_exists = check_cron_job_exists()
@@ -1029,7 +1036,13 @@ def install_crond():
 def setup_cron_job():
     """
     Sets up the cron job to run Fetchtastic at scheduled times.
+    On Windows, this function does nothing as cron jobs are not supported.
     """
+    # Skip cron job setup on Windows
+    if platform.system() == "Windows":
+        print("Cron jobs are not supported on Windows.")
+        return
+
     try:
         # Get current crontab entries
         result = subprocess.run(
@@ -1083,7 +1096,13 @@ def setup_cron_job():
 def remove_cron_job():
     """
     Removes the Fetchtastic daily cron job from the crontab.
+    On Windows, this function does nothing as cron jobs are not supported.
     """
+    # Skip cron job removal on Windows
+    if platform.system() == "Windows":
+        print("Cron jobs are not supported on Windows.")
+        return
+
     try:
         # Get current crontab entries
         result = subprocess.run(
@@ -1156,7 +1175,13 @@ def remove_boot_script():
 def setup_reboot_cron_job():
     """
     Sets up a cron job to run Fetchtastic on system startup (non-Termux).
+    On Windows, this function does nothing as cron jobs are not supported.
     """
+    # Skip cron job setup on Windows
+    if platform.system() == "Windows":
+        print("Cron jobs are not supported on Windows.")
+        return
+
     try:
         # Get current crontab entries
         result = subprocess.run(
@@ -1206,7 +1231,12 @@ def setup_reboot_cron_job():
 def remove_reboot_cron_job():
     """
     Removes the reboot cron job from the crontab.
+    On Windows, this function does nothing as cron jobs are not supported.
     """
+    # Skip cron job removal on Windows
+    if platform.system() == "Windows":
+        print("Cron jobs are not supported on Windows.")
+        return
     try:
         # Get current crontab entries
         result = subprocess.run(
@@ -1245,7 +1275,12 @@ def remove_reboot_cron_job():
 def check_cron_job_exists():
     """
     Checks if a Fetchtastic daily cron job already exists.
+    On Windows, always returns False as cron jobs are not supported.
     """
+    # Skip cron job check on Windows
+    if platform.system() == "Windows":
+        return False
+
     try:
         result = subprocess.run(
             ["crontab", "-l"],
@@ -1277,7 +1312,12 @@ def check_boot_script_exists():
 def check_any_cron_jobs_exist():
     """
     Checks if any Fetchtastic cron jobs (daily or reboot) already exist.
+    On Windows, always returns False as cron jobs are not supported.
     """
+    # Skip cron job check on Windows
+    if platform.system() == "Windows":
+        return False
+
     try:
         result = subprocess.run(
             ["crontab", "-l"],
