@@ -101,6 +101,8 @@ def main():
                     log_info("Configuration successfully migrated to the new location.")
                     # Update config_path to the new location
                     config_path = setup_config.CONFIG_FILE
+                    # Re-load the configuration from the new location
+                    config = setup_config.load_config(config_path)
                 else:
                     log_error(
                         "Failed to migrate configuration. Continuing with old location."
