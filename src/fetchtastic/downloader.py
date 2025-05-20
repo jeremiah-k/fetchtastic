@@ -204,22 +204,59 @@ def check_for_prereleases(
         log_message_func("No firmware directories found in the repository.")
         return False, []
 
-    # Find directories that are newer than the latest release
+    # Get list of existing firmware directories (both regular and pre-releases)
+    firmware_dir = os.path.join(download_dir, "firmware")
+    existing_firmware_dirs = []
+    if os.path.exists(firmware_dir):
+        for item in os.listdir(firmware_dir):
+            item_path = os.path.join(firmware_dir, item)
+            if os.path.isdir(item_path) and item != "prerelease" and item != "repo-dls":
+                # This is a regular firmware directory (e.g., v2.6.8.ef9d0d7)
+                existing_firmware_dirs.append(item)
+
+    # Also check existing pre-releases
+    prerelease_dir = os.path.join(download_dir, "firmware", "prerelease")
+    existing_prerelease_dirs = []
+    if os.path.exists(prerelease_dir):
+        for item in os.listdir(prerelease_dir):
+            if os.path.isdir(os.path.join(prerelease_dir, item)):
+                existing_prerelease_dirs.append(item)
+
+    # Find directories that are newer than the latest release and don't already exist
     prerelease_dirs = []
     for dir_name in directories:
         # Extract version from directory name (e.g., firmware-2.6.9.f93d031)
         if dir_name.startswith("firmware-"):
             dir_version = dir_name[9:]  # Remove 'firmware-' prefix
 
+            # Check if this version already exists as a regular release
+            version_exists = False
+            for existing_dir in existing_firmware_dirs:
+                # Strip 'v' prefix if present for comparison
+                existing_version = (
+                    existing_dir[1:] if existing_dir.startswith("v") else existing_dir
+                )
+                if existing_version == dir_version:
+                    version_exists = True
+                    break
+
+            # Skip if this version already exists as a regular release
+            if version_exists:
+                continue
+
+            # Skip if this pre-release directory already exists
+            if dir_name in existing_prerelease_dirs:
+                continue
+
             # Compare versions (assuming format x.y.z.commit)
             if compare_versions(dir_version, latest_release_version) > 0:
                 prerelease_dirs.append(dir_name)
 
     if not prerelease_dirs:
+        log_message_func("No pre-release firmware found or downloaded.")
         return False, []
 
     # Create prerelease directory if it doesn't exist
-    prerelease_dir = os.path.join(download_dir, "firmware", "prerelease")
     if not os.path.exists(prerelease_dir):
         os.makedirs(prerelease_dir)
 
