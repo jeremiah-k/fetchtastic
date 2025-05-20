@@ -29,11 +29,15 @@ def compare_versions(version1, version2):
         0 if version1 == version2
         -1 if version1 < version2
     """
+    # Handle exact matches immediately
+    if version1 == version2:
+        return 0
+
     # Split versions into components
     v1_parts = version1.split(".")
     v2_parts = version2.split(".")
 
-    # Compare major, minor, patch versions
+    # Compare major, minor, patch versions numerically
     for i in range(min(len(v1_parts), len(v2_parts))):
         if i < 3:  # Major, minor, patch are numeric
             try:
@@ -51,18 +55,22 @@ def compare_versions(version1, version2):
                     return -1
         else:
             # For commit hash, just do string comparison
+            # This is the 4th part (index 3) which is the commit hash
+            # String comparison of commit hashes isn't reliable for determining version order
+            # But we need some deterministic comparison, so we'll use it
             if v1_parts[i] > v2_parts[i]:
                 return 1
             elif v1_parts[i] < v2_parts[i]:
                 return -1
 
     # If we get here and versions have different lengths, the longer one is newer
+    # This should rarely happen with properly formatted version strings
     if len(v1_parts) > len(v2_parts):
         return 1
     elif len(v1_parts) < len(v2_parts):
         return -1
 
-    # Versions are equal
+    # Versions are equal (should have been caught by the exact match check at the top)
     return 0
 
 
@@ -98,8 +106,6 @@ def check_promoted_prereleases(download_dir, latest_release_tag, log_message_fun
 
     # Path to regular release directory
     release_dir = os.path.join(download_dir, "firmware", latest_release_tag)
-    if not os.path.exists(release_dir):
-        return False
 
     # Check for matching pre-release directories
     promoted = False
@@ -113,6 +119,20 @@ def check_promoted_prereleases(download_dir, latest_release_tag, log_message_fun
                     f"Found pre-release {dir_name} that matches latest release {latest_release_tag}"
                 )
                 prerelease_path = os.path.join(prerelease_dir, dir_name)
+
+                # If the release directory doesn't exist yet, we can't compare files
+                # We'll just remove the pre-release directory since it will be downloaded as a regular release
+                if not os.path.exists(release_dir):
+                    log_message_func(
+                        f"Pre-release {dir_name} has been promoted to release {latest_release_tag}, "
+                        f"but the release directory doesn't exist yet. Removing pre-release."
+                    )
+                    shutil.rmtree(prerelease_path)
+                    log_message_func(
+                        f"Removed pre-release directory: {prerelease_path}"
+                    )
+                    promoted = True
+                    continue
 
                 # Verify files match by comparing hashes
                 files_match = True
@@ -175,6 +195,7 @@ def check_for_prereleases(
 ):
     """
     Checks for pre-release firmware in the meshtastic.github.io repository.
+    Also cleans up stale pre-releases that no longer exist in the repository.
 
     Args:
         download_dir: Base download directory
@@ -191,6 +212,16 @@ def check_for_prereleases(
         def log_message_func(message):
             print(message)
 
+    # Function to strip version numbers from filenames
+    def strip_version_numbers(filename):
+        """
+        Removes version numbers and commit hashes from the filename.
+        Uses the same regex as in menu_firmware.py to ensure consistency.
+        """
+        # Regular expression matching version numbers and commit hashes
+        base_name = re.sub(r"([_-])\d+\.\d+\.\d+(?:\.[\da-f]+)?", r"\1", filename)
+        return base_name
+
     # Strip the 'v' prefix if present
     if latest_release_tag.startswith("v"):
         latest_release_version = latest_release_tag[1:]
@@ -204,22 +235,105 @@ def check_for_prereleases(
         log_message_func("No firmware directories found in the repository.")
         return False, []
 
-    # Find directories that are newer than the latest release
+    # Get list of existing firmware directories (both regular and pre-releases)
+    firmware_dir = os.path.join(download_dir, "firmware")
+    existing_firmware_dirs = []
+    if os.path.exists(firmware_dir):
+        for item in os.listdir(firmware_dir):
+            item_path = os.path.join(firmware_dir, item)
+            if os.path.isdir(item_path) and item != "prerelease" and item != "repo-dls":
+                # This is a regular firmware directory (e.g., v2.6.8.ef9d0d7)
+                existing_firmware_dirs.append(item)
+
+    # Also check existing pre-releases
+    prerelease_dir = os.path.join(download_dir, "firmware", "prerelease")
+    existing_prerelease_dirs = []
+    if os.path.exists(prerelease_dir):
+        for item in os.listdir(prerelease_dir):
+            if os.path.isdir(os.path.join(prerelease_dir, item)):
+                existing_prerelease_dirs.append(item)
+
+    # Extract all firmware directory names from the repository
+    repo_firmware_dirs = [
+        dir_name for dir_name in directories if dir_name.startswith("firmware-")
+    ]
+
+    # Clean up the prerelease directory
+    # Only keep directories that:
+    # 1. Exist in the repository
+    # 2. Are newer than the latest release
+    if os.path.exists(prerelease_dir):
+        # First, clean up any non-directory files in the prerelease directory
+        for item in os.listdir(prerelease_dir):
+            item_path = os.path.join(prerelease_dir, item)
+            if not os.path.isdir(item_path):
+                try:
+                    log_message_func(
+                        f"Removing stale file from prerelease directory: {item}"
+                    )
+                    os.remove(item_path)
+                except Exception as e:
+                    log_message_func(f"Error removing file {item_path}: {e}")
+
+        # Now clean up directories
+        for dir_name in existing_prerelease_dirs:
+            should_keep = False
+
+            # Check if it's a firmware directory
+            if dir_name.startswith("firmware-"):
+                dir_version = dir_name[9:]  # Remove 'firmware-' prefix
+
+                # Check if it exists in the repository
+                if dir_name in repo_firmware_dirs:
+                    # Check if it's newer than the latest release
+                    comparison_result = compare_versions(
+                        dir_version, latest_release_version
+                    )
+                    if comparison_result > 0:
+                        should_keep = True
+                    else:
+                        log_message_func(
+                            f"Pre-release {dir_name} is not newer than latest release {latest_release_version} (comparison result: {comparison_result})"
+                        )
+
+            if not should_keep:
+                dir_path = os.path.join(prerelease_dir, dir_name)
+                try:
+                    log_message_func(
+                        f"Removing stale pre-release directory: {dir_name}"
+                    )
+                    shutil.rmtree(dir_path)
+                except Exception as e:
+                    log_message_func(f"Error removing directory {dir_path}: {e}")
+
+    # Find directories in the repository that are newer than the latest release and don't already exist locally
     prerelease_dirs = []
     for dir_name in directories:
         # Extract version from directory name (e.g., firmware-2.6.9.f93d031)
         if dir_name.startswith("firmware-"):
             dir_version = dir_name[9:]  # Remove 'firmware-' prefix
 
-            # Compare versions (assuming format x.y.z.commit)
-            if compare_versions(dir_version, latest_release_version) > 0:
-                prerelease_dirs.append(dir_name)
+            # Check if this version is newer than the latest release
+            comparison_result = compare_versions(dir_version, latest_release_version)
+            if comparison_result > 0:
+                log_message_func(
+                    f"Pre-release {dir_name} is newer than latest release {latest_release_version} (comparison result: {comparison_result})"
+                )
+                # Refresh the list of existing prerelease directories after cleanup
+                existing_prerelease_dirs = []
+                if os.path.exists(prerelease_dir):
+                    for item in os.listdir(prerelease_dir):
+                        if os.path.isdir(os.path.join(prerelease_dir, item)):
+                            existing_prerelease_dirs.append(item)
+
+                # Only add if it doesn't already exist locally
+                if dir_name not in existing_prerelease_dirs:
+                    prerelease_dirs.append(dir_name)
 
     if not prerelease_dirs:
         return False, []
 
     # Create prerelease directory if it doesn't exist
-    prerelease_dir = os.path.join(download_dir, "firmware", "prerelease")
     if not os.path.exists(prerelease_dir):
         os.makedirs(prerelease_dir)
 
@@ -246,6 +360,11 @@ def check_for_prereleases(
             file_name = file["name"]
             download_url = file["download_url"]
             file_path = os.path.join(dir_path, file_name)
+
+            # Only download files that match the selected patterns
+            stripped_file_name = strip_version_numbers(file_name)
+            if not any(pattern in stripped_file_name for pattern in selected_patterns):
+                continue  # Skip this file
 
             if not os.path.exists(file_path):
                 try:
@@ -279,7 +398,7 @@ def check_for_prereleases(
                 downloaded_versions.append(dir_name)
         return True, downloaded_versions
     else:
-        log_message_func("No new pre-release files were downloaded.")
+        # Don't log here - we'll log once at the caller level
         return False, []
 
 
