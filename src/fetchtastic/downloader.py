@@ -254,6 +254,49 @@ def check_for_prereleases(
                 except Exception as e:
                     log_message_func(f"Error removing directory {dir_path}: {e}")
 
+    # Clean up existing pre-releases that are not newer than the latest release
+    # or that already exist as regular releases
+    if os.path.exists(prerelease_dir):
+        for dir_name in existing_prerelease_dirs:
+            if dir_name.startswith("firmware-"):
+                dir_version = dir_name[9:]  # Remove 'firmware-' prefix
+
+                # Check if this version already exists as a regular release
+                version_exists = False
+                for existing_dir in existing_firmware_dirs:
+                    # Strip 'v' prefix if present for comparison
+                    existing_version = (
+                        existing_dir[1:]
+                        if existing_dir.startswith("v")
+                        else existing_dir
+                    )
+                    if existing_version == dir_version:
+                        version_exists = True
+                        break
+
+                # Remove if this version already exists as a regular release
+                if version_exists:
+                    dir_path = os.path.join(prerelease_dir, dir_name)
+                    try:
+                        log_message_func(
+                            f"Removing pre-release {dir_name} that already exists as regular release"
+                        )
+                        shutil.rmtree(dir_path)
+                    except Exception as e:
+                        log_message_func(f"Error removing directory {dir_path}: {e}")
+                    continue
+
+                # Remove if this version is not newer than the latest release
+                if compare_versions(dir_version, latest_release_version) <= 0:
+                    dir_path = os.path.join(prerelease_dir, dir_name)
+                    try:
+                        log_message_func(
+                            f"Removing pre-release {dir_name} that is not newer than latest release"
+                        )
+                        shutil.rmtree(dir_path)
+                    except Exception as e:
+                        log_message_func(f"Error removing directory {dir_path}: {e}")
+
     # Find directories that are newer than the latest release and don't already exist
     prerelease_dirs = []
     for dir_name in directories:
@@ -277,6 +320,13 @@ def check_for_prereleases(
                 continue
 
             # Skip if this pre-release directory already exists
+            # (We need to refresh the list after cleanup)
+            existing_prerelease_dirs = []
+            if os.path.exists(prerelease_dir):
+                for item in os.listdir(prerelease_dir):
+                    if os.path.isdir(os.path.join(prerelease_dir, item)):
+                        existing_prerelease_dirs.append(item)
+
             if dir_name in existing_prerelease_dirs:
                 continue
 
@@ -285,7 +335,6 @@ def check_for_prereleases(
                 prerelease_dirs.append(dir_name)
 
     if not prerelease_dirs:
-        log_message_func("No pre-release firmware found or downloaded.")
         return False, []
 
     # Create prerelease directory if it doesn't exist
@@ -348,7 +397,7 @@ def check_for_prereleases(
                 downloaded_versions.append(dir_name)
         return True, downloaded_versions
     else:
-        log_message_func("No new pre-release files were downloaded.")
+        # Don't log here - we'll log once at the caller level
         return False, []
 
 
