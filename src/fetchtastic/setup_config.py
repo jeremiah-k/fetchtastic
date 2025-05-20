@@ -159,6 +159,13 @@ def run_setup():
     global BASE_DIR, CONFIG_FILE
     print("Running Fetchtastic Setup...")
 
+    # Add a warning for Windows users about running setup from shortcuts
+    if platform.system() == "Windows":
+        print("\nNOTE FOR WINDOWS USERS:")
+        print("If you're running this from a Start Menu shortcut and experience issues")
+        print("with updating shortcuts, please run 'fetchtastic setup' directly from a")
+        print("command prompt instead.\n")
+
     # Install required Termux packages first
     if is_termux():
         install_termux_packages()
@@ -919,6 +926,13 @@ def run_setup():
         print("Setup complete. Run 'fetchtastic download' to start downloading.")
         if WINDOWS_MODULES_AVAILABLE:
             print("You can also use the shortcuts created in the Start Menu.")
+
+        # If running from a batch file or shortcut, pause at the end
+        if os.environ.get("PROMPT") is None or "cmd.exe" in os.environ.get(
+            "COMSPEC", ""
+        ):
+            print("\nPress Enter to close this window...")
+            input()
     else:
         # On other platforms, offer to run it now
         perform_first_run = (
@@ -1166,6 +1180,16 @@ def create_windows_menu_shortcuts(config_file_path, base_dir):
             f.write("echo Press any key to close this window...\n")
             f.write("pause >nul\n")
 
+        # Create a batch file for setup that pauses at the end
+        setup_batch_path = os.path.join(batch_dir, "fetchtastic_setup.bat")
+        with open(setup_batch_path, "w") as f:
+            f.write("@echo off\n")
+            f.write("title Fetchtastic Setup\n")
+            f.write(f'"{fetchtastic_path}" setup\n')
+            f.write("echo.\n")
+            f.write("echo Press any key to close this window...\n")
+            f.write("pause >nul\n")
+
         # Create shortcut for fetchtastic download (using batch file)
         download_shortcut_path = os.path.join(
             WINDOWS_START_MENU_FOLDER, "Fetchtastic Download.lnk"
@@ -1177,14 +1201,13 @@ def create_windows_menu_shortcuts(config_file_path, base_dir):
             Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0),
         )
 
-        # Create shortcut for fetchtastic setup
+        # Create shortcut for fetchtastic setup (using batch file)
         setup_shortcut_path = os.path.join(
             WINDOWS_START_MENU_FOLDER, "Fetchtastic Setup.lnk"
         )
         winshell.CreateShortcut(
             Path=setup_shortcut_path,
-            Target=fetchtastic_path,
-            Arguments="setup",
+            Target=setup_batch_path,
             Description="Configure Fetchtastic settings",
             Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0),
         )
