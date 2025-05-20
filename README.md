@@ -25,28 +25,33 @@ Fetchtastic can be installed on Linux or macOS systems.
 
 #### Easy Installation (Recommended)
 
-1. **Download the Installer Script**:
-
-   Download the appropriate installer script from the [latest release](https://github.com/jeremiah-k/fetchtastic/releases/latest):
-
-   - For Linux: `install_linux.sh`
-   - For macOS: `install_mac.sh`
-
-2. **Make the script executable**:
+1. **One-line Installation**:
 
    ```bash
-   chmod +x install_linux.sh  # or install_mac.sh
+   curl -sSL https://raw.githubusercontent.com/jeremiah-k/fetchtastic/main/src/fetchtastic/tools/fetchtastic-setup.sh | bash
    ```
 
-3. **Run the Installer**:
+   This will download and run the installer script directly.
+
+2. **Alternative: Manual Download**:
+
+   If you prefer to examine the script first:
 
    ```bash
-   ./install_linux.sh  # or ./install_mac.sh
+   # Download the script
+   curl -O https://raw.githubusercontent.com/jeremiah-k/fetchtastic/main/src/fetchtastic/tools/fetchtastic-setup.sh
+
+   # Make it executable
+   chmod +x fetchtastic-setup.sh
+
+   # Run it
+   ./fetchtastic-setup.sh
    ```
 
    The script will:
 
-   - Install Python if needed (macOS script will install Homebrew if needed)
+   - Detect your operating system (Linux or macOS)
+   - Install Python if needed (on macOS, it will install Homebrew if needed)
    - Install pipx
    - Install Fetchtastic
    - Run the Fetchtastic setup
@@ -77,11 +82,11 @@ Fetchtastic can be installed on Windows systems with enhanced Windows integratio
 
    Download the Windows installer script from the [latest release](https://github.com/jeremiah-k/fetchtastic/releases/latest).
 
-   Look for `install_windows.bat` in the release assets.
+   Look for `fetchtastic-setup.bat` in the release assets.
 
 2. **Run the Installer**:
 
-   Double-click the downloaded `install_windows.bat` file.
+   Double-click the downloaded `fetchtastic-setup.bat` file.
 
    The script will:
 

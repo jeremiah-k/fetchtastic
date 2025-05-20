@@ -25,12 +25,12 @@ def get_install_script_path(platform):
     """Get the path to the installation script for the specified platform.
 
     Args:
-        platform: The platform name ('windows', 'linux', 'mac')
+        platform: The platform name ('windows', 'unix')
 
     Returns:
         str: The path to the installation script
     """
-    filename = f"install_{platform}.{'bat' if platform == 'windows' else 'sh'}"
+    filename = f"fetchtastic-setup.{'bat' if platform == 'windows' else 'sh'}"
     try:
         # For Python 3.9+
         return str(importlib.resources.files("fetchtastic.tools").joinpath(filename))
