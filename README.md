@@ -28,7 +28,7 @@ Fetchtastic can be installed on Linux or macOS systems.
 1. **One-line Installation**:
 
    ```bash
-   curl -sSL https://raw.githubusercontent.com/jeremiah-k/fetchtastic/main/src/fetchtastic/tools/fetchtastic-setup.sh | bash
+   curl -sSL https://raw.githubusercontent.com/jeremiah-k/fetchtastic/main/src/fetchtastic/tools/setup_fetchtastic.sh | bash
    ```
 
    This will download and run the installer script directly.
@@ -39,13 +39,13 @@ Fetchtastic can be installed on Linux or macOS systems.
 
    ```bash
    # Download the script
-   curl -O https://raw.githubusercontent.com/jeremiah-k/fetchtastic/main/src/fetchtastic/tools/fetchtastic-setup.sh
+   curl -O https://raw.githubusercontent.com/jeremiah-k/fetchtastic/main/src/fetchtastic/tools/setup_fetchtastic.sh
 
    # Make it executable
-   chmod +x fetchtastic-setup.sh
+   chmod +x setup_fetchtastic.sh
 
    # Run it
-   ./fetchtastic-setup.sh
+   ./setup_fetchtastic.sh
    ```
 
    The script will:
