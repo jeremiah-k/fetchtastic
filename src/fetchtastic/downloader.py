@@ -2,6 +2,7 @@
 
 import json
 import os
+import platform
 import re
 import shutil
 import time
@@ -554,7 +555,7 @@ def main():
             if download_path.endswith(".zip"):
                 try:
                     # Explicitly close the zipfile after checking
-                    with zipfile.ZipFile(temp_path, "r") as zip_check:
+                    with zipfile.ZipFile(temp_path, "r"):
                         # Just accessing the zipfile is enough to validate it
                         pass
 
