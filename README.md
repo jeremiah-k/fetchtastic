@@ -51,9 +51,9 @@ Fetchtastic can be installed on Windows systems with enhanced Windows integratio
 
 #### Easy Installation (Recommended)
 
-1. **Run the Installer Script**:
+This must be run in PowerShell (not Command Prompt).
 
-   Open PowerShell and run:
+1. **Run the Installer Script**:
 
 ```powershell
 irm https://raw.githubusercontent.com/jeremiah-k/fetchtastic/main/src/fetchtastic/tools/setup_fetchtastic.ps1 | iex
@@ -65,20 +65,22 @@ The script installs Python if needed, installs pipx, installs Fetchtastic with W
 
 1. **Install Python**: Download and install Python from the [official Python website](https://www.python.org/downloads/). Make sure to check "Add Python to PATH" during installation.
 
-2. **Install pipx and Fetchtastic without restarting PowerShell**:
+2. **Install pipx and Fetchtastic**:
 
 ```powershell
 python -m pip install --upgrade pip
 python -m pip install --user pipx
 python -m pipx ensurepath
+```
 
-$env:Path += ";$env:USERPROFILE\\.local\\bin;$env:USERPROFILE\\AppData\\Roaming\\Python\\Python$((python -c 'import sys; print(f\"{sys.version_info.major}{sys.version_info.minor}\")'))\\Scripts"
+Restart PowerShell, then run:
 
+```powershell
 pipx install "fetchtastic[win]"
 fetchtastic setup
 ```
 
-This installs Fetchtastic with Windows integration features (Start Menu shortcuts, configuration file shortcuts, and Windows startup integration), and avoids needing to restart your terminal session.
+This installs Fetchtastic with Windows integration features (Start Menu shortcuts, configuration file shortcuts, and Windows startup integration).
 
 #### Windows Integration Features
 
