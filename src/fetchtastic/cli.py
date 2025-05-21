@@ -7,6 +7,8 @@ import shutil
 import subprocess
 import sys
 
+import platformdirs
+
 from fetchtastic import downloader, repo_downloader, setup_config
 from fetchtastic.log_utils import log_error, log_info, setup_logging
 from fetchtastic.setup_config import display_version_info, get_upgrade_command
@@ -317,9 +319,83 @@ def run_clean():
 
     # Remove config directory if empty
     config_dir = setup_config.CONFIG_DIR
-    if os.path.exists(config_dir) and not os.listdir(config_dir):
-        os.rmdir(config_dir)
-        print(f"Removed empty config directory: {config_dir}")
+    if os.path.exists(config_dir):
+        # If on Windows, remove batch files directory
+        batch_dir = os.path.join(config_dir, "batch")
+        if os.path.exists(batch_dir):
+            try:
+                shutil.rmtree(batch_dir)
+                print(f"Removed batch files directory: {batch_dir}")
+            except Exception as e:
+                print(f"Failed to delete batch directory {batch_dir}. Reason: {e}")
+
+        # Check if config directory is now empty
+        if os.path.exists(config_dir) and not os.listdir(config_dir):
+            try:
+                os.rmdir(config_dir)
+                print(f"Removed empty config directory: {config_dir}")
+            except Exception as e:
+                print(f"Failed to delete config directory {config_dir}. Reason: {e}")
+
+    # Windows-specific cleanup
+    if platform.system() == "Windows":
+        # Check if Windows modules are available
+        windows_modules_available = False
+        try:
+            import winshell
+
+            windows_modules_available = True
+        except ImportError:
+            print(
+                "Windows modules not available. Some Windows-specific items may not be removed."
+            )
+
+        if windows_modules_available:
+            # Remove Start Menu shortcuts
+            windows_start_menu_folder = setup_config.WINDOWS_START_MENU_FOLDER
+            if os.path.exists(windows_start_menu_folder):
+                try:
+                    shutil.rmtree(windows_start_menu_folder)
+                    print(
+                        f"Removed Start Menu shortcuts folder: {windows_start_menu_folder}"
+                    )
+                except Exception as e:
+                    print(f"Failed to remove Start Menu shortcuts folder. Reason: {e}")
+                    # Try to remove individual files
+                    try:
+                        for item in os.listdir(windows_start_menu_folder):
+                            item_path = os.path.join(windows_start_menu_folder, item)
+                            try:
+                                if os.path.isfile(item_path):
+                                    os.remove(item_path)
+                                    print(f"Removed Start Menu shortcut: {item}")
+                                elif os.path.isdir(item_path):
+                                    shutil.rmtree(item_path)
+                                    print(f"Removed Start Menu directory: {item}")
+                            except Exception as e2:
+                                print(f"Failed to remove {item}. Reason: {e2}")
+                    except Exception as e3:
+                        print(f"Failed to list Start Menu shortcuts. Reason: {e3}")
+
+            # Remove startup shortcut
+            try:
+                startup_folder = winshell.startup()
+                startup_shortcut_path = os.path.join(startup_folder, "Fetchtastic.lnk")
+                if os.path.exists(startup_shortcut_path):
+                    os.remove(startup_shortcut_path)
+                    print(f"Removed startup shortcut: {startup_shortcut_path}")
+            except Exception as e:
+                print(f"Failed to remove startup shortcut. Reason: {e}")
+
+            # Remove config shortcut in base directory
+            download_dir = setup_config.BASE_DIR
+            config_shortcut_path = os.path.join(download_dir, "fetchtastic_yaml.lnk")
+            if os.path.exists(config_shortcut_path):
+                try:
+                    os.remove(config_shortcut_path)
+                    print(f"Removed configuration shortcut: {config_shortcut_path}")
+                except Exception as e:
+                    print(f"Failed to remove configuration shortcut. Reason: {e}")
 
     # Remove contents of download directory
     download_dir = setup_config.BASE_DIR
@@ -337,40 +413,57 @@ def run_clean():
                 print(f"Failed to delete {item_path}. Reason: {e}")
         print(f"Cleaned contents of download directory: {download_dir}")
 
-    # Remove cron job entries
-    try:
-        # Get current crontab entries
-        result = subprocess.run(
-            ["crontab", "-l"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-        )
-        if result.returncode == 0:
-            existing_cron = result.stdout.strip()
-            # Remove existing fetchtastic cron jobs
-            cron_lines = [line for line in existing_cron.splitlines() if line.strip()]
-            cron_lines = [
-                line
-                for line in cron_lines
-                if "# fetchtastic" not in line and "fetchtastic download" not in line
-            ]
-            # Join cron lines
-            new_cron = "\n".join(cron_lines)
-            # Ensure new_cron ends with a newline
-            if not new_cron.endswith("\n"):
-                new_cron += "\n"
-            # Update crontab
-            process = subprocess.Popen(
-                ["crontab", "-"], stdin=subprocess.PIPE, text=True
+    # Remove cron job entries (non-Windows platforms)
+    if platform.system() != "Windows":
+        try:
+            # Get current crontab entries
+            result = subprocess.run(
+                ["crontab", "-l"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
             )
-            process.communicate(input=new_cron)
-            print("Removed Fetchtastic cron job entries.")
-    except Exception as e:
-        print(f"An error occurred while removing cron jobs: {e}")
+            if result.returncode == 0:
+                existing_cron = result.stdout.strip()
+                # Remove existing fetchtastic cron jobs
+                cron_lines = [
+                    line for line in existing_cron.splitlines() if line.strip()
+                ]
+                cron_lines = [
+                    line
+                    for line in cron_lines
+                    if "# fetchtastic" not in line
+                    and "fetchtastic download" not in line
+                ]
+                # Join cron lines
+                new_cron = "\n".join(cron_lines)
+                # Ensure new_cron ends with a newline
+                if not new_cron.endswith("\n"):
+                    new_cron += "\n"
+                # Update crontab
+                process = subprocess.Popen(
+                    ["crontab", "-"], stdin=subprocess.PIPE, text=True
+                )
+                process.communicate(input=new_cron)
+                print("Removed Fetchtastic cron job entries.")
+        except Exception as e:
+            print(f"An error occurred while removing cron jobs: {e}")
 
-    # Remove boot script if exists
+    # Remove boot script if exists (Termux-specific)
     boot_script = os.path.expanduser("~/.termux/boot/fetchtastic.sh")
     if os.path.exists(boot_script):
         os.remove(boot_script)
         print(f"Removed boot script: {boot_script}")
+
+    # Remove log file
+    log_dir = platformdirs.user_log_dir("fetchtastic")
+    log_file = os.path.join(log_dir, "fetchtastic.log")
+    if os.path.exists(log_file):
+        try:
+            os.remove(log_file)
+            print(f"Removed log file: {log_file}")
+        except Exception as e:
+            print(f"Failed to remove log file. Reason: {e}")
 
     print(
         "The downloaded files and Fetchtastic configuration have been removed from your system."

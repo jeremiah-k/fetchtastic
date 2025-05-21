@@ -3,6 +3,7 @@
 import os
 import platform
 import shutil
+import time
 
 import requests
 
@@ -55,16 +56,47 @@ def download_repo_files(selected_files, download_dir, log_message_func=None):
         file_name = file["name"]
         download_url = file["download_url"]
         file_path = os.path.join(dir_path, file_name)
+        temp_path = file_path + ".tmp"
 
         try:
             log_message_func(f"Downloading {file_name} from {directory or 'root'}...")
             response = requests.get(download_url, stream=True, timeout=30)
             response.raise_for_status()
 
-            with open(file_path, "wb") as f:
+            # Download to a temporary file first
+            with open(temp_path, "wb") as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     if chunk:
                         f.write(chunk)
+
+            # Windows-specific handling for file operations
+            if platform.system() == "Windows":
+                # Try to move the file with retries for Windows
+                max_retries = 3
+                retry_delay = 1  # seconds
+                for retry in range(max_retries):
+                    try:
+                        # Make sure the file is closed and not locked
+                        import gc
+
+                        gc.collect()  # Force garbage collection to release file handles
+
+                        # Try to move the file
+                        os.replace(temp_path, file_path)
+                        break
+                    except PermissionError as e:
+                        if retry < max_retries - 1:
+                            log_message_func(
+                                f"File access error, retrying in {retry_delay} seconds: {e}"
+                            )
+                            time.sleep(retry_delay)
+                            retry_delay *= 2  # Exponential backoff
+                        else:
+                            # Last retry failed
+                            raise
+            else:
+                # Non-Windows platforms
+                os.replace(temp_path, file_path)
 
             # Set executable permissions for .sh files
             if file_name.endswith(".sh"):
@@ -76,6 +108,12 @@ def download_repo_files(selected_files, download_dir, log_message_func=None):
 
         except Exception as e:
             log_message_func(f"Error downloading {file_name}: {e}")
+            # Clean up temp file if it exists
+            if os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except Exception as e2:
+                    log_message_func(f"Error removing temporary file {temp_path}: {e2}")
 
     return downloaded_files
 

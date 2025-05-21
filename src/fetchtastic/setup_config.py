@@ -1182,6 +1182,29 @@ def create_windows_menu_shortcuts(config_file_path, base_dir):
             f.write("echo Press any key to close this window...\n")
             f.write("pause >nul\n")
 
+        # Create a batch file for checking updates that pauses at the end
+        update_batch_path = os.path.join(batch_dir, "fetchtastic_update.bat")
+        with open(update_batch_path, "w") as f:
+            f.write("@echo off\n")
+            f.write("title Fetchtastic Update Check\n")
+            f.write("echo Checking for Fetchtastic updates...\n")
+            f.write("echo.\n")
+            # Use pipx to upgrade fetchtastic
+            pipx_path = shutil.which("pipx")
+            if pipx_path:
+                f.write(f'"{pipx_path}" upgrade fetchtastic\n')
+            else:
+                # Fallback to pip if pipx is not found
+                pip_path = shutil.which("pip")
+                if pip_path:
+                    f.write(f'"{pip_path}" install --upgrade fetchtastic\n')
+                else:
+                    f.write("echo Error: Neither pipx nor pip was found in PATH.\n")
+                    f.write("echo Please install pipx or pip to upgrade Fetchtastic.\n")
+            f.write("echo.\n")
+            f.write("echo Press any key to close this window...\n")
+            f.write("pause >nul\n")
+
         # Create shortcut for fetchtastic download (using batch file)
         download_shortcut_path = os.path.join(
             WINDOWS_START_MENU_FOLDER, "Fetchtastic Download.lnk"
@@ -1265,6 +1288,17 @@ def create_windows_menu_shortcuts(config_file_path, base_dir):
             Path=log_shortcut_path,
             Target=log_file,
             Description="View Fetchtastic Log File",
+            Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0),
+        )
+
+        # Create shortcut for checking updates
+        update_shortcut_path = os.path.join(
+            WINDOWS_START_MENU_FOLDER, "Fetchtastic - Check for Updates.lnk"
+        )
+        winshell.CreateShortcut(
+            Path=update_shortcut_path,
+            Target=update_batch_path,
+            Description="Check for and install Fetchtastic updates",
             Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0),
         )
 

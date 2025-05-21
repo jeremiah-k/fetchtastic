@@ -21,56 +21,34 @@ Fetchtastic is a utility for downloading and managing the latest Meshtastic Andr
 
 ### Linux/Mac Installation
 
-Fetchtastic can be installed on Linux or macOS systems.
-
 #### Easy Installation (Recommended)
 
-1. **One-line Installation**:
+1. **Run the Installer Script**:
+
+   Open a terminal and run:
 
    ```bash
    curl -sSL https://raw.githubusercontent.com/jeremiah-k/fetchtastic/main/src/fetchtastic/tools/setup_fetchtastic.sh | bash
    ```
 
-   This will download and run the installer script directly.
-
-2. **Alternative: Manual Download**:
-
-   If you prefer to examine the script first:
-
-   ```bash
-   # Download the script
-   curl -O https://raw.githubusercontent.com/jeremiah-k/fetchtastic/main/src/fetchtastic/tools/setup_fetchtastic.sh
-
-   # Make it executable
-   chmod +x setup_fetchtastic.sh
-
-   # Run it
-   ./setup_fetchtastic.sh
-   ```
-
    The script will:
 
-   - Detect your operating system (Linux or macOS)
    - Install Python if needed (on macOS, it will install Homebrew if needed)
    - Install pipx
    - Install Fetchtastic
    - Run the Fetchtastic setup
 
-#### Manual Installation with pipx (Alternative)
+#### Manual Installation
 
-It's recommended to use `pipx` to install Fetchtastic in an isolated environment. (If you prefer, you can use `pip` too.)
+If you prefer to install manually:
 
-1. **Install pipx**:
+```bash
+# Using pipx (recommended)
+pipx install fetchtastic
 
-   Follow the installation instructions for your platform on the [pipx documentation page](https://pypa.github.io/pipx/installation/).
-
-   Restart your terminal after installing pipx.
-
-2. **Install Fetchtastic with pipx**:
-
-   ```bash
-   pipx install fetchtastic
-   ```
+# Or using pip
+pip install fetchtastic
+```
 
 ### Windows Installation
 
@@ -78,15 +56,13 @@ Fetchtastic can be installed on Windows systems with enhanced Windows integratio
 
 #### Easy Installation (Recommended)
 
-1. **Download the Installer Script**:
+1. **Run the Installer Script**:
 
-   Download the Windows installer script from the [latest release](https://github.com/jeremiah-k/fetchtastic/releases/latest).
+   Open PowerShell and run:
 
-   Look for `fetchtastic-setup.bat` in the release assets.
-
-2. **Run the Installer**:
-
-   Double-click the downloaded `fetchtastic-setup.bat` file.
+   ```powershell
+   irm https://raw.githubusercontent.com/jeremiah-k/fetchtastic/main/src/fetchtastic/tools/setup_fetchtastic.ps1 | iex
+   ```
 
    The script will:
 
@@ -114,19 +90,14 @@ If you prefer to install manually:
    pipx install fetchtastic[win]
    ```
 
-   This installs Fetchtastic with all Windows integration features.
-
-   This installs additional dependencies for Windows integration:
-
-   - Start Menu shortcuts
-   - Configuration file shortcuts
-   - Windows startup integration
+   This installs Fetchtastic with Windows integration features (Start Menu shortcuts, configuration file shortcuts, and Windows startup integration).
 
 #### Windows Integration Features
 
 When you run `fetchtastic setup` on Windows with the Windows integration dependencies installed, you'll get:
 
 - Shortcuts in the Start Menu for common operations (download, setup, repo browse)
+- A shortcut to check for and install Fetchtastic updates
 - A shortcut to the configuration file for easy editing
 - A shortcut to the Meshtastic downloads folder
 - Option to run Fetchtastic automatically at Windows startup
@@ -155,6 +126,26 @@ pkg install python python-pip openssl -y
 ```bash
 pip install fetchtastic
 ```
+
+## Upgrading
+
+To upgrade Fetchtastic to the latest version:
+
+### For pipx installations (recommended)
+
+```bash
+pipx upgrade fetchtastic
+```
+
+### For pip installations
+
+```bash
+pip install --upgrade fetchtastic
+```
+
+### For Windows users
+
+Windows users can use the "Fetchtastic - Check for Updates" shortcut in the Start Menu.
 
 ## Usage
 
