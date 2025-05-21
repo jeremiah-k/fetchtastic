@@ -124,22 +124,9 @@ export PATH="$HOME/.local/bin:$PATH"
 
 # Install Fetchtastic
 echo
-echo "Installing Fetchtastic..."
 pipx install fetchtastic
 
 # Run Fetchtastic setup
 echo
-echo "Running Fetchtastic setup..."
-fetchtastic setup
-
-echo
-echo "==================================="
-echo "Installation complete!"
-echo "==================================="
-echo
-echo "You can now use Fetchtastic by running:"
-echo "  fetchtastic download - to download firmware and APKs"
-echo "  fetchtastic repo browse - to browse and download files from the repository"
-echo
-echo "Press Enter to exit..."
-read
+echo "You can now run Fetchtastic setup:"
+echo "  fetchtastic setup"
