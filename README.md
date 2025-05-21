@@ -11,10 +11,10 @@ Fetchtastic is a utility for downloading and managing the latest Meshtastic Andr
 - [Usage](#usage)
   - [Setup Process](#setup-process)
   - [Command List](#command-list)
-  - [Files and Directories](#files-and-directories)
-  - [Scheduling](#scheduling)
-  - [Notifications via NTFY](#notifications-via-ntfy)
   - [Repository Browser](#repository-browser)
+  - [Notifications via NTFY](#notifications-via-ntfy)
+  - [Scheduling](#scheduling)
+  - [Files and Directories](#files-and-directories)
 - [Contributing](#contributing)
 
 ## Installation
@@ -27,16 +27,11 @@ Fetchtastic is a utility for downloading and managing the latest Meshtastic Andr
 
    Open a terminal and run:
 
-   ```bash
-   curl -sSL https://raw.githubusercontent.com/jeremiah-k/fetchtastic/main/src/fetchtastic/tools/setup_fetchtastic.sh | bash
-   ```
+```bash
+curl -sSL https://raw.githubusercontent.com/jeremiah-k/fetchtastic/main/src/fetchtastic/tools/setup_fetchtastic.sh | bash
+```
 
-   The script will:
-
-   - Install Python if needed (on macOS, it will install Homebrew if needed)
-   - Install pipx
-   - Install Fetchtastic
-   - Run the Fetchtastic setup
+The script installs Python if needed (on macOS, it will install Homebrew if needed), installs pipx, installs Fetchtastic, and runs the Fetchtastic setup.
 
 #### Manual Installation
 
@@ -60,37 +55,30 @@ Fetchtastic can be installed on Windows systems with enhanced Windows integratio
 
    Open PowerShell and run:
 
-   ```powershell
-   irm https://raw.githubusercontent.com/jeremiah-k/fetchtastic/main/src/fetchtastic/tools/setup_fetchtastic.ps1 | iex
-   ```
+```powershell
+irm https://raw.githubusercontent.com/jeremiah-k/fetchtastic/main/src/fetchtastic/tools/setup_fetchtastic.ps1 | iex
+```
 
-   The script will:
-
-   - Install Python if needed
-   - Install pipx
-   - Install Fetchtastic with Windows integration
-   - Run the Fetchtastic setup
+The script installs Python if needed, installs pipx, installs Fetchtastic with Windows integration, and runs the Fetchtastic setup.
 
 #### Manual Installation
 
-If you prefer to install manually:
+1. **Install Python**: Download and install Python from the [official Python website](https://www.python.org/downloads/). Make sure to check "Add Python to PATH" during installation.
 
-1. **Install Python**:
+2. **Install pipx and Fetchtastic without restarting PowerShell**:
 
-   Download and install Python from the [official Python website](https://www.python.org/downloads/).
+```powershell
+python -m pip install --upgrade pip
+python -m pip install --user pipx
+python -m pipx ensurepath
 
-   Make sure to check "Add Python to PATH" during installation.
+$env:Path += ";$env:USERPROFILE\\.local\\bin;$env:USERPROFILE\\AppData\\Roaming\\Python\\Python$((python -c 'import sys; print(f\"{sys.version_info.major}{sys.version_info.minor}\")'))\\Scripts"
 
-2. **Install Fetchtastic with Windows integration**:
+pipx install "fetchtastic[win]"
+fetchtastic setup
+```
 
-   Open Command Prompt or PowerShell and run:
-
-   ```powershell
-   pip install pipx
-   pipx install fetchtastic[win]
-   ```
-
-   This installs Fetchtastic with Windows integration features (Start Menu shortcuts, configuration file shortcuts, and Windows startup integration).
+This installs Fetchtastic with Windows integration features (Start Menu shortcuts, configuration file shortcuts, and Windows startup integration), and avoids needing to restart your terminal session.
 
 #### Windows Integration Features
 
@@ -108,14 +96,12 @@ Fetchtastic can also be installed on your Android device using Termux.
 
 #### Prerequisites
 
-1. **Install Termux**: Download and install [Termux](https://f-droid.org/en/packages/com.termux/) from F-Droid.
-2. **Install Termux Boot**: Download and install [Termux Boot](https://f-droid.org/en/packages/com.termux.boot/) from F-Droid.
-3. **Install Termux API**: Download and install [Termux API](https://f-droid.org/en/packages/com.termux.api/) from F-Droid.
-4. _(Optional)_ **Install ntfy**: Download and install [ntfy](https://f-droid.org/en/packages/io.heckel.ntfy/) from F-Droid.
+1. **Install Termux**: [From F-Droid](https://f-droid.org/en/packages/com.termux/)
+2. **Install Termux Boot**: [From F-Droid](https://f-droid.org/en/packages/com.termux.boot/)
+3. **Install Termux API**: [From F-Droid](https://f-droid.org/en/packages/com.termux.api/)
+4. _(Optional)_ **Install ntfy**: [From F-Droid](https://f-droid.org/en/packages/io.heckel.ntfy/)
 
 #### Install Dependencies
-
-Open Termux and run:
 
 ```bash
 pkg install python python-pip openssl -y
@@ -127,31 +113,27 @@ pkg install python python-pip openssl -y
 pip install fetchtastic
 ```
 
+You can use `pipx` in Termux, but `pip` is usually simpler and works well.
+
 ## Upgrading
 
 To upgrade Fetchtastic to the latest version:
 
-### For pipx installations (recommended)
+### On Linux/Mac/Windows (pipx installations)
 
 ```bash
 pipx upgrade fetchtastic
 ```
 
-### For pip installations
+### On Termux (pip installation)
 
 ```bash
 pip install --upgrade fetchtastic
 ```
 
-### For Windows users
-
-Windows users can use the "Fetchtastic - Check for Updates" shortcut in the Start Menu.
-
 ## Usage
 
 ### Setup Process
-
-Run the setup command and follow the prompts to configure Fetchtastic:
 
 ```bash
 fetchtastic setup
@@ -161,17 +143,12 @@ During setup, you will be able to:
 
 - Choose whether to download APKs, firmware, or both.
 - Select specific assets to download.
-- Set the number of versions to keep (default is 2 on Termux, 3 on desktop platforms).
-- Configure automatic extraction of firmware files. (Optional)
-- Set up notifications via NTFY. (Optional)
-  - Choose to receive notifications only when new files are downloaded. (Optional)
-- Add a cron job to run Fetchtastic regularly. (Optional)
-  - On Termux, Fetchtastic can be scheduled to run daily at 3 AM using Termux's cron.
-  - On Linux/Mac, Fetchtastic can be scheduled using the system's cron scheduler.
+- Set the number of versions to keep.
+- Configure automatic extraction of firmware files (optional).
+- Set up notifications via NTFY (optional).
+- Add a cron job to run Fetchtastic regularly (optional).
 
 ### Command List
-
-Fetchtastic provides several commands to manage your Meshtastic firmware and APK downloads:
 
 ```bash
 usage: fetchtastic [-h] {setup,download,topic,clean,version,help,repo} ...
@@ -192,8 +169,6 @@ options:
   -h, --help            Show this help message and exit
 ```
 
-The `repo` command has additional subcommands:
-
 ```bash
 usage: fetchtastic repo [-h] {browse,clean} ...
 
@@ -206,102 +181,62 @@ options:
   -h, --help        Show this help message and exit
 ```
 
-### Files and Directories
+### Repository Browser
 
-#### Default Locations
+```bash
+fetchtastic repo browse
+```
 
-By default, Fetchtastic saves downloaded files in the `Downloads/Meshtastic` directory:
+Navigate to a firmware directory, select one or more files (SPACE to select, ENTER to confirm), and they’ll be downloaded to `Downloads/Meshtastic/firmware/repo-dls/<dir>`.
 
-- **APKs**: `Downloads/Meshtastic/apks`
-- **Firmware**: `Downloads/Meshtastic/firmware`
-  - **GitHub Releases**: `Downloads/Meshtastic/firmware/<version>` (managed by `download` command)
-  - **Repository Files**: `Downloads/Meshtastic/firmware/repo-dls` (managed by `repo browse` command)
-  - **Pre-releases**: `Downloads/Meshtastic/firmware/prerelease` (if enabled in setup)
+To clean the repo download folder:
 
-#### Configuration and Log Files
+```bash
+fetchtastic repo clean
+```
 
-Fetchtastic uses standard platform-specific directories for configuration and log files:
+### Notifications via NTFY
 
-- **Linux/Mac**:
-
-  - Configuration: `~/.config/fetchtastic/fetchtastic.yaml`
-  - Logs: `~/.local/share/fetchtastic/logs/fetchtastic.log`
-
-- **Windows**:
-
-  - Configuration: `C:\Users\<username>\AppData\Local\fetchtastic\fetchtastic\fetchtastic.yaml`
-  - Logs: `C:\Users\<username>\AppData\Local\fetchtastic\fetchtastic\logs\fetchtastic.log`
-  - Shortcuts: Created in Start Menu and base directory during setup
-
-- **Termux**:
-  - Configuration: `~/.config/fetchtastic/fetchtastic.yaml`
-  - Logs: `~/.local/share/fetchtastic/logs/fetchtastic.log`
-
-You can manually edit the configuration file to change the settings. On Windows with Windows integration enabled, you can access the configuration file through the shortcut created in the Start Menu.
+NTFY notifications work on all platforms. You can subscribe via [ntfy app](https://ntfy.sh/app/) or browser. During setup, you can enable notifications only for new file downloads.
 
 ### Scheduling
 
-Fetchtastic can be scheduled to run automatically on different platforms:
+Fetchtastic can be scheduled to run automatically:
 
-#### Linux/Mac Scheduling with Cron
-
-During setup on Linux or Mac, you have the option to add a cron job that runs Fetchtastic daily at 3 AM.
-
-To modify the cron job, you can run:
+#### Linux/Mac
 
 ```bash
 crontab -e
 ```
 
-#### Windows Scheduling
+Runs daily at 3AM (if selected in setup).
 
-On Windows, Fetchtastic can be set to run automatically at startup:
+#### Windows
 
-- During setup, you'll be asked if you want to run Fetchtastic automatically on Windows startup
-- This creates a shortcut in the Windows Startup folder
-- The shortcut runs in minimized mode to avoid disrupting your workflow
-- You can manually add or remove this shortcut from the Windows Startup folder
+Adds shortcut to Startup folder (if selected in setup).
 
-#### Termux Scheduling
+#### Termux
 
-On Termux, the setup process will configure a cron job using Termux's cron implementation.
+Termux cron is configured automatically during setup.
 
-### Notifications via NTFY
+### Files and Directories
 
-If you choose to set up notifications, Fetchtastic will send updates to your specified NTFY topic.
+Downloads are saved under `Downloads/Meshtastic`:
 
-- You can subscribe to the topic using the ntfy app or by visiting the topic URL in a browser.
-- You can choose to receive notifications **only when new files are downloaded**.
+- `apks/`
+- `firmware/<version>/`
+- `firmware/repo-dls/`
+- `firmware/prerelease/` (if enabled)
 
-### Repository Browser
+Configs:
 
-Fetchtastic can browse and download files directly from the [meshtastic.github.io](https://github.com/meshtastic/meshtastic.github.io/) repository.
+- Linux/Mac: `~/.config/fetchtastic/fetchtastic.yaml`
+- Termux: same
+- Windows: `AppData/Local/fetchtastic/...`
 
-#### Using the Repository Browser
+Logs go to:
 
-1. Run the repository browser:
-
-   ```bash
-   fetchtastic repo browse
-   ```
-
-2. Navigate through the menu:
-
-   - First, select a firmware directory (e.g., `firmware-2.6.8.ef9d0d7`)
-   - Then, select one or more files to download (press SPACE to select, ENTER to confirm)
-
-3. The selected files will be downloaded to the `Downloads/Meshtastic/firmware/repo-dls/<directory>` folder.
-
-4. To clean the repository download directory:
-   ```bash
-   fetchtastic repo clean
-   ```
-
-#### Differences from Regular Downloads
-
-- The `download` command gets firmware and APKs from GitHub releases and manages version rotation.
-- The `repo browse` command gets specific files from the meshtastic.github.io repository and keeps them until manually deleted.
-- If pre-releases are enabled, Fetchtastic will also check the meshtastic.github.io repository for firmware versions newer than the latest official release.
+- `~/.local/share/fetchtastic/logs/` or Windows equivalent
 
 ## Contributing
 
