@@ -553,21 +553,79 @@ def main():
             # If it's a zip file, verify it's valid before moving
             if download_path.endswith(".zip"):
                 try:
-                    with zipfile.ZipFile(temp_path, "r"):
-                        # Zip file is valid, move it to the final location
+                    # Explicitly close the zipfile after checking
+                    with zipfile.ZipFile(temp_path, "r") as zip_check:
+                        # Just accessing the zipfile is enough to validate it
+                        pass
+
+                    # Windows-specific handling for file operations
+                    if platform.system() == "Windows":
+                        # Try to move the file with retries for Windows
+                        max_retries = 3
+                        retry_delay = 1  # seconds
+                        for retry in range(max_retries):
+                            try:
+                                # Make sure the file is closed and not locked
+                                import gc
+
+                                gc.collect()  # Force garbage collection to release file handles
+
+                                # Try to move the file
+                                os.replace(temp_path, download_path)
+                                log_message(f"Downloaded {download_path}")
+                                return True  # Successfully downloaded
+                            except PermissionError as e:
+                                if retry < max_retries - 1:
+                                    log_message(
+                                        f"File access error, retrying in {retry_delay} seconds: {e}"
+                                    )
+                                    time.sleep(retry_delay)
+                                    retry_delay *= 2  # Exponential backoff
+                                else:
+                                    # Last retry failed
+                                    raise
+                    else:
+                        # Non-Windows platforms
                         os.replace(temp_path, download_path)
                         log_message(f"Downloaded {download_path}")
                         return True  # Successfully downloaded
                 except zipfile.BadZipFile:
                     # Zip file is corrupted
-                    os.remove(temp_path)
+                    if os.path.exists(temp_path):
+                        os.remove(temp_path)
                     log_message(f"Error: Downloaded zip file is corrupted: {url}")
                     return False  # Failed to download
             else:
                 # For non-zip files, just move the temp file to the final location
-                os.replace(temp_path, download_path)
-                log_message(f"Downloaded {download_path}")
-                return True  # Successfully downloaded
+                # Windows-specific handling
+                if platform.system() == "Windows":
+                    max_retries = 3
+                    retry_delay = 1  # seconds
+                    for retry in range(max_retries):
+                        try:
+                            # Force garbage collection to release file handles
+                            import gc
+
+                            gc.collect()
+
+                            os.replace(temp_path, download_path)
+                            log_message(f"Downloaded {download_path}")
+                            return True  # Successfully downloaded
+                        except PermissionError as e:
+                            if retry < max_retries - 1:
+                                log_message(
+                                    f"File access error, retrying in {retry_delay} seconds: {e}"
+                                )
+                                time.sleep(retry_delay)
+                                retry_delay *= 2  # Exponential backoff
+                            else:
+                                # Last retry failed
+                                raise
+                else:
+                    # Non-Windows platforms
+                    os.replace(temp_path, download_path)
+                    log_message(f"Downloaded {download_path}")
+                    return True  # Successfully downloaded
         except requests.exceptions.RequestException as e:
             log_message(f"Error downloading {url}: {e}")
             # Clean up temp file if it exists
