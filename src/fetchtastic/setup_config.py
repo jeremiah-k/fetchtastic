@@ -1,6 +1,7 @@
 # src/fetchtastic/setup_config.py
 
 import os
+from typing import List, Dict, Any, Optional, Tuple, Callable
 import platform
 import random
 import shutil
@@ -11,14 +12,13 @@ import sys
 import platformdirs
 import yaml
 
-from fetchtastic import downloader  # Import downloader to perform first run
+from fetchtastic import downloader
 from fetchtastic import menu_apk, menu_firmware
 
-# Import Windows-specific modules if on Windows
+WINDOWS_MODULES_AVAILABLE: bool
 if platform.system() == "Windows":
     try:
-        import winshell
-
+        import winshell # type: ignore
         WINDOWS_MODULES_AVAILABLE = True
     except ImportError:
         WINDOWS_MODULES_AVAILABLE = False
@@ -30,8 +30,7 @@ if platform.system() == "Windows":
 else:
     WINDOWS_MODULES_AVAILABLE = False
 
-# Windows Start Menu folder for Fetchtastic
-WINDOWS_START_MENU_FOLDER = os.path.join(
+WINDOWS_START_MENU_FOLDER: str = os.path.join(
     os.environ.get("APPDATA", ""),
     "Microsoft",
     "Windows",
@@ -40,17 +39,21 @@ WINDOWS_START_MENU_FOLDER = os.path.join(
     "Fetchtastic",
 )
 
-
-def is_termux():
+def is_termux() -> bool:
     """
     Check if the script is running in a Termux environment.
+
+    Returns:
+        bool: True if running in Termux, False otherwise.
     """
     return "com.termux" in os.environ.get("PREFIX", "")
 
-
-def get_platform():
+def get_platform() -> str:
     """
     Determine the platform on which the script is running.
+
+    Returns:
+        str: A string identifying the platform ("termux", "mac", "linux", "unknown").
     """
     if is_termux():
         return "termux"
@@ -61,81 +64,633 @@ def get_platform():
     else:
         return "unknown"
 
+def validate_version_count(value: str, current_versions_str: str, min_val: int = 1, max_val: int = 10) -> int:
+    """
+    Validates and converts the input string for version count to an integer.
 
-def get_downloads_dir():
+    Args:
+        value (str): The input string from the user.
+        current_versions_str (str): The string representation of the current/default number of versions.
+        min_val (int): The minimum allowed version count.
+        max_val (int): The maximum allowed version count.
+
+    Returns:
+        int: The validated version count.
+
+    Raises:
+        ValueError: If the input is not a valid integer or is outside the allowed range.
+    """
+    effective_value: str = value if value else current_versions_str
+    try:
+        count: int = int(effective_value)
+        if not (min_val <= count <= max_val):
+            raise ValueError(f"Version count must be between {min_val} and {max_val}. You entered '{count}'.")
+        return count
+    except ValueError as e:
+        if "between" in str(e):
+                raise
+        else:
+                raise ValueError(f"Invalid input. Please enter a number between {min_val} and {max_val}. You entered '{effective_value}'.")
+
+def get_downloads_dir() -> str:
     """
     Get the default downloads directory based on the platform.
+
+    Returns:
+        str: The path to the default downloads directory.
     """
-    # For Termux, use ~/storage/downloads
+    storage_downloads: str
     if is_termux():
         storage_downloads = os.path.expanduser("~/storage/downloads")
         if os.path.exists(storage_downloads):
             return storage_downloads
-    # For other environments, use standard Downloads directories
-    home_dir = os.path.expanduser("~")
+
+    home_dir: str = os.path.expanduser("~")
+    downloads_dir: str
+
     downloads_dir = os.path.join(home_dir, "Downloads")
     if os.path.exists(downloads_dir):
         return downloads_dir
     downloads_dir = os.path.join(home_dir, "Download")
     if os.path.exists(downloads_dir):
         return downloads_dir
-    # Fallback to home directory
     return home_dir
 
+# Module-level constants and globals
+DOWNLOADS_DIR: str = get_downloads_dir()
+DEFAULT_BASE_DIR: str = os.path.join(DOWNLOADS_DIR, "Meshtastic")
+CONFIG_DIR: str = platformdirs.user_config_dir("fetchtastic") # type: ignore
+OLD_CONFIG_FILE: str = os.path.join(DEFAULT_BASE_DIR, "fetchtastic.yaml") # Uses initial DEFAULT_BASE_DIR
+CONFIG_FILE: str = os.path.join(CONFIG_DIR, "fetchtastic.yaml")
+BASE_DIR: str = DEFAULT_BASE_DIR # This will be updated during setup
 
-# Default directories
-DOWNLOADS_DIR = get_downloads_dir()
-DEFAULT_BASE_DIR = os.path.join(DOWNLOADS_DIR, "Meshtastic")
+def _perform_initial_platform_checks() -> None:
+    """
+    Performs initial platform-specific checks and setup.
+    This includes Termux package installation, storage setup, and config directory creation.
+    """
+    if is_termux():
+        install_termux_packages()
+        check_storage_setup()
+        print("Termux storage is set up.")
 
-# Get the config directory using platformdirs
-CONFIG_DIR = platformdirs.user_config_dir("fetchtastic")
+    if not os.path.exists(CONFIG_DIR):
+        try:
+            os.makedirs(CONFIG_DIR, exist_ok=True)
+        except Exception as e:
+            print(f"Error creating config directory {CONFIG_DIR}: {e}")
 
-# Old config file location (for migration)
-OLD_CONFIG_FILE = os.path.join(DEFAULT_BASE_DIR, "fetchtastic.yaml")
+def _handle_config_migration() -> None:
+    """
+    Handles migration of configuration from an old location to the new
+    platform-specific directory if needed.
+    """
+    if os.path.exists(OLD_CONFIG_FILE) and not os.path.exists(CONFIG_FILE):
+        from fetchtastic.log_utils import log_error, log_info
+        separator: str = "=" * 80
+        log_info(f"\n{separator}")
+        log_info("Configuration Migration")
+        log_info(separator)
+        prompt_for_migration()
+        if migrate_config():
+            log_info(f"Configuration successfully migrated to: {CONFIG_FILE}")
+        else:
+            log_error(f"Failed to migrate configuration. Please check permissions for {OLD_CONFIG_FILE} and {CONFIG_DIR}.")
+        log_info(f"{separator}\n")
 
-# New config file location using platformdirs
-CONFIG_FILE = os.path.join(CONFIG_DIR, "fetchtastic.yaml")
+def _initialize_or_load_config() -> Tuple[Dict[str, Any], bool]:
+    """
+    Initializes a new configuration dictionary or loads an existing one.
+    Determines if this is the first run based on config existence.
 
-# These will be set during setup or when loading config
-BASE_DIR = DEFAULT_BASE_DIR
+    Returns:
+        Tuple[Dict[str, Any], bool]: A tuple containing:
+            - config (Dict[str, Any]): The configuration dictionary.
+            - is_first_run (bool): True if no existing config was found, False otherwise.
+    """
+    config: Dict[str, Any] = {}
+    exists: bool
+    exists, _ = config_exists()
+    is_first_run: bool = not exists
+    if exists:
+        loaded_config: Optional[Dict[str, Any]] = load_config()
+        if loaded_config is not None:
+            config = loaded_config
+            print("Existing configuration found. You can keep current settings or change them.")
+        else:
+            print("Could not load existing configuration. Starting with defaults.")
+            config = {}
+            is_first_run = True
+    else:
+        print("No existing configuration found. Starting with defaults.")
+        config = {}
+    return config, is_first_run
 
+def _configure_base_directory(config: Dict[str, Any], is_first_run_param: bool) -> Dict[str, Any]:
+    """
+    Configures the base directory for Fetchtastic downloads.
+    Updates the global BASE_DIR and the 'BASE_DIR' key in the config dictionary.
 
-def config_exists(directory=None):
+    Args:
+        config (Dict[str, Any]): The current configuration dictionary.
+        is_first_run_param (bool): Whether this is the first time setup is being run.
+
+    Returns:
+        Dict[str, Any]: The updated configuration dictionary.
+    """
+    global BASE_DIR
+    is_first_run: bool = is_first_run_param
+
+    current_base_dir_display: str = str(config.get("BASE_DIR", DEFAULT_BASE_DIR))
+    prompt_message: str = (
+        f"Enter the base directory for Fetchtastic (default: {DEFAULT_BASE_DIR}): "
+        if is_first_run
+        else f"Enter the base directory for Fetchtastic (current: {current_base_dir_display}): "
+    )
+    base_dir_input: str = input(prompt_message).strip()
+
+    chosen_base_dir: str = DEFAULT_BASE_DIR
+    if base_dir_input:
+        chosen_base_dir = os.path.expanduser(base_dir_input)
+    elif not is_first_run:
+        chosen_base_dir = str(config.get("BASE_DIR", DEFAULT_BASE_DIR))
+
+    BASE_DIR = os.path.expanduser(chosen_base_dir)
+    config["BASE_DIR"] = BASE_DIR
+    if not os.path.exists(BASE_DIR):
+        try:
+            os.makedirs(BASE_DIR)
+            print(f"Created base directory: {BASE_DIR}")
+        except Exception as e:
+            print(f"Error creating base directory {BASE_DIR}: {e}")
+    return config
+
+def _configure_windows_shortcuts(config_file_param: str, base_dir_param: str) -> None:
+    """
+    Handles creation of Windows Start Menu and configuration file shortcuts
+    if running on Windows and `winshell` module is available.
+
+    Args:
+        config_file_param (str): Path to the configuration file.
+        base_dir_param (str): Path to the base directory for downloads.
+    """
+    if platform.system() == "Windows" and WINDOWS_MODULES_AVAILABLE:
+        create_config_shortcut(config_file_param, base_dir_param)
+        prompt_text: str
+        if os.path.exists(WINDOWS_START_MENU_FOLDER):
+            prompt_text = "Fetchtastic shortcuts already exist in the Start Menu. Would you like to update them? [y/n] (default: yes): "
+        else:
+            prompt_text = "Would you like to create Fetchtastic shortcuts in the Start Menu? (recommended) [y/n] (default: yes): "
+        create_menu: str = input(prompt_text).strip().lower() or "y"
+        if create_menu == "y":
+            create_windows_menu_shortcuts(config_file_param, base_dir_param)
+    elif platform.system() == "Windows" and not WINDOWS_MODULES_AVAILABLE:
+        print("Windows shortcuts not available. Install optional dependencies for full Windows integration (see README).")
+
+def _configure_asset_types_and_patterns(config: Dict[str, Any]) -> Tuple[Dict[str, Any], bool, bool]:
+    """
+    Configures which asset types (APKs, firmware) to download and their specific patterns
+    by prompting the user. It updates the configuration dictionary with these choices.
+
+    Args:
+        config (Dict[str, Any]): The current configuration dictionary.
+                                 This dictionary will be updated with keys like
+                                 'SAVE_APKS', 'SAVE_FIRMWARE',
+                                 'SELECTED_APK_ASSETS', 'SELECTED_FIRMWARE_ASSETS'.
+
+    Returns:
+        Tuple[Dict[str, Any], bool, bool]: A tuple containing:
+            - config (Dict[str, Any]): The updated configuration dictionary.
+            - save_apks (bool): True if APKs should be saved, False otherwise.
+            - save_firmware (bool): True if firmware should be saved, False otherwise.
+    """
+    save_choice: str = input("Would you like to download APKs, firmware, or both? [a/f/b] (default: both): ").strip().lower() or "both"
+    save_apks: bool = save_choice in ["a", "both"]
+    save_firmware: bool = save_choice in ["f", "both"]
+    config["SAVE_APKS"] = save_apks
+    config["SAVE_FIRMWARE"] = save_firmware
+
+    selected_assets_key: str
+    if save_apks:
+        apk_selection: Optional[Dict[str, Any]] = menu_apk.run_menu() # type: ignore[no-any-return]
+        selected_assets_key = "SELECTED_APK_ASSETS"
+        if not apk_selection or not apk_selection.get("selected_assets"):
+            print("No APK assets selected. APKs will not be downloaded.")
+            config["SAVE_APKS"] = False
+            save_apks = False
+        else:
+            config[selected_assets_key] = apk_selection["selected_assets"]
+
+    if save_firmware:
+        firmware_selection: Optional[Dict[str, Any]] = menu_firmware.run_menu() # type: ignore[no-any-return]
+        selected_assets_key = "SELECTED_FIRMWARE_ASSETS"
+        if not firmware_selection or not firmware_selection.get("selected_assets"):
+            print("No firmware assets selected. Firmware will not be downloaded.")
+            config["SAVE_FIRMWARE"] = False
+            save_firmware = False
+        else:
+            config[selected_assets_key] = firmware_selection["selected_assets"]
+
+    return config, save_apks, save_firmware
+
+def _configure_version_counts(config: Dict[str, Any], save_apks: bool, save_firmware: bool, is_first_run: bool) -> Dict[str, Any]:
+    """
+    Configures how many versions of APKs and firmware to keep, based on user input.
+
+    Args:
+        config (Dict[str, Any]): The current configuration dictionary.
+        save_apks (bool): Flag indicating if APKs are to be saved.
+        save_firmware (bool): Flag indicating if firmware is to be saved.
+        is_first_run (bool): Flag indicating if this is the first run of the setup.
+
+    Returns:
+        Dict[str, Any]: The updated configuration dictionary.
+    """
+    default_versions_to_keep: int = 2 if is_termux() else 3
+    current_val: int
+    prompt_prefix: str
+    prompt: str
+    user_input: str
+
+    if save_apks:
+        current_val = config.get("ANDROID_VERSIONS_TO_KEEP", default_versions_to_keep) # type: ignore[assignment]
+        prompt_prefix = "default is" if is_first_run else "current:"
+        while True:
+            prompt = f"How many versions of the Android app would you like to keep? ({prompt_prefix} {current_val}, min: 1, max: 10): "
+            user_input = input(prompt).strip()
+            try:
+                config["ANDROID_VERSIONS_TO_KEEP"] = validate_version_count(user_input, str(current_val))
+                break
+            except ValueError as e:
+                print(e)
+    if save_firmware:
+        current_val = config.get("FIRMWARE_VERSIONS_TO_KEEP", default_versions_to_keep) # type: ignore[assignment]
+        prompt_prefix = "default is" if is_first_run else "current:"
+        while True:
+            prompt = f"How many versions of the firmware would you like to keep? ({prompt_prefix} {current_val}, min: 1, max: 10): "
+            user_input = input(prompt).strip()
+            try:
+                config["FIRMWARE_VERSIONS_TO_KEEP"] = validate_version_count(user_input, str(current_val))
+                break
+            except ValueError as e:
+                print(e)
+    return config
+
+def _configure_firmware_options(config: Dict[str, Any], config_file_path_param: str) -> Dict[str, Any]:
+    """
+    Configures firmware-specific options like pre-release checks and auto-extraction settings.
+    Saves the configuration intermittently as these options are set.
+
+    Args:
+        config (Dict[str, Any]): The current configuration dictionary.
+                                 Expected keys like 'CHECK_PRERELEASES', 'AUTO_EXTRACT',
+                                 'EXTRACT_PATTERNS', 'EXCLUDE_PATTERNS' will be updated.
+        config_file_path_param (str): Path to the configuration file for saving changes.
+
+    Returns:
+        Dict[str, Any]: The updated configuration dictionary.
+    """
+    current_prerelease_check: bool = bool(config.get("CHECK_PRERELEASES", False))
+    prerelease_default_str: str = "yes" if current_prerelease_check else "no"
+    prerelease_input: str = input(f"Would you like to check for and download pre-release firmware? [y/n] (default: {prerelease_default_str}): ").strip().lower() or prerelease_default_str[0]
+    config["CHECK_PRERELEASES"] = (prerelease_input == "y")
+
+    with open(config_file_path_param, "w") as f: yaml.dump(config, f)
+
+    current_auto_extract: bool = bool(config.get("AUTO_EXTRACT", False))
+    auto_extract_default_str: str = "yes" if current_auto_extract else "no"
+    auto_extract_input: str = input(f"Would you like to automatically extract specific files from firmware zip archives? [y/n] (default: {auto_extract_default_str}): ").strip().lower() or auto_extract_default_str[0]
+    config["AUTO_EXTRACT"] = (auto_extract_input == "y")
+
+    with open(config_file_path_param, "w") as f: yaml.dump(config, f)
+
+    if config["AUTO_EXTRACT"]:
+        print("Enter keywords for firmware extraction (space-separated). E.g., rak4631- tbeam device-")
+        current_patterns_list: List[str] = config.get("EXTRACT_PATTERNS", []) # type: ignore
+        current_patterns_str: str = " ".join(current_patterns_list)
+        new_patterns_str: str
+        keep_input: str
+
+        if current_patterns_str:
+            print(f"Current patterns: {current_patterns_str}")
+            keep_input = input("Keep current extraction patterns? [y/n] (default: yes): ").strip().lower() or "y"
+            if keep_input == "n":
+                new_patterns_str = input("Enter new extraction patterns: ").strip()
+                config["EXTRACT_PATTERNS"] = new_patterns_str.split() if new_patterns_str else []
+        else:
+            new_patterns_str = input("Extraction patterns: ").strip()
+            config["EXTRACT_PATTERNS"] = new_patterns_str.split() if new_patterns_str else []
+
+        if not config.get("EXTRACT_PATTERNS"):
+            print("No extraction patterns set. Disabling auto-extraction.")
+            config["AUTO_EXTRACT"] = False
+            config["EXCLUDE_PATTERNS"] = []
+        else:
+            with open(config_file_path_param, "w") as f: yaml.dump(config, f)
+
+            current_excludes_list: List[str] = config.get("EXCLUDE_PATTERNS", []) # type: ignore
+            current_excludes_str: str = " ".join(current_excludes_list)
+            exclude_default_choice: str = "yes" if current_excludes_str else "no"
+            exclude_prompt_main: str = input(f"Exclude any patterns from extraction? [y/n] (default: {exclude_default_choice}): ").strip().lower() or exclude_default_choice[0]
+            new_excludes_str: str
+            keep_excludes_input: str
+
+            if exclude_prompt_main == 'y':
+                print("Enter keywords to exclude from extraction (space-separated). E.g., .hex tcxo")
+                if current_excludes_str:
+                    print(f"Current exclude patterns: {current_excludes_str}")
+                    keep_excludes_input = input("Keep current exclude patterns? [y/n] (default: yes): ").strip().lower() or "y"
+                    if keep_excludes_input == 'n':
+                        new_excludes_str = input("Enter new exclude patterns: ").strip()
+                        config["EXCLUDE_PATTERNS"] = new_excludes_str.split() if new_excludes_str else []
+                else:
+                    new_excludes_str = input("Exclude patterns: ").strip()
+                    config["EXCLUDE_PATTERNS"] = new_excludes_str.split() if new_excludes_str else []
+            else:
+                if not current_excludes_str :
+                     config["EXCLUDE_PATTERNS"] = []
+    else:
+        config["EXTRACT_PATTERNS"] = []
+        config["EXCLUDE_PATTERNS"] = []
+
+    with open(config_file_path_param, "w") as f: yaml.dump(config, f)
+    return config
+
+def _configure_termux_wifi_only(config: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Configures the 'Wi-Fi only' download option for Termux environments.
+    If not in Termux, this option is removed from the config.
+
+    Args:
+        config (Dict[str, Any]): The current configuration dictionary.
+                                 The 'WIFI_ONLY' key may be updated or removed.
+
+    Returns:
+        Dict[str, Any]: The updated configuration dictionary.
+    """
+    if is_termux():
+        current_wifi_only: bool = bool(config.get("WIFI_ONLY", True))
+        wifi_default_str: str = "yes" if current_wifi_only else "no"
+        wifi_input: str = input(f"Only download when on Wi-Fi? [y/n] (default: {wifi_default_str}): ").strip().lower() or wifi_default_str[0]
+        config["WIFI_ONLY"] = (wifi_input == "y")
+    else:
+        config.pop("WIFI_ONLY", None)
+    return config
+
+def _finalize_config_and_save(config: Dict[str, Any], base_dir_param: str, config_file_param: str) -> None:
+    """
+    Sets the final 'DOWNLOAD_DIR' in the configuration to the provided base directory
+    and saves the entire configuration dictionary to the specified YAML file.
+    It also ensures the directory for the configuration file exists.
+
+    Args:
+        config (Dict[str, Any]): The final configuration dictionary to save.
+        base_dir_param (str): The base directory path, which will be set as 'DOWNLOAD_DIR'.
+        config_file_param (str): The full path to the configuration file where settings will be saved.
+    """
+    config["DOWNLOAD_DIR"] = base_dir_param
+
+    final_config_dir: str = os.path.dirname(config_file_param)
+    if not os.path.exists(final_config_dir):
+        try:
+            os.makedirs(final_config_dir, exist_ok=True)
+            print(f"Created configuration directory: {final_config_dir}")
+        except Exception as e:
+            print(f"CRITICAL: Error creating configuration directory {final_config_dir}: {e}")
+            print("Cannot save configuration. Please check permissions and path.")
+            return
+
+    try:
+        with open(config_file_param, "w") as f:
+            yaml.dump(config, f)
+        print(f"Configuration saved to: {config_file_param}")
+    except Exception as e:
+        print(f"CRITICAL: Error saving configuration to {config_file_param}: {e}")
+
+def _configure_scheduling_and_startup(config_dir_param: str) -> None:
+    """
+    Configures cron jobs for Unix-like systems (Linux, macOS, Termux)
+    or Windows startup tasks for automatic execution of Fetchtastic.
+
+    Args:
+        config_dir_param (str): Path to the configuration directory, used for storing
+                                batch files on Windows for startup tasks.
+    """
+    if platform.system() == "Windows":
+        if WINDOWS_MODULES_AVAILABLE:
+            startup_folder: str = winshell.startup() # type: ignore
+            startup_shortcut_path: str = os.path.join(startup_folder, "Fetchtastic.lnk")
+            startup_option: str
+            if os.path.exists(startup_shortcut_path):
+                startup_option = input("Fetchtastic is already set to run at startup. Remove? [y/n] (default: no): ").strip().lower() or "n"
+                if startup_option == "y":
+                    try:
+                        batch_dir: str = os.path.join(config_dir_param, "batch")
+                        batch_path: str = os.path.join(batch_dir, "fetchtastic_startup.bat")
+                        if os.path.exists(batch_path): os.remove(batch_path)
+                        os.remove(startup_shortcut_path)
+                        print("✓ Startup shortcut removed.")
+                    except Exception as e:
+                        print(f"Failed to remove startup shortcut: {e}")
+            else:
+                startup_option = input("Run Fetchtastic automatically on Windows startup? [y/n] (default: yes): ").strip().lower() or "y"
+                if startup_option == "y":
+                    if create_startup_shortcut():
+                        print("✓ Fetchtastic will now run automatically on startup.")
+                    else:
+                        print("Failed to create startup shortcut.")
+    elif is_termux():
+        if check_cron_job_exists():
+            if (input("Cron job already set up. Reconfigure? [y/n] (default: no): ").strip().lower() or "n") == 'y':
+                remove_cron_job()
+                install_crond()
+                setup_cron_job()
+        else:
+            if (input("Schedule Fetchtastic daily at 3 AM? [y/n] (default: yes): ").strip().lower() or "y") == 'y':
+                install_crond()
+                setup_cron_job()
+
+        if check_boot_script_exists():
+            if (input("Boot script already set up. Reconfigure? [y/n] (default: no): ").strip().lower() or "n") == 'y':
+                remove_boot_script()
+                setup_boot_script()
+        else:
+            if (input("Run Fetchtastic on device boot? [y/n] (default: yes): ").strip().lower() or "y") == 'y':
+                setup_boot_script()
+    else:
+        if check_any_cron_jobs_exist():
+            if (input("Fetchtastic cron jobs found. Reconfigure? [y/n] (default: no): ").strip().lower() or "n") == 'y':
+                remove_cron_job()
+                remove_reboot_cron_job()
+                if (input("Schedule daily at 3 AM? [y/n] (default: yes): ").strip().lower() or "y") == 'y': setup_cron_job()
+                if (input("Run on system startup? [y/n] (default: yes): ").strip().lower() or "y") == 'y': setup_reboot_cron_job()
+        else:
+            if (input("Schedule daily at 3 AM? [y/n] (default: yes): ").strip().lower() or "y") == 'y': setup_cron_job()
+            if (input("Run on system startup? [y/n] (default: yes): ").strip().lower() or "y") == 'y': setup_reboot_cron_job()
+
+def _configure_notifications(config: Dict[str, Any], config_file_param: str) -> Dict[str, Any]:
+    """
+    Configures NTFY notification settings based on user input.
+    Updates and saves the configuration dictionary.
+
+    Args:
+        config (Dict[str, Any]): The current configuration dictionary.
+        config_file_param (str): Path to the configuration file for saving changes.
+
+    Returns:
+        Dict[str, Any]: The updated configuration dictionary.
+    """
+    has_ntfy_config: bool = bool(config.get("NTFY_TOPIC")) and bool(config.get("NTFY_SERVER"))
+    notifications_default_str: str = "yes" if has_ntfy_config else "no"
+    notifications_input: str = input(f"Set up notifications via NTFY? [y/n] (default: {notifications_default_str}): ").strip().lower() or notifications_default_str[0]
+
+    if notifications_input == "y":
+        current_server: str = str(config.get("NTFY_SERVER", "ntfy.sh"))
+        ntfy_server: str = input(f"Enter NTFY server (current: {current_server}): ").strip() or current_server
+        if not ntfy_server.startswith(("http://", "https://")):
+            ntfy_server = "https://" + ntfy_server
+
+        default_topic: str = "fetchtastic-" + "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
+        current_topic: str = str(config.get("NTFY_TOPIC", default_topic))
+        topic_name: str = input(f"Enter unique topic name (current: {current_topic}): ").strip() or current_topic
+
+        config["NTFY_TOPIC"] = topic_name
+        config["NTFY_SERVER"] = ntfy_server
+        with open(config_file_param, "w") as f: yaml.dump(config, f)
+
+        full_topic_url: str = f"{ntfy_server.rstrip('/')}/{topic_name}"
+        print(f"Notifications enabled for topic: {full_topic_url}")
+
+        text_to_copy: str = topic_name if is_termux() else full_topic_url
+        copy_prompt: str = "Copy to clipboard? [y/n] (default: yes): "
+        if (input(copy_prompt).strip().lower() or "y") == "y":
+            if copy_to_clipboard_func(text_to_copy):
+                print("Copied to clipboard.")
+            else:
+                print("Failed to copy.")
+
+        notify_only_current: bool = bool(config.get("NOTIFY_ON_DOWNLOAD_ONLY", False))
+        notify_default_str: str = "yes" if notify_only_current else "no"
+        notify_input: str = input(f"Notify only when new files are downloaded? [y/n] (default: {notify_default_str}): ").strip().lower() or notify_default_str[0]
+        config["NOTIFY_ON_DOWNLOAD_ONLY"] = (notify_input == "y")
+        with open(config_file_param, "w") as f: yaml.dump(config, f)
+        print("Notification settings saved.")
+    else:
+        if has_ntfy_config and (input("Disable existing notifications? [y/n] (default: no): ").strip().lower() or "n") == "y":
+            config["NTFY_TOPIC"] = ""
+            config["NTFY_SERVER"] = ""
+            config["NOTIFY_ON_DOWNLOAD_ONLY"] = False
+            with open(config_file_param, "w") as f: yaml.dump(config, f)
+            print("Notifications disabled.")
+        elif not has_ntfy_config:
+             config["NTFY_TOPIC"] = ""
+             config["NTFY_SERVER"] = ""
+             config["NOTIFY_ON_DOWNLOAD_ONLY"] = False
+             with open(config_file_param, "w") as f: yaml.dump(config, f)
+             print("Notifications will remain disabled.")
+        else:
+            print("Keeping existing notification settings.")
+    return config
+
+def _prompt_for_first_run() -> None:
+    """
+    Asks the user if they want to perform the first download run after setup.
+    On Windows, provides instructions on how to run manually.
+    """
+    if platform.system() == "Windows":
+        print("Setup complete. Run 'fetchtastic download' to start downloading.")
+        if WINDOWS_MODULES_AVAILABLE: print("You can also use Start Menu shortcuts.")
+        if os.environ.get("PROMPT") is None or "cmd.exe" in os.environ.get("COMSPEC", ""): # type: ignore
+            input("\nPress Enter to close this window...")
+    else:
+        if (input("Start first download run now? [y/n] (default: yes): ").strip().lower() or "y") == "y":
+            print("Setup complete. Starting first run...")
+            downloader.main()
+        else:
+            print("Setup complete. Run 'fetchtastic download' to start.")
+
+def run_setup() -> None:
+    """
+    Runs the main setup process for Fetchtastic.
+    This includes platform checks, configuration loading/migration,
+    setting base directories, choosing assets, configuring versions,
+    firmware options, scheduling, notifications, and prompting for a first run.
+    """
+    global BASE_DIR, CONFIG_FILE
+    print("Running Fetchtastic Setup...")
+
+    _perform_initial_platform_checks()
+    _handle_config_migration()
+
+    config: Dict[str, Any]
+    is_first_run: bool
+    config, is_first_run = _initialize_or_load_config()
+    # _initialize_or_load_config ensures config is a dict
+
+    config = _configure_base_directory(config, is_first_run)
+
+    _configure_windows_shortcuts(CONFIG_FILE, BASE_DIR)
+
+    save_apks: bool
+    save_firmware: bool
+    config, save_apks, save_firmware = _configure_asset_types_and_patterns(config)
+    if not save_apks and not save_firmware:
+        print("No assets selected to download. Please run 'fetchtastic setup' again to select assets.")
+        return
+
+    config = _configure_version_counts(config, save_apks, save_firmware, is_first_run)
+
+    if save_firmware:
+        config = _configure_firmware_options(config, CONFIG_FILE)
+
+    config = _configure_termux_wifi_only(config)
+
+    _finalize_config_and_save(config, BASE_DIR, CONFIG_FILE)
+    _configure_scheduling_and_startup(CONFIG_DIR)
+    config = _configure_notifications(config, CONFIG_FILE)
+
+    _prompt_for_first_run()
+
+def config_exists(directory: Optional[str] = None) -> Tuple[bool, Optional[str]]:
     """
     Check if the configuration file exists.
 
     Args:
-        directory: Optional directory to check for config file. If None, checks both the new
-                  platformdirs location and the old location.
+        directory (Optional[str]): Optional directory to check for config file.
+                                   If None, checks both the new platformdirs
+                                   location and the old location.
 
     Returns:
-        tuple: (exists, path) where exists is a boolean indicating if the config exists,
-               and path is the path to the config file if it exists, otherwise None.
+        Tuple[bool, Optional[str]]: (exists, path) where exists is a boolean
+                                     indicating if the config exists, and path is
+                                     the path to the config file if it exists,
+                                     otherwise None.
     """
+    config_path: Optional[str]
     if directory:
         config_path = os.path.join(directory, "fetchtastic.yaml")
         if os.path.exists(config_path):
             return True, config_path
         return False, None
 
-    # Check new location first
     if os.path.exists(CONFIG_FILE):
         return True, CONFIG_FILE
 
-    # Then check old location
     if os.path.exists(OLD_CONFIG_FILE):
         return True, OLD_CONFIG_FILE
 
     return False, None
 
-
-def check_storage_setup():
+def check_storage_setup() -> bool:
     """
     For Termux: Check if the storage is set up and accessible.
+    Continuously prompts to set up storage until successful.
+
+    Returns:
+        bool: True when storage access is confirmed.
     """
-    # Check if the Termux storage directory and Downloads are set up and writable
-    storage_dir = os.path.expanduser("~/storage")
-    storage_downloads = os.path.expanduser("~/storage/downloads")
+    storage_dir: str = os.path.expanduser("~/storage")
+    storage_downloads: str = os.path.expanduser("~/storage/downloads")
 
     while True:
         if (
@@ -147,1748 +702,700 @@ def check_storage_setup():
             return True
         else:
             print("Termux storage access is not set up or permission was denied.")
-            # Run termux-setup-storage
-            setup_storage()
+            setup_storage() # Defined later, should be fine
             print("Please grant storage permissions when prompted.")
             input("Press Enter after granting storage permissions to continue...")
-            # Re-check if storage is set up
-            continue
+            # Re-check if storage is set up - loop will handle this
 
-
-def run_setup():
-    global BASE_DIR, CONFIG_FILE
-    print("Running Fetchtastic Setup...")
-
-    # Install required Termux packages first
-    if is_termux():
-        install_termux_packages()
-        # Check if storage is set up
-        check_storage_setup()
-        print("Termux storage is set up.")
-
-    # Check if config directory exists, create if not
-    if not os.path.exists(CONFIG_DIR):
-        try:
-            os.makedirs(CONFIG_DIR, exist_ok=True)
-        except Exception as e:
-            print(f"Error creating config directory: {e}")
-
-    # Check for configuration in old location
-    if os.path.exists(OLD_CONFIG_FILE) and not os.path.exists(CONFIG_FILE):
-        # Import here to avoid circular imports
-        from fetchtastic.log_utils import log_error, log_info
-
-        separator = "=" * 80
-        log_info(f"\n{separator}")
-        log_info("Configuration Migration")
-        log_info(separator)
-        # Automatically migrate without prompting
-        prompt_for_migration()  # Just logs the migration message
-        if migrate_config():
-            log_info("Configuration successfully migrated to the new location.")
-            # Update config_path to the new location for subsequent operations
-            config_path = CONFIG_FILE
-            # Re-load the configuration from the new location if it exists
-            if os.path.exists(CONFIG_FILE):
-                exists = True
-        else:
-            log_error("Failed to migrate configuration. Continuing with old location.")
-        log_info(f"{separator}\n")
-
-    # Ask for base directory as the first question
-    config = {}
-    exists, config_path = config_exists()
-
-    if exists:
-        # Load existing configuration
-        config = load_config()
-        print(
-            "Existing configuration found. You can keep current settings or change them."
-        )
-        is_first_run = False
-        current_base_dir = config.get("BASE_DIR", DEFAULT_BASE_DIR)
-        base_dir_prompt = (
-            f"Enter the base directory for Fetchtastic (current: {current_base_dir}): "
-        )
-    else:
-        # Initialize default configuration
-        config = {}
-        is_first_run = True
-        base_dir_prompt = (
-            f"Enter the base directory for Fetchtastic (default: {DEFAULT_BASE_DIR}): "
-        )
-
-    # Prompt for base directory
-    base_dir_input = input(base_dir_prompt).strip()
-
-    if base_dir_input:
-        # User entered a custom directory
-        base_dir = os.path.expanduser(base_dir_input)
-
-        # Check if there's a config file in the specified directory
-        if config_exists(base_dir) and base_dir != BASE_DIR:
-            print(f"Found existing configuration in {base_dir}")
-            # Load the configuration from the specified directory
-            config = load_config(base_dir)
-            is_first_run = False
-        else:
-            # No config in the specified directory or it's the same as current
-            BASE_DIR = base_dir
-            # Keep CONFIG_FILE in the platformdirs location
-            # CONFIG_FILE should not be changed here
-    else:
-        # User accepted the default/current directory
-        if is_first_run:
-            base_dir = DEFAULT_BASE_DIR
-        else:
-            base_dir = config.get("BASE_DIR", DEFAULT_BASE_DIR)
-
-        # Expand user directory if needed (e.g., ~/Downloads/Meshtastic)
-        base_dir = os.path.expanduser(base_dir)
-
-        # Update global variables
-        BASE_DIR = base_dir
-        # Keep CONFIG_FILE in the platformdirs location
-        # CONFIG_FILE should not be changed here
-
-    # Store the base directory in the config
-    config["BASE_DIR"] = BASE_DIR
-
-    # Create the base directory if it doesn't exist
-    if not os.path.exists(BASE_DIR):
-        os.makedirs(BASE_DIR)
-
-    # On Windows, handle shortcuts
-    if platform.system() == "Windows":
-        # Always create a shortcut to the config file in the base directory without asking
-        if WINDOWS_MODULES_AVAILABLE:
-            create_config_shortcut(CONFIG_FILE, BASE_DIR)
-
-            # Check if Start Menu shortcuts already exist
-            if os.path.exists(WINDOWS_START_MENU_FOLDER):
-                create_menu = (
-                    input(
-                        "Fetchtastic shortcuts already exist in the Start Menu. Would you like to update them? [y/n] (default: yes): "
-                    )
-                    .strip()
-                    .lower()
-                    or "y"
-                )
-            else:
-                create_menu = (
-                    input(
-                        "Would you like to create Fetchtastic shortcuts in the Start Menu? (recommended) [y/n] (default: yes): "
-                    )
-                    .strip()
-                    .lower()
-                    or "y"
-                )
-
-            if create_menu == "y":
-                create_windows_menu_shortcuts(CONFIG_FILE, BASE_DIR)
-        else:
-            print(
-                "Windows shortcuts not available. Install optional dependencies for full Windows integration:"
-            )
-            print("pipx install -e .[win]")
-            print("or if using pip: pip install fetchtastic[win]")
-
-    # Prompt to save APKs, firmware, or both
-    save_choice = (
-        input(
-            "Would you like to download APKs, firmware, or both? [a/f/b] (default: both): "
-        )
-        .strip()
-        .lower()
-        or "both"
-    )
-    if save_choice == "a":
-        save_apks = True
-        save_firmware = False
-    elif save_choice == "f":
-        save_apks = False
-        save_firmware = True
-    else:
-        save_apks = True
-        save_firmware = True
-    config["SAVE_APKS"] = save_apks
-    config["SAVE_FIRMWARE"] = save_firmware
-
-    # Run the menu scripts based on user choices
-    if save_apks:
-        apk_selection = menu_apk.run_menu()
-        if not apk_selection:
-            print("No APK assets selected. APKs will not be downloaded.")
-            save_apks = False
-            config["SAVE_APKS"] = False
-        else:
-            config["SELECTED_APK_ASSETS"] = apk_selection["selected_assets"]
-    if save_firmware:
-        firmware_selection = menu_firmware.run_menu()
-        if not firmware_selection:
-            print("No firmware assets selected. Firmware will not be downloaded.")
-            save_firmware = False
-            config["SAVE_FIRMWARE"] = False
-        else:
-            config["SELECTED_FIRMWARE_ASSETS"] = firmware_selection["selected_assets"]
-
-    # If both save_apks and save_firmware are False, inform the user and exit setup
-    if not save_apks and not save_firmware:
-        print("Please select at least one type of asset to download (APK or firmware).")
-        print("Run 'fetchtastic setup' again and select at least one asset.")
-        return
-
-    # Determine default number of versions to keep based on platform
-    default_versions_to_keep = 2 if is_termux() else 3
-
-    # Prompt for number of versions to keep
-    if save_apks:
-        current_versions = config.get(
-            "ANDROID_VERSIONS_TO_KEEP", default_versions_to_keep
-        )
-        if is_first_run:
-            prompt_text = f"How many versions of the Android app would you like to keep? (default is {current_versions}): "
-        else:
-            prompt_text = f"How many versions of the Android app would you like to keep? (current: {current_versions}): "
-        android_versions_to_keep = input(prompt_text).strip() or str(current_versions)
-        config["ANDROID_VERSIONS_TO_KEEP"] = int(android_versions_to_keep)
-    if save_firmware:
-        current_versions = config.get(
-            "FIRMWARE_VERSIONS_TO_KEEP", default_versions_to_keep
-        )
-        if is_first_run:
-            prompt_text = f"How many versions of the firmware would you like to keep? (default is {current_versions}): "
-        else:
-            prompt_text = f"How many versions of the firmware would you like to keep? (current: {current_versions}): "
-        firmware_versions_to_keep = input(prompt_text).strip() or str(current_versions)
-        config["FIRMWARE_VERSIONS_TO_KEEP"] = int(firmware_versions_to_keep)
-
-        # Prompt for pre-release downloads
-        check_prereleases_current = config.get("CHECK_PRERELEASES", False)
-        check_prereleases_default = "yes" if check_prereleases_current else "no"
-        check_prereleases = (
-            input(
-                f"Would you like to check for and download pre-release firmware from meshtastic.github.io? [y/n] (default: {check_prereleases_default}): "
-            )
-            .strip()
-            .lower()
-            or check_prereleases_default[0]
-        )
-        # Make sure we're setting a boolean value, not a string
-        config["CHECK_PRERELEASES"] = check_prereleases == "y"
-
-        # Save configuration immediately to ensure this setting is preserved
-        with open(CONFIG_FILE, "w") as f:
-            yaml.dump(config, f)
-
-        # Prompt for automatic extraction
-        auto_extract_current = config.get("AUTO_EXTRACT", False)
-        auto_extract_default = "yes" if auto_extract_current else "no"
-        auto_extract = (
-            input(
-                f"Would you like to automatically extract specific files from firmware zip archives? [y/n] (default: {auto_extract_default}): "
-            )
-            .strip()
-            .lower()
-            or auto_extract_default[0]
-        )
-
-        # Save the AUTO_EXTRACT setting immediately
-        config["AUTO_EXTRACT"] = auto_extract == "y"
-
-        # Save configuration to ensure this setting is preserved
-        with open(CONFIG_FILE, "w") as f:
-            yaml.dump(config, f)
-
-        if auto_extract == "y":
-            print(
-                "Enter the keywords to match for extraction from the firmware zip files, separated by spaces."
-            )
-            print("Example: rak4631- tbeam t1000-e- tlora-v2-1-1_6- device-")
-
-            # Check if there are existing patterns
-            if config.get("EXTRACT_PATTERNS"):
-                current_patterns = " ".join(config.get("EXTRACT_PATTERNS", []))
-                print(f"Current patterns: {current_patterns}")
-
-                # Ask if user wants to keep or change patterns
-                keep_patterns_default = "yes"
-                keep_patterns = (
-                    input(
-                        f"Do you want to keep the current extraction patterns? [y/n] (default: {keep_patterns_default}): "
-                    )
-                    .strip()
-                    .lower()
-                    or keep_patterns_default[0]
-                )
-
-                if keep_patterns == "y":
-                    # Keep existing patterns
-                    print(f"Keeping current extraction patterns: {current_patterns}")
-                else:
-                    # Get new patterns
-                    extract_patterns = input("Enter new extraction patterns: ").strip()
-                    if extract_patterns:
-                        config["EXTRACT_PATTERNS"] = extract_patterns.split()
-                        print(f"Extraction patterns updated to: {extract_patterns}")
-                    else:
-                        print("No patterns entered. Keeping current patterns.")
-            else:
-                # No existing patterns, get new ones
-                extract_patterns = input("Extraction patterns: ").strip()
-                if extract_patterns:
-                    config["EXTRACT_PATTERNS"] = extract_patterns.split()
-                    print(f"Extraction patterns set to: {extract_patterns}")
-                else:
-                    config["AUTO_EXTRACT"] = False
-                    config["EXTRACT_PATTERNS"] = []
-                    print(
-                        "No patterns selected, no files will be extracted. Run setup again if you wish to change this."
-                    )
-                    # Skip exclude patterns prompt
-                    config["EXCLUDE_PATTERNS"] = []
-
-            # Save configuration again after updating patterns
-            with open(CONFIG_FILE, "w") as f:
-                yaml.dump(config, f)
-            # Prompt for exclude patterns if extraction is enabled
-            if config.get("AUTO_EXTRACT", False) and config.get("EXTRACT_PATTERNS"):
-                exclude_default = "yes" if config.get("EXCLUDE_PATTERNS") else "no"
-                exclude_prompt = f"Would you like to exclude any patterns from extraction? [y/n] (default: {exclude_default}): "
-                exclude_choice = (
-                    input(exclude_prompt).strip().lower() or exclude_default[0]
-                )
-                if exclude_choice == "y":
-                    print(
-                        "Enter the keywords to exclude from extraction, separated by spaces."
-                    )
-                    print("Example: .hex tcxo request s3-core")
-
-                    # Check if there are existing exclude patterns
-                    if config.get("EXCLUDE_PATTERNS"):
-                        current_excludes = " ".join(config.get("EXCLUDE_PATTERNS", []))
-                        print(f"Current exclude patterns: {current_excludes}")
-
-                        # Ask if user wants to keep or change exclude patterns
-                        keep_excludes_default = "yes"
-                        keep_excludes = (
-                            input(
-                                f"Do you want to keep the current exclude patterns? [y/n] (default: {keep_excludes_default}): "
-                            )
-                            .strip()
-                            .lower()
-                            or keep_excludes_default[0]
-                        )
-
-                        if keep_excludes == "y":
-                            # Keep existing exclude patterns
-                            print(
-                                f"Keeping current exclude patterns: {current_excludes}"
-                            )
-                        else:
-                            # Get new exclude patterns
-                            exclude_patterns = input(
-                                "Enter new exclude patterns: "
-                            ).strip()
-                            if exclude_patterns:
-                                config["EXCLUDE_PATTERNS"] = exclude_patterns.split()
-                                print(
-                                    f"Exclude patterns updated to: {exclude_patterns}"
-                                )
-                            else:
-                                config["EXCLUDE_PATTERNS"] = []
-                                print(
-                                    "No exclude patterns entered. All matching files will be extracted."
-                                )
-                    else:
-                        # No existing exclude patterns, get new ones
-                        exclude_patterns = input("Exclude patterns: ").strip()
-                        if exclude_patterns:
-                            config["EXCLUDE_PATTERNS"] = exclude_patterns.split()
-                            print(f"Exclude patterns set to: {exclude_patterns}")
-                        else:
-                            config["EXCLUDE_PATTERNS"] = []
-                            print(
-                                "No exclude patterns entered. All matching files will be extracted."
-                            )
-                else:
-                    # User chose not to exclude patterns
-                    config["EXCLUDE_PATTERNS"] = []
-                    print(
-                        "No exclude patterns will be used. All matching files will be extracted."
-                    )
-            else:
-                config["EXCLUDE_PATTERNS"] = []
-        else:
-            config["AUTO_EXTRACT"] = False
-            config["EXTRACT_PATTERNS"] = []
-            config["EXCLUDE_PATTERNS"] = []
-
-    # Ask if the user wants to only download when connected to Wi-Fi (Termux only)
-    if is_termux():
-        wifi_only_default = "yes" if config.get("WIFI_ONLY", True) else "no"
-        wifi_only = (
-            input(
-                f"Do you want to only download when connected to Wi-Fi? [y/n] (default: {wifi_only_default}): "
-            )
-            .strip()
-            .lower()
-            or wifi_only_default[0]
-        )
-        config["WIFI_ONLY"] = True if wifi_only == "y" else False
-    else:
-        # For non-Termux environments, remove WIFI_ONLY from config if it exists
-        config.pop("WIFI_ONLY", None)
-
-    # Set the download directory to the same as the base directory
-    download_dir = BASE_DIR
-    config["DOWNLOAD_DIR"] = download_dir
-
-    # Make sure the config directory exists
-    if not os.path.exists(CONFIG_DIR):
-        try:
-            os.makedirs(CONFIG_DIR, exist_ok=True)
-        except Exception as e:
-            print(f"Error creating config directory: {e}")
-
-    # Save configuration to YAML file before proceeding
-    with open(CONFIG_FILE, "w") as f:
-        yaml.dump(config, f)
-
-    print(f"Configuration saved to: {CONFIG_FILE}")
-
-    # Cron job setup
-    if platform.system() == "Windows":
-        # Windows doesn't support cron jobs, but we can offer to create a startup shortcut
-        if WINDOWS_MODULES_AVAILABLE:
-            # Check if startup shortcut already exists
-            startup_folder = winshell.startup()
-            startup_shortcut_path = os.path.join(startup_folder, "Fetchtastic.lnk")
-
-            if os.path.exists(startup_shortcut_path):
-                startup_option = (
-                    input(
-                        "Fetchtastic is already set to run at startup. Would you like to remove this? [y/n] (default: no): "
-                    )
-                    .strip()
-                    .lower()
-                    or "n"
-                )
-                if startup_option == "y":
-                    try:
-                        # Also remove the batch file if it exists
-                        batch_dir = os.path.join(CONFIG_DIR, "batch")
-                        batch_path = os.path.join(batch_dir, "fetchtastic_startup.bat")
-                        if os.path.exists(batch_path):
-                            os.remove(batch_path)
-
-                        # Remove the shortcut
-                        os.remove(startup_shortcut_path)
-                        print(
-                            "✓ Startup shortcut removed. Fetchtastic will no longer run automatically at startup."
-                        )
-                    except Exception as e:
-                        print(f"Failed to remove startup shortcut: {e}")
-                        print("You can manually remove it from: " + startup_folder)
-                else:
-                    print(
-                        "✓ Fetchtastic will continue to run automatically at startup."
-                    )
-            else:
-                startup_option = (
-                    input(
-                        "Would you like to run Fetchtastic automatically on Windows startup? [y/n] (default: yes): "
-                    )
-                    .strip()
-                    .lower()
-                    or "y"
-                )
-                if startup_option == "y":
-                    if create_startup_shortcut():
-                        print(
-                            "✓ Fetchtastic will now run automatically when Windows starts."
-                        )
-                    else:
-                        print(
-                            "Failed to create startup shortcut. You can manually set up Fetchtastic to run at startup."
-                        )
-                        print(
-                            "You can use Windows Task Scheduler or add a shortcut to: "
-                            + startup_folder
-                        )
-                else:
-                    print("Fetchtastic will not run automatically on startup.")
-        else:
-            # Don't show this message again since we already showed it earlier
-            pass
-    elif is_termux():
-        # Termux: Ask about cron job and boot script individually
-        # Check if cron job already exists
-        cron_job_exists = check_cron_job_exists()
-        if cron_job_exists:
-            cron_prompt = (
-                input(
-                    "A cron job is already set up. Do you want to reconfigure it? [y/n] (default: no): "
-                )
-                .strip()
-                .lower()
-                or "n"
-            )
-            if cron_prompt == "y":
-                # First, remove existing cron job
-                remove_cron_job()
-                print("Existing cron job removed for reconfiguration.")
-
-                # Then set up new cron job
-                install_crond()
-                setup_cron_job()
-                print("Cron job has been reconfigured.")
-            else:
-                print("Cron job configuration left unchanged.")
-        else:
-            # Ask if the user wants to set up a cron job
-            cron_default = "yes"  # Default to 'yes'
-            setup_cron = (
-                input(
-                    f"Would you like to schedule Fetchtastic to run daily at 3 AM? [y/n] (default: {cron_default}): "
-                )
-                .strip()
-                .lower()
-                or cron_default[0]
-            )
-            if setup_cron == "y":
-                install_crond()
-                setup_cron_job()
-            else:
-                print("Cron job has not been set up.")
-
-        # Check if boot script already exists
-        boot_script_exists = check_boot_script_exists()
-        if boot_script_exists:
-            boot_prompt = (
-                input(
-                    "A boot script is already set up. Do you want to reconfigure it? [y/n] (default: no): "
-                )
-                .strip()
-                .lower()
-                or "n"
-            )
-            if boot_prompt == "y":
-                # First, remove existing boot script
-                remove_boot_script()
-                print("Existing boot script removed for reconfiguration.")
-
-                # Then set up new boot script
-                setup_boot_script()
-                print("Boot script has been reconfigured.")
-            else:
-                print("Boot script configuration left unchanged.")
-        else:
-            # Ask if the user wants to set up a boot script
-            boot_default = "yes"  # Default to 'yes'
-            setup_boot = (
-                input(
-                    f"Do you want Fetchtastic to run on device boot? [y/n] (default: {boot_default}): "
-                )
-                .strip()
-                .lower()
-                or boot_default[0]
-            )
-            if setup_boot == "y":
-                setup_boot_script()
-            else:
-                print("Boot script has not been set up.")
-
-    else:
-        # Linux/Mac: Check if any Fetchtastic cron jobs exist
-        any_cron_jobs_exist = check_any_cron_jobs_exist()
-        if any_cron_jobs_exist:
-            cron_prompt = (
-                input(
-                    "Fetchtastic cron jobs are already set up. Do you want to reconfigure them? [y/n] (default: no): "
-                )
-                .strip()
-                .lower()
-                or "n"
-            )
-            if cron_prompt == "y":
-                # First, remove existing cron jobs
-                remove_cron_job()
-                remove_reboot_cron_job()
-                print("Existing cron jobs removed for reconfiguration.")
-
-                # Ask if they want to set up daily cron job
-                cron_default = "yes"
-                setup_cron = (
-                    input(
-                        f"Would you like to schedule Fetchtastic to run daily at 3 AM? [y/n] (default: {cron_default}): "
-                    )
-                    .strip()
-                    .lower()
-                    or cron_default[0]
-                )
-                if setup_cron == "y":
-                    setup_cron_job()
-                    print("Daily cron job has been set up.")
-                else:
-                    print("Daily cron job will not be set up.")
-
-                # Ask if they want to set up a reboot cron job
-                boot_default = "yes"
-                setup_reboot = (
-                    input(
-                        f"Do you want Fetchtastic to run on system startup? [y/n] (default: {boot_default}): "
-                    )
-                    .strip()
-                    .lower()
-                    or boot_default[0]
-                )
-                if setup_reboot == "y":
-                    setup_reboot_cron_job()
-                    print("Reboot cron job has been set up.")
-                else:
-                    print("Reboot cron job will not be set up.")
-            else:
-                print("Cron job configurations left unchanged.")
-        else:
-            # No existing cron jobs, ask if they want to set them up
-            # Ask if they want to set up daily cron job
-            cron_default = "yes"
-            setup_cron = (
-                input(
-                    f"Would you like to schedule Fetchtastic to run daily at 3 AM? [y/n] (default: {cron_default}): "
-                )
-                .strip()
-                .lower()
-                or cron_default[0]
-            )
-            if setup_cron == "y":
-                setup_cron_job()
-            else:
-                print("Daily cron job has not been set up.")
-
-            # Ask if they want to set up a reboot cron job
-            boot_default = "yes"
-            setup_reboot = (
-                input(
-                    f"Do you want Fetchtastic to run on system startup? [y/n] (default: {boot_default}): "
-                )
-                .strip()
-                .lower()
-                or boot_default[0]
-            )
-            if setup_reboot == "y":
-                setup_reboot_cron_job()
-            else:
-                print("Reboot cron job has not been set up.")
-
-    # Prompt for NTFY server configuration
-    has_ntfy_config = bool(config.get("NTFY_TOPIC")) and bool(config.get("NTFY_SERVER"))
-    notifications_default = "yes" if has_ntfy_config else "no"
-
-    notifications = (
-        input(
-            f"Would you like to set up notifications via NTFY? [y/n] (default: {notifications_default}): "
-        )
-        .strip()
-        .lower()
-        or notifications_default[0]
-    )
-
-    if notifications == "y":
-        # Get NTFY server
-        current_server = config.get("NTFY_SERVER", "ntfy.sh")
-        ntfy_server = (
-            input(f"Enter the NTFY server (current: {current_server}): ").strip()
-            or current_server
-        )
-
-        if not ntfy_server.startswith("http://") and not ntfy_server.startswith(
-            "https://"
-        ):
-            ntfy_server = "https://" + ntfy_server
-
-        # Get topic name
-        if config.get("NTFY_TOPIC"):
-            current_topic = config.get("NTFY_TOPIC")
-        else:
-            current_topic = "fetchtastic-" + "".join(
-                random.choices(string.ascii_lowercase + string.digits, k=6)
-            )
-
-        topic_name = (
-            input(f"Enter a unique topic name (current: {current_topic}): ").strip()
-            or current_topic
-        )
-
-        # Update config
-        config["NTFY_TOPIC"] = topic_name
-        config["NTFY_SERVER"] = ntfy_server
-
-        # Save configuration with NTFY settings
-        with open(CONFIG_FILE, "w") as f:
-            yaml.dump(config, f)
-
-        # Display information
-        full_topic_url = f"{ntfy_server.rstrip('/')}/{topic_name}"
-        print(f"Notifications enabled using topic: {topic_name}")
-        if is_termux():
-            print("Subscribe by pasting the topic name in the ntfy app.")
-        else:
-            print(
-                "Subscribe by visiting the full topic URL in your browser or ntfy app."
-            )
-        print(f"Full topic URL: {full_topic_url}")
-
-        # Offer to copy to clipboard
-        if is_termux():
-            copy_prompt_text = "Do you want to copy the topic name to the clipboard? [y/n] (default: yes): "
-            text_to_copy = topic_name
-        else:
-            copy_prompt_text = "Do you want to copy the topic URL to the clipboard? [y/n] (default: yes): "
-            text_to_copy = full_topic_url
-
-        copy_to_clipboard = input(copy_prompt_text).strip().lower() or "y"
-        if copy_to_clipboard == "y":
-            success = copy_to_clipboard_func(text_to_copy)
-            if success:
-                if is_termux():
-                    print("Topic name copied to clipboard.")
-                else:
-                    print("Topic URL copied to clipboard.")
-            else:
-                print("Failed to copy to clipboard.")
-
-        # Ask if the user wants notifications only when new files are downloaded
-        notify_on_download_only_default = (
-            "yes" if config.get("NOTIFY_ON_DOWNLOAD_ONLY", False) else "no"
-        )
-        notify_on_download_only = (
-            input(
-                f"Do you want to receive notifications only when new files are downloaded? [y/n] (default: {notify_on_download_only_default}): "
-            )
-            .strip()
-            .lower()
-            or notify_on_download_only_default[0]
-        )
-        config["NOTIFY_ON_DOWNLOAD_ONLY"] = (
-            True if notify_on_download_only == "y" else False
-        )
-
-        # Save configuration with the new setting
-        with open(CONFIG_FILE, "w") as f:
-            yaml.dump(config, f)
-
-        print("Notification settings have been saved.")
-
-    else:
-        # User chose not to use notifications
-        if has_ntfy_config:
-            # Ask for confirmation to disable existing notifications
-            disable_confirm = (
-                input(
-                    "You currently have notifications enabled. Are you sure you want to disable them? [y/n] (default: no): "
-                )
-                .strip()
-                .lower()
-                or "n"
-            )
-
-            if disable_confirm == "y":
-                config["NTFY_TOPIC"] = ""
-                config["NTFY_SERVER"] = ""
-                config["NOTIFY_ON_DOWNLOAD_ONLY"] = False
-                with open(CONFIG_FILE, "w") as f:
-                    yaml.dump(config, f)
-                print("Notifications have been disabled.")
-            else:
-                print("Keeping existing notification settings.")
-        else:
-            # No existing notifications, just confirm they're disabled
-            config["NTFY_TOPIC"] = ""
-            config["NTFY_SERVER"] = ""
-            config["NOTIFY_ON_DOWNLOAD_ONLY"] = False
-            with open(CONFIG_FILE, "w") as f:
-                yaml.dump(config, f)
-            print("Notifications will remain disabled.")
-
-    # Ask if the user wants to perform a first run
-    if platform.system() == "Windows":
-        # On Windows, we'll just tell them how to run it
-        print("Setup complete. Run 'fetchtastic download' to start downloading.")
-        if WINDOWS_MODULES_AVAILABLE:
-            print("You can also use the shortcuts created in the Start Menu.")
-
-        # If running from a batch file or shortcut, pause at the end
-        if os.environ.get("PROMPT") is None or "cmd.exe" in os.environ.get(
-            "COMSPEC", ""
-        ):
-            print("\nPress Enter to close this window...")
-            input()
-    else:
-        # On other platforms, offer to run it now
-        perform_first_run = (
-            input("Would you like to start the first run now? [y/n] (default: yes): ")
-            .strip()
-            .lower()
-            or "y"
-        )
-        if perform_first_run == "y":
-            print("Setup complete. Starting first run, this may take a few minutes...")
-            downloader.main()
-        else:
-            print("Setup complete. Run 'fetchtastic download' to start downloading.")
-
-
-def check_for_updates():
+def check_for_updates() -> Tuple[Optional[str], Optional[str], bool]:
     """
-    Check if a newer version of fetchtastic is available.
+    Check if a newer version of fetchtastic is available from PyPI.
 
     Returns:
-        tuple: (current_version, latest_version, update_available)
+        Tuple[Optional[str], Optional[str], bool]: A tuple containing:
+            - current_version (Optional[str]): The currently installed version, or None if not found.
+            - latest_version (Optional[str]): The latest version on PyPI, or None if lookup fails.
+            - update_available (bool): True if a newer version is available, False otherwise.
     """
+    current_version: Optional[str] = None
+    latest_version: Optional[str] = None
+    update_available: bool = False
     try:
-        # Get current version
-        from importlib.metadata import version
+        from importlib.metadata import version as get_version
+        current_version = get_version("fetchtastic")
 
-        current_version = version("fetchtastic")
-
-        # Get latest version from PyPI
         import requests
-
-        response = requests.get("https://pypi.org/pypi/fetchtastic/json", timeout=5)
+        response: requests.Response = requests.get("https://pypi.org/pypi/fetchtastic/json", timeout=5)
         if response.status_code == 200:
-            data = response.json()
-            latest_version = data["info"]["version"]
-            # Use packaging.version for proper version comparison
-            from packaging import version as pkg_version
-
-            current_ver = pkg_version.parse(current_version)
-            latest_ver = pkg_version.parse(latest_version)
-            return current_version, latest_version, latest_ver > current_ver
+            data: Dict[str, Any] = response.json()
+            latest_version = data.get("info", {}).get("version")
+            if current_version and latest_version:
+                from packaging import version as pkg_version # type: ignore
+                current_ver_parsed = pkg_version.parse(current_version)
+                latest_ver_parsed = pkg_version.parse(latest_version)
+                update_available = latest_ver_parsed > current_ver_parsed
+        return current_version, latest_version, update_available
+    except Exception: # Broad exception to catch import errors or request errors
+        # Try to get current_version again if it failed before requests
+        if not current_version:
+            try:
+                from importlib.metadata import version as get_version_fallback
+                current_version = get_version_fallback("fetchtastic")
+            except Exception:
+                 current_version = "unknown" # Fallback if version cannot be determined
         return current_version, None, False
-    except Exception:
-        # If anything fails, just return that no update is available
-        try:
-            from importlib.metadata import version
 
-            return version("fetchtastic"), None, False
-        except Exception:
-            return "unknown", None, False
-
-
-def get_upgrade_command():
+def get_upgrade_command() -> str:
     """
-    Returns the appropriate upgrade command based on the environment.
+    Returns the appropriate upgrade command based on the execution environment.
 
     Returns:
-        str: The command to upgrade fetchtastic
+        str: The command string to upgrade the fetchtastic package.
     """
     if is_termux():
         return "pip install --upgrade fetchtastic"
     else:
+        # Assumes pipx for non-Termux, which might not always be true but is a common case.
         return "pipx upgrade fetchtastic"
 
-
-def display_version_info(show_update_message=True):
+def display_version_info(show_update_message: bool = True) -> Tuple[Optional[str], Optional[str], bool]:
     """
-    Display version information and update message if a newer version is available.
+    Retrieves and returns version information.
+    Optionally, this function could print the information, but currently, it only returns it.
 
     Args:
-        show_update_message: Whether to show the update message if a newer version is available.
-    """
-    current_version, latest_version, update_available = check_for_updates()
-
-    # Return version information without printing
-    # The caller will handle logging/printing as appropriate
-    return current_version, latest_version, update_available
-
-
-def migrate_config():
-    """
-    Migrates the configuration from the old location to the new location.
+        show_update_message (bool): This parameter is currently unused as printing is handled
+                                   by the caller (_initial_setup_and_config). Kept for signature consistency.
 
     Returns:
-        bool: True if migration was successful, False otherwise.
+        Tuple[Optional[str], Optional[str], bool]: A tuple containing:
+            - current_version (Optional[str]): The currently installed version.
+            - latest_version (Optional[str]): The latest version available.
+            - update_available (bool): True if an update is available.
     """
-    # Import here to avoid circular imports
-    from fetchtastic.log_utils import log_error, log_info
+    current_version, latest_version, update_available = check_for_updates()
+    return current_version, latest_version, update_available
 
-    # Check if old config exists
+def migrate_config() -> bool:
+    """
+    Migrates the configuration from the old location (in DEFAULT_BASE_DIR)
+    to the new platform-specific config directory (CONFIG_DIR).
+
+    Returns:
+        bool: True if migration was successful or not needed, False if an error occurred.
+    """
+    from fetchtastic.log_utils import log_error, log_info # Local import for type checking
+
     if not os.path.exists(OLD_CONFIG_FILE):
-        return False
+        log_info("No old configuration file found to migrate.")
+        return True # Nothing to migrate
 
-    # Check if new config directory exists, create if not
     if not os.path.exists(CONFIG_DIR):
         try:
             os.makedirs(CONFIG_DIR, exist_ok=True)
         except Exception as e:
-            log_error(f"Error creating config directory: {e}")
+            log_error(f"Error creating new config directory {CONFIG_DIR}: {e}")
             return False
 
-    # Load the old config
     try:
-        with open(OLD_CONFIG_FILE, "r") as f:
-            config = yaml.safe_load(f)
+        with open(OLD_CONFIG_FILE, "r") as f_old:
+            config_data: Dict[str, Any] = yaml.safe_load(f_old)
     except Exception as e:
-        log_error(f"Error loading old config: {e}")
+        log_error(f"Error loading old configuration from {OLD_CONFIG_FILE}: {e}")
         return False
 
-    # Save to new location
     try:
-        with open(CONFIG_FILE, "w") as f:
-            yaml.dump(config, f)
+        with open(CONFIG_FILE, "w") as f_new:
+            yaml.dump(config_data, f_new)
+        log_info(f"Configuration successfully written to {CONFIG_FILE}")
 
-        # Remove the old file after successful migration
         try:
             os.remove(OLD_CONFIG_FILE)
-            log_info(f"Configuration migrated to {CONFIG_FILE} and old file removed")
+            log_info(f"Old configuration file {OLD_CONFIG_FILE} removed.")
         except Exception as e:
-            log_error(
-                f"Configuration migrated to {CONFIG_FILE} but failed to remove old file: {e}"
-            )
-
+            log_error(f"Failed to remove old configuration file {OLD_CONFIG_FILE}: {e}")
+            # Migration is still considered successful if new file is written
         return True
     except Exception as e:
-        log_error(f"Error saving config to new location: {e}")
+        log_error(f"Error saving configuration to new location {CONFIG_FILE}: {e}")
         return False
 
-
-def prompt_for_migration():
+def prompt_for_migration() -> bool:
     """
-    Automatically migrates the configuration from the old location to the new location
-    without prompting the user.
+    Informs the user about the configuration migration process.
+    Currently, this function is informational as migration is automatic.
 
     Returns:
-        bool: Always returns True to indicate migration should proceed.
+        bool: Always returns True, as migration is attempted automatically if needed.
     """
-    # Import here to avoid circular imports
-    from fetchtastic.log_utils import log_info
-
+    from fetchtastic.log_utils import log_info # Local import for type checking
     log_info(f"Found configuration file at old location: {OLD_CONFIG_FILE}")
-    log_info(f"Automatically migrating to the new location: {CONFIG_FILE}")
+    log_info(f"Attempting to migrate to the new location: {CONFIG_FILE}")
     return True
 
-
-def create_windows_menu_shortcuts(config_file_path, base_dir):
+def create_windows_menu_shortcuts(config_file_path: str, base_dir: str) -> bool:
     """
-    Creates Windows Start Menu shortcuts for fetchtastic.
+    Creates Windows Start Menu shortcuts for Fetchtastic operations and folders.
+    This includes shortcuts for download, setup, repo browse, config file,
+    downloads folder, log file, and update check.
 
     Args:
-        config_file_path: Path to the configuration file
-        base_dir: Base directory for Meshtastic downloads
+        config_file_path (str): Path to the fetchtastic.yaml configuration file.
+        base_dir (str): Base directory where downloads are stored.
 
     Returns:
-        bool: True if shortcuts were created successfully, False otherwise
+        bool: True if shortcuts were created successfully, False otherwise.
     """
     if platform.system() != "Windows" or not WINDOWS_MODULES_AVAILABLE:
         return False
 
     try:
-        # Completely remove the Start Menu folder and recreate it
-        # This ensures we don't have any leftover shortcuts
-        import shutil
-
-        # First, make sure the parent directory exists
-        parent_dir = os.path.dirname(WINDOWS_START_MENU_FOLDER)
-        if not os.path.exists(parent_dir):
-            print(f"Warning: Parent directory {parent_dir} does not exist")
-            # Try to create the parent directory structure
+        import shutil # Ensure shutil is imported for shutil.which
+        if not os.path.exists(WINDOWS_START_MENU_FOLDER):
             try:
-                os.makedirs(parent_dir, exist_ok=True)
+                os.makedirs(WINDOWS_START_MENU_FOLDER, exist_ok=True)
             except Exception as e:
-                print(f"Error creating parent directory: {e}")
+                print(f"Error creating Start Menu folder {WINDOWS_START_MENU_FOLDER}: {e}")
                 return False
 
-        # Now handle the Fetchtastic folder
-        if os.path.exists(WINDOWS_START_MENU_FOLDER):
-            print(f"Removing existing Start Menu folder: {WINDOWS_START_MENU_FOLDER}")
-            try:
-                # Try to remove the entire folder
-                shutil.rmtree(WINDOWS_START_MENU_FOLDER)
-                print("Successfully removed existing shortcuts folder")
-            except Exception as e:
-                print(f"Warning: Could not remove shortcuts folder: {e}")
-                # Try to remove individual files as a fallback
-                try:
-                    # First list all files
-                    files = os.listdir(WINDOWS_START_MENU_FOLDER)
-                    print(f"Found {len(files)} files in shortcuts folder")
-
-                    # Try to remove each file
-                    for file in files:
-                        file_path = os.path.join(WINDOWS_START_MENU_FOLDER, file)
-                        try:
-                            if os.path.isfile(file_path):
-                                os.remove(file_path)
-                                print(f"Removed: {file}")
-                            elif os.path.isdir(file_path):
-                                shutil.rmtree(file_path)
-                                print(f"Removed directory: {file}")
-                        except Exception as e3:
-                            print(f"Could not remove {file}: {e3}")
-
-                    print("Attempted to remove individual files")
-                except Exception as e2:
-                    print(f"Warning: Could not clean shortcuts folder: {e2}")
-                    print("Will attempt to overwrite existing shortcuts")
-
-        # Create a fresh Fetchtastic folder in the Start Menu
-        print(f"Creating Start Menu folder: {WINDOWS_START_MENU_FOLDER}")
-        try:
-            os.makedirs(WINDOWS_START_MENU_FOLDER, exist_ok=True)
-        except Exception as e:
-            print(f"Error creating Start Menu folder: {e}")
-            return False
-
-        # Get the path to the fetchtastic executable
-        fetchtastic_path = shutil.which("fetchtastic")
+        fetchtastic_path: Optional[str] = shutil.which("fetchtastic")
         if not fetchtastic_path:
             print("Error: fetchtastic executable not found in PATH.")
             return False
 
-        # Create batch files in the config directory instead of the Start Menu
-        batch_dir = os.path.join(CONFIG_DIR, "batch")
+        batch_dir: str = os.path.join(CONFIG_DIR, "batch")
         if not os.path.exists(batch_dir):
             os.makedirs(batch_dir, exist_ok=True)
 
-        # Create a batch file for download that pauses at the end
-        download_batch_path = os.path.join(batch_dir, "fetchtastic_download.bat")
+        # Define batch file paths
+        download_batch_path: str = os.path.join(batch_dir, "fetchtastic_download.bat")
+        repo_batch_path: str = os.path.join(batch_dir, "fetchtastic_repo_browse.bat")
+        setup_batch_path: str = os.path.join(batch_dir, "fetchtastic_setup.bat")
+        update_batch_path: str = os.path.join(batch_dir, "fetchtastic_update.bat")
+
+        # Create batch files
         with open(download_batch_path, "w") as f:
-            f.write("@echo off\n")
-            f.write("title Fetchtastic Download\n")
-            f.write(f'"{fetchtastic_path}" download\n')
-            f.write("echo.\n")
-            f.write("echo Press any key to close this window...\n")
-            f.write("pause >nul\n")
-
-        # Create a batch file for repo browse that pauses at the end
-        repo_batch_path = os.path.join(batch_dir, "fetchtastic_repo_browse.bat")
+            f.write(f'@echo off\ntitle Fetchtastic Download\n"{fetchtastic_path}" download\necho.\necho Press any key to close...\npause >nul\n')
         with open(repo_batch_path, "w") as f:
-            f.write("@echo off\n")
-            f.write("title Fetchtastic Repository Browser\n")
-            f.write(f'"{fetchtastic_path}" repo browse\n')
-            f.write("echo.\n")
-            f.write("echo Press any key to close this window...\n")
-            f.write("pause >nul\n")
-
-        # Create a batch file for setup that pauses at the end
-        setup_batch_path = os.path.join(batch_dir, "fetchtastic_setup.bat")
+            f.write(f'@echo off\ntitle Fetchtastic Repository Browser\n"{fetchtastic_path}" repo browse\necho.\necho Press any key to close...\npause >nul\n')
         with open(setup_batch_path, "w") as f:
-            f.write("@echo off\n")
-            f.write("title Fetchtastic Setup\n")
-            f.write(f'"{fetchtastic_path}" setup\n')
-            f.write("echo.\n")
-            f.write("echo Press any key to close this window...\n")
-            f.write("pause >nul\n")
+            f.write(f'@echo off\ntitle Fetchtastic Setup\n"{fetchtastic_path}" setup\necho.\necho Press any key to close...\npause >nul\n')
 
-        # Create a batch file for checking updates that pauses at the end
-        update_batch_path = os.path.join(batch_dir, "fetchtastic_update.bat")
-        with open(update_batch_path, "w") as f:
-            f.write("@echo off\n")
-            f.write("title Fetchtastic Update Check\n")
-            f.write("echo Checking for Fetchtastic updates...\n")
-            f.write("echo.\n")
-            # Use pipx to upgrade fetchtastic
-            pipx_path = shutil.which("pipx")
-            if pipx_path:
-                f.write(f'"{pipx_path}" upgrade fetchtastic\n')
-            else:
-                # Fallback to pip if pipx is not found
-                pip_path = shutil.which("pip")
-                if pip_path:
-                    f.write(f'"{pip_path}" install --upgrade fetchtastic\n')
-                else:
-                    f.write("echo Error: Neither pipx nor pip was found in PATH.\n")
-                    f.write("echo Please install pipx or pip to upgrade Fetchtastic.\n")
-            f.write("echo.\n")
-            f.write("echo Press any key to close this window...\n")
-            f.write("pause >nul\n")
-
-        # Create shortcut for fetchtastic download (using batch file)
-        download_shortcut_path = os.path.join(
-            WINDOWS_START_MENU_FOLDER, "Fetchtastic Download.lnk"
-        )
-        winshell.CreateShortcut(
-            Path=download_shortcut_path,
-            Target=download_batch_path,
-            Description="Download Meshtastic firmware and APKs",
-            Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0),
-        )
-
-        # Create shortcut for fetchtastic setup (using batch file)
-        setup_shortcut_path = os.path.join(
-            WINDOWS_START_MENU_FOLDER, "Fetchtastic Setup.lnk"
-        )
-        winshell.CreateShortcut(
-            Path=setup_shortcut_path,
-            Target=setup_batch_path,
-            Description="Configure Fetchtastic settings",
-            Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0),
-        )
-
-        # Create shortcut for fetchtastic repo browse (using batch file)
-        repo_shortcut_path = os.path.join(
-            WINDOWS_START_MENU_FOLDER, "Fetchtastic Repository Browser.lnk"
-        )
-        winshell.CreateShortcut(
-            Path=repo_shortcut_path,
-            Target=repo_batch_path,
-            Description="Browse and download files from the Meshtastic repository",
-            Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0),
-        )
-
-        # Create shortcut to configuration file
-        config_shortcut_path = os.path.join(
-            WINDOWS_START_MENU_FOLDER, "Fetchtastic Configuration.lnk"
-        )
-        winshell.CreateShortcut(
-            Path=config_shortcut_path,
-            Target=config_file_path,
-            Description="Edit Fetchtastic Configuration File (fetchtastic.yaml)",
-            Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0),
-        )
-
-        # Create shortcut to Meshtastic base directory
-        base_dir_shortcut_path = os.path.join(
-            WINDOWS_START_MENU_FOLDER, "Meshtastic Downloads.lnk"
-        )
-        winshell.CreateShortcut(
-            Path=base_dir_shortcut_path,
-            Target=base_dir,
-            Description="Open Meshtastic Downloads Folder",
-            Icon=(
-                os.path.join(os.environ.get("WINDIR", "C:\\Windows"), "explorer.exe"),
-                0,
-            ),
-        )
-
-        # Create shortcut to log file
-        # First check if there's a log file in the base directory (old location)
-        base_log_file = os.path.join(BASE_DIR, "fetchtastic.log")
-        if os.path.exists(base_log_file):
-            log_file = base_log_file
+        pipx_path: Optional[str] = shutil.which("pipx")
+        pip_path: Optional[str] = shutil.which("pip")
+        update_command: str = ""
+        if pipx_path:
+            update_command = f'"{pipx_path}" upgrade fetchtastic'
+        elif pip_path:
+            update_command = f'"{pip_path}" install --upgrade fetchtastic'
         else:
-            # Use the platformdirs log location
-            log_dir = platformdirs.user_log_dir("fetchtastic")
-            log_file = os.path.join(log_dir, "fetchtastic.log")
-            # Create log directory if it doesn't exist
-            if not os.path.exists(log_dir):
-                os.makedirs(log_dir)
-            # Create an empty log file if it doesn't exist
-            if not os.path.exists(log_file):
-                with open(log_file, "w") as f:
-                    f.write("# Fetchtastic log file\n")
-                print(f"Created empty log file at: {log_file}")
+            update_command = 'echo Error: Neither pipx nor pip was found. Cannot create update shortcut.\npause'
 
-        log_shortcut_path = os.path.join(
-            WINDOWS_START_MENU_FOLDER, "Fetchtastic Log.lnk"
-        )
-        winshell.CreateShortcut(
-            Path=log_shortcut_path,
-            Target=log_file,
-            Description="View Fetchtastic Log File",
-            Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0),
-        )
+        with open(update_batch_path, "w") as f:
+            f.write(f'@echo off\ntitle Fetchtastic Update Check\necho Checking for Fetchtastic updates...\necho.\n{update_command}\necho.\necho Press any key to close...\npause >nul\n')
 
-        # Create shortcut for checking updates
-        update_shortcut_path = os.path.join(
-            WINDOWS_START_MENU_FOLDER, "Fetchtastic - Check for Updates.lnk"
-        )
-        winshell.CreateShortcut(
-            Path=update_shortcut_path,
-            Target=update_batch_path,
-            Description="Check for and install Fetchtastic updates",
-            Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0),
-        )
+        # Create shortcuts
+        shortcuts_to_create: List[Dict[str, Any]] = [
+            {"path": os.path.join(WINDOWS_START_MENU_FOLDER, "Fetchtastic Download.lnk"), "target": download_batch_path, "desc": "Download Meshtastic firmware and APKs"},
+            {"path": os.path.join(WINDOWS_START_MENU_FOLDER, "Fetchtastic Setup.lnk"), "target": setup_batch_path, "desc": "Configure Fetchtastic settings"},
+            {"path": os.path.join(WINDOWS_START_MENU_FOLDER, "Fetchtastic Repository Browser.lnk"), "target": repo_batch_path, "desc": "Browse Meshtastic repository"},
+            {"path": os.path.join(WINDOWS_START_MENU_FOLDER, "Fetchtastic Configuration.lnk"), "target": config_file_path, "desc": "Edit Fetchtastic Configuration"},
+            {"path": os.path.join(WINDOWS_START_MENU_FOLDER, "Meshtastic Downloads.lnk"), "target": base_dir, "desc": "Open Meshtastic Downloads Folder"},
+            {"path": os.path.join(WINDOWS_START_MENU_FOLDER, "Fetchtastic - Check for Updates.lnk"), "target": update_batch_path, "desc": "Check for Fetchtastic updates"},
+        ]
 
-        print("Shortcuts created in Start Menu")
+        # Log file shortcut
+        log_dir: str = platformdirs.user_log_dir("fetchtastic") # type: ignore
+        log_file: str = os.path.join(log_dir, "fetchtastic.log")
+        if not os.path.exists(log_dir): os.makedirs(log_dir, exist_ok=True)
+        if not os.path.exists(log_file): open(log_file, 'a').close() # Create if not exists
+        shortcuts_to_create.append({"path": os.path.join(WINDOWS_START_MENU_FOLDER, "Fetchtastic Log.lnk"), "target": log_file, "desc": "View Fetchtastic Log File"})
+
+        for shortcut_info in shortcuts_to_create:
+            winshell.CreateShortcut( # type: ignore
+                Path=shortcut_info["path"],
+                Target=shortcut_info["target"],
+                Description=shortcut_info["desc"],
+                Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0) if ".bat" in shortcut_info["target"] or ".yaml" in shortcut_info["target"] or ".log" in shortcut_info["target"] else (str(os.environ.get("WINDIR", "C:\\Windows")), 0) # Basic folder icon
+            )
+        print("Shortcuts created/updated in Start Menu.")
         return True
     except Exception as e:
         print(f"Failed to create Windows Start Menu shortcuts: {e}")
         return False
 
-
-def create_config_shortcut(config_file_path, target_dir):
+def create_config_shortcut(config_file_path: str, target_dir: str) -> bool:
     """
-    Creates a shortcut to the configuration file in the target directory.
-    Only works on Windows.
+    Creates a shortcut to the configuration file in the target directory (Windows only).
 
     Args:
-        config_file_path: Path to the configuration file
-        target_dir: Directory where to create the shortcut
+        config_file_path (str): Full path to the configuration file (fetchtastic.yaml).
+        target_dir (str): Directory where the shortcut will be created.
 
     Returns:
-        bool: True if shortcut was created successfully, False otherwise
+        bool: True if shortcut creation was successful or not applicable, False on error.
     """
     if platform.system() != "Windows" or not WINDOWS_MODULES_AVAILABLE:
-        return False
+        return False # Not applicable on non-Windows or if winshell is missing
 
+    shortcut_path: str = os.path.join(target_dir, "fetchtastic_config_shortcut.lnk") # More descriptive name
     try:
-        shortcut_path = os.path.join(target_dir, "fetchtastic_yaml.lnk")
-
-        # Create the shortcut using winshell
-        winshell.CreateShortcut(
+        winshell.CreateShortcut( # type: ignore
             Path=shortcut_path,
             Target=config_file_path,
             Description="Fetchtastic Configuration File (fetchtastic.yaml)",
-            Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0),
+            Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0)
         )
-
         print(f"Created shortcut to configuration file at: {shortcut_path}")
         return True
     except Exception as e:
         print(f"Failed to create shortcut to configuration file: {e}")
         return False
 
-
-def create_startup_shortcut():
+def create_startup_shortcut() -> bool:
     """
-    Creates a shortcut to run fetchtastic on Windows startup.
-    Only works on Windows.
+    Creates a shortcut to run Fetchtastic on Windows startup.
 
     Returns:
-        bool: True if shortcut was created successfully, False otherwise
+        bool: True if shortcut creation was successful or not applicable, False on error.
     """
     if platform.system() != "Windows" or not WINDOWS_MODULES_AVAILABLE:
         return False
 
     try:
-        # Get the path to the fetchtastic executable
-        fetchtastic_path = shutil.which("fetchtastic")
+        fetchtastic_path: Optional[str] = shutil.which("fetchtastic")
         if not fetchtastic_path:
             print("Error: fetchtastic executable not found in PATH.")
             return False
 
-        # Get the startup folder path
-        startup_folder = winshell.startup()
-
-        # Create batch files in the config directory instead of the startup folder
-        batch_dir = os.path.join(CONFIG_DIR, "batch")
+        startup_folder: str = winshell.startup() # type: ignore
+        batch_dir: str = os.path.join(CONFIG_DIR, "batch")
         if not os.path.exists(batch_dir):
             os.makedirs(batch_dir, exist_ok=True)
 
-        # Create a batch file for startup that runs silently
-        batch_path = os.path.join(batch_dir, "fetchtastic_startup.bat")
+        batch_path: str = os.path.join(batch_dir, "fetchtastic_startup.bat")
         with open(batch_path, "w") as f:
-            f.write("@echo off\n")
-            f.write("title Fetchtastic Automatic Download\n")
-            f.write(f'"{fetchtastic_path}" download\n')
-            # Don't pause at the end for startup - we want it to run silently
+            f.write(f'@echo off\ntitle Fetchtastic Automatic Download\n"{fetchtastic_path}" download\n')
 
-        # Create the shortcut to the batch file
-        shortcut_path = os.path.join(startup_folder, "Fetchtastic.lnk")
-
-        # Use direct shortcut creation without WindowStyle parameter
-        try:
-            # First try with WindowStyle parameter (newer versions of winshell)
-            winshell.CreateShortcut(
-                Path=shortcut_path,
-                Target=batch_path,
-                Description="Run Fetchtastic on startup",
-                Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0),
-                WindowStyle=7,  # Minimized
-            )
-        except TypeError:
-            # If WindowStyle is not supported, use basic parameters
-            winshell.CreateShortcut(
-                Path=shortcut_path,
-                Target=batch_path,
-                Description="Run Fetchtastic on startup",
-                Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0),
-            )
-
+        shortcut_path: str = os.path.join(startup_folder, "Fetchtastic.lnk")
+        winshell.CreateShortcut( # type: ignore
+            Path=shortcut_path,
+            Target=batch_path,
+            Description="Run Fetchtastic on startup",
+            Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0),
+            WindowStyle=7,  # 7 for SW_SHOWMINNOACTIVE (minimized and not activated)
+        )
         print(f"Created startup shortcut at: {shortcut_path}")
         return True
     except Exception as e:
         print(f"Failed to create startup shortcut: {e}")
         return False
 
+def copy_to_clipboard_func(text: str) -> bool:
+    """
+    Copies the provided text to the system clipboard.
+    Supports Termux, Windows, macOS, and Linux (via xclip/xsel).
 
-def copy_to_clipboard_func(text):
+    Args:
+        text (str): The text to copy to the clipboard.
+
+    Returns:
+        bool: True if copying was successful, False otherwise.
     """
-    Copies the provided text to the clipboard, depending on the platform.
-    """
-    if is_termux():
-        # Termux environment
-        try:
-            subprocess.run(
-                ["termux-clipboard-set"], input=text.encode("utf-8"), check=True
-            )
+    try:
+        if is_termux():
+            subprocess.run(["termux-clipboard-set"], input=text.encode("utf-8"), check=True)
             return True
-        except Exception as e:
-            print(f"An error occurred while copying to clipboard: {e}")
-            return False
-    elif platform.system() == "Windows" and WINDOWS_MODULES_AVAILABLE:
-        # Windows environment with win32com available
-        try:
-            import win32clipboard
-
+        elif platform.system() == "Windows" and WINDOWS_MODULES_AVAILABLE:
+            import win32clipboard # type: ignore
             win32clipboard.OpenClipboard()
             win32clipboard.EmptyClipboard()
             win32clipboard.SetClipboardText(text)
             win32clipboard.CloseClipboard()
             return True
-        except Exception as e:
-            print(f"An error occurred while copying to clipboard: {e}")
-            return False
-    else:
-        # Other platforms
-        system = platform.system()
-        try:
-            if system == "Darwin":
-                # macOS
-                subprocess.run("pbcopy", text=True, input=text, check=True)
+        elif platform.system() == "Darwin": # macOS
+            subprocess.run("pbcopy", text=True, input=text, check=True)
+            return True
+        elif platform.system() == "Linux":
+            if shutil.which("xclip"):
+                subprocess.run(["xclip", "-selection", "clipboard"], input=text.encode("utf-8"), check=True)
                 return True
-            elif system == "Linux":
-                # Linux
-                if shutil.which("xclip"):
-                    subprocess.run(
-                        ["xclip", "-selection", "clipboard"],
-                        input=text.encode("utf-8"),
-                        check=True,
-                    )
-                    return True
-                elif shutil.which("xsel"):
-                    subprocess.run(
-                        ["xsel", "--clipboard", "--input"],
-                        input=text.encode("utf-8"),
-                        check=True,
-                    )
-                    return True
-                else:
-                    print(
-                        "xclip or xsel not found. Install xclip or xsel to use clipboard functionality."
-                    )
-                    return False
+            elif shutil.which("xsel"):
+                subprocess.run(["xsel", "--clipboard", "--input"], input=text.encode("utf-8"), check=True)
+                return True
             else:
-                print("Clipboard functionality is not supported on this platform.")
+                print("xclip or xsel not found for clipboard functionality.")
                 return False
-        except Exception as e:
-            print(f"An error occurred while copying to clipboard: {e}")
+        else:
+            print("Clipboard functionality not supported on this platform.")
             return False
+    except Exception as e:
+        print(f"An error occurred while copying to clipboard: {e}")
+        return False
 
+def install_termux_packages() -> None:
+    """Installs required Termux packages: termux-api, termux-services, cronie."""
+    packages_to_install: List[str] = []
+    if shutil.which("termux-battery-status") is None: packages_to_install.append("termux-api")
+    if shutil.which("sv-enable") is None: packages_to_install.append("termux-services")
+    if shutil.which("crond") is None: packages_to_install.append("cronie")
 
-def install_termux_packages():
-    """
-    Installs required packages in the Termux environment.
-    """
-    # Install termux-api, termux-services, and cronie if they are not installed
-    packages_to_install = []
-    # Check for termux-api
-    if shutil.which("termux-battery-status") is None:
-        packages_to_install.append("termux-api")
-    # Check for termux-services
-    if shutil.which("sv-enable") is None:
-        packages_to_install.append("termux-services")
-    # Check for cronie
-    if shutil.which("crond") is None:
-        packages_to_install.append("cronie")
     if packages_to_install:
-        print("Installing required Termux packages...")
-        subprocess.run(["pkg", "install"] + packages_to_install + ["-y"], check=True)
-        print("Required Termux packages installed.")
+        print(f"Installing required Termux packages: {', '.join(packages_to_install)}...")
+        try:
+            subprocess.run(["pkg", "install"] + packages_to_install + ["-y"], check=True)
+            print("Required Termux packages installed.")
+        except subprocess.CalledProcessError as e:
+            print(f"Error installing Termux packages: {e}")
+        except FileNotFoundError:
+            print("Error: 'pkg' command not found. Are you in Termux?")
     else:
         print("All required Termux packages are already installed.")
 
-
-def setup_storage():
-    """
-    Runs termux-setup-storage to set up storage access in Termux.
-    """
-    # Run termux-setup-storage
+def setup_storage() -> None:
+    """Runs 'termux-setup-storage' to request storage access in Termux."""
     print("Setting up Termux storage access...")
     try:
         subprocess.run(["termux-setup-storage"], check=True)
-    except subprocess.CalledProcessError:
-        print("An error occurred while setting up Termux storage.")
+    except subprocess.CalledProcessError as e:
+        print(f"Error during 'termux-setup-storage': {e}")
         print("Please grant storage permissions when prompted.")
+    except FileNotFoundError:
+        print("Error: 'termux-setup-storage' command not found. Are you in Termux with Termux:API installed?")
 
-
-def install_crond():
-    """
-    Installs and enables the crond service in Termux.
-    """
+def install_crond() -> None:
+    """Installs and enables the crond service in Termux if not already present."""
     if is_termux():
         try:
-            crond_path = shutil.which("crond")
-            if crond_path is None:
-                print("Installing cronie...")
-                # Install cronie
+            if shutil.which("crond") is None:
+                print("Installing cronie (for crond)...")
                 subprocess.run(["pkg", "install", "cronie", "-y"], check=True)
                 print("cronie installed.")
             else:
-                print("cronie is already installed.")
-            # Enable crond service
+                print("cronie (crond) is already installed.")
+            # Ensure termux-services is available for sv-enable
+            if shutil.which("sv-enable") is None:
+                print("Installing termux-services...")
+                subprocess.run(["pkg", "install", "termux-services", "-y"], check=True)
+                print("termux-services installed.")
+
             subprocess.run(["sv-enable", "crond"], check=True)
             print("crond service enabled.")
-        except Exception as e:
+        except Exception as e: # Catch subprocess.CalledProcessError and FileNotFoundError
             print(f"An error occurred while installing or enabling crond: {e}")
-    else:
-        # For non-Termux environments, crond installation is not needed
-        pass
 
-
-def setup_cron_job():
+def setup_cron_job() -> None:
     """
-    Sets up the cron job to run Fetchtastic at scheduled times.
-    On Windows, this function does nothing as cron jobs are not supported.
+    Sets up a daily cron job to run 'fetchtastic download' at 3 AM.
+    Handles existing crontab entries to avoid duplicates.
+    Does nothing on Windows.
     """
-    # Skip cron job setup on Windows
     if platform.system() == "Windows":
         print("Cron jobs are not supported on Windows.")
         return
 
     try:
-        # Get current crontab entries
-        result = subprocess.run(
-            ["crontab", "-l"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        if result.returncode != 0:
-            existing_cron = ""
-        else:
-            existing_cron = result.stdout.strip()
+        fetchtastic_path: Optional[str] = shutil.which("fetchtastic")
+        if not fetchtastic_path:
+            print("Error: fetchtastic executable not found in PATH. Cannot set up cron job.")
+            return
 
-        # Remove existing Fetchtastic cron jobs (excluding @reboot ones)
-        cron_lines = [line for line in existing_cron.splitlines() if line.strip()]
-        cron_lines = [
-            line
-            for line in cron_lines
-            if not (
-                ("# fetchtastic" in line or "fetchtastic download" in line)
-                and not line.strip().startswith("@reboot")
-            )
-        ]
+        crontab_l_cmd: List[str] = ["crontab", "-l"]
+        current_crontab: str = ""
+        try:
+            result = subprocess.run(crontab_l_cmd, capture_output=True, text=True, check=False)
+            if result.returncode == 0:
+                current_crontab = result.stdout
+        except FileNotFoundError: # crontab command might not exist
+             print("crontab command not found. Cannot setup cron job.")
+             return
 
-        # Add new cron job
-        if is_termux():
-            cron_lines.append("0 3 * * * fetchtastic download  # fetchtastic")
-        else:
-            # Non-Termux environments
-            fetchtastic_path = shutil.which("fetchtastic")
-            if not fetchtastic_path:
-                print("Error: fetchtastic executable not found in PATH.")
-                return
-            cron_lines.append(f"0 3 * * * {fetchtastic_path} download  # fetchtastic")
 
-        # Join cron lines
-        new_cron = "\n".join(cron_lines)
+        job_command: str = f"{fetchtastic_path} download"
+        job_comment: str = "# fetchtastic"
+        cron_job_line: str = f"0 3 * * * {job_command}  {job_comment}"
 
-        # Ensure new_cron ends with a newline
-        if not new_cron.endswith("\n"):
-            new_cron += "\n"
+        new_crontab_lines: List[str] = []
+        job_exists: bool = False
+        for line in current_crontab.splitlines():
+            if job_command in line and job_comment in line:
+                job_exists = True
+                new_crontab_lines.append(cron_job_line) # Ensure our exact line is there
+            elif "# fetchtastic" in line or "fetchtastic download" in line : # Remove other old fetchtastic jobs
+                continue
+            else:
+                new_crontab_lines.append(line)
 
-        # Update crontab
+        if not job_exists:
+            new_crontab_lines.append(cron_job_line)
+
+        new_crontab: str = "\n".join(new_crontab_lines)
+        if not new_crontab.endswith("\n"): # Crontab needs a trailing newline
+            new_crontab += "\n"
+
         process = subprocess.Popen(["crontab", "-"], stdin=subprocess.PIPE, text=True)
-        process.communicate(input=new_cron)
-        print("Cron job added to run Fetchtastic daily at 3 AM.")
+        process.communicate(input=new_crontab)
+        if process.returncode == 0:
+            print("Cron job for Fetchtastic set up successfully to run daily at 3 AM.")
+        else:
+            print("Error setting up cron job. Please check crontab permissions or syntax.")
+
     except Exception as e:
         print(f"An error occurred while setting up the cron job: {e}")
 
-
-def remove_cron_job():
+def remove_cron_job() -> None:
     """
-    Removes the Fetchtastic daily cron job from the crontab.
-    On Windows, this function does nothing as cron jobs are not supported.
+    Removes Fetchtastic daily cron jobs from the crontab.
+    Does nothing on Windows.
     """
-    # Skip cron job removal on Windows
     if platform.system() == "Windows":
-        print("Cron jobs are not supported on Windows.")
         return
 
     try:
-        # Get current crontab entries
-        result = subprocess.run(
-            ["crontab", "-l"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        if result.returncode == 0:
-            existing_cron = result.stdout.strip()
-            # Remove existing Fetchtastic cron jobs (excluding @reboot)
-            cron_lines = [line for line in existing_cron.splitlines() if line.strip()]
-            cron_lines = [
-                line
-                for line in cron_lines
-                if not (
-                    ("# fetchtastic" in line or "fetchtastic download" in line)
-                    and not line.strip().startswith("@reboot")
-                )
-            ]
-            # Join cron lines
-            new_cron = "\n".join(cron_lines)
-            # Ensure new_cron ends with a newline
-            if not new_cron.endswith("\n"):
-                new_cron += "\n"
-            # Update crontab
-            process = subprocess.Popen(
-                ["crontab", "-"], stdin=subprocess.PIPE, text=True
-            )
-            process.communicate(input=new_cron)
-            print("Daily cron job removed.")
+        crontab_l_cmd: List[str] = ["crontab", "-l"]
+        current_crontab: str = ""
+        try:
+            result = subprocess.run(crontab_l_cmd, capture_output=True, text=True, check=False)
+            if result.returncode == 0:
+                current_crontab = result.stdout
+        except FileNotFoundError:
+            print("crontab command not found. Cannot remove cron job.")
+            return
+
+        new_crontab_lines: List[str] = []
+        removed: bool = False
+        for line in current_crontab.splitlines():
+            if ("# fetchtastic" in line or "fetchtastic download" in line) and not line.strip().startswith("@reboot"):
+                removed = True
+                continue
+            new_crontab_lines.append(line)
+
+        if removed:
+            new_crontab: str = "\n".join(new_crontab_lines)
+            if not new_crontab.endswith("\n") and new_crontab: # Crontab needs a trailing newline if not empty
+                new_crontab += "\n"
+
+            process = subprocess.Popen(["crontab", "-"], stdin=subprocess.PIPE, text=True)
+            process.communicate(input=new_crontab)
+            if process.returncode == 0:
+                print("Fetchtastic daily cron job removed.")
+            else:
+                print("Error removing cron job from crontab.")
+        else:
+            print("No Fetchtastic daily cron job found to remove.")
+
     except Exception as e:
         print(f"An error occurred while removing the cron job: {e}")
 
+def setup_boot_script() -> None:
+    """Sets up a boot script in Termux to run Fetchtastic on device boot."""
+    if not is_termux():
+        print("Boot script setup is only for Termux.")
+        return
 
-def setup_boot_script():
-    """
-    Sets up a boot script in Termux to run Fetchtastic on device boot.
-    """
-    boot_dir = os.path.expanduser("~/.termux/boot")
-    boot_script = os.path.join(boot_dir, "fetchtastic.sh")
+    boot_dir: str = os.path.expanduser("~/.termux/boot")
+    boot_script_path: str = os.path.join(boot_dir, "fetchtastic.sh") # Corrected variable name
     if not os.path.exists(boot_dir):
-        os.makedirs(boot_dir)
-        print("Created the Termux:Boot directory.")
-        print(
-            "Please install Termux:Boot from F-Droid and run it once to enable boot scripts."
-        )
-    # Write the boot script
-    with open(boot_script, "w") as f:
-        f.write("#!/data/data/com.termux/files/usr/bin/sh\n")
-        f.write("sleep 30\n")
-        f.write("fetchtastic download\n")
-    os.chmod(boot_script, 0o700)
-    print("Boot script created to run Fetchtastic on device boot.")
-    print(
-        "Note: The script may not run on boot until you have installed and run Termux:Boot at least once."
-    )
-
-
-def remove_boot_script():
-    """
-    Removes the boot script from Termux.
-    """
-    boot_script = os.path.expanduser("~/.termux/boot/fetchtastic.sh")
-    if os.path.exists(boot_script):
-        os.remove(boot_script)
-        print("Boot script removed.")
-
-
-def setup_reboot_cron_job():
-    """
-    Sets up a cron job to run Fetchtastic on system startup (non-Termux).
-    On Windows, this function does nothing as cron jobs are not supported.
-    """
-    # Skip cron job setup on Windows
-    if platform.system() == "Windows":
-        print("Cron jobs are not supported on Windows.")
-        return
-
-    try:
-        # Get current crontab entries
-        result = subprocess.run(
-            ["crontab", "-l"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        if result.returncode != 0:
-            existing_cron = ""
-        else:
-            existing_cron = result.stdout.strip()
-
-        # Remove existing @reboot Fetchtastic cron jobs
-        cron_lines = [line for line in existing_cron.splitlines() if line.strip()]
-        cron_lines = [
-            line
-            for line in cron_lines
-            if not (
-                ("# fetchtastic" in line or "fetchtastic download" in line)
-                and line.strip().startswith("@reboot")
-            )
-        ]
-
-        # Add new @reboot cron job
-        fetchtastic_path = shutil.which("fetchtastic")
-        if not fetchtastic_path:
-            print("Error: fetchtastic executable not found in PATH.")
+        try:
+            os.makedirs(boot_dir)
+            print(f"Created Termux:Boot directory: {boot_dir}")
+        except Exception as e:
+            print(f"Error creating Termux:Boot directory {boot_dir}: {e}")
             return
-        cron_lines.append(f"@reboot {fetchtastic_path} download  # fetchtastic")
 
-        # Join cron lines
-        new_cron = "\n".join(cron_lines)
-
-        # Ensure new_cron ends with a newline
-        if not new_cron.endswith("\n"):
-            new_cron += "\n"
-
-        # Update crontab
-        process = subprocess.Popen(["crontab", "-"], stdin=subprocess.PIPE, text=True)
-        process.communicate(input=new_cron)
-        print("Reboot cron job added to run Fetchtastic on system startup.")
+    script_content: str = "#!/data/data/com.termux/files/usr/bin/sh\nsleep 30\nfetchtastic download\n"
+    try:
+        with open(boot_script_path, "w") as f:
+            f.write(script_content)
+        os.chmod(boot_script_path, 0o700)
+        print(f"Boot script created at {boot_script_path}")
+        print("Note: Termux:Boot app must be installed and run once to enable boot scripts.")
     except Exception as e:
-        print(f"An error occurred while setting up the reboot cron job: {e}")
+        print(f"Error creating boot script {boot_script_path}: {e}")
 
-
-def remove_reboot_cron_job():
-    """
-    Removes the reboot cron job from the crontab.
-    On Windows, this function does nothing as cron jobs are not supported.
-    """
-    # Skip cron job removal on Windows
-    if platform.system() == "Windows":
-        print("Cron jobs are not supported on Windows.")
+def remove_boot_script() -> None:
+    """Removes the Fetchtastic boot script from Termux."""
+    if not is_termux():
+        # This function is Termux-specific
         return
-    try:
-        # Get current crontab entries
-        result = subprocess.run(
-            ["crontab", "-l"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        if result.returncode == 0:
-            existing_cron = result.stdout.strip()
-            # Remove existing @reboot Fetchtastic cron jobs
-            cron_lines = [line for line in existing_cron.splitlines() if line.strip()]
-            cron_lines = [
-                line
-                for line in cron_lines
-                if not (
-                    ("# fetchtastic" in line or "fetchtastic download" in line)
-                    and line.strip().startswith("@reboot")
-                )
-            ]
-            # Join cron lines
-            new_cron = "\n".join(cron_lines)
-            # Ensure new_cron ends with a newline
-            if not new_cron.endswith("\n"):
-                new_cron += "\n"
-            # Update crontab
-            process = subprocess.Popen(
-                ["crontab", "-"], stdin=subprocess.PIPE, text=True
-            )
-            process.communicate(input=new_cron)
-            print("Reboot cron job removed.")
-    except Exception as e:
-        print(f"An error occurred while removing the reboot cron job: {e}")
 
+    boot_script_path: str = os.path.expanduser("~/.termux/boot/fetchtastic.sh")
+    if os.path.exists(boot_script_path):
+        try:
+            os.remove(boot_script_path)
+            print(f"Boot script {boot_script_path} removed.")
+        except Exception as e:
+            print(f"Error removing boot script {boot_script_path}: {e}")
+    else:
+        print("No Fetchtastic boot script found to remove.")
 
-def check_cron_job_exists():
+def setup_reboot_cron_job() -> None:
     """
-    Checks if a Fetchtastic daily cron job already exists.
-    On Windows, always returns False as cron jobs are not supported.
+    Sets up a cron job to run Fetchtastic on system startup (@reboot).
+    This is for non-Termux Linux/macOS systems. Does nothing on Windows.
     """
-    # Skip cron job check on Windows
-    if platform.system() == "Windows":
-        return False
+    if platform.system() == "Windows" or is_termux():
+        return
 
     try:
-        result = subprocess.run(
-            ["crontab", "-l"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        if result.returncode != 0:
-            return False
-        existing_cron = result.stdout.strip()
-        return any(
-            ("# fetchtastic" in line or "fetchtastic download" in line)
-            for line in existing_cron.splitlines()
-            if not line.strip().startswith("@reboot")
-        )
+        fetchtastic_path: Optional[str] = shutil.which("fetchtastic")
+        if not fetchtastic_path:
+            print("Error: fetchtastic executable not found in PATH. Cannot set up @reboot cron job.")
+            return
+
+        crontab_l_cmd: List[str] = ["crontab", "-l"]
+        current_crontab: str = ""
+        try:
+            result = subprocess.run(crontab_l_cmd, capture_output=True, text=True, check=False)
+            if result.returncode == 0:
+                current_crontab = result.stdout
+        except FileNotFoundError:
+            print("crontab command not found. Cannot setup @reboot cron job.")
+            return
+
+        job_command: str = f"{fetchtastic_path} download"
+        job_comment: str = "# fetchtastic_reboot"
+        reboot_job_line: str = f"@reboot {job_command}  {job_comment}"
+
+        new_crontab_lines: List[str] = []
+        job_exists: bool = False
+        for line in current_crontab.splitlines():
+            if job_command in line and job_comment in line and line.strip().startswith("@reboot"):
+                job_exists = True
+                new_crontab_lines.append(reboot_job_line) # Ensure our exact line
+            elif "# fetchtastic_reboot" in line or (line.strip().startswith("@reboot") and "fetchtastic download" in line):
+                continue # Remove other old reboot jobs for fetchtastic
+            else:
+                new_crontab_lines.append(line)
+
+        if not job_exists:
+            new_crontab_lines.append(reboot_job_line)
+
+        new_crontab: str = "\n".join(new_crontab_lines)
+        if not new_crontab.endswith("\n"): new_crontab += "\n"
+
+        process = subprocess.Popen(["crontab", "-"], stdin=subprocess.PIPE, text=True)
+        process.communicate(input=new_crontab)
+        if process.returncode == 0:
+            print("Cron job for Fetchtastic on reboot set up successfully.")
+        else:
+            print("Error setting up @reboot cron job.")
+
     except Exception as e:
-        print(f"An error occurred while checking for existing cron jobs: {e}")
-        return False
+        print(f"An error occurred while setting up the @reboot cron job: {e}")
 
-
-def check_boot_script_exists():
+def remove_reboot_cron_job() -> None:
     """
-    Checks if a Fetchtastic boot script already exists (Termux).
+    Removes Fetchtastic @reboot cron jobs from the crontab.
+    Does nothing on Windows or Termux.
     """
-    boot_script = os.path.expanduser("~/.termux/boot/fetchtastic.sh")
-    return os.path.exists(boot_script)
-
-
-def check_any_cron_jobs_exist():
-    """
-    Checks if any Fetchtastic cron jobs (daily or reboot) already exist.
-    On Windows, always returns False as cron jobs are not supported.
-    """
-    # Skip cron job check on Windows
-    if platform.system() == "Windows":
-        return False
+    if platform.system() == "Windows" or is_termux():
+        return
 
     try:
-        result = subprocess.run(
-            ["crontab", "-l"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        if result.returncode != 0:
-            return False
-        existing_cron = result.stdout.strip()
-        return any(
-            ("# fetchtastic" in line or "fetchtastic download" in line)
-            for line in existing_cron.splitlines()
-        )
+        crontab_l_cmd: List[str] = ["crontab", "-l"]
+        current_crontab: str = ""
+        try:
+            result = subprocess.run(crontab_l_cmd, capture_output=True, text=True, check=False)
+            if result.returncode == 0:
+                current_crontab = result.stdout
+        except FileNotFoundError:
+            print("crontab command not found. Cannot remove @reboot cron job.")
+            return
+
+        new_crontab_lines: List[str] = []
+        removed: bool = False
+        for line in current_crontab.splitlines():
+            if ("# fetchtastic_reboot" in line or ("fetchtastic download" in line and line.strip().startswith("@reboot"))):
+                removed = True
+                continue
+            new_crontab_lines.append(line)
+
+        if removed:
+            new_crontab: str = "\n".join(new_crontab_lines)
+            if not new_crontab.endswith("\n") and new_crontab: new_crontab += "\n"
+
+            process = subprocess.Popen(["crontab", "-"], stdin=subprocess.PIPE, text=True)
+            process.communicate(input=new_crontab)
+            if process.returncode == 0:
+                print("Fetchtastic @reboot cron job removed.")
+            else:
+                print("Error removing @reboot cron job from crontab.")
+        else:
+            print("No Fetchtastic @reboot cron job found to remove.")
+
     except Exception as e:
-        print(f"An error occurred while checking for existing cron jobs: {e}")
+        print(f"An error occurred while removing the @reboot cron job: {e}")
+
+def check_cron_job_exists() -> bool:
+    """
+    Checks if a Fetchtastic daily (non-reboot) cron job already exists.
+    Returns False on Windows or if crontab command fails.
+    """
+    if platform.system() == "Windows": return False
+    try:
+        result = subprocess.run(["crontab", "-l"], capture_output=True, text=True, check=False)
+        if result.returncode != 0: return False
+        return any(("# fetchtastic" in line or "fetchtastic download" in line) and not line.strip().startswith("@reboot") for line in result.stdout.splitlines())
+    except Exception: # Includes FileNotFoundError if crontab isn't installed
         return False
 
+def check_boot_script_exists() -> bool:
+    """Checks if a Fetchtastic boot script exists for Termux."""
+    if not is_termux(): return False
+    boot_script_path: str = os.path.expanduser("~/.termux/boot/fetchtastic.sh")
+    return os.path.exists(boot_script_path)
 
-def load_config(directory=None):
+def check_any_cron_jobs_exist() -> bool:
     """
-    Loads the configuration from the YAML file.
-    Updates global variables based on the loaded configuration.
+    Checks if any Fetchtastic-related cron jobs (daily or @reboot) exist.
+    Returns False on Windows or if crontab command fails.
+    """
+    if platform.system() == "Windows": return False
+    try:
+        result = subprocess.run(["crontab", "-l"], capture_output=True, text=True, check=False)
+        if result.returncode != 0: return False
+        return any(("# fetchtastic" in line or "fetchtastic download" in line) for line in result.stdout.splitlines())
+    except Exception:
+        return False
+
+def load_config(directory: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """
+    Loads the configuration from the YAML file (fetchtastic.yaml).
+    It first checks the platform-specific config directory, then a potential old location.
+    If `directory` is provided, it loads directly from there.
+    Updates the global BASE_DIR if found in the loaded config.
 
     Args:
-        directory: Optional directory to load config from. If None, uses the platformdirs location
-                  or falls back to the old location.
+        directory (Optional[str]): A specific directory to load the config from.
+                                   If None, uses standard locations.
+
+    Returns:
+        Optional[Dict[str, Any]]: The loaded configuration dictionary, or None if not found or error.
     """
     global BASE_DIR
+    config_path: Optional[str] = None
 
     if directory:
-        # This is for backward compatibility or when explicitly loading from a specific directory
         config_path = os.path.join(directory, "fetchtastic.yaml")
-        if not os.path.exists(config_path):
+    elif os.path.exists(CONFIG_FILE):
+        config_path = CONFIG_FILE
+    elif os.path.exists(OLD_CONFIG_FILE):
+        config_path = OLD_CONFIG_FILE
+        print(f"Using configuration from old location: {OLD_CONFIG_FILE}")
+        print(f"Consider running 'fetchtastic setup' to migrate to: {CONFIG_FILE}")
+
+    if config_path and os.path.exists(config_path):
+        try:
+            with open(config_path, "r") as f:
+                config_data: Dict[str, Any] = yaml.safe_load(f)
+            if isinstance(config_data, dict) and "BASE_DIR" in config_data: # type: ignore
+                BASE_DIR = str(config_data["BASE_DIR"]) # Update global
+            return config_data # type: ignore
+        except yaml.YAMLError as e:
+            print(f"Error parsing YAML configuration file {config_path}: {e}")
             return None
-
-        with open(config_path, "r") as f:
-            config = yaml.safe_load(f)
-
-        # Update global variables
-        BASE_DIR = directory
-
-        # If we're loading from a non-standard location, check if we should migrate
-        if config_path != CONFIG_FILE and config_path != OLD_CONFIG_FILE:
-            print(f"Found configuration in non-standard location: {config_path}")
-            print(f"Consider migrating to the standard location: {CONFIG_FILE}")
-
-        return config
-    else:
-        # First check if config exists in the platformdirs location
-        if os.path.exists(CONFIG_FILE):
-            with open(CONFIG_FILE, "r") as f:
-                config = yaml.safe_load(f)
-
-            # Update BASE_DIR from config
-            if "BASE_DIR" in config:
-                BASE_DIR = config["BASE_DIR"]
-
-            return config
-
-        # Then check the old location
-        elif os.path.exists(OLD_CONFIG_FILE):
-            with open(OLD_CONFIG_FILE, "r") as f:
-                config = yaml.safe_load(f)
-
-            # Update BASE_DIR from config
-            if "BASE_DIR" in config:
-                BASE_DIR = config["BASE_DIR"]
-
-            # Suggest migration
-            print(f"Using configuration from old location: {OLD_CONFIG_FILE}")
-            print(
-                f"Consider running setup to migrate to the new location: {CONFIG_FILE}"
-            )
-
-            return config
-
-        return None
+        except Exception as e:
+            print(f"Error loading configuration file {config_path}: {e}")
+            return None
+    return None
