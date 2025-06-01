@@ -498,13 +498,6 @@ def _get_latest_releases_data(url: str, scan_count: int = 10) -> List[Dict[str, 
 
 
 def _initial_setup_and_config() -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[str], bool, Optional[Dict[str, str]]]:
-        releases, key=lambda r: r["published_at"], reverse=True
-    )
-    # Limit the number of releases to be scanned
-    return sorted_releases[:scan_count] # scan_count is a parameter, no constant needed here.
-
-
-def _initial_setup_and_config() -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[str], bool, Optional[Dict[str, str]]]:
     """
     Handles initial setup including version display, configuration loading,
     logging setup, and directory creation.
