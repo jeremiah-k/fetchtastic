@@ -6,20 +6,25 @@ import platform
 import shutil
 import subprocess
 import sys
+from pathlib import Path # Added for add_file_logging
 
 import platformdirs
 
 from fetchtastic import downloader, repo_downloader, setup_config
-from fetchtastic.log_utils import log_error, log_info, setup_logging
+# Removed log_error, log_info, setup_logging
+from fetchtastic.log_utils import logger, add_file_logging, set_log_level # Import new logger utils
 from fetchtastic.setup_config import display_version_info, get_upgrade_command
 
 
 def main():
-    # Set up logging (console only for CLI commands)
-    setup_logging()
+    # Logging is initialized by log_utils on import for console.
+    # File logging and level adjustment will be done after arg parsing.
 
     parser = argparse.ArgumentParser(
         description="Fetchtastic - Meshtastic Firmware and APK Downloader"
+    )
+    parser.add_argument(
+        "-v", "--verbose", action="count", default=0, help="Increase logging verbosity (e.g., -v for INFO, -vv for DEBUG)"
     )
     subparsers = parser.add_subparsers(dest="command")
 
@@ -67,26 +72,43 @@ def main():
 
     args = parser.parse_args()
 
+    # Configure logging level based on verbosity
+    if args.verbose == 1:
+        set_log_level("INFO") # Already default, but explicit if -v is given
+    elif args.verbose >= 2:
+        set_log_level("DEBUG")
+
+    # Attempt to load config to get download_dir for file logging
+    # This is a bit of a chicken-and-egg if setup hasn't run, but okay for now.
+    # If config doesn't exist or DOWNLOAD_DIR isn't set, file logging won't be added here.
+    temp_config_for_log = setup_config.load_config()
+    if temp_config_for_log and temp_config_for_log.get("DOWNLOAD_DIR"):
+        log_file_dir = Path(temp_config_for_log["DOWNLOAD_DIR"]) / "logs"
+        add_file_logging(log_file_dir)
+    else:
+        logger.info("File logging not configured yet (config or DOWNLOAD_DIR not found).")
+
+
     if args.command == "setup":
         # Display version information
-        current_version, latest_version, update_available = display_version_info()
+        current_version, latest_version, update_available = display_version_info() # Uses logger internally now
 
         # Run the setup process
-        setup_config.run_setup()
+        setup_config.run_setup() # Uses logger internally now
 
         # Remind about updates at the end if available
-        if update_available:
+        if update_available and latest_version: # latest_version check added for safety
             upgrade_cmd = get_upgrade_command()
-            log_info("\nUpdate Available")
-            log_info(
+            logger.info("\nUpdate Available")
+            logger.info(
                 f"A newer version (v{latest_version}) of Fetchtastic is available!"
             )
-            log_info(f"Run '{upgrade_cmd}' to upgrade.")
+            logger.info(f"Run '{upgrade_cmd}' to upgrade.")
     elif args.command == "download":
         # Check if configuration exists
         exists, config_path = setup_config.config_exists()
         if not exists:
-            log_info("No configuration found. Running setup.")
+            logger.info("No configuration found. Running setup.")
             setup_config.run_setup()
         else:
             # Check if config is in old location and needs migration
@@ -94,25 +116,25 @@ def main():
                 setup_config.CONFIG_FILE
             ):
                 separator = "=" * 80
-                log_info(f"\n{separator}")
-                log_info("Configuration Migration")
-                log_info(separator)
+                logger.info(f"\n{separator}")
+                logger.info("Configuration Migration")
+                logger.info(separator)
                 # Automatically migrate without prompting
                 setup_config.prompt_for_migration()  # Just logs the migration message
                 if setup_config.migrate_config():
-                    log_info("Configuration successfully migrated to the new location.")
+                    logger.info("Configuration successfully migrated to the new location.")
                     # Update config_path to the new location
                     config_path = setup_config.CONFIG_FILE
                     # Re-load the configuration from the new location
-                    config = setup_config.load_config(config_path)
+                    # config = setup_config.load_config(config_path) # This line was here, but config is not used after this.
                 else:
-                    log_error(
+                    logger.error(
                         "Failed to migrate configuration. Continuing with old location."
                     )
-                log_info(f"{separator}\n")
+                logger.info(f"{separator}\n")
 
             # Display the config file location
-            log_info(f"Using configuration from: {config_path}")
+            logger.info(f"Using configuration from: {config_path}")
 
             # Run the downloader
             downloader.main()
@@ -123,8 +145,8 @@ def main():
             ntfy_server = config["NTFY_SERVER"].rstrip("/")
             ntfy_topic = config["NTFY_TOPIC"]
             full_url = f"{ntfy_server}/{ntfy_topic}"
-            print(f"Current NTFY topic URL: {full_url}")
-            print(f"Topic name: {ntfy_topic}")
+            logger.info(f"Current NTFY topic URL: {full_url}") # Was print
+            logger.info(f"Topic name: {ntfy_topic}") # Was print
 
             if setup_config.is_termux():
                 copy_prompt_text = "Do you want to copy the topic name to the clipboard? [y/n] (default: yes): "
@@ -133,20 +155,20 @@ def main():
                 copy_prompt_text = "Do you want to copy the topic URL to the clipboard? [y/n] (default: yes): "
                 text_to_copy = full_url
 
-            copy_to_clipboard = input(copy_prompt_text).strip().lower() or "y"
-            if copy_to_clipboard == "y":
+            copy_to_clipboard_input = input(copy_prompt_text).strip().lower() or "y" # Renamed variable
+            if copy_to_clipboard_input == "y":
                 success = copy_to_clipboard_func(text_to_copy)
                 if success:
                     if setup_config.is_termux():
-                        print("Topic name copied to clipboard.")
+                        logger.info("Topic name copied to clipboard.") # Was print
                     else:
-                        print("Topic URL copied to clipboard.")
+                        logger.info("Topic URL copied to clipboard.") # Was print
                 else:
-                    print("Failed to copy to clipboard.")
+                    logger.error("Failed to copy to clipboard.") # Was print
             else:
-                print("You can copy the topic information from above.")
+                logger.info("You can copy the topic information from above.") # Was print
         else:
-            print(
+            logger.warning( # Was print, changed to warning
                 "Notifications are not set up. Run 'fetchtastic setup' to configure notifications."
             )
     elif args.command == "clean":
@@ -154,14 +176,14 @@ def main():
         run_clean()
     elif args.command == "version":
         # Get version information
-        current_version, latest_version, update_available = display_version_info()
+        current_version, latest_version, update_available = display_version_info() # Uses logger
 
-        # Log version information
-        log_info(f"Fetchtastic v{current_version}")
-        if update_available and latest_version:
+        # Log version information (already done by display_version_info if using logger)
+        # logger.info(f"Fetchtastic v{current_version}") # Redundant if display_version_info logs
+        if update_available and latest_version: # latest_version check added for safety
             upgrade_cmd = get_upgrade_command()
-            log_info(f"A newer version (v{latest_version}) is available!")
-            log_info(f"Run '{upgrade_cmd}' to upgrade.")
+            logger.info(f"A newer version (v{latest_version}) is available!") # display_version_info should handle this
+            logger.info(f"Run '{upgrade_cmd}' to upgrade.") # display_version_info should handle this
     elif args.command == "help":
         # Check if a subcommand was specified
         if len(sys.argv) > 2:
@@ -178,7 +200,7 @@ def main():
                             if isinstance(action, argparse._SubParsersAction):
                                 browse_parser = action.choices.get("browse")
                                 if browse_parser:
-                                    print("\nRepo browse command help:")
+                                    logger.info("\nRepo browse command help:") # Was print
                                     browse_parser.print_help()
                                 break
                     elif repo_subcommand == "clean":
@@ -187,7 +209,7 @@ def main():
                             if isinstance(action, argparse._SubParsersAction):
                                 clean_parser = action.choices.get("clean")
                                 if clean_parser:
-                                    print("\nRepo clean command help:")
+                                    logger.info("\nRepo clean command help:") # Was print
                                     clean_parser.print_help()
                                 break
             else:
@@ -198,43 +220,43 @@ def main():
             parser.print_help()
     elif args.command == "repo":
         # Display version information
-        current_version, latest_version, update_available = display_version_info()
+        current_version, latest_version, update_available = display_version_info() # Uses logger
 
         # Handle repo subcommands
         exists, _ = setup_config.config_exists()
         if not exists:
-            print("No configuration found. Running setup.")
+            logger.info("No configuration found. Running setup.") # Was print
             setup_config.run_setup()
 
         config = setup_config.load_config()
         if not config:
-            print("Configuration not found. Please run 'fetchtastic setup' first.")
+            logger.error("Configuration not found. Please run 'fetchtastic setup' first.") # Was print
             return
 
         if args.repo_command == "browse":
             # Run the repository downloader
-            repo_downloader.main(config)
+            repo_downloader.main(config) # Assumes repo_downloader.main uses logger
 
             # Remind about updates at the end if available
-            if update_available:
+            if update_available and latest_version: # latest_version check
                 upgrade_cmd = get_upgrade_command()
-                log_info("\nUpdate Available")
-                log_info(
+                logger.info("\nUpdate Available")
+                logger.info(
                     f"A newer version (v{latest_version}) of Fetchtastic is available!"
                 )
-                log_info(f"Run '{upgrade_cmd}' to upgrade.")
+                logger.info(f"Run '{upgrade_cmd}' to upgrade.")
         elif args.repo_command == "clean":
             # Clean the repository directory
             run_repo_clean(config)
 
             # Remind about updates at the end if available
-            if update_available:
+            if update_available and latest_version: # latest_version check
                 upgrade_cmd = get_upgrade_command()
-                log_info("\nUpdate Available")
-                log_info(
+                logger.info("\nUpdate Available")
+                logger.info(
                     f"A newer version (v{latest_version}) of Fetchtastic is available!"
                 )
-                log_info(f"Run '{upgrade_cmd}' to upgrade.")
+                logger.info(f"Run '{upgrade_cmd}' to upgrade.")
         else:
             # No repo subcommand provided
             repo_parser.print_help()
@@ -254,7 +276,7 @@ def copy_to_clipboard_func(text):
             )
             return True
         except Exception as e:
-            print(f"An error occurred while copying to clipboard: {e}")
+            logger.error(f"An error occurred while copying to clipboard: {e}", exc_info=True) # Was print
             return False
     else:
         # Other platforms
@@ -281,20 +303,20 @@ def copy_to_clipboard_func(text):
                     )
                     return True
                 else:
-                    print(
+                    logger.warning( # Was print
                         "xclip or xsel not found. Install xclip or xsel to use clipboard functionality."
                     )
                     return False
             else:
-                print("Clipboard functionality is not supported on this platform.")
+                logger.warning("Clipboard functionality is not supported on this platform.") # Was print
                 return False
         except Exception as e:
-            print(f"An error occurred while copying to clipboard: {e}")
+            logger.error(f"An error occurred while copying to clipboard: {e}", exc_info=True) # Was print
             return False
 
 
 def run_clean():
-    print(
+    logger.info( # Was print
         "This will remove Fetchtastic configuration files, downloaded files, and cron job entries."
     )
     confirm = (
@@ -302,7 +324,7 @@ def run_clean():
         or "n"
     )
     if confirm != "y":
-        print("Clean operation cancelled.")
+        logger.info("Clean operation cancelled.") # Was print
         return
 
     # Remove configuration files (both old and new locations)
@@ -311,11 +333,11 @@ def run_clean():
 
     if os.path.exists(config_file):
         os.remove(config_file)
-        print(f"Removed configuration file: {config_file}")
+        logger.info(f"Removed configuration file: {config_file}") # Was print
 
     if os.path.exists(old_config_file):
         os.remove(old_config_file)
-        print(f"Removed old configuration file: {old_config_file}")
+        logger.info(f"Removed old configuration file: {old_config_file}") # Was print
 
     # Remove config directory if empty
     config_dir = setup_config.CONFIG_DIR
@@ -325,17 +347,17 @@ def run_clean():
         if os.path.exists(batch_dir):
             try:
                 shutil.rmtree(batch_dir)
-                print(f"Removed batch files directory: {batch_dir}")
+                logger.info(f"Removed batch files directory: {batch_dir}") # Was print
             except Exception as e:
-                print(f"Failed to delete batch directory {batch_dir}. Reason: {e}")
+                logger.error(f"Failed to delete batch directory {batch_dir}. Reason: {e}", exc_info=True) # Was print
 
         # Check if config directory is now empty
         if os.path.exists(config_dir) and not os.listdir(config_dir):
             try:
                 os.rmdir(config_dir)
-                print(f"Removed empty config directory: {config_dir}")
+                logger.info(f"Removed empty config directory: {config_dir}") # Was print
             except Exception as e:
-                print(f"Failed to delete config directory {config_dir}. Reason: {e}")
+                logger.error(f"Failed to delete config directory {config_dir}. Reason: {e}", exc_info=True) # Was print
 
     # Windows-specific cleanup
     if platform.system() == "Windows":
@@ -346,7 +368,7 @@ def run_clean():
 
             windows_modules_available = True
         except ImportError:
-            print(
+            logger.warning( # Was print
                 "Windows modules not available. Some Windows-specific items may not be removed."
             )
 
@@ -356,11 +378,11 @@ def run_clean():
             if os.path.exists(windows_start_menu_folder):
                 try:
                     shutil.rmtree(windows_start_menu_folder)
-                    print(
+                    logger.info( # Was print
                         f"Removed Start Menu shortcuts folder: {windows_start_menu_folder}"
                     )
                 except Exception as e:
-                    print(f"Failed to remove Start Menu shortcuts folder. Reason: {e}")
+                    logger.error(f"Failed to remove Start Menu shortcuts folder. Reason: {e}", exc_info=True) # Was print
                     # Try to remove individual files
                     try:
                         for item in os.listdir(windows_start_menu_folder):
@@ -368,14 +390,14 @@ def run_clean():
                             try:
                                 if os.path.isfile(item_path):
                                     os.remove(item_path)
-                                    print(f"Removed Start Menu shortcut: {item}")
+                                    logger.info(f"Removed Start Menu shortcut: {item}") # Was print
                                 elif os.path.isdir(item_path):
                                     shutil.rmtree(item_path)
-                                    print(f"Removed Start Menu directory: {item}")
+                                    logger.info(f"Removed Start Menu directory: {item}") # Was print
                             except Exception as e2:
-                                print(f"Failed to remove {item}. Reason: {e2}")
+                                logger.error(f"Failed to remove {item}. Reason: {e2}", exc_info=True) # Was print
                     except Exception as e3:
-                        print(f"Failed to list Start Menu shortcuts. Reason: {e3}")
+                        logger.error(f"Failed to list Start Menu shortcuts. Reason: {e3}", exc_info=True) # Was print
 
             # Remove startup shortcut
             try:
@@ -383,35 +405,35 @@ def run_clean():
                 startup_shortcut_path = os.path.join(startup_folder, "Fetchtastic.lnk")
                 if os.path.exists(startup_shortcut_path):
                     os.remove(startup_shortcut_path)
-                    print(f"Removed startup shortcut: {startup_shortcut_path}")
+                    logger.info(f"Removed startup shortcut: {startup_shortcut_path}") # Was print
             except Exception as e:
-                print(f"Failed to remove startup shortcut. Reason: {e}")
+                logger.error(f"Failed to remove startup shortcut. Reason: {e}", exc_info=True) # Was print
 
             # Remove config shortcut in base directory
-            download_dir = setup_config.BASE_DIR
-            config_shortcut_path = os.path.join(download_dir, "fetchtastic_yaml.lnk")
+            download_dir_base = setup_config.BASE_DIR # Renamed to avoid conflict
+            config_shortcut_path = os.path.join(download_dir_base, "fetchtastic_yaml.lnk")
             if os.path.exists(config_shortcut_path):
                 try:
                     os.remove(config_shortcut_path)
-                    print(f"Removed configuration shortcut: {config_shortcut_path}")
+                    logger.info(f"Removed configuration shortcut: {config_shortcut_path}") # Was print
                 except Exception as e:
-                    print(f"Failed to remove configuration shortcut. Reason: {e}")
+                    logger.error(f"Failed to remove configuration shortcut. Reason: {e}", exc_info=True) # Was print
 
     # Remove contents of download directory
-    download_dir = setup_config.BASE_DIR
-    if os.path.exists(download_dir):
-        for item in os.listdir(download_dir):
-            item_path = os.path.join(download_dir, item)
+    download_dir_base_content = setup_config.BASE_DIR # Renamed to avoid conflict
+    if os.path.exists(download_dir_base_content):
+        for item in os.listdir(download_dir_base_content):
+            item_path = os.path.join(download_dir_base_content, item)
             try:
                 if os.path.isfile(item_path) or os.path.islink(item_path):
                     os.remove(item_path)
-                    print(f"Removed file: {item_path}")
+                    logger.info(f"Removed file: {item_path}") # Was print
                 elif os.path.isdir(item_path):
                     shutil.rmtree(item_path)
-                    print(f"Removed directory: {item_path}")
+                    logger.info(f"Removed directory: {item_path}") # Was print
             except Exception as e:
-                print(f"Failed to delete {item_path}. Reason: {e}")
-        print(f"Cleaned contents of download directory: {download_dir}")
+                logger.error(f"Failed to delete {item_path}. Reason: {e}", exc_info=True) # Was print
+        logger.info(f"Cleaned contents of download directory: {download_dir_base_content}") # Was print
 
     # Remove cron job entries (non-Windows platforms)
     if platform.system() != "Windows":
@@ -445,15 +467,15 @@ def run_clean():
                     ["crontab", "-"], stdin=subprocess.PIPE, text=True
                 )
                 process.communicate(input=new_cron)
-                print("Removed Fetchtastic cron job entries.")
+                logger.info("Removed Fetchtastic cron job entries.") # Was print
         except Exception as e:
-            print(f"An error occurred while removing cron jobs: {e}")
+            logger.error(f"An error occurred while removing cron jobs: {e}", exc_info=True) # Was print
 
     # Remove boot script if exists (Termux-specific)
     boot_script = os.path.expanduser("~/.termux/boot/fetchtastic.sh")
     if os.path.exists(boot_script):
         os.remove(boot_script)
-        print(f"Removed boot script: {boot_script}")
+        logger.info(f"Removed boot script: {boot_script}") # Was print
 
     # Remove log file
     log_dir = platformdirs.user_log_dir("fetchtastic")
@@ -461,11 +483,11 @@ def run_clean():
     if os.path.exists(log_file):
         try:
             os.remove(log_file)
-            print(f"Removed log file: {log_file}")
+            logger.info(f"Removed log file: {log_file}") # Was print
         except Exception as e:
-            print(f"Failed to remove log file. Reason: {e}")
+            logger.error(f"Failed to remove log file. Reason: {e}", exc_info=True) # Was print
 
-    print(
+    logger.info( # Was print
         "The downloaded files and Fetchtastic configuration have been removed from your system."
     )
 
@@ -474,7 +496,7 @@ def run_repo_clean(config):
     """
     Cleans the repository download directory.
     """
-    print(
+    logger.info( # Was print
         "This will remove all files downloaded from the meshtastic.github.io repository."
     )
     confirm = (
@@ -482,20 +504,20 @@ def run_repo_clean(config):
         or "n"
     )
     if confirm != "y":
-        print("Clean operation cancelled.")
+        logger.info("Clean operation cancelled.") # Was print
         return
 
     # Clean the repo directory
     download_dir = config.get("DOWNLOAD_DIR")
     if not download_dir:
-        print("Download directory not configured.")
+        logger.error("Download directory not configured.") # Was print
         return
 
-    success = repo_downloader.clean_repo_directory(download_dir)
+    success = repo_downloader.clean_repo_directory(download_dir) # Assumes this func uses logger or returns status
     if success:
-        print("Repository directory cleaned successfully.")
+        logger.info("Repository directory cleaned successfully.") # Was print
     else:
-        print("Failed to clean repository directory.")
+        logger.error("Failed to clean repository directory.") # Was print
 
 
 def get_fetchtastic_version():

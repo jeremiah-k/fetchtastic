@@ -14,6 +14,7 @@ import yaml
 
 from fetchtastic import downloader
 from fetchtastic import menu_apk, menu_firmware
+from fetchtastic.log_utils import logger # Import new logger
 
 WINDOWS_MODULES_AVAILABLE: bool
 if platform.system() == "Windows":
@@ -22,11 +23,11 @@ if platform.system() == "Windows":
         WINDOWS_MODULES_AVAILABLE = True
     except ImportError:
         WINDOWS_MODULES_AVAILABLE = False
-        print(
+        logger.warning( # Was print
             "Windows detected. For full Windows integration, install optional dependencies:"
         )
-        print("pipx install -e .[win]")
-        print("or if using pip: pip install fetchtastic[win]")
+        logger.warning("pipx install -e .[win]") # Was print
+        logger.warning("or if using pip: pip install fetchtastic[win]") # Was print
 else:
     WINDOWS_MODULES_AVAILABLE = False
 
@@ -129,15 +130,15 @@ def _perform_initial_platform_checks() -> None:
     This includes Termux package installation, storage setup, and config directory creation.
     """
     if is_termux():
-        install_termux_packages()
-        check_storage_setup()
-        print("Termux storage is set up.")
+        install_termux_packages() # Uses logger internally
+        check_storage_setup() # Uses logger internally
+        logger.info("Termux storage is set up.") # Was print
 
     if not os.path.exists(CONFIG_DIR):
         try:
             os.makedirs(CONFIG_DIR, exist_ok=True)
         except Exception as e:
-            print(f"Error creating config directory {CONFIG_DIR}: {e}")
+            logger.error(f"Error creating config directory {CONFIG_DIR}: {e}", exc_info=True) # Was print
 
 def _handle_config_migration() -> None:
     """
@@ -145,17 +146,17 @@ def _handle_config_migration() -> None:
     platform-specific directory if needed.
     """
     if os.path.exists(OLD_CONFIG_FILE) and not os.path.exists(CONFIG_FILE):
-        from fetchtastic.log_utils import log_error, log_info
+        # No need to import log_error, log_info locally, logger is module-level
         separator: str = "=" * 80
-        log_info(f"\n{separator}")
-        log_info("Configuration Migration")
-        log_info(separator)
-        prompt_for_migration()
-        if migrate_config():
-            log_info(f"Configuration successfully migrated to: {CONFIG_FILE}")
+        logger.info(f"\n{separator}")
+        logger.info("Configuration Migration")
+        logger.info(separator)
+        prompt_for_migration() # Uses logger internally
+        if migrate_config(): # Uses logger internally
+            logger.info(f"Configuration successfully migrated to: {CONFIG_FILE}")
         else:
-            log_error(f"Failed to migrate configuration. Please check permissions for {OLD_CONFIG_FILE} and {CONFIG_DIR}.")
-        log_info(f"{separator}\n")
+            logger.error(f"Failed to migrate configuration. Please check permissions for {OLD_CONFIG_FILE} and {CONFIG_DIR}.")
+        logger.info(f"{separator}\n")
 
 def _initialize_or_load_config() -> Tuple[Dict[str, Any], bool]:
     """
@@ -175,13 +176,13 @@ def _initialize_or_load_config() -> Tuple[Dict[str, Any], bool]:
         loaded_config: Optional[Dict[str, Any]] = load_config()
         if loaded_config is not None:
             config = loaded_config
-            print("Existing configuration found. You can keep current settings or change them.")
+            logger.info("Existing configuration found. You can keep current settings or change them.") # Was print
         else:
-            print("Could not load existing configuration. Starting with defaults.")
+            logger.warning("Could not load existing configuration. Starting with defaults.") # Was print, changed to warning
             config = {}
             is_first_run = True
     else:
-        print("No existing configuration found. Starting with defaults.")
+        logger.info("No existing configuration found. Starting with defaults.") # Was print
         config = {}
     return config, is_first_run
 
@@ -219,9 +220,9 @@ def _configure_base_directory(config: Dict[str, Any], is_first_run_param: bool) 
     if not os.path.exists(BASE_DIR):
         try:
             os.makedirs(BASE_DIR)
-            print(f"Created base directory: {BASE_DIR}")
+            logger.info(f"Created base directory: {BASE_DIR}") # Was print
         except Exception as e:
-            print(f"Error creating base directory {BASE_DIR}: {e}")
+            logger.error(f"Error creating base directory {BASE_DIR}: {e}", exc_info=True) # Was print
     return config
 
 def _configure_windows_shortcuts(config_file_param: str, base_dir_param: str) -> None:
@@ -242,9 +243,9 @@ def _configure_windows_shortcuts(config_file_param: str, base_dir_param: str) ->
             prompt_text = "Would you like to create Fetchtastic shortcuts in the Start Menu? (recommended) [y/n] (default: yes): "
         create_menu: str = input(prompt_text).strip().lower() or "y"
         if create_menu == "y":
-            create_windows_menu_shortcuts(config_file_param, base_dir_param)
+            create_windows_menu_shortcuts(config_file_param, base_dir_param) # Uses logger internally
     elif platform.system() == "Windows" and not WINDOWS_MODULES_AVAILABLE:
-        print("Windows shortcuts not available. Install optional dependencies for full Windows integration (see README).")
+        logger.warning("Windows shortcuts not available. Install optional dependencies for full Windows integration (see README).") # Was print
 
 def _configure_asset_types_and_patterns(config: Dict[str, Any]) -> Tuple[Dict[str, Any], bool, bool]:
     """
@@ -274,7 +275,7 @@ def _configure_asset_types_and_patterns(config: Dict[str, Any]) -> Tuple[Dict[st
         apk_selection: Optional[Dict[str, Any]] = menu_apk.run_menu() # type: ignore[no-any-return]
         selected_assets_key = "SELECTED_APK_ASSETS"
         if not apk_selection or not apk_selection.get("selected_assets"):
-            print("No APK assets selected. APKs will not be downloaded.")
+            logger.warning("No APK assets selected. APKs will not be downloaded.") # Was print
             config["SAVE_APKS"] = False
             save_apks = False
         else:
@@ -284,7 +285,7 @@ def _configure_asset_types_and_patterns(config: Dict[str, Any]) -> Tuple[Dict[st
         firmware_selection: Optional[Dict[str, Any]] = menu_firmware.run_menu() # type: ignore[no-any-return]
         selected_assets_key = "SELECTED_FIRMWARE_ASSETS"
         if not firmware_selection or not firmware_selection.get("selected_assets"):
-            print("No firmware assets selected. Firmware will not be downloaded.")
+            logger.warning("No firmware assets selected. Firmware will not be downloaded.") # Was print
             config["SAVE_FIRMWARE"] = False
             save_firmware = False
         else:
@@ -321,7 +322,7 @@ def _configure_version_counts(config: Dict[str, Any], save_apks: bool, save_firm
                 config["ANDROID_VERSIONS_TO_KEEP"] = validate_version_count(user_input, str(current_val))
                 break
             except ValueError as e:
-                print(e)
+                logger.error(e) # Was print
     if save_firmware:
         current_val = config.get("FIRMWARE_VERSIONS_TO_KEEP", default_versions_to_keep) # type: ignore[assignment]
         prompt_prefix = "default is" if is_first_run else "current:"
@@ -332,7 +333,7 @@ def _configure_version_counts(config: Dict[str, Any], save_apks: bool, save_firm
                 config["FIRMWARE_VERSIONS_TO_KEEP"] = validate_version_count(user_input, str(current_val))
                 break
             except ValueError as e:
-                print(e)
+                logger.error(e) # Was print
     return config
 
 def _configure_firmware_options(config: Dict[str, Any], config_file_path_param: str) -> Dict[str, Any]:
@@ -364,14 +365,14 @@ def _configure_firmware_options(config: Dict[str, Any], config_file_path_param: 
     with open(config_file_path_param, "w") as f: yaml.dump(config, f)
 
     if config["AUTO_EXTRACT"]:
-        print("Enter keywords for firmware extraction (space-separated). E.g., rak4631- tbeam device-")
+        logger.info("Enter keywords for firmware extraction (space-separated). E.g., rak4631- tbeam device-") # Was print
         current_patterns_list: List[str] = config.get("EXTRACT_PATTERNS", []) # type: ignore
         current_patterns_str: str = " ".join(current_patterns_list)
         new_patterns_str: str
         keep_input: str
 
         if current_patterns_str:
-            print(f"Current patterns: {current_patterns_str}")
+            logger.info(f"Current patterns: {current_patterns_str}") # Was print
             keep_input = input("Keep current extraction patterns? [y/n] (default: yes): ").strip().lower() or "y"
             if keep_input == "n":
                 new_patterns_str = input("Enter new extraction patterns: ").strip()
@@ -381,7 +382,7 @@ def _configure_firmware_options(config: Dict[str, Any], config_file_path_param: 
             config["EXTRACT_PATTERNS"] = new_patterns_str.split() if new_patterns_str else []
 
         if not config.get("EXTRACT_PATTERNS"):
-            print("No extraction patterns set. Disabling auto-extraction.")
+            logger.warning("No extraction patterns set. Disabling auto-extraction.") # Was print
             config["AUTO_EXTRACT"] = False
             config["EXCLUDE_PATTERNS"] = []
         else:
@@ -395,9 +396,9 @@ def _configure_firmware_options(config: Dict[str, Any], config_file_path_param: 
             keep_excludes_input: str
 
             if exclude_prompt_main == 'y':
-                print("Enter keywords to exclude from extraction (space-separated). E.g., .hex tcxo")
+                logger.info("Enter keywords to exclude from extraction (space-separated). E.g., .hex tcxo") # Was print
                 if current_excludes_str:
-                    print(f"Current exclude patterns: {current_excludes_str}")
+                    logger.info(f"Current exclude patterns: {current_excludes_str}") # Was print
                     keep_excludes_input = input("Keep current exclude patterns? [y/n] (default: yes): ").strip().lower() or "y"
                     if keep_excludes_input == 'n':
                         new_excludes_str = input("Enter new exclude patterns: ").strip()
@@ -406,7 +407,7 @@ def _configure_firmware_options(config: Dict[str, Any], config_file_path_param: 
                     new_excludes_str = input("Exclude patterns: ").strip()
                     config["EXCLUDE_PATTERNS"] = new_excludes_str.split() if new_excludes_str else []
             else:
-                if not current_excludes_str :
+                if not current_excludes_str : # Ensure this logic remains correct
                      config["EXCLUDE_PATTERNS"] = []
     else:
         config["EXTRACT_PATTERNS"] = []
@@ -453,18 +454,18 @@ def _finalize_config_and_save(config: Dict[str, Any], base_dir_param: str, confi
     if not os.path.exists(final_config_dir):
         try:
             os.makedirs(final_config_dir, exist_ok=True)
-            print(f"Created configuration directory: {final_config_dir}")
+            logger.info(f"Created configuration directory: {final_config_dir}") # Was print
         except Exception as e:
-            print(f"CRITICAL: Error creating configuration directory {final_config_dir}: {e}")
-            print("Cannot save configuration. Please check permissions and path.")
+            logger.critical(f"Error creating configuration directory {final_config_dir}: {e}", exc_info=True) # Was print
+            logger.critical("Cannot save configuration. Please check permissions and path.") # Was print
             return
 
     try:
         with open(config_file_param, "w") as f:
             yaml.dump(config, f)
-        print(f"Configuration saved to: {config_file_param}")
+        logger.info(f"Configuration saved to: {config_file_param}") # Was print
     except Exception as e:
-        print(f"CRITICAL: Error saving configuration to {config_file_param}: {e}")
+        logger.critical(f"Error saving configuration to {config_file_param}: {e}", exc_info=True) # Was print
 
 def _configure_scheduling_and_startup(config_dir_param: str) -> None:
     """
@@ -488,44 +489,44 @@ def _configure_scheduling_and_startup(config_dir_param: str) -> None:
                         batch_path: str = os.path.join(batch_dir, "fetchtastic_startup.bat")
                         if os.path.exists(batch_path): os.remove(batch_path)
                         os.remove(startup_shortcut_path)
-                        print("✓ Startup shortcut removed.")
+                        logger.info("✓ Startup shortcut removed.") # Was print
                     except Exception as e:
-                        print(f"Failed to remove startup shortcut: {e}")
+                        logger.error(f"Failed to remove startup shortcut: {e}", exc_info=True) # Was print
             else:
                 startup_option = input("Run Fetchtastic automatically on Windows startup? [y/n] (default: yes): ").strip().lower() or "y"
                 if startup_option == "y":
-                    if create_startup_shortcut():
-                        print("✓ Fetchtastic will now run automatically on startup.")
+                    if create_startup_shortcut(): # Uses logger internally
+                        logger.info("✓ Fetchtastic will now run automatically on startup.") # Was print
                     else:
-                        print("Failed to create startup shortcut.")
+                        logger.error("Failed to create startup shortcut.") # Was print
     elif is_termux():
-        if check_cron_job_exists():
+        if check_cron_job_exists(): # Uses logger internally
             if (input("Cron job already set up. Reconfigure? [y/n] (default: no): ").strip().lower() or "n") == 'y':
-                remove_cron_job()
-                install_crond()
-                setup_cron_job()
+                remove_cron_job() # Uses logger internally
+                install_crond() # Uses logger internally
+                setup_cron_job() # Uses logger internally
         else:
             if (input("Schedule Fetchtastic daily at 3 AM? [y/n] (default: yes): ").strip().lower() or "y") == 'y':
-                install_crond()
-                setup_cron_job()
+                install_crond() # Uses logger internally
+                setup_cron_job() # Uses logger internally
 
-        if check_boot_script_exists():
+        if check_boot_script_exists(): # Uses logger internally
             if (input("Boot script already set up. Reconfigure? [y/n] (default: no): ").strip().lower() or "n") == 'y':
-                remove_boot_script()
-                setup_boot_script()
+                remove_boot_script() # Uses logger internally
+                setup_boot_script() # Uses logger internally
         else:
             if (input("Run Fetchtastic on device boot? [y/n] (default: yes): ").strip().lower() or "y") == 'y':
-                setup_boot_script()
-    else:
-        if check_any_cron_jobs_exist():
+                setup_boot_script() # Uses logger internally
+    else: # Linux/Mac (non-Termux)
+        if check_any_cron_jobs_exist(): # Uses logger internally
             if (input("Fetchtastic cron jobs found. Reconfigure? [y/n] (default: no): ").strip().lower() or "n") == 'y':
-                remove_cron_job()
-                remove_reboot_cron_job()
-                if (input("Schedule daily at 3 AM? [y/n] (default: yes): ").strip().lower() or "y") == 'y': setup_cron_job()
-                if (input("Run on system startup? [y/n] (default: yes): ").strip().lower() or "y") == 'y': setup_reboot_cron_job()
+                remove_cron_job() # Uses logger internally
+                remove_reboot_cron_job() # Uses logger internally
+                if (input("Schedule daily at 3 AM? [y/n] (default: yes): ").strip().lower() or "y") == 'y': setup_cron_job() # Uses logger
+                if (input("Run on system startup? [y/n] (default: yes): ").strip().lower() or "y") == 'y': setup_reboot_cron_job() # Uses logger
         else:
-            if (input("Schedule daily at 3 AM? [y/n] (default: yes): ").strip().lower() or "y") == 'y': setup_cron_job()
-            if (input("Run on system startup? [y/n] (default: yes): ").strip().lower() or "y") == 'y': setup_reboot_cron_job()
+            if (input("Schedule daily at 3 AM? [y/n] (default: yes): ").strip().lower() or "y") == 'y': setup_cron_job() # Uses logger
+            if (input("Run on system startup? [y/n] (default: yes): ").strip().lower() or "y") == 'y': setup_reboot_cron_job() # Uses logger
 
 def _configure_notifications(config: Dict[str, Any], config_file_param: str) -> Dict[str, Any]:
     """
@@ -558,37 +559,37 @@ def _configure_notifications(config: Dict[str, Any], config_file_param: str) -> 
         with open(config_file_param, "w") as f: yaml.dump(config, f)
 
         full_topic_url: str = f"{ntfy_server.rstrip('/')}/{topic_name}"
-        print(f"Notifications enabled for topic: {full_topic_url}")
+        logger.info(f"Notifications enabled for topic: {full_topic_url}") # Was print
 
         text_to_copy: str = topic_name if is_termux() else full_topic_url
         copy_prompt: str = "Copy to clipboard? [y/n] (default: yes): "
         if (input(copy_prompt).strip().lower() or "y") == "y":
-            if copy_to_clipboard_func(text_to_copy):
-                print("Copied to clipboard.")
+            if copy_to_clipboard_func(text_to_copy): # Uses logger for errors
+                logger.info("Copied to clipboard.") # Was print
             else:
-                print("Failed to copy.")
+                logger.error("Failed to copy.") # Was print (already an error log in func)
 
         notify_only_current: bool = bool(config.get("NOTIFY_ON_DOWNLOAD_ONLY", False))
         notify_default_str: str = "yes" if notify_only_current else "no"
         notify_input: str = input(f"Notify only when new files are downloaded? [y/n] (default: {notify_default_str}): ").strip().lower() or notify_default_str[0]
         config["NOTIFY_ON_DOWNLOAD_ONLY"] = (notify_input == "y")
         with open(config_file_param, "w") as f: yaml.dump(config, f)
-        print("Notification settings saved.")
+        logger.info("Notification settings saved.") # Was print
     else:
         if has_ntfy_config and (input("Disable existing notifications? [y/n] (default: no): ").strip().lower() or "n") == "y":
             config["NTFY_TOPIC"] = ""
             config["NTFY_SERVER"] = ""
             config["NOTIFY_ON_DOWNLOAD_ONLY"] = False
             with open(config_file_param, "w") as f: yaml.dump(config, f)
-            print("Notifications disabled.")
+            logger.info("Notifications disabled.") # Was print
         elif not has_ntfy_config:
              config["NTFY_TOPIC"] = ""
              config["NTFY_SERVER"] = ""
              config["NOTIFY_ON_DOWNLOAD_ONLY"] = False
              with open(config_file_param, "w") as f: yaml.dump(config, f)
-             print("Notifications will remain disabled.")
+             logger.info("Notifications will remain disabled.") # Was print
         else:
-            print("Keeping existing notification settings.")
+            logger.info("Keeping existing notification settings.") # Was print
     return config
 
 def _prompt_for_first_run() -> None:
@@ -597,16 +598,16 @@ def _prompt_for_first_run() -> None:
     On Windows, provides instructions on how to run manually.
     """
     if platform.system() == "Windows":
-        print("Setup complete. Run 'fetchtastic download' to start downloading.")
-        if WINDOWS_MODULES_AVAILABLE: print("You can also use Start Menu shortcuts.")
+        logger.info("Setup complete. Run 'fetchtastic download' to start downloading.") # Was print
+        if WINDOWS_MODULES_AVAILABLE: logger.info("You can also use Start Menu shortcuts.") # Was print
         if os.environ.get("PROMPT") is None or "cmd.exe" in os.environ.get("COMSPEC", ""): # type: ignore
             input("\nPress Enter to close this window...")
     else:
         if (input("Start first download run now? [y/n] (default: yes): ").strip().lower() or "y") == "y":
-            print("Setup complete. Starting first run...")
-            downloader.main()
+            logger.info("Setup complete. Starting first run...") # Was print
+            downloader.main() # Assumes downloader.main uses logger
         else:
-            print("Setup complete. Run 'fetchtastic download' to start.")
+            logger.info("Setup complete. Run 'fetchtastic download' to start.") # Was print
 
 def run_setup() -> None:
     """
@@ -616,39 +617,39 @@ def run_setup() -> None:
     firmware options, scheduling, notifications, and prompting for a first run.
     """
     global BASE_DIR, CONFIG_FILE
-    print("Running Fetchtastic Setup...")
+    logger.info("Running Fetchtastic Setup...") # Was print
 
-    _perform_initial_platform_checks()
-    _handle_config_migration()
+    _perform_initial_platform_checks() # Uses logger
+    _handle_config_migration() # Uses logger
 
     config: Dict[str, Any]
     is_first_run: bool
-    config, is_first_run = _initialize_or_load_config()
+    config, is_first_run = _initialize_or_load_config() # Uses logger
     # _initialize_or_load_config ensures config is a dict
 
-    config = _configure_base_directory(config, is_first_run)
+    config = _configure_base_directory(config, is_first_run) # Uses logger
 
-    _configure_windows_shortcuts(CONFIG_FILE, BASE_DIR)
+    _configure_windows_shortcuts(CONFIG_FILE, BASE_DIR) # Uses logger
 
     save_apks: bool
     save_firmware: bool
-    config, save_apks, save_firmware = _configure_asset_types_and_patterns(config)
+    config, save_apks, save_firmware = _configure_asset_types_and_patterns(config) # Uses logger
     if not save_apks and not save_firmware:
-        print("No assets selected to download. Please run 'fetchtastic setup' again to select assets.")
+        logger.warning("No assets selected to download. Please run 'fetchtastic setup' again to select assets.") # Was print
         return
 
-    config = _configure_version_counts(config, save_apks, save_firmware, is_first_run)
+    config = _configure_version_counts(config, save_apks, save_firmware, is_first_run) # Uses logger
 
     if save_firmware:
-        config = _configure_firmware_options(config, CONFIG_FILE)
+        config = _configure_firmware_options(config, CONFIG_FILE) # Uses logger
 
-    config = _configure_termux_wifi_only(config)
+    config = _configure_termux_wifi_only(config) # Uses logger (indirectly through input)
 
-    _finalize_config_and_save(config, BASE_DIR, CONFIG_FILE)
-    _configure_scheduling_and_startup(CONFIG_DIR)
-    config = _configure_notifications(config, CONFIG_FILE)
+    _finalize_config_and_save(config, BASE_DIR, CONFIG_FILE) # Uses logger
+    _configure_scheduling_and_startup(CONFIG_DIR) # Uses logger
+    config = _configure_notifications(config, CONFIG_FILE) # Uses logger
 
-    _prompt_for_first_run()
+    _prompt_for_first_run() # Uses logger
 
 def config_exists(directory: Optional[str] = None) -> Tuple[bool, Optional[str]]:
     """
@@ -675,7 +676,9 @@ def config_exists(directory: Optional[str] = None) -> Tuple[bool, Optional[str]]
     if os.path.exists(CONFIG_FILE):
         return True, CONFIG_FILE
 
-    if os.path.exists(OLD_CONFIG_FILE):
+    if os.path.exists(OLD_CONFIG_FILE): # This implies a migration might be needed or it's an old setup
+        # This function is just for existence, not for loading logic.
+        # The loading logic in load_config handles printing messages about old locations.
         return True, OLD_CONFIG_FILE
 
     return False, None
@@ -697,12 +700,12 @@ def check_storage_setup() -> bool:
             and os.path.exists(storage_downloads)
             and os.access(storage_downloads, os.W_OK)
         ):
-            print("Termux storage access is already set up.")
+            logger.info("Termux storage access is already set up.") # Was print
             return True
         else:
-            print("Termux storage access is not set up or permission was denied.")
-            setup_storage() # Defined later, should be fine
-            print("Please grant storage permissions when prompted.")
+            logger.warning("Termux storage access is not set up or permission was denied.") # Was print
+            setup_storage() # Uses logger internally
+            logger.info("Please grant storage permissions when prompted.") # Was print
             input("Press Enter after granting storage permissions to continue...")
             # Re-check if storage is set up - loop will handle this
 
@@ -784,14 +787,14 @@ def migrate_config() -> bool:
     from fetchtastic.log_utils import log_error, log_info
 
     if not os.path.exists(OLD_CONFIG_FILE):
-        log_info("No old configuration file found to migrate.")
+        logger.info("No old configuration file found to migrate.")
         return True
 
     if not os.path.exists(CONFIG_DIR):
         try:
             os.makedirs(CONFIG_DIR, exist_ok=True)
         except Exception as e:
-            log_error(f"Error creating new config directory {CONFIG_DIR}: {e}")
+            logger.error(f"Error creating new config directory {CONFIG_DIR}: {e}", exc_info=True)
             return False
 
     config_data: Optional[Dict[str, Any]] = None
@@ -799,25 +802,25 @@ def migrate_config() -> bool:
         with open(OLD_CONFIG_FILE, "r") as f_old:
             config_data = yaml.safe_load(f_old)
         if not isinstance(config_data, dict): # Basic validation
-            log_error(f"Old configuration file {OLD_CONFIG_FILE} is not a valid YAML dictionary.")
+            logger.error(f"Old configuration file {OLD_CONFIG_FILE} is not a valid YAML dictionary.")
             return False
     except Exception as e:
-        log_error(f"Error loading old configuration from {OLD_CONFIG_FILE}: {e}")
+        logger.error(f"Error loading old configuration from {OLD_CONFIG_FILE}: {e}", exc_info=True)
         return False
 
     try:
         with open(CONFIG_FILE, "w") as f_new:
             yaml.dump(config_data, f_new)
-        log_info(f"Configuration successfully written to {CONFIG_FILE}")
+        logger.info(f"Configuration successfully written to {CONFIG_FILE}")
 
         try:
             os.remove(OLD_CONFIG_FILE)
-            log_info(f"Old configuration file {OLD_CONFIG_FILE} removed.")
+            logger.info(f"Old configuration file {OLD_CONFIG_FILE} removed.")
         except Exception as e:
-            log_error(f"Failed to remove old configuration file {OLD_CONFIG_FILE}: {e}")
+            logger.error(f"Failed to remove old configuration file {OLD_CONFIG_FILE}: {e}", exc_info=True)
         return True
     except Exception as e:
-        log_error(f"Error saving configuration to new location {CONFIG_FILE}: {e}")
+        logger.error(f"Error saving configuration to new location {CONFIG_FILE}: {e}", exc_info=True)
         return False
 
 def prompt_for_migration() -> bool:
@@ -828,9 +831,9 @@ def prompt_for_migration() -> bool:
     Returns:
         bool: Always returns True, as migration is attempted automatically if needed.
     """
-    from fetchtastic.log_utils import log_info
-    log_info(f"Found configuration file at old location: {OLD_CONFIG_FILE}")
-    log_info(f"Attempting to migrate to the new location: {CONFIG_FILE}")
+    # No need for local import, logger is module-level
+    logger.info(f"Found configuration file at old location: {OLD_CONFIG_FILE}")
+    logger.info(f"Attempting to migrate to the new location: {CONFIG_FILE}")
     return True
 
 def create_windows_menu_shortcuts(config_file_path: str, base_dir: str) -> bool:
@@ -855,12 +858,12 @@ def create_windows_menu_shortcuts(config_file_path: str, base_dir: str) -> bool:
             try:
                 os.makedirs(WINDOWS_START_MENU_FOLDER, exist_ok=True)
             except Exception as e:
-                print(f"Error creating Start Menu folder {WINDOWS_START_MENU_FOLDER}: {e}")
+                logger.error(f"Error creating Start Menu folder {WINDOWS_START_MENU_FOLDER}: {e}", exc_info=True) # Was print
                 return False
 
         fetchtastic_path: Optional[str] = shutil.which("fetchtastic")
         if not fetchtastic_path:
-            print("Error: fetchtastic executable not found in PATH.")
+            logger.error("Error: fetchtastic executable not found in PATH.") # Was print
             return False
 
         batch_dir: str = os.path.join(CONFIG_DIR, "batch")
@@ -915,10 +918,10 @@ def create_windows_menu_shortcuts(config_file_path: str, base_dir: str) -> bool:
                 Description=shortcut_info["desc"],
                 Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0) if ".bat" in shortcut_info["target"] or ".yaml" in shortcut_info["target"] or ".log" in shortcut_info["target"] else (str(os.environ.get("WINDIR", "C:\\Windows")), 0)
             )
-        print("Shortcuts created/updated in Start Menu.")
+        logger.info("Shortcuts created/updated in Start Menu.") # Was print
         return True
     except Exception as e:
-        print(f"Failed to create Windows Start Menu shortcuts: {e}")
+        logger.error(f"Failed to create Windows Start Menu shortcuts: {e}", exc_info=True) # Was print
         return False
 
 def create_config_shortcut(config_file_path: str, target_dir: str) -> bool:
@@ -943,10 +946,10 @@ def create_config_shortcut(config_file_path: str, target_dir: str) -> bool:
             Description="Fetchtastic Configuration File (fetchtastic.yaml)",
             Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0)
         )
-        print(f"Created shortcut to configuration file at: {shortcut_path}")
+        logger.info(f"Created shortcut to configuration file at: {shortcut_path}") # Was print
         return True
     except Exception as e:
-        print(f"Failed to create shortcut to configuration file: {e}")
+        logger.error(f"Failed to create shortcut to configuration file: {e}", exc_info=True) # Was print
         return False
 
 def create_startup_shortcut() -> bool:
@@ -962,7 +965,7 @@ def create_startup_shortcut() -> bool:
     try:
         fetchtastic_path: Optional[str] = shutil.which("fetchtastic")
         if not fetchtastic_path:
-            print("Error: fetchtastic executable not found in PATH.")
+            logger.error("Error: fetchtastic executable not found in PATH.") # Was print
             return False
 
         startup_folder: str = winshell.startup() # type: ignore
@@ -982,10 +985,10 @@ def create_startup_shortcut() -> bool:
             Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0),
             WindowStyle=7,
         )
-        print(f"Created startup shortcut at: {shortcut_path}")
+        logger.info(f"Created startup shortcut at: {shortcut_path}") # Was print
         return True
     except Exception as e:
-        print(f"Failed to create startup shortcut: {e}")
+        logger.error(f"Failed to create startup shortcut: {e}", exc_info=True) # Was print
         return False
 
 def copy_to_clipboard_func(text: str) -> bool:
@@ -1021,13 +1024,13 @@ def copy_to_clipboard_func(text: str) -> bool:
                 subprocess.run(["xsel", "--clipboard", "--input"], input=text.encode("utf-8"), check=True)
                 return True
             else:
-                print("xclip or xsel not found for clipboard functionality.")
+                logger.warning("xclip or xsel not found for clipboard functionality.") # Was print
                 return False
         else:
-            print("Clipboard functionality is not supported on this platform.")
+            logger.warning("Clipboard functionality is not supported on this platform.") # Was print
             return False
     except Exception as e:
-        print(f"An error occurred while copying to clipboard: {e}")
+        logger.error(f"An error occurred while copying to clipboard: {e}", exc_info=True) # Was print
         return False
 
 def install_termux_packages() -> None:
@@ -1038,48 +1041,48 @@ def install_termux_packages() -> None:
     if shutil.which("crond") is None: packages_to_install.append("cronie")
 
     if packages_to_install:
-        print(f"Installing required Termux packages: {', '.join(packages_to_install)}...")
+        logger.info(f"Installing required Termux packages: {', '.join(packages_to_install)}...") # Was print
         try:
             subprocess.run(["pkg", "install"] + packages_to_install + ["-y"], check=True)
-            print("Required Termux packages installed.")
+            logger.info("Required Termux packages installed.") # Was print
         except subprocess.CalledProcessError as e:
-            print(f"Error installing Termux packages: {e}")
+            logger.error(f"Error installing Termux packages: {e}", exc_info=True) # Was print
         except FileNotFoundError:
-            print("Error: 'pkg' command not found. Are you in Termux?")
+            logger.error("Error: 'pkg' command not found. Are you in Termux?") # Was print
     else:
-        print("All required Termux packages are already installed.")
+        logger.info("All required Termux packages are already installed.") # Was print
 
 def setup_storage() -> None:
     """Runs 'termux-setup-storage' to request storage access in Termux."""
-    print("Setting up Termux storage access...")
+    logger.info("Setting up Termux storage access...") # Was print
     try:
         subprocess.run(["termux-setup-storage"], check=True)
     except subprocess.CalledProcessError as e:
-        print(f"Error during 'termux-setup-storage': {e}")
-        print("Please grant storage permissions when prompted.")
+        logger.error(f"Error during 'termux-setup-storage': {e}", exc_info=True) # Was print
+        logger.warning("Please grant storage permissions when prompted.") # Was print
     except FileNotFoundError:
-        print("Error: 'termux-setup-storage' command not found. Are you in Termux with Termux:API installed?")
+        logger.error("Error: 'termux-setup-storage' command not found. Are you in Termux with Termux:API installed?") # Was print
 
 def install_crond() -> None:
     """Installs and enables the crond service in Termux if not already present."""
     if is_termux():
         try:
             if shutil.which("crond") is None:
-                print("Installing cronie (for crond)...")
+                logger.info("Installing cronie (for crond)...") # Was print
                 subprocess.run(["pkg", "install", "cronie", "-y"], check=True)
-                print("cronie installed.")
+                logger.info("cronie installed.") # Was print
             else:
-                print("cronie (crond) is already installed.")
+                logger.info("cronie (crond) is already installed.") # Was print
 
             if shutil.which("sv-enable") is None:
-                print("Installing termux-services...")
+                logger.info("Installing termux-services...") # Was print
                 subprocess.run(["pkg", "install", "termux-services", "-y"], check=True)
-                print("termux-services installed.")
+                logger.info("termux-services installed.") # Was print
 
             subprocess.run(["sv-enable", "crond"], check=True)
-            print("crond service enabled.")
+            logger.info("crond service enabled.") # Was print
         except Exception as e:
-            print(f"An error occurred while installing or enabling crond: {e}")
+            logger.error(f"An error occurred while installing or enabling crond: {e}", exc_info=True) # Was print
 
 def setup_cron_job() -> None:
     """
@@ -1094,7 +1097,7 @@ def setup_cron_job() -> None:
     try:
         fetchtastic_path: Optional[str] = shutil.which("fetchtastic")
         if not fetchtastic_path:
-            print("Error: fetchtastic executable not found in PATH. Cannot set up cron job.")
+            logger.error("Error: fetchtastic executable not found in PATH. Cannot set up cron job.") # Was print
             return
 
         crontab_l_cmd: List[str] = ["crontab", "-l"]
@@ -1104,7 +1107,7 @@ def setup_cron_job() -> None:
             if result.returncode == 0:
                 current_crontab = result.stdout
         except FileNotFoundError:
-             print("crontab command not found. Cannot setup cron job.")
+             logger.error("crontab command not found. Cannot setup cron job.") # Was print
              return
 
         job_command: str = f"{fetchtastic_path} download"
@@ -1132,12 +1135,12 @@ def setup_cron_job() -> None:
         process: subprocess.Popen = subprocess.Popen(["crontab", "-"], stdin=subprocess.PIPE, text=True)
         process.communicate(input=new_crontab)
         if process.returncode == 0:
-            print("Cron job for Fetchtastic set up successfully to run daily at 3 AM.")
+            logger.info("Cron job for Fetchtastic set up successfully to run daily at 3 AM.") # Was print
         else:
-            print("Error setting up cron job. Please check crontab permissions or syntax.")
+            logger.error("Error setting up cron job. Please check crontab permissions or syntax.") # Was print
 
     except Exception as e:
-        print(f"An error occurred while setting up the cron job: {e}")
+        logger.error(f"An error occurred while setting up the cron job: {e}", exc_info=True) # Was print
 
 def remove_cron_job() -> None:
     """
@@ -1155,7 +1158,7 @@ def remove_cron_job() -> None:
             if result.returncode == 0:
                 current_crontab = result.stdout
         except FileNotFoundError:
-            print("crontab command not found. Cannot remove cron job.")
+            logger.error("crontab command not found. Cannot remove cron job.") # Was print
             return
 
         new_crontab_lines: List[str] = []
@@ -1174,19 +1177,19 @@ def remove_cron_job() -> None:
             process: subprocess.Popen = subprocess.Popen(["crontab", "-"], stdin=subprocess.PIPE, text=True)
             process.communicate(input=new_crontab)
             if process.returncode == 0:
-                print("Fetchtastic daily cron job removed.")
+                logger.info("Fetchtastic daily cron job removed.") # Was print
             else:
-                print("Error removing cron job from crontab.")
+                logger.error("Error removing cron job from crontab.") # Was print
         else:
-            print("No Fetchtastic daily cron job found to remove.")
+            logger.info("No Fetchtastic daily cron job found to remove.") # Was print
 
     except Exception as e:
-        print(f"An error occurred while removing the cron job: {e}")
+        logger.error(f"An error occurred while removing the cron job: {e}", exc_info=True) # Was print
 
 def setup_boot_script() -> None:
     """Sets up a boot script in Termux to run Fetchtastic on device boot."""
     if not is_termux():
-        # print("Boot script setup is only for Termux.") # This is handled by calling context
+        # logger.debug("Boot script setup is only for Termux.") # This is handled by calling context
         return
 
     boot_dir: str = os.path.expanduser("~/.termux/boot")
@@ -1194,9 +1197,9 @@ def setup_boot_script() -> None:
     if not os.path.exists(boot_dir):
         try:
             os.makedirs(boot_dir)
-            print(f"Created Termux:Boot directory: {boot_dir}")
+            logger.info(f"Created Termux:Boot directory: {boot_dir}") # Was print
         except Exception as e:
-            print(f"Error creating Termux:Boot directory {boot_dir}: {e}")
+            logger.error(f"Error creating Termux:Boot directory {boot_dir}: {e}", exc_info=True) # Was print
             return
 
     script_content: str = "#!/data/data/com.termux/files/usr/bin/sh\nsleep 30\nfetchtastic download\n"
@@ -1204,10 +1207,10 @@ def setup_boot_script() -> None:
         with open(boot_script_path, "w") as f:
             f.write(script_content)
         os.chmod(boot_script_path, 0o700)
-        print(f"Boot script created at {boot_script_path}")
-        print("Note: Termux:Boot app must be installed and run once to enable boot scripts.")
+        logger.info(f"Boot script created at {boot_script_path}") # Was print
+        logger.info("Note: Termux:Boot app must be installed and run once to enable boot scripts.") # Was print
     except Exception as e:
-        print(f"Error creating boot script {boot_script_path}: {e}")
+        logger.error(f"Error creating boot script {boot_script_path}: {e}", exc_info=True) # Was print
 
 def remove_boot_script() -> None:
     """Removes the Fetchtastic boot script from Termux."""
@@ -1218,11 +1221,11 @@ def remove_boot_script() -> None:
     if os.path.exists(boot_script_path):
         try:
             os.remove(boot_script_path)
-            print(f"Boot script {boot_script_path} removed.")
+            logger.info(f"Boot script {boot_script_path} removed.") # Was print
         except Exception as e:
-            print(f"Error removing boot script {boot_script_path}: {e}")
+            logger.error(f"Error removing boot script {boot_script_path}: {e}", exc_info=True) # Was print
     else:
-        print("No Fetchtastic boot script found to remove.")
+        logger.info("No Fetchtastic boot script found to remove.") # Was print
 
 def setup_reboot_cron_job() -> None:
     """
@@ -1235,7 +1238,7 @@ def setup_reboot_cron_job() -> None:
     try:
         fetchtastic_path: Optional[str] = shutil.which("fetchtastic")
         if not fetchtastic_path:
-            print("Error: fetchtastic executable not found in PATH. Cannot set up @reboot cron job.")
+            logger.error("Error: fetchtastic executable not found in PATH. Cannot set up @reboot cron job.") # Was print
             return
 
         crontab_l_cmd: List[str] = ["crontab", "-l"]
@@ -1245,7 +1248,7 @@ def setup_reboot_cron_job() -> None:
             if result.returncode == 0:
                 current_crontab = result.stdout
         except FileNotFoundError:
-            print("crontab command not found. Cannot setup @reboot cron job.")
+            logger.error("crontab command not found. Cannot setup @reboot cron job.") # Was print
             return
 
         job_command: str = f"{fetchtastic_path} download"
@@ -1272,12 +1275,12 @@ def setup_reboot_cron_job() -> None:
         process: subprocess.Popen = subprocess.Popen(["crontab", "-"], stdin=subprocess.PIPE, text=True)
         process.communicate(input=new_crontab)
         if process.returncode == 0:
-            print("Cron job for Fetchtastic on reboot set up successfully.")
+            logger.info("Cron job for Fetchtastic on reboot set up successfully.") # Was print
         else:
-            print("Error setting up @reboot cron job.")
+            logger.error("Error setting up @reboot cron job.") # Was print
 
     except Exception as e:
-        print(f"An error occurred while setting up the @reboot cron job: {e}")
+        logger.error(f"An error occurred while setting up the @reboot cron job: {e}", exc_info=True) # Was print
 
 def remove_reboot_cron_job() -> None:
     """
@@ -1295,7 +1298,7 @@ def remove_reboot_cron_job() -> None:
             if result.returncode == 0:
                 current_crontab = result.stdout
         except FileNotFoundError:
-            print("crontab command not found. Cannot remove @reboot cron job.")
+            logger.error("crontab command not found. Cannot remove @reboot cron job.") # Was print
             return
 
         new_crontab_lines: List[str] = []
@@ -1313,14 +1316,14 @@ def remove_reboot_cron_job() -> None:
             process: subprocess.Popen = subprocess.Popen(["crontab", "-"], stdin=subprocess.PIPE, text=True)
             process.communicate(input=new_crontab)
             if process.returncode == 0:
-                print("Fetchtastic @reboot cron job removed.")
+                logger.info("Fetchtastic @reboot cron job removed.") # Was print
             else:
-                print("Error removing @reboot cron job from crontab.")
+                logger.error("Error removing @reboot cron job from crontab.") # Was print
         else:
-            print("No Fetchtastic @reboot cron job found to remove.")
+            logger.info("No Fetchtastic @reboot cron job found to remove.") # Was print
 
     except Exception as e:
-        print(f"An error occurred while removing the @reboot cron job: {e}")
+        logger.error(f"An error occurred while removing the @reboot cron job: {e}", exc_info=True) # Was print
 
 def check_cron_job_exists() -> bool:
     """
@@ -1377,20 +1380,20 @@ def load_config(directory: Optional[str] = None) -> Optional[Dict[str, Any]]:
         config_path = CONFIG_FILE
     elif os.path.exists(OLD_CONFIG_FILE):
         config_path = OLD_CONFIG_FILE
-        print(f"Using configuration from old location: {OLD_CONFIG_FILE}")
-        print(f"Consider running 'fetchtastic setup' to migrate to: {CONFIG_FILE}")
+        logger.warning(f"Using configuration from old location: {OLD_CONFIG_FILE}") # Was print
+        logger.warning(f"Consider running 'fetchtastic setup' to migrate to: {CONFIG_FILE}") # Was print
 
     if config_path and os.path.exists(config_path):
         try:
             with open(config_path, "r") as f:
                 config_data: Dict[str, Any] = yaml.safe_load(f)
-            if isinstance(config_data, dict) and "BASE_DIR" in config_data:
-                BASE_DIR = str(config_data["BASE_DIR"])
+            if isinstance(config_data, dict) and "BASE_DIR" in config_data: # Check if it's a dict before accessing keys
+                BASE_DIR = str(config_data["BASE_DIR"]) # Update global BASE_DIR
             return config_data
         except yaml.YAMLError as e:
-            print(f"Error parsing YAML configuration file {config_path}: {e}")
+            logger.error(f"Error parsing YAML configuration file {config_path}: {e}", exc_info=True) # Was print
             return None
         except Exception as e:
-            print(f"Error loading configuration file {config_path}: {e}")
+            logger.error(f"Error loading configuration file {config_path}: {e}", exc_info=True) # Was print
             return None
     return None
