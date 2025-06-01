@@ -56,17 +56,17 @@ def download_file_with_retry(
                 with zipfile.ZipFile(download_path, "r") as zf:
                     if zf.testzip() is not None : # None means no errors
                             raise zipfile.BadZipFile("Zip file integrity check failed (testzip).")
-                logger.info(f"File {download_path} already exists and is a valid zip. Skipping download.")
+                logger.info(f"💤 Skipped: {os.path.basename(download_path)} (already present & verified)")
                 return True
             except zipfile.BadZipFile:
-                logger.warning(f"Removing corrupted zip file: {download_path}")
+                logger.debug(f"Removing corrupted zip file: {download_path}")
                 try:
                     os.remove(download_path)
                 except (IOError, OSError) as e_rm:
                     logger.error(f"Error removing corrupted zip {download_path}: {e_rm}")
                     return False
             except (IOError, OSError) as e_check: # More specific for file check issues
-                logger.warning(f"IO/OS Error checking existing zip file {download_path}: {e_check}. Attempting re-download.")
+                logger.debug(f"IO/OS Error checking existing zip file {download_path}: {e_check}. Attempting re-download.")
                 try:
                     os.remove(download_path)
                 except (IOError, OSError) as e_rm_other:
@@ -82,10 +82,10 @@ def download_file_with_retry(
         else: # For non-zip files
             try:
                 if os.path.getsize(download_path) > 0:
-                    logger.info(f"File {download_path} already exists and is not empty. Skipping download.")
+                    logger.info(f"💤 Skipped: {os.path.basename(download_path)} (already present)")
                     return True
                 else:
-                    logger.info(f"Removing empty file: {download_path}")
+                    logger.debug(f"Removing empty file: {download_path}")
                     os.remove(download_path) # Try removing first
             except (IOError, OSError) as e_rm_empty: # Catch error if removal or getsize fails
                 logger.error(f"Error with existing empty file {download_path}: {e_rm_empty}")
@@ -94,11 +94,12 @@ def download_file_with_retry(
     temp_path = download_path + ".tmp"
     try:
         # Log before session.get()
-        logger.info(f"Attempting to download file from URL: {url} to temp path: {temp_path}")
+        logger.debug(f"Attempting to download file from URL: {url} to temp path: {temp_path}")
+        start_time = time.time()
         response = session.get(url, stream=True, timeout=DEFAULT_REQUEST_TIMEOUT)
 
         # Log HTTP response status code
-        logger.info(f"Received HTTP response status code: {response.status_code} for URL: {url}")
+        logger.debug(f"Received HTTP response status code: {response.status_code} for URL: {url}")
         response.raise_for_status() # Handled by requests.exceptions.RequestException
 
         downloaded_chunks = 0
@@ -111,7 +112,11 @@ def download_file_with_retry(
                     downloaded_bytes += len(chunk)
                     if downloaded_chunks % 100 == 0:
                         logger.debug(f"Downloaded {downloaded_chunks} chunks ({downloaded_bytes} bytes) so far for {url}")
-            logger.info(f"Finished downloading {url}. Total chunks: {downloaded_chunks}, total bytes: {downloaded_bytes}.")
+
+        download_time = time.time() - start_time
+        file_size_mb = downloaded_bytes / (1024 * 1024)
+        logger.debug(f"Finished downloading {url}. Total chunks: {downloaded_chunks}, total bytes: {downloaded_bytes}.")
+        logger.info(f"✅ Downloaded: {os.path.basename(download_path)} ({file_size_mb:.1f} MB, {downloaded_chunks//1000}k chunks, {download_time:.0f}s)")
 
         if download_path.endswith(".zip"):
             try:
@@ -137,13 +142,13 @@ def download_file_with_retry(
             for i in range(WINDOWS_MAX_REPLACE_RETRIES):
                 try:
                     gc.collect()
-                    logger.info(f"Attempting to move temporary file {temp_path} to {download_path} (Windows attempt {i+1}/{WINDOWS_MAX_REPLACE_RETRIES})")
+                    logger.debug(f"Attempting to move temporary file {temp_path} to {download_path} (Windows attempt {i+1}/{WINDOWS_MAX_REPLACE_RETRIES})")
                     os.replace(temp_path, download_path)
-                    logger.info(f"Successfully moved temporary file {temp_path} to {download_path}")
+                    logger.debug(f"Successfully moved temporary file {temp_path} to {download_path}")
                     return True
                 except PermissionError as e_perm: # Specific to Windows replace issues often
                     if i < WINDOWS_MAX_REPLACE_RETRIES - 1:
-                        logger.warning(f"File access error (PermissionError) on Windows for {download_path}, retrying in {retry_delay}s: {e_perm}")
+                        logger.debug(f"File access error (PermissionError) on Windows for {download_path}, retrying in {retry_delay}s: {e_perm}")
                         time.sleep(retry_delay)
                         retry_delay *= 2
                     else:
@@ -160,9 +165,9 @@ def download_file_with_retry(
                     return False
         else: # Non-Windows
             try:
-                logger.info(f"Attempting to move temporary file {temp_path} to {download_path} (non-Windows)")
+                logger.debug(f"Attempting to move temporary file {temp_path} to {download_path} (non-Windows)")
                 os.replace(temp_path, download_path)
-                logger.info(f"Successfully moved temporary file {temp_path} to {download_path}")
+                logger.debug(f"Successfully moved temporary file {temp_path} to {download_path}")
                 return True
             except (IOError, OSError) as e_nix_replace:
                 logger.error(f"Error replacing file {temp_path} to {download_path} on non-Windows: {e_nix_replace}")
