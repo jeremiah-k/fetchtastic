@@ -1,4 +1,5 @@
 # src/fetchtastic/utils.py
+import hashlib
 import os
 import platform
 import time
@@ -17,6 +18,69 @@ DEFAULT_REQUEST_TIMEOUT: int = 30  # seconds
 DEFAULT_CHUNK_SIZE: int = 8 * 1024  # 8KB
 WINDOWS_MAX_REPLACE_RETRIES: int = 3
 WINDOWS_INITIAL_RETRY_DELAY: float = 1.0 # seconds
+
+def calculate_sha256(file_path: str) -> Optional[str]:
+    """Calculate SHA-256 hash of a file."""
+    try:
+        sha256_hash = hashlib.sha256()
+        with open(file_path, "rb") as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                sha256_hash.update(chunk)
+        return sha256_hash.hexdigest()
+    except (IOError, OSError) as e:
+        logger.debug(f"Error calculating SHA-256 for {file_path}: {e}")
+        return None
+
+def get_hash_file_path(file_path: str) -> str:
+    """Get the path for storing the hash file."""
+    return file_path + ".sha256"
+
+def save_file_hash(file_path: str, hash_value: str) -> None:
+    """Save hash to a .sha256 file."""
+    hash_file = get_hash_file_path(file_path)
+    try:
+        with open(hash_file, "w") as f:
+            f.write(f"{hash_value}  {os.path.basename(file_path)}\n")
+        logger.debug(f"Saved hash for {os.path.basename(file_path)}")
+    except (IOError, OSError) as e:
+        logger.debug(f"Error saving hash file {hash_file}: {e}")
+
+def load_file_hash(file_path: str) -> Optional[str]:
+    """Load hash from a .sha256 file."""
+    hash_file = get_hash_file_path(file_path)
+    try:
+        with open(hash_file, "r") as f:
+            line = f.readline().strip()
+            if line:
+                return line.split()[0]  # First part is the hash
+    except (IOError, OSError):
+        pass  # File doesn't exist or can't be read
+    return None
+
+def verify_file_integrity(file_path: str) -> bool:
+    """Verify file integrity using stored hash."""
+    if not os.path.exists(file_path):
+        return False
+
+    stored_hash = load_file_hash(file_path)
+    if not stored_hash:
+        # No stored hash, calculate and save it
+        current_hash = calculate_sha256(file_path)
+        if current_hash:
+            save_file_hash(file_path, current_hash)
+            logger.debug(f"Generated initial hash for {os.path.basename(file_path)}")
+        return True  # Assume valid for new files
+
+    current_hash = calculate_sha256(file_path)
+    if not current_hash:
+        return False
+
+    if current_hash == stored_hash:
+        logger.debug(f"Hash verified for {os.path.basename(file_path)}")
+        return True
+    else:
+        logger.warning(f"Hash mismatch for {os.path.basename(file_path)} - file may be corrupted")
+        return False
 
 def download_file_with_retry(
     url: str,
@@ -56,8 +120,22 @@ def download_file_with_retry(
                 with zipfile.ZipFile(download_path, "r") as zf:
                     if zf.testzip() is not None : # None means no errors
                             raise zipfile.BadZipFile("Zip file integrity check failed (testzip).")
-                logger.info(f"Skipped: {os.path.basename(download_path)} (already present & verified)")
-                return True
+
+                # Additional hash verification
+                if verify_file_integrity(download_path):
+                    logger.info(f"Skipped: {os.path.basename(download_path)} (already present & verified)")
+                    return True
+                else:
+                    logger.info(f"Hash verification failed for {os.path.basename(download_path)}, re-downloading")
+                    try:
+                        os.remove(download_path)
+                        # Also remove hash file
+                        hash_file = get_hash_file_path(download_path)
+                        if os.path.exists(hash_file):
+                            os.remove(hash_file)
+                    except (IOError, OSError) as e_rm:
+                        logger.error(f"Error removing file with hash mismatch {download_path}: {e_rm}")
+                        return False
             except zipfile.BadZipFile:
                 logger.debug(f"Removing corrupted zip file: {download_path}")
                 try:
@@ -82,8 +160,21 @@ def download_file_with_retry(
         else: # For non-zip files
             try:
                 if os.path.getsize(download_path) > 0:
-                    logger.info(f"Skipped: {os.path.basename(download_path)} (already present)")
-                    return True
+                    # Hash verification for non-zip files
+                    if verify_file_integrity(download_path):
+                        logger.info(f"Skipped: {os.path.basename(download_path)} (already present & verified)")
+                        return True
+                    else:
+                        logger.info(f"Hash verification failed for {os.path.basename(download_path)}, re-downloading")
+                        try:
+                            os.remove(download_path)
+                            # Also remove hash file
+                            hash_file = get_hash_file_path(download_path)
+                            if os.path.exists(hash_file):
+                                os.remove(hash_file)
+                        except (IOError, OSError) as e_rm:
+                            logger.error(f"Error removing file with hash mismatch {download_path}: {e_rm}")
+                            return False
                 else:
                     logger.debug(f"Removing empty file: {download_path}")
                     os.remove(download_path) # Try removing first
@@ -147,6 +238,11 @@ def download_file_with_retry(
                     os.replace(temp_path, download_path)
                     logger.debug(f"Successfully moved temporary file {temp_path} to {download_path}")
 
+                    # Generate hash for the downloaded file
+                    current_hash = calculate_sha256(download_path)
+                    if current_hash:
+                        save_file_hash(download_path, current_hash)
+
                     # Log successful download after file is in place
                     if file_size_mb >= 1.0:
                         logger.info(f"Downloaded: {os.path.basename(download_path)} ({file_size_mb:.1f} MB)")
@@ -175,6 +271,11 @@ def download_file_with_retry(
                 logger.debug(f"Attempting to move temporary file {temp_path} to {download_path} (non-Windows)")
                 os.replace(temp_path, download_path)
                 logger.debug(f"Successfully moved temporary file {temp_path} to {download_path}")
+
+                # Generate hash for the downloaded file
+                current_hash = calculate_sha256(download_path)
+                if current_hash:
+                    save_file_hash(download_path, current_hash)
 
                 # Log successful download after file is in place
                 if file_size_mb >= 1.0:
