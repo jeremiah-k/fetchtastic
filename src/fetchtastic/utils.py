@@ -20,7 +20,11 @@ WINDOWS_MAX_REPLACE_RETRIES: int = 3
 WINDOWS_INITIAL_RETRY_DELAY: float = 1.0 # seconds
 
 def calculate_sha256(file_path: str) -> Optional[str]:
-    """Calculate SHA-256 hash of a file."""
+    """
+    Calculates the SHA-256 hash of the specified file.
+    
+    Reads the file in 4KB chunks and returns the hexadecimal digest string. Returns None if the file cannot be read due to I/O errors.
+    """
     try:
         sha256_hash = hashlib.sha256()
         with open(file_path, "rb") as f:
@@ -32,11 +36,19 @@ def calculate_sha256(file_path: str) -> Optional[str]:
         return None
 
 def get_hash_file_path(file_path: str) -> str:
-    """Get the path for storing the hash file."""
+    """
+    Returns the path to the SHA-256 hash file associated with the given file.
+    
+    The hash file path is constructed by appending '.sha256' to the original file path.
+    """
     return file_path + ".sha256"
 
 def save_file_hash(file_path: str, hash_value: str) -> None:
-    """Save hash to a .sha256 file."""
+    """
+    Saves the SHA-256 hash value to a `.sha256` file alongside the specified file.
+    
+    The hash file contains the hash value and the base filename, formatted for compatibility with standard checksum tools.
+    """
     hash_file = get_hash_file_path(file_path)
     try:
         with open(hash_file, "w") as f:
@@ -46,7 +58,12 @@ def save_file_hash(file_path: str, hash_value: str) -> None:
         logger.debug(f"Error saving hash file {hash_file}: {e}")
 
 def load_file_hash(file_path: str) -> Optional[str]:
-    """Load hash from a .sha256 file."""
+    """
+    Loads the SHA-256 hash value from the .sha256 file associated with the given file.
+    
+    Returns:
+        The hash string if successfully read, or None if the hash file is missing or unreadable.
+    """
     hash_file = get_hash_file_path(file_path)
     try:
         with open(hash_file, "r") as f:
@@ -58,7 +75,11 @@ def load_file_hash(file_path: str) -> Optional[str]:
     return None
 
 def verify_file_integrity(file_path: str) -> bool:
-    """Verify file integrity using stored hash."""
+    """
+    Checks whether a file's contents match its stored SHA-256 hash.
+    
+    If no stored hash exists, computes and saves the current hash, assuming the file is valid. Returns True if the file's hash matches the stored value, or if the hash is newly generated. Returns False if the file does not exist, the hash cannot be computed, or the hashes do not match.
+    """
     if not os.path.exists(file_path):
         return False
 
@@ -88,18 +109,16 @@ def download_file_with_retry(
     # log_message_func: Callable[[str], None] # Removed
 ) -> bool:
     """
-    Downloads a file with a robust retry mechanism and platform-specific handling.
-    Checks for existing valid files (especially zips) before downloading.
-    Validates zip files after download. Handles temporary files and cleanup.
-
+    Downloads a file from a URL to a specified path with retries and integrity checks.
+    
+    Checks if the target file already exists and verifies its integrity using hash and, for ZIP files, archive validation. If the file is missing or invalid, downloads it to a temporary file with a robust retry strategy, validates the download, and atomically replaces the target file. Handles platform-specific file replacement, including multiple retries on Windows to address file locking issues. Cleans up temporary files on failure and saves a SHA-256 hash for future verification.
+    
     Args:
-        url (str): The URL to download the file from.
-        download_path (str): The final path to save the downloaded file.
-        # log_message_func removed from args
-
+        url: The URL to download the file from.
+        download_path: The destination path for the downloaded file.
+    
     Returns:
-        bool: True if the file was successfully downloaded (or already existed and was valid),
-              False otherwise.
+        True if the file was successfully downloaded and verified, or if a valid file already existed; False otherwise.
     """
     session = requests.Session()
     # Using type: ignore for Retry as it might not be perfectly typed by stubs,

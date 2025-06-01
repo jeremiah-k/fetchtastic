@@ -13,15 +13,16 @@ from fetchtastic.log_utils import logger # Import new logger
 
 def download_repo_files(selected_files, download_dir): # log_message_func removed
     """
-    Downloads selected files from the meshtastic.github.io repository.
-
+    Downloads selected files from a repository into a structured local directory.
+    
+    Creates necessary directories under `download_dir/firmware/repo-dls`, downloads each specified file using retry logic, and sets executable permissions on `.sh` files. Returns a list of successfully downloaded file paths. Malformed file entries or download failures are logged and skipped.
+     
     Args:
-        selected_files: Dictionary containing directory and files information
-        download_dir: Base download directory
-        # log_message_func removed
-
+        selected_files: Dictionary with "directory" and "files" keys specifying the target directory and a list of file metadata dictionaries, each containing "name" and "download_url".
+        download_dir: Base directory where files will be downloaded.
+    
     Returns:
-        List of downloaded file paths
+        List of file paths for successfully downloaded files.
     """
     # Removed local log_message_func definition
 
@@ -92,14 +93,13 @@ def download_repo_files(selected_files, download_dir): # log_message_func remove
 
 def clean_repo_directory(download_dir): # log_message_func removed
     """
-    Cleans the repo directory by removing all files and subdirectories.
-
+    Removes all files and subdirectories from the repository download directory.
+    
     Args:
-        download_dir: Base download directory
-        # log_message_func removed
-
+        download_dir: The base directory containing the repository downloads.
+    
     Returns:
-        Boolean indicating success
+        True if the directory was cleaned successfully or did not exist; False if an error occurred during cleanup.
     """
     # Removed local log_message_func definition
 
@@ -129,14 +129,12 @@ def clean_repo_directory(download_dir): # log_message_func removed
 
 def main(config): # log_message_func removed
     """
-    Main function to run the repository downloader.
-
+    Runs the repository downloader workflow using the provided configuration.
+    
+    Prompts the user to select files from the repository, downloads the selected files to the configured directory, and logs the results. On Windows, optionally prompts the user to open the download folder after successful downloads.
+    
     Args:
-        config: Configuration dictionary
-        # log_message_func removed
-
-    Returns:
-        None
+        config: Dictionary containing configuration values, including "DOWNLOAD_DIR".
     """
     # Removed local log_message_func definition
 
