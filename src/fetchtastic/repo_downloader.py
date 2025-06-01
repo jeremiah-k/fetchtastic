@@ -7,6 +7,9 @@ import time
 
 import requests
 
+from fetchtastic.utils import download_file_with_retry
+# We will use the log_message_func passed into download_repo_files
+
 
 def download_repo_files(selected_files, download_dir, log_message_func=None):
     """
@@ -38,82 +41,61 @@ def download_repo_files(selected_files, download_dir, log_message_func=None):
 
     # Create repo-dls directory if it doesn't exist
     repo_dir = os.path.join(download_dir, "firmware", "repo-dls")
-    if not os.path.exists(repo_dir):
-        os.makedirs(repo_dir)
+    try:
+        if not os.path.exists(repo_dir):
+            os.makedirs(repo_dir)
 
-    # Create directory structure matching the repository path
-    if directory:
-        dir_path = os.path.join(repo_dir, directory)
-    else:
-        dir_path = repo_dir
+        # Create directory structure matching the repository path
+        if directory:
+            dir_path = os.path.join(repo_dir, directory)
+        else:
+            dir_path = repo_dir
 
-    if not os.path.exists(dir_path):
-        os.makedirs(dir_path)
+        if not os.path.exists(dir_path):
+            os.makedirs(dir_path)
+    except OSError as e:
+        log_message_func(f"Error creating base directories for repo downloads ({repo_dir} or {dir_path}): {e}")
+        return [] # Cannot proceed if base directories can't be created
 
     downloaded_files = []
 
-    for file in files:
-        file_name = file["name"]
-        download_url = file["download_url"]
-        file_path = os.path.join(dir_path, file_name)
-        temp_path = file_path + ".tmp"
-
+    for file_item in files: # Renamed to avoid conflict with built-in 'file'
         try:
-            log_message_func(f"Downloading {file_name} from {directory or 'root'}...")
-            response = requests.get(download_url, stream=True, timeout=30)
-            response.raise_for_status()
+            file_name = file_item["name"] # Potential KeyError
+            download_url = file_item["download_url"] # Potential KeyError
+            file_path = os.path.join(dir_path, file_name)
+            # temp_path is now internal to download_file_with_retry
 
-            # Download to a temporary file first
-            with open(temp_path, "wb") as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
+            # Ensure log_message_func is correctly set up as it's passed to the utility
+            current_log_func = log_message_func
+            if current_log_func is None: # Should match the existing default setup in the function
+                def default_logger_for_util(message_text: str) -> None: # Use a different name to avoid scope clash
+                    print(message_text)
+                current_log_func = default_logger_for_util
 
-            # Windows-specific handling for file operations
-            if platform.system() == "Windows":
-                # Try to move the file with retries for Windows
-                max_retries = 3
-                retry_delay = 1  # seconds
-                for retry in range(max_retries):
+            if download_file_with_retry(download_url, file_path, current_log_func):
+                log_message_func(f"Successfully processed {file_name}") # General success, specific logs in util
+                # Set executable permissions for .sh files (moved here, after successful download)
+                if file_name.endswith(".sh"):
                     try:
-                        # Make sure the file is closed and not locked
-                        import gc
-
-                        gc.collect()  # Force garbage collection to release file handles
-
-                        # Try to move the file
-                        os.replace(temp_path, file_path)
-                        break
-                    except PermissionError as e:
-                        if retry < max_retries - 1:
-                            log_message_func(
-                                f"File access error, retrying in {retry_delay} seconds: {e}"
-                            )
-                            time.sleep(retry_delay)
-                            retry_delay *= 2  # Exponential backoff
-                        else:
-                            # Last retry failed
-                            raise
+                        os.chmod(file_path, 0o755)
+                        current_log_func(f"Set executable permissions for {file_name}")
+                    except OSError as e_chmod: # Specific for os.chmod
+                        current_log_func(f"Error setting permissions for {file_name}: {e_chmod}")
+                downloaded_files.append(file_path)
             else:
-                # Non-Windows platforms
-                os.replace(temp_path, file_path)
+                # download_file_with_retry now logs its own detailed errors.
+                current_log_func(f"Failed to download or validate {file_name} from {download_url}.")
+                # Temp file cleanup is handled by download_file_with_retry on its failures.
 
-            # Set executable permissions for .sh files
-            if file_name.endswith(".sh"):
-                os.chmod(file_path, 0o755)
-                log_message_func(f"Set executable permissions for {file_name}")
-
-            log_message_func(f"Downloaded {file_name} to {file_path}")
-            downloaded_files.append(file_path)
-
-        except Exception as e:
-            log_message_func(f"Error downloading {file_name}: {e}")
-            # Clean up temp file if it exists
-            if os.path.exists(temp_path):
-                try:
-                    os.remove(temp_path)
-                except Exception as e2:
-                    log_message_func(f"Error removing temporary file {temp_path}: {e2}")
+        except (KeyError, TypeError) as e_file_data:
+            # Error accessing file data like name or download_url
+            malformed_file_info = str(file_item)[:100] # Log part of the problematic item
+            log_message_func(f"Malformed file data encountered: {malformed_file_info}. Error: {e_file_data}. Skipping this item.")
+        except Exception as e_loop: # Catch-all for other unexpected errors in this iteration of the loop
+            # This should be rare if download_file_with_retry handles its part and data is fine.
+            file_name_for_log = file_item.get("name", "unknown_file") if isinstance(file_item, dict) else "unknown_file"
+            log_message_func(f"Unexpected error processing file '{file_name_for_log}' in download loop: {e_loop}")
 
     return downloaded_files
 
@@ -153,8 +135,8 @@ def clean_repo_directory(download_dir, log_message_func=None):
 
         log_message_func(f"Successfully cleaned the repo directory: {repo_dir}")
         return True
-    except Exception as e:
-        log_message_func(f"Error cleaning repo directory: {e}")
+    except (OSError, IOError) as e:
+        log_message_func(f"Error cleaning repo directory {repo_dir}: {e}")
         return False
 
 
@@ -220,7 +202,9 @@ def main(config, log_message_func=None):
                     )
                     if open_folder == "y":
                         os.startfile(download_folder)
-                except Exception as e:
-                    log_message_func(f"Error opening folder: {e}")
+                except OSError as e: # os.startfile can raise OSError
+                    log_message_func(f"Error opening folder {download_folder} with os.startfile: {e}")
+                except Exception as e_open_generic: # Catch other potential errors if any
+                    log_message_func(f"Unexpected error opening folder {download_folder}: {e_open_generic}")
     else:
         log_message_func("No files were downloaded.")
