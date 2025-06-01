@@ -1,141 +1,152 @@
 import logging
-from logging.handlers import RotatingFileHandler
+from logging.handlers import RotatingFileHandler # Already here, ensure it stays
 from pathlib import Path
+import os # Added for environment variable
+from typing import Optional, Any # Added Optional and Any
 
-from rich.console import Console
-from rich.logging import RichHandler
+from rich.console import Console # Keep Rich for console
+from rich.logging import RichHandler # Keep Rich for console
 
-# Initialize Rich console
-console = Console()
+# 1. Initialize a Logger
+LOGGER_NAME = "fetchtastic"
+logger = logging.getLogger(LOGGER_NAME)
 
-# Define custom log level styles
-LOG_LEVEL_STYLES = {
-    "DEBUG": "dim blue",
-    "INFO": "green",
-    "WARNING": "yellow",
-    "ERROR": "bold red",
-    "CRITICAL": "bold white on red",
-}
+# Standard log message format for file handler
+LOG_FORMAT = "%(asctime)s - %(levelname)s - %(name)s - %(module)s.%(funcName)s:%(lineno)d - %(message)s"
+LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
-# Global variables
-config = None
-log_file_path = None
+# Global variable for the file handler to allow removal/reconfiguration if needed
+_file_handler: Optional[RotatingFileHandler] = None
 
-
-def setup_logging(base_dir=None, log_level="INFO"):
+def set_log_level(level_name: str) -> None:
     """
-    Set up logging with Rich formatting.
+    Set the logging level for the 'fetchtastic' logger and its handlers.
 
     Args:
-        base_dir: Base directory for log files. If None, logs will only go to console.
-        log_level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-
-    Returns:
-        Logger object
+        level_name (str): The desired logging level (e.g., "DEBUG", "INFO").
     """
-    # Create logger
-    logger = logging.getLogger("Fetchtastic")
+    level = getattr(logging, level_name.upper(), None)
+    if not isinstance(level, int):
+        logger.warning(f"Invalid log level name: {level_name}. Using current level.")
+        return
 
-    # Set log level
-    log_level = getattr(logging, log_level.upper())
-    logger.setLevel(log_level)
+    logger.setLevel(level)
+    for handler in logger.handlers:
+        handler.setLevel(level) # Ensure all handlers respect the new level
+    logger.info(f"Log level set to {level_name.upper()}")
 
-    # Remove any existing handlers
-    for handler in logger.handlers[:]:
-        logger.removeHandler(handler)
 
+def add_file_logging(log_dir_path: Path, level_name: str = "INFO") -> None:
+    """
+    Adds file logging to the 'fetchtastic' logger.
+
+    Args:
+        log_dir_path (Path): The directory to store log files.
+        level_name (str): The logging level for the file handler.
+    """
+    global _file_handler
+    if _file_handler and _file_handler in logger.handlers:
+        logger.removeHandler(_file_handler) # Remove existing if any, to reconfigure
+        _file_handler.close()
+
+    log_dir_path.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir_path / "fetchtastic.log"
+
+    file_formatter = logging.Formatter(LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
+
+    _file_handler = RotatingFileHandler(
+        log_file,
+        maxBytes=10 * 1024 * 1024,  # 10 MB
+        backupCount=5,
+        encoding="utf-8",
+    )
+    _file_handler.setFormatter(file_formatter)
+
+    file_log_level = getattr(logging, level_name.upper(), logging.INFO)
+    _file_handler.setLevel(file_log_level)
+
+    logger.addHandler(_file_handler)
+    logger.info(f"File logging enabled at {log_file} with level {level_name.upper()}")
+
+
+def _initialize_logger() -> None:
+    """
+    Initializes the 'fetchtastic' logger with a default console handler.
+    Reads log level from FETCHTASTIC_LOG_LEVEL environment variable if set.
+    """
     # Prevent propagation to root logger
     logger.propagate = False
 
-    # Add Rich console handler
+    # Remove any pre-existing handlers from previous imports or runs (especially in interactive sessions)
+    for handler in logger.handlers[:]:
+        logger.removeHandler(handler)
+        handler.close()
+
+    # Configure Console Handler (using RichHandler)
     console_handler = RichHandler(
         rich_tracebacks=True,
-        console=console,
-        show_time=True,
-        show_level=True,
-        show_path=False,
+        show_time=True, # Included in LOG_FORMAT effectively by RichHandler
+        show_level=True, # Included in LOG_FORMAT effectively by RichHandler
+        show_path=False, # Module and funcName are in our LOG_FORMAT for file, Rich handles this differently
         markup=True,
-        log_time_format="%Y-%m-%d %H:%M:%S",
-        omit_repeated_times=False,
+        log_time_format=LOG_DATE_FORMAT, # Consistent time format
     )
-    console_handler.setFormatter(logging.Formatter("%(message)s"))
+    # RichHandler's formatter is more about styling; the content is controlled by its parameters.
+    # For a more "standard" format appearance with RichHandler, one might need to customize it further,
+    # but for now, we let RichHandler manage its console output format.
+    # The LOG_FORMAT string is primarily for the file handler.
+    console_handler.setFormatter(logging.Formatter("%(message)s (%(name)s - %(module)s.%(funcName)s:%(lineno)d)"))
+
+
     logger.addHandler(console_handler)
 
-    # Add file handler if base_dir is provided
-    if base_dir:
-        log_dir = Path(base_dir)
-        log_dir.mkdir(exist_ok=True, parents=True)
+    # Set initial log level from environment variable or default to INFO
+    default_log_level = os.environ.get("FETCHTASTIC_LOG_LEVEL", "INFO").upper()
+    initial_level = getattr(logging, default_log_level, logging.INFO)
 
-        global log_file_path
-        log_file_path = log_dir / "fetchtastic.log"
+    logger.setLevel(initial_level) # Set logger level first
+    console_handler.setLevel(initial_level) # Then set handler level
 
-        # Set up size-based log rotation (10 MB max, keep 3 backups)
-        file_handler = RotatingFileHandler(
-            log_file_path,
-            maxBytes=10 * 1024 * 1024,  # 10 MB
-            backupCount=3,
-            encoding="utf-8",
-        )
-        file_handler.setFormatter(
-            logging.Formatter(
-                fmt="%(asctime)s %(levelname)s: %(message)s",
-                datefmt="%Y-%m-%d %H:%M:%S",
-            )
-        )
-        logger.addHandler(file_handler)
+    # Note: File logging is not enabled by default, call add_file_logging() to enable it.
+    # This is a change from the original setup_logging which could do both.
 
-    return logger
+# Initialize the logger when the module is imported
+_initialize_logger()
 
+# The old functions like setup_logging, get_logger, log_message, log_info, etc.,
+# are removed as per the requirement to use the `logger` object directly.
+# Modules should now `from fetchtastic.log_utils import logger, set_log_level, add_file_logging`
+# and use `logger.info()`, `logger.error()`, etc.
+# The Rich console object is no longer explicitly part of this module's public API,
+# as RichHandler manages its own console.
+# LOG_LEVEL_STYLES is also removed as RichHandler handles styling.
+# The global `config` and `log_file_path` are also removed or managed internally.
 
-def get_logger():
-    """
-    Get the Fetchtastic logger. If it doesn't exist, create a basic console logger.
+if __name__ == '__main__':
+    # Example Usage:
+    logger.debug("This is a debug message.")
+    logger.info("This is an info message.")
+    logger.warning("This is a warning message.")
+    logger.error("This is an error message.")
+    logger.critical("This is a critical message.")
 
-    Returns:
-        Logger object
-    """
-    logger = logging.getLogger("Fetchtastic")
+    set_log_level("DEBUG")
+    logger.debug("This is another debug message after changing level.")
 
-    # If logger has no handlers, set up a basic console handler
-    if not logger.handlers:
-        logger = setup_logging()
+    try:
+        1 / 0
+    except ZeroDivisionError:
+        logger.exception("A handled exception occurred (logged with exception info).")
 
-    return logger
+    # To test file logging (assuming you have a directory ./logs)
+    # from pathlib import Path
+    # log_dir = Path("./logs")
+    # add_file_logging(log_dir, level_name="DEBUG")
+    # logger.info("This message should go to both console and file.")
+    # logger.debug("This debug message should also go to both console and file.")
 
-
-def log_message(message, level="INFO"):
-    """
-    Log a message with the specified level.
-
-    Args:
-        message: Message to log
-        level: Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-    """
-    logger = get_logger()
-    log_method = getattr(logger, level.lower())
-    log_method(message)
-
-
-def log_debug(message):
-    """Log a debug message"""
-    log_message(message, "DEBUG")
-
-
-def log_info(message):
-    """Log an info message"""
-    log_message(message, "INFO")
-
-
-def log_warning(message):
-    """Log a warning message"""
-    log_message(message, "WARNING")
-
-
-def log_error(message):
-    """Log an error message"""
-    log_message(message, "ERROR")
-
-
-def log_critical(message):
-    """Log a critical message"""
-    log_message(message, "CRITICAL")
+    # Test FETCHTASTIC_LOG_LEVEL (run as `FETCHTASTIC_LOG_LEVEL=DEBUG python src/fetchtastic/log_utils.py`)
+    # print(f"Logger effective level: {logging.getLevelName(logger.getEffectiveLevel())}")
+    # for handler in logger.handlers:
+    # print(f"Handler {handler.name if hasattr(handler, 'name') else handler} level: {logging.getLevelName(handler.level)}")
+    pass
