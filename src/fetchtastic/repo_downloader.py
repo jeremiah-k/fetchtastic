@@ -64,12 +64,12 @@ def download_repo_files(selected_files, download_dir): # log_message_func remove
 
             # download_file_with_retry now uses the global logger
             if download_file_with_retry(download_url, file_path): # Removed log_message_func
-                logger.info(f"Successfully processed {file_name}") # Was log_message_func, general success
+                logger.debug(f"Successfully processed {file_name}") # Was log_message_func, general success
                 # Set executable permissions for .sh files (moved here, after successful download)
                 if file_name.endswith(".sh"):
                     try:
                         os.chmod(file_path, 0o755)
-                        logger.info(f"Set executable permissions for {file_name}") # Was current_log_func
+                        logger.debug(f"Set executable permissions for {file_name}") # Was current_log_func
                     except OSError as e_chmod: # Specific for os.chmod
                         logger.warning(f"Error setting permissions for {file_name}: {e_chmod}") # Was current_log_func
                 downloaded_files.append(file_path)

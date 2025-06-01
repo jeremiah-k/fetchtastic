@@ -368,7 +368,7 @@ def check_for_prereleases(
 
             if not os.path.exists(file_path):
                 try:
-                    logger.info(f"Downloading pre-release file: {file_name} from {download_url}")
+                    logger.debug(f"Downloading pre-release file: {file_name} from {download_url}")
                     response = requests.get(download_url, stream=True, timeout=PRERELEASE_REQUEST_TIMEOUT)
                     response.raise_for_status()
 
@@ -381,11 +381,11 @@ def check_for_prereleases(
                     if file_name.endswith(".sh"):
                         try:
                             os.chmod(file_path, 0o755)
-                            logger.info(f"Set executable permissions for {file_name}")
+                            logger.debug(f"Set executable permissions for {file_name}")
                         except OSError as e:
                             logger.warning(f"Error setting executable permissions for {file_name}: {e}")
 
-                    logger.info(f"Downloaded {file_name} to {file_path}")
+                    logger.info(f"✅ Downloaded: {file_name}")
                     downloaded_files.append(file_path)
                 except requests.exceptions.RequestException as e:
                     logger.error(f"Network error downloading pre-release file {file_name} from {download_url}: {e}")
@@ -439,7 +439,7 @@ def _send_ntfy_notification(ntfy_server: Optional[str], ntfy_topic: Optional[str
                 ntfy_url, data=message.encode("utf-8"), headers=headers, timeout=NTFY_REQUEST_TIMEOUT
             )
             response.raise_for_status()
-            logger.info(f"Notification sent to {ntfy_url}")
+            logger.debug(f"Notification sent to {ntfy_url}")
         except requests.exceptions.RequestException as e:
             logger.warning(f"Error sending notification to {ntfy_url}: {e}")
     else:
@@ -524,7 +524,7 @@ def _initial_setup_and_config() -> Tuple[Optional[Dict[str, Any]], Optional[str]
         if not os.path.exists(dir_path_to_create):
             try:
                 os.makedirs(dir_path_to_create)
-                logger.info(f"Created directory: {dir_path_to_create}") # Changed to logger.info
+                logger.debug(f"Created directory: {dir_path_to_create}") # Changed to logger.debug
             except OSError as e:
                 logger.error(f"Error creating directory {dir_path_to_create}: {e}") # Changed to logger.error
                 # Depending on severity, might want to return None or raise error
@@ -711,7 +711,33 @@ def _finalize_and_notify(
     global downloads_skipped
     end_time: float = time.time()
     total_time: float = end_time - start_time
-    logger.info(f"Finished the Meshtastic downloader. Total time taken: {total_time:.2f} seconds")
+
+    # Create clean summary
+    downloaded_count = len(downloaded_firmwares) + len(downloaded_apks)
+    skipped_count = 0  # TODO: Track skipped files properly
+    failed_count = 0   # TODO: Track failed files properly
+
+    logger.info("\n🧾 Summary:")
+    if downloaded_count > 0:
+        logger.info(f"  • {downloaded_count} downloaded")
+    if skipped_count > 0:
+        logger.info(f"  • {skipped_count} skipped")
+    if failed_count > 0:
+        logger.info(f"  • {failed_count} failed")
+
+    # Show latest versions if available
+    if new_firmware_versions:
+        logger.info(f"Latest firmware version: {new_firmware_versions[0] if new_firmware_versions else 'N/A'}")
+    if new_apk_versions:
+        logger.info(f"Latest APK version: {new_apk_versions[0] if new_apk_versions else 'N/A'}")
+
+    # Format time nicely
+    if total_time >= 60:
+        minutes = int(total_time // 60)
+        seconds = int(total_time % 60)
+        logger.info(f"Total time: {minutes}m {seconds}s")
+    else:
+        logger.info(f"Total time: {total_time:.0f}s")
 
     if update_available and latest_version :
         upgrade_cmd: str = get_upgrade_command()
@@ -844,11 +870,11 @@ def extract_files(zip_path: str, extract_dir: str, patterns: List[str], exclude_
                                 source: Any = zip_ref.open(file_info) # Can raise BadZipFile, LargeZipFile
                                 with open(target_path, "wb") as target_file: # Can raise IOError
                                     target_file.write(source.read())
-                                logger.info(f"Extracted {base_name} to {extract_dir}")
+                                logger.debug(f"Extracted {base_name} to {extract_dir}")
                             if base_name.endswith(".sh"):
                                 if not os.access(target_path, os.X_OK):
                                     os.chmod(target_path, 0o755) # Can raise OSError
-                                    logger.info(f"Set executable permissions for {base_name}")
+                                    logger.debug(f"Set executable permissions for {base_name}")
                             break
                         except ValueError as e_val: # From safe_extract_path
                             logger.warning(f"Skipping extraction of '{base_name}' due to unsafe path: {e_val}")
@@ -1000,12 +1026,12 @@ def check_and_download(
                     continue # Skip this release if its directory cannot be created
 
             if not os.path.exists(release_notes_file) and release_data.get("body"):
-                logger.info(f"Downloading release notes for version {release_tag}.")
+                logger.debug(f"Downloading release notes for version {release_tag}.")
                 release_notes_content: str = strip_unwanted_chars(release_data["body"])
                 try:
                     with open(release_notes_file, "w", encoding="utf-8") as notes_file:
                         notes_file.write(release_notes_content)
-                    logger.info(f"Saved release notes to {release_notes_file}")
+                    logger.debug(f"Saved release notes to {release_notes_file}")
                 except IOError as e:
                     logger.warning(f"Error writing release notes to {release_notes_file}: {e}")
 
@@ -1061,7 +1087,7 @@ def check_and_download(
 
         if assets_to_download: # This check is correct based on the first loop.
             actions_taken = True
-            logger.info(f"Downloading missing assets for version {release_tag}.")
+            logger.debug(f"Downloading missing assets for version {release_tag}.")
             any_downloaded: bool = False
             url: str
             path_to_download: str # This variable is path_to_download in the loop below
@@ -1105,8 +1131,9 @@ def check_and_download(
                                 zip_path, release_dir, extract_patterns, exclude_patterns_list
                             )
                             if extraction_needed:
-                                logger.info(f"Extracting files from {zip_path}...")
+                                logger.debug(f"Extracting files from {zip_path}...")
                                 extract_files(zip_path, release_dir, extract_patterns, exclude_patterns_list)
+                                logger.info(f"📦 Extracted: {os.path.basename(zip_path)}")
 
         set_permissions_on_sh_files(release_dir)
 
@@ -1117,7 +1144,7 @@ def check_and_download(
                 try:
                     with open(latest_release_file, "w") as f:
                         f.write(latest_release_tag_val)
-                    logger.info(f"Updated latest release tag to {latest_release_tag_val}")
+                    logger.debug(f"Updated latest release tag to {latest_release_tag_val}")
                 except IOError as e:
                     logger.warning(f"Error writing latest release tag to {latest_release_file}: {e}")
         except (IndexError, KeyError, TypeError) as e: # If releases_to_download is empty or structure is wrong
@@ -1161,7 +1188,7 @@ def set_permissions_on_sh_files(directory: str) -> None:
                     try:
                         if not os.access(file_path, os.X_OK):
                             os.chmod(file_path, 0o755)
-                            logger.info(f"Set executable permissions for {file_in_dir}")
+                            logger.debug(f"Set executable permissions for {file_in_dir}")
                     except OSError as e:
                         logger.warning(f"Error setting permissions on {file_path}: {e}")
     except OSError as e_walk: # os.walk itself can fail
