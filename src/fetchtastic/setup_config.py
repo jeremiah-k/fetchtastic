@@ -156,6 +156,11 @@ def check_storage_setup():
 
 
 def run_setup():
+    """
+    Runs the interactive setup process for Fetchtastic, guiding the user through configuration, migration, and environment-specific setup.
+    
+    This function handles initial configuration, migration from old config locations, selection of asset types to download (APKs, firmware), version retention policies, firmware extraction options, notification setup, and scheduling (cron jobs or startup shortcuts) based on the detected platform (Windows, Termux, Linux, macOS). It saves the resulting configuration to a YAML file and offers to perform the first download run upon completion.
+    """
     global BASE_DIR, CONFIG_FILE
     print("Running Fetchtastic Setup...")
 
@@ -1006,10 +1011,10 @@ def display_version_info(show_update_message=True):
 
 def migrate_config():
     """
-    Migrates the configuration from the old location to the new location.
-
+    Migrates the configuration file from the old location to the new standard location.
+    
     Returns:
-        bool: True if migration was successful, False otherwise.
+        True if the migration succeeds, False otherwise. The old configuration file is removed after a successful migration.
     """
     # Import here to avoid circular imports
     from fetchtastic.log_utils import logger
@@ -1056,11 +1061,9 @@ def migrate_config():
 
 def prompt_for_migration():
     """
-    Automatically migrates the configuration from the old location to the new location
-    without prompting the user.
-
-    Returns:
-        bool: Always returns True to indicate migration should proceed.
+    Logs the automatic migration of the configuration file from the old location to the new location.
+    
+    Always returns True to indicate that migration should proceed.
     """
     # Import here to avoid circular imports
     from fetchtastic.log_utils import logger

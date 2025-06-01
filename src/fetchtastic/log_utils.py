@@ -21,11 +21,9 @@ _file_handler: Optional[RotatingFileHandler] = None
 
 def set_log_level(level_name: str) -> None:
     """
-    Set the logging level for the 'fetchtastic' logger and its handlers.
-    Also updates formatters based on the new level.
-
-    Args:
-        level_name (str): The desired logging level (e.g., "DEBUG", "INFO").
+    Sets the logging level for the 'fetchtastic' logger and all attached handlers.
+    
+    Updates each handler's formatter to match the new log level, using a simple format for INFO and above, and a detailed format for DEBUG and below. If an invalid level name is provided, logs a warning and leaves the current level unchanged.
     """
     level = getattr(logging, level_name.upper(), None)
     if not isinstance(level, int):
@@ -57,11 +55,9 @@ def set_log_level(level_name: str) -> None:
 
 def add_file_logging(log_dir_path: Path, level_name: str = "INFO") -> None:
     """
-    Adds file logging to the 'fetchtastic' logger.
-
-    Args:
-        log_dir_path (Path): The directory to store log files.
-        level_name (str): The logging level for the file handler.
+    Enables rotating file logging for the 'fetchtastic' logger in the specified directory.
+    
+    Creates or reconfigures a rotating file handler that writes logs to 'fetchtastic.log' within the given directory. The log format and detail level are determined by the specified logging level. Existing file handlers are replaced if present.
     """
     global _file_handler
     if _file_handler and _file_handler in logger.handlers:
@@ -93,8 +89,9 @@ def add_file_logging(log_dir_path: Path, level_name: str = "INFO") -> None:
 
 def _initialize_logger() -> None:
     """
-    Initializes the 'fetchtastic' logger with a default console handler.
-    Reads log level from FETCHTASTIC_LOG_LEVEL environment variable if set.
+    Initializes the module-level 'fetchtastic' logger with a Rich-enhanced console handler.
+    
+    Removes any existing handlers to prevent duplicates, sets the log level from the FETCHTASTIC_LOG_LEVEL environment variable (defaulting to INFO), and configures the console output format based on the chosen log level. File logging is not enabled by default and must be added separately.
     """
     # Prevent propagation to root logger
     logger.propagate = False
