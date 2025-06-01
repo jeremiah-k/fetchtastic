@@ -1,7 +1,8 @@
 import logging
-from logging.handlers import RotatingFileHandler
+from logging.handlers import RotatingFileHandler # Already here, ensure it stays
 from pathlib import Path
 import os # Added for environment variable
+from typing import Optional, Any # Added Optional and Any
 
 from rich.console import Console # Keep Rich for console
 from rich.logging import RichHandler # Keep Rich for console
