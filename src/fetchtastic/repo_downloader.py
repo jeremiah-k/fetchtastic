@@ -64,7 +64,7 @@ def download_repo_files(selected_files, download_dir): # log_message_func remove
 
             # download_file_with_retry now uses the global logger
             if download_file_with_retry(download_url, file_path): # Removed log_message_func
-                logger.debug(f"Successfully processed {file_name}") # Was log_message_func, general success
+                # download_file_with_retry already logs the download completion
                 # Set executable permissions for .sh files (moved here, after successful download)
                 if file_name.endswith(".sh"):
                     try:

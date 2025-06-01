@@ -56,7 +56,7 @@ def download_file_with_retry(
                 with zipfile.ZipFile(download_path, "r") as zf:
                     if zf.testzip() is not None : # None means no errors
                             raise zipfile.BadZipFile("Zip file integrity check failed (testzip).")
-                logger.info(f"💤 Skipped: {os.path.basename(download_path)} (already present & verified)")
+                logger.info(f"Skipped: {os.path.basename(download_path)} (already present & verified)")
                 return True
             except zipfile.BadZipFile:
                 logger.debug(f"Removing corrupted zip file: {download_path}")
@@ -82,7 +82,7 @@ def download_file_with_retry(
         else: # For non-zip files
             try:
                 if os.path.getsize(download_path) > 0:
-                    logger.info(f"💤 Skipped: {os.path.basename(download_path)} (already present)")
+                    logger.info(f"Skipped: {os.path.basename(download_path)} (already present)")
                     return True
                 else:
                     logger.debug(f"Removing empty file: {download_path}")
@@ -116,7 +116,8 @@ def download_file_with_retry(
         download_time = time.time() - start_time
         file_size_mb = downloaded_bytes / (1024 * 1024)
         logger.debug(f"Finished downloading {url}. Total chunks: {downloaded_chunks}, total bytes: {downloaded_bytes}.")
-        logger.info(f"✅ Downloaded: {os.path.basename(download_path)} ({file_size_mb:.1f} MB, {downloaded_chunks//1000}k chunks, {download_time:.0f}s)")
+
+        # Log completion after successful file replacement (moved below)
 
         if download_path.endswith(".zip"):
             try:
@@ -145,6 +146,12 @@ def download_file_with_retry(
                     logger.debug(f"Attempting to move temporary file {temp_path} to {download_path} (Windows attempt {i+1}/{WINDOWS_MAX_REPLACE_RETRIES})")
                     os.replace(temp_path, download_path)
                     logger.debug(f"Successfully moved temporary file {temp_path} to {download_path}")
+
+                    # Log successful download after file is in place
+                    if file_size_mb >= 1.0:
+                        logger.info(f"Downloaded: {os.path.basename(download_path)} ({file_size_mb:.1f} MB)")
+                    else:
+                        logger.info(f"Downloaded: {os.path.basename(download_path)} ({downloaded_bytes} bytes)")
                     return True
                 except PermissionError as e_perm: # Specific to Windows replace issues often
                     if i < WINDOWS_MAX_REPLACE_RETRIES - 1:
@@ -168,6 +175,12 @@ def download_file_with_retry(
                 logger.debug(f"Attempting to move temporary file {temp_path} to {download_path} (non-Windows)")
                 os.replace(temp_path, download_path)
                 logger.debug(f"Successfully moved temporary file {temp_path} to {download_path}")
+
+                # Log successful download after file is in place
+                if file_size_mb >= 1.0:
+                    logger.info(f"Downloaded: {os.path.basename(download_path)} ({file_size_mb:.1f} MB)")
+                else:
+                    logger.info(f"Downloaded: {os.path.basename(download_path)} ({downloaded_bytes} bytes)")
                 return True
             except (IOError, OSError) as e_nix_replace:
                 logger.error(f"Error replacing file {temp_path} to {download_path} on non-Windows: {e_nix_replace}")
