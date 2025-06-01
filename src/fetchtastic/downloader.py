@@ -595,6 +595,7 @@ def _process_firmware_downloads(config: Dict[str, Any], paths_and_urls: Dict[str
         )
         downloaded_firmwares.extend(fw_downloaded)
         new_firmware_versions.extend(fw_new_versions)
+        all_failed_firmware_downloads.extend(failed_fw_downloads_details) # Ensure this line is present
         if fw_downloaded:
             logger.info(f"Downloaded Firmware versions: {', '.join(fw_downloaded)}")
 
@@ -632,10 +633,10 @@ def _process_firmware_downloads(config: Dict[str, Any], paths_and_urls: Dict[str
     elif not config.get("SELECTED_FIRMWARE_ASSETS", []):
         logger.info("No firmware assets selected. Skipping firmware download.")
 
-    return downloaded_firmwares, new_firmware_versions
+    return downloaded_firmwares, new_firmware_versions, all_failed_firmware_downloads
 
 
-def _process_apk_downloads(config: Dict[str, Any], paths_and_urls: Dict[str, str]) -> Tuple[List[str], List[str], List[Dict[str,str]]]: # Corrected type hint
+def _process_apk_downloads(config: Dict[str, Any], paths_and_urls: Dict[str, str]) -> Tuple[List[str], List[str], List[Dict[str,str]]]:
     """
     Handles the APK download process.
 
@@ -651,6 +652,7 @@ def _process_apk_downloads(config: Dict[str, Any], paths_and_urls: Dict[str, str
     global downloads_skipped
     downloaded_apks: List[str] = []
     new_apk_versions: List[str] = []
+    all_failed_apk_downloads: List[Dict[str, str]] = [] # Initialize all_failed_apk_downloads
 
     if config.get("SAVE_APKS", False) and config.get("SELECTED_APK_ASSETS", []):
         latest_android_releases: List[Dict[str, Any]] = _get_latest_releases_data(
@@ -658,7 +660,8 @@ def _process_apk_downloads(config: Dict[str, Any], paths_and_urls: Dict[str, str
         )
         apk_downloaded: List[str]
         apk_new_versions_list: List[str]
-        apk_downloaded, apk_new_versions_list = check_and_download(
+        failed_apk_downloads_details: List[Dict[str, str]] # Declare for unpacking
+        apk_downloaded, apk_new_versions_list, failed_apk_downloads_details = check_and_download( # Unpack 3 values
             latest_android_releases,
             paths_and_urls["latest_android_release_file"],
             "Android APK",
@@ -671,12 +674,13 @@ def _process_apk_downloads(config: Dict[str, Any], paths_and_urls: Dict[str, str
         )
         downloaded_apks.extend(apk_downloaded)
         new_apk_versions.extend(apk_new_versions_list)
+        all_failed_apk_downloads.extend(failed_apk_downloads_details) # Extend with failed details
         if apk_downloaded:
             logger.info(f"Downloaded Android APK versions: {', '.join(apk_downloaded)}")
     elif not config.get("SELECTED_APK_ASSETS", []):
         logger.info("No APK assets selected. Skipping APK download.")
 
-    return downloaded_apks, new_apk_versions
+    return downloaded_apks, new_apk_versions, all_failed_apk_downloads
 
 
 def _finalize_and_notify(
