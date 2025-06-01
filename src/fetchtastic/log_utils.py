@@ -11,9 +11,10 @@ from rich.logging import RichHandler # Keep Rich for console
 LOGGER_NAME = "fetchtastic"
 logger = logging.getLogger(LOGGER_NAME)
 
-# Standard log message format for file handler
-LOG_FORMAT = "%(asctime)s - %(levelname)s - %(name)s - %(module)s.%(funcName)s:%(lineno)d - %(message)s"
+# Log message formats - split between INFO and DEBUG levels
 LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+INFO_LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
+DEBUG_LOG_FORMAT = "%(asctime)s - %(levelname)s - %(name)s - %(module)s.%(funcName)s:%(lineno)d - %(message)s"
 
 # Global variable for the file handler to allow removal/reconfiguration if needed
 _file_handler: Optional[RotatingFileHandler] = None
@@ -21,6 +22,7 @@ _file_handler: Optional[RotatingFileHandler] = None
 def set_log_level(level_name: str) -> None:
     """
     Set the logging level for the 'fetchtastic' logger and its handlers.
+    Also updates formatters based on the new level.
 
     Args:
         level_name (str): The desired logging level (e.g., "DEBUG", "INFO").
@@ -31,8 +33,25 @@ def set_log_level(level_name: str) -> None:
         return
 
     logger.setLevel(level)
+
+    # Update formatters for all handlers based on new level
     for handler in logger.handlers:
-        handler.setLevel(level) # Ensure all handlers respect the new level
+        handler.setLevel(level)
+
+        # Update formatter based on level
+        if level >= logging.INFO:
+            if isinstance(handler, RichHandler):
+                formatter = logging.Formatter("%(message)s")
+            else:
+                formatter = logging.Formatter(INFO_LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
+        else:
+            if isinstance(handler, RichHandler):
+                formatter = logging.Formatter("%(message)s (%(name)s - %(module)s.%(funcName)s:%(lineno)d)")
+            else:
+                formatter = logging.Formatter(DEBUG_LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
+
+        handler.setFormatter(formatter)
+
     logger.info(f"Log level set to {level_name.upper()}")
 
 
@@ -52,7 +71,12 @@ def add_file_logging(log_dir_path: Path, level_name: str = "INFO") -> None:
     log_dir_path.mkdir(parents=True, exist_ok=True)
     log_file = log_dir_path / "fetchtastic.log"
 
-    file_formatter = logging.Formatter(LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
+    # Choose formatter based on log level
+    file_log_level = getattr(logging, level_name.upper(), logging.INFO)
+    if file_log_level >= logging.INFO:
+        file_formatter = logging.Formatter(INFO_LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
+    else:
+        file_formatter = logging.Formatter(DEBUG_LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
 
     _file_handler = RotatingFileHandler(
         log_file,
@@ -61,8 +85,6 @@ def add_file_logging(log_dir_path: Path, level_name: str = "INFO") -> None:
         encoding="utf-8",
     )
     _file_handler.setFormatter(file_formatter)
-
-    file_log_level = getattr(logging, level_name.upper(), logging.INFO)
     _file_handler.setLevel(file_log_level)
 
     logger.addHandler(_file_handler)
@@ -85,24 +107,25 @@ def _initialize_logger() -> None:
     # Configure Console Handler (using RichHandler)
     console_handler = RichHandler(
         rich_tracebacks=True,
-        show_time=True, # Included in LOG_FORMAT effectively by RichHandler
-        show_level=True, # Included in LOG_FORMAT effectively by RichHandler
-        show_path=False, # Module and funcName are in our LOG_FORMAT for file, Rich handles this differently
+        show_time=True,
+        show_level=True,
+        show_path=False,
         markup=True,
-        log_time_format=LOG_DATE_FORMAT, # Consistent time format
+        log_time_format=LOG_DATE_FORMAT,
     )
-    # RichHandler's formatter is more about styling; the content is controlled by its parameters.
-    # For a more "standard" format appearance with RichHandler, one might need to customize it further,
-    # but for now, we let RichHandler manage its console output format.
-    # The LOG_FORMAT string is primarily for the file handler.
-    console_handler.setFormatter(logging.Formatter("%(message)s (%(name)s - %(module)s.%(funcName)s:%(lineno)d)"))
-
-
-    logger.addHandler(console_handler)
 
     # Set initial log level from environment variable or default to INFO
     default_log_level = os.environ.get("FETCHTASTIC_LOG_LEVEL", "INFO").upper()
     initial_level = getattr(logging, default_log_level, logging.INFO)
+
+    # Choose console formatter based on log level
+    if initial_level >= logging.INFO:
+        console_formatter = logging.Formatter("%(message)s")
+    else:
+        console_formatter = logging.Formatter("%(message)s (%(name)s - %(module)s.%(funcName)s:%(lineno)d)")
+
+    console_handler.setFormatter(console_formatter)
+    logger.addHandler(console_handler)
 
     logger.setLevel(initial_level) # Set logger level first
     console_handler.setLevel(initial_level) # Then set handler level
