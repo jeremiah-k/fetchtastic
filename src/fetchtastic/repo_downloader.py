@@ -7,30 +7,30 @@ import time
 
 import requests
 
+from fetchtastic.utils import download_file_with_retry
+from fetchtastic.log_utils import logger # Import new logger
 
-def download_repo_files(selected_files, download_dir, log_message_func=None):
+
+def download_repo_files(selected_files, download_dir): # log_message_func removed
     """
     Downloads selected files from the meshtastic.github.io repository.
 
     Args:
         selected_files: Dictionary containing directory and files information
         download_dir: Base download directory
-        log_message_func: Function to log messages (optional)
+        # log_message_func removed
 
     Returns:
         List of downloaded file paths
     """
-    if log_message_func is None:
-
-        def log_message_func(message):
-            print(message)
+    # Removed local log_message_func definition
 
     if (
         not selected_files
         or "directory" not in selected_files
         or "files" not in selected_files
     ):
-        log_message_func("No files selected for download.")
+        logger.info("No files selected for download.") # Was log_message_func
         return []
 
     directory = selected_files["directory"]
@@ -38,106 +38,75 @@ def download_repo_files(selected_files, download_dir, log_message_func=None):
 
     # Create repo-dls directory if it doesn't exist
     repo_dir = os.path.join(download_dir, "firmware", "repo-dls")
-    if not os.path.exists(repo_dir):
-        os.makedirs(repo_dir)
+    try:
+        if not os.path.exists(repo_dir):
+            os.makedirs(repo_dir)
 
-    # Create directory structure matching the repository path
-    if directory:
-        dir_path = os.path.join(repo_dir, directory)
-    else:
-        dir_path = repo_dir
+        # Create directory structure matching the repository path
+        if directory:
+            dir_path = os.path.join(repo_dir, directory)
+        else:
+            dir_path = repo_dir
 
-    if not os.path.exists(dir_path):
-        os.makedirs(dir_path)
+        if not os.path.exists(dir_path):
+            os.makedirs(dir_path)
+    except OSError as e:
+        logger.error(f"Error creating base directories for repo downloads ({repo_dir} or {dir_path}): {e}", exc_info=True) # Was log_message_func
+        return [] # Cannot proceed if base directories can't be created
 
     downloaded_files = []
 
-    for file in files:
-        file_name = file["name"]
-        download_url = file["download_url"]
-        file_path = os.path.join(dir_path, file_name)
-        temp_path = file_path + ".tmp"
-
+    for file_item in files: # Renamed to avoid conflict with built-in 'file'
         try:
-            log_message_func(f"Downloading {file_name} from {directory or 'root'}...")
-            response = requests.get(download_url, stream=True, timeout=30)
-            response.raise_for_status()
+            file_name = file_item["name"] # Potential KeyError
+            download_url = file_item["download_url"] # Potential KeyError
+            file_path = os.path.join(dir_path, file_name)
 
-            # Download to a temporary file first
-            with open(temp_path, "wb") as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-
-            # Windows-specific handling for file operations
-            if platform.system() == "Windows":
-                # Try to move the file with retries for Windows
-                max_retries = 3
-                retry_delay = 1  # seconds
-                for retry in range(max_retries):
+            # download_file_with_retry now uses the global logger
+            if download_file_with_retry(download_url, file_path): # Removed log_message_func
+                # download_file_with_retry already logs the download completion
+                # Set executable permissions for .sh files (moved here, after successful download)
+                if file_name.endswith(".sh"):
                     try:
-                        # Make sure the file is closed and not locked
-                        import gc
-
-                        gc.collect()  # Force garbage collection to release file handles
-
-                        # Try to move the file
-                        os.replace(temp_path, file_path)
-                        break
-                    except PermissionError as e:
-                        if retry < max_retries - 1:
-                            log_message_func(
-                                f"File access error, retrying in {retry_delay} seconds: {e}"
-                            )
-                            time.sleep(retry_delay)
-                            retry_delay *= 2  # Exponential backoff
-                        else:
-                            # Last retry failed
-                            raise
+                        os.chmod(file_path, 0o755)
+                        logger.debug(f"Set executable permissions for {file_name}") # Was current_log_func
+                    except OSError as e_chmod: # Specific for os.chmod
+                        logger.warning(f"Error setting permissions for {file_name}: {e_chmod}") # Was current_log_func
+                downloaded_files.append(file_path)
             else:
-                # Non-Windows platforms
-                os.replace(temp_path, file_path)
+                # download_file_with_retry now logs its own detailed errors.
+                logger.error(f"Failed to download or validate {file_name} from {download_url}.") # Was current_log_func
+                # Temp file cleanup is handled by download_file_with_retry on its failures.
 
-            # Set executable permissions for .sh files
-            if file_name.endswith(".sh"):
-                os.chmod(file_path, 0o755)
-                log_message_func(f"Set executable permissions for {file_name}")
-
-            log_message_func(f"Downloaded {file_name} to {file_path}")
-            downloaded_files.append(file_path)
-
-        except Exception as e:
-            log_message_func(f"Error downloading {file_name}: {e}")
-            # Clean up temp file if it exists
-            if os.path.exists(temp_path):
-                try:
-                    os.remove(temp_path)
-                except Exception as e2:
-                    log_message_func(f"Error removing temporary file {temp_path}: {e2}")
+        except (KeyError, TypeError) as e_file_data:
+            # Error accessing file data like name or download_url
+            malformed_file_info = str(file_item)[:100] # Log part of the problematic item
+            logger.error(f"Malformed file data encountered: {malformed_file_info}. Error: {e_file_data}. Skipping this item.", exc_info=True) # Was log_message_func
+        except Exception as e_loop: # Catch-all for other unexpected errors in this iteration of the loop
+            # This should be rare if download_file_with_retry handles its part and data is fine.
+            file_name_for_log = file_item.get("name", "unknown_file") if isinstance(file_item, dict) else "unknown_file"
+            logger.error(f"Unexpected error processing file '{file_name_for_log}' in download loop: {e_loop}", exc_info=True) # Was log_message_func
 
     return downloaded_files
 
 
-def clean_repo_directory(download_dir, log_message_func=None):
+def clean_repo_directory(download_dir): # log_message_func removed
     """
     Cleans the repo directory by removing all files and subdirectories.
 
     Args:
         download_dir: Base download directory
-        log_message_func: Function to log messages (optional)
+        # log_message_func removed
 
     Returns:
         Boolean indicating success
     """
-    if log_message_func is None:
-
-        def log_message_func(message):
-            print(message)
+    # Removed local log_message_func definition
 
     repo_dir = os.path.join(download_dir, "firmware", "repo-dls")
 
     if not os.path.exists(repo_dir):
-        log_message_func("Repo-dls directory does not exist. Nothing to clean.")
+        logger.info("Repo-dls directory does not exist. Nothing to clean.") # Was log_message_func
         return True
 
     try:
@@ -146,66 +115,63 @@ def clean_repo_directory(download_dir, log_message_func=None):
             item_path = os.path.join(repo_dir, item)
             if os.path.isfile(item_path) or os.path.islink(item_path):
                 os.remove(item_path)
-                log_message_func(f"Removed file: {item_path}")
+                logger.info(f"Removed file: {item_path}") # Was log_message_func
             elif os.path.isdir(item_path):
                 shutil.rmtree(item_path)
-                log_message_func(f"Removed directory: {item_path}")
+                logger.info(f"Removed directory: {item_path}") # Was log_message_func
 
-        log_message_func(f"Successfully cleaned the repo directory: {repo_dir}")
+        logger.info(f"Successfully cleaned the repo directory: {repo_dir}") # Was log_message_func
         return True
-    except Exception as e:
-        log_message_func(f"Error cleaning repo directory: {e}")
+    except (OSError, IOError) as e:
+        logger.error(f"Error cleaning repo directory {repo_dir}: {e}", exc_info=True) # Was log_message_func
         return False
 
 
-def main(config, log_message_func=None):
+def main(config): # log_message_func removed
     """
     Main function to run the repository downloader.
 
     Args:
         config: Configuration dictionary
-        log_message_func: Function to log messages (optional)
+        # log_message_func removed
 
     Returns:
         None
     """
-    if log_message_func is None:
+    # Removed local log_message_func definition
 
-        def log_message_func(message):
-            print(message)
-
-    from fetchtastic import menu_repo
+    from fetchtastic import menu_repo # menu_repo likely uses print or its own logging, review separately if needed
 
     download_dir = config.get("DOWNLOAD_DIR")
     if not download_dir:
-        log_message_func("Download directory not configured.")
+        logger.error("Download directory not configured.") # Was log_message_func
         return
 
-    log_message_func("Starting Repository File Browser...")
+    logger.info("Starting Repository File Browser...") # Was log_message_func
 
     # Run the menu to select files
-    selected_files = menu_repo.run_menu()
+    selected_files = menu_repo.run_menu() # Assuming menu_repo.run_menu() doesn't need log_message_func
 
     if not selected_files:
-        log_message_func("No files selected for download. Exiting.")
+        logger.info("No files selected for download. Exiting.") # Was log_message_func
         return
 
     # Download the selected files
-    downloaded_files = download_repo_files(
-        selected_files, download_dir, log_message_func
+    downloaded_files = download_repo_files( # log_message_func removed from call
+        selected_files, download_dir
     )
 
     if downloaded_files:
-        log_message_func(f"Successfully downloaded {len(downloaded_files)} files.")
+        logger.info(f"Successfully downloaded {len(downloaded_files)} files.") # Was log_message_func
         for file_path in downloaded_files:
-            log_message_func(f"  - {os.path.basename(file_path)}")
+            logger.info(f"  - {os.path.basename(file_path)}") # Was log_message_func
 
         # Show the download directory
         download_folder = (
             os.path.dirname(downloaded_files[0]) if downloaded_files else ""
         )
         if download_folder:
-            log_message_func(f"\nFiles were saved to: {download_folder}")
+            logger.info(f"\nFiles were saved to: {download_folder}") # Was log_message_func
 
             # If on Windows, offer to open the folder
             if platform.system() == "Windows":
@@ -220,7 +186,9 @@ def main(config, log_message_func=None):
                     )
                     if open_folder == "y":
                         os.startfile(download_folder)
-                except Exception as e:
-                    log_message_func(f"Error opening folder: {e}")
+                except OSError as e: # os.startfile can raise OSError
+                    logger.error(f"Error opening folder {download_folder} with os.startfile: {e}", exc_info=True) # Was log_message_func
+                except Exception as e_open_generic: # Catch other potential errors if any
+                    logger.error(f"Unexpected error opening folder {download_folder}: {e_open_generic}", exc_info=True) # Was log_message_func
     else:
-        log_message_func("No files were downloaded.")
+        logger.info("No files were downloaded.") # Was log_message_func

@@ -176,24 +176,24 @@ def run_setup():
     # Check for configuration in old location
     if os.path.exists(OLD_CONFIG_FILE) and not os.path.exists(CONFIG_FILE):
         # Import here to avoid circular imports
-        from fetchtastic.log_utils import log_error, log_info
+        from fetchtastic.log_utils import logger
 
         separator = "=" * 80
-        log_info(f"\n{separator}")
-        log_info("Configuration Migration")
-        log_info(separator)
+        logger.info(f"\n{separator}")
+        logger.info("Configuration Migration")
+        logger.info(separator)
         # Automatically migrate without prompting
         prompt_for_migration()  # Just logs the migration message
         if migrate_config():
-            log_info("Configuration successfully migrated to the new location.")
+            logger.info("Configuration successfully migrated to the new location.")
             # Update config_path to the new location for subsequent operations
             config_path = CONFIG_FILE
             # Re-load the configuration from the new location if it exists
             if os.path.exists(CONFIG_FILE):
                 exists = True
         else:
-            log_error("Failed to migrate configuration. Continuing with old location.")
-        log_info(f"{separator}\n")
+            logger.error("Failed to migrate configuration. Continuing with old location.")
+        logger.info(f"{separator}\n")
 
     # Ask for base directory as the first question
     config = {}
@@ -1012,7 +1012,7 @@ def migrate_config():
         bool: True if migration was successful, False otherwise.
     """
     # Import here to avoid circular imports
-    from fetchtastic.log_utils import log_error, log_info
+    from fetchtastic.log_utils import logger
 
     # Check if old config exists
     if not os.path.exists(OLD_CONFIG_FILE):
@@ -1023,7 +1023,7 @@ def migrate_config():
         try:
             os.makedirs(CONFIG_DIR, exist_ok=True)
         except Exception as e:
-            log_error(f"Error creating config directory: {e}")
+            logger.error(f"Error creating config directory: {e}")
             return False
 
     # Load the old config
@@ -1031,7 +1031,7 @@ def migrate_config():
         with open(OLD_CONFIG_FILE, "r") as f:
             config = yaml.safe_load(f)
     except Exception as e:
-        log_error(f"Error loading old config: {e}")
+        logger.error(f"Error loading old config: {e}")
         return False
 
     # Save to new location
@@ -1042,15 +1042,15 @@ def migrate_config():
         # Remove the old file after successful migration
         try:
             os.remove(OLD_CONFIG_FILE)
-            log_info(f"Configuration migrated to {CONFIG_FILE} and old file removed")
+            logger.info(f"Configuration migrated to {CONFIG_FILE} and old file removed")
         except Exception as e:
-            log_error(
+            logger.error(
                 f"Configuration migrated to {CONFIG_FILE} but failed to remove old file: {e}"
             )
 
         return True
     except Exception as e:
-        log_error(f"Error saving config to new location: {e}")
+        logger.error(f"Error saving config to new location: {e}")
         return False
 
 
@@ -1063,10 +1063,10 @@ def prompt_for_migration():
         bool: Always returns True to indicate migration should proceed.
     """
     # Import here to avoid circular imports
-    from fetchtastic.log_utils import log_info
+    from fetchtastic.log_utils import logger
 
-    log_info(f"Found configuration file at old location: {OLD_CONFIG_FILE}")
-    log_info(f"Automatically migrating to the new location: {CONFIG_FILE}")
+    logger.info(f"Found configuration file at old location: {OLD_CONFIG_FILE}")
+    logger.info(f"Automatically migrating to the new location: {CONFIG_FILE}")
     return True
 
 

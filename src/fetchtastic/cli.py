@@ -10,13 +10,12 @@ import sys
 import platformdirs
 
 from fetchtastic import downloader, repo_downloader, setup_config
-from fetchtastic.log_utils import log_error, log_info, setup_logging
+from fetchtastic.log_utils import logger
 from fetchtastic.setup_config import display_version_info, get_upgrade_command
 
 
 def main():
-    # Set up logging (console only for CLI commands)
-    setup_logging()
+    # Logging is automatically initialized by importing log_utils
 
     parser = argparse.ArgumentParser(
         description="Fetchtastic - Meshtastic Firmware and APK Downloader"
@@ -77,16 +76,16 @@ def main():
         # Remind about updates at the end if available
         if update_available:
             upgrade_cmd = get_upgrade_command()
-            log_info("\nUpdate Available")
-            log_info(
+            logger.info("\nUpdate Available")
+            logger.info(
                 f"A newer version (v{latest_version}) of Fetchtastic is available!"
             )
-            log_info(f"Run '{upgrade_cmd}' to upgrade.")
+            logger.info(f"Run '{upgrade_cmd}' to upgrade.")
     elif args.command == "download":
         # Check if configuration exists
         exists, config_path = setup_config.config_exists()
         if not exists:
-            log_info("No configuration found. Running setup.")
+            logger.info("No configuration found. Running setup.")
             setup_config.run_setup()
         else:
             # Check if config is in old location and needs migration
@@ -94,25 +93,25 @@ def main():
                 setup_config.CONFIG_FILE
             ):
                 separator = "=" * 80
-                log_info(f"\n{separator}")
-                log_info("Configuration Migration")
-                log_info(separator)
+                logger.info(f"\n{separator}")
+                logger.info("Configuration Migration")
+                logger.info(separator)
                 # Automatically migrate without prompting
                 setup_config.prompt_for_migration()  # Just logs the migration message
                 if setup_config.migrate_config():
-                    log_info("Configuration successfully migrated to the new location.")
+                    logger.info("Configuration successfully migrated to the new location.")
                     # Update config_path to the new location
                     config_path = setup_config.CONFIG_FILE
                     # Re-load the configuration from the new location
                     config = setup_config.load_config(config_path)
                 else:
-                    log_error(
+                    logger.error(
                         "Failed to migrate configuration. Continuing with old location."
                     )
-                log_info(f"{separator}\n")
+                logger.info(f"{separator}\n")
 
             # Display the config file location
-            log_info(f"Using configuration from: {config_path}")
+            logger.info(f"Using configuration from: {config_path}")
 
             # Run the downloader
             downloader.main()
@@ -157,11 +156,11 @@ def main():
         current_version, latest_version, update_available = display_version_info()
 
         # Log version information
-        log_info(f"Fetchtastic v{current_version}")
+        logger.info(f"Fetchtastic v{current_version}")
         if update_available and latest_version:
             upgrade_cmd = get_upgrade_command()
-            log_info(f"A newer version (v{latest_version}) is available!")
-            log_info(f"Run '{upgrade_cmd}' to upgrade.")
+            logger.info(f"A newer version (v{latest_version}) is available!")
+            logger.info(f"Run '{upgrade_cmd}' to upgrade.")
     elif args.command == "help":
         # Check if a subcommand was specified
         if len(sys.argv) > 2:
@@ -218,11 +217,11 @@ def main():
             # Remind about updates at the end if available
             if update_available:
                 upgrade_cmd = get_upgrade_command()
-                log_info("\nUpdate Available")
-                log_info(
+                logger.info("\nUpdate Available")
+                logger.info(
                     f"A newer version (v{latest_version}) of Fetchtastic is available!"
                 )
-                log_info(f"Run '{upgrade_cmd}' to upgrade.")
+                logger.info(f"Run '{upgrade_cmd}' to upgrade.")
         elif args.repo_command == "clean":
             # Clean the repository directory
             run_repo_clean(config)
@@ -230,11 +229,11 @@ def main():
             # Remind about updates at the end if available
             if update_available:
                 upgrade_cmd = get_upgrade_command()
-                log_info("\nUpdate Available")
-                log_info(
+                logger.info("\nUpdate Available")
+                logger.info(
                     f"A newer version (v{latest_version}) of Fetchtastic is available!"
                 )
-                log_info(f"Run '{upgrade_cmd}' to upgrade.")
+                logger.info(f"Run '{upgrade_cmd}' to upgrade.")
         else:
             # No repo subcommand provided
             repo_parser.print_help()
