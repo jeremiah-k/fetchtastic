@@ -92,14 +92,25 @@ def download_file_with_retry(
 
     temp_path = download_path + ".tmp"
     try:
-        log_message_func(f"Downloading {url} to {temp_path}")
+        # Log before session.get()
+        log_message_func(f"Attempting to download file from URL: {url} to temp path: {temp_path}")
         response = session.get(url, stream=True, timeout=DEFAULT_REQUEST_TIMEOUT)
+
+        # Log HTTP response status code
+        log_message_func(f"Received HTTP response status code: {response.status_code} for URL: {url}")
         response.raise_for_status() # Handled by requests.exceptions.RequestException
 
+        downloaded_chunks = 0
+        downloaded_bytes = 0
         with open(temp_path, "wb") as file: # Can raise IOError
             for chunk in response.iter_content(chunk_size=DEFAULT_CHUNK_SIZE):
                 if chunk:
                     file.write(chunk)
+                    downloaded_chunks += 1
+                    downloaded_bytes += len(chunk)
+                    if downloaded_chunks % 100 == 0:
+                        log_message_func(f"Downloaded {downloaded_chunks} chunks ({downloaded_bytes} bytes) so far for {url}")
+            log_message_func(f"Finished downloading {url}. Total chunks: {downloaded_chunks}, total bytes: {downloaded_bytes}.")
 
         if download_path.endswith(".zip"):
             try:
@@ -125,8 +136,9 @@ def download_file_with_retry(
             for i in range(WINDOWS_MAX_REPLACE_RETRIES):
                 try:
                     gc.collect()
+                    log_message_func(f"Attempting to move temporary file {temp_path} to {download_path} (Windows attempt {i+1}/{WINDOWS_MAX_REPLACE_RETRIES})")
                     os.replace(temp_path, download_path)
-                    log_message_func(f"Successfully downloaded and moved {url} to {download_path}")
+                    log_message_func(f"Successfully moved temporary file {temp_path} to {download_path}")
                     return True
                 except PermissionError as e_perm: # Specific to Windows replace issues often
                     if i < WINDOWS_MAX_REPLACE_RETRIES - 1:
@@ -147,8 +159,9 @@ def download_file_with_retry(
                     return False
         else: # Non-Windows
             try:
+                log_message_func(f"Attempting to move temporary file {temp_path} to {download_path} (non-Windows)")
                 os.replace(temp_path, download_path)
-                log_message_func(f"Successfully downloaded and moved {url} to {download_path}")
+                log_message_func(f"Successfully moved temporary file {temp_path} to {download_path}")
                 return True
             except (IOError, OSError) as e_nix_replace:
                 log_message_func(f"Error replacing file {temp_path} to {download_path} on non-Windows: {e_nix_replace}")
