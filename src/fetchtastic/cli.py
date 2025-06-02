@@ -23,7 +23,12 @@ def main():
     subparsers = parser.add_subparsers(dest="command")
 
     # Command to run setup
-    subparsers.add_parser("setup", help="Run the setup process")
+    setup_parser = subparsers.add_parser("setup", help="Run the setup process")
+    setup_parser.add_argument(
+        "--update-integrations",
+        action="store_true",
+        help="Update Windows integrations (Start Menu shortcuts) without full setup",
+    )
 
     # Command to download firmware and APKs
     subparsers.add_parser("download", help="Download firmware and APKs")
@@ -70,8 +75,30 @@ def main():
         # Display version information
         current_version, latest_version, update_available = display_version_info()
 
-        # Run the setup process
-        setup_config.run_setup()
+        # Check if this is just an integrations update
+        if hasattr(args, "update_integrations") and args.update_integrations:
+            # Only update Windows integrations
+            if platform.system() == "Windows":
+                logger.info("Updating Windows integrations...")
+                config = setup_config.load_config()
+                if config:
+                    success = setup_config.create_windows_menu_shortcuts(
+                        setup_config.CONFIG_FILE,
+                        config.get("BASE_DIR", setup_config.BASE_DIR),
+                    )
+                    if success:
+                        logger.info("Windows integrations updated successfully!")
+                    else:
+                        logger.error("Failed to update Windows integrations.")
+                else:
+                    logger.error(
+                        "No configuration found. Run 'fetchtastic setup' first."
+                    )
+            else:
+                logger.info("Integration updates are only available on Windows.")
+        else:
+            # Run the full setup process
+            setup_config.run_setup()
 
         # Remind about updates at the end if available
         if update_available:

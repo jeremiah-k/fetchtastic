@@ -185,14 +185,54 @@ function Install-Or-Upgrade-Fetchtastic {
 }
 
 function Run-Setup {
-    Write-Host "Running fetchtastic setup..."
-    fetchtastic setup
+    param([bool]$IsUpgrade = $false)
+
+    if ($IsUpgrade) {
+        Write-Host "`nFetchtastic has been upgraded successfully!" -ForegroundColor Green
+
+        # Check if Windows integrations need updating
+        $updateIntegrations = (
+            input "Would you like to update Windows integrations (Start Menu shortcuts, etc.)? [y/n] (default: yes): "
+        ).strip().lower() -or "y"
+
+        if ($updateIntegrations -eq "y") {
+            Write-Host "Updating Windows integrations..."
+            fetchtastic setup --update-integrations 2>$null
+            if ($LASTEXITCODE -ne 0) {
+                # Fallback: run full setup but skip most prompts
+                Write-Host "Integration update failed. Running setup to refresh integrations..."
+                fetchtastic setup
+            }
+        }
+
+        $runSetup = (
+            input "Would you like to run the full setup to review/update your configuration? [y/n] (default: no): "
+        ).strip().lower() -or "n"
+
+        if ($runSetup -eq "y") {
+            Write-Host "Running fetchtastic setup..."
+            fetchtastic setup
+        } else {
+            Write-Host "Setup skipped. You can run 'fetchtastic setup' later to modify your configuration."
+        }
+    } else {
+        Write-Host "Running fetchtastic setup..."
+        fetchtastic setup
+    }
 }
 
 Prompt-Key
 Ensure-Python
 Ensure-Pipx
+
+# Check if this is an upgrade (fetchtastic already exists)
+$isUpgrade = $false
+$existing = pipx list | Select-String "fetchtastic"
+if ($existing) {
+    $isUpgrade = $true
+}
+
 Install-Or-Upgrade-Fetchtastic
-Run-Setup
+Run-Setup -IsUpgrade $isUpgrade
 
 Write-Host "`nInstallation complete!" -ForegroundColor Green

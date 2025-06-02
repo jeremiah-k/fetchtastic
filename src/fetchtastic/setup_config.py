@@ -1191,15 +1191,45 @@ def create_windows_menu_shortcuts(config_file_path, base_dir):
             f.write("title Fetchtastic Update Check\n")
             f.write("echo Checking for Fetchtastic updates...\n")
             f.write("echo.\n")
-            # Use pipx to upgrade fetchtastic
+
+            # Use pipx to upgrade fetchtastic with improved logic
             pipx_path = shutil.which("pipx")
             if pipx_path:
+                f.write("echo Attempting to upgrade Fetchtastic...\n")
                 f.write(f'"{pipx_path}" upgrade fetchtastic\n')
+                f.write("if %ERRORLEVEL% EQU 0 (\n")
+                f.write("    echo Upgrade completed successfully!\n")
+                f.write(") else (\n")
+                f.write("    echo Upgrade failed or already at latest version.\n")
+                f.write("    echo Trying force reinstall...\n")
+                f.write(f'    "{pipx_path}" install fetchtastic[win] --force\n')
+                f.write("    if %ERRORLEVEL% EQU 0 (\n")
+                f.write("        echo Force reinstall completed successfully!\n")
+                f.write("    ) else (\n")
+                f.write(
+                    "        echo Force reinstall failed. Trying uninstall/reinstall...\n"
+                )
+                f.write(
+                    f'        "{pipx_path}" uninstall fetchtastic --force >nul 2>&1\n'
+                )
+                f.write(f'        "{pipx_path}" install fetchtastic[win]\n')
+                f.write("        if %ERRORLEVEL% EQU 0 (\n")
+                f.write("            echo Reinstall completed successfully!\n")
+                f.write("        ) else (\n")
+                f.write(
+                    "            echo All upgrade methods failed. Please check your internet connection.\n"
+                )
+                f.write("        )\n")
+                f.write("    )\n")
+                f.write(")\n")
+                f.write("echo.\n")
+                f.write("echo Checking final version...\n")
+                f.write("fetchtastic version\n")
             else:
                 # Fallback to pip if pipx is not found
                 pip_path = shutil.which("pip")
                 if pip_path:
-                    f.write(f'"{pip_path}" install --upgrade fetchtastic\n')
+                    f.write(f'"{pip_path}" install --upgrade fetchtastic[win]\n')
                 else:
                     f.write("echo Error: Neither pipx nor pip was found in PATH.\n")
                     f.write("echo Please install pipx or pip to upgrade Fetchtastic.\n")

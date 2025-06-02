@@ -121,16 +121,60 @@ You can use `pipx` in Termux, but `pip` is usually simpler and works well.
 
 To upgrade Fetchtastic to the latest version:
 
-### On Linux/Mac/Windows (pipx installations)
+### Windows (Recommended)
+
+**Option 1: Use the installation script (handles upgrade issues automatically)**
+
+```powershell
+irm https://raw.githubusercontent.com/jeremiah-k/fetchtastic/main/src/fetchtastic/tools/setup_fetchtastic.ps1 | iex
+```
+
+**Option 2: Use Start Menu shortcut**
+
+- Open Start Menu → Fetchtastic → "Check for Updates"
+
+**Option 3: Manual pipx upgrade**
+
+```powershell
+pipx upgrade fetchtastic
+# If it says "already at latest version" but you know there's a newer version:
+pipx install fetchtastic[win] --force
+```
+
+### Linux/Mac (pipx installations)
 
 ```bash
 pipx upgrade fetchtastic
 ```
 
-### On Termux (pip installation)
+### Termux (pip installation)
 
 ```bash
 pip install --upgrade fetchtastic
+```
+
+### Troubleshooting Upgrades
+
+If `pipx upgrade` reports "already at latest version" but you know a newer version exists:
+
+**Windows:**
+
+```powershell
+pipx install fetchtastic[win] --force
+```
+
+**Linux/Mac:**
+
+```bash
+pipx install fetchtastic --force
+```
+
+**Complete reinstall (if needed):**
+
+```bash
+pipx uninstall fetchtastic
+pipx install fetchtastic[win]  # Windows
+pipx install fetchtastic       # Linux/Mac
 ```
 
 ## Usage
