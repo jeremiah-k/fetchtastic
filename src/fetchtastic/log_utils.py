@@ -1,11 +1,10 @@
 import logging
-from logging.handlers import RotatingFileHandler # Already here, ensure it stays
+import os  # Added for environment variable
+from logging.handlers import RotatingFileHandler  # Already here, ensure it stays
 from pathlib import Path
-import os # Added for environment variable
-from typing import Optional, Any # Added Optional and Any
+from typing import Optional  # Added Optional and Any
 
-from rich.console import Console # Keep Rich for console
-from rich.logging import RichHandler # Keep Rich for console
+from rich.logging import RichHandler  # Keep Rich for console
 
 # 1. Initialize a Logger
 LOGGER_NAME = "fetchtastic"
@@ -18,6 +17,7 @@ DEBUG_LOG_FORMAT = "%(asctime)s - %(levelname)s - %(name)s - %(module)s.%(funcNa
 
 # Global variable for the file handler to allow removal/reconfiguration if needed
 _file_handler: Optional[RotatingFileHandler] = None
+
 
 def set_log_level(level_name: str) -> None:
     """
@@ -46,7 +46,9 @@ def set_log_level(level_name: str) -> None:
                 formatter = logging.Formatter(INFO_LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
         else:
             if isinstance(handler, RichHandler):
-                formatter = logging.Formatter("%(message)s (%(name)s - %(module)s.%(funcName)s:%(lineno)d)")
+                formatter = logging.Formatter(
+                    "%(message)s (%(name)s - %(module)s.%(funcName)s:%(lineno)d)"
+                )
             else:
                 formatter = logging.Formatter(DEBUG_LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
 
@@ -65,7 +67,7 @@ def add_file_logging(log_dir_path: Path, level_name: str = "INFO") -> None:
     """
     global _file_handler
     if _file_handler and _file_handler in logger.handlers:
-        logger.removeHandler(_file_handler) # Remove existing if any, to reconfigure
+        logger.removeHandler(_file_handler)  # Remove existing if any, to reconfigure
         _file_handler.close()
 
     log_dir_path.mkdir(parents=True, exist_ok=True)
@@ -122,16 +124,19 @@ def _initialize_logger() -> None:
     if initial_level >= logging.INFO:
         console_formatter = logging.Formatter("%(message)s")
     else:
-        console_formatter = logging.Formatter("%(message)s (%(name)s - %(module)s.%(funcName)s:%(lineno)d)")
+        console_formatter = logging.Formatter(
+            "%(message)s (%(name)s - %(module)s.%(funcName)s:%(lineno)d)"
+        )
 
     console_handler.setFormatter(console_formatter)
     logger.addHandler(console_handler)
 
-    logger.setLevel(initial_level) # Set logger level first
-    console_handler.setLevel(initial_level) # Then set handler level
+    logger.setLevel(initial_level)  # Set logger level first
+    console_handler.setLevel(initial_level)  # Then set handler level
 
     # Note: File logging is not enabled by default, call add_file_logging() to enable it.
     # This is a change from the original setup_logging which could do both.
+
 
 # Initialize the logger when the module is imported
 _initialize_logger()
@@ -145,7 +150,7 @@ _initialize_logger()
 # LOG_LEVEL_STYLES is also removed as RichHandler handles styling.
 # The global `config` and `log_file_path` are also removed or managed internally.
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Example Usage:
     logger.debug("This is a debug message.")
     logger.info("This is an info message.")
@@ -157,7 +162,7 @@ if __name__ == '__main__':
     logger.debug("This is another debug message after changing level.")
 
     try:
-        1 / 0
+        _ = 1 / 0  # Intentional division by zero for testing exception logging
     except ZeroDivisionError:
         logger.exception("A handled exception occurred (logged with exception info).")
 

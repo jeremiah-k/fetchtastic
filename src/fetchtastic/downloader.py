@@ -1,28 +1,26 @@
 # src/fetchtastic/downloader.py
 
 import json
-from typing import List, Dict, Any, Optional, Tuple, Callable
 import os
-import platform
 import re
 import shutil
 import time
 import zipfile
 from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 
 from fetchtastic import menu_repo, setup_config
+
 # Removed log_info, setup_logging
-from fetchtastic.log_utils import logger # Import new logger
+from fetchtastic.log_utils import logger  # Import new logger
 from fetchtastic.setup_config import display_version_info, get_upgrade_command
 from fetchtastic.utils import download_file_with_retry
 
 # Constants for downloader operations
 RELEASE_SCAN_COUNT: int = 10
-NTFY_REQUEST_TIMEOUT: int = 10 # seconds
+NTFY_REQUEST_TIMEOUT: int = 10  # seconds
 # Constants for check_for_prereleases internal download
 PRERELEASE_REQUEST_TIMEOUT: int = 30
 PRERELEASE_CHUNK_SIZE: int = 8 * 1024
@@ -71,7 +69,9 @@ def compare_versions(version1, version2):
     return 0
 
 
-def check_promoted_prereleases(download_dir, latest_release_tag): # log_message_func parameter removed
+def check_promoted_prereleases(
+    download_dir, latest_release_tag
+):  # log_message_func parameter removed
     """
     Checks if any pre-releases have been promoted to regular releases.
     If a pre-release matches the latest release, it verifies the files match
@@ -123,12 +123,12 @@ def check_promoted_prereleases(download_dir, latest_release_tag): # log_message_
                     )
                     try:
                         shutil.rmtree(prerelease_path)
-                        logger.info(
-                            f"Removed pre-release directory: {prerelease_path}"
-                        )
+                        logger.info(f"Removed pre-release directory: {prerelease_path}")
                         promoted = True
                     except OSError as e:
-                        logger.error(f"Error removing pre-release directory {prerelease_path}: {e}")
+                        logger.error(
+                            f"Error removing pre-release directory {prerelease_path}: {e}"
+                        )
                     continue
 
                 # Verify files match by comparing hashes
@@ -147,8 +147,12 @@ def check_promoted_prereleases(download_dir, latest_release_tag): # log_message_
                                 )
                                 break
                 except OSError as e:
-                    logger.error(f"Error listing files in {prerelease_path} for hash comparison: {e}")
-                    files_match = False # Assume files don't match if we can't check them
+                    logger.error(
+                        f"Error listing files in {prerelease_path} for hash comparison: {e}"
+                    )
+                    files_match = (
+                        False  # Assume files don't match if we can't check them
+                    )
 
                 if files_match:
                     logger.info(
@@ -157,12 +161,12 @@ def check_promoted_prereleases(download_dir, latest_release_tag): # log_message_
                     # Remove the pre-release directory since it's now a regular release
                     try:
                         shutil.rmtree(prerelease_path)
-                        logger.info(
-                            f"Removed pre-release directory: {prerelease_path}"
-                        )
+                        logger.info(f"Removed pre-release directory: {prerelease_path}")
                         promoted = True
                     except OSError as e:
-                        logger.error(f"Error removing promoted pre-release directory {prerelease_path}: {e}")
+                        logger.error(
+                            f"Error removing promoted pre-release directory {prerelease_path}: {e}"
+                        )
 
     return promoted
 
@@ -199,7 +203,10 @@ def compare_file_hashes(file1, file2):
 
 
 def check_for_prereleases(
-    download_dir, latest_release_tag, selected_patterns, exclude_patterns=None # log_message_func parameter removed
+    download_dir,
+    latest_release_tag,
+    selected_patterns,
+    exclude_patterns=None,  # log_message_func parameter removed
 ):
     """
     Checks for pre-release firmware in the meshtastic.github.io repository.
@@ -272,12 +279,16 @@ def check_for_prereleases(
                     )
                     os.remove(item_path)
                 except OSError as e:
-                    logger.warning(f"Error removing stale file {item_path} from prerelease directory: {e}")
+                    logger.warning(
+                        f"Error removing stale file {item_path} from prerelease directory: {e}"
+                    )
 
         # Now clean up directories
         for dir_name in existing_prerelease_dirs:
             should_keep = False
-            dir_path = os.path.join(prerelease_dir, dir_name) # Define dir_path here for use in except block
+            dir_path = os.path.join(
+                prerelease_dir, dir_name
+            )  # Define dir_path here for use in except block
 
             try:
                 # Check if it's a firmware directory
@@ -294,15 +305,19 @@ def check_for_prereleases(
                             should_keep = True
 
                 if not should_keep:
-                    logger.info(
-                        f"Removing stale pre-release directory: {dir_name}"
-                    )
+                    logger.info(f"Removing stale pre-release directory: {dir_name}")
                     shutil.rmtree(dir_path)
             except OSError as e:
-                logger.warning(f"Error processing or removing directory {dir_path} during prerelease cleanup: {e}")
-            except Exception as e_general: # Catch other potential errors like from compare_versions
-                logger.error(f"Unexpected error processing directory {dir_path} for prerelease cleanup: {e_general}", exc_info=True)
-
+                logger.warning(
+                    f"Error processing or removing directory {dir_path} during prerelease cleanup: {e}"
+                )
+            except (
+                Exception
+            ) as e_general:  # Catch other potential errors like from compare_versions
+                logger.error(
+                    f"Unexpected error processing directory {dir_path} for prerelease cleanup: {e_general}",
+                    exc_info=True,
+                )
 
     # Find directories in the repository that are newer than the latest release and don't already exist locally
     prerelease_dirs = []
@@ -343,11 +358,17 @@ def check_for_prereleases(
 
                             # Apply same filtering logic as download
                             stripped_file_name = strip_version_numbers(file_name)
-                            if not any(pattern in stripped_file_name for pattern in selected_patterns):
+                            if not any(
+                                pattern in stripped_file_name
+                                for pattern in selected_patterns
+                            ):
                                 continue  # Skip this file
 
                             # Skip files that match exclude patterns
-                            if any(exclude in file_name for exclude in exclude_patterns_list):
+                            if any(
+                                exclude in file_name
+                                for exclude in exclude_patterns_list
+                            ):
                                 continue  # Skip this file
 
                             expected_matching_files.append(file_name)
@@ -360,13 +381,19 @@ def check_for_prereleases(
                                 missing_files.append(expected_file)
 
                         if missing_files:
-                            logger.debug(f"Pre-release {dir_name} is missing {len(missing_files)} files, will re-download")
+                            logger.debug(
+                                f"Pre-release {dir_name} is missing {len(missing_files)} files, will re-download"
+                            )
                             should_process = True
                         else:
-                            logger.debug(f"Pre-release {dir_name} is complete with all expected files")
+                            logger.debug(
+                                f"Pre-release {dir_name} is complete with all expected files"
+                            )
                     else:
                         # Could not fetch expected files list, assume we need to process
-                        logger.debug(f"Could not fetch file list for {dir_name}, will attempt download")
+                        logger.debug(
+                            f"Could not fetch file list for {dir_name}, will attempt download"
+                        )
                         should_process = True
 
                 if should_process:
@@ -381,7 +408,7 @@ def check_for_prereleases(
             os.makedirs(prerelease_dir)
         except OSError as e:
             logger.error(f"Error creating pre-release directory {prerelease_dir}: {e}")
-            return False, [] # Cannot proceed if directory creation fails
+            return False, []  # Cannot proceed if directory creation fails
 
     downloaded_files = []
 
@@ -402,8 +429,10 @@ def check_for_prereleases(
             try:
                 os.makedirs(dir_path)
             except OSError as e:
-                logger.error(f"Error creating directory for pre-release {dir_name} at {dir_path}: {e}")
-                continue # Skip this pre-release if its directory cannot be created
+                logger.error(
+                    f"Error creating directory for pre-release {dir_name} at {dir_path}: {e}"
+                )
+                continue  # Skip this pre-release if its directory cannot be created
 
         # Filter files based on selected patterns
         for file in files:
@@ -422,12 +451,18 @@ def check_for_prereleases(
 
             if not os.path.exists(file_path):
                 try:
-                    logger.debug(f"Downloading pre-release file: {file_name} from {download_url}")
-                    response = requests.get(download_url, stream=True, timeout=PRERELEASE_REQUEST_TIMEOUT)
+                    logger.debug(
+                        f"Downloading pre-release file: {file_name} from {download_url}"
+                    )
+                    response = requests.get(
+                        download_url, stream=True, timeout=PRERELEASE_REQUEST_TIMEOUT
+                    )
                     response.raise_for_status()
 
                     with open(file_path, "wb") as f:
-                        for chunk in response.iter_content(chunk_size=PRERELEASE_CHUNK_SIZE):
+                        for chunk in response.iter_content(
+                            chunk_size=PRERELEASE_CHUNK_SIZE
+                        ):
                             if chunk:
                                 f.write(chunk)
 
@@ -437,16 +472,25 @@ def check_for_prereleases(
                             os.chmod(file_path, 0o755)
                             logger.debug(f"Set executable permissions for {file_name}")
                         except OSError as e:
-                            logger.warning(f"Error setting executable permissions for {file_name}: {e}")
+                            logger.warning(
+                                f"Error setting executable permissions for {file_name}: {e}"
+                            )
 
                     logger.info(f"Downloaded: {file_name}")
                     downloaded_files.append(file_path)
                 except requests.exceptions.RequestException as e:
-                    logger.error(f"Network error downloading pre-release file {file_name} from {download_url}: {e}")
+                    logger.error(
+                        f"Network error downloading pre-release file {file_name} from {download_url}: {e}"
+                    )
                 except IOError as e:
-                    logger.error(f"File I/O error while downloading pre-release file {file_name} to {file_path}: {e}")
-                except Exception as e: # Catch any other unexpected errors
-                    logger.error(f"Unexpected error downloading pre-release file {file_name}: {e}", exc_info=True)
+                    logger.error(
+                        f"File I/O error while downloading pre-release file {file_name} to {file_path}: {e}"
+                    )
+                except Exception as e:  # Catch any other unexpected errors
+                    logger.error(
+                        f"Unexpected error downloading pre-release file {file_name}: {e}",
+                        exc_info=True,
+                    )
 
     downloaded_versions = []
     if downloaded_files:
@@ -471,7 +515,12 @@ downloads_skipped: bool = False
 # _log_message function removed
 
 
-def _send_ntfy_notification(ntfy_server: Optional[str], ntfy_topic: Optional[str], message: str, title: Optional[str] = None) -> None:
+def _send_ntfy_notification(
+    ntfy_server: Optional[str],
+    ntfy_topic: Optional[str],
+    message: str,
+    title: Optional[str] = None,
+) -> None:
     """
     Sends a notification via NTFY.
 
@@ -490,7 +539,10 @@ def _send_ntfy_notification(ntfy_server: Optional[str], ntfy_topic: Optional[str
             if title:
                 headers["Title"] = title
             response: requests.Response = requests.post(
-                ntfy_url, data=message.encode("utf-8"), headers=headers, timeout=NTFY_REQUEST_TIMEOUT
+                ntfy_url,
+                data=message.encode("utf-8"),
+                headers=headers,
+                timeout=NTFY_REQUEST_TIMEOUT,
             )
             response.raise_for_status()
             logger.debug(f"Notification sent to {ntfy_url}")
@@ -530,8 +582,8 @@ def _get_latest_releases_data(url: str, scan_count: int = 10) -> List[Dict[str, 
 
     except requests.exceptions.RequestException as e:
         logger.error(f"Failed to fetch releases data from {url}: {e}")
-        return [] # Return empty list on error
-    except requests.exceptions.JSONDecodeError as e: # Or ValueError for older requests
+        return []  # Return empty list on error
+    except requests.exceptions.JSONDecodeError as e:  # Or ValueError for older requests
         logger.error(f"Failed to decode JSON response from {url}: {e}")
         return []
 
@@ -540,15 +592,30 @@ def _get_latest_releases_data(url: str, scan_count: int = 10) -> List[Dict[str, 
         sorted_releases: List[Dict[str, Any]] = sorted(
             releases, key=lambda r: r["published_at"], reverse=True
         )
-    except (TypeError, KeyError) as e: # Handle cases where 'published_at' might be missing or not comparable
-        logger.warning(f"Error sorting releases, 'published_at' key might be missing or invalid: {e}")
-        return releases # Return unsorted or partially sorted if error occurs during sort
+    except (
+        TypeError,
+        KeyError,
+    ) as e:  # Handle cases where 'published_at' might be missing or not comparable
+        logger.warning(
+            f"Error sorting releases, 'published_at' key might be missing or invalid: {e}"
+        )
+        return (
+            releases  # Return unsorted or partially sorted if error occurs during sort
+        )
 
     # Limit the number of releases to be scanned
-    return sorted_releases[:scan_count] # scan_count is a parameter, no constant needed here.
+    return sorted_releases[
+        :scan_count
+    ]  # scan_count is a parameter, no constant needed here.
 
 
-def _initial_setup_and_config() -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[str], bool, Optional[Dict[str, str]]]:
+def _initial_setup_and_config() -> Tuple[
+    Optional[Dict[str, Any]],
+    Optional[str],
+    Optional[str],
+    bool,
+    Optional[Dict[str, str]],
+]:
     """
     Handles initial setup including version display, configuration loading,
     logging setup, and directory creation.
@@ -568,7 +635,9 @@ def _initial_setup_and_config() -> Tuple[Optional[Dict[str, Any]], Optional[str]
 
     config: Optional[Dict[str, Any]] = setup_config.load_config()
     if not config:
-        logger.error("Configuration not found. Please run 'fetchtastic setup' first.") # Changed to logger.error
+        logger.error(
+            "Configuration not found. Please run 'fetchtastic setup' first."
+        )  # Changed to logger.error
         return None, current_version, latest_version, update_available, None
 
     download_dir: str = config.get(
@@ -577,11 +646,15 @@ def _initial_setup_and_config() -> Tuple[Optional[Dict[str, Any]], Optional[str]
     )
     # setup_logging(download_dir) # Removed call to old setup_logging
 
-    logger.info(f"Fetchtastic v{current_version if current_version else 'unknown'}") # Changed to logger.info
+    logger.info(
+        f"Fetchtastic v{current_version if current_version else 'unknown'}"
+    )  # Changed to logger.info
     if update_available and latest_version:
-        logger.info(f"A newer version (v{latest_version}) is available!") # Changed to logger.info
+        logger.info(
+            f"A newer version (v{latest_version}) is available!"
+        )  # Changed to logger.info
         upgrade_cmd: str = get_upgrade_command()
-        logger.info(f"Run '{upgrade_cmd}' to upgrade.") # Changed to logger.info
+        logger.info(f"Run '{upgrade_cmd}' to upgrade.")  # Changed to logger.info
 
     firmware_dir: str = os.path.join(download_dir, "firmware")
     apks_dir: str = os.path.join(download_dir, "apks")
@@ -590,9 +663,13 @@ def _initial_setup_and_config() -> Tuple[Optional[Dict[str, Any]], Optional[str]
         if not os.path.exists(dir_path_to_create):
             try:
                 os.makedirs(dir_path_to_create)
-                logger.debug(f"Created directory: {dir_path_to_create}") # Changed to logger.debug
+                logger.debug(
+                    f"Created directory: {dir_path_to_create}"
+                )  # Changed to logger.debug
             except OSError as e:
-                logger.error(f"Error creating directory {dir_path_to_create}: {e}") # Changed to logger.error
+                logger.error(
+                    f"Error creating directory {dir_path_to_create}: {e}"
+                )  # Changed to logger.error
                 # Depending on severity, might want to return None or raise error
                 # For now, log and continue, some functionality might be impaired.
 
@@ -600,8 +677,12 @@ def _initial_setup_and_config() -> Tuple[Optional[Dict[str, Any]], Optional[str]
         "download_dir": download_dir,
         "firmware_dir": firmware_dir,
         "apks_dir": apks_dir,
-        "latest_android_release_file": os.path.join(apks_dir, "latest_android_release.txt"),
-        "latest_firmware_release_file": os.path.join(firmware_dir, "latest_firmware_release.txt"),
+        "latest_android_release_file": os.path.join(
+            apks_dir, "latest_android_release.txt"
+        ),
+        "latest_firmware_release_file": os.path.join(
+            firmware_dir, "latest_firmware_release.txt"
+        ),
         "android_releases_url": "https://api.github.com/repos/meshtastic/Meshtastic-Android/releases",
         "firmware_releases_url": "https://api.github.com/repos/meshtastic/firmware/releases",
     }
@@ -619,10 +700,14 @@ def _check_wifi_connection(config: Dict[str, Any]) -> None:
     if setup_config.is_termux() and config.get("WIFI_ONLY", False):
         if not is_connected_to_wifi():
             downloads_skipped = True
-            logger.warning("Not connected to Wi-Fi. Skipping all downloads.") # Changed to logger.warning
+            logger.warning(
+                "Not connected to Wi-Fi. Skipping all downloads."
+            )  # Changed to logger.warning
 
 
-def _process_firmware_downloads(config: Dict[str, Any], paths_and_urls: Dict[str, str]) -> Tuple[List[str], List[str], List[Dict[str, str]], Optional[str]]:
+def _process_firmware_downloads(
+    config: Dict[str, Any], paths_and_urls: Dict[str, str]
+) -> Tuple[List[str], List[str], List[Dict[str, str]], Optional[str]]:
     """
     Handles the firmware download process, including pre-releases.
 
@@ -643,9 +728,14 @@ def _process_firmware_downloads(config: Dict[str, Any], paths_and_urls: Dict[str
     all_failed_firmware_downloads: List[Dict[str, str]] = []
     latest_firmware_version: Optional[str] = None
 
-    if config.get("SAVE_FIRMWARE", False) and config.get("SELECTED_FIRMWARE_ASSETS", []):
+    if config.get("SAVE_FIRMWARE", False) and config.get(
+        "SELECTED_FIRMWARE_ASSETS", []
+    ):
         latest_firmware_releases: List[Dict[str, Any]] = _get_latest_releases_data(
-            paths_and_urls["firmware_releases_url"], config.get("FIRMWARE_VERSIONS_TO_KEEP", RELEASE_SCAN_COUNT) # Use RELEASE_SCAN_COUNT if versions_to_keep not in config
+            paths_and_urls["firmware_releases_url"],
+            config.get(
+                "FIRMWARE_VERSIONS_TO_KEEP", RELEASE_SCAN_COUNT
+            ),  # Use RELEASE_SCAN_COUNT if versions_to_keep not in config
         )
 
         # Extract the actual latest firmware version
@@ -653,21 +743,25 @@ def _process_firmware_downloads(config: Dict[str, Any], paths_and_urls: Dict[str
             latest_firmware_version = latest_firmware_releases[0].get("tag_name")
         fw_downloaded: List[str]
         fw_new_versions: List[str]
-        failed_fw_downloads_details: List[Dict[str, str]] # Explicitly declare type
-        fw_downloaded, fw_new_versions, failed_fw_downloads_details = check_and_download( # Corrected unpacking
-            latest_firmware_releases,
-            paths_and_urls["latest_firmware_release_file"],
-            "Firmware",
-            paths_and_urls["firmware_dir"],
-            config.get("FIRMWARE_VERSIONS_TO_KEEP", 2),
-            config.get("EXTRACT_PATTERNS", []),
-            selected_patterns=config.get("SELECTED_FIRMWARE_ASSETS", []), # type: ignore
-            auto_extract=config.get("AUTO_EXTRACT", False),
-            exclude_patterns=config.get("EXCLUDE_PATTERNS", []), # type: ignore
+        failed_fw_downloads_details: List[Dict[str, str]]  # Explicitly declare type
+        fw_downloaded, fw_new_versions, failed_fw_downloads_details = (
+            check_and_download(  # Corrected unpacking
+                latest_firmware_releases,
+                paths_and_urls["latest_firmware_release_file"],
+                "Firmware",
+                paths_and_urls["firmware_dir"],
+                config.get("FIRMWARE_VERSIONS_TO_KEEP", 2),
+                config.get("EXTRACT_PATTERNS", []),
+                selected_patterns=config.get("SELECTED_FIRMWARE_ASSETS", []),  # type: ignore
+                auto_extract=config.get("AUTO_EXTRACT", False),
+                exclude_patterns=config.get("EXCLUDE_PATTERNS", []),  # type: ignore
+            )
         )
         downloaded_firmwares.extend(fw_downloaded)
         new_firmware_versions.extend(fw_new_versions)
-        all_failed_firmware_downloads.extend(failed_fw_downloads_details) # Ensure this line is present
+        all_failed_firmware_downloads.extend(
+            failed_fw_downloads_details
+        )  # Ensure this line is present
         if fw_downloaded:
             logger.info(f"Downloaded Firmware versions: {', '.join(fw_downloaded)}")
 
@@ -678,24 +772,31 @@ def _process_firmware_downloads(config: Dict[str, Any], paths_and_urls: Dict[str
 
         if latest_release_tag:
             promoted: bool = check_promoted_prereleases(
-                paths_and_urls["download_dir"], latest_release_tag # logger.info removed
+                paths_and_urls["download_dir"],
+                latest_release_tag,  # logger.info removed
             )
             if promoted:
-                logger.info("Detected pre-release(s) that have been promoted to regular release.")
+                logger.info(
+                    "Detected pre-release(s) that have been promoted to regular release."
+                )
 
         if config.get("CHECK_PRERELEASES", False) and not downloads_skipped:
             if latest_release_tag:
                 logger.info("Checking for pre-release firmware...")
                 prerelease_found: bool
                 prerelease_versions: List[str]
-                prerelease_found, prerelease_versions = check_for_prereleases( # logger.info removed
-                    paths_and_urls["download_dir"],
-                    latest_release_tag,
-                    config.get("EXTRACT_PATTERNS", []), # type: ignore
-                    exclude_patterns=config.get("EXCLUDE_PATTERNS", []), # type: ignore
+                prerelease_found, prerelease_versions = (
+                    check_for_prereleases(  # logger.info removed
+                        paths_and_urls["download_dir"],
+                        latest_release_tag,
+                        config.get("EXTRACT_PATTERNS", []),  # type: ignore
+                        exclude_patterns=config.get("EXCLUDE_PATTERNS", []),  # type: ignore
+                    )
                 )
                 if prerelease_found:
-                    logger.info(f"Pre-release firmware downloaded successfully: {', '.join(prerelease_versions)}")
+                    logger.info(
+                        f"Pre-release firmware downloaded successfully: {', '.join(prerelease_versions)}"
+                    )
                     version: str
                     for version in prerelease_versions:
                         downloaded_firmwares.append(f"pre-release {version}")
@@ -706,10 +807,17 @@ def _process_firmware_downloads(config: Dict[str, Any], paths_and_urls: Dict[str
     elif not config.get("SELECTED_FIRMWARE_ASSETS", []):
         logger.info("No firmware assets selected. Skipping firmware download.")
 
-    return downloaded_firmwares, new_firmware_versions, all_failed_firmware_downloads, latest_firmware_version
+    return (
+        downloaded_firmwares,
+        new_firmware_versions,
+        all_failed_firmware_downloads,
+        latest_firmware_version,
+    )
 
 
-def _process_apk_downloads(config: Dict[str, Any], paths_and_urls: Dict[str, str]) -> Tuple[List[str], List[str], List[Dict[str,str]], Optional[str]]:
+def _process_apk_downloads(
+    config: Dict[str, Any], paths_and_urls: Dict[str, str]
+) -> Tuple[List[str], List[str], List[Dict[str, str]], Optional[str]]:
     """
     Handles the APK download process.
 
@@ -727,12 +835,17 @@ def _process_apk_downloads(config: Dict[str, Any], paths_and_urls: Dict[str, str
     global downloads_skipped
     downloaded_apks: List[str] = []
     new_apk_versions: List[str] = []
-    all_failed_apk_downloads: List[Dict[str, str]] = [] # Initialize all_failed_apk_downloads
+    all_failed_apk_downloads: List[Dict[str, str]] = (
+        []
+    )  # Initialize all_failed_apk_downloads
     latest_apk_version: Optional[str] = None
 
     if config.get("SAVE_APKS", False) and config.get("SELECTED_APK_ASSETS", []):
         latest_android_releases: List[Dict[str, Any]] = _get_latest_releases_data(
-            paths_and_urls["android_releases_url"], config.get("ANDROID_VERSIONS_TO_KEEP", RELEASE_SCAN_COUNT) # Use RELEASE_SCAN_COUNT if versions_to_keep not in config
+            paths_and_urls["android_releases_url"],
+            config.get(
+                "ANDROID_VERSIONS_TO_KEEP", RELEASE_SCAN_COUNT
+            ),  # Use RELEASE_SCAN_COUNT if versions_to_keep not in config
         )
 
         # Extract the actual latest APK version
@@ -740,27 +853,36 @@ def _process_apk_downloads(config: Dict[str, Any], paths_and_urls: Dict[str, str
             latest_apk_version = latest_android_releases[0].get("tag_name")
         apk_downloaded: List[str]
         apk_new_versions_list: List[str]
-        failed_apk_downloads_details: List[Dict[str, str]] # Declare for unpacking
-        apk_downloaded, apk_new_versions_list, failed_apk_downloads_details = check_and_download( # Unpack 3 values
-            latest_android_releases,
-            paths_and_urls["latest_android_release_file"],
-            "Android APK",
-            paths_and_urls["apks_dir"],
-            config.get("ANDROID_VERSIONS_TO_KEEP", 2),
-            [],
-            selected_patterns=config.get("SELECTED_APK_ASSETS", []), # type: ignore
-            auto_extract=False,
-            exclude_patterns=[],
+        failed_apk_downloads_details: List[Dict[str, str]]  # Declare for unpacking
+        apk_downloaded, apk_new_versions_list, failed_apk_downloads_details = (
+            check_and_download(  # Unpack 3 values
+                latest_android_releases,
+                paths_and_urls["latest_android_release_file"],
+                "Android APK",
+                paths_and_urls["apks_dir"],
+                config.get("ANDROID_VERSIONS_TO_KEEP", 2),
+                [],
+                selected_patterns=config.get("SELECTED_APK_ASSETS", []),  # type: ignore
+                auto_extract=False,
+                exclude_patterns=[],
+            )
         )
         downloaded_apks.extend(apk_downloaded)
         new_apk_versions.extend(apk_new_versions_list)
-        all_failed_apk_downloads.extend(failed_apk_downloads_details) # Extend with failed details
+        all_failed_apk_downloads.extend(
+            failed_apk_downloads_details
+        )  # Extend with failed details
         if apk_downloaded:
             logger.info(f"Downloaded Android APK versions: {', '.join(apk_downloaded)}")
     elif not config.get("SELECTED_APK_ASSETS", []):
         logger.info("No APK assets selected. Skipping APK download.")
 
-    return downloaded_apks, new_apk_versions, all_failed_apk_downloads, latest_apk_version
+    return (
+        downloaded_apks,
+        new_apk_versions,
+        all_failed_apk_downloads,
+        latest_apk_version,
+    )
 
 
 def _finalize_and_notify(
@@ -774,7 +896,7 @@ def _finalize_and_notify(
     latest_version: Optional[str],
     update_available: bool,
     latest_firmware_version: Optional[str] = None,
-    latest_apk_version: Optional[str] = None
+    latest_apk_version: Optional[str] = None,
 ) -> None:
     """
     Handles final logging, application update messages, and notifications.
@@ -807,7 +929,7 @@ def _finalize_and_notify(
     if latest_apk_version:
         logger.info(f"Latest APK: {latest_apk_version}")
 
-    if update_available and latest_version :
+    if update_available and latest_version:
         upgrade_cmd: str = get_upgrade_command()
         logger.info("\nUpdate Available")
         logger.info(f"A newer version (v{latest_version}) of Fetchtastic is available!")
@@ -821,14 +943,25 @@ def _finalize_and_notify(
     message_lines: List[str]
 
     if downloads_skipped:
-        message_lines = ["New releases are available but downloads were skipped because the device is not connected to Wi-Fi."]
+        message_lines = [
+            "New releases are available but downloads were skipped because the device is not connected to Wi-Fi."
+        ]
         if new_firmware_versions:
-            message_lines.append(f"Firmware versions available: {', '.join(new_firmware_versions)}")
+            message_lines.append(
+                f"Firmware versions available: {', '.join(new_firmware_versions)}"
+            )
         if new_apk_versions:
-            message_lines.append(f"Android APK versions available: {', '.join(new_apk_versions)}")
+            message_lines.append(
+                f"Android APK versions available: {', '.join(new_apk_versions)}"
+            )
         notification_message = "\n".join(message_lines) + f"\n{datetime.now()}"
         logger.info("\n".join(message_lines))
-        _send_ntfy_notification(ntfy_server, ntfy_topic, notification_message, title="Fetchtastic Downloads Skipped")
+        _send_ntfy_notification(
+            ntfy_server,
+            ntfy_topic,
+            notification_message,
+            title="Fetchtastic Downloads Skipped",
+        )
     elif downloaded_firmwares or downloaded_apks:
         notification_messages: List[str] = []
         message: str
@@ -839,12 +972,19 @@ def _finalize_and_notify(
             message = f"Downloaded Android APK versions: {', '.join(downloaded_apks)}"
             notification_messages.append(message)
         notification_message = "\n".join(notification_messages) + f"\n{datetime.now()}"
-        _send_ntfy_notification(ntfy_server, ntfy_topic, notification_message, title="Fetchtastic Download Completed")
+        _send_ntfy_notification(
+            ntfy_server,
+            ntfy_topic,
+            notification_message,
+            title="Fetchtastic Download Completed",
+        )
     else:
         message: str = f"All assets are up to date.\n{datetime.now()}"
         logger.info(message)
         if not notify_on_download_only:
-            _send_ntfy_notification(ntfy_server, ntfy_topic, message, title="Fetchtastic Up to Date")
+            _send_ntfy_notification(
+                ntfy_server, ntfy_topic, message, title="Fetchtastic Up to Date"
+            )
 
 
 def is_connected_to_wifi() -> bool:
@@ -859,19 +999,22 @@ def is_connected_to_wifi() -> bool:
     if setup_config.is_termux():
         try:
             result: str = os.popen("termux-wifi-connectioninfo").read()
-            if not result: return False
+            if not result:
+                return False
             data: Dict[str, Any] = json.loads(result)
-            supplicant_state: str = data.get("supplicant_state", "") # type: ignore
-            ip_address: str = data.get("ip", "") # type: ignore
+            supplicant_state: str = data.get("supplicant_state", "")  # type: ignore
+            ip_address: str = data.get("ip", "")  # type: ignore
             return supplicant_state == "COMPLETED" and ip_address != ""
         except json.JSONDecodeError as e:
             logger.warning(f"Error decoding JSON from termux-wifi-connectioninfo: {e}")
             return False
-        except OSError as e: # For os.popen issues
+        except OSError as e:  # For os.popen issues
             logger.warning(f"OSError checking Wi-Fi connection with os.popen: {e}")
             return False
-        except Exception as e: # Catch any other unexpected error
-            logger.error(f"Unexpected error checking Wi-Fi connection: {e}", exc_info=True)
+        except Exception as e:  # Catch any other unexpected error
+            logger.error(
+                f"Unexpected error checking Wi-Fi connection: {e}", exc_info=True
+            )
             return False
     else:
         return True
@@ -898,15 +1041,22 @@ def safe_extract_path(extract_dir: str, file_path: str) -> str:
     prospective_path: str = os.path.join(abs_extract_dir, file_path)
     safe_path: str = os.path.normpath(prospective_path)
 
-    if not safe_path.startswith(abs_extract_dir + os.sep) and safe_path != abs_extract_dir:
+    if (
+        not safe_path.startswith(abs_extract_dir + os.sep)
+        and safe_path != abs_extract_dir
+    ):
         if safe_path == abs_extract_dir and (file_path == "" or file_path == "."):
             pass
         else:
-            raise ValueError(f"Unsafe path detected: '{file_path}' attempts to write outside of '{extract_dir}'")
+            raise ValueError(
+                f"Unsafe path detected: '{file_path}' attempts to write outside of '{extract_dir}'"
+            )
     return safe_path
 
 
-def extract_files(zip_path: str, extract_dir: str, patterns: List[str], exclude_patterns: List[str]) -> None:
+def extract_files(
+    zip_path: str, extract_dir: str, patterns: List[str], exclude_patterns: List[str]
+) -> None:
     """
     Extracts files matching specified patterns from a zip archive, excluding others.
 
@@ -922,8 +1072,10 @@ def extract_files(zip_path: str, extract_dir: str, patterns: List[str], exclude_
             for file_info in zip_ref.infolist():
                 file_name: str = file_info.filename
                 base_name: str = os.path.basename(file_name)
-                if not base_name: continue
-                if any(exclude in base_name for exclude in exclude_patterns): continue
+                if not base_name:
+                    continue
+                if any(exclude in base_name for exclude in exclude_patterns):
+                    continue
 
                 stripped_base_name: str = strip_version_numbers(base_name)
                 pattern: str
@@ -934,35 +1086,64 @@ def extract_files(zip_path: str, extract_dir: str, patterns: List[str], exclude_
                             if not os.path.exists(target_path):
                                 target_dir_for_file: str = os.path.dirname(target_path)
                                 if not os.path.exists(target_dir_for_file):
-                                    os.makedirs(target_dir_for_file, exist_ok=True) # Can raise OSError
-                                source: Any = zip_ref.open(file_info) # Can raise BadZipFile, LargeZipFile
-                                with open(target_path, "wb") as target_file: # Can raise IOError
+                                    os.makedirs(
+                                        target_dir_for_file, exist_ok=True
+                                    )  # Can raise OSError
+                                source: Any = zip_ref.open(
+                                    file_info
+                                )  # Can raise BadZipFile, LargeZipFile
+                                with open(
+                                    target_path, "wb"
+                                ) as target_file:  # Can raise IOError
                                     target_file.write(source.read())
                                 logger.info(f"  Extracted: {base_name}")
                             if base_name.endswith(".sh"):
                                 if not os.access(target_path, os.X_OK):
-                                    os.chmod(target_path, 0o755) # Can raise OSError
-                                    logger.debug(f"Set executable permissions for {base_name}")
+                                    os.chmod(target_path, 0o755)  # Can raise OSError
+                                    logger.debug(
+                                        f"Set executable permissions for {base_name}"
+                                    )
                             break
-                        except ValueError as e_val: # From safe_extract_path
-                            logger.warning(f"Skipping extraction of '{base_name}' due to unsafe path: {e_val}")
+                        except ValueError as e_val:  # From safe_extract_path
+                            logger.warning(
+                                f"Skipping extraction of '{base_name}' due to unsafe path: {e_val}"
+                            )
                         except (IOError, OSError) as e_io_os:
-                            logger.warning(f"File/OS error during extraction of '{base_name}': {e_io_os}")
-                        except zipfile.BadZipFile as e_bzf_inner: # Should ideally be caught by outer, but just in case
-                             logger.warning(f"Bad zip file encountered while processing member '{base_name}' of '{zip_path}': {e_bzf_inner}")
-                        except Exception as e_inner_extract: # Catch other unexpected errors for this specific file
-                            logger.error(f"Unexpected error extracting file '{base_name}' from '{zip_path}': {e_inner_extract}", exc_info=True)
-                        continue # Continue to next pattern or file in zip
-    except zipfile.BadZipFile as e_bzf:
-        logger.error(f"Error: {zip_path} is a bad zip file and cannot be opened. Removing file.")
+                            logger.warning(
+                                f"File/OS error during extraction of '{base_name}': {e_io_os}"
+                            )
+                        except (
+                            zipfile.BadZipFile
+                        ) as e_bzf_inner:  # Should ideally be caught by outer, but just in case
+                            logger.warning(
+                                f"Bad zip file encountered while processing member '{base_name}' of '{zip_path}': {e_bzf_inner}"
+                            )
+                        except (
+                            Exception
+                        ) as e_inner_extract:  # Catch other unexpected errors for this specific file
+                            logger.error(
+                                f"Unexpected error extracting file '{base_name}' from '{zip_path}': {e_inner_extract}",
+                                exc_info=True,
+                            )
+                        continue  # Continue to next pattern or file in zip
+    except zipfile.BadZipFile:
+        logger.error(
+            f"Error: {zip_path} is a bad zip file and cannot be opened. Removing file."
+        )
         try:
-            if os.path.exists(zip_path): os.remove(zip_path)
+            if os.path.exists(zip_path):
+                os.remove(zip_path)
         except (IOError, OSError) as e_rm:
             logger.error(f"Error removing corrupted zip file {zip_path}: {e_rm}")
     except (IOError, OSError) as e_io_main:
-         logger.error(f"IO/OS error opening or reading zip file {zip_path}: {e_io_main}")
-    except Exception as e_outer_extract: # Catch other unexpected errors during the overall extraction process
-        logger.error(f"An unexpected error occurred while processing zip file {zip_path}: {e_outer_extract}", exc_info=True)
+        logger.error(f"IO/OS error opening or reading zip file {zip_path}: {e_io_main}")
+    except (
+        Exception
+    ) as e_outer_extract:  # Catch other unexpected errors during the overall extraction process
+        logger.error(
+            f"An unexpected error occurred while processing zip file {zip_path}: {e_outer_extract}",
+            exc_info=True,
+        )
 
 
 def strip_version_numbers(filename: str) -> str:
@@ -989,10 +1170,13 @@ def cleanup_old_versions(directory: str, releases_to_keep: List[str]) -> None:
         releases_to_keep (List[str]): A list of release tag names to keep.
     """
     excluded_dirs: List[str] = ["repo-dls", "prerelease"]
-    versions: List[str] = [d for d in os.listdir(directory) if os.path.isdir(os.path.join(directory, d))]
+    versions: List[str] = [
+        d for d in os.listdir(directory) if os.path.isdir(os.path.join(directory, d))
+    ]
     version: str
     for version in versions:
-        if version in excluded_dirs: continue
+        if version in excluded_dirs:
+            continue
         if version not in releases_to_keep:
             version_path: str = os.path.join(directory, version)
             try:
@@ -1002,7 +1186,9 @@ def cleanup_old_versions(directory: str, releases_to_keep: List[str]) -> None:
                 shutil.rmtree(version_path)
                 logger.info(f"Removed directory and its contents: {version_path}")
             except OSError as e:
-                logger.warning(f"Error removing old version directory {version_path}: {e}")
+                logger.warning(
+                    f"Error removing old version directory {version_path}: {e}"
+                )
 
 
 def strip_unwanted_chars(text: str) -> str:
@@ -1057,7 +1243,6 @@ def check_and_download(
     actions_taken: bool = False
     exclude_patterns_list: List[str] = exclude_patterns or []
 
-
     if not os.path.exists(download_dir_path):
         os.makedirs(download_dir_path)
 
@@ -1067,7 +1252,9 @@ def check_and_download(
             with open(latest_release_file, "r") as f:
                 saved_release_tag = f.read().strip()
         except IOError as e:
-            logger.warning(f"Error reading latest release file {latest_release_file}: {e}")
+            logger.warning(
+                f"Error reading latest release file {latest_release_file}: {e}"
+            )
             # Potentially critical, could lead to re-downloading, but proceed for now.
 
     releases_to_download: List[Dict[str, Any]] = releases[:versions_to_keep]
@@ -1077,21 +1264,31 @@ def check_and_download(
         for release_data in releases_to_download:
             if release_data["tag_name"] != saved_release_tag:
                 new_versions_available.append(release_data["tag_name"])
-        return downloaded_versions, new_versions_available, failed_downloads_details # Added failed_downloads_details
+        return (
+            downloaded_versions,
+            new_versions_available,
+            failed_downloads_details,
+        )  # Added failed_downloads_details
 
     release_data: Dict[str, Any]
     for release_data in releases_to_download:
         try:
-            release_tag: str = release_data["tag_name"] # Potential KeyError if API response changes
+            release_tag: str = release_data[
+                "tag_name"
+            ]  # Potential KeyError if API response changes
             release_dir: str = os.path.join(download_dir_path, release_tag)
-            release_notes_file: str = os.path.join(release_dir, f"release_notes-{release_tag}.md")
+            release_notes_file: str = os.path.join(
+                release_dir, f"release_notes-{release_tag}.md"
+            )
 
             if not os.path.exists(release_dir):
                 try:
                     os.makedirs(release_dir, exist_ok=True)
                 except OSError as e:
-                    logger.error(f"Error creating release directory {release_dir}: {e}. Skipping version {release_tag}.")
-                    continue # Skip this release if its directory cannot be created
+                    logger.error(
+                        f"Error creating release directory {release_dir}: {e}. Skipping version {release_tag}."
+                    )
+                    continue  # Skip this release if its directory cannot be created
 
             if not os.path.exists(release_notes_file) and release_data.get("body"):
                 logger.debug(f"Downloading release notes for version {release_tag}.")
@@ -1101,13 +1298,19 @@ def check_and_download(
                         notes_file.write(release_notes_content)
                     logger.debug(f"Saved release notes to {release_notes_file}")
                 except IOError as e:
-                    logger.warning(f"Error writing release notes to {release_notes_file}: {e}")
+                    logger.warning(
+                        f"Error writing release notes to {release_notes_file}: {e}"
+                    )
 
             asset: Dict[str, Any]
-            for asset in release_data.get("assets", []): # Use .get for assets for safety
-                file_name: str = asset.get("name", "") # Use .get for name
+            for asset in release_data.get(
+                "assets", []
+            ):  # Use .get for assets for safety
+                file_name: str = asset.get("name", "")  # Use .get for name
                 if not file_name:
-                    logger.warning(f"Asset found with no name for release {release_tag}. Skipping.")
+                    logger.warning(
+                        f"Asset found with no name for release {release_tag}. Skipping."
+                    )
                     continue
 
                 if file_name.endswith(".zip"):
@@ -1115,92 +1318,139 @@ def check_and_download(
                     if os.path.exists(asset_download_path):
                         try:
                             with zipfile.ZipFile(asset_download_path, "r") as zf:
-                                if zf.testzip() is not None: # Check integrity
-                                    raise zipfile.BadZipFile("Corrupted zip file detected during pre-check.")
+                                if zf.testzip() is not None:  # Check integrity
+                                    raise zipfile.BadZipFile(
+                                        "Corrupted zip file detected during pre-check."
+                                    )
                         except zipfile.BadZipFile:
-                            logger.warning(f"Removing corrupted zip file: {asset_download_path}")
-                            try: os.remove(asset_download_path)
-                            except OSError as e_rm: logger.error(f"Error removing corrupted zip {asset_download_path}: {e_rm}")
-                        except (IOError, OSError) as e_check: # For issues opening/reading the zip during check
-                            logger.warning(f"Error checking existing zip file {asset_download_path}: {e_check}. Attempting re-download.")
-                            try: os.remove(asset_download_path)
-                            except OSError as e_rm: logger.error(f"Error removing zip {asset_download_path} before re-download: {e_rm}")
+                            logger.warning(
+                                f"Removing corrupted zip file: {asset_download_path}"
+                            )
+                            try:
+                                os.remove(asset_download_path)
+                            except OSError as e_rm:
+                                logger.error(
+                                    f"Error removing corrupted zip {asset_download_path}: {e_rm}"
+                                )
+                        except (
+                            IOError,
+                            OSError,
+                        ) as e_check:  # For issues opening/reading the zip during check
+                            logger.warning(
+                                f"Error checking existing zip file {asset_download_path}: {e_check}. Attempting re-download."
+                            )
+                            try:
+                                os.remove(asset_download_path)
+                            except OSError as e_rm:
+                                logger.error(
+                                    f"Error removing zip {asset_download_path} before re-download: {e_rm}"
+                                )
 
             assets_to_download: List[Tuple[str, str]] = []
             for asset in release_data.get("assets", []):
                 file_name = asset.get("name", "")
-                if not file_name: continue # Already logged
+                if not file_name:
+                    continue  # Already logged
                 browser_download_url = asset.get("browser_download_url")
                 if not browser_download_url:
-                    logger.warning(f"Asset '{file_name}' in release '{release_tag}' has no download URL. Skipping.")
-                    failed_downloads_details.append({
-                        "url": "Unknown - No download URL",
-                        "path_to_download": os.path.join(release_dir, file_name),
-                        "release_tag": release_tag,
-                        "file_name": file_name,
-                        "reason": "Missing browser_download_url",
-                        "type": release_type # Added type
-                    })
+                    logger.warning(
+                        f"Asset '{file_name}' in release '{release_tag}' has no download URL. Skipping."
+                    )
+                    failed_downloads_details.append(
+                        {
+                            "url": "Unknown - No download URL",
+                            "path_to_download": os.path.join(release_dir, file_name),
+                            "release_tag": release_tag,
+                            "file_name": file_name,
+                            "reason": "Missing browser_download_url",
+                            "type": release_type,  # Added type
+                        }
+                    )
                     continue
 
                 stripped_file_name: str = strip_version_numbers(file_name)
-                if selected_patterns and not any(pattern in stripped_file_name for pattern in selected_patterns):
+                if selected_patterns and not any(
+                    pattern in stripped_file_name for pattern in selected_patterns
+                ):
                     continue
                 asset_download_path = os.path.join(release_dir, file_name)
                 if not os.path.exists(asset_download_path):
-                    assets_to_download.append((browser_download_url, asset_download_path))
+                    assets_to_download.append(
+                        (browser_download_url, asset_download_path)
+                    )
         except (KeyError, TypeError) as e_data:
-            logger.error(f"Error processing release data structure for a release (possibly malformed API response or unexpected structure): {e_data}. Skipping this release.")
-            continue # Skip to the next release if current one is malformed
+            logger.error(
+                f"Error processing release data structure for a release (possibly malformed API response or unexpected structure): {e_data}. Skipping this release."
+            )
+            continue  # Skip to the next release if current one is malformed
 
-        if assets_to_download: # This check is correct based on the first loop.
+        if assets_to_download:  # This check is correct based on the first loop.
             actions_taken = True
             logger.info(f"Processing release: {release_tag}")
             any_downloaded: bool = False
             url: str
-            path_to_download: str # This variable is path_to_download in the loop below
             # The assets_to_download list contains (url, path_to_download) tuples.
             # We iterate through this list to attempt downloads.
 
-            for url, asset_dl_path in assets_to_download: # asset_dl_path is the full path for download
+            for (
+                url,
+                asset_dl_path,
+            ) in assets_to_download:  # asset_dl_path is the full path for download
                 # Try to find the original asset to get file_name for logging more accurately
-                asset_file_name_for_log = os.path.basename(asset_dl_path) # Fallback to basename of path
+                asset_file_name_for_log = os.path.basename(
+                    asset_dl_path
+                )  # Fallback to basename of path
                 for asset_dict_for_name_lookup in release_data.get("assets", []):
                     if asset_dict_for_name_lookup.get("browser_download_url") == url:
-                        asset_file_name_for_log = asset_dict_for_name_lookup.get("name", asset_file_name_for_log)
+                        asset_file_name_for_log = asset_dict_for_name_lookup.get(
+                            "name", asset_file_name_for_log
+                        )
                         break
 
                 if download_file_with_retry(url, asset_dl_path):
                     any_downloaded = True
                 else:
                     # download_file_with_retry failed
-                    failed_downloads_details.append({
-                        "url": url,
-                        "path_to_download": asset_dl_path,
-                        "release_tag": release_tag,
-                        "file_name": asset_file_name_for_log,
-                        "reason": "download_file_with_retry returned False",
-                        "type": release_type # Added type
-                    })
+                    failed_downloads_details.append(
+                        {
+                            "url": url,
+                            "path_to_download": asset_dl_path,
+                            "release_tag": release_tag,
+                            "file_name": asset_file_name_for_log,
+                            "reason": "download_file_with_retry returned False",
+                            "type": release_type,  # Added type
+                        }
+                    )
 
             if any_downloaded and release_tag not in downloaded_versions:
-                 # Add to downloaded_versions only if at least one asset from this release was successfully downloaded
+                # Add to downloaded_versions only if at least one asset from this release was successfully downloaded
                 downloaded_versions.append(release_tag)
 
             if auto_extract and release_type == "Firmware":
-                for asset_data in release_data.get("assets", []): # Iterate over asset_data from release_data
-                    file_name = asset_data.get("name", "") # Use .get for safety
-                    if not file_name: continue
+                for asset_data in release_data.get(
+                    "assets", []
+                ):  # Iterate over asset_data from release_data
+                    file_name = asset_data.get("name", "")  # Use .get for safety
+                    if not file_name:
+                        continue
 
                     if file_name.endswith(".zip"):
                         zip_path: str = os.path.join(release_dir, file_name)
                         if os.path.exists(zip_path):
                             extraction_needed: bool = check_extraction_needed(
-                                zip_path, release_dir, extract_patterns, exclude_patterns_list
+                                zip_path,
+                                release_dir,
+                                extract_patterns,
+                                exclude_patterns_list,
                             )
                             if extraction_needed:
                                 logger.info(f"Extracting: {os.path.basename(zip_path)}")
-                                extract_files(zip_path, release_dir, extract_patterns, exclude_patterns_list)
+                                extract_files(
+                                    zip_path,
+                                    release_dir,
+                                    extract_patterns,
+                                    exclude_patterns_list,
+                                )
 
         set_permissions_on_sh_files(release_dir)
 
@@ -1211,18 +1461,29 @@ def check_and_download(
                 try:
                     with open(latest_release_file, "w") as f:
                         f.write(latest_release_tag_val)
-                    logger.debug(f"Updated latest release tag to {latest_release_tag_val}")
+                    logger.debug(
+                        f"Updated latest release tag to {latest_release_tag_val}"
+                    )
                 except IOError as e:
-                    logger.warning(f"Error writing latest release tag to {latest_release_file}: {e}")
-        except (IndexError, KeyError, TypeError) as e: # If releases_to_download is empty or structure is wrong
-             logger.warning(f"Could not determine latest release tag to save due to data issue: {e}")
-
+                    logger.warning(
+                        f"Error writing latest release tag to {latest_release_file}: {e}"
+                    )
+        except (
+            IndexError,
+            KeyError,
+            TypeError,
+        ) as e:  # If releases_to_download is empty or structure is wrong
+            logger.warning(
+                f"Could not determine latest release tag to save due to data issue: {e}"
+            )
 
     try:
         release_tags_to_keep: List[str] = [r["tag_name"] for r in releases_to_download]
         cleanup_old_versions(download_dir_path, release_tags_to_keep)
     except (KeyError, TypeError) as e:
-        logger.warning(f"Error preparing list of tags to keep for cleanup: {e}. Cleanup might be skipped or incomplete.")
+        logger.warning(
+            f"Error preparing list of tags to keep for cleanup: {e}. Cleanup might be skipped or incomplete."
+        )
 
     if not actions_taken:
         logger.info(f"All {release_type} assets are up to date.")
@@ -1255,14 +1516,20 @@ def set_permissions_on_sh_files(directory: str) -> None:
                     try:
                         if not os.access(file_path, os.X_OK):
                             os.chmod(file_path, 0o755)
-                            logger.debug(f"Set executable permissions for {file_in_dir}")
+                            logger.debug(
+                                f"Set executable permissions for {file_in_dir}"
+                            )
                     except OSError as e:
                         logger.warning(f"Error setting permissions on {file_path}: {e}")
-    except OSError as e_walk: # os.walk itself can fail
-        logger.warning(f"Error walking directory {directory} to set permissions: {e_walk}")
+    except OSError as e_walk:  # os.walk itself can fail
+        logger.warning(
+            f"Error walking directory {directory} to set permissions: {e_walk}"
+        )
 
 
-def check_extraction_needed(zip_path: str, extract_dir: str, patterns: List[str], exclude_patterns: List[str]) -> bool:
+def check_extraction_needed(
+    zip_path: str, extract_dir: str, patterns: List[str], exclude_patterns: List[str]
+) -> bool:
     """
     Checks if extraction is needed by comparing zip contents against already extracted files
     based on current extraction patterns.
@@ -1283,8 +1550,10 @@ def check_extraction_needed(zip_path: str, extract_dir: str, patterns: List[str]
             for file_info in zip_ref.infolist():
                 file_name: str = file_info.filename
                 base_name: str = os.path.basename(file_name)
-                if not base_name: continue
-                if any(exclude in base_name for exclude in exclude_patterns): continue
+                if not base_name:
+                    continue
+                if any(exclude in base_name for exclude in exclude_patterns):
+                    continue
                 stripped_base_name: str = strip_version_numbers(base_name)
                 pattern: str
                 for pattern in patterns:
@@ -1298,18 +1567,28 @@ def check_extraction_needed(zip_path: str, extract_dir: str, patterns: List[str]
                 return True
         return False
     except zipfile.BadZipFile:
-        logger.error(f"Error: {zip_path} is a bad zip file and cannot be opened. Removing file.")
+        logger.error(
+            f"Error: {zip_path} is a bad zip file and cannot be opened. Removing file."
+        )
         try:
-            if os.path.exists(zip_path): os.remove(zip_path)
+            if os.path.exists(zip_path):
+                os.remove(zip_path)
         except (IOError, OSError) as e_rm:
-            logger.error(f"Error removing corrupted zip file {zip_path} (in check_extraction_needed): {e_rm}")
-        return False # Indicate extraction is needed as we couldn't verify or had to remove
-    except (IOError, OSError) as e_io_check: # For other IO errors with the zip file
-        logger.warning(f"IO/OS error checking extraction needed for {zip_path}: {e_io_check}")
-        return True # Assume extraction is needed if we can't check
-    except Exception as e_unexp_check: # Catch-all for other unexpected errors
-        logger.error(f"Unexpected error checking extraction needed for {zip_path}: {e_unexp_check}", exc_info=True)
-        return True # Default to needing extraction on unknown error
+            logger.error(
+                f"Error removing corrupted zip file {zip_path} (in check_extraction_needed): {e_rm}"
+            )
+        return False  # Indicate extraction is needed as we couldn't verify or had to remove
+    except (IOError, OSError) as e_io_check:  # For other IO errors with the zip file
+        logger.warning(
+            f"IO/OS error checking extraction needed for {zip_path}: {e_io_check}"
+        )
+        return True  # Assume extraction is needed if we can't check
+    except Exception as e_unexp_check:  # Catch-all for other unexpected errors
+        logger.error(
+            f"Unexpected error checking extraction needed for {zip_path}: {e_unexp_check}",
+            exc_info=True,
+        )
+        return True  # Default to needing extraction on unknown error
 
 
 def main() -> None:
@@ -1317,7 +1596,7 @@ def main() -> None:
     Main function to orchestrate the Fetchtastic downloader process.
     """
     start_time: float = time.time()
-    logger.info("Starting Fetchtastic...") # Changed to logger.info
+    logger.info("Starting Fetchtastic...")  # Changed to logger.info
 
     config: Optional[Dict[str, Any]]
     current_version: Optional[str]
@@ -1325,10 +1604,12 @@ def main() -> None:
     update_available: bool
     paths_and_urls: Optional[Dict[str, str]]
 
-    config, current_version, latest_version, update_available, paths_and_urls = _initial_setup_and_config()
+    config, current_version, latest_version, update_available, paths_and_urls = (
+        _initial_setup_and_config()
+    )
 
-    if not config or not paths_and_urls: # Check if setup failed
-        logger.error("Initial setup failed. Exiting.") # Changed to logger.error
+    if not config or not paths_and_urls:  # Check if setup failed
+        logger.error("Initial setup failed. Exiting.")  # Changed to logger.error
         return
 
     _check_wifi_connection(config)
@@ -1342,8 +1623,15 @@ def main() -> None:
     failed_apk_list: List[Dict[str, str]]
     latest_apk_version: Optional[str]
 
-    downloaded_firmwares, new_firmware_versions, failed_firmware_list, latest_firmware_version = _process_firmware_downloads(config, paths_and_urls)
-    downloaded_apks, new_apk_versions, failed_apk_list, latest_apk_version = _process_apk_downloads(config, paths_and_urls)
+    (
+        downloaded_firmwares,
+        new_firmware_versions,
+        failed_firmware_list,
+        latest_firmware_version,
+    ) = _process_firmware_downloads(config, paths_and_urls)
+    downloaded_apks, new_apk_versions, failed_apk_list, latest_apk_version = (
+        _process_apk_downloads(config, paths_and_urls)
+    )
 
     if failed_firmware_list:
         logger.debug(f"Collected failed firmware downloads: {failed_firmware_list}")
@@ -1355,20 +1643,40 @@ def main() -> None:
     if all_failed_downloads:
         logger.info(f"Retrying {len(all_failed_downloads)} failed downloads...")
         for failure_detail in all_failed_downloads:
-            logger.info(f"Retrying download of {failure_detail['file_name']} for release {failure_detail['release_tag']} from {failure_detail['url']}")
-            if download_file_with_retry(failure_detail['url'], failure_detail['path_to_download']):
-                logger.info(f"Successfully retried download of {failure_detail['file_name']} for release {failure_detail['release_tag']}")
+            logger.info(
+                f"Retrying download of {failure_detail['file_name']} for release {failure_detail['release_tag']} from {failure_detail['url']}"
+            )
+            if download_file_with_retry(
+                failure_detail["url"], failure_detail["path_to_download"]
+            ):
+                logger.info(
+                    f"Successfully retried download of {failure_detail['file_name']} for release {failure_detail['release_tag']}"
+                )
                 # Update tracking lists
-                if failure_detail['type'] == "Firmware":
-                    if failure_detail['release_tag'] not in downloaded_firmwares:
-                        downloaded_firmwares.append(failure_detail['release_tag'])
-                elif failure_detail['type'] == "Android APK":
-                    if failure_detail['release_tag'] not in downloaded_apks:
-                        downloaded_apks.append(failure_detail['release_tag'])
+                if failure_detail["type"] == "Firmware":
+                    if failure_detail["release_tag"] not in downloaded_firmwares:
+                        downloaded_firmwares.append(failure_detail["release_tag"])
+                elif failure_detail["type"] == "Android APK":
+                    if failure_detail["release_tag"] not in downloaded_apks:
+                        downloaded_apks.append(failure_detail["release_tag"])
             else:
-                logger.error(f"Retry failed for {failure_detail['file_name']} for release {failure_detail['release_tag']}")
+                logger.error(
+                    f"Retry failed for {failure_detail['file_name']} for release {failure_detail['release_tag']}"
+                )
 
-    _finalize_and_notify(start_time, config, downloaded_firmwares, downloaded_apks, new_firmware_versions, new_apk_versions, current_version, latest_version, update_available, latest_firmware_version, latest_apk_version)
+    _finalize_and_notify(
+        start_time,
+        config,
+        downloaded_firmwares,
+        downloaded_apks,
+        new_firmware_versions,
+        new_apk_versions,
+        current_version,
+        latest_version,
+        update_available,
+        latest_firmware_version,
+        latest_apk_version,
+    )
 
 
 if __name__ == "__main__":
