@@ -58,9 +58,71 @@ function Ensure-Pipx {
     Write-Host "pipx installed and available."
 }
 
-function Install-Fetchtastic {
-    Write-Host "Installing Fetchtastic via pipx..."
-    pipx install fetchtastic[win]
+function Install-Or-Upgrade-Fetchtastic {
+    Write-Host "Checking for existing Fetchtastic installation..."
+
+    # Check if fetchtastic is already installed
+    $existing = pipx list | Select-String "fetchtastic"
+
+    if ($existing) {
+        Write-Host "Fetchtastic is already installed. Checking for updates..."
+
+        # Get current version
+        $currentVersion = ""
+        try {
+            $versionOutput = fetchtastic version 2>$null
+            if ($versionOutput -match "Fetchtastic v(\d+\.\d+\.\d+)") {
+                $currentVersion = $matches[1]
+                Write-Host "Current version: $currentVersion"
+            }
+        } catch {
+            Write-Host "Could not determine current version."
+        }
+
+        # Try to upgrade
+        Write-Host "Upgrading Fetchtastic..."
+        $upgradeResult = pipx upgrade fetchtastic 2>&1
+
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "Fetchtastic upgraded successfully!" -ForegroundColor Green
+        } else {
+            Write-Host "Upgrade failed. Trying force reinstall..." -ForegroundColor Yellow
+            pipx uninstall fetchtastic --force 2>$null
+            pipx install fetchtastic[win]
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "Fetchtastic reinstalled successfully!" -ForegroundColor Green
+            } else {
+                Write-Error "Failed to install Fetchtastic. Please check the error messages above."
+                exit 1
+            }
+        }
+    } else {
+        Write-Host "Installing Fetchtastic via pipx..."
+        pipx install fetchtastic[win]
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "Fetchtastic installed successfully!" -ForegroundColor Green
+        } else {
+            Write-Error "Failed to install Fetchtastic. Please check the error messages above."
+            exit 1
+        }
+    }
+
+    # Verify installation
+    $fetchtastic = Get-Command fetchtastic -ErrorAction SilentlyContinue
+    if (-not $fetchtastic) {
+        Write-Error "Fetchtastic installation verification failed. Please restart your terminal and try again."
+        exit 1
+    }
+
+    # Show final version
+    try {
+        $finalVersion = fetchtastic version 2>$null
+        if ($finalVersion) {
+            Write-Host "Final version: $finalVersion" -ForegroundColor Cyan
+        }
+    } catch {
+        Write-Host "Installation complete, but could not verify version."
+    }
 }
 
 function Run-Setup {
@@ -71,7 +133,7 @@ function Run-Setup {
 Prompt-Key
 Ensure-Python
 Ensure-Pipx
-Install-Fetchtastic
+Install-Or-Upgrade-Fetchtastic
 Run-Setup
 
 Write-Host "`nInstallation complete!" -ForegroundColor Green
