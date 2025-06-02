@@ -7,6 +7,7 @@ import shutil
 import string
 import subprocess
 import sys
+from datetime import datetime
 
 import platformdirs
 import yaml
@@ -753,6 +754,16 @@ def run_setup():
     download_dir = BASE_DIR
     config["DOWNLOAD_DIR"] = download_dir
 
+    # Record the version at which setup was last run
+    try:
+        from importlib.metadata import version
+        current_version = version("fetchtastic")
+        config["LAST_SETUP_VERSION"] = current_version
+        config["LAST_SETUP_DATE"] = datetime.now().isoformat()
+    except Exception:
+        # If we can't get the version, just record the date
+        config["LAST_SETUP_DATE"] = datetime.now().isoformat()
+
     # Make sure the config directory exists
     if not os.path.exists(CONFIG_DIR):
         try:
@@ -1203,6 +1214,35 @@ def get_upgrade_command():
             return "pipx upgrade fetchtastic"
     else:
         return "pipx upgrade fetchtastic"
+
+
+def should_recommend_setup():
+    """
+    Check if setup should be recommended based on version changes.
+
+    Returns:
+        tuple: (should_recommend, reason, last_setup_version, current_version)
+    """
+    try:
+        config = load_config()
+        if not config:
+            return True, "No configuration found", None, None
+
+        last_setup_version = config.get("LAST_SETUP_VERSION")
+        if not last_setup_version:
+            return True, "Setup version not tracked", None, None
+
+        # Get current version
+        from importlib.metadata import version
+        current_version = version("fetchtastic")
+
+        if last_setup_version != current_version:
+            return True, f"Version changed from {last_setup_version} to {current_version}", last_setup_version, current_version
+
+        return False, "Setup is current", last_setup_version, current_version
+
+    except Exception:
+        return True, "Could not determine setup status", None, None
 
 
 def display_version_info(show_update_message=True):
