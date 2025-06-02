@@ -58,6 +58,18 @@ function Ensure-Pipx {
     Write-Host "pipx installed and available."
 }
 
+function Get-PyPI-Version {
+    param([string]$PackageName)
+
+    try {
+        $response = Invoke-RestMethod -Uri "https://pypi.org/pypi/$PackageName/json" -TimeoutSec 10
+        return $response.info.version
+    } catch {
+        Write-Host "Could not check PyPI version: $($_.Exception.Message)" -ForegroundColor Yellow
+        return $null
+    }
+}
+
 function Install-Or-Upgrade-Fetchtastic {
     Write-Host "Checking for existing Fetchtastic installation..."
 
@@ -79,21 +91,56 @@ function Install-Or-Upgrade-Fetchtastic {
             Write-Host "Could not determine current version."
         }
 
-        # Try to upgrade
+        # Try to upgrade first
         Write-Host "Upgrading Fetchtastic..."
         $upgradeResult = pipx upgrade fetchtastic 2>&1
 
-        if ($LASTEXITCODE -eq 0) {
+        # Check if upgrade says "already at latest version" but we might not be
+        if ($upgradeResult -match "already at latest version") {
+            Write-Host "pipx reports already at latest version. Checking PyPI for actual latest..." -ForegroundColor Yellow
+
+            # Check actual PyPI version
+            $pypiVersion = Get-PyPI-Version "fetchtastic"
+            if ($pypiVersion) {
+                Write-Host "Latest version on PyPI: $pypiVersion" -ForegroundColor Cyan
+                if ($currentVersion -and $currentVersion -ne $pypiVersion) {
+                    Write-Host "Version mismatch detected! Current: $currentVersion, PyPI: $pypiVersion" -ForegroundColor Yellow
+                }
+            }
+
+            # Try force reinstall to ensure we get the actual latest from PyPI
+            Write-Host "Force reinstalling to ensure latest version..."
+            pipx install fetchtastic[win] --force
+
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "Fetchtastic force reinstalled successfully!" -ForegroundColor Green
+            } else {
+                Write-Host "Force install failed. Trying uninstall/reinstall..." -ForegroundColor Yellow
+                pipx uninstall fetchtastic --force 2>$null
+                pipx install fetchtastic[win]
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Host "Fetchtastic reinstalled successfully!" -ForegroundColor Green
+                } else {
+                    Write-Error "Failed to install Fetchtastic. Please check the error messages above."
+                    exit 1
+                }
+            }
+        } elseif ($LASTEXITCODE -eq 0) {
             Write-Host "Fetchtastic upgraded successfully!" -ForegroundColor Green
         } else {
             Write-Host "Upgrade failed. Trying force reinstall..." -ForegroundColor Yellow
-            pipx uninstall fetchtastic --force 2>$null
-            pipx install fetchtastic[win]
+            pipx install fetchtastic[win] --force
             if ($LASTEXITCODE -eq 0) {
-                Write-Host "Fetchtastic reinstalled successfully!" -ForegroundColor Green
+                Write-Host "Fetchtastic force reinstalled successfully!" -ForegroundColor Green
             } else {
-                Write-Error "Failed to install Fetchtastic. Please check the error messages above."
-                exit 1
+                pipx uninstall fetchtastic --force 2>$null
+                pipx install fetchtastic[win]
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Host "Fetchtastic reinstalled successfully!" -ForegroundColor Green
+                } else {
+                    Write-Error "Failed to install Fetchtastic. Please check the error messages above."
+                    exit 1
+                }
             }
         }
     } else {
