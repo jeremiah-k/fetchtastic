@@ -24,11 +24,14 @@ def main():
 
     # Command to run setup
     setup_parser = subparsers.add_parser("setup", help="Run the setup process")
-    setup_parser.add_argument(
-        "--update-integrations",
-        action="store_true",
-        help="Update Windows integrations (Start Menu shortcuts) without full setup",
-    )
+
+    # Only add Windows-specific flag on Windows
+    if platform.system() == "Windows":
+        setup_parser.add_argument(
+            "--update-integrations",
+            action="store_true",
+            help="Update Windows integrations (Start Menu shortcuts) without full setup",
+        )
 
     # Command to download firmware and APKs
     subparsers.add_parser("download", help="Download firmware and APKs")
