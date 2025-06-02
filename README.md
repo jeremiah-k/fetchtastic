@@ -49,7 +49,7 @@ pip install fetchtastic
 
 Fetchtastic can be installed on Windows systems with enhanced Windows integration.
 
-#### Easy Installation (Recommended)
+#### Easy Windows Installation (Recommended)
 
 This must be run in PowerShell (not Command Prompt).
 
@@ -61,7 +61,7 @@ irm https://raw.githubusercontent.com/jeremiah-k/fetchtastic/main/src/fetchtasti
 
 The script installs Python if needed, installs pipx, installs Fetchtastic with Windows integration, and runs the Fetchtastic setup.
 
-#### Manual Installation
+#### Manual Windows Installation
 
 1. **Install Python**: Download and install Python from the [official Python website](https://www.python.org/downloads/). Make sure to check "Add Python to PATH" during installation.
 
@@ -103,34 +103,130 @@ Fetchtastic can also be installed on your Android device using Termux.
 3. **Install Termux API**: [From F-Droid](https://f-droid.org/en/packages/com.termux.api/)
 4. _(Optional)_ **Install ntfy**: [From F-Droid](https://f-droid.org/en/packages/io.heckel.ntfy/)
 
-#### Install Dependencies
+#### Installation (Recommended)
 
 ```bash
+curl -sSL https://raw.githubusercontent.com/jeremiah-k/fetchtastic/main/src/fetchtastic/tools/setup_fetchtastic.sh | bash
+```
+
+This script will:
+
+- Install Python and pipx
+- Install Fetchtastic via pipx for better package isolation
+- Run the setup process
+
+#### Manual Termux Installation
+
+**Using pipx (recommended):**
+
+```bash
+# Install required packages
 pkg install python python-pip openssl -y
+
+# Install pipx
+pip install --user pipx
+python -m pipx ensurepath
+
+# Install Fetchtastic
+pipx install fetchtastic
+
+# Run setup
+fetchtastic setup
 ```
 
-#### Install Fetchtastic
+**Using pip (legacy method):**
 
 ```bash
+# Install required packages
+pkg install python python-pip openssl -y
+
+# Install Fetchtastic
 pip install fetchtastic
+
+# Run setup
+fetchtastic setup
 ```
 
-You can use `pipx` in Termux, but `pip` is usually simpler and works well.
+**Note:** If you have an existing pip installation, Fetchtastic will offer to migrate you to pipx during setup for better package isolation and consistency with other platforms.
 
 ## Upgrading
 
 To upgrade Fetchtastic to the latest version:
 
-### On Linux/Mac/Windows (pipx installations)
+### Windows (Recommended)
+
+#### Option 1: Use the installation script (handles upgrade issues automatically)
+
+```powershell
+irm https://raw.githubusercontent.com/jeremiah-k/fetchtastic/main/src/fetchtastic/tools/setup_fetchtastic.ps1 | iex
+```
+
+#### Option 2: Use Start Menu shortcut
+
+- Open Start Menu → Fetchtastic → "Check for Updates"
+
+#### Option 3: Manual pipx upgrade
+
+```powershell
+pipx upgrade fetchtastic
+# If it says "already at latest version" but you know there's a newer version:
+pipx install fetchtastic[win] --force
+```
+
+### Linux/Mac (pipx installations)
 
 ```bash
 pipx upgrade fetchtastic
 ```
 
-### On Termux (pip installation)
+### Termux (Android)
+
+**pipx installation (recommended):**
+
+```bash
+pipx upgrade fetchtastic
+```
+
+**pip installation (legacy):**
 
 ```bash
 pip install --upgrade fetchtastic
+```
+
+**Migration from pip to pipx:**
+If you have an existing pip installation and want to migrate to pipx:
+
+```bash
+fetchtastic setup
+# Follow the migration prompts, or manually:
+pip uninstall fetchtastic -y
+pip install --user pipx
+python -m pipx ensurepath
+pipx install fetchtastic
+```
+
+### Troubleshooting Upgrades
+
+If `pipx upgrade` reports "already at latest version" but you know a newer version exists:
+
+**Windows:**
+
+```powershell
+pipx install fetchtastic[win] --force
+```
+
+**Linux/Mac/Termux:**
+
+```bash
+pipx install fetchtastic --force
+```
+
+**Complete reinstall (if needed):**
+
+```bash
+pipx uninstall fetchtastic
+pipx install fetchtastic[win]  # Windows
+pipx install fetchtastic       # Linux/Mac/Termux
 ```
 
 ## Usage
