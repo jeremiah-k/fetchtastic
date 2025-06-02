@@ -43,17 +43,19 @@ WINDOWS_START_MENU_FOLDER = os.path.join(
 
 def is_termux():
     """
-    Check if the script is running in a Termux environment.
+    Returns True if the script is running in a Termux environment.
+    
+    Detects Termux by checking if the 'PREFIX' environment variable contains 'com.termux'.
     """
     return "com.termux" in os.environ.get("PREFIX", "")
 
 
 def is_fetchtastic_installed_via_pip():
     """
-    Check if fetchtastic is installed via pip (not pipx).
-
+    Determines if Fetchtastic is installed using pip (not pipx).
+    
     Returns:
-        bool: True if installed via pip, False otherwise
+        True if Fetchtastic is found in the output of `pip list`; otherwise, False.
     """
     try:
         import subprocess
@@ -72,10 +74,10 @@ def is_fetchtastic_installed_via_pip():
 
 def is_fetchtastic_installed_via_pipx():
     """
-    Check if fetchtastic is installed via pipx.
-
+    Determines if Fetchtastic is installed using pipx.
+    
     Returns:
-        bool: True if installed via pipx, False otherwise
+        True if Fetchtastic appears in the output of `pipx list`, otherwise False.
     """
     try:
         import subprocess
@@ -94,10 +96,10 @@ def is_fetchtastic_installed_via_pipx():
 
 def get_fetchtastic_installation_method():
     """
-    Determine how fetchtastic is currently installed.
-
+    Determines the installation method used for Fetchtastic.
+    
     Returns:
-        str: 'pip', 'pipx', or 'unknown'
+        'pipx' if installed via pipx, 'pip' if installed via pip, or 'unknown' if the method cannot be determined.
     """
     if is_fetchtastic_installed_via_pipx():
         return "pipx"
@@ -109,10 +111,12 @@ def get_fetchtastic_installation_method():
 
 def migrate_pip_to_pipx():
     """
-    Migrate fetchtastic from pip to pipx installation in Termux.
-
+    Migrates Fetchtastic from a pip installation to a pipx installation in Termux.
+    
+    Performs backup and restoration of the configuration file, ensures pipx is installed, uninstalls Fetchtastic from pip, installs it with pipx, and restores the configuration. Prompts the user for confirmation before proceeding.
+    
     Returns:
-        bool: True if migration successful, False otherwise
+        True if migration is successful or not needed; False if migration fails or is canceled.
     """
     if not is_termux():
         print("Migration is only supported in Termux.")
@@ -225,7 +229,7 @@ def migrate_pip_to_pipx():
 
 def get_platform():
     """
-    Determine the platform on which the script is running.
+    Returns a string identifying the current platform as 'termux', 'mac', 'linux', or 'unknown'.
     """
     if is_termux():
         return "termux"
@@ -331,6 +335,11 @@ def check_storage_setup():
 
 
 def run_setup():
+    """
+    Runs the interactive setup process for Fetchtastic, guiding the user through configuration, migration, and platform-specific integration.
+    
+    This function handles initial configuration, migration from pip to pipx on Termux, directory setup, asset selection, version retention policies, firmware extraction options, Wi-Fi-only download settings, and notification preferences. It also manages creation of Windows shortcuts, Termux cron jobs and boot scripts, and Linux/macOS cron jobs as appropriate. At the end of setup, the user is offered the option to perform an initial run of Fetchtastic.
+    """
     global BASE_DIR, CONFIG_FILE
     print("Running Fetchtastic Setup...")
 
@@ -1188,10 +1197,9 @@ def check_for_updates():
 
 def get_upgrade_command():
     """
-    Returns the appropriate upgrade command based on the environment and installation method.
-
-    Returns:
-        str: The command to upgrade fetchtastic
+    Returns the shell command to upgrade Fetchtastic based on the current platform and installation method.
+    
+    On Termux, selects pip or pipx depending on how Fetchtastic was installed. On other platforms, defaults to pipx.
     """
     if is_termux():
         # Check how fetchtastic is installed in Termux
@@ -1287,14 +1295,16 @@ def prompt_for_migration():
 
 def create_windows_menu_shortcuts(config_file_path, base_dir):
     """
-    Creates Windows Start Menu shortcuts for fetchtastic.
-
+    Creates Windows Start Menu shortcuts for Fetchtastic commands, configuration, and logs.
+    
+    Shortcuts are generated for downloading assets, running setup, browsing the repository, editing the configuration file, accessing the downloads folder, viewing logs, and checking for updates. Batch files are created to handle command execution, and existing shortcuts are removed before recreation.
+    
     Args:
-        config_file_path: Path to the configuration file
-        base_dir: Base directory for Meshtastic downloads
-
+        config_file_path: Path to the Fetchtastic configuration file.
+        base_dir: Directory where Meshtastic downloads are stored.
+    
     Returns:
-        bool: True if shortcuts were created successfully, False otherwise
+        True if all shortcuts were created successfully, False otherwise.
     """
     if platform.system() != "Windows" or not WINDOWS_MODULES_AVAILABLE:
         return False
