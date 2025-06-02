@@ -110,14 +110,14 @@ function Install-Or-Upgrade-Fetchtastic {
 
             # Try force reinstall to ensure we get the actual latest from PyPI
             Write-Host "Force reinstalling to ensure latest version..."
-            pipx install fetchtastic[win] --force
+            pipx install "fetchtastic[win]" --force
 
             if ($LASTEXITCODE -eq 0) {
                 Write-Host "Fetchtastic force reinstalled successfully!" -ForegroundColor Green
             } else {
                 Write-Host "Force install failed. Trying uninstall/reinstall..." -ForegroundColor Yellow
                 pipx uninstall fetchtastic --force 2>$null
-                pipx install fetchtastic[win]
+                pipx install "fetchtastic[win]"
                 if ($LASTEXITCODE -eq 0) {
                     Write-Host "Fetchtastic reinstalled successfully!" -ForegroundColor Green
                 } else {
@@ -129,12 +129,12 @@ function Install-Or-Upgrade-Fetchtastic {
             Write-Host "Fetchtastic upgraded successfully!" -ForegroundColor Green
         } else {
             Write-Host "Upgrade failed. Trying force reinstall..." -ForegroundColor Yellow
-            pipx install fetchtastic[win] --force
+            pipx install "fetchtastic[win]" --force
             if ($LASTEXITCODE -eq 0) {
                 Write-Host "Fetchtastic force reinstalled successfully!" -ForegroundColor Green
             } else {
                 pipx uninstall fetchtastic --force 2>$null
-                pipx install fetchtastic[win]
+                pipx install "fetchtastic[win]"
                 if ($LASTEXITCODE -eq 0) {
                     Write-Host "Fetchtastic reinstalled successfully!" -ForegroundColor Green
                 } else {
@@ -145,7 +145,7 @@ function Install-Or-Upgrade-Fetchtastic {
         }
     } else {
         Write-Host "Installing Fetchtastic via pipx..."
-        pipx install fetchtastic[win]
+        pipx install "fetchtastic[win]"
         if ($LASTEXITCODE -eq 0) {
             Write-Host "Fetchtastic installed successfully!" -ForegroundColor Green
         } else {
@@ -191,9 +191,8 @@ function Run-Setup {
         Write-Host "`nFetchtastic has been upgraded successfully!" -ForegroundColor Green
 
         # Check if Windows integrations need updating
-        $updateIntegrations = (
-            input "Would you like to update Windows integrations (Start Menu shortcuts, etc.)? [y/n] (default: yes): "
-        ).strip().lower() -or "y"
+        $updateIntegrationsInput = Read-Host "Would you like to update Windows integrations (Start Menu shortcuts, etc.)? [y/n] (default: yes)"
+        $updateIntegrations = if ([string]::IsNullOrWhiteSpace($updateIntegrationsInput)) { "y" } else { $updateIntegrationsInput.Trim().ToLower() }
 
         if ($updateIntegrations -eq "y") {
             Write-Host "Updating Windows integrations..."
@@ -205,9 +204,8 @@ function Run-Setup {
             }
         }
 
-        $runSetup = (
-            input "Would you like to run the full setup to review/update your configuration? [y/n] (default: no): "
-        ).strip().lower() -or "n"
+        $runSetupInput = Read-Host "Would you like to run the full setup to review/update your configuration? [y/n] (default: no)"
+        $runSetup = if ([string]::IsNullOrWhiteSpace($runSetupInput)) { "n" } else { $runSetupInput.Trim().ToLower() }
 
         if ($runSetup -eq "y") {
             Write-Host "Running fetchtastic setup..."

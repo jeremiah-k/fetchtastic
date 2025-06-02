@@ -1413,7 +1413,7 @@ def create_windows_menu_shortcuts(config_file_path, base_dir):
                 f.write(") else (\n")
                 f.write("    echo Upgrade failed or already at latest version.\n")
                 f.write("    echo Trying force reinstall...\n")
-                f.write(f'    "{pipx_path}" install fetchtastic[win] --force\n')
+                f.write(f'    "{pipx_path}" install "fetchtastic[win]" --force\n')
                 f.write("    if %ERRORLEVEL% EQU 0 (\n")
                 f.write("        echo Force reinstall completed successfully!\n")
                 f.write("    ) else (\n")
@@ -1423,7 +1423,7 @@ def create_windows_menu_shortcuts(config_file_path, base_dir):
                 f.write(
                     f'        "{pipx_path}" uninstall fetchtastic --force >nul 2>&1\n'
                 )
-                f.write(f'        "{pipx_path}" install fetchtastic[win]\n')
+                f.write(f'        "{pipx_path}" install "fetchtastic[win]"\n')
                 f.write("        if %ERRORLEVEL% EQU 0 (\n")
                 f.write("            echo Reinstall completed successfully!\n")
                 f.write("        ) else (\n")
@@ -1440,7 +1440,7 @@ def create_windows_menu_shortcuts(config_file_path, base_dir):
                 # Fallback to pip if pipx is not found
                 pip_path = shutil.which("pip")
                 if pip_path:
-                    f.write(f'"{pip_path}" install --upgrade fetchtastic[win]\n')
+                    f.write(f'"{pip_path}" install --upgrade "fetchtastic[win]"\n')
                 else:
                     f.write("echo Error: Neither pipx nor pip was found in PATH.\n")
                     f.write("echo Please install pipx or pip to upgrade Fetchtastic.\n")
