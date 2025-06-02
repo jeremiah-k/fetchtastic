@@ -103,19 +103,51 @@ Fetchtastic can also be installed on your Android device using Termux.
 3. **Install Termux API**: [From F-Droid](https://f-droid.org/en/packages/com.termux.api/)
 4. _(Optional)_ **Install ntfy**: [From F-Droid](https://f-droid.org/en/packages/io.heckel.ntfy/)
 
-#### Install Dependencies
+#### Installation (Recommended)
 
 ```bash
+curl -sSL https://raw.githubusercontent.com/jeremiah-k/fetchtastic/main/src/fetchtastic/tools/setup_fetchtastic.sh | bash
+```
+
+This script will:
+
+- Install Python and pipx
+- Install Fetchtastic via pipx for better package isolation
+- Run the setup process
+
+#### Manual Installation
+
+**Using pipx (recommended):**
+
+```bash
+# Install required packages
 pkg install python python-pip openssl -y
+
+# Install pipx
+pip install --user pipx
+python -m pipx ensurepath
+
+# Install Fetchtastic
+pipx install fetchtastic
+
+# Run setup
+fetchtastic setup
 ```
 
-#### Install Fetchtastic
+**Using pip (legacy method):**
 
 ```bash
+# Install required packages
+pkg install python python-pip openssl -y
+
+# Install Fetchtastic
 pip install fetchtastic
+
+# Run setup
+fetchtastic setup
 ```
 
-You can use `pipx` in Termux, but `pip` is usually simpler and works well.
+**Note:** If you have an existing pip installation, Fetchtastic will offer to migrate you to pipx during setup for better package isolation and consistency with other platforms.
 
 ## Upgrading
 
@@ -147,10 +179,30 @@ pipx install fetchtastic[win] --force
 pipx upgrade fetchtastic
 ```
 
-### Termux (pip installation)
+### Termux (Android)
+
+**pipx installation (recommended):**
+
+```bash
+pipx upgrade fetchtastic
+```
+
+**pip installation (legacy):**
 
 ```bash
 pip install --upgrade fetchtastic
+```
+
+**Migration from pip to pipx:**
+If you have an existing pip installation and want to migrate to pipx:
+
+```bash
+fetchtastic setup
+# Follow the migration prompts, or manually:
+pip uninstall fetchtastic -y
+pip install --user pipx
+python -m pipx ensurepath
+pipx install fetchtastic
 ```
 
 ### Troubleshooting Upgrades
@@ -163,7 +215,7 @@ If `pipx upgrade` reports "already at latest version" but you know a newer versi
 pipx install fetchtastic[win] --force
 ```
 
-**Linux/Mac:**
+**Linux/Mac/Termux:**
 
 ```bash
 pipx install fetchtastic --force
@@ -174,7 +226,7 @@ pipx install fetchtastic --force
 ```bash
 pipx uninstall fetchtastic
 pipx install fetchtastic[win]  # Windows
-pipx install fetchtastic       # Linux/Mac
+pipx install fetchtastic       # Linux/Mac/Termux
 ```
 
 ## Usage

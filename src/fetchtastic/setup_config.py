@@ -48,6 +48,179 @@ def is_termux():
     return "com.termux" in os.environ.get("PREFIX", "")
 
 
+def is_fetchtastic_installed_via_pip():
+    """
+    Check if fetchtastic is installed via pip (not pipx).
+
+    Returns:
+        bool: True if installed via pip, False otherwise
+    """
+    try:
+        import subprocess
+
+        # Check if fetchtastic is in pip list
+        result = subprocess.run(
+            ["pip", "list"], capture_output=True, text=True, check=False
+        )
+        if result.returncode == 0:
+            return "fetchtastic" in result.stdout.lower()
+    except Exception:
+        pass
+    return False
+
+
+def is_fetchtastic_installed_via_pipx():
+    """
+    Check if fetchtastic is installed via pipx.
+
+    Returns:
+        bool: True if installed via pipx, False otherwise
+    """
+    try:
+        import subprocess
+
+        # Check if fetchtastic is in pipx list
+        result = subprocess.run(
+            ["pipx", "list"], capture_output=True, text=True, check=False
+        )
+        if result.returncode == 0:
+            return "fetchtastic" in result.stdout.lower()
+    except Exception:
+        pass
+    return False
+
+
+def get_fetchtastic_installation_method():
+    """
+    Determine how fetchtastic is currently installed.
+
+    Returns:
+        str: 'pip', 'pipx', or 'unknown'
+    """
+    if is_fetchtastic_installed_via_pipx():
+        return "pipx"
+    elif is_fetchtastic_installed_via_pip():
+        return "pip"
+    else:
+        return "unknown"
+
+
+def migrate_pip_to_pipx():
+    """
+    Migrate fetchtastic from pip to pipx installation in Termux.
+
+    Returns:
+        bool: True if migration successful, False otherwise
+    """
+    if not is_termux():
+        print("Migration is only supported in Termux.")
+        return False
+
+    if get_fetchtastic_installation_method() != "pip":
+        print("Fetchtastic is not installed via pip. No migration needed.")
+        return True
+
+    print("\n" + "=" * 50)
+    print("MIGRATING FROM PIP TO PIPX")
+    print("=" * 50)
+    print("We recommend using pipx for better package isolation.")
+    print("This will:")
+    print("1. Backup your current configuration")
+    print("2. Install pipx if not available")
+    print("3. Uninstall fetchtastic from pip")
+    print("4. Install fetchtastic with pipx")
+    print("5. Restore your configuration")
+    print()
+
+    migrate = (
+        input("Do you want to migrate to pipx? [y/n] (default: yes): ").strip().lower()
+        or "y"
+    )
+    if migrate != "y":
+        print("Migration cancelled. You can continue using pip, but we recommend pipx.")
+        return False
+
+    try:
+        import shutil
+        import subprocess
+
+        # Step 1: Backup configuration
+        print("1. Backing up configuration...")
+        config_backup = None
+        if os.path.exists(CONFIG_FILE):
+            with open(CONFIG_FILE, "r") as f:
+                config_backup = f.read()
+            print("   Configuration backed up.")
+        else:
+            print("   No existing configuration found.")
+
+        # Step 2: Install pipx if needed
+        print("2. Ensuring pipx is available...")
+        pipx_path = shutil.which("pipx")
+        if not pipx_path:
+            print("   Installing pipx...")
+            result = subprocess.run(
+                ["pip", "install", "--user", "pipx"], capture_output=True, text=True
+            )
+            if result.returncode != 0:
+                print(f"   Failed to install pipx: {result.stderr}")
+                return False
+
+            # Ensure pipx path
+            result = subprocess.run(
+                ["python", "-m", "pipx", "ensurepath"], capture_output=True, text=True
+            )
+            print("   pipx installed successfully.")
+        else:
+            print("   pipx is already available.")
+
+        # Step 3: Uninstall from pip
+        print("3. Uninstalling fetchtastic from pip...")
+        result = subprocess.run(
+            ["pip", "uninstall", "fetchtastic", "-y"], capture_output=True, text=True
+        )
+        if result.returncode != 0:
+            print(f"   Warning: Failed to uninstall from pip: {result.stderr}")
+        else:
+            print("   Uninstalled from pip successfully.")
+
+        # Step 4: Install with pipx
+        print("4. Installing fetchtastic with pipx...")
+        result = subprocess.run(
+            ["pipx", "install", "fetchtastic"], capture_output=True, text=True
+        )
+        if result.returncode != 0:
+            print(f"   Failed to install with pipx: {result.stderr}")
+            # Try to restore pip installation
+            print("   Attempting to restore pip installation...")
+            subprocess.run(["pip", "install", "fetchtastic"], check=False)
+            return False
+        else:
+            print("   Installed with pipx successfully.")
+
+        # Step 5: Restore configuration
+        if config_backup:
+            print("5. Restoring configuration...")
+            with open(CONFIG_FILE, "w") as f:
+                f.write(config_backup)
+            print("   Configuration restored.")
+
+        print("\n" + "=" * 50)
+        print("MIGRATION COMPLETED SUCCESSFULLY!")
+        print("=" * 50)
+        print("Fetchtastic is now installed via pipx.")
+        print("You can now use 'pipx upgrade fetchtastic' to upgrade.")
+        print("Your configuration has been preserved.")
+        print()
+
+        return True
+
+    except Exception as e:
+        print(f"Migration failed with error: {e}")
+        print("You can continue using the pip installation.")
+        return False
+
+
 def get_platform():
     """
     Determine the platform on which the script is running.
@@ -165,6 +338,38 @@ def run_setup():
         # Check if storage is set up
         check_storage_setup()
         print("Termux storage is set up.")
+
+        # Check for pip installation and offer migration to pipx
+        if get_fetchtastic_installation_method() == "pip":
+            print("\n" + "=" * 60)
+            print("NOTICE: Fetchtastic is installed via pip")
+            print("=" * 60)
+            print("We now recommend using pipx for better package isolation.")
+            print("pipx provides:")
+            print("• Isolated environments for each package")
+            print("• Better dependency management")
+            print("• Consistent experience across platforms")
+            print("• Easier upgrades and maintenance")
+            print()
+
+            offer_migration = (
+                input("Would you like to migrate to pipx now? [y/n] (default: yes): ")
+                .strip()
+                .lower()
+                or "y"
+            )
+            if offer_migration == "y":
+                migration_success = migrate_pip_to_pipx()
+                if migration_success:
+                    print("Migration completed! Continuing with setup...")
+                else:
+                    print(
+                        "Migration failed or cancelled. Continuing with pip installation..."
+                    )
+            else:
+                print("You can migrate later by running 'fetchtastic setup' again.")
+                print("For now, continuing with pip installation...")
+            print()
 
     # Check if config directory exists, create if not
     if not os.path.exists(CONFIG_DIR):
@@ -981,13 +1186,19 @@ def check_for_updates():
 
 def get_upgrade_command():
     """
-    Returns the appropriate upgrade command based on the environment.
+    Returns the appropriate upgrade command based on the environment and installation method.
 
     Returns:
         str: The command to upgrade fetchtastic
     """
     if is_termux():
-        return "pip install --upgrade fetchtastic"
+        # Check how fetchtastic is installed in Termux
+        install_method = get_fetchtastic_installation_method()
+        if install_method == "pip":
+            return "pip install --upgrade fetchtastic"
+        else:
+            # Default to pipx for new installations and pipx installations
+            return "pipx upgrade fetchtastic"
     else:
         return "pipx upgrade fetchtastic"
 
