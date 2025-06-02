@@ -1,5 +1,6 @@
 # src/fetchtastic/downloader.py
 
+import fnmatch
 import json
 import os
 import re
@@ -366,7 +367,7 @@ def check_for_prereleases(
 
                             # Skip files that match exclude patterns
                             if any(
-                                exclude in file_name
+                                fnmatch.fnmatch(file_name, exclude)
                                 for exclude in exclude_patterns_list
                             ):
                                 continue  # Skip this file
@@ -446,7 +447,9 @@ def check_for_prereleases(
                 continue  # Skip this file
 
             # Skip files that match exclude patterns
-            if any(exclude in file_name for exclude in exclude_patterns_list):
+            if any(
+                fnmatch.fnmatch(file_name, exclude) for exclude in exclude_patterns_list
+            ):
                 continue  # Skip this file
 
             if not os.path.exists(file_path):
@@ -1074,7 +1077,9 @@ def extract_files(
                 base_name: str = os.path.basename(file_name)
                 if not base_name:
                     continue
-                if any(exclude in base_name for exclude in exclude_patterns):
+                if any(
+                    fnmatch.fnmatch(base_name, exclude) for exclude in exclude_patterns
+                ):
                     continue
 
                 stripped_base_name: str = strip_version_numbers(base_name)
@@ -1552,7 +1557,9 @@ def check_extraction_needed(
                 base_name: str = os.path.basename(file_name)
                 if not base_name:
                     continue
-                if any(exclude in base_name for exclude in exclude_patterns):
+                if any(
+                    fnmatch.fnmatch(base_name, exclude) for exclude in exclude_patterns
+                ):
                     continue
                 stripped_base_name: str = strip_version_numbers(base_name)
                 pattern: str
