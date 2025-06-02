@@ -199,7 +199,7 @@ def compare_file_hashes(file1, file2):
 
 
 def check_for_prereleases(
-    download_dir, latest_release_tag, selected_patterns # log_message_func parameter removed
+    download_dir, latest_release_tag, selected_patterns, exclude_patterns=None # log_message_func parameter removed
 ):
     """
     Checks for pre-release firmware in the meshtastic.github.io repository.
@@ -209,6 +209,7 @@ def check_for_prereleases(
         download_dir: Base download directory
         latest_release_tag: The latest official release tag (e.g., v2.6.8.ef9d0d7)
         selected_patterns: List of firmware patterns to download
+        exclude_patterns: Optional list of filename patterns to exclude from downloading
         # log_message_func parameter removed
 
     Returns:
@@ -216,6 +217,9 @@ def check_for_prereleases(
                  list of pre-release versions that were downloaded)
     """
     # Removed local log_message_func definition
+
+    # Initialize exclude patterns list
+    exclude_patterns_list = exclude_patterns or []
 
     # Strip the 'v' prefix if present
     if latest_release_tag.startswith("v"):
@@ -361,9 +365,13 @@ def check_for_prereleases(
             download_url = file["download_url"]
             file_path = os.path.join(dir_path, file_name)
 
-            # Only download files that match the selected patterns
+            # Only download files that match the selected patterns and don't match exclude patterns
             stripped_file_name = strip_version_numbers(file_name)
             if not any(pattern in stripped_file_name for pattern in selected_patterns):
+                continue  # Skip this file
+
+            # Skip files that match exclude patterns
+            if any(exclude in file_name for exclude in exclude_patterns_list):
                 continue  # Skip this file
 
             if not os.path.exists(file_path):
@@ -459,9 +467,21 @@ def _get_latest_releases_data(url: str, scan_count: int = 10) -> List[Dict[str, 
         List[Dict[str, Any]]: A list of release data dictionaries, sorted by publication date.
     """
     try:
+        # Add progress feedback
+        if "firmware" in url:
+            logger.info("Fetching firmware releases from GitHub...")
+        elif "Android" in url:
+            logger.info("Fetching Android APK releases from GitHub...")
+        else:
+            logger.info("Fetching releases from GitHub...")
+
         response: requests.Response = requests.get(url, timeout=NTFY_REQUEST_TIMEOUT)
         response.raise_for_status()
         releases: List[Dict[str, Any]] = response.json()
+
+        # Log how many releases were fetched
+        logger.debug(f"Fetched {len(releases)} releases from GitHub API")
+
     except requests.exceptions.RequestException as e:
         logger.error(f"Failed to fetch releases data from {url}: {e}")
         return [] # Return empty list on error
@@ -625,7 +645,8 @@ def _process_firmware_downloads(config: Dict[str, Any], paths_and_urls: Dict[str
                 prerelease_found, prerelease_versions = check_for_prereleases( # logger.info removed
                     paths_and_urls["download_dir"],
                     latest_release_tag,
-                    config.get("SELECTED_FIRMWARE_ASSETS", []), # type: ignore
+                    config.get("EXTRACT_PATTERNS", []), # type: ignore
+                    exclude_patterns=config.get("EXCLUDE_PATTERNS", []), # type: ignore
                 )
                 if prerelease_found:
                     logger.info(f"Pre-release firmware downloaded successfully: {', '.join(prerelease_versions)}")
