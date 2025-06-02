@@ -202,19 +202,18 @@ def check_for_prereleases(
     download_dir, latest_release_tag, selected_patterns, exclude_patterns=None # log_message_func parameter removed
 ):
     """
-    Checks for pre-release firmware in the meshtastic.github.io repository.
-    Also cleans up stale pre-releases that no longer exist in the repository.
-
+    Checks for and downloads pre-release firmware versions newer than the latest official release.
+    
+    Cleans up stale pre-release directories that are no longer present in the repository or are not newer than the latest release. Downloads missing or incomplete pre-release files that match selected patterns and do not match any exclude patterns.
+    
     Args:
-        download_dir: Base download directory
-        latest_release_tag: The latest official release tag (e.g., v2.6.8.ef9d0d7)
-        selected_patterns: List of firmware patterns to download
-        exclude_patterns: Optional list of filename patterns to exclude from downloading
-        # log_message_func parameter removed
-
+        download_dir: Base directory where firmware is stored.
+        latest_release_tag: Tag of the latest official release (e.g., v2.6.8.ef9d0d7).
+        selected_patterns: List of filename patterns to include for downloading.
+        exclude_patterns: Optional list of filename patterns to exclude from downloading.
+    
     Returns:
-        Tuple of (boolean indicating if any pre-releases were found and downloaded,
-                 list of pre-release versions that were downloaded)
+        A tuple (found_and_downloaded, downloaded_versions), where found_and_downloaded is True if any pre-releases were downloaded, and downloaded_versions is a list of pre-release version directory names that were downloaded.
     """
     # Removed local log_message_func definition
 
@@ -503,14 +502,14 @@ def _send_ntfy_notification(ntfy_server: Optional[str], ntfy_topic: Optional[str
 
 def _get_latest_releases_data(url: str, scan_count: int = 10) -> List[Dict[str, Any]]:
     """
-    Fetches the latest releases from a GitHub API URL and sorts them by date.
-
+    Fetches and returns the most recent releases from a GitHub API URL, sorted by publication date.
+    
     Args:
-        url (str): The GitHub API URL for releases.
-        scan_count (int): The number of most recent releases to scan.
-
+        url: The GitHub API URL for releases.
+        scan_count: The maximum number of recent releases to return.
+    
     Returns:
-        List[Dict[str, Any]]: A list of release data dictionaries, sorted by publication date.
+        A list of release data dictionaries, sorted by most recent publication date. Returns an empty list if the request or JSON decoding fails.
     """
     try:
         # Add progress feedback
@@ -611,9 +610,9 @@ def _initial_setup_and_config() -> Tuple[Optional[Dict[str, Any]], Optional[str]
 
 def _check_wifi_connection(config: Dict[str, Any]) -> None:
     """
-    Checks Wi-Fi connection if configured, updating the global 'downloads_skipped'.
-    Args:
-        config (Dict[str, Any]): The application configuration.
+    Checks if Wi-Fi-only downloads are enabled and skips downloads if not connected.
+    
+    If running in Termux and Wi-Fi-only mode is enabled in the configuration, sets the global `downloads_skipped` flag to True and logs a warning if the device is not connected to Wi-Fi.
     """
     global downloads_skipped
     if setup_config.is_termux() and config.get("WIFI_ONLY", False):
@@ -624,18 +623,16 @@ def _check_wifi_connection(config: Dict[str, Any]) -> None:
 
 def _process_firmware_downloads(config: Dict[str, Any], paths_and_urls: Dict[str, str]) -> Tuple[List[str], List[str], List[Dict[str, str]], Optional[str]]:
     """
-    Handles the firmware download process, including pre-releases.
-
-    Args:
-        config (Dict[str, Any]): The application configuration.
-        paths_and_urls (Dict[str, str]): Dictionary of important paths and URLs.
-
+    Downloads and manages firmware releases, including handling pre-releases.
+    
+    Fetches the latest firmware releases, downloads missing or new firmware assets matching configured patterns, extracts files if enabled, checks for promoted pre-releases, and optionally downloads pre-release firmware versions. Returns lists of downloaded firmware versions, newly detected versions, details of failed downloads, and the latest firmware version tag if available.
+    
     Returns:
-        Tuple[List[str], List[str], List[Dict[str, str]], Optional[str]]: A tuple containing:
+        A tuple containing:
             - List of downloaded firmware versions.
             - List of new firmware versions detected.
             - List of dictionaries with details of failed firmware downloads.
-            - Latest firmware version (or None if no releases found).
+            - Latest firmware version tag, or None if no releases are found.
     """
     global downloads_skipped
     downloaded_firmwares: List[str] = []
@@ -711,18 +708,16 @@ def _process_firmware_downloads(config: Dict[str, Any], paths_and_urls: Dict[str
 
 def _process_apk_downloads(config: Dict[str, Any], paths_and_urls: Dict[str, str]) -> Tuple[List[str], List[str], List[Dict[str,str]], Optional[str]]:
     """
-    Handles the APK download process.
-
-    Args:
-        config (Dict[str, Any]): The application configuration.
-        paths_and_urls (Dict[str, str]): Dictionary of important paths and URLs.
-
+    Downloads and manages Android APK releases based on configuration.
+    
+    Fetches the latest APK releases, downloads missing assets matching selected patterns, tracks new and failed downloads, and determines the latest APK version available.
+    
     Returns:
-        Tuple[List[str], List[str], List[Dict[str,str]], Optional[str]]: A tuple containing:
-            - List of downloaded APK versions.
-            - List of new APK versions detected.
+        A tuple containing:
+            - List of downloaded APK version tags.
+            - List of new APK version tags detected.
             - List of dictionaries with details of failed APK downloads.
-            - Latest APK version (or None if no releases found).
+            - The latest APK version tag, or None if no releases are found.
     """
     global downloads_skipped
     downloaded_apks: List[str] = []
@@ -777,18 +772,9 @@ def _finalize_and_notify(
     latest_apk_version: Optional[str] = None
 ) -> None:
     """
-    Handles final logging, application update messages, and notifications.
-
-    Args:
-        start_time (float): The start time of the download process.
-        config (Dict[str, Any]): The application configuration.
-        downloaded_firmwares (List[str]): List of downloaded firmware versions.
-        downloaded_apks (List[str]): List of downloaded APK versions.
-        new_firmware_versions (List[str]): List of new firmware versions detected.
-        new_apk_versions (List[str]): List of new APK versions detected.
-        current_version (Optional[str]): Current application version.
-        latest_version (Optional[str]): Latest available application version.
-        update_available (bool): True if an update is available.
+    Logs a summary of the download process, application update status, and sends notifications about downloads or skipped actions.
+    
+    If downloads were skipped due to Wi-Fi restrictions, notifies the user with available versions. If new firmware or APKs were downloaded, sends a notification listing them. If no new downloads occurred and notifications are not restricted to downloads only, notifies that all assets are up to date. Also logs the latest firmware and APK versions if available, and informs about application updates if a newer version exists.
     """
     global downloads_skipped
     end_time: float = time.time()
@@ -1314,7 +1300,9 @@ def check_extraction_needed(zip_path: str, extract_dir: str, patterns: List[str]
 
 def main() -> None:
     """
-    Main function to orchestrate the Fetchtastic downloader process.
+    Coordinates the entire Fetchtastic download workflow.
+    
+    Performs initial setup, checks Wi-Fi connectivity, processes firmware and APK downloads, retries failed downloads, and finalizes the process with logging and notifications.
     """
     start_time: float = time.time()
     logger.info("Starting Fetchtastic...") # Changed to logger.info
