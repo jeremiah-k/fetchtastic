@@ -4,6 +4,7 @@ import os
 import platform
 import shutil
 
+from fetchtastic import menu_repo
 from fetchtastic.log_utils import logger  # Import new logger
 from fetchtastic.utils import download_file_with_retry
 
@@ -176,9 +177,7 @@ def main(config):  # log_message_func removed
     """
     # Removed local log_message_func definition
 
-    from fetchtastic import (
-        menu_repo,  # menu_repo likely uses print or its own logging, review separately if needed
-    )
+    # menu_repo is now imported at module level
 
     download_dir = config.get("DOWNLOAD_DIR")
     if not download_dir:
