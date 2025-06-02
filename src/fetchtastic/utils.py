@@ -229,7 +229,7 @@ def download_file_with_retry(
         logger.debug(
             f"Attempting to download file from URL: {url} to temp path: {temp_path}"
         )
-        start_time = time.time()
+        time.time()
         response = session.get(url, stream=True, timeout=DEFAULT_REQUEST_TIMEOUT)
 
         # Log HTTP response status code
