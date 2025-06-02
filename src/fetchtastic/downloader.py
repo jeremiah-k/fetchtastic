@@ -556,7 +556,7 @@ def _check_wifi_connection(config: Dict[str, Any]) -> None:
             logger.warning("Not connected to Wi-Fi. Skipping all downloads.") # Changed to logger.warning
 
 
-def _process_firmware_downloads(config: Dict[str, Any], paths_and_urls: Dict[str, str]) -> Tuple[List[str], List[str]]:
+def _process_firmware_downloads(config: Dict[str, Any], paths_and_urls: Dict[str, str]) -> Tuple[List[str], List[str], List[Dict[str, str]], Optional[str]]:
     """
     Handles the firmware download process, including pre-releases.
 
@@ -565,20 +565,26 @@ def _process_firmware_downloads(config: Dict[str, Any], paths_and_urls: Dict[str
         paths_and_urls (Dict[str, str]): Dictionary of important paths and URLs.
 
     Returns:
-        Tuple[List[str], List[str], List[Dict[str, str]]]: A tuple containing:
+        Tuple[List[str], List[str], List[Dict[str, str]], Optional[str]]: A tuple containing:
             - List of downloaded firmware versions.
             - List of new firmware versions detected.
             - List of dictionaries with details of failed firmware downloads.
+            - Latest firmware version (or None if no releases found).
     """
     global downloads_skipped
     downloaded_firmwares: List[str] = []
     new_firmware_versions: List[str] = []
     all_failed_firmware_downloads: List[Dict[str, str]] = []
+    latest_firmware_version: Optional[str] = None
 
     if config.get("SAVE_FIRMWARE", False) and config.get("SELECTED_FIRMWARE_ASSETS", []):
         latest_firmware_releases: List[Dict[str, Any]] = _get_latest_releases_data(
             paths_and_urls["firmware_releases_url"], config.get("FIRMWARE_VERSIONS_TO_KEEP", RELEASE_SCAN_COUNT) # Use RELEASE_SCAN_COUNT if versions_to_keep not in config
         )
+
+        # Extract the actual latest firmware version
+        if latest_firmware_releases:
+            latest_firmware_version = latest_firmware_releases[0].get("tag_name")
         fw_downloaded: List[str]
         fw_new_versions: List[str]
         failed_fw_downloads_details: List[Dict[str, str]] # Explicitly declare type
@@ -633,10 +639,10 @@ def _process_firmware_downloads(config: Dict[str, Any], paths_and_urls: Dict[str
     elif not config.get("SELECTED_FIRMWARE_ASSETS", []):
         logger.info("No firmware assets selected. Skipping firmware download.")
 
-    return downloaded_firmwares, new_firmware_versions, all_failed_firmware_downloads
+    return downloaded_firmwares, new_firmware_versions, all_failed_firmware_downloads, latest_firmware_version
 
 
-def _process_apk_downloads(config: Dict[str, Any], paths_and_urls: Dict[str, str]) -> Tuple[List[str], List[str], List[Dict[str,str]]]:
+def _process_apk_downloads(config: Dict[str, Any], paths_and_urls: Dict[str, str]) -> Tuple[List[str], List[str], List[Dict[str,str]], Optional[str]]:
     """
     Handles the APK download process.
 
@@ -645,19 +651,26 @@ def _process_apk_downloads(config: Dict[str, Any], paths_and_urls: Dict[str, str
         paths_and_urls (Dict[str, str]): Dictionary of important paths and URLs.
 
     Returns:
-        Tuple[List[str], List[str]]: A tuple containing:
+        Tuple[List[str], List[str], List[Dict[str,str]], Optional[str]]: A tuple containing:
             - List of downloaded APK versions.
             - List of new APK versions detected.
+            - List of dictionaries with details of failed APK downloads.
+            - Latest APK version (or None if no releases found).
     """
     global downloads_skipped
     downloaded_apks: List[str] = []
     new_apk_versions: List[str] = []
     all_failed_apk_downloads: List[Dict[str, str]] = [] # Initialize all_failed_apk_downloads
+    latest_apk_version: Optional[str] = None
 
     if config.get("SAVE_APKS", False) and config.get("SELECTED_APK_ASSETS", []):
         latest_android_releases: List[Dict[str, Any]] = _get_latest_releases_data(
             paths_and_urls["android_releases_url"], config.get("ANDROID_VERSIONS_TO_KEEP", RELEASE_SCAN_COUNT) # Use RELEASE_SCAN_COUNT if versions_to_keep not in config
         )
+
+        # Extract the actual latest APK version
+        if latest_android_releases:
+            latest_apk_version = latest_android_releases[0].get("tag_name")
         apk_downloaded: List[str]
         apk_new_versions_list: List[str]
         failed_apk_downloads_details: List[Dict[str, str]] # Declare for unpacking
@@ -680,7 +693,7 @@ def _process_apk_downloads(config: Dict[str, Any], paths_and_urls: Dict[str, str
     elif not config.get("SELECTED_APK_ASSETS", []):
         logger.info("No APK assets selected. Skipping APK download.")
 
-    return downloaded_apks, new_apk_versions, all_failed_apk_downloads
+    return downloaded_apks, new_apk_versions, all_failed_apk_downloads, latest_apk_version
 
 
 def _finalize_and_notify(
@@ -692,7 +705,9 @@ def _finalize_and_notify(
     new_apk_versions: List[str],
     current_version: Optional[str],
     latest_version: Optional[str],
-    update_available: bool
+    update_available: bool,
+    latest_firmware_version: Optional[str] = None,
+    latest_apk_version: Optional[str] = None
 ) -> None:
     """
     Handles final logging, application update messages, and notifications.
@@ -720,10 +735,10 @@ def _finalize_and_notify(
         logger.info(f"Downloaded {downloaded_count} new files")
 
     # Show latest versions if available
-    if new_firmware_versions:
-        logger.info(f"Latest firmware: {new_firmware_versions[0]}")
-    if new_apk_versions:
-        logger.info(f"Latest APK: {new_apk_versions[0]}")
+    if latest_firmware_version:
+        logger.info(f"Latest firmware: {latest_firmware_version}")
+    if latest_apk_version:
+        logger.info(f"Latest APK: {latest_apk_version}")
 
     if update_available and latest_version :
         upgrade_cmd: str = get_upgrade_command()
@@ -1254,12 +1269,14 @@ def main() -> None:
     downloaded_firmwares: List[str]
     new_firmware_versions: List[str]
     failed_firmware_list: List[Dict[str, str]]
+    latest_firmware_version: Optional[str]
     downloaded_apks: List[str]
     new_apk_versions: List[str]
     failed_apk_list: List[Dict[str, str]]
+    latest_apk_version: Optional[str]
 
-    downloaded_firmwares, new_firmware_versions, failed_firmware_list = _process_firmware_downloads(config, paths_and_urls)
-    downloaded_apks, new_apk_versions, failed_apk_list = _process_apk_downloads(config, paths_and_urls)
+    downloaded_firmwares, new_firmware_versions, failed_firmware_list, latest_firmware_version = _process_firmware_downloads(config, paths_and_urls)
+    downloaded_apks, new_apk_versions, failed_apk_list, latest_apk_version = _process_apk_downloads(config, paths_and_urls)
 
     if failed_firmware_list:
         logger.debug(f"Collected failed firmware downloads: {failed_firmware_list}")
@@ -1284,7 +1301,7 @@ def main() -> None:
             else:
                 logger.error(f"Retry failed for {failure_detail['file_name']} for release {failure_detail['release_tag']}")
 
-    _finalize_and_notify(start_time, config, downloaded_firmwares, downloaded_apks, new_firmware_versions, new_apk_versions, current_version, latest_version, update_available)
+    _finalize_and_notify(start_time, config, downloaded_firmwares, downloaded_apks, new_firmware_versions, new_apk_versions, current_version, latest_version, update_available, latest_firmware_version, latest_apk_version)
 
 
 if __name__ == "__main__":
