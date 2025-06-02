@@ -192,7 +192,9 @@ def run_setup():
             if os.path.exists(CONFIG_FILE):
                 exists = True
         else:
-            logger.error("Failed to migrate configuration. Continuing with old location.")
+            logger.error(
+                "Failed to migrate configuration. Continuing with old location."
+            )
         logger.info(f"{separator}\n")
 
     # Ask for base directory as the first question

@@ -99,7 +99,9 @@ def main():
                 # Automatically migrate without prompting
                 setup_config.prompt_for_migration()  # Just logs the migration message
                 if setup_config.migrate_config():
-                    logger.info("Configuration successfully migrated to the new location.")
+                    logger.info(
+                        "Configuration successfully migrated to the new location."
+                    )
                     # Update config_path to the new location
                     config_path = setup_config.CONFIG_FILE
                     # Re-load the configuration from the new location
