@@ -58,8 +58,16 @@ def download_repo_files(selected_files, download_dir):  # log_message_func remov
 
     for file_item in files:  # Renamed to avoid conflict with built-in 'file'
         try:
-            file_name = file_item["name"]  # Potential KeyError
-            download_url = file_item["download_url"]  # Potential KeyError
+            # Safely retrieve required keys and validate early
+            file_name = file_item.get("name")
+            download_url = file_item.get("download_url")
+
+            if not file_name or not download_url:
+                logger.warning(
+                    f"Skipping file item with missing data: name='{file_name}', download_url='{download_url}'"
+                )
+                continue
+
             file_path = os.path.join(dir_path, file_name)
 
             # download_file_with_retry now uses the global logger

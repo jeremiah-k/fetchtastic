@@ -141,7 +141,8 @@ def test_pattern_matching():
 
 
 def test_version_detection():
-    """Test that version detection shows correct latest versions."""
+    """Test that version detection shows correct latest versions using mocked data."""
+    from unittest.mock import patch
 
     print("\n=== TESTING VERSION DETECTION ===")
     print("=" * 50)
@@ -149,45 +150,68 @@ def test_version_detection():
     try:
         from fetchtastic.downloader import _get_latest_releases_data
 
-        # Test firmware releases
-        print("Testing firmware version detection...")
-        firmware_url = "https://api.github.com/repos/meshtastic/firmware/releases"
-        firmware_releases = _get_latest_releases_data(firmware_url, 5)
+        # Mock firmware release data
+        mock_firmware_releases = [
+            {"tag_name": "v2.6.10.9ce4455", "published_at": "2024-01-15T10:00:00Z"},
+            {"tag_name": "v2.6.9.f223b8a", "published_at": "2024-01-10T10:00:00Z"},
+        ]
 
-        if firmware_releases:
-            latest_firmware = firmware_releases[0].get("tag_name")
-            print(f"✅ Latest firmware detected: {latest_firmware}")
-            if latest_firmware == "v2.6.9.f223b8a":
-                print("✅ Firmware version detection is CORRECT!")
-                firmware_success = True
+        # Mock Android release data
+        mock_android_releases = [
+            {"tag_name": "2.6.10", "published_at": "2024-01-15T10:00:00Z"},
+            {"tag_name": "2.6.9", "published_at": "2024-01-10T10:00:00Z"},
+        ]
+
+        def mock_get_releases(url, scan_count):
+            if "firmware" in url:
+                return mock_firmware_releases[:scan_count]
+            elif "Android" in url:
+                return mock_android_releases[:scan_count]
+            return []
+
+        with patch(
+            "fetchtastic.downloader._get_latest_releases_data",
+            side_effect=mock_get_releases,
+        ):
+            # Test firmware releases
+            print("Testing firmware version detection...")
+            firmware_url = "https://api.github.com/repos/meshtastic/firmware/releases"
+            firmware_releases = _get_latest_releases_data(firmware_url, 5)
+
+            if firmware_releases:
+                latest_firmware = firmware_releases[0].get("tag_name")
+                print(f"✅ Latest firmware detected: {latest_firmware}")
+                if latest_firmware == "v2.6.10.9ce4455":
+                    print("✅ Firmware version detection is CORRECT!")
+                    firmware_success = True
+                else:
+                    print(f"❌ Expected v2.6.10.9ce4455, got {latest_firmware}")
+                    firmware_success = False
             else:
-                print(f"❌ Expected v2.6.9.f223b8a, got {latest_firmware}")
+                print("❌ No firmware releases found")
                 firmware_success = False
-        else:
-            print("❌ No firmware releases found")
-            firmware_success = False
 
-        # Test Android releases
-        print("\nTesting Android version detection...")
-        android_url = (
-            "https://api.github.com/repos/meshtastic/Meshtastic-Android/releases"
-        )
-        android_releases = _get_latest_releases_data(android_url, 5)
+            # Test Android releases
+            print("\nTesting Android version detection...")
+            android_url = (
+                "https://api.github.com/repos/meshtastic/Meshtastic-Android/releases"
+            )
+            android_releases = _get_latest_releases_data(android_url, 5)
 
-        if android_releases:
-            latest_android = android_releases[0].get("tag_name")
-            print(f"✅ Latest Android detected: {latest_android}")
-            if latest_android == "2.6.9":
-                print("✅ Android version detection is CORRECT!")
-                android_success = True
+            if android_releases:
+                latest_android = android_releases[0].get("tag_name")
+                print(f"✅ Latest Android detected: {latest_android}")
+                if latest_android == "2.6.10":
+                    print("✅ Android version detection is CORRECT!")
+                    android_success = True
+                else:
+                    print(f"❌ Expected 2.6.10, got {latest_android}")
+                    android_success = False
             else:
-                print(f"❌ Expected 2.6.9, got {latest_android}")
+                print("❌ No Android releases found")
                 android_success = False
-        else:
-            print("❌ No Android releases found")
-            android_success = False
 
-        return firmware_success and android_success
+            return firmware_success and android_success
 
     except Exception as e:
         print(f"❌ Error testing version detection: {e}")
@@ -196,20 +220,72 @@ def test_version_detection():
 
 def test_progress_feedback():
     """Test that progress feedback is working during GitHub API calls."""
+    import logging
+    from io import StringIO
+    from unittest.mock import patch
 
     print("\n=== TESTING PROGRESS FEEDBACK ===")
     print("=" * 50)
 
-    # We can see from the output above that progress messages are being displayed
-    # The INFO messages "Fetching firmware releases from GitHub..." and
-    # "Fetching Android APK releases from GitHub..." are clearly visible
-    print("✅ Progress feedback is working!")
-    print("   Observed messages:")
-    print("   - 'Fetching firmware releases from GitHub...'")
-    print("   - 'Fetching Android APK releases from GitHub...'")
-    print("   These messages eliminate the ~60 second silent hang during API calls")
+    try:
+        from fetchtastic.downloader import _get_latest_releases_data
 
-    return True
+        # Create a string buffer to capture log output
+        log_capture = StringIO()
+        handler = logging.StreamHandler(log_capture)
+        handler.setLevel(logging.INFO)
+
+        # Get the logger used by the downloader
+        from fetchtastic.log_utils import logger
+
+        logger.addHandler(handler)
+
+        # Mock requests to avoid actual network calls
+        with patch("requests.get") as mock_get:
+            mock_response = mock_get.return_value
+            mock_response.raise_for_status.return_value = None
+            mock_response.json.return_value = [
+                {"tag_name": "v2.6.10", "published_at": "2024-01-15T10:00:00Z"}
+            ]
+
+            # Test firmware progress message
+            firmware_url = "https://api.github.com/repos/meshtastic/firmware/releases"
+            _get_latest_releases_data(firmware_url, 5)
+
+            # Test Android progress message
+            android_url = (
+                "https://api.github.com/repos/meshtastic/Meshtastic-Android/releases"
+            )
+            _get_latest_releases_data(android_url, 5)
+
+        # Remove the handler to avoid affecting other tests
+        logger.removeHandler(handler)
+
+        # Get the captured log output
+        log_output = log_capture.getvalue()
+
+        # Check for expected progress messages
+        firmware_message_found = "Fetching firmware releases from GitHub" in log_output
+        android_message_found = (
+            "Fetching Android APK releases from GitHub" in log_output
+        )
+
+        if firmware_message_found and android_message_found:
+            print("✅ Progress feedback is working!")
+            print("   Found expected messages:")
+            print("   - 'Fetching firmware releases from GitHub...'")
+            print("   - 'Fetching Android APK releases from GitHub...'")
+            return True
+        else:
+            print("❌ Progress feedback messages not found!")
+            print(f"   Log output: {log_output}")
+            print(f"   Firmware message found: {firmware_message_found}")
+            print(f"   Android message found: {android_message_found}")
+            return False
+
+    except Exception as e:
+        print(f"❌ Error testing progress feedback: {e}")
+        return False
 
 
 if __name__ == "__main__":

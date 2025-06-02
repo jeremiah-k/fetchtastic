@@ -251,7 +251,9 @@ def download_file_with_retry(
                             f"Downloaded {downloaded_chunks} chunks ({downloaded_bytes} bytes) so far for {url}"
                         )
 
-        time.time() - start_time
+        # end-to-end download duration is available in
+        #   elapsed = time.time() - start_time
+        # if you intend to log or return it later.
         file_size_mb = downloaded_bytes / (1024 * 1024)
         logger.debug(
             f"Finished downloading {url}. Total chunks: {downloaded_chunks}, total bytes: {downloaded_bytes}."
