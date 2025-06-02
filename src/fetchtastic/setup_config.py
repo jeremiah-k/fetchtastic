@@ -757,6 +757,7 @@ def run_setup():
     # Record the version at which setup was last run
     try:
         from importlib.metadata import version
+
         current_version = version("fetchtastic")
         config["LAST_SETUP_VERSION"] = current_version
         config["LAST_SETUP_DATE"] = datetime.now().isoformat()
@@ -1234,10 +1235,16 @@ def should_recommend_setup():
 
         # Get current version
         from importlib.metadata import version
+
         current_version = version("fetchtastic")
 
         if last_setup_version != current_version:
-            return True, f"Version changed from {last_setup_version} to {current_version}", last_setup_version, current_version
+            return (
+                True,
+                f"Version changed from {last_setup_version} to {current_version}",
+                last_setup_version,
+                current_version,
+            )
 
         return False, "Setup is current", last_setup_version, current_version
 
