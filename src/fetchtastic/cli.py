@@ -17,6 +17,11 @@ from fetchtastic.setup_config import display_version_info, get_upgrade_command
 def main():
     # Logging is automatically initialized by importing log_utils
 
+    """
+    Runs the Fetchtastic command-line interface, handling setup, downloads, configuration, notifications, cleaning, version display, and repository interactions.
+    
+    Parses command-line arguments and dispatches to the appropriate functionality based on the selected subcommand. Supports conditional Windows integration updates, configuration migration, clipboard operations, and displays upgrade reminders when a newer version is available.
+    """
     parser = argparse.ArgumentParser(
         description="Fetchtastic - Meshtastic Firmware and APK Downloader"
     )

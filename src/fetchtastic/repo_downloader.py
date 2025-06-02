@@ -166,14 +166,12 @@ def clean_repo_directory(download_dir):  # log_message_func removed
 
 def main(config):  # log_message_func removed
     """
-    Main function to run the repository downloader.
-
+    Runs the repository downloader workflow using the provided configuration.
+    
+    Prompts the user to select files for download, downloads the selected files to the configured directory, and logs the results. On Windows, optionally offers to open the download folder after completion.
+    
     Args:
-        config: Configuration dictionary
-        # log_message_func removed
-
-    Returns:
-        None
+        config: Dictionary containing configuration values, including "DOWNLOAD_DIR".
     """
     # Removed local log_message_func definition
 
