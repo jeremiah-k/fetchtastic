@@ -322,8 +322,54 @@ def check_for_prereleases(
                         if os.path.isdir(os.path.join(prerelease_dir, item)):
                             existing_prerelease_dirs.append(item)
 
-                # Only add if it doesn't already exist locally
+                # Check if we need to download this pre-release
+                # Either the directory doesn't exist, or it exists but is missing files
+                should_process = False
+
                 if dir_name not in existing_prerelease_dirs:
+                    # Directory doesn't exist at all
+                    should_process = True
+                else:
+                    # Directory exists, but check if all expected files are present
+                    dir_path = os.path.join(prerelease_dir, dir_name)
+
+                    # Fetch the list of files that should be in this directory
+                    expected_files = menu_repo.fetch_directory_contents(dir_name)
+                    if expected_files:
+                        # Filter expected files based on patterns (same logic as download)
+                        expected_matching_files = []
+                        for file in expected_files:
+                            file_name = file["name"]
+
+                            # Apply same filtering logic as download
+                            stripped_file_name = strip_version_numbers(file_name)
+                            if not any(pattern in stripped_file_name for pattern in selected_patterns):
+                                continue  # Skip this file
+
+                            # Skip files that match exclude patterns
+                            if any(exclude in file_name for exclude in exclude_patterns_list):
+                                continue  # Skip this file
+
+                            expected_matching_files.append(file_name)
+
+                        # Check if all expected files are present locally
+                        missing_files = []
+                        for expected_file in expected_matching_files:
+                            local_file_path = os.path.join(dir_path, expected_file)
+                            if not os.path.exists(local_file_path):
+                                missing_files.append(expected_file)
+
+                        if missing_files:
+                            logger.debug(f"Pre-release {dir_name} is missing {len(missing_files)} files, will re-download")
+                            should_process = True
+                        else:
+                            logger.debug(f"Pre-release {dir_name} is complete with all expected files")
+                    else:
+                        # Could not fetch expected files list, assume we need to process
+                        logger.debug(f"Could not fetch file list for {dir_name}, will attempt download")
+                        should_process = True
+
+                if should_process:
                     prerelease_dirs.append(dir_name)
 
     if not prerelease_dirs:
