@@ -7,6 +7,7 @@ import shutil
 import string
 import subprocess
 import sys
+from datetime import datetime
 
 import platformdirs
 import yaml
@@ -331,6 +332,11 @@ def check_storage_setup():
 
 
 def run_setup():
+    """
+    Runs the interactive setup process for Fetchtastic, guiding the user through configuration, migration, asset selection, scheduling, and notification setup.
+    
+    This function handles platform-specific requirements, including Termux package installation, Windows shortcut creation, and cron or boot script scheduling on Linux/macOS/Termux. It prompts the user for key configuration options such as base directory, asset types to download, version retention, firmware extraction patterns, Wi-Fi-only downloads, and NTFY notification preferences. The setup process also migrates old configuration files if present, records the setup version and date, and saves all settings to the configuration file. At the end, it offers to perform the first download run or provides instructions for manual execution.
+    """
     global BASE_DIR, CONFIG_FILE
     print("Running Fetchtastic Setup...")
 
@@ -752,6 +758,17 @@ def run_setup():
     # Set the download directory to the same as the base directory
     download_dir = BASE_DIR
     config["DOWNLOAD_DIR"] = download_dir
+
+    # Record the version at which setup was last run
+    try:
+        from importlib.metadata import version
+
+        current_version = version("fetchtastic")
+        config["LAST_SETUP_VERSION"] = current_version
+        config["LAST_SETUP_DATE"] = datetime.now().isoformat()
+    except Exception:
+        # If we can't get the version, just record the date
+        config["LAST_SETUP_DATE"] = datetime.now().isoformat()
 
     # Make sure the config directory exists
     if not os.path.exists(CONFIG_DIR):
@@ -1188,10 +1205,9 @@ def check_for_updates():
 
 def get_upgrade_command():
     """
-    Returns the appropriate upgrade command based on the environment and installation method.
-
-    Returns:
-        str: The command to upgrade fetchtastic
+    Returns the shell command to upgrade Fetchtastic based on the current platform and installation method.
+    
+    The command is tailored for Termux (using pip or pipx) or other platforms (using pipx).
     """
     if is_termux():
         # Check how fetchtastic is installed in Termux
@@ -1205,12 +1221,54 @@ def get_upgrade_command():
         return "pipx upgrade fetchtastic"
 
 
+def should_recommend_setup():
+    """
+    Determines whether the setup process should be recommended based on configuration and version changes.
+    
+    Returns:
+        A tuple (should_recommend, reason, last_setup_version, current_version), where:
+        - should_recommend (bool): True if setup is recommended, False otherwise.
+        - reason (str): Explanation for the recommendation.
+        - last_setup_version (str or None): The version recorded during the last setup, or None if unavailable.
+        - current_version (str or None): The currently installed version, or None if unavailable.
+    """
+    try:
+        config = load_config()
+        if not config:
+            return True, "No configuration found", None, None
+
+        last_setup_version = config.get("LAST_SETUP_VERSION")
+        if not last_setup_version:
+            return True, "Setup version not tracked", None, None
+
+        # Get current version
+        from importlib.metadata import version
+
+        current_version = version("fetchtastic")
+
+        if last_setup_version != current_version:
+            return (
+                True,
+                f"Version changed from {last_setup_version} to {current_version}",
+                last_setup_version,
+                current_version,
+            )
+
+        return False, "Setup is current", last_setup_version, current_version
+
+    except Exception:
+        return True, "Could not determine setup status", None, None
+
+
 def display_version_info(show_update_message=True):
     """
-    Display version information and update message if a newer version is available.
-
+    Retrieves the current and latest Fetchtastic version information and update status.
+    
     Args:
-        show_update_message: Whether to show the update message if a newer version is available.
+        show_update_message: If True, includes update message in output (not used internally).
+    
+    Returns:
+        A tuple containing the current version, latest version, and a boolean indicating if an update is available.
     """
     current_version, latest_version, update_available = check_for_updates()
 
