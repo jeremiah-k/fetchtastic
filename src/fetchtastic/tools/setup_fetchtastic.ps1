@@ -161,11 +161,23 @@ function Install-Or-Upgrade-Fetchtastic {
         exit 1
     }
 
-    # Show final version
+    # Show final version and check against PyPI
     try {
         $finalVersion = fetchtastic version 2>$null
         if ($finalVersion) {
             Write-Host "Final version: $finalVersion" -ForegroundColor Cyan
+
+            # Extract version number for comparison
+            if ($finalVersion -match "Fetchtastic v(\d+\.\d+\.\d+)") {
+                $installedVersion = $matches[1]
+                $pypiVersion = Get-PyPI-Version "fetchtastic"
+
+                if ($pypiVersion -and $installedVersion -ne $pypiVersion) {
+                    Write-Host "Note: PyPI shows version $pypiVersion, but you have $installedVersion" -ForegroundColor Yellow
+                    Write-Host "This may indicate a delay in PyPI publishing or local cache issues." -ForegroundColor Yellow
+                    Write-Host "If you experience issues, try: pipx uninstall fetchtastic && pipx install fetchtastic[win]" -ForegroundColor Cyan
+                }
+            }
         }
     } catch {
         Write-Host "Installation complete, but could not verify version."
