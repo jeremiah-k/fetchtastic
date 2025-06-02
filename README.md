@@ -49,7 +49,7 @@ pip install fetchtastic
 
 Fetchtastic can be installed on Windows systems with enhanced Windows integration.
 
-#### Easy Installation (Recommended)
+#### Easy Windows Installation (Recommended)
 
 This must be run in PowerShell (not Command Prompt).
 
@@ -61,7 +61,7 @@ irm https://raw.githubusercontent.com/jeremiah-k/fetchtastic/main/src/fetchtasti
 
 The script installs Python if needed, installs pipx, installs Fetchtastic with Windows integration, and runs the Fetchtastic setup.
 
-#### Manual Installation
+#### Manual Windows Installation
 
 1. **Install Python**: Download and install Python from the [official Python website](https://www.python.org/downloads/). Make sure to check "Add Python to PATH" during installation.
 
@@ -115,7 +115,7 @@ This script will:
 - Install Fetchtastic via pipx for better package isolation
 - Run the setup process
 
-#### Manual Installation
+#### Manual Termux Installation
 
 **Using pipx (recommended):**
 
@@ -155,17 +155,17 @@ To upgrade Fetchtastic to the latest version:
 
 ### Windows (Recommended)
 
-**Option 1: Use the installation script (handles upgrade issues automatically)**
+#### Option 1: Use the installation script (handles upgrade issues automatically)
 
 ```powershell
 irm https://raw.githubusercontent.com/jeremiah-k/fetchtastic/main/src/fetchtastic/tools/setup_fetchtastic.ps1 | iex
 ```
 
-**Option 2: Use Start Menu shortcut**
+#### Option 2: Use Start Menu shortcut
 
 - Open Start Menu → Fetchtastic → "Check for Updates"
 
-**Option 3: Manual pipx upgrade**
+#### Option 3: Manual pipx upgrade
 
 ```powershell
 pipx upgrade fetchtastic

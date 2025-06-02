@@ -64,7 +64,8 @@ def is_fetchtastic_installed_via_pip():
         )
         if result.returncode == 0:
             return "fetchtastic" in result.stdout.lower()
-    except Exception:
+    except (subprocess.SubprocessError, FileNotFoundError, OSError):
+        # pip command not found or failed to execute
         pass
     return False
 
@@ -85,7 +86,8 @@ def is_fetchtastic_installed_via_pipx():
         )
         if result.returncode == 0:
             return "fetchtastic" in result.stdout.lower()
-    except Exception:
+    except (subprocess.SubprocessError, FileNotFoundError, OSError):
+        # pipx command not found or failed to execute
         pass
     return False
 
