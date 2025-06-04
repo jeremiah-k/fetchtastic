@@ -1251,6 +1251,11 @@ def _is_release_complete(
 
         expected_assets.append(file_name)
 
+    # If no assets match the patterns, return False (not complete)
+    if not expected_assets:
+        logger.debug(f"No assets match selected patterns for release in {release_dir}")
+        return False
+
     # Check if all expected assets exist in the release directory
     for asset_name in expected_assets:
         asset_path = os.path.join(release_dir, asset_name)
@@ -1272,6 +1277,23 @@ def _is_release_complete(
                 return False
             except (IOError, OSError):
                 logger.debug(f"Error checking zip file: {asset_path}")
+                return False
+        else:
+            # For non-zip files, verify file size matches expected size from GitHub
+            try:
+                actual_size = os.path.getsize(asset_path)
+                # Find the corresponding asset in release_data to get expected size
+                for asset in release_data.get("assets", []):
+                    if asset.get("name") == asset_name:
+                        expected_size = asset.get("size")
+                        if expected_size is not None and actual_size != expected_size:
+                            logger.debug(
+                                f"File size mismatch for {asset_path}: expected {expected_size}, got {actual_size}"
+                            )
+                            return False
+                        break
+            except (OSError, TypeError):
+                logger.debug(f"Error checking file size for {asset_path}")
                 return False
 
     return True
@@ -1360,8 +1382,21 @@ def check_and_download(
                 logger.debug(
                     f"Release {release_tag} already exists and is complete, skipping download"
                 )
+                # Update latest_release_file if this is the most recent release
+                if (
+                    release_tag != saved_release_tag
+                    and release_data == releases_to_download[0]
+                ):
+                    try:
+                        with open(latest_release_file, "w") as f:
+                            f.write(release_tag)
+                        logger.debug(
+                            f"Updated latest release tag to {release_tag} (complete release)"
+                        )
+                    except IOError as e:
+                        logger.warning(f"Error updating latest release file: {e}")
                 # Still add to new_versions_available if it's different from saved tag
-                if release_tag != saved_release_tag:
+                elif release_tag != saved_release_tag:
                     new_versions_available.append(release_tag)
                 continue
 
@@ -1562,14 +1597,17 @@ def check_and_download(
                 f"Could not determine latest release tag to save due to data issue: {e}"
             )
 
-    # Run cleanup after all downloads are complete
-    try:
-        release_tags_to_keep: List[str] = [r["tag_name"] for r in releases_to_download]
-        cleanup_old_versions(download_dir_path, release_tags_to_keep)
-    except (KeyError, TypeError) as e:
-        logger.warning(
-            f"Error preparing list of tags to keep for cleanup: {e}. Cleanup might be skipped or incomplete."
-        )
+    # Run cleanup after all downloads are complete, but only if actions were taken
+    if actions_taken:
+        try:
+            release_tags_to_keep: List[str] = [
+                r["tag_name"] for r in releases_to_download
+            ]
+            cleanup_old_versions(download_dir_path, release_tags_to_keep)
+        except (KeyError, TypeError) as e:
+            logger.warning(
+                f"Error preparing list of tags to keep for cleanup: {e}. Cleanup might be skipped or incomplete."
+            )
 
     if not actions_taken:
         logger.info(f"All {release_type} assets are up to date.")
