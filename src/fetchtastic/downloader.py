@@ -1210,6 +1210,71 @@ def strip_unwanted_chars(text: str) -> str:
     return printable_regex.sub("", text)
 
 
+def _is_release_complete(
+    release_data: Dict[str, Any],
+    release_dir: str,
+    selected_patterns: Optional[List[str]],
+    exclude_patterns: List[str]
+) -> bool:
+    """
+    Checks if a release directory exists and contains all expected files.
+
+    Args:
+        release_data: Release data from GitHub API
+        release_dir: Path to the release directory
+        selected_patterns: Patterns for selecting specific assets
+        exclude_patterns: Patterns to exclude from consideration
+
+    Returns:
+        bool: True if the release is complete, False otherwise
+    """
+    if not os.path.exists(release_dir):
+        return False
+
+    # Get list of expected assets based on patterns
+    expected_assets = []
+    for asset in release_data.get("assets", []):
+        file_name = asset.get("name", "")
+        if not file_name:
+            continue
+
+        # Apply same filtering logic as download
+        stripped_file_name = strip_version_numbers(file_name)
+        if selected_patterns and not any(
+            pattern in stripped_file_name for pattern in selected_patterns
+        ):
+            continue
+
+        # Skip files that match exclude patterns
+        if any(fnmatch.fnmatch(file_name, exclude) for exclude in exclude_patterns):
+            continue
+
+        expected_assets.append(file_name)
+
+    # Check if all expected assets exist in the release directory
+    for asset_name in expected_assets:
+        asset_path = os.path.join(release_dir, asset_name)
+        if not os.path.exists(asset_path):
+            logger.debug(f"Missing asset {asset_name} in release directory {release_dir}")
+            return False
+
+        # For zip files, verify they're not corrupted
+        if asset_name.endswith(".zip"):
+            try:
+                with zipfile.ZipFile(asset_path, "r") as zf:
+                    if zf.testzip() is not None:
+                        logger.debug(f"Corrupted zip file detected: {asset_path}")
+                        return False
+            except zipfile.BadZipFile:
+                logger.debug(f"Bad zip file detected: {asset_path}")
+                return False
+            except (IOError, OSError):
+                logger.debug(f"Error checking zip file: {asset_path}")
+                return False
+
+    return True
+
+
 def check_and_download(
     releases: List[Dict[str, Any]],
     latest_release_file: str,
@@ -1285,6 +1350,14 @@ def check_and_download(
             release_notes_file: str = os.path.join(
                 release_dir, f"release_notes-{release_tag}.md"
             )
+
+            # Check if this release has already been downloaded and is complete
+            if _is_release_complete(release_data, release_dir, selected_patterns, exclude_patterns_list):
+                logger.debug(f"Release {release_tag} already exists and is complete, skipping download")
+                # Still add to new_versions_available if it's different from saved tag
+                if release_tag != saved_release_tag:
+                    new_versions_available.append(release_tag)
+                continue
 
             if not os.path.exists(release_dir):
                 try:
@@ -1459,7 +1532,8 @@ def check_and_download(
 
         set_permissions_on_sh_files(release_dir)
 
-    if releases_to_download:
+    # Only update the latest release file if we actually downloaded something
+    if releases_to_download and downloaded_versions:
         try:
             latest_release_tag_val: str = releases_to_download[0]["tag_name"]
             if latest_release_tag_val != saved_release_tag:
@@ -1482,6 +1556,7 @@ def check_and_download(
                 f"Could not determine latest release tag to save due to data issue: {e}"
             )
 
+    # Run cleanup after all downloads are complete
     try:
         release_tags_to_keep: List[str] = [r["tag_name"] for r in releases_to_download]
         cleanup_old_versions(download_dir_path, release_tags_to_keep)
