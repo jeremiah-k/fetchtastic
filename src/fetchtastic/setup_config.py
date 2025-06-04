@@ -334,7 +334,7 @@ def check_storage_setup():
 def run_setup():
     """
     Runs the interactive setup process for Fetchtastic, guiding the user through configuration, migration, asset selection, scheduling, and notification setup.
-    
+
     This function handles platform-specific requirements, including Termux package installation, Windows shortcut creation, and cron or boot script scheduling on Linux/macOS/Termux. It prompts the user for key configuration options such as base directory, asset types to download, version retention, firmware extraction patterns, Wi-Fi-only downloads, and NTFY notification preferences. The setup process also migrates old configuration files if present, records the setup version and date, and saves all settings to the configuration file. At the end, it offers to perform the first download run or provides instructions for manual execution.
     """
     global BASE_DIR, CONFIG_FILE
@@ -1206,7 +1206,7 @@ def check_for_updates():
 def get_upgrade_command():
     """
     Returns the shell command to upgrade Fetchtastic based on the current platform and installation method.
-    
+
     The command is tailored for Termux (using pip or pipx) or other platforms (using pipx).
     """
     if is_termux():
@@ -1224,7 +1224,7 @@ def get_upgrade_command():
 def should_recommend_setup():
     """
     Determines whether the setup process should be recommended based on configuration and version changes.
-    
+
     Returns:
         A tuple (should_recommend, reason, last_setup_version, current_version), where:
         - should_recommend (bool): True if setup is recommended, False otherwise.
@@ -1263,10 +1263,10 @@ def should_recommend_setup():
 def display_version_info(show_update_message=True):
     """
     Retrieves the current and latest Fetchtastic version information and update status.
-    
+
     Args:
         show_update_message: If True, includes update message in output (not used internally).
-    
+
     Returns:
         A tuple containing the current version, latest version, and a boolean indicating if an update is available.
     """

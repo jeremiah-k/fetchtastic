@@ -1214,7 +1214,7 @@ def _is_release_complete(
     release_data: Dict[str, Any],
     release_dir: str,
     selected_patterns: Optional[List[str]],
-    exclude_patterns: List[str]
+    exclude_patterns: List[str],
 ) -> bool:
     """
     Checks if a release directory exists and contains all expected files.
@@ -1255,7 +1255,9 @@ def _is_release_complete(
     for asset_name in expected_assets:
         asset_path = os.path.join(release_dir, asset_name)
         if not os.path.exists(asset_path):
-            logger.debug(f"Missing asset {asset_name} in release directory {release_dir}")
+            logger.debug(
+                f"Missing asset {asset_name} in release directory {release_dir}"
+            )
             return False
 
         # For zip files, verify they're not corrupted
@@ -1352,8 +1354,12 @@ def check_and_download(
             )
 
             # Check if this release has already been downloaded and is complete
-            if _is_release_complete(release_data, release_dir, selected_patterns, exclude_patterns_list):
-                logger.debug(f"Release {release_tag} already exists and is complete, skipping download")
+            if _is_release_complete(
+                release_data, release_dir, selected_patterns, exclude_patterns_list
+            ):
+                logger.debug(
+                    f"Release {release_tag} already exists and is complete, skipping download"
+                )
                 # Still add to new_versions_available if it's different from saved tag
                 if release_tag != saved_release_tag:
                     new_versions_available.append(release_tag)
