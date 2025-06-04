@@ -1198,16 +1198,98 @@ def cleanup_old_versions(directory: str, releases_to_keep: List[str]) -> None:
 
 def strip_unwanted_chars(text: str) -> str:
     """
-    Strips out non-printable characters and emojis from a string.
-
+    Removes non-ASCII characters, including emojis, from a string.
+    
     Args:
-        text (str): The input string.
-
+        text: The input string to clean.
+    
     Returns:
-        str: The string with non-printable characters and emojis removed.
+        The input string with all non-ASCII characters removed.
     """
     printable_regex = re.compile(r"[^\x00-\x7F]+")
     return printable_regex.sub("", text)
+
+
+def _is_release_complete(
+    release_data: Dict[str, Any],
+    release_dir: str,
+    selected_patterns: Optional[List[str]],
+    exclude_patterns: List[str],
+) -> bool:
+    """
+    Determines if a release directory contains all required assets and valid zip files.
+    
+    Checks that all expected asset files, filtered by selected and exclude patterns, exist in the release directory. For zip assets, verifies file integrity by testing for corruption. Returns True if all assets are present and valid; otherwise, returns False.
+    """
+    if not os.path.exists(release_dir):
+        return False
+
+    # Get list of expected assets based on patterns
+    expected_assets = []
+    for asset in release_data.get("assets", []):
+        file_name = asset.get("name", "")
+        if not file_name:
+            continue
+
+        # Apply same filtering logic as download
+        stripped_file_name = strip_version_numbers(file_name)
+        if selected_patterns and not any(
+            pattern in stripped_file_name for pattern in selected_patterns
+        ):
+            continue
+
+        # Skip files that match exclude patterns
+        if any(fnmatch.fnmatch(file_name, exclude) for exclude in exclude_patterns):
+            continue
+
+        expected_assets.append(file_name)
+
+    # If no assets match the patterns, return False (not complete)
+    if not expected_assets:
+        logger.debug(f"No assets match selected patterns for release in {release_dir}")
+        return False
+
+    # Check if all expected assets exist in the release directory
+    for asset_name in expected_assets:
+        asset_path = os.path.join(release_dir, asset_name)
+        if not os.path.exists(asset_path):
+            logger.debug(
+                f"Missing asset {asset_name} in release directory {release_dir}"
+            )
+            return False
+
+        # For zip files, verify they're not corrupted
+        if asset_name.endswith(".zip"):
+            try:
+                with zipfile.ZipFile(asset_path, "r") as zf:
+                    if zf.testzip() is not None:
+                        logger.debug(f"Corrupted zip file detected: {asset_path}")
+                        return False
+            except zipfile.BadZipFile:
+                logger.debug(f"Bad zip file detected: {asset_path}")
+                return False
+            except (IOError, OSError):
+                logger.debug(f"Error checking zip file: {asset_path}")
+                return False
+        else:
+            # For non-zip files, verify file size matches expected size from GitHub
+            try:
+                actual_size = os.path.getsize(asset_path)
+                # Find the corresponding asset in release_data to get expected size
+                for asset in release_data.get("assets", []):
+                    if asset.get("name") == asset_name:
+                        expected_size = asset.get("size")
+                        if expected_size is not None and actual_size != expected_size:
+                            logger.debug(
+                                f"File size mismatch for {asset_path}: expected {expected_size}, got {actual_size}"
+                            )
+                            return False
+                        break
+            except (OSError, TypeError):
+                logger.debug(f"Error checking file size for {asset_path}")
+                return False
+
+    return True
 
 
 def check_and_download(
@@ -1222,24 +1304,26 @@ def check_and_download(
     exclude_patterns: Optional[List[str]] = None,
 ) -> Tuple[List[str], List[str], List[Dict[str, str]]]:
     """
-    Checks for missing releases and downloads them if necessary. Handles extraction and cleanup.
-
+    Checks for missing or incomplete releases, downloads required assets, extracts files if configured, and cleans up old versions.
+    
+    Downloads assets for the specified number of recent releases, skipping those already present and complete. Handles extraction of files from zip archives if enabled, saves release notes, sets permissions on shell scripts, and removes outdated release directories. Returns lists of successfully downloaded versions, new versions detected but not downloaded, and details of any failed downloads.
+    
     Args:
-        releases (List[Dict[str, Any]]): List of release data from GitHub API.
-        latest_release_file (str): Path to the file storing the latest downloaded release tag.
-        release_type (str): Type of release (e.g., "Firmware", "Android APK").
-        download_dir_path (str): Base directory to download releases into.
-        versions_to_keep (int): Number of latest versions to keep.
-        extract_patterns (List[str]): Patterns for extracting files from zips (if auto_extract is True).
-        selected_patterns (Optional[List[str]]): Patterns for selecting specific assets to download.
-        auto_extract (bool): Whether to automatically extract files for this release type.
-        exclude_patterns (Optional[List[str]]): Patterns to exclude from extraction.
-
+        releases: List of release data dictionaries from the GitHub API.
+        latest_release_file: Path to the file storing the latest downloaded release tag.
+        release_type: Type of release (e.g., "Firmware", "Android APK").
+        download_dir_path: Directory where releases are downloaded.
+        versions_to_keep: Number of latest versions to retain.
+        extract_patterns: Patterns for extracting files from zip archives.
+        selected_patterns: Patterns for selecting specific assets to download.
+        auto_extract: Whether to automatically extract files for this release type.
+        exclude_patterns: Patterns to exclude from extraction.
+    
     Returns:
-        Tuple[List[str], List[str], List[Dict[str, str]]]:
+        A tuple containing:
             - List of downloaded version tags.
-            - List of new versions available but potentially skipped.
-            - List of dictionaries detailing failed downloads.
+            - List of new version tags available but not downloaded.
+            - List of dictionaries with details about failed downloads.
     """
     global downloads_skipped
     downloaded_versions: List[str] = []
@@ -1285,6 +1369,31 @@ def check_and_download(
             release_notes_file: str = os.path.join(
                 release_dir, f"release_notes-{release_tag}.md"
             )
+
+            # Check if this release has already been downloaded and is complete
+            if _is_release_complete(
+                release_data, release_dir, selected_patterns, exclude_patterns_list
+            ):
+                logger.debug(
+                    f"Release {release_tag} already exists and is complete, skipping download"
+                )
+                # Update latest_release_file if this is the most recent release
+                if (
+                    release_tag != saved_release_tag
+                    and release_data == releases_to_download[0]
+                ):
+                    try:
+                        with open(latest_release_file, "w") as f:
+                            f.write(release_tag)
+                        logger.debug(
+                            f"Updated latest release tag to {release_tag} (complete release)"
+                        )
+                    except IOError as e:
+                        logger.warning(f"Error updating latest release file: {e}")
+                # Still add to new_versions_available if it's different from saved tag
+                elif release_tag != saved_release_tag:
+                    new_versions_available.append(release_tag)
+                continue
 
             if not os.path.exists(release_dir):
                 try:
@@ -1459,7 +1568,8 @@ def check_and_download(
 
         set_permissions_on_sh_files(release_dir)
 
-    if releases_to_download:
+    # Only update the latest release file if we actually downloaded something
+    if releases_to_download and downloaded_versions:
         try:
             latest_release_tag_val: str = releases_to_download[0]["tag_name"]
             if latest_release_tag_val != saved_release_tag:
@@ -1482,13 +1592,17 @@ def check_and_download(
                 f"Could not determine latest release tag to save due to data issue: {e}"
             )
 
-    try:
-        release_tags_to_keep: List[str] = [r["tag_name"] for r in releases_to_download]
-        cleanup_old_versions(download_dir_path, release_tags_to_keep)
-    except (KeyError, TypeError) as e:
-        logger.warning(
-            f"Error preparing list of tags to keep for cleanup: {e}. Cleanup might be skipped or incomplete."
-        )
+    # Run cleanup after all downloads are complete, but only if actions were taken
+    if actions_taken:
+        try:
+            release_tags_to_keep: List[str] = [
+                r["tag_name"] for r in releases_to_download
+            ]
+            cleanup_old_versions(download_dir_path, release_tags_to_keep)
+        except (KeyError, TypeError) as e:
+            logger.warning(
+                f"Error preparing list of tags to keep for cleanup: {e}. Cleanup might be skipped or incomplete."
+            )
 
     if not actions_taken:
         logger.info(f"All {release_type} assets are up to date.")
