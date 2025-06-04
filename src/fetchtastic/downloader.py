@@ -1198,13 +1198,13 @@ def cleanup_old_versions(directory: str, releases_to_keep: List[str]) -> None:
 
 def strip_unwanted_chars(text: str) -> str:
     """
-    Strips out non-printable characters and emojis from a string.
-
+    Removes non-ASCII characters, including emojis, from a string.
+    
     Args:
-        text (str): The input string.
-
+        text: The input string to clean.
+    
     Returns:
-        str: The string with non-printable characters and emojis removed.
+        The string with all non-ASCII characters removed.
     """
     printable_regex = re.compile(r"[^\x00-\x7F]+")
     return printable_regex.sub("", text)
@@ -1217,16 +1217,12 @@ def _is_release_complete(
     exclude_patterns: List[str],
 ) -> bool:
     """
-    Checks if a release directory exists and contains all expected files.
-
-    Args:
-        release_data: Release data from GitHub API
-        release_dir: Path to the release directory
-        selected_patterns: Patterns for selecting specific assets
-        exclude_patterns: Patterns to exclude from consideration
-
+    Determines if a release directory contains all expected asset files and that any zip files are valid.
+    
+    Checks for the presence of all assets matching the selected and excluded patterns in the release directory, and verifies the integrity of zip files by testing for corruption.
+    
     Returns:
-        bool: True if the release is complete, False otherwise
+        True if all expected assets are present and valid; False otherwise.
     """
     if not os.path.exists(release_dir):
         return False
@@ -1289,24 +1285,26 @@ def check_and_download(
     exclude_patterns: Optional[List[str]] = None,
 ) -> Tuple[List[str], List[str], List[Dict[str, str]]]:
     """
-    Checks for missing releases and downloads them if necessary. Handles extraction and cleanup.
-
+    Checks for missing or incomplete releases, downloads required assets, extracts files if configured, and cleans up old versions.
+    
+    Downloads assets for the specified number of latest releases, skipping those already present and complete. Handles corrupted zip files by removing and re-downloading them. Optionally extracts files from downloaded archives and sets executable permissions on shell scripts. Updates the latest release tag file only if new downloads occur, and removes outdated release directories after processing.
+    
     Args:
-        releases (List[Dict[str, Any]]): List of release data from GitHub API.
-        latest_release_file (str): Path to the file storing the latest downloaded release tag.
-        release_type (str): Type of release (e.g., "Firmware", "Android APK").
-        download_dir_path (str): Base directory to download releases into.
-        versions_to_keep (int): Number of latest versions to keep.
-        extract_patterns (List[str]): Patterns for extracting files from zips (if auto_extract is True).
-        selected_patterns (Optional[List[str]]): Patterns for selecting specific assets to download.
-        auto_extract (bool): Whether to automatically extract files for this release type.
-        exclude_patterns (Optional[List[str]]): Patterns to exclude from extraction.
-
+        releases: List of release metadata dictionaries from the GitHub API.
+        latest_release_file: Path to the file storing the latest downloaded release tag.
+        release_type: Human-readable type of release (e.g., "Firmware", "Android APK").
+        download_dir_path: Directory where releases are downloaded.
+        versions_to_keep: Number of latest versions to retain.
+        extract_patterns: Patterns for extracting files from zip archives.
+        selected_patterns: Patterns for selecting which assets to download.
+        auto_extract: If True, automatically extracts files for this release type.
+        exclude_patterns: Patterns to exclude from extraction.
+    
     Returns:
-        Tuple[List[str], List[str], List[Dict[str, str]]]:
+        A tuple containing:
             - List of downloaded version tags.
-            - List of new versions available but potentially skipped.
-            - List of dictionaries detailing failed downloads.
+            - List of new version tags available but not downloaded in this run.
+            - List of dictionaries with details about failed downloads.
     """
     global downloads_skipped
     downloaded_versions: List[str] = []

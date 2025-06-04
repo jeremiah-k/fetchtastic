@@ -333,9 +333,9 @@ def check_storage_setup():
 
 def run_setup():
     """
-    Runs the interactive setup process for Fetchtastic, guiding the user through configuration, migration, asset selection, scheduling, and notification setup.
-
-    This function handles platform-specific requirements, including Termux package installation, Windows shortcut creation, and cron or boot script scheduling on Linux/macOS/Termux. It prompts the user for key configuration options such as base directory, asset types to download, version retention, firmware extraction patterns, Wi-Fi-only downloads, and NTFY notification preferences. The setup process also migrates old configuration files if present, records the setup version and date, and saves all settings to the configuration file. At the end, it offers to perform the first download run or provides instructions for manual execution.
+    Runs the interactive setup process for Fetchtastic, guiding the user through initial configuration, migration, asset selection, scheduling, and notification setup.
+    
+    This function handles platform-specific requirements such as Termux package installation, Windows shortcut creation, and scheduling via cron or boot scripts on Linux/macOS/Termux. It prompts the user for configuration options including base directory, asset types to download, version retention, firmware extraction patterns, Wi-Fi-only downloads (Termux), and NTFY notification preferences. The setup process migrates old configuration files if present, records the setup version and date, saves all settings to the configuration file, and offers to perform the first download run or provides instructions for manual execution.
     """
     global BASE_DIR, CONFIG_FILE
     print("Running Fetchtastic Setup...")
@@ -1205,9 +1205,12 @@ def check_for_updates():
 
 def get_upgrade_command():
     """
-    Returns the shell command to upgrade Fetchtastic based on the current platform and installation method.
-
-    The command is tailored for Termux (using pip or pipx) or other platforms (using pipx).
+    Returns the appropriate shell command to upgrade Fetchtastic for the current platform and installation method.
+    
+    The command uses pip or pipx depending on whether Fetchtastic is installed via pip or pipx, and adapts for Termux or other platforms.
+    
+    Returns:
+        str: The shell command to upgrade Fetchtastic.
     """
     if is_termux():
         # Check how fetchtastic is installed in Termux
@@ -1223,14 +1226,14 @@ def get_upgrade_command():
 
 def should_recommend_setup():
     """
-    Determines whether the setup process should be recommended based on configuration and version changes.
-
+    Determines if the setup process should be recommended based on configuration presence and version changes.
+    
     Returns:
-        A tuple (should_recommend, reason, last_setup_version, current_version), where:
-        - should_recommend (bool): True if setup is recommended, False otherwise.
-        - reason (str): Explanation for the recommendation.
-        - last_setup_version (str or None): The version recorded during the last setup, or None if unavailable.
-        - current_version (str or None): The currently installed version, or None if unavailable.
+        A tuple (should_recommend, reason, last_setup_version, current_version):
+            - should_recommend (bool): True if setup is recommended, False otherwise.
+            - reason (str): Explanation for the recommendation.
+            - last_setup_version (str or None): Version recorded during the last setup, or None if unavailable.
+            - current_version (str or None): Currently installed version, or None if unavailable.
     """
     try:
         config = load_config()
@@ -1263,12 +1266,12 @@ def should_recommend_setup():
 def display_version_info(show_update_message=True):
     """
     Retrieves the current and latest Fetchtastic version information and update status.
-
+    
     Args:
-        show_update_message: If True, includes update message in output (not used internally).
-
+        show_update_message: Ignored parameter; retained for compatibility.
+    
     Returns:
-        A tuple containing the current version, latest version, and a boolean indicating if an update is available.
+        Tuple of (current_version, latest_version, update_available), where update_available is True if a newer version exists.
     """
     current_version, latest_version, update_available = check_for_updates()
 
