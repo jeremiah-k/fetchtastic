@@ -81,12 +81,12 @@ class BootloaderAsset(BaseAssetHandler):
         return config
 
     def _run_bootloader_menu(self) -> Optional[Dict[str, Any]]:
-        """Run the bootloader selection menu."""
+        """Run the bootloader selection menu using pick."""
+        from pick import pick
+
         print("\n" + "=" * 60)
         print("Bootloader Selection")
         print("=" * 60)
-        print("Select the types of bootloaders you want to download:")
-        print()
 
         # Define available bootloader categories
         bootloader_categories = [
@@ -94,111 +94,38 @@ class BootloaderAsset(BaseAssetHandler):
                 "id": "stock_bootloaders",
                 "name": "Stock Device Bootloaders",
                 "description": "Original bootloaders for specific devices (T1000-E, RAK4631)",
-                "selected": False,
             },
             {
                 "id": "otafix_bootloaders",
                 "name": "OTA-Fix Modified Bootloaders",
                 "description": "Modified Adafruit nRF52 bootloaders with OTA improvements",
-                "selected": False,
             },
         ]
 
-        # Display menu and get selections
-        print("Use SPACE to select/deselect, ENTER to confirm:")
-        print()
+        # Create options for pick
+        options = []
+        for category in bootloader_categories:
+            option_text = f"{category['name']} - {category['description']}"
+            options.append(option_text)
 
-        current_selection = 0
-        while True:
-            # Clear screen and show menu
-            print("\033[H\033[J", end="")  # Clear screen
-            print("Bootloader Selection")
-            print("=" * 60)
-            print("Select the types of bootloaders you want to download:")
-            print("Use SPACE to select/deselect, ENTER to confirm, Q to quit")
-            print()
-
-            for i, category in enumerate(bootloader_categories):
-                marker = "●" if category["selected"] else "○"
-                cursor = "→ " if i == current_selection else "  "
-                print(f"{cursor}{marker} {category['name']}")
-                print(f"    {category['description']}")
-                print()
-
-            print(
-                "Navigation: ↑/↓ arrows, SPACE to toggle, ENTER to confirm, Q to quit"
+        try:
+            # Use pick for multi-selection
+            selected_options, selected_indices = pick(
+                options,
+                "Select bootloader types to download (SPACE to select, ENTER to confirm):",
+                multiselect=True,
+                min_selection_count=1,
             )
 
-            # Get user input
-            try:
-                import sys
-                import termios
-                import tty
+            # Get selected category IDs
+            selected_types = [bootloader_categories[i]["id"] for i in selected_indices]
+            print(
+                f"\nSelected bootloader types: {', '.join([bootloader_categories[i]['name'] for i in selected_indices])}"
+            )
 
-                fd = sys.stdin.fileno()
-                old_settings = termios.tcgetattr(fd)
-                tty.setraw(sys.stdin.fileno())
-                key = sys.stdin.read(1)
-                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-
-                if key == "\x1b":  # Arrow key sequence
-                    key += sys.stdin.read(2)
-                    if key == "\x1b[A":  # Up arrow
-                        current_selection = (current_selection - 1) % len(
-                            bootloader_categories
-                        )
-                    elif key == "\x1b[B":  # Down arrow
-                        current_selection = (current_selection + 1) % len(
-                            bootloader_categories
-                        )
-                elif key == " ":  # Space to toggle
-                    bootloader_categories[current_selection]["selected"] = (
-                        not bootloader_categories[current_selection]["selected"]
-                    )
-                elif key == "\r" or key == "\n":  # Enter to confirm
-                    break
-                elif key.lower() == "q":  # Quit
-                    return None
-
-            except (ImportError, OSError):
-                # Fallback for systems without termios (like Windows)
-                print("\nFallback menu (termios not available):")
-                for i, category in enumerate(bootloader_categories):
-                    marker = "[X]" if category["selected"] else "[ ]"
-                    print(f"{i+1}. {marker} {category['name']}")
-                    print(f"   {category['description']}")
-
-                choice = input(
-                    "\nEnter numbers to toggle (e.g., '1 2'), or 'done' to finish: "
-                ).strip()
-                if choice.lower() == "done":
-                    break
-                elif choice.lower() == "q":
-                    return None
-                else:
-                    try:
-                        for num in choice.split():
-                            idx = int(num) - 1
-                            if 0 <= idx < len(bootloader_categories):
-                                bootloader_categories[idx]["selected"] = (
-                                    not bootloader_categories[idx]["selected"]
-                                )
-                    except ValueError:
-                        print(
-                            "Invalid input. Please enter numbers separated by spaces."
-                        )
-                        input("Press Enter to continue...")
-
-        # Get selected categories
-        selected_types = [cat["id"] for cat in bootloader_categories if cat["selected"]]
-
-        if not selected_types:
-            print("\nNo bootloader types selected.")
+        except (KeyboardInterrupt, EOFError):
+            print("\nSelection cancelled.")
             return None
-
-        print(
-            f"\nSelected bootloader types: {', '.join([cat['name'] for cat in bootloader_categories if cat['selected']])}"
-        )
 
         # For each selected category, get specific selections
         selected_assets = {}

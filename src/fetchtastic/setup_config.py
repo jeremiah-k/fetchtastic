@@ -50,7 +50,7 @@ def is_termux():
 
 def run_asset_selection_menu(asset_manager, config, is_first_run):
     """
-    Run the new modular asset selection menu with checkbox-style selection.
+    Run the modular asset selection menu using pick for consistency.
 
     Args:
         asset_manager: AssetManager instance with registered handlers
@@ -60,132 +60,85 @@ def run_asset_selection_menu(asset_manager, config, is_first_run):
     Returns:
         Dictionary with updated configuration or None if cancelled
     """
+    from pick import pick
+
     print("\n" + "=" * 60)
     print("Asset Selection")
     print("=" * 60)
     print("Select the types of assets you want to download:")
-    print("Use SPACE to select/deselect, ENTER to confirm")
     print()
 
     # Get all available asset types
     asset_types = asset_manager.get_all_asset_types()
 
-    # Set initial selection based on existing config
-    for asset_type in asset_types:
-        if asset_type.config_key in config:
-            asset_type.enabled = config[asset_type.config_key]
+    # Create options for pick with current selection state
+    options = []
+    preselected = []
 
-    current_selection = 0
-    while True:
-        # Clear screen and show menu
-        print("\033[H\033[J", end="")  # Clear screen
-        print("Asset Selection")
-        print("=" * 60)
-        print("Select the types of assets you want to download:")
-        print("Use SPACE to select/deselect, ENTER to confirm, Q to quit")
-        print()
+    for i, asset_type in enumerate(asset_types):
+        # Format option with description
+        option_text = f"{asset_type.name} - {asset_type.description}"
+        options.append(option_text)
+
+        # Check if this asset type is currently enabled
+        if asset_type.config_key in config and config[asset_type.config_key]:
+            preselected.append(i)
+
+    try:
+        # Use pick for multi-selection
+        selected_options, selected_indices = pick(
+            options,
+            "Select asset types to download (SPACE to select, ENTER to confirm):",
+            multiselect=True,
+            min_selection_count=1,
+            default_index=preselected,
+        )
+
+        # Process selections
+        selected_config = {}
+        for i, asset_type in enumerate(asset_types):
+            # Enable if selected, disable if not
+            selected_config[asset_type.config_key] = i in selected_indices
+
+        return selected_config
+
+    except (KeyboardInterrupt, EOFError):
+        print("\nSelection cancelled.")
+        return None
+
+        # Run selection menus for each enabled asset type and collect additional config
+        updated_config = selected_config.copy()
 
         for i, asset_type in enumerate(asset_types):
-            marker = "●" if asset_type.enabled else "○"
-            cursor = "→ " if i == current_selection else "  "
-            print(f"{cursor}{marker} {asset_type.name}")
-            print(f"    {asset_type.description}")
-            print()
+            if i not in selected_indices:
+                continue  # Skip unselected asset types
 
-        print("Navigation: ↑/↓ arrows, SPACE to toggle, ENTER to confirm, Q to quit")
+            handler = asset_manager.get_handler(asset_type.id)
+            if not handler:
+                continue
 
-        # Get user input
-        try:
-            import sys
-            import termios
-            import tty
+            print(f"\n{'-' * 40}")
+            print(f"Configuring {asset_type.name}")
+            print(f"{'-' * 40}")
 
-            fd = sys.stdin.fileno()
-            old_settings = termios.tcgetattr(fd)
-            tty.setraw(sys.stdin.fileno())
-            key = sys.stdin.read(1)
-            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+            # Run the asset-specific selection menu
+            selection_result = handler.run_selection_menu(config)
+            if not selection_result:
+                print(
+                    f"No {asset_type.name.lower()} selected. Disabling this asset type."
+                )
+                updated_config[asset_type.config_key] = False
+                continue
 
-            if key == "\x1b":  # Arrow key sequence
-                key += sys.stdin.read(2)
-                if key == "\x1b[A":  # Up arrow
-                    current_selection = (current_selection - 1) % len(asset_types)
-                elif key == "\x1b[B":  # Down arrow
-                    current_selection = (current_selection + 1) % len(asset_types)
-            elif key == " ":  # Space to toggle
-                asset_types[current_selection].enabled = not asset_types[
-                    current_selection
-                ].enabled
-            elif key == "\r" or key == "\n":  # Enter to confirm
-                break
-            elif key.lower() == "q":  # Quit
-                return None
+            # Update config with selection results
+            updated_config.update(selection_result)
 
-        except (ImportError, OSError):
-            # Fallback for systems without termios (like Windows)
-            print("\nFallback menu (termios not available):")
-            for i, asset_type in enumerate(asset_types):
-                marker = "[X]" if asset_type.enabled else "[ ]"
-                print(f"{i+1}. {marker} {asset_type.name}")
-                print(f"   {asset_type.description}")
+            # Run additional configuration setup
+            updated_config = handler.setup_additional_config(
+                updated_config, is_first_run
+            )
 
-            choice = input(
-                "\nEnter numbers to toggle (e.g., '1 2'), or 'done' to finish: "
-            ).strip()
-            if choice.lower() == "done":
-                break
-            elif choice.lower() == "q":
-                return None
-            else:
-                try:
-                    for num in choice.split():
-                        idx = int(num) - 1
-                        if 0 <= idx < len(asset_types):
-                            asset_types[idx].enabled = not asset_types[idx].enabled
-                except ValueError:
-                    print("Invalid input. Please enter numbers separated by spaces.")
-                    input("Press Enter to continue...")
-
-    # Check if any assets are selected
-    enabled_assets = [asset for asset in asset_types if asset.enabled]
-    if not enabled_assets:
-        print("\nNo assets selected.")
-        return None
-
-    print(f"\nSelected assets: {', '.join([asset.name for asset in enabled_assets])}")
-
-    # Run selection menus for each enabled asset type and collect additional config
-    updated_config = {}
-
-    for asset_type in enabled_assets:
-        handler = asset_manager.get_handler(asset_type.id)
-        if not handler:
-            continue
-
-        print(f"\n{'-' * 40}")
-        print(f"Configuring {asset_type.name}")
-        print(f"{'-' * 40}")
-
-        # Run the asset-specific selection menu
-        selection_result = handler.run_selection_menu(config)
-        if not selection_result:
-            print(f"No {asset_type.name.lower()} selected. Disabling this asset type.")
-            asset_type.enabled = False
-            continue
-
-        # Update config with selection results
-        updated_config[asset_type.config_key] = True
-        updated_config.update(selection_result)
-
-        # Run additional configuration setup
-        updated_config = handler.setup_additional_config(updated_config, is_first_run)
-
-    # Final check - ensure at least one asset type is still enabled
-    final_enabled = [asset for asset in asset_types if asset.enabled]
-    if not final_enabled:
-        return None
-
-    return updated_config
+        return updated_config
 
 
 def is_fetchtastic_installed_via_pip():

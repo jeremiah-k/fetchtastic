@@ -74,12 +74,12 @@ class DFUAppsAsset(BaseAssetHandler):
         return config
 
     def _run_dfu_apps_menu(self) -> Optional[Dict[str, Any]]:
-        """Run the DFU apps selection menu."""
+        """Run the DFU apps selection menu using pick."""
+        from pick import pick
+
         print("\n" + "=" * 60)
         print("DFU/Firmware Flashing Apps Selection")
         print("=" * 60)
-        print("Select the flashing apps you want to download:")
-        print()
 
         # Define available DFU apps
         dfu_apps = [
@@ -88,102 +88,34 @@ class DFUAppsAsset(BaseAssetHandler):
                 "name": "Nordic DFU Library APK",
                 "description": "Android DFU library for flashing Nordic nRF devices",
                 "repo": "NordicSemiconductor/Android-DFU-Library",
-                "selected": False,
             }
         ]
 
-        # Display menu and get selections
-        print("Use SPACE to select/deselect, ENTER to confirm:")
-        print()
+        # Create options for pick
+        options = []
+        for app in dfu_apps:
+            option_text = (
+                f"{app['name']} - {app['description']} (Repository: {app['repo']})"
+            )
+            options.append(option_text)
 
-        current_selection = 0
-        while True:
-            # Clear screen and show menu
-            print("\033[H\033[J", end="")  # Clear screen
-            print("DFU/Firmware Flashing Apps Selection")
-            print("=" * 60)
-            print("Select the flashing apps you want to download:")
-            print("Use SPACE to select/deselect, ENTER to confirm, Q to quit")
-            print()
-
-            for i, app in enumerate(dfu_apps):
-                marker = "●" if app["selected"] else "○"
-                cursor = "→ " if i == current_selection else "  "
-                print(f"{cursor}{marker} {app['name']}")
-                print(f"    {app['description']}")
-                print(f"    Repository: {app['repo']}")
-                print()
-
-            print(
-                "Navigation: ↑/↓ arrows, SPACE to toggle, ENTER to confirm, Q to quit"
+        try:
+            # Use pick for multi-selection
+            selected_options, selected_indices = pick(
+                options,
+                "Select DFU/flashing apps to download (SPACE to select, ENTER to confirm):",
+                multiselect=True,
+                min_selection_count=1,
             )
 
-            # Get user input
-            try:
-                import sys
-                import termios
-                import tty
+            # Get selected app IDs
+            selected_apps = [dfu_apps[i]["id"] for i in selected_indices]
+            print(
+                f"\nSelected DFU apps: {', '.join([dfu_apps[i]['name'] for i in selected_indices])}"
+            )
 
-                fd = sys.stdin.fileno()
-                old_settings = termios.tcgetattr(fd)
-                tty.setraw(sys.stdin.fileno())
-                key = sys.stdin.read(1)
-                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-
-                if key == "\x1b":  # Arrow key sequence
-                    key += sys.stdin.read(2)
-                    if key == "\x1b[A":  # Up arrow
-                        current_selection = (current_selection - 1) % len(dfu_apps)
-                    elif key == "\x1b[B":  # Down arrow
-                        current_selection = (current_selection + 1) % len(dfu_apps)
-                elif key == " ":  # Space to toggle
-                    dfu_apps[current_selection]["selected"] = not dfu_apps[
-                        current_selection
-                    ]["selected"]
-                elif key == "\r" or key == "\n":  # Enter to confirm
-                    break
-                elif key.lower() == "q":  # Quit
-                    return None
-
-            except (ImportError, OSError):
-                # Fallback for systems without termios (like Windows)
-                print("\nFallback menu (termios not available):")
-                for i, app in enumerate(dfu_apps):
-                    marker = "[X]" if app["selected"] else "[ ]"
-                    print(f"{i+1}. {marker} {app['name']}")
-                    print(f"   {app['description']}")
-                    print(f"   Repository: {app['repo']}")
-
-                choice = input(
-                    "\nEnter numbers to toggle (e.g., '1'), or 'done' to finish: "
-                ).strip()
-                if choice.lower() == "done":
-                    break
-                elif choice.lower() == "q":
-                    return None
-                else:
-                    try:
-                        for num in choice.split():
-                            idx = int(num) - 1
-                            if 0 <= idx < len(dfu_apps):
-                                dfu_apps[idx]["selected"] = not dfu_apps[idx][
-                                    "selected"
-                                ]
-                    except ValueError:
-                        print(
-                            "Invalid input. Please enter numbers separated by spaces."
-                        )
-                        input("Press Enter to continue...")
-
-        # Get selected apps
-        selected_apps = [app["id"] for app in dfu_apps if app["selected"]]
-
-        if not selected_apps:
-            print("\nNo DFU apps selected.")
+        except (KeyboardInterrupt, EOFError):
+            print("\nSelection cancelled.")
             return None
-
-        print(
-            f"\nSelected DFU apps: {', '.join([app['name'] for app in dfu_apps if app['selected']])}"
-        )
 
         return {"SELECTED_DFU_APPS": selected_apps}
