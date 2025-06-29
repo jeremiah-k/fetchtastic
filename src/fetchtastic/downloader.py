@@ -30,6 +30,7 @@ PRERELEASE_CHUNK_SIZE: int = 8 * 1024
 def compare_versions(version1, version2):
     """
     Compares two version strings (e.g., 2.6.9.f93d031 vs 2.6.8.ef9d0d7).
+    Also handles meshtasticd format like 2.7.0.16192.local705515a.
 
     Returns:
         1 if version1 > version2
@@ -40,14 +41,31 @@ def compare_versions(version1, version2):
     if version1 == version2:
         return 0
 
+    # Normalize versions to handle meshtasticd format (e.g., 2.7.0.16192.local705515a)
+    def normalize_version(version):
+        # Handle meshtasticd format: 2.7.0.16192.local705515a -> 2.7.0.local705515a
+        if "local" in version:
+            parts = version.split(".")
+            if len(parts) >= 4 and "local" in parts[-1]:
+                # Keep major.minor.patch and the local hash part
+                return f"{parts[0]}.{parts[1]}.{parts[2]}.{parts[-1]}"
+        return version
+
+    v1_normalized = normalize_version(version1)
+    v2_normalized = normalize_version(version2)
+
     # Split versions into components
-    v1_parts = version1.split(".")
-    v2_parts = version2.split(".")
+    v1_parts = v1_normalized.split(".")
+    v2_parts = v2_normalized.split(".")
 
     # Make sure we have at least 3 parts for each version
     if len(v1_parts) < 3 or len(v2_parts) < 3:
         # If either version doesn't have at least 3 parts, do a simple string comparison
-        return 1 if version1 > version2 else (-1 if version1 < version2 else 0)
+        return (
+            1
+            if v1_normalized > v2_normalized
+            else (-1 if v1_normalized < v2_normalized else 0)
+        )
 
     # Compare major, minor, patch versions numerically
     for i in range(3):  # Only compare the first 3 parts (major.minor.patch)

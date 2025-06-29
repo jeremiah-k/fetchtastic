@@ -120,7 +120,9 @@ class MeshtasticFirmwareAsset(BaseAssetHandler):
         print(
             "Enter the keywords to match for extraction from the firmware zip files, separated by spaces."
         )
-        print("Example: rak4631- tbeam t1000-e- tlora-v2-1-1_6- device-")
+        print(
+            "Example: rak4631- tbeam t1000-e- tlora-v2-1-1_6- device- littlefs- bleota"
+        )
 
         # Check if there are existing patterns
         if config.get("EXTRACT_PATTERNS"):

@@ -583,8 +583,15 @@ def run_setup():
         if config_exists(base_dir) and base_dir != BASE_DIR:
             print(f"Found existing configuration in {base_dir}")
             # Load the configuration from the specified directory
-            config = load_config(base_dir)
-            is_first_run = False
+            loaded_config = load_config(base_dir)
+            if loaded_config is not None:
+                config = loaded_config
+                is_first_run = False
+            else:
+                print(
+                    "Warning: Could not load configuration from specified directory. Using current config."
+                )
+                BASE_DIR = base_dir
         else:
             # No config in the specified directory or it's the same as current
             BASE_DIR = base_dir
