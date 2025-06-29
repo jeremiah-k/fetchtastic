@@ -13,7 +13,6 @@ import platformdirs
 import yaml
 
 from fetchtastic import downloader  # Import downloader to perform first run
-from fetchtastic import menu_apk, menu_firmware
 
 # Import Windows-specific modules if on Windows
 if platform.system() == "Windows":

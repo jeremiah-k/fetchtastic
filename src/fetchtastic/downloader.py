@@ -1813,7 +1813,7 @@ def _process_bootloader_downloads(
 
         try:
             # Get releases from GitHub API
-            releases = _get_sorted_releases(github_api_url, RELEASE_SCAN_COUNT)
+            releases = _get_latest_releases_data(github_api_url, RELEASE_SCAN_COUNT)
             if not releases:
                 logger.warning(f"No releases found for {repo_owner}/{repo_name}")
             else:
@@ -1941,7 +1941,7 @@ def _process_dfu_app_downloads(
 
         try:
             # Get releases from GitHub API
-            releases = _get_sorted_releases(github_api_url, RELEASE_SCAN_COUNT)
+            releases = _get_latest_releases_data(github_api_url, RELEASE_SCAN_COUNT)
             if not releases:
                 logger.warning(f"No releases found for {repo_owner}/{repo_name}")
                 return (
