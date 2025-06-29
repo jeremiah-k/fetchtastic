@@ -35,6 +35,7 @@ class BootloaderAsset(BaseAssetHandler):
         return [
             "SAVE_BOOTLOADERS",
             "SELECTED_BOOTLOADER_TYPES",
+            "SELECTED_BOOTLOADER_ASSETS",
             "BOOTLOADER_VERSIONS_TO_KEEP",
         ]
 
@@ -221,7 +222,10 @@ class BootloaderAsset(BaseAssetHandler):
             print("No specific bootloader assets selected.")
             return None
 
-        return {"selected_types": selected_types, "selected_assets": selected_assets}
+        return {
+            "SELECTED_BOOTLOADER_TYPES": selected_types,
+            "SELECTED_BOOTLOADER_ASSETS": selected_assets,
+        }
 
     def _select_stock_bootloaders(self) -> List[str]:
         """Select stock bootloader assets."""

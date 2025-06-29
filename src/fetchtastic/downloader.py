@@ -891,15 +891,12 @@ def _process_apk_downloads(
 def _finalize_and_notify(
     start_time: float,
     config: Dict[str, Any],
-    downloaded_firmwares: List[str],
-    downloaded_apks: List[str],
-    new_firmware_versions: List[str],
-    new_apk_versions: List[str],
+    all_downloads: List[str],
+    all_new_versions: List[str],
+    latest_versions: Dict[str, Optional[str]],
     current_version: Optional[str],
     latest_version: Optional[str],
     update_available: bool,
-    latest_firmware_version: Optional[str] = None,
-    latest_apk_version: Optional[str] = None,
 ) -> None:
     """
     Handles final logging, application update messages, and notifications.
@@ -907,10 +904,9 @@ def _finalize_and_notify(
     Args:
         start_time (float): The start time of the download process.
         config (Dict[str, Any]): The application configuration.
-        downloaded_firmwares (List[str]): List of downloaded firmware versions.
-        downloaded_apks (List[str]): List of downloaded APK versions.
-        new_firmware_versions (List[str]): List of new firmware versions detected.
-        new_apk_versions (List[str]): List of new APK versions detected.
+        all_downloads (List[str]): List of all downloaded versions across asset types.
+        all_new_versions (List[str]): List of all new versions detected across asset types.
+        latest_versions (Dict[str, Optional[str]]): Dictionary of latest versions by asset type.
         current_version (Optional[str]): Current application version.
         latest_version (Optional[str]): Latest available application version.
         update_available (bool): True if an update is available.
@@ -920,17 +916,17 @@ def _finalize_and_notify(
     total_time: float = end_time - start_time
 
     # Create clean summary
-    downloaded_count = len(downloaded_firmwares) + len(downloaded_apks)
+    downloaded_count = len(all_downloads)
 
     logger.info(f"\nCompleted in {total_time:.1f}s")
     if downloaded_count > 0:
         logger.info(f"Downloaded {downloaded_count} new files")
 
     # Show latest versions if available
-    if latest_firmware_version:
-        logger.info(f"Latest firmware: {latest_firmware_version}")
-    if latest_apk_version:
-        logger.info(f"Latest APK: {latest_apk_version}")
+    for asset_type, version in latest_versions.items():
+        if version:
+            asset_name = asset_type.replace("_", " ").title()
+            logger.info(f"Latest {asset_name}: {version}")
 
     if update_available and latest_version:
         upgrade_cmd: str = get_upgrade_command()
@@ -949,13 +945,9 @@ def _finalize_and_notify(
         message_lines = [
             "New releases are available but downloads were skipped because the device is not connected to Wi-Fi."
         ]
-        if new_firmware_versions:
+        if all_new_versions:
             message_lines.append(
-                f"Firmware versions available: {', '.join(new_firmware_versions)}"
-            )
-        if new_apk_versions:
-            message_lines.append(
-                f"Android APK versions available: {', '.join(new_apk_versions)}"
+                f"New versions available: {', '.join(all_new_versions)}"
             )
         notification_message = "\n".join(message_lines) + f"\n{datetime.now()}"
         logger.info("\n".join(message_lines))
@@ -965,14 +957,10 @@ def _finalize_and_notify(
             notification_message,
             title="Fetchtastic Downloads Skipped",
         )
-    elif downloaded_firmwares or downloaded_apks:
+    elif all_downloads:
         notification_messages: List[str] = []
-        message: str
-        if downloaded_firmwares:
-            message = f"Downloaded Firmware versions: {', '.join(downloaded_firmwares)}"
-            notification_messages.append(message)
-        if downloaded_apks:
-            message = f"Downloaded Android APK versions: {', '.join(downloaded_apks)}"
+        if all_downloads:
+            message = f"Downloaded new versions: {', '.join(all_downloads)}"
             notification_messages.append(message)
         notification_message = "\n".join(notification_messages) + f"\n{datetime.now()}"
         _send_ntfy_notification(
@@ -1199,10 +1187,10 @@ def cleanup_old_versions(directory: str, releases_to_keep: List[str]) -> None:
 def strip_unwanted_chars(text: str) -> str:
     """
     Removes non-ASCII characters, including emojis, from a string.
-    
+
     Args:
         text: The input string to clean.
-    
+
     Returns:
         The input string with all non-ASCII characters removed.
     """
@@ -1218,7 +1206,7 @@ def _is_release_complete(
 ) -> bool:
     """
     Determines if a release directory contains all required assets and valid zip files.
-    
+
     Checks that all expected asset files, filtered by selected and exclude patterns, exist in the release directory. For zip assets, verifies file integrity by testing for corruption. Returns True if all assets are present and valid; otherwise, returns False.
     """
     if not os.path.exists(release_dir):
@@ -1305,9 +1293,9 @@ def check_and_download(
 ) -> Tuple[List[str], List[str], List[Dict[str, str]]]:
     """
     Checks for missing or incomplete releases, downloads required assets, extracts files if configured, and cleans up old versions.
-    
+
     Downloads assets for the specified number of recent releases, skipping those already present and complete. Handles extraction of files from zip archives if enabled, saves release notes, sets permissions on shell scripts, and removes outdated release directories. Returns lists of successfully downloaded versions, new versions detected but not downloaded, and details of any failed downloads.
-    
+
     Args:
         releases: List of release data dictionaries from the GitHub API.
         latest_release_file: Path to the file storing the latest downloaded release tag.
@@ -1318,7 +1306,7 @@ def check_and_download(
         selected_patterns: Patterns for selecting specific assets to download.
         auto_extract: Whether to automatically extract files for this release type.
         exclude_patterns: Patterns to exclude from extraction.
-    
+
     Returns:
         A tuple containing:
             - List of downloaded version tags.
@@ -1712,6 +1700,408 @@ def check_extraction_needed(
         return True  # Default to needing extraction on unknown error
 
 
+def _download_release_notes(
+    release_data: Dict[str, Any], release_dir: str, prefix: str
+) -> None:
+    """
+    Download release notes for a GitHub release.
+
+    Args:
+        release_data: GitHub release data
+        release_dir: Directory to save release notes
+        prefix: Prefix for the release notes filename
+    """
+    try:
+        release_notes = release_data.get("body", "")
+        if release_notes:
+            notes_filename = f"{prefix}-release-notes-{release_data['tag_name']}.md"
+            notes_path = os.path.join(release_dir, notes_filename)
+
+            with open(notes_path, "w", encoding="utf-8") as f:
+                f.write(f"# Release Notes for {release_data['tag_name']}\n\n")
+                f.write(
+                    f"**Published:** {release_data.get('published_at', 'Unknown')}\n\n"
+                )
+                f.write(release_notes)
+
+            logger.info(f"Downloaded release notes: {notes_filename}")
+    except Exception as e:
+        logger.warning(f"Failed to download release notes: {e}")
+
+
+def _download_readme_from_repo(
+    repo_owner: str, repo_name: str, release_dir: str
+) -> None:
+    """
+    Download README file from a GitHub repository.
+
+    Args:
+        repo_owner: GitHub repository owner
+        repo_name: GitHub repository name
+        release_dir: Directory to save README
+    """
+    try:
+        readme_url = f"https://raw.githubusercontent.com/{repo_owner}/{repo_name}/master/README.md"
+        readme_path = os.path.join(release_dir, "README.md")
+
+        if download_file_with_retry(readme_url, readme_path):
+            logger.info("Downloaded README.md")
+        else:
+            # Try main branch if master doesn't exist
+            readme_url = f"https://raw.githubusercontent.com/{repo_owner}/{repo_name}/main/README.md"
+            if download_file_with_retry(readme_url, readme_path):
+                logger.info("Downloaded README.md")
+            else:
+                logger.warning(
+                    "Failed to download README.md from master or main branch"
+                )
+    except Exception as e:
+        logger.warning(f"Failed to download README: {e}")
+
+
+def _process_bootloader_downloads(
+    config: Dict[str, Any], paths_and_urls: Dict[str, str]
+) -> Tuple[List[str], List[str], List[Dict[str, str]], Optional[str]]:
+    """
+    Process bootloader downloads.
+
+    Args:
+        config: Configuration dictionary
+        paths_and_urls: Dictionary containing paths and URLs
+
+    Returns:
+        Tuple of (downloaded_bootloaders, new_bootloader_versions, failed_bootloader_list, latest_bootloader_version)
+    """
+    logger.info("Processing bootloader downloads...")
+
+    downloaded_bootloaders = []
+    new_bootloader_versions = []
+    failed_bootloader_list = []
+    latest_bootloader_version = None
+
+    selected_types = config.get("SELECTED_BOOTLOADER_TYPES", [])
+    selected_assets = config.get("SELECTED_BOOTLOADER_ASSETS", {})
+
+    if not selected_types:
+        logger.info("No bootloader types selected for download")
+        return (
+            downloaded_bootloaders,
+            new_bootloader_versions,
+            failed_bootloader_list,
+            latest_bootloader_version,
+        )
+
+    download_dir = paths_and_urls["download_dir"]
+    bootloaders_dir = os.path.join(download_dir, "bootloaders")
+
+    # Ensure bootloaders directory exists
+    if not os.path.exists(bootloaders_dir):
+        os.makedirs(bootloaders_dir)
+        logger.info(f"Created bootloaders directory: {bootloaders_dir}")
+
+    # Process OTA-fix bootloaders if selected
+    if "otafix_bootloaders" in selected_types and "otafix_all" in selected_assets.get(
+        "otafix_bootloaders", []
+    ):
+        logger.info("Processing OTA-fix bootloaders...")
+
+        repo_owner = "oltaco"
+        repo_name = "Adafruit_nRF52_Bootloader_OTAFIX"
+        github_api_url = (
+            f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases"
+        )
+
+        try:
+            # Get releases from GitHub API
+            releases = _get_sorted_releases(github_api_url, RELEASE_SCAN_COUNT)
+            if not releases:
+                logger.warning(f"No releases found for {repo_owner}/{repo_name}")
+            else:
+                # Process the latest release
+                latest_release = releases[0]
+                release_tag = latest_release["tag_name"]
+                latest_bootloader_version = release_tag
+
+                # Create release directory
+                release_dir = os.path.join(bootloaders_dir, "otafix", release_tag)
+                if not os.path.exists(release_dir):
+                    os.makedirs(release_dir)
+
+                # Check if release is already complete
+                if _is_release_complete(latest_release, release_dir, [], []):
+                    logger.info(
+                        f"OTA-fix bootloaders {release_tag} already downloaded and complete"
+                    )
+                else:
+                    # Download all assets (hex, zip, uf2 files)
+                    assets_downloaded = False
+                    for asset in latest_release.get("assets", []):
+                        file_name = asset.get("name", "")
+                        if file_name and not file_name.startswith("Source code"):
+                            download_url = asset.get("browser_download_url", "")
+                            if download_url:
+                                file_path = os.path.join(release_dir, file_name)
+                                logger.info(f"Downloading {file_name}...")
+
+                                if download_file_with_retry(download_url, file_path):
+                                    logger.info(f"Successfully downloaded {file_name}")
+                                    assets_downloaded = True
+                                else:
+                                    logger.error(f"Failed to download {file_name}")
+                                    failed_bootloader_list.append(
+                                        {
+                                            "type": "Bootloader",
+                                            "file_name": file_name,
+                                            "release_tag": release_tag,
+                                            "url": download_url,
+                                            "path_to_download": file_path,
+                                        }
+                                    )
+
+                    # Download README and release notes
+                    if assets_downloaded:
+                        _download_release_notes(
+                            latest_release, release_dir, "otafix-bootloaders"
+                        )
+                        _download_readme_from_repo(repo_owner, repo_name, release_dir)
+                        downloaded_bootloaders.append(release_tag)
+                        new_bootloader_versions.append(release_tag)
+                        logger.info(
+                            f"Successfully processed OTA-fix bootloaders {release_tag}"
+                        )
+
+        except Exception as e:
+            logger.error(f"Error processing OTA-fix bootloaders: {e}")
+
+    # Process stock bootloaders if selected
+    if "stock_bootloaders" in selected_types:
+        stock_assets = selected_assets.get("stock_bootloaders", [])
+        if stock_assets:
+            logger.info("Processing stock bootloaders...")
+            # TODO: Implement stock bootloader downloads
+            # This would involve downloading from specific sources for T1000-E and RAK4631
+            logger.info("Stock bootloader downloads not yet implemented")
+
+    logger.info("Bootloader download processing complete")
+    return (
+        downloaded_bootloaders,
+        new_bootloader_versions,
+        failed_bootloader_list,
+        latest_bootloader_version,
+    )
+
+
+def _process_dfu_app_downloads(
+    config: Dict[str, Any], paths_and_urls: Dict[str, str]
+) -> Tuple[List[str], List[str], List[Dict[str, str]], Optional[str]]:
+    """
+    Process DFU app downloads.
+
+    Args:
+        config: Configuration dictionary
+        paths_and_urls: Dictionary containing paths and URLs
+
+    Returns:
+        Tuple of (downloaded_dfu_apps, new_dfu_app_versions, failed_dfu_app_list, latest_dfu_app_version)
+    """
+    logger.info("Processing DFU app downloads...")
+
+    downloaded_dfu_apps = []
+    new_dfu_app_versions = []
+    failed_dfu_app_list = []
+    latest_dfu_app_version = None
+
+    selected_apps = config.get("SELECTED_DFU_APPS", [])
+    if not selected_apps:
+        logger.info("No DFU apps selected for download")
+        return (
+            downloaded_dfu_apps,
+            new_dfu_app_versions,
+            failed_dfu_app_list,
+            latest_dfu_app_version,
+        )
+
+    download_dir = paths_and_urls["download_dir"]
+    dfu_apps_dir = os.path.join(download_dir, "dfu-apps")
+
+    # Ensure DFU apps directory exists
+    if not os.path.exists(dfu_apps_dir):
+        os.makedirs(dfu_apps_dir)
+        logger.info(f"Created DFU apps directory: {dfu_apps_dir}")
+
+    # Process Nordic DFU Library if selected
+    if "nordic_dfu" in selected_apps:
+        logger.info("Processing Nordic DFU Library downloads...")
+
+        repo_owner = "NordicSemiconductor"
+        repo_name = "Android-DFU-Library"
+        github_api_url = (
+            f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases"
+        )
+
+        try:
+            # Get releases from GitHub API
+            releases = _get_sorted_releases(github_api_url, RELEASE_SCAN_COUNT)
+            if not releases:
+                logger.warning(f"No releases found for {repo_owner}/{repo_name}")
+                return (
+                    downloaded_dfu_apps,
+                    new_dfu_app_versions,
+                    failed_dfu_app_list,
+                    latest_dfu_app_version,
+                )
+
+            # Process the latest release
+            latest_release = releases[0]
+            release_tag = latest_release["tag_name"]
+            latest_dfu_app_version = release_tag
+
+            # Create release directory
+            release_dir = os.path.join(dfu_apps_dir, "nordic-dfu", release_tag)
+            if not os.path.exists(release_dir):
+                os.makedirs(release_dir)
+
+            # Check if release is already complete
+            if _is_release_complete(latest_release, release_dir, ["apk"], []):
+                logger.info(
+                    f"Nordic DFU Library {release_tag} already downloaded and complete"
+                )
+                return (
+                    downloaded_dfu_apps,
+                    new_dfu_app_versions,
+                    failed_dfu_app_list,
+                    latest_dfu_app_version,
+                )
+
+            # Download APK assets
+            assets_downloaded = False
+            for asset in latest_release.get("assets", []):
+                file_name = asset.get("name", "")
+                if file_name.endswith(".apk"):
+                    download_url = asset.get("browser_download_url", "")
+                    if download_url:
+                        file_path = os.path.join(release_dir, file_name)
+                        logger.info(f"Downloading {file_name}...")
+
+                        if download_file_with_retry(download_url, file_path):
+                            logger.info(f"Successfully downloaded {file_name}")
+                            assets_downloaded = True
+                        else:
+                            logger.error(f"Failed to download {file_name}")
+                            failed_dfu_app_list.append(
+                                {
+                                    "type": "DFU App",
+                                    "file_name": file_name,
+                                    "release_tag": release_tag,
+                                    "url": download_url,
+                                    "path_to_download": file_path,
+                                }
+                            )
+
+            # Download release notes
+            if assets_downloaded:
+                _download_release_notes(latest_release, release_dir, "nordic-dfu")
+                downloaded_dfu_apps.append(release_tag)
+                new_dfu_app_versions.append(release_tag)
+                logger.info(f"Successfully processed Nordic DFU Library {release_tag}")
+
+        except Exception as e:
+            logger.error(f"Error processing Nordic DFU Library downloads: {e}")
+
+    logger.info("DFU app download processing complete")
+    return (
+        downloaded_dfu_apps,
+        new_dfu_app_versions,
+        failed_dfu_app_list,
+        latest_dfu_app_version,
+    )
+
+
+def _process_all_asset_downloads(
+    config: Dict[str, Any], paths_and_urls: Dict[str, str]
+) -> Tuple[List[str], List[str], List[Dict[str, str]], Dict[str, Optional[str]]]:
+    """
+    Process downloads for all enabled asset types using the modular system.
+
+    Args:
+        config: Configuration dictionary
+        paths_and_urls: Dictionary containing paths and URLs
+
+    Returns:
+        Tuple of (all_downloads, all_new_versions, all_failed_downloads, latest_versions)
+    """
+    from fetchtastic.assets import (
+        AssetManager,
+        BootloaderAsset,
+        DFUAppsAsset,
+        MeshtasticAndroidAsset,
+        MeshtasticFirmwareAsset,
+    )
+
+    # Initialize asset manager and register handlers
+    asset_manager = AssetManager()
+    asset_manager.register_handler(MeshtasticFirmwareAsset())
+    asset_manager.register_handler(MeshtasticAndroidAsset())
+    asset_manager.register_handler(BootloaderAsset())
+    asset_manager.register_handler(DFUAppsAsset())
+
+    all_downloads = []
+    all_new_versions = []
+    all_failed_downloads = []
+    latest_versions = {}
+
+    # Process firmware downloads (existing functionality)
+    if config.get("SAVE_FIRMWARE", False):
+        (
+            downloaded_firmwares,
+            new_firmware_versions,
+            failed_firmware_list,
+            latest_firmware_version,
+        ) = _process_firmware_downloads(config, paths_and_urls)
+        all_downloads.extend(downloaded_firmwares)
+        all_new_versions.extend(new_firmware_versions)
+        all_failed_downloads.extend(failed_firmware_list)
+        latest_versions["firmware"] = latest_firmware_version
+
+    # Process APK downloads (existing functionality)
+    if config.get("SAVE_APKS", False):
+        downloaded_apks, new_apk_versions, failed_apk_list, latest_apk_version = (
+            _process_apk_downloads(config, paths_and_urls)
+        )
+        all_downloads.extend(downloaded_apks)
+        all_new_versions.extend(new_apk_versions)
+        all_failed_downloads.extend(failed_apk_list)
+        latest_versions["android"] = latest_apk_version
+
+    # Process bootloader downloads (new functionality)
+    if config.get("SAVE_BOOTLOADERS", False):
+        (
+            downloaded_bootloaders,
+            new_bootloader_versions,
+            failed_bootloader_list,
+            latest_bootloader_version,
+        ) = _process_bootloader_downloads(config, paths_and_urls)
+        all_downloads.extend(downloaded_bootloaders)
+        all_new_versions.extend(new_bootloader_versions)
+        all_failed_downloads.extend(failed_bootloader_list)
+        latest_versions["bootloaders"] = latest_bootloader_version
+
+    # Process DFU apps downloads (new functionality)
+    if config.get("SAVE_DFU_APPS", False):
+        (
+            downloaded_dfu_apps,
+            new_dfu_app_versions,
+            failed_dfu_app_list,
+            latest_dfu_app_version,
+        ) = _process_dfu_app_downloads(config, paths_and_urls)
+        all_downloads.extend(downloaded_dfu_apps)
+        all_new_versions.extend(new_dfu_app_versions)
+        all_failed_downloads.extend(failed_dfu_app_list)
+        latest_versions["dfu_apps"] = latest_dfu_app_version
+
+    return all_downloads, all_new_versions, all_failed_downloads, latest_versions
+
+
 def main() -> None:
     """
     Main function to orchestrate the Fetchtastic downloader process.
@@ -1735,31 +2125,13 @@ def main() -> None:
 
     _check_wifi_connection(config)
 
-    downloaded_firmwares: List[str]
-    new_firmware_versions: List[str]
-    failed_firmware_list: List[Dict[str, str]]
-    latest_firmware_version: Optional[str]
-    downloaded_apks: List[str]
-    new_apk_versions: List[str]
-    failed_apk_list: List[Dict[str, str]]
-    latest_apk_version: Optional[str]
-
-    (
-        downloaded_firmwares,
-        new_firmware_versions,
-        failed_firmware_list,
-        latest_firmware_version,
-    ) = _process_firmware_downloads(config, paths_and_urls)
-    downloaded_apks, new_apk_versions, failed_apk_list, latest_apk_version = (
-        _process_apk_downloads(config, paths_and_urls)
+    # Process all enabled asset types using the modular system
+    all_downloads, all_new_versions, all_failed_downloads, latest_versions = (
+        _process_all_asset_downloads(config, paths_and_urls)
     )
 
-    if failed_firmware_list:
-        logger.debug(f"Collected failed firmware downloads: {failed_firmware_list}")
-    if failed_apk_list:
-        logger.debug(f"Collected failed APK downloads: {failed_apk_list}")
-
-    all_failed_downloads = failed_firmware_list + failed_apk_list
+    if all_failed_downloads:
+        logger.debug(f"Collected failed downloads: {all_failed_downloads}")
 
     if all_failed_downloads:
         logger.info(f"Retrying {len(all_failed_downloads)} failed downloads...")
@@ -1774,12 +2146,8 @@ def main() -> None:
                     f"Successfully retried download of {failure_detail['file_name']} for release {failure_detail['release_tag']}"
                 )
                 # Update tracking lists
-                if failure_detail["type"] == "Firmware":
-                    if failure_detail["release_tag"] not in downloaded_firmwares:
-                        downloaded_firmwares.append(failure_detail["release_tag"])
-                elif failure_detail["type"] == "Android APK":
-                    if failure_detail["release_tag"] not in downloaded_apks:
-                        downloaded_apks.append(failure_detail["release_tag"])
+                if failure_detail["release_tag"] not in all_downloads:
+                    all_downloads.append(failure_detail["release_tag"])
             else:
                 logger.error(
                     f"Retry failed for {failure_detail['file_name']} for release {failure_detail['release_tag']}"
@@ -1788,15 +2156,12 @@ def main() -> None:
     _finalize_and_notify(
         start_time,
         config,
-        downloaded_firmwares,
-        downloaded_apks,
-        new_firmware_versions,
-        new_apk_versions,
+        all_downloads,
+        all_new_versions,
+        latest_versions,
         current_version,
         latest_version,
         update_available,
-        latest_firmware_version,
-        latest_apk_version,
     )
 
 

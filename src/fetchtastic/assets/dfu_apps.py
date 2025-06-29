@@ -186,4 +186,4 @@ class DFUAppsAsset(BaseAssetHandler):
             f"\nSelected DFU apps: {', '.join([app['name'] for app in dfu_apps if app['selected']])}"
         )
 
-        return {"selected_apps": selected_apps}
+        return {"SELECTED_DFU_APPS": selected_apps}
