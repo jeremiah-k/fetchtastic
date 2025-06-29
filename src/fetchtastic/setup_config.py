@@ -49,6 +49,146 @@ def is_termux():
     return "com.termux" in os.environ.get("PREFIX", "")
 
 
+def run_asset_selection_menu(asset_manager, config, is_first_run):
+    """
+    Run the new modular asset selection menu with checkbox-style selection.
+
+    Args:
+        asset_manager: AssetManager instance with registered handlers
+        config: Current configuration dictionary
+        is_first_run: Whether this is the first time setup is being run
+
+    Returns:
+        Dictionary with updated configuration or None if cancelled
+    """
+    print("\n" + "=" * 60)
+    print("Asset Selection")
+    print("=" * 60)
+    print("Select the types of assets you want to download:")
+    print("Use SPACE to select/deselect, ENTER to confirm")
+    print()
+
+    # Get all available asset types
+    asset_types = asset_manager.get_all_asset_types()
+
+    # Set initial selection based on existing config
+    for asset_type in asset_types:
+        if asset_type.config_key in config:
+            asset_type.enabled = config[asset_type.config_key]
+
+    current_selection = 0
+    while True:
+        # Clear screen and show menu
+        print("\033[H\033[J", end="")  # Clear screen
+        print("Asset Selection")
+        print("=" * 60)
+        print("Select the types of assets you want to download:")
+        print("Use SPACE to select/deselect, ENTER to confirm, Q to quit")
+        print()
+
+        for i, asset_type in enumerate(asset_types):
+            marker = "●" if asset_type.enabled else "○"
+            cursor = "→ " if i == current_selection else "  "
+            print(f"{cursor}{marker} {asset_type.name}")
+            print(f"    {asset_type.description}")
+            print()
+
+        print("Navigation: ↑/↓ arrows, SPACE to toggle, ENTER to confirm, Q to quit")
+
+        # Get user input
+        try:
+            import sys
+            import termios
+            import tty
+
+            fd = sys.stdin.fileno()
+            old_settings = termios.tcgetattr(fd)
+            tty.setraw(sys.stdin.fileno())
+            key = sys.stdin.read(1)
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+            if key == "\x1b":  # Arrow key sequence
+                key += sys.stdin.read(2)
+                if key == "\x1b[A":  # Up arrow
+                    current_selection = (current_selection - 1) % len(asset_types)
+                elif key == "\x1b[B":  # Down arrow
+                    current_selection = (current_selection + 1) % len(asset_types)
+            elif key == " ":  # Space to toggle
+                asset_types[current_selection].enabled = not asset_types[
+                    current_selection
+                ].enabled
+            elif key == "\r" or key == "\n":  # Enter to confirm
+                break
+            elif key.lower() == "q":  # Quit
+                return None
+
+        except (ImportError, OSError):
+            # Fallback for systems without termios (like Windows)
+            print("\nFallback menu (termios not available):")
+            for i, asset_type in enumerate(asset_types):
+                marker = "[X]" if asset_type.enabled else "[ ]"
+                print(f"{i+1}. {marker} {asset_type.name}")
+                print(f"   {asset_type.description}")
+
+            choice = input(
+                "\nEnter numbers to toggle (e.g., '1 2'), or 'done' to finish: "
+            ).strip()
+            if choice.lower() == "done":
+                break
+            elif choice.lower() == "q":
+                return None
+            else:
+                try:
+                    for num in choice.split():
+                        idx = int(num) - 1
+                        if 0 <= idx < len(asset_types):
+                            asset_types[idx].enabled = not asset_types[idx].enabled
+                except ValueError:
+                    print("Invalid input. Please enter numbers separated by spaces.")
+                    input("Press Enter to continue...")
+
+    # Check if any assets are selected
+    enabled_assets = [asset for asset in asset_types if asset.enabled]
+    if not enabled_assets:
+        print("\nNo assets selected.")
+        return None
+
+    print(f"\nSelected assets: {', '.join([asset.name for asset in enabled_assets])}")
+
+    # Run selection menus for each enabled asset type and collect additional config
+    updated_config = {}
+
+    for asset_type in enabled_assets:
+        handler = asset_manager.get_handler(asset_type.id)
+        if not handler:
+            continue
+
+        print(f"\n{'-' * 40}")
+        print(f"Configuring {asset_type.name}")
+        print(f"{'-' * 40}")
+
+        # Run the asset-specific selection menu
+        selection_result = handler.run_selection_menu(config)
+        if not selection_result:
+            print(f"No {asset_type.name.lower()} selected. Disabling this asset type.")
+            asset_type.enabled = False
+            continue
+
+        # Update config with selection results
+        updated_config[asset_type.config_key] = True
+        updated_config.update(selection_result)
+
+        # Run additional configuration setup
+        updated_config = handler.setup_additional_config(updated_config, is_first_run)
+
+    # Final check - ensure at least one asset type is still enabled
+    final_enabled = [asset for asset in asset_types if asset.enabled]
+    if not final_enabled:
+        return None
+
+    return updated_config
+
+
 def is_fetchtastic_installed_via_pip():
     """
     Check if fetchtastic is installed via pip (not pipx).
@@ -334,7 +474,7 @@ def check_storage_setup():
 def run_setup():
     """
     Runs the interactive setup process for Fetchtastic, guiding the user through configuration, migration, asset selection, scheduling, and notification setup.
-    
+
     This function handles platform-specific requirements such as Termux package installation, Windows shortcut creation, and scheduling via cron or boot scripts on Linux, macOS, and Termux. It prompts the user for key configuration options including the base directory, asset types to download (APKs, firmware, or both), version retention, firmware extraction patterns, Wi-Fi-only downloads (Termux), and NTFY notification preferences. The setup process migrates old configuration files if present, records the setup version and date, saves all settings to the configuration file, and offers to perform the first download run or provides instructions for manual execution.
     """
     global BASE_DIR, CONFIG_FILE
@@ -508,236 +648,35 @@ def run_setup():
             print("pipx install -e .[win]")
             print("or if using pip: pip install fetchtastic[win]")
 
-    # Prompt to save APKs, firmware, or both
-    save_choice = (
-        input(
-            "Would you like to download APKs, firmware, or both? [a/f/b] (default: both): "
-        )
-        .strip()
-        .lower()
-        or "both"
+    # Use the new modular asset selection system
+    from fetchtastic.assets import (
+        AssetManager,
+        BootloaderAsset,
+        DFUAppsAsset,
+        MeshtasticAndroidAsset,
+        MeshtasticFirmwareAsset,
     )
-    if save_choice == "a":
-        save_apks = True
-        save_firmware = False
-    elif save_choice == "f":
-        save_apks = False
-        save_firmware = True
-    else:
-        save_apks = True
-        save_firmware = True
-    config["SAVE_APKS"] = save_apks
-    config["SAVE_FIRMWARE"] = save_firmware
 
-    # Run the menu scripts based on user choices
-    if save_apks:
-        apk_selection = menu_apk.run_menu()
-        if not apk_selection:
-            print("No APK assets selected. APKs will not be downloaded.")
-            save_apks = False
-            config["SAVE_APKS"] = False
-        else:
-            config["SELECTED_APK_ASSETS"] = apk_selection["selected_assets"]
-    if save_firmware:
-        firmware_selection = menu_firmware.run_menu()
-        if not firmware_selection:
-            print("No firmware assets selected. Firmware will not be downloaded.")
-            save_firmware = False
-            config["SAVE_FIRMWARE"] = False
-        else:
-            config["SELECTED_FIRMWARE_ASSETS"] = firmware_selection["selected_assets"]
+    # Initialize asset manager and register handlers
+    asset_manager = AssetManager()
+    asset_manager.register_handler(MeshtasticFirmwareAsset())
+    asset_manager.register_handler(MeshtasticAndroidAsset())
+    asset_manager.register_handler(BootloaderAsset())
+    asset_manager.register_handler(DFUAppsAsset())
 
-    # If both save_apks and save_firmware are False, inform the user and exit setup
-    if not save_apks and not save_firmware:
-        print("Please select at least one type of asset to download (APK or firmware).")
+    # Run asset selection menu
+    selected_assets = run_asset_selection_menu(asset_manager, config, is_first_run)
+
+    if not selected_assets:
+        print("Please select at least one type of asset to download.")
         print("Run 'fetchtastic setup' again and select at least one asset.")
         return
 
-    # Determine default number of versions to keep based on platform
-    default_versions_to_keep = 2 if is_termux() else 3
+    # Update config with selected assets
+    config.update(selected_assets)
 
-    # Prompt for number of versions to keep
-    if save_apks:
-        current_versions = config.get(
-            "ANDROID_VERSIONS_TO_KEEP", default_versions_to_keep
-        )
-        if is_first_run:
-            prompt_text = f"How many versions of the Android app would you like to keep? (default is {current_versions}): "
-        else:
-            prompt_text = f"How many versions of the Android app would you like to keep? (current: {current_versions}): "
-        android_versions_to_keep = input(prompt_text).strip() or str(current_versions)
-        config["ANDROID_VERSIONS_TO_KEEP"] = int(android_versions_to_keep)
-    if save_firmware:
-        current_versions = config.get(
-            "FIRMWARE_VERSIONS_TO_KEEP", default_versions_to_keep
-        )
-        if is_first_run:
-            prompt_text = f"How many versions of the firmware would you like to keep? (default is {current_versions}): "
-        else:
-            prompt_text = f"How many versions of the firmware would you like to keep? (current: {current_versions}): "
-        firmware_versions_to_keep = input(prompt_text).strip() or str(current_versions)
-        config["FIRMWARE_VERSIONS_TO_KEEP"] = int(firmware_versions_to_keep)
-
-        # Prompt for pre-release downloads
-        check_prereleases_current = config.get("CHECK_PRERELEASES", False)
-        check_prereleases_default = "yes" if check_prereleases_current else "no"
-        check_prereleases = (
-            input(
-                f"Would you like to check for and download pre-release firmware from meshtastic.github.io? [y/n] (default: {check_prereleases_default}): "
-            )
-            .strip()
-            .lower()
-            or check_prereleases_default[0]
-        )
-        # Make sure we're setting a boolean value, not a string
-        config["CHECK_PRERELEASES"] = check_prereleases == "y"
-
-        # Save configuration immediately to ensure this setting is preserved
-        with open(CONFIG_FILE, "w") as f:
-            yaml.dump(config, f)
-
-        # Prompt for automatic extraction
-        auto_extract_current = config.get("AUTO_EXTRACT", False)
-        auto_extract_default = "yes" if auto_extract_current else "no"
-        auto_extract = (
-            input(
-                f"Would you like to automatically extract specific files from firmware zip archives? [y/n] (default: {auto_extract_default}): "
-            )
-            .strip()
-            .lower()
-            or auto_extract_default[0]
-        )
-
-        # Save the AUTO_EXTRACT setting immediately
-        config["AUTO_EXTRACT"] = auto_extract == "y"
-
-        # Save configuration to ensure this setting is preserved
-        with open(CONFIG_FILE, "w") as f:
-            yaml.dump(config, f)
-
-        if auto_extract == "y":
-            print(
-                "Enter the keywords to match for extraction from the firmware zip files, separated by spaces."
-            )
-            print("Example: rak4631- tbeam t1000-e- tlora-v2-1-1_6- device-")
-
-            # Check if there are existing patterns
-            if config.get("EXTRACT_PATTERNS"):
-                current_patterns = " ".join(config.get("EXTRACT_PATTERNS", []))
-                print(f"Current patterns: {current_patterns}")
-
-                # Ask if user wants to keep or change patterns
-                keep_patterns_default = "yes"
-                keep_patterns = (
-                    input(
-                        f"Do you want to keep the current extraction patterns? [y/n] (default: {keep_patterns_default}): "
-                    )
-                    .strip()
-                    .lower()
-                    or keep_patterns_default[0]
-                )
-
-                if keep_patterns == "y":
-                    # Keep existing patterns
-                    print(f"Keeping current extraction patterns: {current_patterns}")
-                else:
-                    # Get new patterns
-                    extract_patterns = input("Enter new extraction patterns: ").strip()
-                    if extract_patterns:
-                        config["EXTRACT_PATTERNS"] = extract_patterns.split()
-                        print(f"Extraction patterns updated to: {extract_patterns}")
-                    else:
-                        print("No patterns entered. Keeping current patterns.")
-            else:
-                # No existing patterns, get new ones
-                extract_patterns = input("Extraction patterns: ").strip()
-                if extract_patterns:
-                    config["EXTRACT_PATTERNS"] = extract_patterns.split()
-                    print(f"Extraction patterns set to: {extract_patterns}")
-                else:
-                    config["AUTO_EXTRACT"] = False
-                    config["EXTRACT_PATTERNS"] = []
-                    print(
-                        "No patterns selected, no files will be extracted. Run setup again if you wish to change this."
-                    )
-                    # Skip exclude patterns prompt
-                    config["EXCLUDE_PATTERNS"] = []
-
-            # Save configuration again after updating patterns
-            with open(CONFIG_FILE, "w") as f:
-                yaml.dump(config, f)
-            # Prompt for exclude patterns if extraction is enabled
-            if config.get("AUTO_EXTRACT", False) and config.get("EXTRACT_PATTERNS"):
-                exclude_default = "yes" if config.get("EXCLUDE_PATTERNS") else "no"
-                exclude_prompt = f"Would you like to exclude any patterns from extraction? [y/n] (default: {exclude_default}): "
-                exclude_choice = (
-                    input(exclude_prompt).strip().lower() or exclude_default[0]
-                )
-                if exclude_choice == "y":
-                    print(
-                        "Enter the keywords to exclude from extraction, separated by spaces."
-                    )
-                    print("Example: .hex tcxo request s3-core")
-
-                    # Check if there are existing exclude patterns
-                    if config.get("EXCLUDE_PATTERNS"):
-                        current_excludes = " ".join(config.get("EXCLUDE_PATTERNS", []))
-                        print(f"Current exclude patterns: {current_excludes}")
-
-                        # Ask if user wants to keep or change exclude patterns
-                        keep_excludes_default = "yes"
-                        keep_excludes = (
-                            input(
-                                f"Do you want to keep the current exclude patterns? [y/n] (default: {keep_excludes_default}): "
-                            )
-                            .strip()
-                            .lower()
-                            or keep_excludes_default[0]
-                        )
-
-                        if keep_excludes == "y":
-                            # Keep existing exclude patterns
-                            print(
-                                f"Keeping current exclude patterns: {current_excludes}"
-                            )
-                        else:
-                            # Get new exclude patterns
-                            exclude_patterns = input(
-                                "Enter new exclude patterns: "
-                            ).strip()
-                            if exclude_patterns:
-                                config["EXCLUDE_PATTERNS"] = exclude_patterns.split()
-                                print(
-                                    f"Exclude patterns updated to: {exclude_patterns}"
-                                )
-                            else:
-                                config["EXCLUDE_PATTERNS"] = []
-                                print(
-                                    "No exclude patterns entered. All matching files will be extracted."
-                                )
-                    else:
-                        # No existing exclude patterns, get new ones
-                        exclude_patterns = input("Exclude patterns: ").strip()
-                        if exclude_patterns:
-                            config["EXCLUDE_PATTERNS"] = exclude_patterns.split()
-                            print(f"Exclude patterns set to: {exclude_patterns}")
-                        else:
-                            config["EXCLUDE_PATTERNS"] = []
-                            print(
-                                "No exclude patterns entered. All matching files will be extracted."
-                            )
-                else:
-                    # User chose not to exclude patterns
-                    config["EXCLUDE_PATTERNS"] = []
-                    print(
-                        "No exclude patterns will be used. All matching files will be extracted."
-                    )
-            else:
-                config["EXCLUDE_PATTERNS"] = []
-        else:
-            config["AUTO_EXTRACT"] = False
-            config["EXTRACT_PATTERNS"] = []
-            config["EXCLUDE_PATTERNS"] = []
+    # Asset-specific configuration is now handled by the modular asset system
+    # All configuration prompts are handled within each asset handler
 
     # Ask if the user wants to only download when connected to Wi-Fi (Termux only)
     if is_termux():
@@ -1206,7 +1145,7 @@ def check_for_updates():
 def get_upgrade_command():
     """
     Returns the appropriate shell command to upgrade Fetchtastic for the current platform and installation method.
-    
+
     On Termux, selects between pip and pipx based on how Fetchtastic was installed. On other platforms, defaults to pipx.
     """
     if is_termux():
@@ -1224,7 +1163,7 @@ def get_upgrade_command():
 def should_recommend_setup():
     """
     Determines if the setup process should be recommended based on configuration presence and version changes.
-    
+
     Returns:
         A tuple (should_recommend, reason, last_setup_version, current_version), where:
         - should_recommend (bool): True if setup is recommended, False otherwise.
@@ -1263,7 +1202,7 @@ def should_recommend_setup():
 def display_version_info(show_update_message=True):
     """
     Retrieves the current and latest Fetchtastic version information and update status.
-    
+
     Returns:
         A tuple of (current_version, latest_version, update_available), where update_available is True if a newer version is available.
     """
