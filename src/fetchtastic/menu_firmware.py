@@ -29,10 +29,18 @@ def extract_base_name(filename):
     Example:
     - 'meshtasticd_2.5.13.1a06f88_amd64.deb' -> 'meshtasticd__amd64.deb'
     - 'firmware-rak4631-2.5.13.1a06f88-ota.zip' -> 'firmware-rak4631--ota.zip'
+    - 'meshtasticd-2.7.0.16192.local705515a-src.zip' -> 'meshtasticd--src.zip'
     """
     # Regular expression to match version numbers and commit hashes
-    # Matches patterns like '-2.5.13.1a06f88' or '_2.5.13.1a06f88'
-    base_name = re.sub(r"([_-])\d+\.\d+\.\d+(?:\.[\da-f]+)?", r"\1", filename)
+    # This handles complex patterns like '-2.7.0.16192.local705515a' and '-2.5.13.1a06f88'
+    base_name = re.sub(
+        r"([_-])\d+\.\d+\.\d+(?:\.\d+)?(?:\.local[\da-f]+)?(?:\.[\da-f]+)?",
+        r"\1",
+        filename,
+    )
+
+    # Clean up remaining version-like suffixes (like '705515a' or just 'a')
+    base_name = re.sub(r"([_-])[\da-f]*[a-f][\da-f]*(?=\.|$)", r"\1", base_name)
     return base_name
 
 
