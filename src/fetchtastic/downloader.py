@@ -790,39 +790,91 @@ def _process_firmware_downloads(
     if config.get("SAVE_FIRMWARE", False) and config.get(
         "SELECTED_FIRMWARE_ASSETS", []
     ):
-        latest_firmware_releases: List[Dict[str, Any]] = _get_latest_releases_data(
-            paths_and_urls["firmware_releases_url"],
-            config.get(
-                "FIRMWARE_VERSIONS_TO_KEEP", RELEASE_SCAN_COUNT
-            ),  # Use RELEASE_SCAN_COUNT if versions_to_keep not in config
-        )
+        # Fast check: Read saved version first
+        latest_firmware_release_file = paths_and_urls["latest_firmware_release_file"]
+        saved_firmware_version = None
+        if os.path.exists(latest_firmware_release_file):
+            try:
+                with open(latest_firmware_release_file, "r") as f:
+                    saved_firmware_version = f.read().strip()
+            except IOError as e:
+                logger.warning(f"Error reading latest firmware release file: {e}")
 
-        # Extract the actual latest firmware version
-        if latest_firmware_releases:
-            latest_firmware_version = latest_firmware_releases[0].get("tag_name")
-        fw_downloaded: List[str]
-        fw_new_versions: List[str]
-        failed_fw_downloads_details: List[Dict[str, str]]  # Explicitly declare type
-        fw_downloaded, fw_new_versions, failed_fw_downloads_details = (
-            check_and_download(  # Corrected unpacking
-                latest_firmware_releases,
-                paths_and_urls["latest_firmware_release_file"],
-                "Firmware",
-                paths_and_urls["firmware_dir"],
-                config.get("FIRMWARE_VERSIONS_TO_KEEP", 2),
-                config.get("EXTRACT_PATTERNS", []),
-                selected_patterns=config.get("SELECTED_FIRMWARE_ASSETS", []),  # type: ignore
-                auto_extract=config.get("AUTO_EXTRACT", False),
-                exclude_patterns=config.get("EXCLUDE_PATTERNS", []),  # type: ignore
+        # Quick API call to get just the latest release
+        logger.info("Fetching firmware releases from GitHub...")
+        try:
+            response = requests.get(
+                paths_and_urls["firmware_releases_url"], timeout=NTFY_REQUEST_TIMEOUT
             )
-        )
-        downloaded_firmwares.extend(fw_downloaded)
-        new_firmware_versions.extend(fw_new_versions)
-        all_failed_firmware_downloads.extend(
-            failed_fw_downloads_details
-        )  # Ensure this line is present
-        if fw_downloaded:
-            logger.info(f"Downloaded Firmware versions: {', '.join(fw_downloaded)}")
+            response.raise_for_status()
+            releases = response.json()
+            if releases:
+                latest_firmware_version = releases[0].get("tag_name")
+
+                # Fast check: If we already have the latest version and it's complete, skip
+                if (
+                    saved_firmware_version == latest_firmware_version
+                    and latest_firmware_version
+                ):
+                    firmware_dir = os.path.join(
+                        paths_and_urls["download_dir"],
+                        "firmware",
+                        latest_firmware_version,
+                    )
+                    if os.path.exists(firmware_dir):
+                        logger.info("All Firmware assets are up to date.")
+                        # Skip to prerelease check
+                        latest_release_tag = latest_firmware_version
+                        downloads_skipped = True
+                    else:
+                        # Directory doesn't exist, need to download
+                        latest_firmware_releases = _get_latest_releases_data(
+                            paths_and_urls["firmware_releases_url"],
+                            config.get("FIRMWARE_VERSIONS_TO_KEEP", RELEASE_SCAN_COUNT),
+                        )
+                else:
+                    # Version mismatch or no saved version, need to download
+                    latest_firmware_releases = _get_latest_releases_data(
+                        paths_and_urls["firmware_releases_url"],
+                        config.get("FIRMWARE_VERSIONS_TO_KEEP", RELEASE_SCAN_COUNT),
+                    )
+            else:
+                logger.warning("No firmware releases found")
+                latest_firmware_releases = []
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error fetching firmware releases: {e}")
+            latest_firmware_releases = []
+
+        # Only process downloads if we didn't skip them
+        if not downloads_skipped and latest_firmware_releases:
+            fw_downloaded: List[str]
+            fw_new_versions: List[str]
+            failed_fw_downloads_details: List[Dict[str, str]]  # Explicitly declare type
+            fw_downloaded, fw_new_versions, failed_fw_downloads_details = (
+                check_and_download(  # Corrected unpacking
+                    latest_firmware_releases,
+                    paths_and_urls["latest_firmware_release_file"],
+                    "Firmware",
+                    paths_and_urls["firmware_dir"],
+                    config.get("FIRMWARE_VERSIONS_TO_KEEP", 2),
+                    config.get("EXTRACT_PATTERNS", []),
+                    selected_patterns=config.get("SELECTED_FIRMWARE_ASSETS", []),  # type: ignore
+                    auto_extract=config.get("AUTO_EXTRACT", False),
+                    exclude_patterns=config.get("EXCLUDE_PATTERNS", []),  # type: ignore
+                )
+            )
+            downloaded_firmwares.extend(fw_downloaded)
+            new_firmware_versions.extend(fw_new_versions)
+            all_failed_firmware_downloads.extend(
+                failed_fw_downloads_details
+            )  # Ensure this line is present
+            if fw_downloaded:
+                logger.info(f"Downloaded Firmware versions: {', '.join(fw_downloaded)}")
+        else:
+            # Initialize empty lists when downloads are skipped
+            fw_downloaded = []
+            fw_new_versions = []
+            failed_fw_downloads_details = []
 
         latest_release_tag: Optional[str] = None
         if os.path.exists(paths_and_urls["latest_firmware_release_file"]):
@@ -2060,9 +2112,7 @@ def _process_bootloader_downloads(
                 logger.info("Stock bootloaders already downloaded and complete")
             logger.info("Stock bootloader processing complete")
         else:
-            logger.info(
-                "No stock bootloader assets selected (run 'fetchtastic setup' to configure)"
-            )
+            logger.info("Stock bootloader processing skipped (none selected)")
 
     logger.info("Device bootloader processing complete")
     return (
