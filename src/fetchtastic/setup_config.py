@@ -87,12 +87,13 @@ def run_asset_selection_menu(asset_manager, config, is_first_run):
 
     try:
         # Use pick for multi-selection
+        # Note: For multiselect, we can't use default_index with a list
+        # Instead, we'll handle preselection differently if needed
         selected_options, selected_indices = pick(
             options,
             "Select asset types to download (SPACE to select, ENTER to confirm):",
             multiselect=True,
             min_selection_count=1,
-            default_index=preselected,
         )
 
         # Process selections
@@ -473,10 +474,18 @@ def migrate_old_config_keys(config: Dict[str, Any]) -> Dict[str, Any]:
             old_assets = config["selected_assets"]
             print(f"Found old asset selection: {old_assets}")
 
-            # Convert to new format - assume these are firmware assets for now
-            # In a real migration, you might need more logic to determine the type
-            config["SELECTED_FIRMWARE_ASSETS"] = old_assets
-            print(f"Migrated to SELECTED_FIRMWARE_ASSETS: {old_assets}")
+            # Determine asset type based on patterns
+            # APK patterns: fdroidRelease-, googleRelease-
+            # Firmware patterns: device-, rak4631-, tbeam, etc.
+            apk_patterns = ["fdroidRelease-", "googleRelease-"]
+            is_apk_assets = any(asset in apk_patterns for asset in old_assets)
+
+            if is_apk_assets:
+                config["SELECTED_APK_ASSETS"] = old_assets
+                print(f"Migrated to SELECTED_APK_ASSETS: {old_assets}")
+            else:
+                config["SELECTED_FIRMWARE_ASSETS"] = old_assets
+                print(f"Migrated to SELECTED_FIRMWARE_ASSETS: {old_assets}")
 
             # Remove old key
             del config["selected_assets"]
