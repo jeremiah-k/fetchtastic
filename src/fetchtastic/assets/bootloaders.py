@@ -29,7 +29,7 @@ class BootloaderAsset(BaseAssetHandler):
 
     def run_selection_menu(self, config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Run the bootloader selection menu."""
-        return self._run_bootloader_menu()
+        return self._run_bootloader_menu(config)
 
     def get_config_keys(self) -> List[str]:
         return [
@@ -80,7 +80,7 @@ class BootloaderAsset(BaseAssetHandler):
 
         return config
 
-    def _run_bootloader_menu(self) -> Optional[Dict[str, Any]]:
+    def _run_bootloader_menu(self, config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Run the bootloader selection menu using pick."""
         from pick import pick
 
@@ -172,7 +172,7 @@ class BootloaderAsset(BaseAssetHandler):
             )
 
             if category_id == "stock_bootloaders":
-                assets = self._select_stock_bootloaders()
+                assets = self._select_stock_bootloaders(config)
             elif category_id == "otafix_bootloaders":
                 assets = self._select_otafix_bootloaders()
             else:
@@ -190,7 +190,7 @@ class BootloaderAsset(BaseAssetHandler):
             "SELECTED_BOOTLOADER_ASSETS": selected_assets,
         }
 
-    def _select_stock_bootloaders(self) -> List[str]:
+    def _select_stock_bootloaders(self, config: Dict[str, Any]) -> List[str]:
         """Select stock bootloader assets using pick."""
         from pick import pick
 

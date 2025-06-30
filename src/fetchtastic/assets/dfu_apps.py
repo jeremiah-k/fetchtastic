@@ -29,7 +29,7 @@ class DFUAppsAsset(BaseAssetHandler):
 
     def run_selection_menu(self, config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Run the DFU apps selection menu."""
-        return self._run_dfu_apps_menu()
+        return self._run_dfu_apps_menu(config)
 
     def get_config_keys(self) -> List[str]:
         return ["SAVE_DFU_APPS", "SELECTED_DFU_APPS", "DFU_APPS_VERSIONS_TO_KEEP"]
@@ -73,7 +73,7 @@ class DFUAppsAsset(BaseAssetHandler):
 
         return config
 
-    def _run_dfu_apps_menu(self) -> Optional[Dict[str, Any]]:
+    def _run_dfu_apps_menu(self, config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Run the DFU apps selection menu using pick."""
         from pick import pick
 
