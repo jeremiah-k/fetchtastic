@@ -71,7 +71,6 @@ def run_asset_selection_menu(asset_manager, config, is_first_run):
 
     # Get all available asset types
     asset_types = asset_manager.get_all_asset_types()
-    print(f"DEBUG: run_asset_selection_menu got {len(asset_types)} asset types")
 
     if not asset_types:
         print(
@@ -87,29 +86,21 @@ def run_asset_selection_menu(asset_manager, config, is_first_run):
         # Format option with description
         option_text = f"{asset_type.name} - {asset_type.description}"
         options.append(option_text)
-        print(f"DEBUG: Added option {i}: {option_text}")
 
         # Check if this asset type is currently enabled
         if asset_type.config_key in config and config[asset_type.config_key]:
             preselected.append(i)
-            print(f"DEBUG: Asset type {i} is preselected")
-
-    print(f"DEBUG: Total options: {len(options)}")
-    print(f"DEBUG: Preselected: {preselected}")
-    print(f"DEBUG: About to call pick with options: {options}")
 
     try:
         # Use pick for multi-selection
         # Note: For multiselect, we can't use default_index with a list
         # Instead, we'll handle preselection differently if needed
-        print("DEBUG: Calling pick now...")
         result = pick(
             options,
             "Select asset types to download (SPACE to select, ENTER to confirm):",
             multiselect=True,
             min_selection_count=0,
         )
-        print(f"DEBUG: pick returned: {result} (type: {type(result)})")
 
         # Handle the result - pick with multiselect=True returns different formats
         if isinstance(result, tuple) and len(result) == 2:
@@ -119,7 +110,6 @@ def run_asset_selection_menu(asset_manager, config, is_first_run):
             # Format: [(option_text, index), (option_text, index), ...]
             selected_options = [item[0] for item in result]
             selected_indices = [item[1] for item in result]
-            print(f"DEBUG: Extracted indices: {selected_indices}")
         elif isinstance(result, list):
             # Format: [option_text, option_text, ...]
             selected_options = result
@@ -745,28 +735,13 @@ def run_setup():
 
     # Initialize asset manager and register handlers
     asset_manager = AssetManager()
-    print("DEBUG: Registering asset handlers...")
-    try:
-        asset_manager.register_handler(MeshtasticFirmwareAsset())
-        print("DEBUG: Registered MeshtasticFirmwareAsset")
-        asset_manager.register_handler(MeshtasticAndroidAsset())
-        print("DEBUG: Registered MeshtasticAndroidAsset")
-        asset_manager.register_handler(BootloaderAsset())
-        print("DEBUG: Registered BootloaderAsset")
-        asset_manager.register_handler(DFUAppsAsset())
-        print("DEBUG: Registered DFUAppsAsset")
-    except Exception as e:
-        print(f"DEBUG: Error registering handlers: {e}")
-        import traceback
-
-        traceback.print_exc()
-
-    asset_types = asset_manager.get_all_asset_types()
-    print(f"DEBUG: Asset manager has {len(asset_types)} asset types")
+    asset_manager.register_handler(MeshtasticFirmwareAsset())
+    asset_manager.register_handler(MeshtasticAndroidAsset())
+    asset_manager.register_handler(BootloaderAsset())
+    asset_manager.register_handler(DFUAppsAsset())
 
     # Run asset selection menu
     selected_assets = run_asset_selection_menu(asset_manager, config, is_first_run)
-    print(f"DEBUG: run_asset_selection_menu returned: {selected_assets}")
 
     if not selected_assets:
         print("Please select at least one type of asset to download.")
