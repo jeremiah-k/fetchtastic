@@ -979,9 +979,18 @@ def _finalize_and_notify(
         logger.info(f"Downloaded {downloaded_count} new files")
 
     # Show latest versions if available
+    asset_name_mapping = {
+        "firmware": "Firmware",
+        "android": "Android APKs",
+        "bootloaders": "Bootloaders",
+        "dfu_apps": "DFU Apps",
+    }
+
     for asset_type, version in latest_versions.items():
         if version:
-            asset_name = asset_type.replace("_", " ").title()
+            asset_name = asset_name_mapping.get(
+                asset_type, asset_type.replace("_", " ").title()
+            )
             logger.info(f"Latest {asset_name}: {version}")
 
     if update_available and latest_version:
@@ -1859,7 +1868,7 @@ def _process_bootloader_downloads(
     Returns:
         Tuple of (downloaded_bootloaders, new_bootloader_versions, failed_bootloader_list, latest_bootloader_version)
     """
-    logger.info("Processing bootloader downloads...")
+    logger.info("Processing device bootloaders...")
 
     downloaded_bootloaders = []
     new_bootloader_versions = []
@@ -2046,9 +2055,16 @@ def _process_bootloader_downloads(
                     if not latest_bootloader_version:
                         latest_bootloader_version = "Stock bootloaders available"
 
+            # Provide consolidated status for stock bootloaders
+            if latest_bootloader_version == "Stock bootloaders available":
+                logger.info("Stock bootloaders already downloaded and complete")
             logger.info("Stock bootloader processing complete")
+        else:
+            logger.info(
+                "No stock bootloader assets selected (run 'fetchtastic setup' to configure)"
+            )
 
-    logger.info("Bootloader download processing complete")
+    logger.info("Device bootloader processing complete")
     return (
         downloaded_bootloaders,
         new_bootloader_versions,
@@ -2070,7 +2086,7 @@ def _process_dfu_app_downloads(
     Returns:
         Tuple of (downloaded_dfu_apps, new_dfu_app_versions, failed_dfu_app_list, latest_dfu_app_version)
     """
-    logger.info("Processing DFU app downloads...")
+    logger.info("Processing DFU/flashing apps...")
 
     downloaded_dfu_apps = []
     new_dfu_app_versions = []
@@ -2097,7 +2113,7 @@ def _process_dfu_app_downloads(
 
     # Process Nordic DFU Library if selected
     if "nordic_dfu" in selected_apps:
-        logger.info("Processing Nordic DFU Library downloads...")
+        logger.info("Checking Nordic DFU Library...")
 
         repo_owner = "NordicSemiconductor"
         repo_name = "Android-DFU-Library"
@@ -2174,7 +2190,7 @@ def _process_dfu_app_downloads(
         except Exception as e:
             logger.error(f"Error processing Nordic DFU Library downloads: {e}")
 
-    logger.info("DFU app download processing complete")
+    logger.info("DFU/flashing app processing complete")
     return (
         downloaded_dfu_apps,
         new_dfu_app_versions,
