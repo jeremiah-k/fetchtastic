@@ -54,12 +54,17 @@ def multi_select_with_preselection(
     if not choices:
         return None
 
-    # Handle preselection
-    default_values = preselected if preselected else []
-
+    # Handle preselection - use Choice objects with checked property
     try:
+        from questionary import Choice
+
+        choice_objects = []
+        for choice in choices:
+            is_checked = choice in (preselected or [])
+            choice_objects.append(Choice(choice, checked=is_checked))
+
         selected = questionary.checkbox(
-            message, choices=choices, default=default_values, style=FETCHTASTIC_STYLE
+            message, choices=choice_objects, style=FETCHTASTIC_STYLE
         ).ask()
 
         # Handle cancellation (Ctrl+C returns None)

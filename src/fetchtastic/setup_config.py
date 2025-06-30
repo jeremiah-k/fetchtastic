@@ -102,18 +102,10 @@ def run_asset_selection_menu(asset_manager, config, is_first_run):
         if preselected:
             show_preselection_info(preselected)
 
-        # Validate preselected items are in choices
-        valid_preselected = []
-        for item in preselected:
-            if item in options:
-                valid_preselected.append(item)
-            else:
-                print(f"Warning: Preselected item '{item}' not found in choices")
-
         selected_options = multi_select_with_preselection(
             message="Select asset types to download:",
             choices=options,
-            preselected=valid_preselected,
+            preselected=preselected,
             min_selection=0,
         )
 

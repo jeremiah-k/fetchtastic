@@ -168,6 +168,8 @@ class MeshtasticFirmwareAsset(BaseAssetHandler):
                     print("No patterns entered. Keeping current patterns.")
         else:
             # No existing patterns, get new ones
+            from fetchtastic.ui_utils import text_input
+
             extract_patterns = text_input("Extraction patterns:")
 
             if extract_patterns is None:
