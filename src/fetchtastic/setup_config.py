@@ -111,13 +111,17 @@ def run_asset_selection_menu(asset_manager, config, is_first_run):
         )
         print(f"DEBUG: pick returned: {result} (type: {type(result)})")
 
-        # Handle the result - pick with multiselect=True should return (selected_items, indices)
-        # But sometimes it might return just the list of selected items
+        # Handle the result - pick with multiselect=True returns different formats
         if isinstance(result, tuple) and len(result) == 2:
-            # Normal case: (selected_options, selected_indices)
+            # Format: (selected_options, selected_indices)
             selected_options, selected_indices = result
+        elif isinstance(result, list) and result and isinstance(result[0], tuple):
+            # Format: [(option_text, index), (option_text, index), ...]
+            selected_options = [item[0] for item in result]
+            selected_indices = [item[1] for item in result]
+            print(f"DEBUG: Extracted indices: {selected_indices}")
         elif isinstance(result, list):
-            # Alternative case: just the list of selected options
+            # Format: [option_text, option_text, ...]
             selected_options = result
             # Find indices by matching options
             selected_indices = []
@@ -133,12 +137,6 @@ def run_asset_selection_menu(asset_manager, config, is_first_run):
             print(f"Unexpected pick result format: {type(result)} - {result}")
             selected_options = [result] if result else []
             selected_indices = []
-            for option in selected_options:
-                try:
-                    idx = options.index(option)
-                    selected_indices.append(idx)
-                except (ValueError, AttributeError):
-                    continue
 
         # Process selections - first set the basic enable/disable flags
         selected_config = {}
