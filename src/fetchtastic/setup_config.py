@@ -71,6 +71,13 @@ def run_asset_selection_menu(asset_manager, config, is_first_run):
 
     # Get all available asset types
     asset_types = asset_manager.get_all_asset_types()
+    print(f"DEBUG: Found {len(asset_types)} asset types")
+
+    if not asset_types:
+        print(
+            "ERROR: No asset types found! Asset manager may not be initialized properly."
+        )
+        return None
 
     # Create options for pick with current selection state
     options = []
@@ -80,10 +87,14 @@ def run_asset_selection_menu(asset_manager, config, is_first_run):
         # Format option with description
         option_text = f"{asset_type.name} - {asset_type.description}"
         options.append(option_text)
+        print(f"DEBUG: Added option {i}: {option_text}")
 
         # Check if this asset type is currently enabled
         if asset_type.config_key in config and config[asset_type.config_key]:
             preselected.append(i)
+            print(f"DEBUG: Asset type {i} is preselected")
+
+    print(f"DEBUG: Total options: {len(options)}, Preselected: {preselected}")
 
     try:
         # Use pick for multi-selection
@@ -125,17 +136,11 @@ def run_asset_selection_menu(asset_manager, config, is_first_run):
                 except (ValueError, AttributeError):
                     continue
 
-        # Process selections
+        # Process selections - first set the basic enable/disable flags
         selected_config = {}
         for i, asset_type in enumerate(asset_types):
             # Enable if selected, disable if not
             selected_config[asset_type.config_key] = i in selected_indices
-
-        return selected_config
-
-    except (KeyboardInterrupt, EOFError):
-        print("\nSelection cancelled.")
-        return None
 
         # Run selection menus for each enabled asset type and collect additional config
         updated_config = selected_config.copy()
@@ -170,6 +175,10 @@ def run_asset_selection_menu(asset_manager, config, is_first_run):
             )
 
         return updated_config
+
+    except (KeyboardInterrupt, EOFError):
+        print("\nSelection cancelled.")
+        return None
 
 
 def is_fetchtastic_installed_via_pip():
