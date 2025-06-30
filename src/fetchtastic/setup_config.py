@@ -71,7 +71,6 @@ def run_asset_selection_menu(asset_manager, config, is_first_run):
 
     # Get all available asset types
     asset_types = asset_manager.get_all_asset_types()
-    print(f"DEBUG: Found {len(asset_types)} asset types")
 
     if not asset_types:
         print(
@@ -87,14 +86,10 @@ def run_asset_selection_menu(asset_manager, config, is_first_run):
         # Format option with description
         option_text = f"{asset_type.name} - {asset_type.description}"
         options.append(option_text)
-        print(f"DEBUG: Added option {i}: {option_text}")
 
         # Check if this asset type is currently enabled
         if asset_type.config_key in config and config[asset_type.config_key]:
             preselected.append(i)
-            print(f"DEBUG: Asset type {i} is preselected")
-
-    print(f"DEBUG: Total options: {len(options)}, Preselected: {preselected}")
 
     try:
         # Use pick for multi-selection
