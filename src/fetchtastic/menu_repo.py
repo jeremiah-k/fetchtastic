@@ -2,7 +2,8 @@
 
 
 import requests
-from pick import pick
+
+from fetchtastic.ui_utils import multi_select_with_preselection, single_select
 
 
 def fetch_repo_contents(path=""):
@@ -138,30 +139,33 @@ def select_item(items, current_path=""):
 
     # Add a title that shows the current path
     path_display = f" - {current_path}" if current_path else ""
-    title = f"Select an item to browse{path_display} (press ENTER to navigate, find a directory with files to select and download):"
+    message = f"Select an item to browse{path_display}:"
 
-    option, index = pick(display_names, title, indicator="*")
+    selected_option = single_select(message=message, choices=display_names)
+
+    if selected_option is None:
+        # Handle cancellation (Ctrl+C)
+        return {"type": "quit"}
 
     # Handle "Go back" option
-    if current_path and index == 0:
-        # Return a special value to indicate going back
+    if current_path and selected_option == "[Go back to parent directory]":
         return {"type": "back"}
 
     # Handle "Quit" option
-    if option == "[Quit]":
-        # Return a special value to indicate quitting
+    if selected_option == "[Quit]":
         return {"type": "quit"}
 
-    # Adjust index if we added a "Go back" option
-    if current_path:
-        index -= 1
+    # Find the corresponding item
+    # Account for the "Go back" option if present
+    offset = 1 if current_path else 0
 
-    # Adjust for the quit option which is always at the end
-    if index == len(items):
-        # This shouldn't happen as we already handled the quit option above
-        return {"type": "quit"}
+    for i, item in enumerate(items):
+        expected_display = f"{item['name']}/" if item["type"] == "dir" else item["name"]
+        if display_names[i + offset] == expected_display:
+            return item
 
-    return items[index]
+    # Fallback - shouldn't reach here
+    return {"type": "quit"}
 
 
 def select_files(files):
@@ -173,34 +177,23 @@ def select_files(files):
         print("No files found in the selected directory.")
         return None
 
-    # Create a list of file names for the menu
+    # Create a list of file names for the menu (excluding [Quit] from choices)
     file_names = [file["name"] for file in files]
 
-    # Add a quit option
-    file_names.append("[Quit]")
+    message = """Select the files you want to download:
+Note: Selected files will be downloaded to the repo-dls directory."""
 
-    title = """Select the files you want to download (press SPACE to select, ENTER to confirm):
-Note: Selected files will be downloaded to the repo-dls directory.
-Select "[Quit]" to exit without downloading."""
-
-    selected_options = pick(
-        file_names, title, multiselect=True, min_selection_count=0, indicator="*"
+    selected_file_names = multi_select_with_preselection(
+        message=message, choices=file_names, preselected=None, min_selection=0
     )
 
-    if not selected_options:
+    if not selected_file_names:
         print("No files selected for download.")
         return None
 
-    # Check if the quit option was selected
-    for option in selected_options:
-        if option[0] == "[Quit]":
-            print("Exiting without downloading.")
-            return None
-
     # Get the full file information for selected files
     selected_files = []
-    for option in selected_options:
-        file_name = option[0]
+    for file_name in selected_file_names:
         for file in files:
             if file["name"] == file_name:
                 selected_files.append(file)

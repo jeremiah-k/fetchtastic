@@ -164,8 +164,16 @@ def main():
                 copy_prompt_text = "Do you want to copy the topic URL to the clipboard? [y/n] (default: yes): "
                 text_to_copy = full_url
 
-            copy_to_clipboard = input(copy_prompt_text).strip().lower() or "y"
-            if copy_to_clipboard == "y":
+            from fetchtastic.ui_utils import confirm_prompt
+
+            copy_to_clipboard = confirm_prompt(
+                copy_prompt_text.replace(" [y/n] (default: yes): ", ""), default=True
+            )
+
+            if copy_to_clipboard is None:
+                print("Operation cancelled.")
+                return
+            elif copy_to_clipboard:
                 success = copy_to_clipboard_func(text_to_copy)
                 if success:
                     if setup_config.is_termux():
@@ -328,11 +336,11 @@ def run_clean():
     print(
         "This will remove Fetchtastic configuration files, downloaded files, and cron job entries."
     )
-    confirm = (
-        input("Are you sure you want to proceed? [y/n] (default: no): ").strip().lower()
-        or "n"
-    )
-    if confirm != "y":
+    from fetchtastic.ui_utils import confirm_prompt
+
+    confirm = confirm_prompt("Are you sure you want to proceed?", default=False)
+
+    if confirm is None or not confirm:
         print("Clean operation cancelled.")
         return
 
@@ -508,11 +516,11 @@ def run_repo_clean(config):
     print(
         "This will remove all files downloaded from the meshtastic.github.io repository."
     )
-    confirm = (
-        input("Are you sure you want to proceed? [y/n] (default: no): ").strip().lower()
-        or "n"
-    )
-    if confirm != "y":
+    from fetchtastic.ui_utils import confirm_prompt
+
+    confirm = confirm_prompt("Are you sure you want to proceed?", default=False)
+
+    if confirm is None or not confirm:
         print("Clean operation cancelled.")
         return
 

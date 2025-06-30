@@ -51,7 +51,7 @@ def is_termux():
 
 def run_asset_selection_menu(asset_manager, config, is_first_run):
     """
-    Run the modular asset selection menu using pick for consistency.
+    Run the modular asset selection menu using questionary for consistency.
 
     Args:
         asset_manager: AssetManager instance with registered handlers
@@ -61,7 +61,10 @@ def run_asset_selection_menu(asset_manager, config, is_first_run):
     Returns:
         Dictionary with updated configuration or None if cancelled
     """
-    from pick import pick
+    from fetchtastic.ui_utils import (
+        multi_select_with_preselection,
+        show_preselection_info,
+    )
 
     print("\n" + "=" * 60)
     print("Asset Selection")
@@ -78,7 +81,7 @@ def run_asset_selection_menu(asset_manager, config, is_first_run):
         )
         return None
 
-    # Create options for pick with current selection state
+    # Create options for questionary with current selection state
     options = []
     preselected = []
 
@@ -86,62 +89,61 @@ def run_asset_selection_menu(asset_manager, config, is_first_run):
     options.append("🔥 SELECT ALL ASSET TYPES")
 
     for i, asset_type in enumerate(asset_types):
-        # Format option with description (offset by 1 due to "Select All" option)
+        # Format option with description
         option_text = f"{asset_type.name} - {asset_type.description}"
         options.append(option_text)
 
-        # Check if this asset type is currently enabled (offset by 1)
+        # Check if this asset type is currently enabled
         if asset_type.config_key in config and config[asset_type.config_key]:
-            preselected.append(i + 1)
+            preselected.append(option_text)
 
     try:
-        # Use pick for multi-selection
-        # Note: pick library doesn't support default_index with multiselect properly
-        # TODO: Implement preselection differently in the future
+        # Show preselection info if any
         if preselected:
-            print(f"Current selections: {', '.join([options[i] for i in preselected])}")
+            show_preselection_info(preselected)
 
-        result = pick(
-            options,
-            "Select asset types to download (SPACE to select, ENTER to confirm):",
-            multiselect=True,
-            min_selection_count=0,
+        # Validate preselected items are in choices
+        valid_preselected = []
+        for item in preselected:
+            if item in options:
+                valid_preselected.append(item)
+            else:
+                print(f"Warning: Preselected item '{item}' not found in choices")
+
+        selected_options = multi_select_with_preselection(
+            message="Select asset types to download:",
+            choices=options,
+            preselected=valid_preselected,
+            min_selection=0,
         )
 
-        # Handle the result - pick with multiselect=True returns different formats
-        if isinstance(result, tuple) and len(result) == 2:
-            # Format: (selected_options, selected_indices)
-            selected_options, selected_indices = result
-        elif isinstance(result, list) and result and isinstance(result[0], tuple):
-            # Format: [(option_text, index), (option_text, index), ...]
-            selected_options = [item[0] for item in result]
-            selected_indices = [item[1] for item in result]
-        elif isinstance(result, list):
-            # Format: [option_text, option_text, ...]
-            selected_options = result
-            # Find indices by matching options
-            selected_indices = []
-            for option in selected_options:
-                try:
-                    idx = options.index(option)
-                    selected_indices.append(idx)
-                except ValueError:
-                    # If we can't find the option, skip it
-                    continue
-        else:
-            # Unexpected format - try to handle gracefully
-            print(f"Unexpected pick result format: {type(result)} - {result}")
-            selected_options = [result] if result else []
-            selected_indices = []
+        if selected_options is None:
+            print("Asset selection cancelled.")
+            return None
+
+        if not selected_options:
+            print("No asset types selected.")
+            return None
 
         # Handle "Select All" option
-        if 0 in selected_indices:  # "Select All" was selected
-            # Select all asset types (indices 1 through len(asset_types))
-            selected_indices = list(range(1, len(asset_types) + 1))
+        if "🔥 SELECT ALL ASSET TYPES" in selected_options:
+            # Select all asset types (exclude the "Select All" option itself)
+            selected_options = [
+                opt for opt in options if opt != "🔥 SELECT ALL ASSET TYPES"
+            ]
             print("🔥 Selected all asset types!")
 
-        # Adjust indices to account for "Select All" option (subtract 1 from each)
-        adjusted_indices = [idx - 1 for idx in selected_indices if idx > 0]
+        # Map selected options back to asset type indices
+        adjusted_indices = []
+        for option in selected_options:
+            if option == "🔥 SELECT ALL ASSET TYPES":
+                continue  # Skip the "Select All" option
+            # Find the corresponding asset type
+            for i, asset_type in enumerate(asset_types):
+                expected_option = f"{asset_type.name} - {asset_type.description}"
+                if option == expected_option:
+                    adjusted_indices.append(i)
+                    break
 
         # Process selections - first set the basic enable/disable flags
         selected_config = {}
@@ -274,10 +276,13 @@ def migrate_pip_to_pipx():
     print("5. Restore your configuration")
     print()
 
-    migrate = (
-        input("Do you want to migrate to pipx? [y/n] (default: yes): ").strip().lower()
-        or "y"
-    )
+    from fetchtastic.ui_utils import confirm_prompt
+
+    migrate = confirm_prompt("Do you want to migrate to pipx?", default=True)
+
+    if migrate is None:
+        print("Migration cancelled.")
+        return
     if migrate != "y":
         print("Migration cancelled. You can continue using pip, but we recommend pipx.")
         return False
@@ -465,7 +470,12 @@ def check_storage_setup():
             # Run termux-setup-storage
             setup_storage()
             print("Please grant storage permissions when prompted.")
-            input("Press Enter after granting storage permissions to continue...")
+            from fetchtastic.ui_utils import text_input
+
+            text_input(
+                "Press Enter after granting storage permissions to continue...",
+                default="",
+            )
             # Re-check if storage is set up
             continue
 
@@ -504,14 +514,15 @@ def migrate_old_config_keys(config: Dict[str, Any]) -> Dict[str, Any]:
     print("The old settings will be removed after migration.")
     print()
 
-    migrate = (
-        input("Would you like to migrate these settings? [y/n] (default: yes): ")
-        .strip()
-        .lower()
-        or "y"
-    )
+    from fetchtastic.ui_utils import confirm_prompt
 
-    if migrate == "y":
+    migrate = confirm_prompt("Would you like to migrate these settings?", default=True)
+
+    if migrate is None:
+        print("Migration cancelled.")
+        return
+
+    if migrate:
         print("Migrating configuration...")
 
         # Migrate selected_assets to new format
@@ -612,13 +623,16 @@ def run_setup():
             print("• Easier upgrades and maintenance")
             print()
 
-            offer_migration = (
-                input("Would you like to migrate to pipx now? [y/n] (default: yes): ")
-                .strip()
-                .lower()
-                or "y"
+            from fetchtastic.ui_utils import confirm_prompt
+
+            offer_migration = confirm_prompt(
+                "Would you like to migrate to pipx now?", default=True
             )
-            if offer_migration == "y":
+
+            if offer_migration is None:
+                print("Migration cancelled.")
+                return
+            if offer_migration:
                 migration_success = migrate_pip_to_pipx()
                 if migration_success:
                     print("Migration completed! Continuing with setup...")
@@ -690,7 +704,23 @@ def run_setup():
         )
 
     # Prompt for base directory
-    base_dir_input = input(base_dir_prompt).strip()
+    from fetchtastic.ui_utils import text_input
+
+    if exists:
+        current_base_dir = config.get("BASE_DIR", DEFAULT_BASE_DIR)
+        base_dir_input = text_input(
+            "Enter the base directory for Fetchtastic:", default=current_base_dir
+        )
+    else:
+        base_dir_input = text_input(
+            "Enter the base directory for Fetchtastic:", default=DEFAULT_BASE_DIR
+        )
+
+    if base_dir_input is None:
+        print("Setup cancelled.")
+        return
+
+    base_dir_input = base_dir_input.strip()
 
     if base_dir_input:
         # User entered a custom directory
@@ -743,26 +773,24 @@ def run_setup():
             create_config_shortcut(CONFIG_FILE, BASE_DIR)
 
             # Check if Start Menu shortcuts already exist
+            from fetchtastic.ui_utils import confirm_prompt
+
             if os.path.exists(WINDOWS_START_MENU_FOLDER):
-                create_menu = (
-                    input(
-                        "Fetchtastic shortcuts already exist in the Start Menu. Would you like to update them? [y/n] (default: yes): "
-                    )
-                    .strip()
-                    .lower()
-                    or "y"
+                create_menu = confirm_prompt(
+                    "Fetchtastic shortcuts already exist in the Start Menu. Would you like to update them?",
+                    default=True,
                 )
             else:
-                create_menu = (
-                    input(
-                        "Would you like to create Fetchtastic shortcuts in the Start Menu? (recommended) [y/n] (default: yes): "
-                    )
-                    .strip()
-                    .lower()
-                    or "y"
+                create_menu = confirm_prompt(
+                    "Would you like to create Fetchtastic shortcuts in the Start Menu? (recommended)",
+                    default=True,
                 )
 
-            if create_menu == "y":
+            if create_menu is None:
+                print("Setup cancelled.")
+                return
+
+            if create_menu:
                 create_windows_menu_shortcuts(CONFIG_FILE, BASE_DIR)
         else:
             print(
@@ -810,16 +838,19 @@ def run_setup():
 
     # Ask if the user wants to only download when connected to Wi-Fi (Termux only)
     if is_termux():
-        wifi_only_default = "yes" if config.get("WIFI_ONLY", True) else "no"
-        wifi_only = (
-            input(
-                f"Do you want to only download when connected to Wi-Fi? [y/n] (default: {wifi_only_default}): "
-            )
-            .strip()
-            .lower()
-            or wifi_only_default[0]
+        from fetchtastic.ui_utils import confirm_prompt
+
+        wifi_only_default = config.get("WIFI_ONLY", True)
+        wifi_only = confirm_prompt(
+            "Do you want to only download when connected to Wi-Fi?",
+            default=wifi_only_default,
         )
-        config["WIFI_ONLY"] = True if wifi_only == "y" else False
+
+        if wifi_only is None:
+            print("Setup cancelled.")
+            return
+
+        config["WIFI_ONLY"] = wifi_only
     else:
         # For non-Termux environments, remove WIFI_ONLY from config if it exists
         config.pop("WIFI_ONLY", None)
@@ -861,15 +892,15 @@ def run_setup():
             startup_shortcut_path = os.path.join(startup_folder, "Fetchtastic.lnk")
 
             if os.path.exists(startup_shortcut_path):
-                startup_option = (
-                    input(
-                        "Fetchtastic is already set to run at startup. Would you like to remove this? [y/n] (default: no): "
-                    )
-                    .strip()
-                    .lower()
-                    or "n"
+                startup_option = confirm_prompt(
+                    "Fetchtastic is already set to run at startup. Would you like to remove this?",
+                    default=False,
                 )
-                if startup_option == "y":
+
+                if startup_option is None:
+                    print("Setup cancelled.")
+                    return
+                elif startup_option:
                     try:
                         # Also remove the batch file if it exists
                         batch_dir = os.path.join(CONFIG_DIR, "batch")
@@ -890,15 +921,15 @@ def run_setup():
                         "✓ Fetchtastic will continue to run automatically at startup."
                     )
             else:
-                startup_option = (
-                    input(
-                        "Would you like to run Fetchtastic automatically on Windows startup? [y/n] (default: yes): "
-                    )
-                    .strip()
-                    .lower()
-                    or "y"
+                startup_option = confirm_prompt(
+                    "Would you like to run Fetchtastic automatically on Windows startup?",
+                    default=True,
                 )
-                if startup_option == "y":
+
+                if startup_option is None:
+                    print("Setup cancelled.")
+                    return
+                elif startup_option:
                     if create_startup_shortcut():
                         print(
                             "✓ Fetchtastic will now run automatically when Windows starts."
@@ -921,15 +952,15 @@ def run_setup():
         # Check if cron job already exists
         cron_job_exists = check_cron_job_exists()
         if cron_job_exists:
-            cron_prompt = (
-                input(
-                    "A cron job is already set up. Do you want to reconfigure it? [y/n] (default: no): "
-                )
-                .strip()
-                .lower()
-                or "n"
+            cron_prompt = confirm_prompt(
+                "A cron job is already set up. Do you want to reconfigure it?",
+                default=False,
             )
-            if cron_prompt == "y":
+
+            if cron_prompt is None:
+                print("Setup cancelled.")
+                return
+            elif cron_prompt:
                 # First, remove existing cron job
                 remove_cron_job()
                 print("Existing cron job removed for reconfiguration.")
@@ -942,16 +973,17 @@ def run_setup():
                 print("Cron job configuration left unchanged.")
         else:
             # Ask if the user wants to set up a cron job
-            cron_default = "yes"  # Default to 'yes'
-            setup_cron = (
-                input(
-                    f"Would you like to schedule Fetchtastic to run daily at 3 AM? [y/n] (default: {cron_default}): "
-                )
-                .strip()
-                .lower()
-                or cron_default[0]
+            from fetchtastic.ui_utils import confirm_prompt
+
+            setup_cron = confirm_prompt(
+                "Would you like to schedule Fetchtastic to run daily at 3 AM?",
+                default=True,
             )
-            if setup_cron == "y":
+
+            if setup_cron is None:
+                print("Setup cancelled.")
+                return
+            elif setup_cron:
                 install_crond()
                 setup_cron_job()
             else:
@@ -960,15 +992,17 @@ def run_setup():
         # Check if boot script already exists
         boot_script_exists = check_boot_script_exists()
         if boot_script_exists:
-            boot_prompt = (
-                input(
-                    "A boot script is already set up. Do you want to reconfigure it? [y/n] (default: no): "
-                )
-                .strip()
-                .lower()
-                or "n"
+            from fetchtastic.ui_utils import confirm_prompt
+
+            boot_prompt = confirm_prompt(
+                "A boot script is already set up. Do you want to reconfigure it?",
+                default=False,
             )
-            if boot_prompt == "y":
+
+            if boot_prompt is None:
+                print("Setup cancelled.")
+                return
+            elif boot_prompt:
                 # First, remove existing boot script
                 remove_boot_script()
                 print("Existing boot script removed for reconfiguration.")
@@ -980,16 +1014,16 @@ def run_setup():
                 print("Boot script configuration left unchanged.")
         else:
             # Ask if the user wants to set up a boot script
-            boot_default = "yes"  # Default to 'yes'
-            setup_boot = (
-                input(
-                    f"Do you want Fetchtastic to run on device boot? [y/n] (default: {boot_default}): "
-                )
-                .strip()
-                .lower()
-                or boot_default[0]
+            from fetchtastic.ui_utils import confirm_prompt
+
+            setup_boot = confirm_prompt(
+                "Do you want Fetchtastic to run on device boot?", default=True
             )
-            if setup_boot == "y":
+
+            if setup_boot is None:
+                print("Setup cancelled.")
+                return
+            elif setup_boot:
                 setup_boot_script()
             else:
                 print("Boot script has not been set up.")
@@ -998,47 +1032,46 @@ def run_setup():
         # Linux/Mac: Check if any Fetchtastic cron jobs exist
         any_cron_jobs_exist = check_any_cron_jobs_exist()
         if any_cron_jobs_exist:
-            cron_prompt = (
-                input(
-                    "Fetchtastic cron jobs are already set up. Do you want to reconfigure them? [y/n] (default: no): "
-                )
-                .strip()
-                .lower()
-                or "n"
+            cron_prompt = confirm_prompt(
+                "Fetchtastic cron jobs are already set up. Do you want to reconfigure them?",
+                default=False,
             )
-            if cron_prompt == "y":
+
+            if cron_prompt is None:
+                print("Setup cancelled.")
+                return
+            elif cron_prompt:
                 # First, remove existing cron jobs
                 remove_cron_job()
                 remove_reboot_cron_job()
                 print("Existing cron jobs removed for reconfiguration.")
 
                 # Ask if they want to set up daily cron job
-                cron_default = "yes"
-                setup_cron = (
-                    input(
-                        f"Would you like to schedule Fetchtastic to run daily at 3 AM? [y/n] (default: {cron_default}): "
-                    )
-                    .strip()
-                    .lower()
-                    or cron_default[0]
+                from fetchtastic.ui_utils import confirm_prompt
+
+                setup_cron = confirm_prompt(
+                    "Would you like to schedule Fetchtastic to run daily at 3 AM?",
+                    default=True,
                 )
-                if setup_cron == "y":
+
+                if setup_cron is None:
+                    print("Setup cancelled.")
+                    return
+                elif setup_cron:
                     setup_cron_job()
                     print("Daily cron job has been set up.")
                 else:
                     print("Daily cron job will not be set up.")
 
                 # Ask if they want to set up a reboot cron job
-                boot_default = "yes"
-                setup_reboot = (
-                    input(
-                        f"Do you want Fetchtastic to run on system startup? [y/n] (default: {boot_default}): "
-                    )
-                    .strip()
-                    .lower()
-                    or boot_default[0]
+                setup_reboot = confirm_prompt(
+                    "Do you want Fetchtastic to run on system startup?", default=True
                 )
-                if setup_reboot == "y":
+
+                if setup_reboot is None:
+                    print("Setup cancelled.")
+                    return
+                elif setup_reboot:
                     setup_reboot_cron_job()
                     print("Reboot cron job has been set up.")
                 else:
@@ -1048,55 +1081,54 @@ def run_setup():
         else:
             # No existing cron jobs, ask if they want to set them up
             # Ask if they want to set up daily cron job
-            cron_default = "yes"
-            setup_cron = (
-                input(
-                    f"Would you like to schedule Fetchtastic to run daily at 3 AM? [y/n] (default: {cron_default}): "
-                )
-                .strip()
-                .lower()
-                or cron_default[0]
+            from fetchtastic.ui_utils import confirm_prompt
+
+            setup_cron = confirm_prompt(
+                "Would you like to schedule Fetchtastic to run daily at 3 AM?",
+                default=True,
             )
-            if setup_cron == "y":
+
+            if setup_cron is None:
+                print("Setup cancelled.")
+                return
+            elif setup_cron:
                 setup_cron_job()
             else:
                 print("Daily cron job has not been set up.")
 
             # Ask if they want to set up a reboot cron job
-            boot_default = "yes"
-            setup_reboot = (
-                input(
-                    f"Do you want Fetchtastic to run on system startup? [y/n] (default: {boot_default}): "
-                )
-                .strip()
-                .lower()
-                or boot_default[0]
+            setup_reboot = confirm_prompt(
+                "Do you want Fetchtastic to run on system startup?", default=True
             )
-            if setup_reboot == "y":
+
+            if setup_reboot is None:
+                print("Setup cancelled.")
+                return
+            elif setup_reboot:
                 setup_reboot_cron_job()
             else:
                 print("Reboot cron job has not been set up.")
 
     # Prompt for NTFY server configuration
     has_ntfy_config = bool(config.get("NTFY_TOPIC")) and bool(config.get("NTFY_SERVER"))
-    notifications_default = "yes" if has_ntfy_config else "no"
+    from fetchtastic.ui_utils import confirm_prompt, text_input
 
-    notifications = (
-        input(
-            f"Would you like to set up notifications via NTFY? [y/n] (default: {notifications_default}): "
-        )
-        .strip()
-        .lower()
-        or notifications_default[0]
+    notifications = confirm_prompt(
+        "Would you like to set up notifications via NTFY?", default=has_ntfy_config
     )
 
-    if notifications == "y":
+    if notifications is None:
+        print("Setup cancelled.")
+        return
+
+    if notifications:
         # Get NTFY server
         current_server = config.get("NTFY_SERVER", "ntfy.sh")
-        ntfy_server = (
-            input(f"Enter the NTFY server (current: {current_server}): ").strip()
-            or current_server
-        )
+        ntfy_server = text_input("Enter the NTFY server:", default=current_server)
+
+        if ntfy_server is None:
+            print("Setup cancelled.")
+            return
 
         if not ntfy_server.startswith("http://") and not ntfy_server.startswith(
             "https://"
@@ -1111,10 +1143,11 @@ def run_setup():
                 random.choices(string.ascii_lowercase + string.digits, k=6)
             )
 
-        topic_name = (
-            input(f"Enter a unique topic name (current: {current_topic}): ").strip()
-            or current_topic
-        )
+        topic_name = text_input("Enter a unique topic name:", default=current_topic)
+
+        if topic_name is None:
+            print("Setup cancelled.")
+            return
 
         # Update config
         config["NTFY_TOPIC"] = topic_name
@@ -1137,14 +1170,18 @@ def run_setup():
 
         # Offer to copy to clipboard
         if is_termux():
-            copy_prompt_text = "Do you want to copy the topic name to the clipboard? [y/n] (default: yes): "
+            copy_prompt_message = "Do you want to copy the topic name to the clipboard?"
             text_to_copy = topic_name
         else:
-            copy_prompt_text = "Do you want to copy the topic URL to the clipboard? [y/n] (default: yes): "
+            copy_prompt_message = "Do you want to copy the topic URL to the clipboard?"
             text_to_copy = full_topic_url
 
-        copy_to_clipboard = input(copy_prompt_text).strip().lower() or "y"
-        if copy_to_clipboard == "y":
+        copy_to_clipboard = confirm_prompt(copy_prompt_message, default=True)
+
+        if copy_to_clipboard is None:
+            print("Setup cancelled.")
+            return
+        elif copy_to_clipboard:
             success = copy_to_clipboard_func(text_to_copy)
             if success:
                 if is_termux():
@@ -1155,20 +1192,17 @@ def run_setup():
                 print("Failed to copy to clipboard.")
 
         # Ask if the user wants notifications only when new files are downloaded
-        notify_on_download_only_default = (
-            "yes" if config.get("NOTIFY_ON_DOWNLOAD_ONLY", False) else "no"
+        notify_on_download_only_default = config.get("NOTIFY_ON_DOWNLOAD_ONLY", False)
+        notify_on_download_only = confirm_prompt(
+            "Do you want to receive notifications only when new files are downloaded?",
+            default=notify_on_download_only_default,
         )
-        notify_on_download_only = (
-            input(
-                f"Do you want to receive notifications only when new files are downloaded? [y/n] (default: {notify_on_download_only_default}): "
-            )
-            .strip()
-            .lower()
-            or notify_on_download_only_default[0]
-        )
-        config["NOTIFY_ON_DOWNLOAD_ONLY"] = (
-            True if notify_on_download_only == "y" else False
-        )
+
+        if notify_on_download_only is None:
+            print("Setup cancelled.")
+            return
+
+        config["NOTIFY_ON_DOWNLOAD_ONLY"] = notify_on_download_only
 
         # Save configuration with the new setting
         with open(CONFIG_FILE, "w") as f:
@@ -1180,16 +1214,15 @@ def run_setup():
         # User chose not to use notifications
         if has_ntfy_config:
             # Ask for confirmation to disable existing notifications
-            disable_confirm = (
-                input(
-                    "You currently have notifications enabled. Are you sure you want to disable them? [y/n] (default: no): "
-                )
-                .strip()
-                .lower()
-                or "n"
+            disable_confirm = confirm_prompt(
+                "You currently have notifications enabled. Are you sure you want to disable them?",
+                default=False,
             )
 
-            if disable_confirm == "y":
+            if disable_confirm is None:
+                print("Setup cancelled.")
+                return
+            elif disable_confirm:
                 config["NTFY_TOPIC"] = ""
                 config["NTFY_SERVER"] = ""
                 config["NOTIFY_ON_DOWNLOAD_ONLY"] = False
@@ -1219,16 +1252,19 @@ def run_setup():
             "COMSPEC", ""
         ):
             print("\nPress Enter to close this window...")
-            input()
+            from fetchtastic.ui_utils import text_input
+
+            text_input("", default="")
     else:
         # On other platforms, offer to run it now
-        perform_first_run = (
-            input("Would you like to start the first run now? [y/n] (default: yes): ")
-            .strip()
-            .lower()
-            or "y"
+        perform_first_run = confirm_prompt(
+            "Would you like to start the first run now?", default=True
         )
-        if perform_first_run == "y":
+
+        if perform_first_run is None:
+            print("Setup cancelled.")
+            return
+        elif perform_first_run:
             print("Setup complete. Starting first run, this may take a few minutes...")
             downloader.main()
         else:

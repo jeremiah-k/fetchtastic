@@ -219,15 +219,16 @@ def main(config):  # log_message_func removed
             # If on Windows, offer to open the folder
             if platform.system() == "Windows":
                 try:
-                    open_folder = (
-                        input(
-                            "\nWould you like to open this folder? [y/n] (default: yes): "
-                        )
-                        .strip()
-                        .lower()
-                        or "y"
+                    from fetchtastic.ui_utils import confirm_prompt
+
+                    open_folder = confirm_prompt(
+                        "Would you like to open this folder?", default=True
                     )
-                    if open_folder == "y":
+
+                    if open_folder is None:
+                        print("Operation cancelled.")
+                        return
+                    elif open_folder:
                         os.startfile(download_folder)  # nosec B606
                 except OSError as e:  # os.startfile can raise OSError
                     logger.error(

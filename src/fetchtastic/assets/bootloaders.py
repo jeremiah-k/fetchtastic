@@ -69,20 +69,31 @@ class BootloaderAsset(BaseAssetHandler):
         current_versions = config.get(
             "BOOTLOADER_VERSIONS_TO_KEEP", default_versions_to_keep
         )
-        if is_first_run:
-            prompt_text = f"How many versions of bootloaders would you like to keep? (default is {current_versions}): "
-        else:
-            prompt_text = f"How many versions of bootloaders would you like to keep? (current: {current_versions}): "
-        bootloader_versions_to_keep = input(prompt_text).strip() or str(
-            current_versions
+        from fetchtastic.ui_utils import text_input
+
+        bootloader_versions_to_keep = text_input(
+            "How many versions of bootloaders would you like to keep?",
+            default=str(current_versions),
         )
-        config["BOOTLOADER_VERSIONS_TO_KEEP"] = int(bootloader_versions_to_keep)
+
+        if bootloader_versions_to_keep is None:
+            print("Setup cancelled.")
+            return config
+
+        try:
+            config["BOOTLOADER_VERSIONS_TO_KEEP"] = int(bootloader_versions_to_keep)
+        except ValueError:
+            print(f"Invalid number entered. Using default: {current_versions}")
+            config["BOOTLOADER_VERSIONS_TO_KEEP"] = current_versions
 
         return config
 
     def _run_bootloader_menu(self, config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Run the bootloader selection menu using pick."""
-        from pick import pick
+        """Run the bootloader selection menu using questionary."""
+        from fetchtastic.ui_utils import (
+            multi_select_with_preselection,
+            show_preselection_info,
+        )
 
         print("\n" + "=" * 60)
         print("Bootloader Selection")
@@ -102,59 +113,46 @@ class BootloaderAsset(BaseAssetHandler):
             },
         ]
 
-        # Create options for pick and check for preselected items
+        # Create options and check for preselected items
         options = []
         preselected = []
         current_types = config.get("SELECTED_BOOTLOADER_TYPES", [])
 
-        for i, category in enumerate(bootloader_categories):
+        for category in bootloader_categories:
             option_text = f"{category['name']} - {category['description']}"
             options.append(option_text)
 
             # Check if this category is currently selected
             if category["id"] in current_types:
-                preselected.append(i)
+                preselected.append(option_text)
 
         try:
-            from pick import pick
-
-            # Use pick for multi-selection
-            # Note: pick library doesn't support default_index with multiselect properly
+            # Show preselection info if any
             if preselected:
-                print(
-                    f"Current selections: {', '.join([options[i] for i in preselected])}"
-                )
+                show_preselection_info(preselected)
 
-            result = pick(
-                options,
-                "Select bootloader types to download (SPACE to select, ENTER to confirm):",
-                multiselect=True,
-                min_selection_count=1,
+            selected_options = multi_select_with_preselection(
+                message="Select bootloader types to download:",
+                choices=options,
+                preselected=preselected,
+                min_selection=1,
             )
 
-            # Handle different pick result formats
-            if isinstance(result, tuple) and len(result) == 2:
-                # Format: (selected_options, selected_indices)
-                selected_options, selected_indices = result
-            elif isinstance(result, list) and result and isinstance(result[0], tuple):
-                # Format: [(option_text, index), (option_text, index), ...]
-                selected_options = [item[0] for item in result]
-                selected_indices = [item[1] for item in result]
-            else:
-                # Fallback - treat as list of options and find indices
-                selected_options = result if isinstance(result, list) else [result]
-                selected_indices = []
-                for option in selected_options:
-                    try:
-                        idx = options.index(option)
-                        selected_indices.append(idx)
-                    except ValueError:
-                        continue
+            if not selected_options:
+                print("No bootloader types selected.")
+                return None
 
-            # Get selected category IDs
-            selected_types = [bootloader_categories[i]["id"] for i in selected_indices]
+            # Map selected options back to category IDs
+            selected_types = []
+            for selected_option in selected_options:
+                for category in bootloader_categories:
+                    expected_option = f"{category['name']} - {category['description']}"
+                    if selected_option == expected_option:
+                        selected_types.append(category["id"])
+                        break
+
             print(
-                f"\nSelected bootloader types: {', '.join([bootloader_categories[i]['name'] for i in selected_indices])}"
+                f"\nSelected bootloader types: {', '.join([cat['name'] for cat in bootloader_categories if cat['id'] in selected_types])}"
             )
 
         except (KeyboardInterrupt, EOFError):
@@ -189,8 +187,11 @@ class BootloaderAsset(BaseAssetHandler):
         }
 
     def _select_stock_bootloaders(self, config: Dict[str, Any]) -> List[str]:
-        """Select stock bootloader assets using pick."""
-        from pick import pick
+        """Select stock bootloader assets using questionary."""
+        from fetchtastic.ui_utils import (
+            multi_select_with_preselection,
+            show_preselection_info,
+        )
 
         print("\n" + "=" * 40)
         print("Stock Device Bootloaders")
@@ -210,60 +211,47 @@ class BootloaderAsset(BaseAssetHandler):
             },
         ]
 
-        # Create options for pick and check for preselected items
+        # Create options and check for preselected items
         options = []
         preselected = []
         current_assets = config.get("SELECTED_BOOTLOADER_ASSETS", {})
         current_stock = current_assets.get("stock_bootloaders", [])
 
-        for i, option in enumerate(stock_options):
+        for option in stock_options:
             option_text = f"{option['name']} - {option['description']}"
             options.append(option_text)
 
             # Check if this bootloader is currently selected
             if option["id"] in current_stock:
-                preselected.append(i)
+                preselected.append(option_text)
 
         try:
-            from pick import pick
-
-            # Use pick for multi-selection
-            # Note: pick library doesn't support default_index with multiselect properly
+            # Show preselection info if any
             if preselected:
-                print(
-                    f"Current selections: {', '.join([options[i] for i in preselected])}"
-                )
+                show_preselection_info(preselected)
 
-            result = pick(
-                options,
-                "Select stock bootloaders to download (SPACE to select, ENTER to confirm):",
-                multiselect=True,
-                min_selection_count=1,
+            selected_options = multi_select_with_preselection(
+                message="Select stock bootloaders to download:",
+                choices=options,
+                preselected=preselected,
+                min_selection=1,
             )
 
-            # Handle different pick result formats
-            if isinstance(result, tuple) and len(result) == 2:
-                # Format: (selected_options, selected_indices)
-                selected_options, selected_indices = result
-            elif isinstance(result, list) and result and isinstance(result[0], tuple):
-                # Format: [(option_text, index), (option_text, index), ...]
-                selected_options = [item[0] for item in result]
-                selected_indices = [item[1] for item in result]
-            else:
-                # Fallback - treat as list of options and find indices
-                selected_options = result if isinstance(result, list) else [result]
-                selected_indices = []
-                for option in selected_options:
-                    try:
-                        idx = options.index(option)
-                        selected_indices.append(idx)
-                    except ValueError:
-                        continue
+            if not selected_options:
+                print("No stock bootloaders selected.")
+                return []
 
-            # Get selected bootloader IDs
-            selected_bootloaders = [stock_options[i]["id"] for i in selected_indices]
+            # Map selected options back to bootloader IDs
+            selected_bootloaders = []
+            for selected_option in selected_options:
+                for option in stock_options:
+                    expected_option = f"{option['name']} - {option['description']}"
+                    if selected_option == expected_option:
+                        selected_bootloaders.append(option["id"])
+                        break
+
             print(
-                f"\nSelected stock bootloaders: {', '.join([stock_options[i]['name'] for i in selected_indices])}"
+                f"\nSelected stock bootloaders: {', '.join([opt['name'] for opt in stock_options if opt['id'] in selected_bootloaders])}"
             )
 
             return selected_bootloaders
@@ -274,6 +262,8 @@ class BootloaderAsset(BaseAssetHandler):
 
     def _select_otafix_bootloaders(self) -> List[str]:
         """Select OTA-fix bootloader assets."""
+        from fetchtastic.ui_utils import confirm_prompt
+
         print("\n" + "=" * 40)
         print("OTA-Fix Modified Bootloaders")
         print("=" * 40)
@@ -283,7 +273,7 @@ class BootloaderAsset(BaseAssetHandler):
         print("Includes README and setup instructions.")
         print()
 
-        confirm = input("Download OTA-fix bootloaders? [y/n]: ").strip().lower()
-        if confirm == "y":
+        confirm = confirm_prompt("Download OTA-fix bootloaders?", default=True)
+        if confirm:
             return ["otafix_all"]
         return []

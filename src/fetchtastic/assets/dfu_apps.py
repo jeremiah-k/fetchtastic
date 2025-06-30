@@ -64,18 +64,31 @@ class DFUAppsAsset(BaseAssetHandler):
         current_versions = config.get(
             "DFU_APPS_VERSIONS_TO_KEEP", default_versions_to_keep
         )
-        if is_first_run:
-            prompt_text = f"How many versions of DFU/flashing apps would you like to keep? (default is {current_versions}): "
-        else:
-            prompt_text = f"How many versions of DFU/flashing apps would you like to keep? (current: {current_versions}): "
-        dfu_apps_versions_to_keep = input(prompt_text).strip() or str(current_versions)
-        config["DFU_APPS_VERSIONS_TO_KEEP"] = int(dfu_apps_versions_to_keep)
+        from fetchtastic.ui_utils import text_input
+
+        dfu_apps_versions_to_keep = text_input(
+            "How many versions of DFU/flashing apps would you like to keep?",
+            default=str(current_versions),
+        )
+
+        if dfu_apps_versions_to_keep is None:
+            print("Setup cancelled.")
+            return config
+
+        try:
+            config["DFU_APPS_VERSIONS_TO_KEEP"] = int(dfu_apps_versions_to_keep)
+        except ValueError:
+            print(f"Invalid number entered. Using default: {current_versions}")
+            config["DFU_APPS_VERSIONS_TO_KEEP"] = current_versions
 
         return config
 
     def _run_dfu_apps_menu(self, config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Run the DFU apps selection menu using pick."""
-        from pick import pick
+        """Run the DFU apps selection menu using questionary."""
+        from fetchtastic.ui_utils import (
+            multi_select_with_preselection,
+            show_preselection_info,
+        )
 
         print("\n" + "=" * 60)
         print("DFU/Firmware Flashing Apps Selection")
@@ -91,12 +104,12 @@ class DFUAppsAsset(BaseAssetHandler):
             }
         ]
 
-        # Create options for pick and check for preselected items
+        # Create options and check for preselected items
         options = []
         preselected = []
         current_apps = config.get("SELECTED_DFU_APPS", [])
 
-        for i, app in enumerate(dfu_apps):
+        for app in dfu_apps:
             option_text = (
                 f"{app['name']} - {app['description']} (Repository: {app['repo']})"
             )
@@ -104,48 +117,35 @@ class DFUAppsAsset(BaseAssetHandler):
 
             # Check if this app is currently selected
             if app["id"] in current_apps:
-                preselected.append(i)
+                preselected.append(option_text)
 
         try:
-            from pick import pick
-
-            # Use pick for multi-selection
-            # Note: pick library doesn't support default_index with multiselect properly
+            # Show preselection info if any
             if preselected:
-                print(
-                    f"Current selections: {', '.join([options[i] for i in preselected])}"
-                )
+                show_preselection_info(preselected)
 
-            result = pick(
-                options,
-                "Select DFU/flashing apps to download (SPACE to select, ENTER to confirm):",
-                multiselect=True,
-                min_selection_count=1,
+            selected_options = multi_select_with_preselection(
+                message="Select DFU/flashing apps to download:",
+                choices=options,
+                preselected=preselected,
+                min_selection=1,
             )
 
-            # Handle different pick result formats
-            if isinstance(result, tuple) and len(result) == 2:
-                # Format: (selected_options, selected_indices)
-                selected_options, selected_indices = result
-            elif isinstance(result, list) and result and isinstance(result[0], tuple):
-                # Format: [(option_text, index), (option_text, index), ...]
-                selected_options = [item[0] for item in result]
-                selected_indices = [item[1] for item in result]
-            else:
-                # Fallback - treat as list of options and find indices
-                selected_options = result if isinstance(result, list) else [result]
-                selected_indices = []
-                for option in selected_options:
-                    try:
-                        idx = options.index(option)
-                        selected_indices.append(idx)
-                    except ValueError:
-                        continue
+            if not selected_options:
+                print("No DFU apps selected.")
+                return None
 
-            # Get selected app IDs
-            selected_apps = [dfu_apps[i]["id"] for i in selected_indices]
+            # Map selected options back to app IDs
+            selected_apps = []
+            for selected_option in selected_options:
+                for app in dfu_apps:
+                    expected_option = f"{app['name']} - {app['description']} (Repository: {app['repo']})"
+                    if selected_option == expected_option:
+                        selected_apps.append(app["id"])
+                        break
+
             print(
-                f"\nSelected DFU apps: {', '.join([dfu_apps[i]['name'] for i in selected_indices])}"
+                f"\nSelected DFU apps: {', '.join([app['name'] for app in dfu_apps if app['id'] in selected_apps])}"
             )
 
         except (KeyboardInterrupt, EOFError):

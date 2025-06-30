@@ -28,16 +28,38 @@ def extract_base_name(filename):
     return base_name
 
 
-def select_assets(assets):
-    from pick import pick
+def select_assets(assets, preselected_patterns=None):
+    """
+    Displays a menu for the user to select APK assets to download.
+    Returns a list of selected base patterns.
 
-    title = """Select the APK files you want to download (press SPACE to select, ENTER to confirm):
-Note: These are files from the latest release. Version numbers may change in other releases."""
-    options = assets
-    selected_options = pick(
-        options, title, multiselect=True, min_selection_count=0, indicator="*"
+    Args:
+        assets: List of available APK assets
+        preselected_patterns: List of previously selected base patterns for preselection
+    """
+    from fetchtastic.ui_utils import (
+        multi_select_with_preselection,
+        show_preselection_info,
     )
-    selected_assets = [option[0] for option in selected_options]
+
+    # Handle preselection by matching patterns to current assets
+    preselected_assets = []
+    if preselected_patterns:
+        for asset in assets:
+            asset_pattern = extract_base_name(asset)
+            if asset_pattern in preselected_patterns:
+                preselected_assets.append(asset)
+
+        if preselected_assets:
+            show_preselection_info(preselected_assets)
+
+    message = """Select the APK files you want to download:
+Note: These are files from the latest release. Version numbers may change in other releases."""
+
+    selected_assets = multi_select_with_preselection(
+        message=message, choices=assets, preselected=preselected_assets, min_selection=0
+    )
+
     if not selected_assets:
         print("No APK files selected. APKs will not be downloaded.")
         return None
@@ -50,10 +72,16 @@ Note: These are files from the latest release. Version numbers may change in oth
     return base_patterns
 
 
-def run_menu():
+def run_menu(preselected_patterns=None):
+    """
+    Runs the APK selection menu and returns the selected patterns.
+
+    Args:
+        preselected_patterns: List of previously selected base patterns for preselection
+    """
     try:
         assets = fetch_apk_assets()
-        selected_patterns = select_assets(assets)
+        selected_patterns = select_assets(assets, preselected_patterns)
         if selected_patterns is None:
             return None
         return {"selected_assets": selected_patterns}

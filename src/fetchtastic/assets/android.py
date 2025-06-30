@@ -30,7 +30,9 @@ class MeshtasticAndroidAsset(BaseAssetHandler):
 
     def run_selection_menu(self, config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Run the APK selection menu."""
-        return menu_apk.run_menu()
+        # Get preselected patterns from config
+        preselected_patterns = config.get("SELECTED_APK_ASSETS", [])
+        return menu_apk.run_menu(preselected_patterns)
 
     def get_config_keys(self) -> List[str]:
         return ["SAVE_APKS", "SELECTED_APK_ASSETS", "ANDROID_VERSIONS_TO_KEEP"]
@@ -65,11 +67,21 @@ class MeshtasticAndroidAsset(BaseAssetHandler):
         current_versions = config.get(
             "ANDROID_VERSIONS_TO_KEEP", default_versions_to_keep
         )
-        if is_first_run:
-            prompt_text = f"How many versions of the Android app would you like to keep? (default is {current_versions}): "
-        else:
-            prompt_text = f"How many versions of the Android app would you like to keep? (current: {current_versions}): "
-        android_versions_to_keep = input(prompt_text).strip() or str(current_versions)
-        config["ANDROID_VERSIONS_TO_KEEP"] = int(android_versions_to_keep)
+        from fetchtastic.ui_utils import text_input
+
+        android_versions_to_keep = text_input(
+            "How many versions of the Android app would you like to keep?",
+            default=str(current_versions),
+        )
+
+        if android_versions_to_keep is None:
+            print("Setup cancelled.")
+            return config
+
+        try:
+            config["ANDROID_VERSIONS_TO_KEEP"] = int(android_versions_to_keep)
+        except ValueError:
+            print(f"Invalid number entered. Using default: {current_versions}")
+            config["ANDROID_VERSIONS_TO_KEEP"] = current_versions
 
         return config
