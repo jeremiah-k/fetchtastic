@@ -89,12 +89,35 @@ def run_asset_selection_menu(asset_manager, config, is_first_run):
         # Use pick for multi-selection
         # Note: For multiselect, we can't use default_index with a list
         # Instead, we'll handle preselection differently if needed
-        selected_options, selected_indices = pick(
+        result = pick(
             options,
             "Select asset types to download (SPACE to select, ENTER to confirm):",
             multiselect=True,
             min_selection_count=1,
         )
+
+        # Debug: Print result type and content
+        print(f"DEBUG: pick result type: {type(result)}")
+        print(f"DEBUG: pick result content: {result}")
+
+        # Handle the result - pick with multiselect=True should return (selected_items, indices)
+        if isinstance(result, tuple) and len(result) == 2:
+            selected_options, selected_indices = result
+        elif isinstance(result, list):
+            # If it's just a list, assume these are the selected options
+            selected_options = result
+            # Find indices by matching options
+            selected_indices = []
+            for option in selected_options:
+                try:
+                    idx = options.index(option)
+                    selected_indices.append(idx)
+                except ValueError:
+                    pass
+        else:
+            # Fallback - treat as single selection
+            selected_options = [result] if result else []
+            selected_indices = [options.index(result)] if result in options else []
 
         # Process selections
         selected_config = {}
