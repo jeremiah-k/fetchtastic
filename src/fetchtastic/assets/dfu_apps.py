@@ -100,6 +100,8 @@ class DFUAppsAsset(BaseAssetHandler):
             options.append(option_text)
 
         try:
+            from pick import pick
+
             # Use pick for multi-selection
             selected_options, selected_indices = pick(
                 options,

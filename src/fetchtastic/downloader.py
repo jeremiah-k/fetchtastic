@@ -2216,6 +2216,24 @@ def _process_all_asset_downloads(
     all_failed_downloads = []
     latest_versions = {}
 
+    # Check if any asset types are enabled
+    enabled_assets = []
+    if config.get("SAVE_FIRMWARE", False):
+        enabled_assets.append("Firmware")
+    if config.get("SAVE_APKS", False):
+        enabled_assets.append("Android APKs")
+    if config.get("SAVE_BOOTLOADERS", False):
+        enabled_assets.append("Bootloaders")
+    if config.get("SAVE_DFU_APPS", False):
+        enabled_assets.append("DFU Apps")
+
+    if not enabled_assets:
+        logger.info("No asset types are enabled for download.")
+        logger.info(
+            "Run 'fetchtastic setup' to configure which assets you want to download."
+        )
+        return all_downloads, all_new_versions, all_failed_downloads, latest_versions
+
     # Process firmware downloads (existing functionality)
     if config.get("SAVE_FIRMWARE", False):
         (

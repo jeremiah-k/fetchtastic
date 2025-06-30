@@ -3,7 +3,6 @@
 import re
 
 import requests
-from pick import pick
 
 
 def fetch_apk_assets():
@@ -30,6 +29,8 @@ def extract_base_name(filename):
 
 
 def select_assets(assets):
+    from pick import pick
+
     title = """Select the APK files you want to download (press SPACE to select, ENTER to confirm):
 Note: These are files from the latest release. Version numbers may change in other releases."""
     options = assets

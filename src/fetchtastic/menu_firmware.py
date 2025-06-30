@@ -3,7 +3,6 @@
 import re
 
 import requests
-from pick import pick
 
 
 def fetch_firmware_assets():
@@ -42,6 +41,8 @@ def select_assets(assets):
     Displays a menu for the user to select firmware assets to download.
     Returns a dictionary containing the selected base patterns.
     """
+    from pick import pick
+
     title = """Select the firmware files you want to download (press SPACE to select, ENTER to confirm):
 Note: These are files from the latest release. Version numbers may change in other releases."""
     options = assets
