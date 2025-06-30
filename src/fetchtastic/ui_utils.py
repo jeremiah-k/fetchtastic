@@ -10,16 +10,16 @@ from typing import Any, Dict, List, Optional
 import questionary
 from questionary import Style
 
-# Define consistent styling for all prompts using official Meshtastic colors
+# Define consistent styling for all prompts using clean color scheme
 # Primary: #2C2D3C (dark blue-gray), Secondary: #67EA94 (mint green)
 FETCHTASTIC_STYLE = Style(
     [
         (
             "qmark",
             "fg:#67ea94 bold",
-        ),  # token in front of the question - Meshtastic mint green
-        ("question", "fg:#2c2d3c bold"),  # question text - Meshtastic dark blue-gray
-        ("answer", "fg:#67ea94 bold"),  # submitted answer text - Meshtastic mint green
+        ),  # token in front of the question - mint green
+        ("question", "fg:#2c2d3c bold"),  # question text - dark blue-gray
+        ("answer", "fg:#67ea94 bold"),  # submitted answer text - mint green
         (
             "pointer",
             "fg:#67ea94 bold",

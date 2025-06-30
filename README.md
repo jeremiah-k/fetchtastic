@@ -1,11 +1,11 @@
 # Fetchtastic
 
-Fetchtastic is a fast, reliable utility for downloading and managing the latest Meshtastic Android app and Firmware releases. Features a modern interface with official Meshtastic branding, intelligent preselection, and lightning-fast performance.
+Fetchtastic is a fast, reliable utility for downloading and managing the latest Meshtastic Android app and Firmware releases. Features a modern interface with clean styling, intelligent preselection, and lightning-fast performance.
 
 ## ✨ Key Features
 
 - **Lightning Fast**: Smart caching provides 48x faster performance when assets are up to date
-- **Modern Interface**: Official Meshtastic branding with mint green accents and professional styling
+- **Modern Interface**: Clean design with mint green accents and professional styling
 - **Intelligent Preselection**: Remembers your previous choices and preselects them automatically
 - **Multi-Asset Support**: Download firmware, Android APKs, bootloaders, and DFU flashing apps
 - **Repository Browser**: Browse and download files from meshtastic.github.io
