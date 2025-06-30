@@ -1,6 +1,16 @@
 # Fetchtastic
 
-Fetchtastic is a utility for downloading and managing the latest Meshtastic Android app and Firmware releases. It also provides optional notifications via NTFY.
+Fetchtastic is a fast, reliable utility for downloading and managing the latest Meshtastic Android app and Firmware releases. Features a modern interface with official Meshtastic branding, intelligent preselection, and lightning-fast performance.
+
+## ✨ Key Features
+
+- **Lightning Fast**: Smart caching provides 48x faster performance when assets are up to date
+- **Modern Interface**: Official Meshtastic branding with mint green accents and professional styling
+- **Intelligent Preselection**: Remembers your previous choices and preselects them automatically
+- **Multi-Asset Support**: Download firmware, Android APKs, bootloaders, and DFU flashing apps
+- **Repository Browser**: Browse and download files from meshtastic.github.io
+- **Smart Notifications**: Optional NTFY integration for download completion alerts
+- **Cross-Platform**: Works on Linux, macOS, Windows, and Android (Termux)
 
 ## Table of Contents
 
@@ -237,14 +247,15 @@ pipx install fetchtastic       # Linux/Mac/Termux
 fetchtastic setup
 ```
 
-During setup, you will be able to:
+During setup, you'll experience the modern interface with intelligent preselection:
 
-- Choose whether to download APKs, firmware, or both.
-- Select specific assets to download.
-- Set the number of versions to keep.
-- Configure automatic extraction of firmware files (optional).
-- Set up notifications via NTFY (optional).
-- Add a cron job to run Fetchtastic regularly (optional).
+- **Asset Selection**: Choose firmware, Android APKs, bootloaders, and/or DFU flashing apps
+- **Smart Preselection**: Previously selected items are automatically preselected for convenience
+- **Specific Asset Choice**: Select exactly which firmware files and asset types you want
+- **Version Management**: Set how many versions to keep for each asset type
+- **Auto-Extraction**: Configure automatic extraction of firmware files (optional)
+- **Notifications**: Set up NTFY alerts for download completion (optional)
+- **Scheduling**: Add automated downloads via cron job or Windows startup (optional)
 
 ### Command List
 
