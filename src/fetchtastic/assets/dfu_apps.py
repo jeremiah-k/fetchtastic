@@ -103,12 +103,31 @@ class DFUAppsAsset(BaseAssetHandler):
             from pick import pick
 
             # Use pick for multi-selection
-            selected_options, selected_indices = pick(
+            result = pick(
                 options,
                 "Select DFU/flashing apps to download (SPACE to select, ENTER to confirm):",
                 multiselect=True,
                 min_selection_count=1,
             )
+
+            # Handle different pick result formats
+            if isinstance(result, tuple) and len(result) == 2:
+                # Format: (selected_options, selected_indices)
+                selected_options, selected_indices = result
+            elif isinstance(result, list) and result and isinstance(result[0], tuple):
+                # Format: [(option_text, index), (option_text, index), ...]
+                selected_options = [item[0] for item in result]
+                selected_indices = [item[1] for item in result]
+            else:
+                # Fallback - treat as list of options and find indices
+                selected_options = result if isinstance(result, list) else [result]
+                selected_indices = []
+                for option in selected_options:
+                    try:
+                        idx = options.index(option)
+                        selected_indices.append(idx)
+                    except ValueError:
+                        continue
 
             # Get selected app IDs
             selected_apps = [dfu_apps[i]["id"] for i in selected_indices]
