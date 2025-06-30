@@ -95,20 +95,17 @@ def run_asset_selection_menu(asset_manager, config, is_first_run):
             preselected.append(i + 1)
 
     try:
-        # Use pick for multi-selection with preselection
-        pick_kwargs = {
-            "multiselect": True,
-            "min_selection_count": 0,
-        }
-
-        # Add preselection if we have any
+        # Use pick for multi-selection
+        # Note: pick library doesn't support default_index with multiselect properly
+        # TODO: Implement preselection differently in the future
         if preselected:
-            pick_kwargs["default_index"] = preselected
+            print(f"Current selections: {', '.join([options[i] for i in preselected])}")
 
         result = pick(
             options,
             "Select asset types to download (SPACE to select, ENTER to confirm):",
-            **pick_kwargs,
+            multiselect=True,
+            min_selection_count=0,
         )
 
         # Handle the result - pick with multiselect=True returns different formats
@@ -522,18 +519,50 @@ def migrate_old_config_keys(config: Dict[str, Any]) -> Dict[str, Any]:
             old_assets = config["selected_assets"]
             print(f"Found old asset selection: {old_assets}")
 
-            # Determine asset type based on patterns
-            # APK patterns: fdroidRelease-, googleRelease-
-            # Firmware patterns: device-, rak4631-, tbeam, etc.
+            # Separate assets by type based on patterns
             apk_patterns = ["fdroidRelease-", "googleRelease-"]
-            is_apk_assets = any(asset in apk_patterns for asset in old_assets)
+            firmware_patterns = [
+                "device-",
+                "rak4631-",
+                "tbeam",
+                "t1000-e-",
+                "tlora-",
+                "littlefs-",
+                "bleota",
+            ]
 
-            if is_apk_assets:
-                config["SELECTED_APK_ASSETS"] = old_assets
-                print(f"Migrated to SELECTED_APK_ASSETS: {old_assets}")
-            else:
-                config["SELECTED_FIRMWARE_ASSETS"] = old_assets
-                print(f"Migrated to SELECTED_FIRMWARE_ASSETS: {old_assets}")
+            apk_assets = [
+                asset
+                for asset in old_assets
+                if any(pattern in asset for pattern in apk_patterns)
+            ]
+            firmware_assets = [
+                asset
+                for asset in old_assets
+                if any(pattern in asset for pattern in firmware_patterns)
+            ]
+
+            # Handle mixed or unknown assets
+            if apk_assets:
+                config["SELECTED_APK_ASSETS"] = apk_assets
+                print(f"Migrated to SELECTED_APK_ASSETS: {apk_assets}")
+
+            if firmware_assets:
+                config["SELECTED_FIRMWARE_ASSETS"] = firmware_assets
+                print(f"Migrated to SELECTED_FIRMWARE_ASSETS: {firmware_assets}")
+
+            # If we couldn't categorize some assets, put them in firmware as fallback
+            uncategorized = [
+                asset
+                for asset in old_assets
+                if asset not in apk_assets and asset not in firmware_assets
+            ]
+            if uncategorized:
+                existing_firmware = config.get("SELECTED_FIRMWARE_ASSETS", [])
+                config["SELECTED_FIRMWARE_ASSETS"] = existing_firmware + uncategorized
+                print(
+                    f"Migrated uncategorized assets to SELECTED_FIRMWARE_ASSETS: {uncategorized}"
+                )
 
             # Remove old key
             del config["selected_assets"]

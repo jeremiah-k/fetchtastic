@@ -109,20 +109,18 @@ class DFUAppsAsset(BaseAssetHandler):
         try:
             from pick import pick
 
-            # Use pick for multi-selection with preselection
-            pick_kwargs = {
-                "multiselect": True,
-                "min_selection_count": 1,
-            }
-
-            # Add preselection if we have any
+            # Use pick for multi-selection
+            # Note: pick library doesn't support default_index with multiselect properly
             if preselected:
-                pick_kwargs["default_index"] = preselected
+                print(
+                    f"Current selections: {', '.join([options[i] for i in preselected])}"
+                )
 
             result = pick(
                 options,
                 "Select DFU/flashing apps to download (SPACE to select, ENTER to confirm):",
-                **pick_kwargs,
+                multiselect=True,
+                min_selection_count=1,
             )
 
             # Handle different pick result formats
