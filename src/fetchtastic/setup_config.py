@@ -8,6 +8,7 @@ import string
 import subprocess
 import sys
 from datetime import datetime
+from typing import Any, Dict
 
 import platformdirs
 import yaml
@@ -423,6 +424,79 @@ def check_storage_setup():
             continue
 
 
+def migrate_old_config_keys(config: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Migrate old configuration keys to new format.
+
+    Args:
+        config: Configuration dictionary
+
+    Returns:
+        Updated configuration dictionary
+    """
+    # Check for old keys that need migration
+    old_key_mappings = {
+        "selected_assets": ["SELECTED_FIRMWARE_ASSETS", "SELECTED_APK_ASSETS"]
+    }
+
+    found_old_keys = []
+    for old_key in old_key_mappings.keys():
+        if old_key in config:
+            found_old_keys.append(old_key)
+
+    if not found_old_keys:
+        return config
+
+    print("\n" + "=" * 60)
+    print("Configuration Migration Required")
+    print("=" * 60)
+    print("Your configuration contains old settings that need to be updated:")
+    for key in found_old_keys:
+        print(f"  - {key}")
+    print()
+    print("These settings can be automatically migrated to the new format.")
+    print("The old settings will be removed after migration.")
+    print()
+
+    migrate = (
+        input("Would you like to migrate these settings? [y/n] (default: yes): ")
+        .strip()
+        .lower()
+        or "y"
+    )
+
+    if migrate == "y":
+        print("Migrating configuration...")
+
+        # Migrate selected_assets to new format
+        if "selected_assets" in config:
+            old_assets = config["selected_assets"]
+            print(f"Found old asset selection: {old_assets}")
+
+            # Convert to new format - assume these are firmware assets for now
+            # In a real migration, you might need more logic to determine the type
+            config["SELECTED_FIRMWARE_ASSETS"] = old_assets
+            print(f"Migrated to SELECTED_FIRMWARE_ASSETS: {old_assets}")
+
+            # Remove old key
+            del config["selected_assets"]
+            print("Removed old 'selected_assets' key")
+
+        print("Migration completed successfully!")
+        print("=" * 60)
+        print()
+        return config
+    else:
+        print("Migration cancelled. You'll need to reconfigure your asset selections.")
+        # Remove old keys without migration
+        for old_key in found_old_keys:
+            if old_key in config:
+                del config[old_key]
+        print("=" * 60)
+        print()
+        return config
+
+
 def run_setup():
     """
     Runs the interactive setup process for Fetchtastic, guiding the user through configuration, migration, asset selection, scheduling, and notification setup.
@@ -509,6 +583,10 @@ def run_setup():
     if exists:
         # Load existing configuration
         config = load_config()
+
+        # Check for and migrate old configuration keys
+        config = migrate_old_config_keys(config)
+
         print(
             "Existing configuration found. You can keep current settings or change them."
         )

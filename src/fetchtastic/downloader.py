@@ -711,6 +711,44 @@ def _initial_setup_and_config() -> Tuple[
     return config, current_version, latest_version, update_available, paths_and_urls
 
 
+def _check_for_old_config_keys(config: Dict[str, Any]) -> bool:
+    """
+    Check for old configuration keys and warn user to run setup again.
+
+    Args:
+        config: Configuration dictionary
+
+    Returns:
+        True if old keys found, False otherwise
+    """
+    old_keys = [
+        "selected_assets",  # Old key for firmware/APK assets
+    ]
+
+    found_old_keys = []
+    for key in old_keys:
+        if key in config:
+            found_old_keys.append(key)
+
+    if found_old_keys:
+        logger.error("⚠️  Outdated configuration detected!")
+        logger.error(
+            "Your configuration file contains old settings that are no longer supported:"
+        )
+        for key in found_old_keys:
+            logger.error(f"  - {key}")
+        logger.error("")
+        logger.error("Please run 'fetchtastic setup' to update your configuration.")
+        logger.error(
+            "During setup, you'll be asked if you want to migrate your existing settings."
+        )
+        logger.error("")
+        logger.error("Exiting to prevent unexpected behavior.")
+        return True
+
+    return False
+
+
 def _check_wifi_connection(config: Dict[str, Any]) -> None:
     """
     Checks Wi-Fi connection if configured, updating the global 'downloads_skipped'.
@@ -749,12 +787,9 @@ def _process_firmware_downloads(
     all_failed_firmware_downloads: List[Dict[str, str]] = []
     latest_firmware_version: Optional[str] = None
 
-    # Check for firmware assets with backward compatibility
-    firmware_assets = config.get("SELECTED_FIRMWARE_ASSETS", []) or config.get(
-        "selected_assets", []
-    )
-
-    if config.get("SAVE_FIRMWARE", False) and firmware_assets:
+    if config.get("SAVE_FIRMWARE", False) and config.get(
+        "SELECTED_FIRMWARE_ASSETS", []
+    ):
         latest_firmware_releases: List[Dict[str, Any]] = _get_latest_releases_data(
             paths_and_urls["firmware_releases_url"],
             config.get(
@@ -828,7 +863,7 @@ def _process_firmware_downloads(
                     logger.info("No new pre-release firmware found or downloaded.")
             else:
                 logger.info("No latest release tag found. Skipping pre-release check.")
-    elif not firmware_assets:
+    elif not config.get("SELECTED_FIRMWARE_ASSETS", []):
         logger.info("No firmware assets selected. Skipping firmware download.")
 
     return (
@@ -864,12 +899,7 @@ def _process_apk_downloads(
     )  # Initialize all_failed_apk_downloads
     latest_apk_version: Optional[str] = None
 
-    # Check for APK assets with backward compatibility
-    apk_assets = config.get("SELECTED_APK_ASSETS", []) or config.get(
-        "selected_assets", []
-    )
-
-    if config.get("SAVE_APKS", False) and apk_assets:
+    if config.get("SAVE_APKS", False) and config.get("SELECTED_APK_ASSETS", []):
         latest_android_releases: List[Dict[str, Any]] = _get_latest_releases_data(
             paths_and_urls["android_releases_url"],
             config.get(
@@ -903,7 +933,7 @@ def _process_apk_downloads(
         )  # Extend with failed details
         if apk_downloaded:
             logger.info(f"Downloaded Android APK versions: {', '.join(apk_downloaded)}")
-    elif not apk_assets:
+    elif not config.get("SELECTED_APK_ASSETS", []):
         logger.info("No APK assets selected. Skipping APK download.")
 
     return (
@@ -2261,6 +2291,10 @@ def main() -> None:
 
     if not config or not paths_and_urls:  # Check if setup failed
         logger.error("Initial setup failed. Exiting.")  # Changed to logger.error
+        return
+
+    # Check for old configuration keys and warn user
+    if _check_for_old_config_keys(config):
         return
 
     _check_wifi_connection(config)
