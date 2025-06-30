@@ -96,15 +96,13 @@ def run_asset_selection_menu(asset_manager, config, is_first_run):
             min_selection_count=1,
         )
 
-        # Debug: Print result type and content
-        print(f"DEBUG: pick result type: {type(result)}")
-        print(f"DEBUG: pick result content: {result}")
-
         # Handle the result - pick with multiselect=True should return (selected_items, indices)
+        # But sometimes it might return just the list of selected items
         if isinstance(result, tuple) and len(result) == 2:
+            # Normal case: (selected_options, selected_indices)
             selected_options, selected_indices = result
         elif isinstance(result, list):
-            # If it's just a list, assume these are the selected options
+            # Alternative case: just the list of selected options
             selected_options = result
             # Find indices by matching options
             selected_indices = []
@@ -113,11 +111,19 @@ def run_asset_selection_menu(asset_manager, config, is_first_run):
                     idx = options.index(option)
                     selected_indices.append(idx)
                 except ValueError:
-                    pass
+                    # If we can't find the option, skip it
+                    continue
         else:
-            # Fallback - treat as single selection
+            # Unexpected format - try to handle gracefully
+            print(f"Unexpected pick result format: {type(result)} - {result}")
             selected_options = [result] if result else []
-            selected_indices = [options.index(result)] if result in options else []
+            selected_indices = []
+            for option in selected_options:
+                try:
+                    idx = options.index(option)
+                    selected_indices.append(idx)
+                except (ValueError, AttributeError):
+                    continue
 
         # Process selections
         selected_config = {}
