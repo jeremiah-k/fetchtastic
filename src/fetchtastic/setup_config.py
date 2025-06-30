@@ -71,6 +71,7 @@ def run_asset_selection_menu(asset_manager, config, is_first_run):
 
     # Get all available asset types
     asset_types = asset_manager.get_all_asset_types()
+    print(f"DEBUG: run_asset_selection_menu got {len(asset_types)} asset types")
 
     if not asset_types:
         print(
@@ -738,13 +739,28 @@ def run_setup():
 
     # Initialize asset manager and register handlers
     asset_manager = AssetManager()
-    asset_manager.register_handler(MeshtasticFirmwareAsset())
-    asset_manager.register_handler(MeshtasticAndroidAsset())
-    asset_manager.register_handler(BootloaderAsset())
-    asset_manager.register_handler(DFUAppsAsset())
+    print("DEBUG: Registering asset handlers...")
+    try:
+        asset_manager.register_handler(MeshtasticFirmwareAsset())
+        print("DEBUG: Registered MeshtasticFirmwareAsset")
+        asset_manager.register_handler(MeshtasticAndroidAsset())
+        print("DEBUG: Registered MeshtasticAndroidAsset")
+        asset_manager.register_handler(BootloaderAsset())
+        print("DEBUG: Registered BootloaderAsset")
+        asset_manager.register_handler(DFUAppsAsset())
+        print("DEBUG: Registered DFUAppsAsset")
+    except Exception as e:
+        print(f"DEBUG: Error registering handlers: {e}")
+        import traceback
+
+        traceback.print_exc()
+
+    asset_types = asset_manager.get_all_asset_types()
+    print(f"DEBUG: Asset manager has {len(asset_types)} asset types")
 
     # Run asset selection menu
     selected_assets = run_asset_selection_menu(asset_manager, config, is_first_run)
+    print(f"DEBUG: run_asset_selection_menu returned: {selected_assets}")
 
     if not selected_assets:
         print("Please select at least one type of asset to download.")
