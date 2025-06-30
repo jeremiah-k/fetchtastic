@@ -677,7 +677,11 @@ def run_setup():
         config = load_config()
 
         # Check for and migrate old configuration keys
-        config = migrate_old_config_keys(config)
+        migrated_config = migrate_old_config_keys(config)
+        if migrated_config != config:
+            # Migration occurred, save the updated config immediately
+            config = migrated_config
+            save_config(config)
 
         print(
             "Existing configuration found. You can keep current settings or change them."

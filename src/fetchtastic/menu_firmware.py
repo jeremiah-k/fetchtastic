@@ -77,7 +77,7 @@ Note: These are files from the latest release. Version numbers may change in oth
     for asset_name in selected_assets:
         pattern = extract_base_name(asset_name)
         base_patterns.append(pattern)
-    return {"selected_assets": base_patterns}
+    return {"SELECTED_FIRMWARE_ASSETS": base_patterns}
 
 
 def run_menu(preselected_patterns=None):

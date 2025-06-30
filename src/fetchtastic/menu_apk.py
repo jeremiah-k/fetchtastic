@@ -84,7 +84,7 @@ def run_menu(preselected_patterns=None):
         selected_patterns = select_assets(assets, preselected_patterns)
         if selected_patterns is None:
             return None
-        return {"selected_assets": selected_patterns}
+        return {"SELECTED_APK_ASSETS": selected_patterns}
     except Exception as e:
         print(f"An error occurred: {e}")
         return None
