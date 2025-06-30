@@ -87,21 +87,29 @@ def run_asset_selection_menu(asset_manager, config, is_first_run):
         # Format option with description
         option_text = f"{asset_type.name} - {asset_type.description}"
         options.append(option_text)
+        print(f"DEBUG: Added option {i}: {option_text}")
 
         # Check if this asset type is currently enabled
         if asset_type.config_key in config and config[asset_type.config_key]:
             preselected.append(i)
+            print(f"DEBUG: Asset type {i} is preselected")
+
+    print(f"DEBUG: Total options: {len(options)}")
+    print(f"DEBUG: Preselected: {preselected}")
+    print(f"DEBUG: About to call pick with options: {options}")
 
     try:
         # Use pick for multi-selection
         # Note: For multiselect, we can't use default_index with a list
         # Instead, we'll handle preselection differently if needed
+        print("DEBUG: Calling pick now...")
         result = pick(
             options,
             "Select asset types to download (SPACE to select, ENTER to confirm):",
             multiselect=True,
-            min_selection_count=1,
+            min_selection_count=0,
         )
+        print(f"DEBUG: pick returned: {result} (type: {type(result)})")
 
         # Handle the result - pick with multiselect=True should return (selected_items, indices)
         # But sometimes it might return just the list of selected items
