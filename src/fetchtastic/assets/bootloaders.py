@@ -102,21 +102,36 @@ class BootloaderAsset(BaseAssetHandler):
             },
         ]
 
-        # Create options for pick
+        # Create options for pick and check for preselected items
         options = []
-        for category in bootloader_categories:
+        preselected = []
+        current_types = config.get("SELECTED_BOOTLOADER_TYPES", [])
+
+        for i, category in enumerate(bootloader_categories):
             option_text = f"{category['name']} - {category['description']}"
             options.append(option_text)
+
+            # Check if this category is currently selected
+            if category["id"] in current_types:
+                preselected.append(i)
 
         try:
             from pick import pick
 
-            # Use pick for multi-selection
+            # Use pick for multi-selection with preselection
+            pick_kwargs = {
+                "multiselect": True,
+                "min_selection_count": 1,
+            }
+
+            # Add preselection if we have any
+            if preselected:
+                pick_kwargs["default_index"] = preselected
+
             result = pick(
                 options,
                 "Select bootloader types to download (SPACE to select, ENTER to confirm):",
-                multiselect=True,
-                min_selection_count=1,
+                **pick_kwargs,
             )
 
             # Handle different pick result formats
@@ -197,21 +212,37 @@ class BootloaderAsset(BaseAssetHandler):
             },
         ]
 
-        # Create options for pick
+        # Create options for pick and check for preselected items
         options = []
-        for option in stock_options:
+        preselected = []
+        current_assets = config.get("SELECTED_BOOTLOADER_ASSETS", {})
+        current_stock = current_assets.get("stock_bootloaders", [])
+
+        for i, option in enumerate(stock_options):
             option_text = f"{option['name']} - {option['description']}"
             options.append(option_text)
+
+            # Check if this bootloader is currently selected
+            if option["id"] in current_stock:
+                preselected.append(i)
 
         try:
             from pick import pick
 
-            # Use pick for multi-selection
+            # Use pick for multi-selection with preselection
+            pick_kwargs = {
+                "multiselect": True,
+                "min_selection_count": 1,
+            }
+
+            # Add preselection if we have any
+            if preselected:
+                pick_kwargs["default_index"] = preselected
+
             result = pick(
                 options,
                 "Select stock bootloaders to download (SPACE to select, ENTER to confirm):",
-                multiselect=True,
-                min_selection_count=1,
+                **pick_kwargs,
             )
 
             # Handle different pick result formats

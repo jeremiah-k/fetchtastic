@@ -82,24 +82,33 @@ def run_asset_selection_menu(asset_manager, config, is_first_run):
     options = []
     preselected = []
 
+    # Add "Select All" option at the top
+    options.append("🔥 SELECT ALL ASSET TYPES")
+
     for i, asset_type in enumerate(asset_types):
-        # Format option with description
+        # Format option with description (offset by 1 due to "Select All" option)
         option_text = f"{asset_type.name} - {asset_type.description}"
         options.append(option_text)
 
-        # Check if this asset type is currently enabled
+        # Check if this asset type is currently enabled (offset by 1)
         if asset_type.config_key in config and config[asset_type.config_key]:
-            preselected.append(i)
+            preselected.append(i + 1)
 
     try:
-        # Use pick for multi-selection
-        # Note: For multiselect, we can't use default_index with a list
-        # Instead, we'll handle preselection differently if needed
+        # Use pick for multi-selection with preselection
+        pick_kwargs = {
+            "multiselect": True,
+            "min_selection_count": 0,
+        }
+
+        # Add preselection if we have any
+        if preselected:
+            pick_kwargs["default_index"] = preselected
+
         result = pick(
             options,
             "Select asset types to download (SPACE to select, ENTER to confirm):",
-            multiselect=True,
-            min_selection_count=0,
+            **pick_kwargs,
         )
 
         # Handle the result - pick with multiselect=True returns different formats
@@ -128,17 +137,26 @@ def run_asset_selection_menu(asset_manager, config, is_first_run):
             selected_options = [result] if result else []
             selected_indices = []
 
+        # Handle "Select All" option
+        if 0 in selected_indices:  # "Select All" was selected
+            # Select all asset types (indices 1 through len(asset_types))
+            selected_indices = list(range(1, len(asset_types) + 1))
+            print("🔥 Selected all asset types!")
+
+        # Adjust indices to account for "Select All" option (subtract 1 from each)
+        adjusted_indices = [idx - 1 for idx in selected_indices if idx > 0]
+
         # Process selections - first set the basic enable/disable flags
         selected_config = {}
         for i, asset_type in enumerate(asset_types):
             # Enable if selected, disable if not
-            selected_config[asset_type.config_key] = i in selected_indices
+            selected_config[asset_type.config_key] = i in adjusted_indices
 
         # Run selection menus for each enabled asset type and collect additional config
         updated_config = selected_config.copy()
 
         for i, asset_type in enumerate(asset_types):
-            if i not in selected_indices:
+            if i not in adjusted_indices:
                 continue  # Skip unselected asset types
 
             handler = asset_manager.get_handler(asset_type.id)
@@ -750,6 +768,13 @@ def run_setup():
 
     # Update config with selected assets
     config.update(selected_assets)
+
+    # Clean up any old configuration keys that are no longer needed
+    old_keys_to_remove = ["selected_assets"]
+    for old_key in old_keys_to_remove:
+        if old_key in config:
+            del config[old_key]
+            print(f"Removed outdated configuration key: {old_key}")
 
     # Asset-specific configuration is now handled by the modular asset system
     # All configuration prompts are handled within each asset handler

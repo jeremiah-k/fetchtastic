@@ -91,23 +91,38 @@ class DFUAppsAsset(BaseAssetHandler):
             }
         ]
 
-        # Create options for pick
+        # Create options for pick and check for preselected items
         options = []
-        for app in dfu_apps:
+        preselected = []
+        current_apps = config.get("SELECTED_DFU_APPS", [])
+
+        for i, app in enumerate(dfu_apps):
             option_text = (
                 f"{app['name']} - {app['description']} (Repository: {app['repo']})"
             )
             options.append(option_text)
 
+            # Check if this app is currently selected
+            if app["id"] in current_apps:
+                preselected.append(i)
+
         try:
             from pick import pick
 
-            # Use pick for multi-selection
+            # Use pick for multi-selection with preselection
+            pick_kwargs = {
+                "multiselect": True,
+                "min_selection_count": 1,
+            }
+
+            # Add preselection if we have any
+            if preselected:
+                pick_kwargs["default_index"] = preselected
+
             result = pick(
                 options,
                 "Select DFU/flashing apps to download (SPACE to select, ENTER to confirm):",
-                multiselect=True,
-                min_selection_count=1,
+                **pick_kwargs,
             )
 
             # Handle different pick result formats
