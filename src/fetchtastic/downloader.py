@@ -749,9 +749,12 @@ def _process_firmware_downloads(
     all_failed_firmware_downloads: List[Dict[str, str]] = []
     latest_firmware_version: Optional[str] = None
 
-    if config.get("SAVE_FIRMWARE", False) and config.get(
-        "SELECTED_FIRMWARE_ASSETS", []
-    ):
+    # Check for firmware assets with backward compatibility
+    firmware_assets = config.get("SELECTED_FIRMWARE_ASSETS", []) or config.get(
+        "selected_assets", []
+    )
+
+    if config.get("SAVE_FIRMWARE", False) and firmware_assets:
         latest_firmware_releases: List[Dict[str, Any]] = _get_latest_releases_data(
             paths_and_urls["firmware_releases_url"],
             config.get(
@@ -825,7 +828,7 @@ def _process_firmware_downloads(
                     logger.info("No new pre-release firmware found or downloaded.")
             else:
                 logger.info("No latest release tag found. Skipping pre-release check.")
-    elif not config.get("SELECTED_FIRMWARE_ASSETS", []):
+    elif not firmware_assets:
         logger.info("No firmware assets selected. Skipping firmware download.")
 
     return (
@@ -861,7 +864,12 @@ def _process_apk_downloads(
     )  # Initialize all_failed_apk_downloads
     latest_apk_version: Optional[str] = None
 
-    if config.get("SAVE_APKS", False) and config.get("SELECTED_APK_ASSETS", []):
+    # Check for APK assets with backward compatibility
+    apk_assets = config.get("SELECTED_APK_ASSETS", []) or config.get(
+        "selected_assets", []
+    )
+
+    if config.get("SAVE_APKS", False) and apk_assets:
         latest_android_releases: List[Dict[str, Any]] = _get_latest_releases_data(
             paths_and_urls["android_releases_url"],
             config.get(
@@ -895,7 +903,7 @@ def _process_apk_downloads(
         )  # Extend with failed details
         if apk_downloaded:
             logger.info(f"Downloaded Android APK versions: {', '.join(apk_downloaded)}")
-    elif not config.get("SELECTED_APK_ASSETS", []):
+    elif not apk_assets:
         logger.info("No APK assets selected. Skipping APK download.")
 
     return (
@@ -1777,6 +1785,37 @@ def _download_readme_from_repo(
         logger.warning(f"Failed to download README: {e}")
 
 
+def _download_otafix_documentation_images(release_dir: str) -> None:
+    """
+    Download OTA-fix documentation images.
+
+    Args:
+        release_dir: Directory to save documentation images
+    """
+    try:
+        base_url = "https://raw.githubusercontent.com/oltaco/Adafruit_nRF52_Bootloader_OTAFIX/refs/heads/master/docs"
+        images = ["dfu_settings_01.png", "dfu_settings_02.png"]
+
+        docs_dir = os.path.join(release_dir, "docs")
+        if not os.path.exists(docs_dir):
+            os.makedirs(docs_dir)
+
+        for image in images:
+            image_url = f"{base_url}/{image}"
+            image_path = os.path.join(docs_dir, image)
+
+            if not os.path.exists(image_path):
+                if download_file_with_retry(image_url, image_path):
+                    logger.info(f"Downloaded documentation image: {image}")
+                else:
+                    logger.warning(f"Failed to download documentation image: {image}")
+            else:
+                logger.debug(f"Documentation image already exists: {image}")
+
+    except Exception as e:
+        logger.warning(f"Failed to download OTA-fix documentation images: {e}")
+
+
 def _process_bootloader_downloads(
     config: Dict[str, Any], paths_and_urls: Dict[str, str]
 ) -> Tuple[List[str], List[str], List[Dict[str, str]], Optional[str]]:
@@ -1876,12 +1915,13 @@ def _process_bootloader_downloads(
                                         }
                                     )
 
-                    # Download README and release notes
+                    # Download README, release notes, and documentation images
                     if assets_downloaded:
                         _download_release_notes(
                             latest_release, release_dir, "otafix-bootloaders"
                         )
                         _download_readme_from_repo(repo_owner, repo_name, release_dir)
+                        _download_otafix_documentation_images(release_dir)
                         downloaded_bootloaders.append(release_tag)
                         new_bootloader_versions.append(release_tag)
                         logger.info(
@@ -1896,9 +1936,87 @@ def _process_bootloader_downloads(
         stock_assets = selected_assets.get("stock_bootloaders", [])
         if stock_assets:
             logger.info("Processing stock bootloaders...")
-            # TODO: Implement stock bootloader downloads
-            # This would involve downloading from specific sources for T1000-E and RAK4631
-            logger.info("Stock bootloader downloads not yet implemented")
+
+            # Create stock bootloaders directory
+            stock_dir = os.path.join(bootloaders_dir, "stock")
+            if not os.path.exists(stock_dir):
+                os.makedirs(stock_dir)
+
+            # Download RAK4631 bootloader if selected
+            if "rak4631" in stock_assets:
+                rak_dir = os.path.join(stock_dir, "rak4631")
+                if not os.path.exists(rak_dir):
+                    os.makedirs(rak_dir)
+
+                rak_file = "wiscore_rak4631_board_bootloader-0.4.3_s140_6.1.1.uf2"
+                rak_url = f"https://github.com/RAKWireless/WisBlock/raw/refs/heads/master/bootloader/RAK4630/Latest/{rak_file}"
+                rak_path = os.path.join(rak_dir, rak_file)
+
+                if not os.path.exists(rak_path):
+                    logger.info(f"Downloading RAK4631 stock bootloader: {rak_file}")
+                    if download_file_with_retry(rak_url, rak_path):
+                        logger.info("Successfully downloaded RAK4631 bootloader")
+                        downloaded_bootloaders.append("RAK4631 Stock Bootloader")
+                        new_bootloader_versions.append("RAK4631 v0.4.3")
+                        # Set a static version for stock bootloaders
+                        if not latest_bootloader_version:
+                            latest_bootloader_version = "Stock bootloaders available"
+                    else:
+                        logger.error("Failed to download RAK4631 bootloader")
+                        failed_bootloader_list.append(
+                            {
+                                "type": "Stock Bootloader",
+                                "file_name": rak_file,
+                                "release_tag": "RAK4631 v0.4.3",
+                                "url": rak_url,
+                                "path_to_download": rak_path,
+                            }
+                        )
+                else:
+                    logger.info("RAK4631 stock bootloader already exists")
+                    # Set version even if already exists
+                    if not latest_bootloader_version:
+                        latest_bootloader_version = "Stock bootloaders available"
+
+            # Download T1000-E bootloader if selected
+            if "t1000e" in stock_assets:
+                t1000e_dir = os.path.join(stock_dir, "t1000e")
+                if not os.path.exists(t1000e_dir):
+                    os.makedirs(t1000e_dir)
+
+                t1000e_file = "t1000_e_bootloader-0.9.1-5-g488711a_s140_7.3.0.zip"
+                t1000e_url = (
+                    f"https://files.seeedstudio.com/wiki/SenseCAP/lorahub/{t1000e_file}"
+                )
+                t1000e_path = os.path.join(t1000e_dir, t1000e_file)
+
+                if not os.path.exists(t1000e_path):
+                    logger.info(f"Downloading T1000-E stock bootloader: {t1000e_file}")
+                    if download_file_with_retry(t1000e_url, t1000e_path):
+                        logger.info("Successfully downloaded T1000-E bootloader")
+                        downloaded_bootloaders.append("T1000-E Stock Bootloader")
+                        new_bootloader_versions.append("T1000-E v0.9.1")
+                        # Set a static version for stock bootloaders
+                        if not latest_bootloader_version:
+                            latest_bootloader_version = "Stock bootloaders available"
+                    else:
+                        logger.error("Failed to download T1000-E bootloader")
+                        failed_bootloader_list.append(
+                            {
+                                "type": "Stock Bootloader",
+                                "file_name": t1000e_file,
+                                "release_tag": "T1000-E v0.9.1",
+                                "url": t1000e_url,
+                                "path_to_download": t1000e_path,
+                            }
+                        )
+                else:
+                    logger.info("T1000-E stock bootloader already exists")
+                    # Set version even if already exists
+                    if not latest_bootloader_version:
+                        latest_bootloader_version = "Stock bootloaders available"
+
+            logger.info("Stock bootloader processing complete")
 
     logger.info("Bootloader download processing complete")
     return (
@@ -2079,7 +2197,8 @@ def _process_all_asset_downloads(
         all_downloads.extend(downloaded_firmwares)
         all_new_versions.extend(new_firmware_versions)
         all_failed_downloads.extend(failed_firmware_list)
-        latest_versions["firmware"] = latest_firmware_version
+        if latest_firmware_version:
+            latest_versions["firmware"] = latest_firmware_version
 
     # Process APK downloads (existing functionality)
     if config.get("SAVE_APKS", False):
@@ -2089,7 +2208,8 @@ def _process_all_asset_downloads(
         all_downloads.extend(downloaded_apks)
         all_new_versions.extend(new_apk_versions)
         all_failed_downloads.extend(failed_apk_list)
-        latest_versions["android"] = latest_apk_version
+        if latest_apk_version:
+            latest_versions["android"] = latest_apk_version
 
     # Process bootloader downloads (new functionality)
     if config.get("SAVE_BOOTLOADERS", False):
@@ -2102,7 +2222,8 @@ def _process_all_asset_downloads(
         all_downloads.extend(downloaded_bootloaders)
         all_new_versions.extend(new_bootloader_versions)
         all_failed_downloads.extend(failed_bootloader_list)
-        latest_versions["bootloaders"] = latest_bootloader_version
+        if latest_bootloader_version:
+            latest_versions["bootloaders"] = latest_bootloader_version
 
     # Process DFU apps downloads (new functionality)
     if config.get("SAVE_DFU_APPS", False):
@@ -2115,7 +2236,8 @@ def _process_all_asset_downloads(
         all_downloads.extend(downloaded_dfu_apps)
         all_new_versions.extend(new_dfu_app_versions)
         all_failed_downloads.extend(failed_dfu_app_list)
-        latest_versions["dfu_apps"] = latest_dfu_app_version
+        if latest_dfu_app_version:
+            latest_versions["dfu_apps"] = latest_dfu_app_version
 
     return all_downloads, all_new_versions, all_failed_downloads, latest_versions
 

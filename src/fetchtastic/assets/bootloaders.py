@@ -155,24 +155,53 @@ class BootloaderAsset(BaseAssetHandler):
         }
 
     def _select_stock_bootloaders(self) -> List[str]:
-        """Select stock bootloader assets."""
+        """Select stock bootloader assets using pick."""
+        from pick import pick
+
         print("\n" + "=" * 40)
         print("Stock Device Bootloaders")
         print("=" * 40)
-        print("Available stock bootloaders:")
-        print("1. Seeed Studio T1000-E Tracker")
-        print("2. RAK Wisblock 4631")
-        print()
 
-        choice = input("Select bootloaders (1,2 or 'all'): ").strip().lower()
+        # Define available stock bootloaders
+        stock_options = [
+            {
+                "id": "t1000e",
+                "name": "Seeed Studio T1000-E Tracker",
+                "description": "Stock bootloader v0.9.1 (one-time download)",
+            },
+            {
+                "id": "rak4631",
+                "name": "RAK Wisblock 4631",
+                "description": "Stock bootloader v0.4.3 (one-time download)",
+            },
+        ]
 
-        assets = []
-        if choice == "all" or "1" in choice:
-            assets.append("t1000e_stock")
-        if choice == "all" or "2" in choice:
-            assets.append("rak4631_stock")
+        # Create options for pick
+        options = []
+        for option in stock_options:
+            option_text = f"{option['name']} - {option['description']}"
+            options.append(option_text)
 
-        return assets
+        try:
+            # Use pick for multi-selection
+            selected_options, selected_indices = pick(
+                options,
+                "Select stock bootloaders to download (SPACE to select, ENTER to confirm):",
+                multiselect=True,
+                min_selection_count=1,
+            )
+
+            # Get selected bootloader IDs
+            selected_bootloaders = [stock_options[i]["id"] for i in selected_indices]
+            print(
+                f"\nSelected stock bootloaders: {', '.join([stock_options[i]['name'] for i in selected_indices])}"
+            )
+
+            return selected_bootloaders
+
+        except (KeyboardInterrupt, EOFError):
+            print("\nSelection cancelled.")
+            return []
 
     def _select_otafix_bootloaders(self) -> List[str]:
         """Select OTA-fix bootloader assets."""
