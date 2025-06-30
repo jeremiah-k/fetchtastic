@@ -262,6 +262,13 @@ def download_file_with_retry(
         # Log completion after successful file replacement (moved below)
 
         if download_path.endswith(".zip"):
+            # Check if temp file exists before trying to validate it
+            if not os.path.exists(temp_path):
+                logger.error(
+                    f"Temporary zip file {temp_path} does not exist for validation. Download may have been interrupted."
+                )
+                return False
+
             try:
                 with zipfile.ZipFile(temp_path, "r") as zf_temp:
                     if zf_temp.testzip() is not None:

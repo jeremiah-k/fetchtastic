@@ -10,20 +10,30 @@ from typing import Any, Dict, List, Optional
 import questionary
 from questionary import Style
 
-# Define consistent styling for all prompts
+# Define consistent styling for all prompts using official Meshtastic colors
+# Primary: #2C2D3C (dark blue-gray), Secondary: #67EA94 (mint green)
 FETCHTASTIC_STYLE = Style(
     [
-        ("qmark", "fg:#673ab7 bold"),  # token in front of the question
-        ("question", "bold"),  # question text
-        ("answer", "fg:#f44336 bold"),  # submitted answer text behind the question
-        ("pointer", "fg:#673ab7 bold"),  # pointer used in select and checkbox prompts
+        (
+            "qmark",
+            "fg:#67ea94 bold",
+        ),  # token in front of the question - Meshtastic mint green
+        ("question", "fg:#2c2d3c bold"),  # question text - Meshtastic dark blue-gray
+        ("answer", "fg:#67ea94 bold"),  # submitted answer text - Meshtastic mint green
+        (
+            "pointer",
+            "fg:#67ea94 bold",
+        ),  # pointer used in select and checkbox prompts - mint green
         (
             "highlighted",
-            "fg:#673ab7 bold",
-        ),  # pointed-at choice in select and checkbox prompts
-        ("selected", "fg:#cc5454"),  # style for a selected item of a checkbox
-        ("separator", "fg:#cc5454"),  # separator in lists
-        ("instruction", ""),  # user instructions for select, rawselect, checkbox
+            "fg:#67ea94 bold",
+        ),  # pointed-at choice in select and checkbox prompts - mint green
+        (
+            "selected",
+            "fg:#67ea94",
+        ),  # style for a selected item of a checkbox - mint green
+        ("separator", "fg:#888888"),  # separator in lists - gray
+        ("instruction", "fg:#888888 italic"),  # user instructions - gray italic
         ("text", ""),  # plain text
         (
             "disabled",
@@ -64,7 +74,10 @@ def multi_select_with_preselection(
             choice_objects.append(Choice(choice, checked=is_checked))
 
         selected = questionary.checkbox(
-            message, choices=choice_objects, style=FETCHTASTIC_STYLE
+            message,
+            choices=choice_objects,
+            style=FETCHTASTIC_STYLE,
+            instruction="(Use arrow keys to move, space to select)",
         ).ask()
 
         # Handle cancellation (Ctrl+C returns None)
@@ -101,7 +114,11 @@ def single_select(
 
     try:
         selected = questionary.select(
-            message, choices=choices, default=default, style=FETCHTASTIC_STYLE
+            message,
+            choices=choices,
+            default=default,
+            style=FETCHTASTIC_STYLE,
+            instruction="(Use arrow keys to move, enter to select)",
         ).ask()
 
         return selected

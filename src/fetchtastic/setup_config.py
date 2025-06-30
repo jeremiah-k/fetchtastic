@@ -85,9 +85,6 @@ def run_asset_selection_menu(asset_manager, config, is_first_run):
     options = []
     preselected = []
 
-    # Add "Select All" option at the top
-    options.append("🔥 SELECT ALL ASSET TYPES")
-
     for i, asset_type in enumerate(asset_types):
         # Format option with description
         option_text = f"{asset_type.name} - {asset_type.description}"
@@ -117,19 +114,9 @@ def run_asset_selection_menu(asset_manager, config, is_first_run):
             print("No asset types selected.")
             return None
 
-        # Handle "Select All" option
-        if "🔥 SELECT ALL ASSET TYPES" in selected_options:
-            # Select all asset types (exclude the "Select All" option itself)
-            selected_options = [
-                opt for opt in options if opt != "🔥 SELECT ALL ASSET TYPES"
-            ]
-            print("🔥 Selected all asset types!")
-
         # Map selected options back to asset type indices
         adjusted_indices = []
         for option in selected_options:
-            if option == "🔥 SELECT ALL ASSET TYPES":
-                continue  # Skip the "Select All" option
             # Find the corresponding asset type
             for i, asset_type in enumerate(asset_types):
                 expected_option = f"{asset_type.name} - {asset_type.description}"
@@ -1028,6 +1015,8 @@ def run_setup():
         # Linux/Mac: Check if any Fetchtastic cron jobs exist
         any_cron_jobs_exist = check_any_cron_jobs_exist()
         if any_cron_jobs_exist:
+            from fetchtastic.ui_utils import confirm_prompt
+
             cron_prompt = confirm_prompt(
                 "Fetchtastic cron jobs are already set up. Do you want to reconfigure them?",
                 default=False,
