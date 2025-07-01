@@ -8,7 +8,7 @@ import string
 import subprocess
 import sys
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import platformdirs
 import yaml
@@ -85,7 +85,7 @@ def run_asset_selection_menu(asset_manager, config, is_first_run):
     options = []
     preselected = []
 
-    for i, asset_type in enumerate(asset_types):
+    for asset_type in asset_types:
         # Format option with description
         option_text = f"{asset_type.name} - {asset_type.description}"
         options.append(option_text)
@@ -427,6 +427,39 @@ def config_exists(directory=None):
     return False, None
 
 
+def save_config(config: Dict[str, Any], config_file: str = None) -> bool:
+    """
+    Save configuration to YAML file.
+
+    Args:
+        config: Configuration dictionary to save
+        config_file: Optional path to config file. If None, uses CONFIG_FILE
+
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    import yaml
+
+    file_path = config_file or CONFIG_FILE
+
+    # Make sure the config directory exists
+    config_dir = os.path.dirname(file_path)
+    if not os.path.exists(config_dir):
+        try:
+            os.makedirs(config_dir, exist_ok=True)
+        except Exception as e:
+            print(f"Error creating config directory: {e}")
+            return False
+
+    try:
+        with open(file_path, "w") as f:
+            yaml.dump(config, f)
+        return True
+    except Exception as e:
+        print(f"Error saving configuration: {e}")
+        return False
+
+
 def check_storage_setup():
     """
     For Termux: Check if the storage is set up and accessible.
@@ -458,6 +491,73 @@ def check_storage_setup():
             continue
 
 
+def get_asset_patterns(config: Dict[str, Any], asset_type: str) -> List[str]:
+    """
+    Get asset patterns for a specific asset type from the generic pattern system.
+    Falls back to legacy config keys for backward compatibility.
+
+    Args:
+        config: Configuration dictionary
+        asset_type: Asset type identifier (e.g., 'android', 'firmware', 'bootloaders')
+
+    Returns:
+        List of asset patterns for the specified type
+    """
+    # First check the new generic pattern system
+    generic_patterns = config.get("SELECTED_ASSET_PATTERNS", {})
+    if asset_type in generic_patterns:
+        return generic_patterns[asset_type]
+
+    # Fall back to legacy config keys for backward compatibility
+    legacy_key_mapping = {
+        "android": "SELECTED_APK_ASSETS",
+        "firmware": "SELECTED_FIRMWARE_ASSETS",
+        "bootloaders": "SELECTED_BOOTLOADER_ASSETS",
+    }
+
+    legacy_key = legacy_key_mapping.get(asset_type)
+    if legacy_key and legacy_key in config:
+        return config[legacy_key]
+
+    return []
+
+
+def set_asset_patterns(
+    config: Dict[str, Any], asset_type: str, patterns: List[str]
+) -> Dict[str, Any]:
+    """
+    Set asset patterns for a specific asset type in the generic pattern system.
+    Also updates legacy config keys for backward compatibility.
+
+    Args:
+        config: Configuration dictionary
+        asset_type: Asset type identifier
+        patterns: List of asset patterns to set
+
+    Returns:
+        Updated configuration dictionary
+    """
+    # Initialize generic pattern system if not present
+    if "SELECTED_ASSET_PATTERNS" not in config:
+        config["SELECTED_ASSET_PATTERNS"] = {}
+
+    # Set patterns in generic system
+    config["SELECTED_ASSET_PATTERNS"][asset_type] = patterns
+
+    # Also set in legacy keys for backward compatibility
+    legacy_key_mapping = {
+        "android": "SELECTED_APK_ASSETS",
+        "firmware": "SELECTED_FIRMWARE_ASSETS",
+        "bootloaders": "SELECTED_BOOTLOADER_ASSETS",
+    }
+
+    legacy_key = legacy_key_mapping.get(asset_type)
+    if legacy_key:
+        config[legacy_key] = patterns
+
+    return config
+
+
 def migrate_old_config_keys(config: Dict[str, Any]) -> Dict[str, Any]:
     """
     Migrate old configuration keys to new format.
@@ -470,7 +570,10 @@ def migrate_old_config_keys(config: Dict[str, Any]) -> Dict[str, Any]:
     """
     # Check for old keys that need migration
     old_key_mappings = {
-        "selected_assets": ["SELECTED_FIRMWARE_ASSETS", "SELECTED_APK_ASSETS"]
+        "selected_assets": ["SELECTED_FIRMWARE_ASSETS", "SELECTED_APK_ASSETS"],
+        "SELECTED_APK_ASSETS": [
+            "SELECTED_ASSET_PATTERNS"
+        ],  # New generic pattern system
     }
 
     found_old_keys = []
@@ -478,7 +581,12 @@ def migrate_old_config_keys(config: Dict[str, Any]) -> Dict[str, Any]:
         if old_key in config:
             found_old_keys.append(old_key)
 
-    if not found_old_keys:
+    # Also check for SELECTED_APK_ASSETS that needs migration to generic patterns
+    needs_pattern_migration = (
+        "SELECTED_APK_ASSETS" in config and "SELECTED_ASSET_PATTERNS" not in config
+    )
+
+    if not found_old_keys and not needs_pattern_migration:
         return config
 
     print("\n" + "=" * 60)
@@ -487,6 +595,8 @@ def migrate_old_config_keys(config: Dict[str, Any]) -> Dict[str, Any]:
     print("Your configuration contains old settings that need to be updated:")
     for key in found_old_keys:
         print(f"  - {key}")
+    if needs_pattern_migration:
+        print("  - SELECTED_APK_ASSETS (migrating to generic pattern system)")
     print()
     print("These settings can be automatically migrated to the new format.")
     print("The old settings will be removed after migration.")
@@ -556,6 +666,22 @@ def migrate_old_config_keys(config: Dict[str, Any]) -> Dict[str, Any]:
             # Remove old key
             del config["selected_assets"]
             print("Removed old 'selected_assets' key")
+
+        # Migrate SELECTED_APK_ASSETS to generic pattern system
+        if needs_pattern_migration:
+            apk_patterns = config["SELECTED_APK_ASSETS"]
+            print(f"Migrating APK patterns to generic system: {apk_patterns}")
+
+            # Initialize generic pattern system
+            if "SELECTED_ASSET_PATTERNS" not in config:
+                config["SELECTED_ASSET_PATTERNS"] = {}
+
+            # Store APK patterns under the android asset type
+            config["SELECTED_ASSET_PATTERNS"]["android"] = apk_patterns
+            print(f"Migrated to SELECTED_ASSET_PATTERNS.android: {apk_patterns}")
+
+            # Keep the old key for backward compatibility during transition
+            print("Keeping SELECTED_APK_ASSETS for backward compatibility")
 
         print("Migration completed successfully!")
         print("=" * 60)
@@ -674,16 +800,10 @@ def run_setup():
         )
         is_first_run = False
         current_base_dir = config.get("BASE_DIR", DEFAULT_BASE_DIR)
-        base_dir_prompt = (
-            f"Enter the base directory for Fetchtastic (current: {current_base_dir}): "
-        )
     else:
         # Initialize default configuration
         config = {}
         is_first_run = True
-        base_dir_prompt = (
-            f"Enter the base directory for Fetchtastic (default: {DEFAULT_BASE_DIR}): "
-        )
 
     # Prompt for base directory
     from fetchtastic.ui_utils import text_input

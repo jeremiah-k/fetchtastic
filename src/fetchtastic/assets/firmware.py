@@ -29,10 +29,8 @@ class MeshtasticFirmwareAsset(BaseAssetHandler):
         return "Meshtastic firmware releases from GitHub"
 
     def run_selection_menu(self, config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Run the firmware selection menu."""
-        # Get preselected patterns from config
-        preselected_patterns = config.get("SELECTED_FIRMWARE_ASSETS", [])
-        return menu_firmware.run_menu(preselected_patterns)
+        """Run the firmware selection menu with system choice."""
+        return self._run_firmware_system_menu(config)
 
     def get_config_keys(self) -> List[str]:
         return [
@@ -44,6 +42,220 @@ class MeshtasticFirmwareAsset(BaseAssetHandler):
             "EXTRACT_PATTERNS",
             "EXCLUDE_PATTERNS",
         ]
+
+    def _run_firmware_system_menu(
+        self, config: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """Run firmware system selection menu (new vs legacy)."""
+        from fetchtastic.ui_utils import single_select_with_info
+
+        print("\n" + "=" * 60)
+        print("Firmware Download System Selection")
+        print("=" * 60)
+
+        # Define firmware system options
+        system_options = [
+            {
+                "title": "New Hardware-Based System",
+                "value": "new_system",
+                "description": "Organize by manufacturer and device model using official hardware list",
+            },
+            {
+                "title": "Legacy Pattern System",
+                "value": "legacy_system",
+                "description": "Use existing pattern-based firmware selection system",
+            },
+        ]
+
+        # Get current system preference from config
+        current_system = config.get("FIRMWARE_SYSTEM", "legacy_system")
+
+        try:
+            selected_system = single_select_with_info(
+                message="Choose firmware download system:",
+                choices=system_options,
+                default=current_system,
+            )
+
+            if not selected_system:
+                print("No system selected.")
+                return None
+
+            if selected_system == "new_system":
+                return self._run_new_firmware_menu(config)
+            else:
+                return self._run_legacy_firmware_menu(config)
+
+        except (KeyboardInterrupt, EOFError):
+            print("\nSelection cancelled.")
+            return None
+
+    def _run_legacy_firmware_menu(
+        self, config: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """Run the legacy firmware selection menu."""
+        # Get preselected patterns from config
+        preselected_patterns = config.get("SELECTED_FIRMWARE_ASSETS", [])
+        result = menu_firmware.run_menu(preselected_patterns)
+
+        if result:
+            # Ensure the system preference is saved
+            result["FIRMWARE_SYSTEM"] = "legacy_system"
+
+        return result
+
+    def _run_new_firmware_menu(
+        self, config: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """Run the new hardware-based firmware selection menu."""
+        import requests
+
+        from fetchtastic.ui_utils import (
+            multi_select_with_info,
+            show_preselection_info,
+        )
+
+        print("\n" + "=" * 60)
+        print("Hardware-Based Firmware Selection")
+        print("=" * 60)
+
+        try:
+            # Fetch hardware list from meshtastic web flasher
+            print("Fetching hardware list...")
+            hardware_url = "https://raw.githubusercontent.com/meshtastic/web-flasher/refs/heads/main/public/data/hardware-list.json"
+            response = requests.get(hardware_url, timeout=10)
+            response.raise_for_status()
+            hardware_list = response.json()
+
+            # Group devices by manufacturer tags
+            manufacturers = {}
+            for device in hardware_list:
+                if not device.get("activelySupported", False):
+                    continue  # Skip unsupported devices
+
+                tags = device.get("tags", ["Other"])
+                for tag in tags:
+                    if tag not in manufacturers:
+                        manufacturers[tag] = []
+                    manufacturers[tag].append(device)
+
+            # Create manufacturer selection options
+            manufacturer_options = []
+            for manufacturer in sorted(manufacturers.keys()):
+                device_count = len(manufacturers[manufacturer])
+                manufacturer_options.append(
+                    {
+                        "title": manufacturer,
+                        "value": manufacturer,
+                        "description": f"{device_count} supported devices",
+                    }
+                )
+
+            # Get preselected manufacturers from config
+            current_manufacturers = config.get("SELECTED_FIRMWARE_MANUFACTURERS", [])
+
+            # Show preselection info if any
+            if current_manufacturers:
+                show_preselection_info(current_manufacturers)
+
+            selected_manufacturers = multi_select_with_info(
+                message="Select device manufacturers:",
+                choices=manufacturer_options,
+                preselected=current_manufacturers,
+                min_selection=1,
+            )
+
+            if not selected_manufacturers:
+                print("No manufacturers selected.")
+                return None
+
+            print(f"\nSelected manufacturers: {', '.join(selected_manufacturers)}")
+
+            # For each manufacturer, let user select specific devices
+            selected_devices = {}
+            for manufacturer in selected_manufacturers:
+                devices = self._select_manufacturer_devices(
+                    manufacturer, manufacturers[manufacturer], config
+                )
+                if devices:
+                    selected_devices[manufacturer] = devices
+
+            if not selected_devices:
+                print("No devices selected.")
+                return None
+
+            return {
+                "FIRMWARE_SYSTEM": "new_system",
+                "SELECTED_FIRMWARE_MANUFACTURERS": selected_manufacturers,
+                "SELECTED_FIRMWARE_DEVICES": selected_devices,
+            }
+
+        except requests.RequestException as e:
+            print(f"Error fetching hardware list: {e}")
+            print("Falling back to legacy system...")
+            return self._run_legacy_firmware_menu(config)
+        except (KeyboardInterrupt, EOFError):
+            print("\nSelection cancelled.")
+            return None
+
+    def _select_manufacturer_devices(
+        self, manufacturer: str, devices: List[Dict], config: Dict[str, Any]
+    ) -> List[str]:
+        """Select specific devices for a manufacturer."""
+        from fetchtastic.ui_utils import (
+            multi_select_with_info,
+            show_preselection_info,
+        )
+
+        print(f"\n" + "=" * 40)
+        print(f"{manufacturer} Device Selection")
+        print("=" * 40)
+
+        # Create device selection options
+        device_options = []
+        for device in devices:
+            display_name = device.get("displayName", "Unknown Device")
+            platform_target = device.get("platformioTarget", "unknown")
+            architecture = device.get("architecture", "unknown")
+            support_level = device.get("supportLevel", "unknown")
+
+            description = f"Target: {platform_target} | Arch: {architecture} | Support: {support_level}"
+
+            device_options.append(
+                {
+                    "title": display_name,
+                    "value": platform_target,
+                    "description": description,
+                }
+            )
+
+        # Get preselected devices from config
+        current_devices = config.get("SELECTED_FIRMWARE_DEVICES", {}).get(
+            manufacturer, []
+        )
+
+        try:
+            # Show preselection info if any
+            if current_devices:
+                show_preselection_info(current_devices)
+
+            selected_devices = multi_select_with_info(
+                message=f"Select {manufacturer} devices:",
+                choices=device_options,
+                preselected=current_devices,
+                min_selection=1,
+            )
+
+            if not selected_devices:
+                print(f"No {manufacturer} devices selected.")
+                return []
+
+            print(f"\nSelected {manufacturer} devices: {', '.join(selected_devices)}")
+            return selected_devices
+
+        except (KeyboardInterrupt, EOFError):
+            print("\nDevice selection cancelled.")
+            return []
 
     def validate_config(self, config: Dict[str, Any]) -> bool:
         """Validate firmware configuration."""

@@ -2,13 +2,13 @@
 
 """
 UI utilities for consistent questionary-based user interfaces.
-Provides common styling and helper functions for prompts.
+Provides common styling and helper functions for prompts with enhanced information display.
 """
 
 from typing import Any, Dict, List, Optional
 
 import questionary
-from questionary import Style
+from questionary import Choice, Style
 
 # Define consistent styling for all prompts using clean color scheme
 # Primary: #67EA94 (mint green), Secondary: #FFFFFF (white), Tertiary: #AAAAAA (light gray)
@@ -183,3 +183,137 @@ def show_preselection_info(preselected: List[str]) -> None:
             f"Previously selected items will be preselected: {', '.join(preselected)}"
         )
         print()
+
+
+def create_choice_with_info(
+    title: str, value: Optional[str] = None, description: Optional[str] = None
+) -> Choice:
+    """
+    Create a questionary Choice object with optional description information.
+
+    Args:
+        title: The display text for the choice
+        value: The value to return when selected (defaults to title)
+        description: Optional description text to display
+
+    Returns:
+        Choice object with enhanced information
+    """
+    if description:
+        # Format the choice with description for display
+        display_text = f"{title} - {description}"
+    else:
+        display_text = title
+
+    return Choice(title=display_text, value=value or title)
+
+
+def multi_select_with_info(
+    message: str,
+    choices: List[Dict[str, str]],
+    preselected: Optional[List[str]] = None,
+    min_selection: int = 0,
+) -> Optional[List[str]]:
+    """
+    Create a multi-select prompt with enhanced information display.
+
+    Args:
+        message: The prompt message to display
+        choices: List of choice dictionaries with 'title', 'value', and optional 'description'
+        preselected: List of preselected values
+        min_selection: Minimum number of selections required
+
+    Returns:
+        List of selected values, or None if cancelled
+    """
+    if not choices:
+        return None
+
+    # Create Choice objects with information
+    choice_objects = []
+    for choice_dict in choices:
+        title = choice_dict.get("title", "")
+        value = choice_dict.get("value", title)
+        description = choice_dict.get("description", "")
+
+        # Create enhanced choice with description
+        if description:
+            display_text = f"{title} - {description}"
+        else:
+            display_text = title
+
+        is_checked = value in (preselected or [])
+        choice_objects.append(
+            Choice(title=display_text, value=value, checked=is_checked)
+        )
+
+    try:
+        selected = questionary.checkbox(
+            message,
+            choices=choice_objects,
+            style=FETCHTASTIC_STYLE,
+            instruction="(Use arrow keys to move, space to select, enter to confirm)",
+        ).ask()
+
+        # Handle cancellation (Ctrl+C returns None)
+        if selected is None:
+            return None
+
+        # Check minimum selection requirement
+        if min_selection > 0 and len(selected) < min_selection:
+            print(f"Please select at least {min_selection} item(s).")
+            return None
+
+        return selected
+
+    except KeyboardInterrupt:
+        return None
+
+
+def single_select_with_info(
+    message: str,
+    choices: List[Dict[str, str]],
+    default: Optional[str] = None,
+) -> Optional[str]:
+    """
+    Create a single-select prompt with enhanced information display.
+
+    Args:
+        message: The prompt message to display
+        choices: List of choice dictionaries with 'title', 'value', and optional 'description'
+        default: Default value to highlight
+
+    Returns:
+        Selected value, or None if cancelled
+    """
+    if not choices:
+        return None
+
+    # Create Choice objects with information
+    choice_objects = []
+    for choice_dict in choices:
+        title = choice_dict.get("title", "")
+        value = choice_dict.get("value", title)
+        description = choice_dict.get("description", "")
+
+        # Create enhanced choice with description
+        if description:
+            display_text = f"{title} - {description}"
+        else:
+            display_text = title
+
+        choice_objects.append(Choice(title=display_text, value=value))
+
+    try:
+        selected = questionary.select(
+            message,
+            choices=choice_objects,
+            default=default,
+            style=FETCHTASTIC_STYLE,
+            instruction="(Use arrow keys to move, enter to select)",
+        ).ask()
+
+        return selected
+
+    except KeyboardInterrupt:
+        return None
