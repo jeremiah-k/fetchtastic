@@ -147,24 +147,14 @@ class MeshtasticAndroidAsset(BaseAssetHandler):
         # Define Meshtastic Android app patterns with comprehensive descriptions
         pattern_options = [
             {
-                "title": "Release APK",
+                "title": "Google Play Store Release",
                 "value": ".*release.*\\.apk$",
-                "description": "Official release builds optimized for production use (recommended for most users)",
-            },
-            {
-                "title": "Debug APK",
-                "value": ".*debug.*\\.apk$",
-                "description": "Debug builds with additional logging and development features (larger file size)",
+                "description": "Official Google Play Store release builds with Google services (recommended for most users)",
             },
             {
                 "title": "F-Droid Release",
                 "value": ".*fdroid.*\\.apk$",
                 "description": "F-Droid compatible builds without proprietary Google dependencies (open source stores)",
-            },
-            {
-                "title": "All APK Variants",
-                "value": ".*\\.apk$",
-                "description": "Download all available APK build variants (release, debug, fdroid)",
             },
         ]
 
