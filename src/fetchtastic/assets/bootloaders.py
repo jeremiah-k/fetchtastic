@@ -16,7 +16,7 @@ class BootloaderAsset(BaseAssetHandler):
         asset_type = AssetType(
             id="bootloaders",
             name="Device Bootloaders",
-            description="Bootloaders for various Meshtastic-compatible devices",
+            description="Stock and enhanced bootloaders for nRF52840 and other Meshtastic-compatible devices",
             config_key="SAVE_BOOTLOADERS",
         )
         super().__init__(asset_type)
@@ -189,22 +189,67 @@ class BootloaderAsset(BaseAssetHandler):
         print("Stock Device Bootloaders")
         print("=" * 40)
 
-        # Define available stock bootloaders with enhanced information
+        # Define available stock bootloaders with comprehensive information
         stock_options = [
-            {
-                "title": "Seeed T1000-E Tracker",
-                "value": "t1000e_stock",
-                "description": "Original bootloader for Seeed Card Tracker T1000-E (one-time download)",
-            },
             {
                 "title": "RAK4631 WisBlock Core",
                 "value": "rak4631_stock",
-                "description": "Original bootloader for RAK4631 WisBlock Core module (one-time download)",
+                "description": "Original Adafruit UF2 bootloader for RAK4631 WisBlock Core module (RAK Wireless official)",
             },
             {
-                "title": "XIAO nRF52840 (Original)",
+                "title": "Seeed T1000-E Tracker",
+                "value": "t1000e_stock",
+                "description": "Factory bootloader for Seeed Card Tracker T1000-E (Seeed Studio official documentation)",
+            },
+            {
+                "title": "Seeed XIAO nRF52840",
                 "value": "xiao_nrf52840_stock",
-                "description": "Original Seeed XIAO nRF52840 bootloader (one-time download)",
+                "description": "Factory UF2 bootloader for Seeed XIAO nRF52840 (Seeed Studio wiki with recovery instructions)",
+            },
+            {
+                "title": "Seeed XIAO nRF52840 Sense",
+                "value": "xiao_nrf52840_sense_stock",
+                "description": "Factory UF2 bootloader for Seeed XIAO nRF52840 Sense variant (Seeed Studio official)",
+            },
+            {
+                "title": "LILYGO T-Echo",
+                "value": "t_echo_stock",
+                "description": "Original Adafruit UF2 bootloader for LILYGO T-Echo (Meshtastic documentation with recovery guide)",
+            },
+            {
+                "title": "RAK WisMesh Tap",
+                "value": "rak_wismeshtap_stock",
+                "description": "Factory bootloader for RAK WisMesh Tap touchscreen device (RAK Wireless official)",
+            },
+            {
+                "title": "RAK WisMesh Repeater",
+                "value": "rak_wismesh_repeater_stock",
+                "description": "Factory bootloader for RAK WisMesh Repeater (RAK2560) (RAK Wireless official)",
+            },
+            {
+                "title": "Heltec Mesh Node T114",
+                "value": "heltec_t114_stock",
+                "description": "Original bootloader for Heltec Mesh Node T114 with case support (Heltec Automation official)",
+            },
+            {
+                "title": "Heltec MeshPocket",
+                "value": "heltec_meshpocket_stock",
+                "description": "Factory bootloader for Heltec MeshPocket with E-ink display (Heltec Automation official)",
+            },
+            {
+                "title": "Nano G2 Ultra",
+                "value": "nano_g2_ultra_stock",
+                "description": "Original bootloader for B&Q Nano G2 Ultra nRF52840 device (B&Q Consulting official)",
+            },
+            {
+                "title": "Canary One",
+                "value": "canary_one_stock",
+                "description": "Factory bootloader for Canary One nRF52840 device (Canary Labs official)",
+            },
+            {
+                "title": "ThinkNode M1",
+                "value": "thinknode_m1_stock",
+                "description": "Original UF2 bootloader for Elecrow ThinkNode M1 with E-ink display (Elecrow official)",
             },
         ]
 
@@ -247,42 +292,52 @@ class BootloaderAsset(BaseAssetHandler):
         print("Modified Bootloaders (OTA-fix)")
         print("=" * 40)
 
-        # Define common OTA-fix bootloader patterns with descriptions
+        # Define enhanced OTA-fix bootloader patterns with comprehensive descriptions
         pattern_options = [
             {
-                "title": "All RAK4631 Bootloaders",
+                "title": "All RAK4631 Enhanced Bootloaders",
                 "value": ".*rak4631.*",
-                "description": "Enhanced RAK4631 bootloaders with OTA improvements (hex, zip, uf2)",
+                "description": "Enhanced Adafruit bootloaders for RAK4631 with OTA improvements (hex, zip, uf2 formats available)",
             },
             {
-                "title": "All XIAO nRF52840 Bootloaders",
+                "title": "All XIAO nRF52840 Enhanced Bootloaders",
                 "value": ".*xiao_nrf52840.*",
-                "description": "Enhanced XIAO nRF52840 bootloaders (regular and sense variants)",
+                "description": "Enhanced Adafruit bootloaders for XIAO nRF52840 regular and sense variants (Seeed Studio compatible)",
             },
             {
-                "title": "All ProMicro nRF52840 Bootloaders",
+                "title": "All ProMicro nRF52840 Enhanced Bootloaders",
                 "value": ".*promicro_nrf52840.*",
-                "description": "Enhanced ProMicro nRF52840 bootloaders for DIY builds",
+                "description": "Enhanced Adafruit bootloaders for ProMicro nRF52840 DIY builds (community developed)",
+            },
+            {
+                "title": "All T-Echo Enhanced Bootloaders",
+                "value": ".*t.?echo.*",
+                "description": "Enhanced Adafruit bootloaders for LILYGO T-Echo with improved OTA support (LILYGO compatible)",
+            },
+            {
+                "title": "All Heltec nRF52 Enhanced Bootloaders",
+                "value": ".*heltec.*nrf.*",
+                "description": "Enhanced bootloaders for Heltec nRF52840 devices (T114, MeshPocket) with OTA improvements",
             },
             {
                 "title": "UF2 Update Files Only",
                 "value": ".*\\.uf2$",
-                "description": "UF2 update files for direct flashing via USB mass storage",
+                "description": "UF2 update files for direct drag-and-drop flashing via USB mass storage mode",
             },
             {
-                "title": "HEX Files Only",
+                "title": "HEX Programming Files Only",
                 "value": ".*\\.hex$",
-                "description": "HEX files for programming with external tools",
+                "description": "HEX files for programming with external tools (J-Link, OpenOCD, nrfjprog)",
             },
             {
-                "title": "ZIP Archives Only",
+                "title": "ZIP Archive Packages Only",
                 "value": ".*\\.zip$",
-                "description": "ZIP archive files containing multiple bootloader variants",
+                "description": "ZIP archive packages containing multiple bootloader variants and documentation",
             },
             {
-                "title": "All Enhanced Bootloaders",
+                "title": "All Enhanced Bootloader Files",
                 "value": ".*",
-                "description": "All available enhanced bootloader files with OTA improvements",
+                "description": "All available enhanced bootloader files with OTA improvements (Adafruit nRF52 bootloader based)",
             },
         ]
 

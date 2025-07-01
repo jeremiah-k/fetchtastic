@@ -16,7 +16,7 @@ class DFUAppsAsset(BaseAssetHandler):
         asset_type = AssetType(
             id="dfu_apps",
             name="DFU/Firmware Flashing Apps",
-            description="Apps for flashing firmware and bootloaders to devices",
+            description="Nordic DFU and device management apps for flashing firmware and bootloaders over Bluetooth",
             config_key="SAVE_DFU_APPS",
         )
         super().__init__(asset_type)
@@ -94,17 +94,22 @@ class DFUAppsAsset(BaseAssetHandler):
         print("DFU/Firmware Flashing Apps Selection")
         print("=" * 60)
 
-        # Define available DFU apps with enhanced information
+        # Define available DFU apps with comprehensive information
         dfu_app_options = [
             {
                 "title": "Nordic DFU Library APK",
                 "value": "nordic_dfu",
-                "description": "Android DFU library for flashing Nordic nRF devices (NordicSemiconductor/Android-DFU-Library)",
+                "description": "Android DFU library for flashing Nordic nRF52 devices over Bluetooth (NordicSemiconductor/Android-DFU-Library)",
             },
             {
                 "title": "nRF Connect Device Manager",
                 "value": "nrf_device_manager",
-                "description": "Nordic's official device management app with DFU capabilities (NordicSemiconductor/Android-nRF-Connect-Device-Manager)",
+                "description": "Nordic's official device management app with advanced DFU and debugging capabilities (NordicSemiconductor/Android-nRF-Connect-Device-Manager)",
+            },
+            {
+                "title": "nRF Connect for Mobile",
+                "value": "nrf_connect_mobile",
+                "description": "Nordic's comprehensive Bluetooth Low Energy scanner and device interaction tool (NordicSemiconductor/Android-nRF-Connect)",
             },
         ]
 

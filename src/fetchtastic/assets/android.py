@@ -17,7 +17,7 @@ class MeshtasticAndroidAsset(BaseAssetHandler):
         asset_type = AssetType(
             id="android",
             name="Meshtastic Android APKs",
-            description="Meshtastic Android app releases from GitHub",
+            description="Official Meshtastic Android app releases with multiple build variants (release, debug, F-Droid)",
             config_key="SAVE_APKS",
         )
         super().__init__(asset_type)
@@ -144,27 +144,27 @@ class MeshtasticAndroidAsset(BaseAssetHandler):
         print("Meshtastic Android App Variants")
         print("=" * 40)
 
-        # Define common Meshtastic Android patterns with descriptions
+        # Define Meshtastic Android app patterns with comprehensive descriptions
         pattern_options = [
             {
                 "title": "Release APK",
                 "value": ".*release.*\\.apk$",
-                "description": "Official release builds (recommended for most users)",
+                "description": "Official release builds optimized for production use (recommended for most users)",
             },
             {
                 "title": "Debug APK",
                 "value": ".*debug.*\\.apk$",
-                "description": "Debug builds with additional logging and development features",
+                "description": "Debug builds with additional logging and development features (larger file size)",
             },
             {
                 "title": "F-Droid Release",
                 "value": ".*fdroid.*\\.apk$",
-                "description": "F-Droid compatible builds without proprietary dependencies",
+                "description": "F-Droid compatible builds without proprietary Google dependencies (open source stores)",
             },
             {
-                "title": "All APK Files",
+                "title": "All APK Variants",
                 "value": ".*\\.apk$",
-                "description": "Download all available APK variants",
+                "description": "Download all available APK build variants (release, debug, fdroid)",
             },
         ]
 

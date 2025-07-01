@@ -17,7 +17,7 @@ class MeshtasticFirmwareAsset(BaseAssetHandler):
         asset_type = AssetType(
             id="firmware",
             name="Meshtastic Firmware",
-            description="Meshtastic firmware releases from GitHub",
+            description="Official Meshtastic firmware releases for all supported devices (ESP32, nRF52, RP2040)",
             config_key="SAVE_FIRMWARE",
         )
         super().__init__(asset_type)
@@ -56,17 +56,17 @@ class MeshtasticFirmwareAsset(BaseAssetHandler):
         print("Firmware Download System Selection")
         print("=" * 60)
 
-        # Define firmware system options
+        # Define firmware system options with comprehensive descriptions
         system_options = [
             {
                 "title": "New Hardware-Based System",
                 "value": "new_system",
-                "description": "Organize by manufacturer and device model using official hardware list",
+                "description": "Organize by manufacturer and device model using official Meshtastic hardware list (recommended for most users)",
             },
             {
                 "title": "Legacy Pattern System",
                 "value": "legacy_system",
-                "description": "Use existing pattern-based firmware selection system",
+                "description": "Use existing regex pattern-based firmware selection system (advanced users and custom builds)",
             },
         ]
 
