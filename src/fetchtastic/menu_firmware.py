@@ -33,14 +33,15 @@ def extract_base_name(filename):
     """
     # Regular expression to match version numbers and commit hashes
     # This handles complex patterns like '-2.7.0.16192.local705515a' and '-2.5.13.1a06f88'
+    # Also handles meshtasticd format without dots: 'meshtasticd-2.7.0.local705515a-src.zip'
     base_name = re.sub(
-        r"([_-])\d+\.\d+\.\d+(?:\.\d+)?(?:\.local[\da-f]+)?(?:\.[\da-f]+)?",
+        r"([_-])\d+\.\d+\.\d+(?:\.\d+)?(?:\.local[\da-f]+|\.[\da-f]+|local[\da-f]+)?",
         r"\1",
         filename,
     )
 
-    # Clean up remaining version-like suffixes (like '705515a' or just 'a')
-    base_name = re.sub(r"([_-])[\da-f]*[a-f][\da-f]*(?=\.|$)", r"\1", base_name)
+    # Clean up remaining version-like suffixes and commit hashes (like '705515a', 'a06f88', etc.)
+    base_name = re.sub(r"([_-])[\da-f]{6,}(?=\.|$|[_-])", r"\1", base_name)
     return base_name
 
 

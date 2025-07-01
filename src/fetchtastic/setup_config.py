@@ -148,10 +148,9 @@ def run_asset_selection_menu(asset_manager, config, is_first_run):
             # Run the asset-specific selection menu
             selection_result = handler.run_selection_menu(config)
             if not selection_result:
-                print(
-                    f"No {asset_type.name.lower()} selected. Disabling this asset type."
-                )
-                updated_config[asset_type.config_key] = False
+                print(f"Failed to configure {asset_type.name}. Please try setup again.")
+                # Don't disable the asset type - keep it enabled but without specific selections
+                # This allows the user to try again without losing their asset type selection
                 continue
 
             # Update config with selection results
