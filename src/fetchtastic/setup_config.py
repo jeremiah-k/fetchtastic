@@ -62,7 +62,6 @@ def run_asset_selection_menu(asset_manager, config, is_first_run):
         Dictionary with updated configuration or None if cancelled
     """
     from fetchtastic.ui_utils import (
-        multi_select_with_preselection,
         show_preselection_info,
     )
 
@@ -99,12 +98,40 @@ def run_asset_selection_menu(asset_manager, config, is_first_run):
         if preselected:
             show_preselection_info(preselected)
 
-        selected_options = multi_select_with_preselection(
+        # Convert to enhanced format for new UI
+        asset_options = []
+        preselected_indices = []
+
+        for i, asset_type in enumerate(asset_types):
+            asset_options.append(
+                {
+                    "title": asset_type.name,
+                    "value": i,
+                    "description": asset_type.description,
+                }
+            )
+
+            # Check if preselected
+            option_text = f"{asset_type.name} - {asset_type.description}"
+            if option_text in preselected:
+                preselected_indices.append(i)
+
+        from fetchtastic.ui_utils import multi_select_with_info
+
+        selected_indices = multi_select_with_info(
             message="Select asset types to download:",
-            choices=options,
-            preselected=preselected,
+            choices=asset_options,
+            preselected=preselected_indices,
             min_selection=0,
         )
+
+        # Convert back to options format for compatibility
+        selected_options = []
+        if selected_indices:
+            for index in selected_indices:
+                asset_type = asset_types[index]
+                option_text = f"{asset_type.name} - {asset_type.description}"
+                selected_options.append(option_text)
 
         if selected_options is None:
             print("Asset selection cancelled.")
