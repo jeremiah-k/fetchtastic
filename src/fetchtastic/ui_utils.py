@@ -11,14 +11,11 @@ import questionary
 from questionary import Style
 
 # Define consistent styling for all prompts using clean color scheme
-# Primary: #2C2D3C (dark blue-gray), Secondary: #67EA94 (mint green)
+# Primary: #67EA94 (mint green), Secondary: #FFFFFF (white), Tertiary: #AAAAAA (light gray)
 FETCHTASTIC_STYLE = Style(
     [
-        (
-            "qmark",
-            "fg:#67ea94 bold",
-        ),  # token in front of the question - mint green
-        ("question", "fg:#2c2d3c bold"),  # question text - dark blue-gray
+        ("qmark", "fg:#67ea94 bold"),  # token in front of the question - mint green
+        ("question", "fg:#ffffff"),  # question text - white for better visibility
         ("answer", "fg:#67ea94 bold"),  # submitted answer text - mint green
         (
             "pointer",
@@ -26,14 +23,14 @@ FETCHTASTIC_STYLE = Style(
         ),  # pointer used in select and checkbox prompts - mint green
         (
             "highlighted",
-            "fg:#67ea94 bold",
+            "fg:#67ea94",
         ),  # pointed-at choice in select and checkbox prompts - mint green
         (
             "selected",
             "fg:#67ea94",
         ),  # style for a selected item of a checkbox - mint green
-        ("separator", "fg:#888888"),  # separator in lists - gray
-        ("instruction", "fg:#888888 italic"),  # user instructions - gray italic
+        ("instruction", "fg:#aaaaaa italic"),  # user instructions - light gray italic
+        ("separator", "fg:#555555"),  # separator in lists - medium gray
         ("text", ""),  # plain text
         (
             "disabled",

@@ -2372,6 +2372,8 @@ def _process_all_asset_downloads(
         all_failed_downloads.extend(failed_apk_list)
         if latest_apk_version:
             latest_versions["android"] = latest_apk_version
+    elif config.get("SELECTED_APK_ASSETS", []):
+        logger.info("Android APK processing skipped (disabled in config)")
 
     # Process bootloader downloads (new functionality)
     if config.get("SAVE_BOOTLOADERS", False):

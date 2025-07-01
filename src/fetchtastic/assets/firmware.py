@@ -129,10 +129,9 @@ class MeshtasticFirmwareAsset(BaseAssetHandler):
 
     def _setup_extraction_patterns(self, config: Dict[str, Any]):
         """Setup extraction patterns for firmware."""
-        print(
-            "Enter the keywords to match for extraction from the firmware zip files, separated by spaces."
-        )
-        print(
+        from fetchtastic.ui_utils import text_input
+
+        example_text = (
             "Example: rak4631- tbeam t1000-e- tlora-v2-1-1_6- device- littlefs- bleota"
         )
 
@@ -142,7 +141,7 @@ class MeshtasticFirmwareAsset(BaseAssetHandler):
             print(f"Current patterns: {current_patterns}")
 
             # Ask if user wants to keep or change patterns
-            from fetchtastic.ui_utils import confirm_prompt, text_input
+            from fetchtastic.ui_utils import confirm_prompt
 
             keep_patterns = confirm_prompt(
                 "Do you want to keep the current extraction patterns?", default=True
@@ -155,8 +154,9 @@ class MeshtasticFirmwareAsset(BaseAssetHandler):
                 # Keep existing patterns
                 print(f"Keeping current extraction patterns: {current_patterns}")
             else:
-                # Get new patterns
-                extract_patterns = text_input("Enter new extraction patterns:")
+                # Get new patterns with proper questionary styling
+                prompt_message = f"Enter new extraction patterns:\n{example_text}"
+                extract_patterns = text_input(prompt_message)
 
                 if extract_patterns is None:
                     print("Setup cancelled.")
@@ -167,10 +167,9 @@ class MeshtasticFirmwareAsset(BaseAssetHandler):
                 else:
                     print("No patterns entered. Keeping current patterns.")
         else:
-            # No existing patterns, get new ones
-            from fetchtastic.ui_utils import text_input
-
-            extract_patterns = text_input("Extraction patterns:")
+            # No existing patterns, get new ones with proper questionary styling
+            prompt_message = f"Extraction patterns:\n{example_text}"
+            extract_patterns = text_input(prompt_message)
 
             if extract_patterns is None:
                 print("Setup cancelled.")
@@ -205,8 +204,7 @@ class MeshtasticFirmwareAsset(BaseAssetHandler):
             print("Setup cancelled.")
             return config
         elif exclude_choice:
-            print("Enter the keywords to exclude from extraction, separated by spaces.")
-            print("Example: .hex tcxo request s3-core")
+            exclude_example = "Example: .hex tcxo request s3-core"
 
             # Check if there are existing exclude patterns
             if config.get("EXCLUDE_PATTERNS"):
@@ -226,8 +224,9 @@ class MeshtasticFirmwareAsset(BaseAssetHandler):
                     current_excludes = " ".join(config.get("EXCLUDE_PATTERNS", []))
                     print(f"Keeping current exclude patterns: {current_excludes}")
                 else:
-                    # Get new exclude patterns
-                    exclude_patterns = text_input("Enter new exclude patterns:")
+                    # Get new exclude patterns with proper questionary styling
+                    prompt_message = f"Enter new exclude patterns:\n{exclude_example}"
+                    exclude_patterns = text_input(prompt_message)
 
                     if exclude_patterns is None:
                         print("Setup cancelled.")
@@ -238,8 +237,9 @@ class MeshtasticFirmwareAsset(BaseAssetHandler):
                     else:
                         print("No exclude patterns entered. Keeping current patterns.")
             else:
-                # No existing exclude patterns, get new ones
-                exclude_patterns = text_input("Exclude patterns:")
+                # No existing exclude patterns, get new ones with proper questionary styling
+                prompt_message = f"Exclude patterns:\n{exclude_example}"
+                exclude_patterns = text_input(prompt_message)
 
                 if exclude_patterns is None:
                     print("Setup cancelled.")
