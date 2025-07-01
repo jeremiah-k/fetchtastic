@@ -17,7 +17,7 @@ class MeshtasticAndroidAsset(BaseAssetHandler):
         asset_type = AssetType(
             id="android",
             name="Meshtastic Android APKs",
-            description="Official Meshtastic Android app releases from GitHub",
+            description="Meshtastic Android app releases from GitHub",
             config_key="SAVE_APKS",
         )
         super().__init__(asset_type)
@@ -26,7 +26,7 @@ class MeshtasticAndroidAsset(BaseAssetHandler):
         return "Meshtastic Android APKs"
 
     def get_description(self) -> str:
-        return "Official Meshtastic Android app releases from GitHub"
+        return "Meshtastic Android app releases from GitHub"
 
     def run_selection_menu(self, config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Run the APK selection menu."""

@@ -17,7 +17,7 @@ class MeshtasticFirmwareAsset(BaseAssetHandler):
         asset_type = AssetType(
             id="firmware",
             name="Meshtastic Firmware",
-            description="Official Meshtastic firmware releases from GitHub",
+            description="Meshtastic firmware releases from GitHub",
             config_key="SAVE_FIRMWARE",
         )
         super().__init__(asset_type)
@@ -26,7 +26,7 @@ class MeshtasticFirmwareAsset(BaseAssetHandler):
         return "Meshtastic Firmware"
 
     def get_description(self) -> str:
-        return "Official Meshtastic firmware releases from GitHub"
+        return "Meshtastic firmware releases from GitHub"
 
     def run_selection_menu(self, config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Run the firmware selection menu."""

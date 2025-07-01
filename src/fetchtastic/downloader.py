@@ -531,7 +531,7 @@ def check_for_prereleases(
 # Use the version check function from setup_config
 
 # Global variable to track if downloads were skipped due to Wi-Fi check
-downloads_skipped: bool = False
+downloads_skipped_wifi: bool = False
 
 # _log_message function removed
 
@@ -751,14 +751,14 @@ def _check_for_old_config_keys(config: Dict[str, Any]) -> bool:
 
 def _check_wifi_connection(config: Dict[str, Any]) -> None:
     """
-    Checks Wi-Fi connection if configured, updating the global 'downloads_skipped'.
+    Checks Wi-Fi connection if configured, updating the global 'downloads_skipped_wifi'.
     Args:
         config (Dict[str, Any]): The application configuration.
     """
-    global downloads_skipped
+    global downloads_skipped_wifi
     if setup_config.is_termux() and config.get("WIFI_ONLY", False):
         if not is_connected_to_wifi():
-            downloads_skipped = True
+            downloads_skipped_wifi = True
             logger.warning(
                 "Not connected to Wi-Fi. Skipping all downloads."
             )  # Changed to logger.warning
@@ -952,39 +952,87 @@ def _process_apk_downloads(
     latest_apk_version: Optional[str] = None
 
     if config.get("SAVE_APKS", False) and config.get("SELECTED_APK_ASSETS", []):
-        latest_android_releases: List[Dict[str, Any]] = _get_latest_releases_data(
-            paths_and_urls["android_releases_url"],
-            config.get(
-                "ANDROID_VERSIONS_TO_KEEP", RELEASE_SCAN_COUNT
-            ),  # Use RELEASE_SCAN_COUNT if versions_to_keep not in config
-        )
+        # Fast check: Read saved version first
+        latest_android_release_file = paths_and_urls["latest_android_release_file"]
+        saved_apk_version = None
+        if os.path.exists(latest_android_release_file):
+            try:
+                with open(latest_android_release_file, "r") as f:
+                    saved_apk_version = f.read().strip()
+            except IOError as e:
+                logger.warning(f"Error reading latest Android release file: {e}")
 
-        # Extract the actual latest APK version
-        if latest_android_releases:
-            latest_apk_version = latest_android_releases[0].get("tag_name")
-        apk_downloaded: List[str]
-        apk_new_versions_list: List[str]
-        failed_apk_downloads_details: List[Dict[str, str]]  # Declare for unpacking
-        apk_downloaded, apk_new_versions_list, failed_apk_downloads_details = (
-            check_and_download(  # Unpack 3 values
-                latest_android_releases,
-                paths_and_urls["latest_android_release_file"],
-                "Android APK",
-                paths_and_urls["apks_dir"],
-                config.get("ANDROID_VERSIONS_TO_KEEP", 2),
-                [],
-                selected_patterns=config.get("SELECTED_APK_ASSETS", []),  # type: ignore
-                auto_extract=False,
-                exclude_patterns=[],
+        # Quick API call to get just the latest release
+        logger.info("Fetching Android APK releases from GitHub...")
+        apk_downloads_skipped = False
+        try:
+            response = requests.get(
+                paths_and_urls["android_releases_url"], timeout=NTFY_REQUEST_TIMEOUT
             )
-        )
-        downloaded_apks.extend(apk_downloaded)
-        new_apk_versions.extend(apk_new_versions_list)
-        all_failed_apk_downloads.extend(
-            failed_apk_downloads_details
-        )  # Extend with failed details
-        if apk_downloaded:
-            logger.info(f"Downloaded Android APK versions: {', '.join(apk_downloaded)}")
+            response.raise_for_status()
+            releases = response.json()
+            if releases:
+                latest_apk_version = releases[0].get("tag_name")
+
+                # Fast check: If we already have the latest version and it's complete, skip
+                if saved_apk_version == latest_apk_version and latest_apk_version:
+                    apk_dir = os.path.join(
+                        paths_and_urls["apks_dir"], latest_apk_version
+                    )
+                    if os.path.exists(apk_dir):
+                        logger.info("All Android APK assets are up to date.")
+                        apk_downloads_skipped = True
+                    else:
+                        # Directory doesn't exist, need to download
+                        latest_android_releases = _get_latest_releases_data(
+                            paths_and_urls["android_releases_url"],
+                            config.get("ANDROID_VERSIONS_TO_KEEP", RELEASE_SCAN_COUNT),
+                        )
+                else:
+                    # Version mismatch or no saved version, need to download
+                    latest_android_releases = _get_latest_releases_data(
+                        paths_and_urls["android_releases_url"],
+                        config.get("ANDROID_VERSIONS_TO_KEEP", RELEASE_SCAN_COUNT),
+                    )
+            else:
+                logger.warning("No Android APK releases found")
+                latest_android_releases = []
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error fetching Android APK releases: {e}")
+            latest_android_releases = []
+
+        # Only process downloads if we didn't skip them
+        if not apk_downloads_skipped and latest_android_releases:
+            apk_downloaded: List[str]
+            apk_new_versions_list: List[str]
+            failed_apk_downloads_details: List[Dict[str, str]]  # Declare for unpacking
+            apk_downloaded, apk_new_versions_list, failed_apk_downloads_details = (
+                check_and_download(  # Unpack 3 values
+                    latest_android_releases,
+                    paths_and_urls["latest_android_release_file"],
+                    "Android APK",
+                    paths_and_urls["apks_dir"],
+                    config.get("ANDROID_VERSIONS_TO_KEEP", 2),
+                    [],
+                    selected_patterns=config.get("SELECTED_APK_ASSETS", []),  # type: ignore
+                    auto_extract=False,
+                    exclude_patterns=[],
+                )
+            )
+            downloaded_apks.extend(apk_downloaded)
+            new_apk_versions.extend(apk_new_versions_list)
+            all_failed_apk_downloads.extend(
+                failed_apk_downloads_details
+            )  # Extend with failed details
+            if apk_downloaded:
+                logger.info(
+                    f"Downloaded Android APK versions: {', '.join(apk_downloaded)}"
+                )
+        else:
+            # Initialize empty lists when downloads are skipped
+            apk_downloaded = []
+            apk_new_versions_list = []
+            failed_apk_downloads_details = []
     elif not config.get("SELECTED_APK_ASSETS", []):
         logger.info("No APK assets selected. Skipping APK download.")
 
@@ -1058,7 +1106,7 @@ def _finalize_and_notify(
     notification_message: str
     message_lines: List[str]
 
-    if downloads_skipped:
+    if downloads_skipped_wifi:
         message_lines = [
             "New releases are available but downloads were skipped because the device is not connected to Wi-Fi."
         ]
@@ -1430,7 +1478,7 @@ def check_and_download(
             - List of new version tags available but not downloaded.
             - List of dictionaries with details about failed downloads.
     """
-    global downloads_skipped
+    global downloads_skipped_wifi
     downloaded_versions: List[str] = []
     new_versions_available: List[str] = []
     failed_downloads_details: List[Dict[str, str]] = []
@@ -1453,7 +1501,7 @@ def check_and_download(
 
     releases_to_download: List[Dict[str, Any]] = releases[:versions_to_keep]
 
-    if downloads_skipped:
+    if downloads_skipped_wifi:
         release_data: Dict[str, Any]
         for release_data in releases_to_download:
             if release_data["tag_name"] != saved_release_tag:
