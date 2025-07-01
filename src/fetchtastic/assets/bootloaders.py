@@ -34,8 +34,9 @@ class BootloaderAsset(BaseAssetHandler):
     def get_config_keys(self) -> List[str]:
         return [
             "SAVE_BOOTLOADERS",
-            "SELECTED_BOOTLOADER_TYPES",
-            "SELECTED_BOOTLOADER_ASSETS",
+            "SELECTED_BOOTLOADER_BRANDS",  # Legacy key for backward compatibility
+            "SELECTED_BOOTLOADER_TYPES",  # New key for category selection (stock vs modified)
+            "SELECTED_BOOTLOADER_ASSETS",  # Updated to store by category
             "BOOTLOADER_VERSIONS_TO_KEEP",
         ]
 
@@ -176,6 +177,142 @@ class BootloaderAsset(BaseAssetHandler):
             "SELECTED_BOOTLOADER_TYPES": selected_categories,
             "SELECTED_BOOTLOADER_ASSETS": selected_assets,
         }
+
+    def _select_stock_bootloaders(self, config: Dict[str, Any]) -> List[str]:
+        """Select stock device bootloaders."""
+        from fetchtastic.ui_utils import (
+            multi_select_with_info,
+            show_preselection_info,
+        )
+
+        print("\n" + "=" * 40)
+        print("Stock Device Bootloaders")
+        print("=" * 40)
+
+        # Define available stock bootloaders with enhanced information
+        stock_options = [
+            {
+                "title": "Seeed T1000-E Tracker",
+                "value": "t1000e_stock",
+                "description": "Original bootloader for Seeed Card Tracker T1000-E (one-time download)",
+            },
+            {
+                "title": "RAK4631 WisBlock Core",
+                "value": "rak4631_stock",
+                "description": "Original bootloader for RAK4631 WisBlock Core module (one-time download)",
+            },
+            {
+                "title": "XIAO nRF52840 (Original)",
+                "value": "xiao_nrf52840_stock",
+                "description": "Original Seeed XIAO nRF52840 bootloader (one-time download)",
+            },
+        ]
+
+        # Get preselected stock bootloaders from config
+        current_stock = config.get("SELECTED_BOOTLOADER_ASSETS", {}).get(
+            "stock_bootloaders", []
+        )
+
+        try:
+            # Show preselection info if any
+            if current_stock:
+                show_preselection_info(current_stock)
+
+            selected_stock = multi_select_with_info(
+                message="Select stock device bootloaders:",
+                choices=stock_options,
+                preselected=current_stock,
+                min_selection=1,
+            )
+
+            if not selected_stock:
+                print("No stock bootloaders selected.")
+                return []
+
+            print(f"\nSelected stock bootloaders: {', '.join(selected_stock)}")
+            return selected_stock
+
+        except (KeyboardInterrupt, EOFError):
+            print("\nStock bootloader selection cancelled.")
+            return []
+
+    def _select_modified_bootloaders(self, config: Dict[str, Any]) -> List[str]:
+        """Select modified (OTA-fix) bootloaders with pattern-based selection."""
+        from fetchtastic.ui_utils import (
+            multi_select_with_info,
+            show_preselection_info,
+        )
+
+        print("\n" + "=" * 40)
+        print("Modified Bootloaders (OTA-fix)")
+        print("=" * 40)
+
+        # Define common OTA-fix bootloader patterns with descriptions
+        pattern_options = [
+            {
+                "title": "All RAK4631 Bootloaders",
+                "value": ".*rak4631.*",
+                "description": "Enhanced RAK4631 bootloaders with OTA improvements (hex, zip, uf2)",
+            },
+            {
+                "title": "All XIAO nRF52840 Bootloaders",
+                "value": ".*xiao_nrf52840.*",
+                "description": "Enhanced XIAO nRF52840 bootloaders (regular and sense variants)",
+            },
+            {
+                "title": "All ProMicro nRF52840 Bootloaders",
+                "value": ".*promicro_nrf52840.*",
+                "description": "Enhanced ProMicro nRF52840 bootloaders for DIY builds",
+            },
+            {
+                "title": "UF2 Update Files Only",
+                "value": ".*\\.uf2$",
+                "description": "UF2 update files for direct flashing via USB mass storage",
+            },
+            {
+                "title": "HEX Files Only",
+                "value": ".*\\.hex$",
+                "description": "HEX files for programming with external tools",
+            },
+            {
+                "title": "ZIP Archives Only",
+                "value": ".*\\.zip$",
+                "description": "ZIP archive files containing multiple bootloader variants",
+            },
+            {
+                "title": "All Enhanced Bootloaders",
+                "value": ".*",
+                "description": "All available enhanced bootloader files with OTA improvements",
+            },
+        ]
+
+        # Get preselected modified bootloaders from config
+        current_modified = config.get("SELECTED_BOOTLOADER_ASSETS", {}).get(
+            "modified_bootloaders", []
+        )
+
+        try:
+            # Show preselection info if any
+            if current_modified:
+                show_preselection_info(current_modified)
+
+            selected_modified = multi_select_with_info(
+                message="Select modified bootloader patterns:",
+                choices=pattern_options,
+                preselected=current_modified,
+                min_selection=1,
+            )
+
+            if not selected_modified:
+                print("No modified bootloader patterns selected.")
+                return []
+
+            print(f"\nSelected patterns: {', '.join(selected_modified)}")
+            return selected_modified
+
+        except (KeyboardInterrupt, EOFError):
+            print("\nModified bootloader selection cancelled.")
+            return []
 
     def _select_rak_bootloaders(self, config: Dict[str, Any]) -> List[str]:
         """Select RAK Wireless bootloader assets using questionary."""

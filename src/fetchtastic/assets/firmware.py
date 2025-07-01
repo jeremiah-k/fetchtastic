@@ -35,7 +35,10 @@ class MeshtasticFirmwareAsset(BaseAssetHandler):
     def get_config_keys(self) -> List[str]:
         return [
             "SAVE_FIRMWARE",
-            "SELECTED_FIRMWARE_ASSETS",
+            "SELECTED_FIRMWARE_ASSETS",  # Legacy key for pattern-based system
+            "FIRMWARE_SYSTEM",  # New key for system selection (new vs legacy)
+            "SELECTED_FIRMWARE_MANUFACTURERS",  # New key for manufacturer selection
+            "SELECTED_FIRMWARE_DEVICES",  # New key for device selection
             "FIRMWARE_VERSIONS_TO_KEEP",
             "CHECK_PRERELEASES",
             "AUTO_EXTRACT",

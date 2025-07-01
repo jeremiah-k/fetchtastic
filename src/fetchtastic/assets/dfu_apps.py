@@ -84,9 +84,9 @@ class DFUAppsAsset(BaseAssetHandler):
         return config
 
     def _run_dfu_apps_menu(self, config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Run the DFU apps selection menu using questionary."""
+        """Run the DFU apps selection menu using enhanced UI."""
         from fetchtastic.ui_utils import (
-            multi_select_with_preselection,
+            multi_select_with_info,
             show_preselection_info,
         )
 
@@ -94,62 +94,53 @@ class DFUAppsAsset(BaseAssetHandler):
         print("DFU/Firmware Flashing Apps Selection")
         print("=" * 60)
 
-        # Define available DFU apps
-        dfu_apps = [
+        # Define available DFU apps with enhanced information
+        dfu_app_options = [
             {
-                "id": "nordic_dfu",
-                "name": "Nordic DFU Library APK",
-                "description": "Android DFU library for flashing Nordic nRF devices",
-                "repo": "NordicSemiconductor/Android-DFU-Library",
-            }
+                "title": "Nordic DFU Library APK",
+                "value": "nordic_dfu",
+                "description": "Android DFU library for flashing Nordic nRF devices (NordicSemiconductor/Android-DFU-Library)",
+            },
+            {
+                "title": "nRF Connect Device Manager",
+                "value": "nrf_device_manager",
+                "description": "Nordic's official device management app with DFU capabilities (NordicSemiconductor/Android-nRF-Connect-Device-Manager)",
+            },
         ]
 
-        # Create options and check for preselected items
-        options = []
-        preselected = []
+        # Get preselected apps from config
         current_apps = config.get("SELECTED_DFU_APPS", [])
-
-        for app in dfu_apps:
-            option_text = (
-                f"{app['name']} - {app['description']} (Repository: {app['repo']})"
-            )
-            options.append(option_text)
-
-            # Check if this app is currently selected
-            if app["id"] in current_apps:
-                preselected.append(option_text)
 
         try:
             # Show preselection info if any
-            if preselected:
-                show_preselection_info(preselected)
+            if current_apps:
+                app_names = [
+                    app["title"]
+                    for app in dfu_app_options
+                    if app["value"] in current_apps
+                ]
+                if app_names:
+                    show_preselection_info(app_names)
 
-            selected_options = multi_select_with_preselection(
+            selected_apps = multi_select_with_info(
                 message="Select DFU/flashing apps to download:",
-                choices=options,
-                preselected=preselected,
+                choices=dfu_app_options,
+                preselected=current_apps,
                 min_selection=1,
             )
 
-            if not selected_options:
+            if not selected_apps:
                 print("No DFU apps selected.")
                 return None
 
-            # Map selected options back to app IDs
-            selected_apps = []
-            for selected_option in selected_options:
-                for app in dfu_apps:
-                    expected_option = f"{app['name']} - {app['description']} (Repository: {app['repo']})"
-                    if selected_option == expected_option:
-                        selected_apps.append(app["id"])
-                        break
+            # Get selected app names for display
+            selected_names = [
+                app["title"] for app in dfu_app_options if app["value"] in selected_apps
+            ]
+            print(f"\nSelected DFU apps: {', '.join(selected_names)}")
 
-            print(
-                f"\nSelected DFU apps: {', '.join([app['name'] for app in dfu_apps if app['id'] in selected_apps])}"
-            )
+            return {"SELECTED_DFU_APPS": selected_apps}
 
         except (KeyboardInterrupt, EOFError):
             print("\nSelection cancelled.")
             return None
-
-        return {"SELECTED_DFU_APPS": selected_apps}
