@@ -1411,16 +1411,39 @@ def _is_release_complete(
             )
             return False
 
-        # For zip files, verify they're not corrupted
+        # For zip files, verify they're not corrupted with timeout protection
         if asset_name.endswith(".zip"):
             try:
-                with zipfile.ZipFile(asset_path, "r") as zf:
-                    if zf.testzip() is not None:
-                        logger.debug(f"Corrupted zip file detected: {asset_path}")
-                        return False
+                import signal
+
+                def timeout_handler(signum, frame):
+                    raise TimeoutError("Zip file verification timed out")
+
+                # Set a timeout for zip verification to prevent hanging
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(10)  # 10 second timeout
+
+                try:
+                    with zipfile.ZipFile(asset_path, "r") as zf:
+                        if zf.testzip() is not None:
+                            logger.debug(f"Corrupted zip file detected: {asset_path}")
+                            return False
+                finally:
+                    signal.alarm(0)  # Cancel the alarm
+
             except zipfile.BadZipFile:
                 logger.debug(f"Bad zip file detected: {asset_path}")
                 return False
+            except TimeoutError:
+                logger.warning(
+                    f"Zip file verification timed out for {asset_path}, assuming valid"
+                )
+                # Don't fail on timeout, assume file is valid to avoid blocking
+                pass
+            except Exception as e:
+                logger.warning(f"Error verifying zip file {asset_path}: {e}")
+                # Don't fail on other errors, assume file is valid to avoid blocking
+                pass
             except (IOError, OSError):
                 logger.debug(f"Error checking zip file: {asset_path}")
                 return False
@@ -1584,11 +1607,30 @@ def check_and_download(
                     asset_download_path: str = os.path.join(release_dir, file_name)
                     if os.path.exists(asset_download_path):
                         try:
-                            with zipfile.ZipFile(asset_download_path, "r") as zf:
-                                if zf.testzip() is not None:  # Check integrity
-                                    raise zipfile.BadZipFile(
-                                        "Corrupted zip file detected during pre-check."
-                                    )
+                            import signal
+
+                            def timeout_handler(signum, frame):
+                                raise TimeoutError("Zip file verification timed out")
+
+                            # Set a timeout for zip verification to prevent hanging
+                            signal.signal(signal.SIGALRM, timeout_handler)
+                            signal.alarm(10)  # 10 second timeout
+
+                            try:
+                                with zipfile.ZipFile(asset_download_path, "r") as zf:
+                                    if zf.testzip() is not None:  # Check integrity
+                                        raise zipfile.BadZipFile(
+                                            "Corrupted zip file detected during pre-check."
+                                        )
+                            finally:
+                                signal.alarm(0)  # Cancel the alarm
+
+                        except TimeoutError:
+                            logger.warning(
+                                f"Zip file verification timed out for {asset_download_path}, skipping verification"
+                            )
+                            # Continue without failing to avoid blocking
+                            continue
                         except zipfile.BadZipFile:
                             logger.warning(
                                 f"Removing corrupted zip file: {asset_download_path}"

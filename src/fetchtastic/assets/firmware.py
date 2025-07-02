@@ -123,12 +123,85 @@ class MeshtasticFirmwareAsset(BaseAssetHandler):
         print("=" * 60)
 
         try:
-            # Fetch hardware list from meshtastic web flasher
+            # Fetch hardware list from Meshtastic API with robust error handling
             print("Fetching hardware list...")
-            hardware_url = "https://raw.githubusercontent.com/meshtastic/web-flasher/refs/heads/main/public/data/hardware-list.json"
-            response = requests.get(hardware_url, timeout=10)
-            response.raise_for_status()
-            hardware_list = response.json()
+
+            # Try Meshtastic API first, fallback to web flasher if needed
+            hardware_urls = [
+                "https://api.meshtastic.org/hardware",
+                "https://raw.githubusercontent.com/meshtastic/web-flasher/refs/heads/main/public/data/hardware-list.json",
+            ]
+
+            hardware_list = None
+            for url in hardware_urls:
+                try:
+                    # Create session with retry strategy for network resilience
+                    import requests
+                    from requests.adapters import HTTPAdapter
+                    from urllib3.util.retry import Retry
+
+                    session = requests.Session()
+                    retry_strategy = Retry(
+                        total=2,
+                        connect=2,
+                        backoff_factor=0.5,
+                        status_forcelist=[502, 503, 504, 429],
+                    )
+                    adapter = HTTPAdapter(max_retries=retry_strategy)
+                    session.mount("https://", adapter)
+
+                    response = session.get(url, timeout=5)
+                    response.raise_for_status()
+                    hardware_list = response.json()
+                    print(f"Successfully fetched hardware list from {url}")
+                    break
+                except (
+                    requests.exceptions.RequestException,
+                    requests.exceptions.Timeout,
+                ) as e:
+                    print(f"Failed to fetch from {url}: {e}")
+                    continue
+                except Exception as e:
+                    print(f"Unexpected error fetching from {url}: {e}")
+                    continue
+
+            if not hardware_list:
+                print(
+                    "Failed to fetch hardware list from all sources. Using offline fallback."
+                )
+                # Provide a minimal fallback for essential devices
+                hardware_list = [
+                    {
+                        "hwModel": 9,
+                        "hwModelSlug": "RAK4631",
+                        "platformioTarget": "rak4631",
+                        "architecture": "nrf52840",
+                        "activelySupported": True,
+                        "supportLevel": 1,
+                        "displayName": "RAK WisBlock 4631",
+                        "tags": ["RAK"],
+                    },
+                    {
+                        "hwModel": 4,
+                        "hwModelSlug": "TBEAM",
+                        "platformioTarget": "tbeam",
+                        "architecture": "esp32",
+                        "activelySupported": True,
+                        "supportLevel": 1,
+                        "displayName": "LILYGO T-Beam",
+                        "tags": ["LilyGo"],
+                    },
+                    {
+                        "hwModel": 7,
+                        "hwModelSlug": "T_ECHO",
+                        "platformioTarget": "t-echo",
+                        "architecture": "nrf52840",
+                        "activelySupported": True,
+                        "supportLevel": 1,
+                        "displayName": "LILYGO T-Echo",
+                        "tags": ["LilyGo"],
+                    },
+                ]
 
             # Group devices by manufacturer tags
             manufacturers = {}

@@ -1405,6 +1405,7 @@ def run_setup():
 def check_for_updates():
     """
     Check if a newer version of fetchtastic is available.
+    Includes robust network error handling and graceful fallbacks.
 
     Returns:
         tuple: (current_version, latest_version, update_available)
@@ -1415,20 +1416,46 @@ def check_for_updates():
 
         current_version = version("fetchtastic")
 
-        # Get latest version from PyPI
+        # Get latest version from PyPI with robust error handling
         import requests
+        from requests.adapters import HTTPAdapter
+        from urllib3.util.retry import Retry
 
-        response = requests.get("https://pypi.org/pypi/fetchtastic/json", timeout=5)
-        if response.status_code == 200:
-            data = response.json()
-            latest_version = data["info"]["version"]
-            # Use packaging.version for proper version comparison
-            from packaging import version as pkg_version
+        # Create session with retry strategy
+        session = requests.Session()
+        retry_strategy = Retry(
+            total=2,
+            connect=2,
+            backoff_factor=0.5,
+            status_forcelist=[502, 503, 504, 429],
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        session.mount("https://", adapter)
 
-            current_ver = pkg_version.parse(current_version)
-            latest_ver = pkg_version.parse(latest_version)
-            return current_version, latest_version, latest_ver > current_ver
+        try:
+            response = session.get("https://pypi.org/pypi/fetchtastic/json", timeout=3)
+            if response.status_code == 200:
+                data = response.json()
+                latest_version = data["info"]["version"]
+                # Use packaging.version for proper version comparison
+                from packaging import version as pkg_version
+
+                current_ver = pkg_version.parse(current_version)
+                latest_ver = pkg_version.parse(latest_version)
+                return current_version, latest_version, latest_ver > current_ver
+        except (
+            requests.exceptions.RequestException,
+            requests.exceptions.Timeout,
+            requests.exceptions.ConnectionError,
+        ) as e:
+            # Network errors - fail silently and continue
+            pass
+        except Exception as e:
+            # Other errors - fail silently and continue
+            pass
+
         return current_version, None, False
+
     except Exception:
         # If anything fails, just return that no update is available
         try:
