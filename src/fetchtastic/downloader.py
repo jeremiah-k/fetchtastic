@@ -13,6 +13,25 @@ from typing import Any, Dict, List, Optional, Tuple
 import requests
 
 from fetchtastic import menu_repo, setup_config
+from fetchtastic.constants import (
+    ENABLED_ASSETS_LABELS,
+    LATEST_VERSION_LABELS,
+    LOG_ALL_ANDROID_UP_TO_DATE,
+    LOG_ALL_FIRMWARE_UP_TO_DATE,
+    LOG_BOOTLOADER_PROCESSING_COMPLETE,
+    LOG_DFU_PROCESSING_COMPLETE,
+    LOG_FETCHING_ANDROID_APP_RELEASES,
+    LOG_FETCHING_BOOTLOADER_RELEASES,
+    LOG_FETCHING_DFU_RELEASES,
+    LOG_FETCHING_FIRMWARE_RELEASES,
+    LOG_PROCESSING_BOOTLOADERS,
+    LOG_PROCESSING_DFU_APPS,
+    LOG_PROCESSING_OTA_BOOTLOADERS,
+    LOG_PROCESSING_STOCK_BOOTLOADERS,
+    LOG_STOCK_BOOTLOADER_PROCESSING_COMPLETE,
+    SUCCESS_ALL_ASSETS_UP_TO_DATE,
+    SUCCESS_COMPLETED_IN,
+)
 
 # Removed log_info, setup_logging
 from fetchtastic.log_utils import logger  # Import new logger
@@ -796,7 +815,7 @@ def _process_firmware_downloads(
                 logger.warning(f"Error reading latest firmware release file: {e}")
 
         # Quick API call to get just the latest release
-        logger.info("Fetching firmware releases from GitHub...")
+        logger.info(LOG_FETCHING_FIRMWARE_RELEASES)
         try:
             response = requests.get(
                 paths_and_urls["firmware_releases_url"], timeout=NTFY_REQUEST_TIMEOUT
@@ -817,7 +836,7 @@ def _process_firmware_downloads(
                         latest_firmware_version,
                     )
                     if os.path.exists(firmware_dir):
-                        logger.info("All Firmware assets are up to date.")
+                        logger.info(LOG_ALL_FIRMWARE_UP_TO_DATE)
                         # Skip to prerelease check
                         latest_release_tag = latest_firmware_version
                         downloads_skipped = True
@@ -958,7 +977,7 @@ def _process_apk_downloads(
                 logger.warning(f"Error reading latest Android release file: {e}")
 
         # Quick API call to get just the latest release
-        logger.info("Fetching Meshtastic Android App releases from GitHub...")
+        logger.info(LOG_FETCHING_ANDROID_APP_RELEASES)
         apk_downloads_skipped = False
         try:
             response = requests.get(
@@ -975,7 +994,7 @@ def _process_apk_downloads(
                         paths_and_urls["apks_dir"], latest_apk_version
                     )
                     if os.path.exists(apk_dir):
-                        logger.info("All Android APK assets are up to date.")
+                        logger.info(LOG_ALL_ANDROID_UP_TO_DATE)
                         apk_downloads_skipped = True
                     else:
                         # Directory doesn't exist, need to download
@@ -1069,17 +1088,12 @@ def _finalize_and_notify(
     # Create clean summary
     downloaded_count = len(all_downloads)
 
-    logger.info(f"Completed in {total_time:.1f}s")
+    logger.info(SUCCESS_COMPLETED_IN.format(time=total_time))
     if downloaded_count > 0:
         logger.info(f"Downloaded {downloaded_count} new files")
 
     # Show latest versions if available
-    asset_name_mapping = {
-        "firmware": "Firmware",
-        "android": "Android APKs",
-        "bootloaders": "Bootloaders",
-        "dfu_apps": "DFU Apps",
-    }
+    asset_name_mapping = LATEST_VERSION_LABELS
 
     for asset_type, version in latest_versions.items():
         if version:
@@ -1130,7 +1144,7 @@ def _finalize_and_notify(
             title="Fetchtastic Download Completed",
         )
     else:
-        message: str = f"All assets are up to date.\n{datetime.now()}"
+        message: str = f"{SUCCESS_ALL_ASSETS_UP_TO_DATE}\n{datetime.now()}"
         logger.info(message)
         if not notify_on_download_only:
             _send_ntfy_notification(
@@ -2086,7 +2100,7 @@ def _process_bootloader_downloads(
     Returns:
         Tuple of (downloaded_bootloaders, new_bootloader_versions, failed_bootloader_list, latest_bootloader_version)
     """
-    logger.info("Processing device bootloaders...")
+    logger.info(LOG_PROCESSING_BOOTLOADERS)
 
     downloaded_bootloaders = []
     new_bootloader_versions = []
@@ -2117,7 +2131,7 @@ def _process_bootloader_downloads(
     if "otafix_bootloaders" in selected_types and "otafix_all" in selected_assets.get(
         "otafix_bootloaders", []
     ):
-        logger.info("Processing OTA-fix bootloaders...")
+        logger.info(LOG_PROCESSING_OTA_BOOTLOADERS)
 
         repo_owner = "oltaco"
         repo_name = "Adafruit_nRF52_Bootloader_OTAFIX"
@@ -2127,7 +2141,7 @@ def _process_bootloader_downloads(
 
         try:
             # Get releases from GitHub API
-            logger.info("Fetching OTA-fix bootloader releases from GitHub...")
+            logger.info(LOG_FETCHING_BOOTLOADER_RELEASES)
             releases = _get_latest_releases_data(github_api_url, RELEASE_SCAN_COUNT)
             if not releases:
                 logger.warning(f"No releases found for {repo_owner}/{repo_name}")
@@ -2193,7 +2207,7 @@ def _process_bootloader_downloads(
     if "stock_bootloaders" in selected_types:
         stock_assets = selected_assets.get("stock_bootloaders", [])
         if stock_assets:
-            logger.info("Processing stock bootloaders...")
+            logger.info(LOG_PROCESSING_STOCK_BOOTLOADERS)
 
             # Create stock bootloaders directory
             stock_dir = os.path.join(bootloaders_dir, "stock")
@@ -2277,11 +2291,11 @@ def _process_bootloader_downloads(
             # Provide consolidated status for stock bootloaders
             if latest_bootloader_version == "Stock bootloaders available":
                 logger.info("Stock bootloaders already downloaded and complete")
-            logger.info("Stock bootloader processing complete")
+            logger.info(LOG_STOCK_BOOTLOADER_PROCESSING_COMPLETE)
         else:
             logger.info("Stock bootloader processing skipped (none selected)")
 
-    logger.info("Device bootloader processing complete")
+    logger.info(LOG_BOOTLOADER_PROCESSING_COMPLETE)
     return (
         downloaded_bootloaders,
         new_bootloader_versions,
@@ -2303,7 +2317,7 @@ def _process_dfu_app_downloads(
     Returns:
         Tuple of (downloaded_dfu_apps, new_dfu_app_versions, failed_dfu_app_list, latest_dfu_app_version)
     """
-    logger.info("Processing DFU/flashing apps...")
+    logger.info(LOG_PROCESSING_DFU_APPS)
 
     downloaded_dfu_apps = []
     new_dfu_app_versions = []
@@ -2338,7 +2352,7 @@ def _process_dfu_app_downloads(
 
         try:
             # Get releases from GitHub API
-            logger.info("Checking Nordic DFU Library...")
+            logger.info(LOG_FETCHING_DFU_RELEASES)
             releases = _get_latest_releases_data(github_api_url, RELEASE_SCAN_COUNT)
             if not releases:
                 logger.warning(f"No releases found for {repo_owner}/{repo_name}")
@@ -2406,7 +2420,7 @@ def _process_dfu_app_downloads(
         except Exception as e:
             logger.error(f"Error processing Nordic DFU Library downloads: {e}")
 
-    logger.info("DFU/flashing app processing complete")
+    logger.info(LOG_DFU_PROCESSING_COMPLETE)
     return (
         downloaded_dfu_apps,
         new_dfu_app_versions,
@@ -2450,14 +2464,9 @@ def _process_all_asset_downloads(
 
     # Check if any asset types are enabled
     enabled_assets = []
-    if config.get("SAVE_FIRMWARE", False):
-        enabled_assets.append("Firmware")
-    if config.get("SAVE_APKS", False):
-        enabled_assets.append("Android APKs")
-    if config.get("SAVE_BOOTLOADERS", False):
-        enabled_assets.append("Bootloaders")
-    if config.get("SAVE_DFU_APPS", False):
-        enabled_assets.append("DFU Apps")
+    for config_key, asset_name in ENABLED_ASSETS_LABELS.items():
+        if config.get(config_key, False):
+            enabled_assets.append(asset_name)
 
     if not enabled_assets:
         logger.info("No asset types are enabled for download.")
