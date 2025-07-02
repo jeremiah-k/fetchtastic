@@ -586,13 +586,8 @@ def _get_latest_releases_data(url: str, scan_count: int = 10) -> List[Dict[str, 
         List[Dict[str, Any]]: A list of release data dictionaries, sorted by publication date.
     """
     try:
-        # Add progress feedback
-        if "firmware" in url:
-            logger.info("Fetching firmware releases from GitHub...")
-        elif "Android" in url:
-            logger.info("Fetching Android APK releases from GitHub...")
-        else:
-            logger.info("Fetching releases from GitHub...")
+        # Add progress feedback - but only for direct calls, not internal calls
+        # This prevents duplicate logging when called from specific asset handlers
 
         response: requests.Response = requests.get(url, timeout=NTFY_REQUEST_TIMEOUT)
         response.raise_for_status()
@@ -963,7 +958,7 @@ def _process_apk_downloads(
                 logger.warning(f"Error reading latest Android release file: {e}")
 
         # Quick API call to get just the latest release
-        logger.info("Fetching Android APK releases from GitHub...")
+        logger.info("Fetching Meshtastic Android App releases from GitHub...")
         apk_downloads_skipped = False
         try:
             response = requests.get(
@@ -2134,6 +2129,7 @@ def _process_bootloader_downloads(
 
         try:
             # Get releases from GitHub API
+            logger.info("Fetching OTA-fix bootloader releases from GitHub...")
             releases = _get_latest_releases_data(github_api_url, RELEASE_SCAN_COUNT)
             if not releases:
                 logger.warning(f"No releases found for {repo_owner}/{repo_name}")
@@ -2346,6 +2342,7 @@ def _process_dfu_app_downloads(
 
         try:
             # Get releases from GitHub API
+            logger.info("Fetching Nordic DFU Library releases from GitHub...")
             releases = _get_latest_releases_data(github_api_url, RELEASE_SCAN_COUNT)
             if not releases:
                 logger.warning(f"No releases found for {repo_owner}/{repo_name}")
