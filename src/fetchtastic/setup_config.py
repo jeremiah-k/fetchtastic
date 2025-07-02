@@ -1447,10 +1447,10 @@ def check_for_updates():
             requests.exceptions.RequestException,
             requests.exceptions.Timeout,
             requests.exceptions.ConnectionError,
-        ) as e:
+        ):
             # Network errors - fail silently and continue
             pass
-        except Exception as e:
+        except Exception:
             # Other errors - fail silently and continue
             pass
 

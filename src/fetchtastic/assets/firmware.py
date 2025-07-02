@@ -283,7 +283,7 @@ class MeshtasticFirmwareAsset(BaseAssetHandler):
             show_preselection_info,
         )
 
-        print(f"\n" + "=" * 40)
+        print("\n" + "=" * 40)
         print(f"{manufacturer} Device Selection")
         print("=" * 40)
 

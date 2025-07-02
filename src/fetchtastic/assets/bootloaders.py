@@ -155,9 +155,7 @@ class BootloaderAsset(BaseAssetHandler):
         selected_assets = {}
 
         for category_id in selected_categories:
-            category = next(
-                b for b in bootloader_categories if b["value"] == category_id
-            )
+            next(b for b in bootloader_categories if b["value"] == category_id)
 
             if category_id == "stock_bootloaders":
                 assets = self._select_stock_bootloaders(config)

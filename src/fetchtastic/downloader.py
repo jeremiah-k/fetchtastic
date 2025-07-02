@@ -1069,7 +1069,7 @@ def _finalize_and_notify(
     # Create clean summary
     downloaded_count = len(all_downloads)
 
-    logger.info(f"\nCompleted in {total_time:.1f}s")
+    logger.info(f"Completed in {total_time:.1f}s")
     if downloaded_count > 0:
         logger.info(f"Downloaded {downloaded_count} new files")
 
@@ -1418,15 +1418,15 @@ def _is_release_complete(
 
                     result = {"success": True, "error": None}
 
-                    def verify_zip():
+                    def verify_zip(path=asset_path, res=result):
                         try:
-                            with zipfile.ZipFile(asset_path, "r") as zf:
+                            with zipfile.ZipFile(path, "r") as zf:
                                 if zf.testzip() is not None:
-                                    result["success"] = False
-                                    result["error"] = "Corrupted zip file detected"
+                                    res["success"] = False
+                                    res["error"] = "Corrupted zip file detected"
                         except Exception as e:
-                            result["success"] = False
-                            result["error"] = str(e)
+                            res["success"] = False
+                            res["error"] = str(e)
 
                     thread = threading.Thread(target=verify_zip)
                     thread.daemon = True
@@ -1652,19 +1652,17 @@ def check_and_download(
 
                                 result = {"success": True, "error": None}
 
-                                def verify_zip():
+                                def verify_zip(path=asset_download_path, res=result):
                                     try:
-                                        with zipfile.ZipFile(
-                                            asset_download_path, "r"
-                                        ) as zf:
+                                        with zipfile.ZipFile(path, "r") as zf:
                                             if zf.testzip() is not None:
-                                                result["success"] = False
-                                                result["error"] = (
+                                                res["success"] = False
+                                                res["error"] = (
                                                     "Corrupted zip file detected during pre-check."
                                                 )
                                     except Exception as e:
-                                        result["success"] = False
-                                        result["error"] = str(e)
+                                        res["success"] = False
+                                        res["error"] = str(e)
 
                                 thread = threading.Thread(target=verify_zip)
                                 thread.daemon = True
@@ -2332,8 +2330,6 @@ def _process_dfu_app_downloads(
 
     # Process Nordic DFU Library if selected
     if "nordic_dfu" in selected_apps:
-        logger.info("Checking Nordic DFU Library...")
-
         repo_owner = "NordicSemiconductor"
         repo_name = "Android-DFU-Library"
         github_api_url = (
@@ -2342,7 +2338,7 @@ def _process_dfu_app_downloads(
 
         try:
             # Get releases from GitHub API
-            logger.info("Fetching Nordic DFU Library releases from GitHub...")
+            logger.info("Checking Nordic DFU Library...")
             releases = _get_latest_releases_data(github_api_url, RELEASE_SCAN_COUNT)
             if not releases:
                 logger.warning(f"No releases found for {repo_owner}/{repo_name}")

@@ -6,7 +6,6 @@ Meshtastic Android APK asset handler.
 
 from typing import Any, Dict, List, Optional
 
-from .. import menu_apk
 from .base import AssetType, BaseAssetHandler
 
 
