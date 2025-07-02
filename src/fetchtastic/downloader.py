@@ -2064,7 +2064,9 @@ def _download_otafix_documentation_images(release_dir: str) -> None:
         release_dir: Directory to save documentation images
     """
     try:
-        base_url = "https://raw.githubusercontent.com/oltaco/Adafruit_nRF52_Bootloader_OTAFIX/refs/heads/master/docs"
+        base_url = (
+            "https://github.com/oltaco/Adafruit_nRF52_Bootloader_OTAFIX/raw/master/docs"
+        )
         images = ["dfu_settings_01.png", "dfu_settings_02.png"]
 
         docs_dir = os.path.join(release_dir, "docs")

@@ -70,8 +70,8 @@ class MeshtasticFirmwareAsset(BaseAssetHandler):
             },
         ]
 
-        # Get current system preference from config
-        current_system = config.get("FIRMWARE_SYSTEM", "legacy_system")
+        # Get current system preference from config (default to new system)
+        current_system = config.get("FIRMWARE_SYSTEM", "new_system")
 
         try:
             selected_system = single_select_with_info(
@@ -126,10 +126,10 @@ class MeshtasticFirmwareAsset(BaseAssetHandler):
             # Fetch hardware list from Meshtastic API with robust error handling
             print("Fetching hardware list...")
 
-            # Try Meshtastic API first, fallback to web flasher if needed
+            # Try web flasher first (most reliable), then other sources
             hardware_urls = [
-                "https://api.meshtastic.org/hardware",
                 "https://raw.githubusercontent.com/meshtastic/web-flasher/refs/heads/main/public/data/hardware-list.json",
+                "https://raw.githubusercontent.com/meshtastic/meshtastic/refs/heads/master/protobufs/meshtastic/hardware.json",
             ]
 
             hardware_list = None
@@ -243,7 +243,8 @@ class MeshtasticFirmwareAsset(BaseAssetHandler):
 
             if not selected_manufacturers:
                 print("No manufacturers selected.")
-                return None
+                print("Falling back to legacy pattern system...")
+                return self._run_legacy_firmware_menu(config)
 
             print(f"\nSelected manufacturers: {', '.join(selected_manufacturers)}")
 
@@ -258,7 +259,8 @@ class MeshtasticFirmwareAsset(BaseAssetHandler):
 
             if not selected_devices:
                 print("No devices selected.")
-                return None
+                print("Falling back to legacy pattern system...")
+                return self._run_legacy_firmware_menu(config)
 
             return {
                 "FIRMWARE_SYSTEM": "new_system",
@@ -319,7 +321,7 @@ class MeshtasticFirmwareAsset(BaseAssetHandler):
                 message=f"Select {manufacturer} devices:",
                 choices=device_options,
                 preselected=current_devices,
-                min_selection=1,
+                min_selection=0,  # Allow no selection
             )
 
             if not selected_devices:

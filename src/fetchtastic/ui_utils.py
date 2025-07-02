@@ -305,10 +305,18 @@ def single_select_with_info(
         choice_objects.append(Choice(title=display_text, value=value))
 
     try:
+        # Find the default choice object that matches the default value
+        default_choice = None
+        if default:
+            for choice_obj in choice_objects:
+                if choice_obj.value == default:
+                    default_choice = choice_obj.value
+                    break
+
         selected = questionary.select(
             message,
             choices=choice_objects,
-            default=default,
+            default=default_choice,
             style=FETCHTASTIC_STYLE,
             instruction="(Use arrow keys to move, enter to select)",
         ).ask()
