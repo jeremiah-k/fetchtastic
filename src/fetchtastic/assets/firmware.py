@@ -611,7 +611,8 @@ class MeshtasticFirmwareAsset(BaseAssetHandler):
 
         config["AUTO_EXTRACT"] = auto_extract
 
-        if auto_extract:
+        # Only setup extraction patterns for legacy system
+        if auto_extract and config.get("FIRMWARE_SYSTEM") == "legacy":
             self._setup_extraction_patterns(config)
 
         return config
