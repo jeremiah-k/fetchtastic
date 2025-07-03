@@ -234,17 +234,30 @@ class MeshtasticFirmwareAsset(BaseAssetHandler):
             if current_manufacturers:
                 show_preselection_info(current_manufacturers)
 
-            selected_manufacturers = multi_select_with_info(
-                message="Select device manufacturers:",
-                choices=manufacturer_options,
-                preselected=current_manufacturers,
-                min_selection=1,
-            )
+            # Loop until user makes valid selection or cancels
+            selected_manufacturers = None
+            while not selected_manufacturers:
+                try:
+                    selected_manufacturers = multi_select_with_info(
+                        message="Select device manufacturers:",
+                        choices=manufacturer_options,
+                        preselected=current_manufacturers,
+                        min_selection=0,  # Allow empty selection to handle in loop
+                    )
 
-            if not selected_manufacturers:
-                print("No manufacturers selected.")
-                print("Falling back to legacy pattern system...")
-                return self._run_legacy_firmware_menu(config)
+                    if selected_manufacturers is None:
+                        # User pressed Ctrl+C - cancel completely
+                        print("\nSelection cancelled.")
+                        return None
+                    elif not selected_manufacturers:
+                        # User pressed Enter without selecting - prompt again
+                        print(
+                            "Please select at least 1 manufacturer or press Ctrl+C to cancel."
+                        )
+                        continue
+                except KeyboardInterrupt:
+                    print("\nSelection cancelled.")
+                    return None
 
             print(f"\nSelected manufacturers: {', '.join(selected_manufacturers)}")
 

@@ -866,8 +866,12 @@ def _process_firmware_downloads(
             logger.error(f"Error fetching firmware releases: {e}")
             latest_firmware_releases = []
 
-        # Only process downloads if we didn't skip them
-        if not downloads_skipped and latest_firmware_releases:
+        # Only process downloads if we didn't skip them (either due to up-to-date or WiFi)
+        if (
+            not downloads_skipped
+            and not downloads_skipped_wifi
+            and latest_firmware_releases
+        ):
             fw_downloaded: List[str]
             fw_new_versions: List[str]
             failed_fw_downloads_details: List[Dict[str, str]]  # Explicitly declare type
@@ -912,7 +916,11 @@ def _process_firmware_downloads(
                     "Detected pre-release(s) that have been promoted to regular release."
                 )
 
-        if config.get("CHECK_PRERELEASES", False) and not downloads_skipped:
+        if (
+            config.get("CHECK_PRERELEASES", False)
+            and not downloads_skipped
+            and not downloads_skipped_wifi
+        ):
             if latest_release_tag:
                 logger.info("Checking for pre-release firmware...")
                 prerelease_found: bool
