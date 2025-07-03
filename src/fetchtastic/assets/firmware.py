@@ -244,16 +244,10 @@ class MeshtasticFirmwareAsset(BaseAssetHandler):
                 print("Falling back to legacy pattern system...")
                 return self._run_legacy_firmware_menu(config)
 
-            # Ask about additional utility files
-            include_erase_files = self._ask_for_erase_files()
-
             result = {
                 "FIRMWARE_SYSTEM": "api_based",
                 "SELECTED_FIRMWARE_TARGETS": firmware_targets,
             }
-
-            if include_erase_files:
-                result["INCLUDE_ERASE_FILES"] = True
 
             return result
 
@@ -447,16 +441,30 @@ class MeshtasticFirmwareAsset(BaseAssetHandler):
         from fetchtastic.ui_utils import confirm_prompt
 
         print("\n" + "=" * 60)
-        print("Additional Utility Files")
+        print("nRF52 Factory Erase Files")
         print("=" * 60)
-        print("Factory erase files can be used to completely reset nRF52 devices.")
         print(
-            "These files are useful for troubleshooting or preparing devices for fresh installs."
+            "Factory erase files clear littlefs data that may change format between firmware releases."
+        )
+        print(
+            "Use these files BEFORE updating firmware to prevent compatibility issues."
+        )
+        print("")
+        print("Available erase files:")
+        print(
+            "• Meshtastic_nRF52_factory_erase_v3_S140_7.3.0.uf2 (for SoftDevice 7.x.x)"
+        )
+        print(
+            "• Meshtastic_nRF52_factory_erase_v3_S140_6.1.0.uf2 (for SoftDevice 6.x.x)"
+        )
+        print("")
+        print(
+            "Check your device's INFO_UF2.TXT file to determine which version to use."
         )
 
         try:
             include_erase = confirm_prompt(
-                "Include factory erase files for nRF52 devices?",
+                "Include nRF52 factory erase files?",
                 default=True,
             )
             return include_erase if include_erase is not None else False
@@ -572,6 +580,10 @@ class MeshtasticFirmwareAsset(BaseAssetHandler):
         except ValueError:
             print(f"Invalid number entered. Using default: {current_versions}")
             config["FIRMWARE_VERSIONS_TO_KEEP"] = current_versions
+
+        # Ask about factory erase files for nRF52 devices
+        include_erase_files = self._ask_for_erase_files()
+        config["INCLUDE_ERASE_FILES"] = include_erase_files
 
         # Prompt for pre-release downloads
         check_prereleases_current = config.get("CHECK_PRERELEASES", False)
