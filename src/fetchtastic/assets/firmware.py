@@ -77,7 +77,7 @@ class MeshtasticFirmwareAsset(BaseAssetHandler):
             selected_system = single_select_with_info(
                 message="Choose firmware download system:",
                 choices=system_options,
-                default=current_system,
+                default=None,  # No default highlighting
             )
 
             if not selected_system:
@@ -234,51 +234,15 @@ class MeshtasticFirmwareAsset(BaseAssetHandler):
             if current_manufacturers:
                 show_preselection_info(current_manufacturers)
 
-            # Loop until user makes valid selection or cancels
-            selected_manufacturers = None
-            while not selected_manufacturers:
-                try:
-                    selected_manufacturers = multi_select_with_info(
-                        message="Select device manufacturers:",
-                        choices=manufacturer_options,
-                        preselected=current_manufacturers,
-                        min_selection=0,  # Allow empty selection to handle in loop
-                    )
+            # Use shopping cart style selection
+            firmware_targets = self._run_manufacturer_shopping_cart(
+                manufacturers, config
+            )
 
-                    if selected_manufacturers is None:
-                        # User pressed Ctrl+C - cancel completely
-                        print("\nSelection cancelled.")
-                        return None
-                    elif not selected_manufacturers:
-                        # User pressed Enter without selecting - prompt again
-                        print(
-                            "Please select at least 1 manufacturer or press Ctrl+C to cancel."
-                        )
-                        continue
-                except KeyboardInterrupt:
-                    print("\nSelection cancelled.")
-                    return None
-
-            print(f"\nSelected manufacturers: {', '.join(selected_manufacturers)}")
-
-            # For each manufacturer, let user select specific devices
-            selected_devices = {}
-            for manufacturer in selected_manufacturers:
-                devices = self._select_manufacturer_devices(
-                    manufacturer, manufacturers[manufacturer], config
-                )
-                if devices:
-                    selected_devices[manufacturer] = devices
-
-            if not selected_devices:
+            if not firmware_targets:
                 print("No devices selected.")
                 print("Falling back to legacy pattern system...")
                 return self._run_legacy_firmware_menu(config)
-
-            # Convert nested device structure to flat target list
-            firmware_targets = []
-            for manufacturer, devices in selected_devices.items():
-                firmware_targets.extend(devices)
 
             return {
                 "FIRMWARE_SYSTEM": "api_based",
@@ -291,6 +255,183 @@ class MeshtasticFirmwareAsset(BaseAssetHandler):
             return self._run_legacy_firmware_menu(config)
         except (KeyboardInterrupt, EOFError):
             print("\nSelection cancelled.")
+            return None
+
+    def _run_manufacturer_shopping_cart(
+        self, manufacturers: Dict[str, List[Dict]], config: Dict[str, Any]
+    ) -> List[str]:
+        """
+        Run shopping cart style manufacturer/device selection.
+
+        Returns:
+            List of selected firmware targets
+        """
+        from fetchtastic.ui_utils import single_select_with_info
+
+        # Track selected devices across all manufacturers
+        selected_targets = []
+
+        # Get existing selections from config
+        existing_targets = config.get("SELECTED_FIRMWARE_TARGETS", [])
+        if existing_targets:
+            selected_targets = existing_targets.copy()
+
+        while True:
+            # Build manufacturer menu with current selections
+            manufacturer_choices = []
+            for manufacturer, devices in manufacturers.items():
+                # Count how many devices are selected for this manufacturer
+                manufacturer_targets = [
+                    device["platformioTarget"]
+                    for device in devices
+                    if device["platformioTarget"] in selected_targets
+                ]
+                count = len(manufacturer_targets)
+
+                if count > 0:
+                    title = f"{manufacturer} ({count} selected)"
+                    description = f"Selected: {', '.join(manufacturer_targets)}"
+                else:
+                    title = f"{manufacturer} (0 selected)"
+                    description = f"{len(devices)} available devices"
+
+                manufacturer_choices.append(
+                    {
+                        "title": title,
+                        "value": manufacturer,
+                        "description": description,
+                    }
+                )
+
+            # Add control options
+            manufacturer_choices.extend(
+                [
+                    {
+                        "title": "--- Actions ---",
+                        "value": "separator",
+                        "description": "",
+                    },
+                    {
+                        "title": f"Finish Selection ({len(selected_targets)} devices total)",
+                        "value": "finish",
+                        "description": (
+                            "Continue with selected devices"
+                            if selected_targets
+                            else "No devices selected - will use legacy system"
+                        ),
+                    },
+                    {
+                        "title": "Cancel",
+                        "value": "cancel",
+                        "description": "Cancel firmware configuration",
+                    },
+                ]
+            )
+
+            print("\n" + "=" * 60)
+            print("Device Selection - Shopping Cart")
+            print("=" * 60)
+            if selected_targets:
+                print(f"Currently selected: {', '.join(selected_targets)}")
+            else:
+                print("No devices selected yet")
+
+            try:
+                choice = single_select_with_info(
+                    message="Select manufacturer to configure or choose action:",
+                    choices=manufacturer_choices,
+                    default=None,
+                )
+
+                if choice is None or choice == "cancel":
+                    print("\nSelection cancelled.")
+                    return []
+                elif choice == "finish":
+                    return selected_targets
+                elif choice == "separator":
+                    continue  # Ignore separator selection
+                else:
+                    # User selected a manufacturer - enter device selection
+                    manufacturer_devices = manufacturers[choice]
+                    updated_targets = self._select_devices_for_manufacturer(
+                        choice, manufacturer_devices, selected_targets
+                    )
+                    if updated_targets is not None:
+                        selected_targets = updated_targets
+                    # Continue loop to show updated main menu
+
+            except KeyboardInterrupt:
+                print("\nSelection cancelled.")
+                return []
+
+    def _select_devices_for_manufacturer(
+        self, manufacturer: str, devices: List[Dict], current_targets: List[str]
+    ) -> List[str]:
+        """
+        Select devices for a specific manufacturer.
+
+        Returns:
+            Updated list of all selected targets, or None if cancelled
+        """
+        from fetchtastic.ui_utils import multi_select_with_info
+
+        # Build device options
+        device_options = []
+        for device in devices:
+            target = device["platformioTarget"]
+            arch = device.get("architecture", "unknown")
+            title = f"{device['displayName']} - {target}"
+            description = f"Target: {target} | Arch: {arch}"
+
+            device_options.append(
+                {
+                    "title": title,
+                    "value": target,
+                    "description": description,
+                }
+            )
+
+        # Find currently selected devices for this manufacturer
+        manufacturer_targets = [
+            device["platformioTarget"]
+            for device in devices
+            if device["platformioTarget"] in current_targets
+        ]
+
+        print(f"\n" + "=" * 40)
+        print(f"{manufacturer} Device Selection")
+        print("=" * 40)
+        if manufacturer_targets:
+            print(f"Currently selected: {', '.join(manufacturer_targets)}")
+        else:
+            print("No devices selected for this manufacturer")
+
+        try:
+            selected_devices = multi_select_with_info(
+                message=f"Select {manufacturer} devices (space to select, enter when done):",
+                choices=device_options,
+                preselected=manufacturer_targets,
+                min_selection=0,
+            )
+
+            if selected_devices is None:
+                # User cancelled
+                return None
+
+            # Update the global target list
+            updated_targets = current_targets.copy()
+
+            # Remove all previous selections for this manufacturer
+            for device in devices:
+                if device["platformioTarget"] in updated_targets:
+                    updated_targets.remove(device["platformioTarget"])
+
+            # Add new selections for this manufacturer
+            updated_targets.extend(selected_devices)
+
+            return updated_targets
+
+        except KeyboardInterrupt:
             return None
 
     def _select_manufacturer_devices(
