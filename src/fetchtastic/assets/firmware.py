@@ -598,22 +598,29 @@ class MeshtasticFirmwareAsset(BaseAssetHandler):
 
         config["CHECK_PRERELEASES"] = check_prereleases
 
-        # Prompt for automatic extraction
-        auto_extract_current = config.get("AUTO_EXTRACT", False)
-        auto_extract = confirm_prompt(
-            "Would you like to automatically extract specific files from firmware zip archives?",
-            default=auto_extract_current,
-        )
+        # Only ask about extraction for legacy system
+        if config.get("FIRMWARE_SYSTEM") == "legacy":
+            # Prompt for automatic extraction
+            auto_extract_current = config.get("AUTO_EXTRACT", False)
+            auto_extract = confirm_prompt(
+                "Would you like to automatically extract specific files from firmware zip archives?",
+                default=auto_extract_current,
+            )
 
-        if auto_extract is None:
-            print("Setup cancelled.")
-            return config
+            if auto_extract is None:
+                print("Setup cancelled.")
+                return config
 
-        config["AUTO_EXTRACT"] = auto_extract
+            config["AUTO_EXTRACT"] = auto_extract
 
-        # Only setup extraction patterns for legacy system
-        if auto_extract and config.get("FIRMWARE_SYSTEM") == "legacy":
-            self._setup_extraction_patterns(config)
+            # Setup extraction patterns if enabled
+            if auto_extract:
+                self._setup_extraction_patterns(config)
+        else:
+            # API-based system doesn't need extraction patterns
+            config["AUTO_EXTRACT"] = False
+            config["EXTRACT_PATTERNS"] = []
+            config["EXCLUDE_PATTERNS"] = []
 
         return config
 

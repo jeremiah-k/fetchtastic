@@ -71,7 +71,6 @@ class MeshtasticAndroidAsset(BaseAssetHandler):
 
         return {
             "SELECTED_ANDROID_APPS": selected_patterns,
-            "SELECTED_APK_ASSETS": all_patterns,  # Legacy compatibility
             "SELECTED_ANDROID_PATTERNS": selected_patterns,
         }
 

@@ -84,67 +84,37 @@ class DFUAppsAsset(BaseAssetHandler):
         return config
 
     def _run_dfu_apps_menu(self, config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Run the DFU apps selection menu using enhanced UI."""
-        from fetchtastic.ui_utils import (
-            multi_select_with_info,
-            show_preselection_info,
-        )
+        """Run the DFU apps selection menu using simple yes/no."""
+        from fetchtastic.ui_utils import confirm_prompt
 
         print("\n" + "=" * 60)
-        print("DFU/Firmware Flashing Apps Selection")
+        print("Nordic DFU App Selection")
         print("=" * 60)
+        print(
+            "Nordic DFU Library is an Android app for flashing Nordic nRF52 devices over Bluetooth."
+        )
+        print("This is useful for updating firmware on nRF52-based Meshtastic devices.")
 
-        # Define available DFU apps with comprehensive information
-        dfu_app_options = [
-            {
-                "title": "Nordic DFU Library APK",
-                "value": "nordic_dfu",
-                "description": "Android DFU library for flashing Nordic nRF52 devices over Bluetooth (NordicSemiconductor/Android-DFU-Library)",
-            },
-            {
-                "title": "nRF Connect Device Manager",
-                "value": "nrf_device_manager",
-                "description": "Nordic's official device management app with advanced DFU and debugging capabilities (NordicSemiconductor/Android-nRF-Connect-Device-Manager)",
-            },
-            {
-                "title": "nRF Connect for Mobile",
-                "value": "nrf_connect_mobile",
-                "description": "Nordic's comprehensive Bluetooth Low Energy scanner and device interaction tool (NordicSemiconductor/Android-nRF-Connect)",
-            },
-        ]
-
-        # Get preselected apps from config
+        # Get current selection
         current_apps = config.get("SELECTED_DFU_APPS", [])
 
         try:
-            # Show preselection info if any
-            if current_apps:
-                app_names = [
-                    app["title"]
-                    for app in dfu_app_options
-                    if app["value"] in current_apps
-                ]
-                if app_names:
-                    show_preselection_info(app_names)
-
-            selected_apps = multi_select_with_info(
-                message="Select DFU/flashing apps to download:",
-                choices=dfu_app_options,
-                preselected=current_apps,
-                min_selection=1,
+            # Simple yes/no for Nordic DFU app
+            include_dfu = confirm_prompt(
+                "Include Nordic DFU app for nRF52 device flashing?",
+                default="nordic_dfu" in current_apps,
             )
 
-            if not selected_apps:
-                print("No DFU apps selected.")
+            if include_dfu is None:
+                print("Selection cancelled.")
                 return None
 
-            # Get selected app names for display
-            selected_names = [
-                app["title"] for app in dfu_app_options if app["value"] in selected_apps
-            ]
-            print(f"\nSelected DFU apps: {', '.join(selected_names)}")
-
-            return {"SELECTED_DFU_APPS": selected_apps}
+            if include_dfu:
+                print("\nSelected: Nordic DFU Library APK")
+                return {"SELECTED_DFU_APPS": ["nordic_dfu"]}
+            else:
+                print("\nNo DFU apps selected.")
+                return {"SELECTED_DFU_APPS": []}
 
         except (KeyboardInterrupt, EOFError):
             print("\nSelection cancelled.")
