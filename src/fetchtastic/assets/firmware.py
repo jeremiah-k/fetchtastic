@@ -244,10 +244,18 @@ class MeshtasticFirmwareAsset(BaseAssetHandler):
                 print("Falling back to legacy pattern system...")
                 return self._run_legacy_firmware_menu(config)
 
-            return {
+            # Ask about additional utility files
+            include_erase_files = self._ask_for_erase_files()
+
+            result = {
                 "FIRMWARE_SYSTEM": "api_based",
                 "SELECTED_FIRMWARE_TARGETS": firmware_targets,
             }
+
+            if include_erase_files:
+                result["INCLUDE_ERASE_FILES"] = True
+
+            return result
 
         except requests.RequestException as e:
             print(f"Error fetching hardware list: {e}")
@@ -433,6 +441,27 @@ class MeshtasticFirmwareAsset(BaseAssetHandler):
 
         except KeyboardInterrupt:
             return None
+
+    def _ask_for_erase_files(self) -> bool:
+        """Ask user if they want to include factory erase files for nRF52 devices."""
+        from fetchtastic.ui_utils import confirm_prompt
+
+        print("\n" + "=" * 60)
+        print("Additional Utility Files")
+        print("=" * 60)
+        print("Factory erase files can be used to completely reset nRF52 devices.")
+        print(
+            "These files are useful for troubleshooting or preparing devices for fresh installs."
+        )
+
+        try:
+            include_erase = confirm_prompt(
+                "Include factory erase files for nRF52 devices?",
+                default=True,
+            )
+            return include_erase if include_erase is not None else False
+        except KeyboardInterrupt:
+            return False
 
     def _select_manufacturer_devices(
         self, manufacturer: str, devices: List[Dict], config: Dict[str, Any]

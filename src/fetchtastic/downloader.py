@@ -2099,11 +2099,34 @@ def _get_firmware_patterns(config: Dict[str, Any]) -> List[str]:
 
     # Support both old nested structure and new flat target list
     if firmware_targets:
-        # New simplified structure - just a list of targets
+        # New simplified structure - comprehensive file patterns for each target
         patterns = []
         for target in firmware_targets:
+            # Main firmware files (covers both .bin and .uf2 architectures)
             patterns.append(f"firmware-{target}-")
-            patterns.append(target)
+            # LittleFS files for ESP32 devices
+            patterns.append(f"littlefs-{target}-")
+            patterns.append(f"littlefswebui-{target}-")
+
+        # Add shared files needed for complete firmware flashing
+        patterns.extend(
+            [
+                "bleota.bin",  # BLE OTA for ESP32 devices
+                "device-install.sh",  # Install script for Linux/Mac
+                "device-install.bat",  # Install script for Windows
+                "device-update.sh",  # Update script for Linux/Mac
+                "device-update.bat",  # Update script for Windows
+            ]
+        )
+
+        # Add factory erase files if requested
+        if config.get("INCLUDE_ERASE_FILES", False):
+            patterns.extend(
+                [
+                    "Meshtastic_nRF52_factory_erase_v3_S140_",  # Factory erase for nRF52
+                ]
+            )
+
         return patterns
     elif hardware_devices:
         # Legacy nested structure - convert to patterns
