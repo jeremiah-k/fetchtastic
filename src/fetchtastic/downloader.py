@@ -801,9 +801,12 @@ def _process_firmware_downloads(
     all_failed_firmware_downloads: List[Dict[str, str]] = []
     latest_firmware_version: Optional[str] = None
 
-    if config.get("SAVE_FIRMWARE", False) and config.get(
-        "SELECTED_FIRMWARE_ASSETS", []
-    ):
+    # Check if firmware is enabled and has selections (either legacy patterns or hardware-based)
+    firmware_enabled = config.get("SAVE_FIRMWARE", False)
+    has_legacy_patterns = bool(config.get("SELECTED_FIRMWARE_ASSETS", []))
+    has_hardware_selections = bool(config.get("SELECTED_FIRMWARE_DEVICES", {}))
+
+    if firmware_enabled and (has_legacy_patterns or has_hardware_selections):
         # Fast check: Read saved version first
         latest_firmware_release_file = paths_and_urls["latest_firmware_release_file"]
         saved_firmware_version = None
@@ -872,7 +875,7 @@ def _process_firmware_downloads(
                     paths_and_urls["firmware_dir"],
                     config.get("FIRMWARE_VERSIONS_TO_KEEP", 2),
                     config.get("EXTRACT_PATTERNS", []),
-                    selected_patterns=config.get("SELECTED_FIRMWARE_ASSETS", []),  # type: ignore
+                    selected_patterns=_get_firmware_patterns(config),  # type: ignore
                     auto_extract=config.get("AUTO_EXTRACT", False),
                     exclude_patterns=config.get("EXCLUDE_PATTERNS", []),  # type: ignore
                 )
@@ -929,7 +932,10 @@ def _process_firmware_downloads(
                     logger.info("No new pre-release firmware found or downloaded.")
             else:
                 logger.info("No latest release tag found. Skipping pre-release check.")
-    elif not config.get("SELECTED_FIRMWARE_ASSETS", []):
+    elif not (
+        config.get("SELECTED_FIRMWARE_ASSETS", [])
+        or config.get("SELECTED_FIRMWARE_DEVICES", {})
+    ):
         logger.info("No firmware assets selected. Skipping firmware download.")
 
     return (
@@ -2056,6 +2062,39 @@ def _download_readme_from_repo(
         logger.warning(f"Failed to download README: {e}")
 
 
+def _get_firmware_patterns(config: Dict[str, Any]) -> List[str]:
+    """
+    Get firmware patterns from either legacy SELECTED_FIRMWARE_ASSETS or
+    hardware-based SELECTED_FIRMWARE_DEVICES.
+
+    Args:
+        config: Configuration dictionary
+
+    Returns:
+        List of firmware patterns to match against asset names
+    """
+    # Check for legacy pattern system first
+    legacy_patterns = config.get("SELECTED_FIRMWARE_ASSETS", [])
+    if legacy_patterns:
+        return legacy_patterns
+
+    # Check for hardware-based system
+    hardware_devices = config.get("SELECTED_FIRMWARE_DEVICES", {})
+    if not hardware_devices:
+        return []
+
+    # Convert hardware device targets to firmware patterns
+    patterns = []
+    for manufacturer, devices in hardware_devices.items():
+        for device_target in devices:
+            # Convert device target to firmware pattern
+            # e.g., "rak4631" -> "firmware-rak4631-" or just "rak4631"
+            patterns.append(f"firmware-{device_target}-")
+            patterns.append(device_target)  # Also match direct target names
+
+    return patterns
+
+
 def _download_otafix_documentation_images(release_dir: str) -> None:
     """
     Download OTA-fix documentation images.
@@ -2129,10 +2168,16 @@ def _process_bootloader_downloads(
         os.makedirs(bootloaders_dir)
         logger.info(f"Created bootloaders directory: {bootloaders_dir}")
 
-    # Process OTA-fix bootloaders if selected
-    if "otafix_bootloaders" in selected_types and "otafix_all" in selected_assets.get(
-        "otafix_bootloaders", []
-    ):
+    # Process OTA-fix bootloaders if selected (support both old and new config formats)
+    otafix_selected = (
+        "otafix_bootloaders" in selected_types
+        and "otafix_all" in selected_assets.get("otafix_bootloaders", [])
+    ) or (
+        "modified_bootloaders" in selected_types
+        and "otafix_all" in selected_assets.get("modified_bootloaders", [])
+    )
+
+    if otafix_selected:
         logger.info(LOG_PROCESSING_OTA_BOOTLOADERS)
 
         repo_owner = "oltaco"
