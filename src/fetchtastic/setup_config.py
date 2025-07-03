@@ -212,8 +212,8 @@ def is_fetchtastic_installed_via_pip():
         if result.returncode == 0:
             return "fetchtastic" in result.stdout.lower()
     except (subprocess.SubprocessError, FileNotFoundError, OSError):
-        # pip command not found or failed to execute
-        pass
+        # pip command not found or failed to execute - this is expected on some systems
+        return False
     return False
 
 
@@ -234,8 +234,8 @@ def is_fetchtastic_installed_via_pipx():
         if result.returncode == 0:
             return "fetchtastic" in result.stdout.lower()
     except (subprocess.SubprocessError, FileNotFoundError, OSError):
-        # pipx command not found or failed to execute
-        pass
+        # pipx command not found or failed to execute - this is expected on some systems
+        return False
     return False
 
 
@@ -1075,6 +1075,7 @@ def run_setup():
                     print("Fetchtastic will not run automatically on startup.")
         else:
             # Don't show this message again since we already showed it earlier
+            # No action needed - user already configured scheduling
             pass
     elif is_termux():
         # Termux: Ask about cron job and boot script individually
@@ -1447,12 +1448,16 @@ def check_for_updates():
             requests.exceptions.RequestException,
             requests.exceptions.Timeout,
             requests.exceptions.ConnectionError,
-        ):
-            # Network errors - fail silently and continue
-            pass
-        except Exception:
-            # Other errors - fail silently and continue
-            pass
+        ) as e:
+            # Network errors - log and continue
+            from fetchtastic.log_utils import logger
+
+            logger.debug(f"Network error checking for updates: {e}")
+        except Exception as e:
+            # Other errors - log and continue
+            from fetchtastic.log_utils import logger
+
+            logger.debug(f"Error checking for updates: {e}")
 
         return current_version, None, False
 

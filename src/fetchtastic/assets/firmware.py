@@ -59,8 +59,8 @@ class MeshtasticFirmwareAsset(BaseAssetHandler):
         # Define firmware system options with comprehensive descriptions
         system_options = [
             {
-                "title": "New Hardware-Based System",
-                "value": "new_system",
+                "title": "API-Based System",
+                "value": "api_based",
                 "description": "Organize by manufacturer and device model using official Meshtastic hardware list (recommended for most users)",
             },
             {
@@ -70,8 +70,8 @@ class MeshtasticFirmwareAsset(BaseAssetHandler):
             },
         ]
 
-        # Get current system preference from config (default to new system)
-        current_system = config.get("FIRMWARE_SYSTEM", "new_system")
+        # Get current system preference from config (default to API-based system)
+        current_system = config.get("FIRMWARE_SYSTEM", "api_based")
 
         try:
             selected_system = single_select_with_info(
@@ -84,8 +84,8 @@ class MeshtasticFirmwareAsset(BaseAssetHandler):
                 print("No system selected.")
                 return None
 
-            if selected_system == "new_system":
-                return self._run_new_firmware_menu(config)
+            if selected_system == "api_based":
+                return self._run_api_based_firmware_menu(config)
             else:
                 return self._run_legacy_firmware_menu(config)
 
@@ -107,10 +107,10 @@ class MeshtasticFirmwareAsset(BaseAssetHandler):
 
         return result
 
-    def _run_new_firmware_menu(
+    def _run_api_based_firmware_menu(
         self, config: Dict[str, Any]
     ) -> Optional[Dict[str, Any]]:
-        """Run the new hardware-based firmware selection menu."""
+        """Run the API-based hardware firmware selection menu."""
         import requests
 
         from fetchtastic.ui_utils import (
@@ -262,10 +262,14 @@ class MeshtasticFirmwareAsset(BaseAssetHandler):
                 print("Falling back to legacy pattern system...")
                 return self._run_legacy_firmware_menu(config)
 
+            # Convert nested device structure to flat target list
+            firmware_targets = []
+            for manufacturer, devices in selected_devices.items():
+                firmware_targets.extend(devices)
+
             return {
-                "FIRMWARE_SYSTEM": "new_system",
-                "SELECTED_FIRMWARE_MANUFACTURERS": selected_manufacturers,
-                "SELECTED_FIRMWARE_DEVICES": selected_devices,
+                "FIRMWARE_SYSTEM": "api_based",
+                "SELECTED_FIRMWARE_TARGETS": firmware_targets,
             }
 
         except requests.RequestException as e:

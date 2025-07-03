@@ -796,17 +796,21 @@ def _process_firmware_downloads(
             - Latest firmware version (or None if no releases found).
     """
     global downloads_skipped
+    downloads_skipped = False  # Initialize the variable
     downloaded_firmwares: List[str] = []
     new_firmware_versions: List[str] = []
     all_failed_firmware_downloads: List[Dict[str, str]] = []
     latest_firmware_version: Optional[str] = None
 
-    # Check if firmware is enabled and has selections (either legacy patterns or hardware-based)
+    # Check if firmware is enabled and has selections (legacy patterns, hardware-based, or target list)
     firmware_enabled = config.get("SAVE_FIRMWARE", False)
     has_legacy_patterns = bool(config.get("SELECTED_FIRMWARE_ASSETS", []))
     has_hardware_selections = bool(config.get("SELECTED_FIRMWARE_DEVICES", {}))
+    has_firmware_targets = bool(config.get("SELECTED_FIRMWARE_TARGETS", []))
 
-    if firmware_enabled and (has_legacy_patterns or has_hardware_selections):
+    if firmware_enabled and (
+        has_legacy_patterns or has_hardware_selections or has_firmware_targets
+    ):
         # Fast check: Read saved version first
         latest_firmware_release_file = paths_and_urls["latest_firmware_release_file"]
         saved_firmware_version = None
@@ -935,6 +939,7 @@ def _process_firmware_downloads(
     elif not (
         config.get("SELECTED_FIRMWARE_ASSETS", [])
         or config.get("SELECTED_FIRMWARE_DEVICES", {})
+        or config.get("SELECTED_FIRMWARE_TARGETS", [])
     ):
         logger.info("No firmware assets selected. Skipping firmware download.")
 
@@ -964,6 +969,7 @@ def _process_apk_downloads(
             - Latest APK version (or None if no releases found).
     """
     global downloads_skipped
+    downloads_skipped = False  # Initialize the variable
     downloaded_apks: List[str] = []
     new_apk_versions: List[str] = []
     all_failed_apk_downloads: List[Dict[str, str]] = (
@@ -1088,6 +1094,7 @@ def _finalize_and_notify(
         update_available (bool): True if an update is available.
     """
     global downloads_skipped
+    downloads_skipped = False  # Initialize the variable if not already set
     end_time: float = time.time()
     total_time: float = end_time - start_time
 
@@ -2078,10 +2085,28 @@ def _get_firmware_patterns(config: Dict[str, Any]) -> List[str]:
     if legacy_patterns:
         return legacy_patterns
 
-    # Check for hardware-based system
+    # Check for hardware-based system (support both old and new naming)
     hardware_devices = config.get("SELECTED_FIRMWARE_DEVICES", {})
-    if not hardware_devices:
-        return []
+    firmware_targets = config.get("SELECTED_FIRMWARE_TARGETS", [])
+
+    # Support both old nested structure and new flat target list
+    if firmware_targets:
+        # New simplified structure - just a list of targets
+        patterns = []
+        for target in firmware_targets:
+            patterns.append(f"firmware-{target}-")
+            patterns.append(target)
+        return patterns
+    elif hardware_devices:
+        # Legacy nested structure - convert to patterns
+        patterns = []
+        for manufacturer, devices in hardware_devices.items():
+            for device_target in devices:
+                patterns.append(f"firmware-{device_target}-")
+                patterns.append(device_target)
+        return patterns
+
+    return []
 
     # Convert hardware device targets to firmware patterns
     patterns = []
