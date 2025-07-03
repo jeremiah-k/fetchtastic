@@ -2436,6 +2436,10 @@ def load_config(directory=None):
             with open(CONFIG_FILE, "r") as f:
                 config = yaml.safe_load(f)
 
+            # Handle empty or invalid config file
+            if config is None:
+                config = {}
+
             # Update BASE_DIR from config
             if "BASE_DIR" in config:
                 BASE_DIR = config["BASE_DIR"]
@@ -2446,6 +2450,10 @@ def load_config(directory=None):
         elif os.path.exists(OLD_CONFIG_FILE):
             with open(OLD_CONFIG_FILE, "r") as f:
                 config = yaml.safe_load(f)
+
+            # Handle empty or invalid config file
+            if config is None:
+                config = {}
 
             # Update BASE_DIR from config
             if "BASE_DIR" in config:

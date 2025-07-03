@@ -221,27 +221,22 @@ class MeshtasticAndroidAsset(BaseAssetHandler):
         """Select patterns for Meshtastic Official Client."""
         from fetchtastic.ui_utils import multi_select_with_info
 
-        # Define Meshtastic Android app patterns
+        # Define Meshtastic Android app patterns based on actual releases
         pattern_options = [
             {
-                "title": "Google Play Store Release",
+                "title": "Google Play Store Release APK",
                 "value": "googleRelease-",
                 "description": "Official release APK from Google Play Store",
             },
             {
-                "title": "F-Droid Release",
+                "title": "F-Droid Release APK",
                 "value": "fdroidRelease-",
                 "description": "F-Droid compatible APK without Google services",
             },
             {
-                "title": "Debug Build",
-                "value": "debug-",
-                "description": "Debug APK for development and testing",
-            },
-            {
-                "title": "Android App Bundle",
-                "value": "release-.*\\.aab$",
-                "description": "Android App Bundle (AAB) for distribution",
+                "title": "Google Play Store Release AAB",
+                "value": "googleRelease-.*\\.aab$",
+                "description": "Android App Bundle (AAB) for Google Play distribution",
             },
         ]
 
