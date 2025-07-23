@@ -10,6 +10,8 @@ The easiest way to install Fetchtastic on Windows is using our automated PowerSh
 irm https://raw.githubusercontent.com/jeremiah-k/fetchtastic/main/src/fetchtastic/tools/setup_fetchtastic.ps1 | iex
 ```
 
+> **Security Note:** For security-conscious users, you can [download and inspect the script](https://raw.githubusercontent.com/jeremiah-k/fetchtastic/main/src/fetchtastic/tools/setup_fetchtastic.ps1) before running it.
+
 This script will:
 
 - Install Python if needed (silently, with PATH configuration)
@@ -100,20 +102,17 @@ To manually manage startup:
 
 Configuration is stored at:
 
-```
+```text
 %LOCALAPPDATA%\fetchtastic\fetchtastic.yaml
 ```
 
 Downloads are saved to:
 
-```
+```text
 %USERPROFILE%\Downloads\Meshtastic\
-├── apks\
-├── firmware\
-│   ├── v2.x.x\
-│   ├── repo-dls\
-│   └── prerelease\ (if enabled)
 ```
+
+See the [Usage Guide](usage-guide.md#file-organization) for detailed file organization.
 
 ## Troubleshooting
 

@@ -51,8 +51,8 @@ fetchtastic setup
 
 **Asset Types**: Choose what to download:
 
-- Firmware only
-- Android APKs only
+- Firmware
+- Android APKs
 - Both firmware and APKs
 
 **Asset Selection**: Choose specific firmware devices or APK variants
@@ -121,7 +121,7 @@ fetchtastic repo browse
 
 Repository files are saved to:
 
-```
+```text
 ~/Downloads/Meshtastic/firmware/repo-dls/
 ```
 
@@ -137,7 +137,7 @@ This removes all files from the repository download directory.
 
 Fetchtastic organizes downloads in a structured way:
 
-```
+```text
 ~/Downloads/Meshtastic/
 ├── apks/
 │   ├── v2.3.2/

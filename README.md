@@ -25,11 +25,15 @@ Fetchtastic automatically downloads the latest Meshtastic firmware and Android A
 curl -sSL https://raw.githubusercontent.com/jeremiah-k/fetchtastic/main/src/fetchtastic/tools/setup_fetchtastic.sh | bash
 ```
 
+> **Security Note:** For security-conscious users, you can [download and inspect the script](https://raw.githubusercontent.com/jeremiah-k/fetchtastic/main/src/fetchtastic/tools/setup_fetchtastic.sh) before running it.
+
 **Windows (PowerShell):**
 
 ```powershell
 irm https://raw.githubusercontent.com/jeremiah-k/fetchtastic/main/src/fetchtastic/tools/setup_fetchtastic.ps1 | iex
 ```
+
+> **Security Note:** For security-conscious users, you can [download and inspect the script](https://raw.githubusercontent.com/jeremiah-k/fetchtastic/main/src/fetchtastic/tools/setup_fetchtastic.ps1) before running it.
 
 **Android (Termux):**
 
@@ -79,7 +83,7 @@ fetchtastic clean      # Remove all configuration
 
 Downloads are organized in a clean structure:
 
-```
+```text
 ~/Downloads/Meshtastic/
 ├── apks/
 │   ├── v2.3.2/

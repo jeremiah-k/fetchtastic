@@ -8,6 +8,8 @@ The easiest way to install Fetchtastic on Linux is using our automated installer
 curl -sSL https://raw.githubusercontent.com/jeremiah-k/fetchtastic/main/src/fetchtastic/tools/setup_fetchtastic.sh | bash
 ```
 
+> **Security Note:** For security-conscious users, you can [download and inspect the script](https://raw.githubusercontent.com/jeremiah-k/fetchtastic/main/src/fetchtastic/tools/setup_fetchtastic.sh) before running it.
+
 This script will:
 
 - Check if Python is installed and install it if needed
@@ -92,14 +94,11 @@ Configuration is stored at:
 
 Downloads are saved to:
 
-```
+```text
 ~/Downloads/Meshtastic/
-├── apks/
-├── firmware/
-│   ├── v2.x.x/
-│   ├── repo-dls/
-│   └── prerelease/ (if enabled)
 ```
+
+See the [Usage Guide](usage-guide.md#file-organization) for detailed file organization.
 
 ## Troubleshooting
 
