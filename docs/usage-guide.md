@@ -228,35 +228,7 @@ You can manually edit the configuration file or re-run setup:
 fetchtastic setup
 ```
 
-### Configuration Migration
-
-Fetchtastic automatically migrates old configuration files to new locations when needed.
-
-## Troubleshooting
-
-### No Configuration Found
-
-If you see "No configuration found", run:
-
-```bash
-fetchtastic setup
-```
-
-### Download Failures
-
-1. Check your internet connection
-2. Verify GitHub is accessible
-3. Try running the command again (automatic retry)
-
-### Permission Issues
-
-Make sure Fetchtastic has permission to write to the download directory.
-
-### Storage Space
-
-Regularly clean old versions or reduce the number of versions to keep in setup.
-
-### Network Issues on Termux
+### Saving Phone Data
 
 Enable "Wi-Fi only" mode in setup to avoid cellular data issues.
 
