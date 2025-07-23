@@ -88,7 +88,7 @@ crontab -l
 
 Configuration is stored at:
 
-```
+```text
 ~/.config/fetchtastic/fetchtastic.yaml
 ```
 
