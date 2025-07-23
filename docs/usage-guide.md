@@ -228,10 +228,6 @@ You can manually edit the configuration file or re-run setup:
 fetchtastic setup
 ```
 
-### Saving Phone Data
-
-Enable "Wi-Fi only" mode in setup to avoid cellular data issues.
-
 ## Advanced Usage
 
 ### Custom Extraction Patterns
