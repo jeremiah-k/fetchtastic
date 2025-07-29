@@ -19,7 +19,7 @@ Fetchtastic automatically downloads the latest Meshtastic firmware and Android A
 
 ### One-Line Installation
 
-**Linux/macOS:**
+**Linux/MacOS/Android (Termux):**
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/jeremiah-k/fetchtastic/main/src/fetchtastic/tools/setup_fetchtastic.sh | bash
@@ -34,14 +34,6 @@ irm https://raw.githubusercontent.com/jeremiah-k/fetchtastic/main/src/fetchtasti
 ```
 
 > **Security Note:** For security-conscious users, you can [inspect the script](https://raw.githubusercontent.com/jeremiah-k/fetchtastic/main/src/fetchtastic/tools/setup_fetchtastic.ps1) before running it.
-
-**Android (Termux):**
-
-```bash
-curl -sSL https://raw.githubusercontent.com/jeremiah-k/fetchtastic/main/src/fetchtastic/tools/setup_fetchtastic.sh | bash
-```
-
-> **Security Note:** For security-conscious users, you can [inspect the script](https://raw.githubusercontent.com/jeremiah-k/fetchtastic/main/src/fetchtastic/tools/setup_fetchtastic.sh) before running it.
 
 ### Basic Usage
 
