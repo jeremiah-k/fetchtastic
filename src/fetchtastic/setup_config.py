@@ -12,7 +12,6 @@ from datetime import datetime
 import platformdirs
 import yaml
 
-from fetchtastic import downloader  # Import downloader to perform first run
 from fetchtastic import menu_apk, menu_firmware
 
 # Import Windows-specific modules if on Windows
@@ -1160,6 +1159,7 @@ def run_setup():
             or "y"
         )
         if perform_first_run == "y":
+            from fetchtastic import downloader  # Local import to break circular dependency
             print("Setup complete. Starting first run, this may take a few minutes...")
             downloader.main()
         else:

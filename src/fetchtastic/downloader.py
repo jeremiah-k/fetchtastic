@@ -36,13 +36,17 @@ def compare_versions(version1, version2):
         0 if version1 == version2
         -1 if version1 < version2
     """
+    # Strip 'v' prefix if it exists
+    v1 = version1.lstrip("v")
+    v2 = version2.lstrip("v")
+
     # Handle exact matches immediately
-    if version1 == version2:
+    if v1 == v2:
         return 0
 
     # Split versions into components
-    v1_parts = version1.split(".")
-    v2_parts = version2.split(".")
+    v1_parts = v1.split(".")
+    v2_parts = v2.split(".")
 
     # Make sure we have at least 3 parts for each version
     if len(v1_parts) < 3 or len(v2_parts) < 3:
@@ -1162,7 +1166,8 @@ def strip_version_numbers(filename: str) -> str:
     Returns:
         str: The filename with version numbers and commit hashes removed.
     """
-    base_name: str = re.sub(r"([_-])\d+\.\d+\.\d+(?:\.[\da-f]+)?", r"\1", filename)
+    # This regex removes separators and version numbers like -2.3.2.1a2b3c4 or _v1.2.3
+    base_name: str = re.sub(r"[-_]v?\d+\.\d+\.\d+(?:\.[\da-f]+)?", "", filename)
     return base_name
 
 
@@ -1265,6 +1270,21 @@ def _is_release_complete(
                     if zf.testzip() is not None:
                         logger.debug(f"Corrupted zip file detected: {asset_path}")
                         return False
+                # Also check file size for zip files
+                try:
+                    actual_size = os.path.getsize(asset_path)
+                    for asset in release_data.get("assets", []):
+                        if asset.get("name") == asset_name:
+                            expected_size = asset.get("size")
+                            if expected_size is not None and actual_size != expected_size:
+                                logger.debug(
+                                    f"File size mismatch for {asset_path}: expected {expected_size}, got {actual_size}"
+                                )
+                                return False
+                            break
+                except (OSError, TypeError):
+                    logger.debug(f"Error checking file size for {asset_path}")
+                    return False
             except zipfile.BadZipFile:
                 logger.debug(f"Bad zip file detected: {asset_path}")
                 return False
