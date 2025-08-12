@@ -14,19 +14,26 @@ import requests
 
 from fetchtastic import menu_repo, setup_config
 
+# Import constants from constants module
+from fetchtastic.constants import (
+    API_CALL_DELAY,
+    DEFAULT_ANDROID_VERSIONS_TO_KEEP,
+    DEFAULT_FIRMWARE_VERSIONS_TO_KEEP,
+    LATEST_ANDROID_RELEASE_FILE,
+    LATEST_FIRMWARE_RELEASE_FILE,
+    MESHTASTIC_ANDROID_RELEASES_URL,
+    MESHTASTIC_FIRMWARE_RELEASES_URL,
+    NTFY_REQUEST_TIMEOUT,
+    PRERELEASE_CHUNK_SIZE,
+    PRERELEASE_REQUEST_TIMEOUT,
+    RELEASE_SCAN_COUNT,
+    VERSION_REGEX_PATTERN,
+)
+
 # Removed log_info, setup_logging
 from fetchtastic.log_utils import logger  # Import new logger
 from fetchtastic.setup_config import display_version_info, get_upgrade_command
 from fetchtastic.utils import download_file_with_retry
-
-# Constants for downloader operations
-RELEASE_SCAN_COUNT: int = 10
-NTFY_REQUEST_TIMEOUT: int = 10  # seconds
-# Constants for check_for_prereleases internal download
-PRERELEASE_REQUEST_TIMEOUT: int = 30
-PRERELEASE_CHUNK_SIZE: int = 8 * 1024
-# Rate limiting - small delay between API calls to be respectful
-API_CALL_DELAY: float = 0.1  # seconds
 
 
 def compare_versions(version1, version2):
@@ -125,7 +132,7 @@ def check_promoted_prereleases(
             dir_version = dir_name[9:]  # Remove 'firmware-' prefix
 
             # Validate version format before processing (hash part is optional)
-            if not re.match(r"^\d+\.\d+\.\d+(?:\.[a-f0-9]+)?$", dir_version):
+            if not re.match(VERSION_REGEX_PATTERN, dir_version):
                 logger.warning(
                     f"Invalid version format in prerelease directory {dir_name}, skipping"
                 )
@@ -335,7 +342,7 @@ def check_for_prereleases(
                     dir_version = dir_name[9:]  # Remove 'firmware-' prefix
 
                     # Validate version format (should be X.Y.Z or X.Y.Z.hash)
-                    if not re.match(r"^\d+\.\d+\.\d+(?:\.[a-f0-9]+)?$", dir_version):
+                    if not re.match(VERSION_REGEX_PATTERN, dir_version):
                         logger.warning(
                             f"Invalid version format in directory {dir_name}, removing"
                         )
@@ -728,13 +735,13 @@ def _initial_setup_and_config() -> Tuple[
         "firmware_dir": firmware_dir,
         "apks_dir": apks_dir,
         "latest_android_release_file": os.path.join(
-            apks_dir, "latest_android_release.txt"
+            apks_dir, LATEST_ANDROID_RELEASE_FILE
         ),
         "latest_firmware_release_file": os.path.join(
-            firmware_dir, "latest_firmware_release.txt"
+            firmware_dir, LATEST_FIRMWARE_RELEASE_FILE
         ),
-        "android_releases_url": "https://api.github.com/repos/meshtastic/Meshtastic-Android/releases",
-        "firmware_releases_url": "https://api.github.com/repos/meshtastic/firmware/releases",
+        "android_releases_url": MESHTASTIC_ANDROID_RELEASES_URL,
+        "firmware_releases_url": MESHTASTIC_FIRMWARE_RELEASES_URL,
     }
 
     return config, current_version, latest_version, update_available, paths_and_urls
@@ -800,7 +807,9 @@ def _process_firmware_downloads(
                 paths_and_urls["latest_firmware_release_file"],
                 "Firmware",
                 paths_and_urls["firmware_dir"],
-                config.get("FIRMWARE_VERSIONS_TO_KEEP", 2),
+                config.get(
+                    "FIRMWARE_VERSIONS_TO_KEEP", DEFAULT_FIRMWARE_VERSIONS_TO_KEEP
+                ),
                 config.get("EXTRACT_PATTERNS", []),
                 selected_patterns=config.get("SELECTED_FIRMWARE_ASSETS", []),  # type: ignore
                 auto_extract=config.get("AUTO_EXTRACT", False),
@@ -910,7 +919,9 @@ def _process_apk_downloads(
                 paths_and_urls["latest_android_release_file"],
                 "Android APK",
                 paths_and_urls["apks_dir"],
-                config.get("ANDROID_VERSIONS_TO_KEEP", 2),
+                config.get(
+                    "ANDROID_VERSIONS_TO_KEEP", DEFAULT_ANDROID_VERSIONS_TO_KEEP
+                ),
                 [],
                 selected_patterns=config.get("SELECTED_APK_ASSETS", []),  # type: ignore
                 auto_extract=False,

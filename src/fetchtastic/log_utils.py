@@ -6,14 +6,18 @@ from typing import Optional  # Added Optional and Any
 
 from rich.logging import RichHandler  # Keep Rich for console
 
-# 1. Initialize a Logger
-LOGGER_NAME = "fetchtastic"
-logger = logging.getLogger(LOGGER_NAME)
+from fetchtastic.constants import (
+    DEBUG_LOG_FORMAT,
+    INFO_LOG_FORMAT,
+    LOG_DATE_FORMAT,
+    LOG_FILE_BACKUP_COUNT,
+    LOG_FILE_MAX_BYTES,
+    LOG_LEVEL_ENV_VAR,
+    LOGGER_NAME,
+)
 
-# Log message formats - split between INFO and DEBUG levels
-LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
-INFO_LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
-DEBUG_LOG_FORMAT = "%(asctime)s - %(levelname)s - %(name)s - %(module)s.%(funcName)s:%(lineno)d - %(message)s"
+# 1. Initialize a Logger
+logger = logging.getLogger(LOGGER_NAME)
 
 # Global variable for the file handler to allow removal/reconfiguration if needed
 _file_handler: Optional[RotatingFileHandler] = None
@@ -82,8 +86,8 @@ def add_file_logging(log_dir_path: Path, level_name: str = "INFO") -> None:
 
     _file_handler = RotatingFileHandler(
         log_file,
-        maxBytes=10 * 1024 * 1024,  # 10 MB
-        backupCount=5,
+        maxBytes=LOG_FILE_MAX_BYTES,
+        backupCount=LOG_FILE_BACKUP_COUNT,
         encoding="utf-8",
     )
     _file_handler.setFormatter(file_formatter)
@@ -117,7 +121,7 @@ def _initialize_logger() -> None:
     )
 
     # Set initial log level from environment variable or default to INFO
-    default_log_level = os.environ.get("FETCHTASTIC_LOG_LEVEL", "INFO").upper()
+    default_log_level = os.environ.get(LOG_LEVEL_ENV_VAR, "INFO").upper()
     initial_level = getattr(logging, default_log_level, logging.INFO)
 
     # Choose console formatter based on log level

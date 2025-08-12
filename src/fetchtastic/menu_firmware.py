@@ -6,17 +6,20 @@ import time
 import requests
 from pick import pick
 
-# Constants
-GITHUB_API_TIMEOUT = 10  # seconds
-API_CALL_DELAY = 0.1  # seconds - small delay to be respectful to GitHub API
+from fetchtastic.constants import (
+    API_CALL_DELAY,
+    GITHUB_API_TIMEOUT,
+    MESHTASTIC_FIRMWARE_RELEASES_URL,
+)
 
 
 def fetch_firmware_assets():
     """
     Fetches the list of firmware assets from the latest release on GitHub.
     """
-    firmware_releases_url = "https://api.github.com/repos/meshtastic/firmware/releases"
-    response = requests.get(firmware_releases_url, timeout=GITHUB_API_TIMEOUT)
+    response = requests.get(
+        MESHTASTIC_FIRMWARE_RELEASES_URL, timeout=GITHUB_API_TIMEOUT
+    )
     response.raise_for_status()
 
     # Small delay to be respectful to GitHub API

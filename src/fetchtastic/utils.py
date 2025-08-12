@@ -11,15 +11,19 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry  # type: ignore
 
+# Import constants from constants module
+from fetchtastic.constants import (
+    DEFAULT_BACKOFF_FACTOR,
+    DEFAULT_CHUNK_SIZE,
+    DEFAULT_CONNECT_RETRIES,
+    DEFAULT_REQUEST_TIMEOUT,
+    EXECUTABLE_PERMISSIONS,
+    SHELL_SCRIPT_EXTENSION,
+    WINDOWS_INITIAL_RETRY_DELAY,
+    WINDOWS_MAX_REPLACE_RETRIES,
+    ZIP_EXTENSION,
+)
 from fetchtastic.log_utils import logger  # Import the new logger
-
-# Constants for download_file_with_retry
-DEFAULT_CONNECT_RETRIES: int = 3
-DEFAULT_BACKOFF_FACTOR: float = 1.0  # Make it float for potential fractional backoff
-DEFAULT_REQUEST_TIMEOUT: int = 30  # seconds
-DEFAULT_CHUNK_SIZE: int = 8 * 1024  # 8KB
-WINDOWS_MAX_REPLACE_RETRIES: int = 3
-WINDOWS_INITIAL_RETRY_DELAY: float = 1.0  # seconds
 
 
 def calculate_sha256(file_path: str) -> Optional[str]:
@@ -125,7 +129,7 @@ def download_file_with_retry(
 
     # Check if file exists and is valid (especially for zips)
     if os.path.exists(download_path):
-        if download_path.endswith(".zip"):
+        if download_path.endswith(ZIP_EXTENSION):
             try:
                 with zipfile.ZipFile(download_path, "r") as zf:
                     if zf.testzip() is not None:  # None means no errors
@@ -261,7 +265,7 @@ def download_file_with_retry(
 
         # Log completion after successful file replacement (moved below)
 
-        if download_path.endswith(".zip"):
+        if download_path.endswith(ZIP_EXTENSION):
             try:
                 with zipfile.ZipFile(temp_path, "r") as zf_temp:
                     if zf_temp.testzip() is not None:

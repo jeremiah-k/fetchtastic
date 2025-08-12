@@ -6,9 +6,11 @@ import time
 import requests
 from pick import pick
 
-# Constants
-GITHUB_API_TIMEOUT = 10  # seconds
-API_CALL_DELAY = 0.1  # seconds - small delay to be respectful to GitHub API
+from fetchtastic.constants import (
+    API_CALL_DELAY,
+    GITHUB_API_TIMEOUT,
+    MESHTASTIC_GITHUB_IO_CONTENTS_URL,
+)
 
 
 def fetch_repo_contents(path=""):
@@ -20,7 +22,7 @@ def fetch_repo_contents(path=""):
         path: Optional path within the repository to fetch contents from
     """
     # GitHub API URL for the repository contents
-    base_url = "https://api.github.com/repos/meshtastic/meshtastic.github.io/contents"
+    base_url = MESHTASTIC_GITHUB_IO_CONTENTS_URL
     # Ensure proper URL construction - avoid double slashes
     if path:
         path = path.strip("/")  # Remove leading/trailing slashes

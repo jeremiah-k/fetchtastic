@@ -5,6 +5,11 @@ import platform
 import shutil
 
 from fetchtastic import menu_repo
+from fetchtastic.constants import (
+    EXECUTABLE_PERMISSIONS,
+    REPO_DOWNLOADS_DIR,
+    SHELL_SCRIPT_EXTENSION,
+)
 from fetchtastic.log_utils import logger  # Import new logger
 from fetchtastic.utils import download_file_with_retry
 
@@ -34,8 +39,8 @@ def download_repo_files(selected_files, download_dir):  # log_message_func remov
     directory = selected_files["directory"]
     files = selected_files["files"]
 
-    # Create repo-dls directory if it doesn't exist
-    repo_dir = os.path.join(download_dir, "firmware", "repo-dls")
+    # Create repo downloads directory if it doesn't exist
+    repo_dir = os.path.join(download_dir, "firmware", REPO_DOWNLOADS_DIR)
     try:
         if not os.path.exists(repo_dir):
             os.makedirs(repo_dir)
@@ -76,10 +81,10 @@ def download_repo_files(selected_files, download_dir):  # log_message_func remov
                 download_url, file_path
             ):  # Removed log_message_func
                 # download_file_with_retry already logs the download completion
-                # Set executable permissions for .sh files (moved here, after successful download)
-                if file_name.endswith(".sh"):
+                # Set executable permissions for shell script files (moved here, after successful download)
+                if file_name.endswith(SHELL_SCRIPT_EXTENSION):
                     try:
-                        os.chmod(file_path, 0o755)
+                        os.chmod(file_path, EXECUTABLE_PERMISSIONS)
                         logger.debug(
                             f"Set executable permissions for {file_name}"
                         )  # Was current_log_func
@@ -134,7 +139,7 @@ def clean_repo_directory(download_dir):  # log_message_func removed
     """
     # Removed local log_message_func definition
 
-    repo_dir = os.path.join(download_dir, "firmware", "repo-dls")
+    repo_dir = os.path.join(download_dir, "firmware", REPO_DOWNLOADS_DIR)
 
     if not os.path.exists(repo_dir):
         logger.info(

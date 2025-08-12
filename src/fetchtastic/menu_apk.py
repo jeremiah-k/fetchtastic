@@ -6,16 +6,16 @@ import time
 import requests
 from pick import pick
 
-# Constants
-GITHUB_API_TIMEOUT = 10  # seconds
-API_CALL_DELAY = 0.1  # seconds - small delay to be respectful to GitHub API
+from fetchtastic.constants import (
+    API_CALL_DELAY,
+    APK_EXTENSION,
+    GITHUB_API_TIMEOUT,
+    MESHTASTIC_ANDROID_RELEASES_URL,
+)
 
 
 def fetch_apk_assets():
-    apk_releases_url = (
-        "https://api.github.com/repos/meshtastic/Meshtastic-Android/releases"
-    )
-    response = requests.get(apk_releases_url, timeout=GITHUB_API_TIMEOUT)
+    response = requests.get(MESHTASTIC_ANDROID_RELEASES_URL, timeout=GITHUB_API_TIMEOUT)
     response.raise_for_status()
 
     # Small delay to be respectful to GitHub API
@@ -26,7 +26,7 @@ def fetch_apk_assets():
     latest_release = releases[0]
     assets = latest_release["assets"]
     asset_names = sorted(
-        [asset["name"] for asset in assets if asset["name"].endswith(".apk")]
+        [asset["name"] for asset in assets if asset["name"].endswith(APK_EXTENSION)]
     )  # Sorted alphabetically
     return asset_names
 

@@ -258,18 +258,21 @@ def get_downloads_dir():
     return home_dir
 
 
+# Import constants
+from fetchtastic.constants import CONFIG_FILE_NAME, MESHTASTIC_DIR_NAME
+
 # Default directories
 DOWNLOADS_DIR = get_downloads_dir()
-DEFAULT_BASE_DIR = os.path.join(DOWNLOADS_DIR, "Meshtastic")
+DEFAULT_BASE_DIR = os.path.join(DOWNLOADS_DIR, MESHTASTIC_DIR_NAME)
 
 # Get the config directory using platformdirs
 CONFIG_DIR = platformdirs.user_config_dir("fetchtastic")
 
 # Old config file location (for migration)
-OLD_CONFIG_FILE = os.path.join(DEFAULT_BASE_DIR, "fetchtastic.yaml")
+OLD_CONFIG_FILE = os.path.join(DEFAULT_BASE_DIR, CONFIG_FILE_NAME)
 
 # New config file location using platformdirs
-CONFIG_FILE = os.path.join(CONFIG_DIR, "fetchtastic.yaml")
+CONFIG_FILE = os.path.join(CONFIG_DIR, CONFIG_FILE_NAME)
 
 # These will be set during setup or when loading config
 BASE_DIR = DEFAULT_BASE_DIR
@@ -1227,10 +1230,10 @@ def get_upgrade_command():
 def should_recommend_setup():
     """
     Determine whether running the interactive setup should be recommended.
-    
+
     Checks for an existing configuration and compares the recorded setup version to the currently installed package version.
     Returns a tuple (should_recommend, reason, last_setup_version, current_version):
-    
+
     - should_recommend (bool): True if setup is recommended (no config, missing recorded setup version, version changed, or an error occurred); False if setup appears up-to-date.
     - reason (str): Short human-readable explanation for the recommendation.
     - last_setup_version (str | None): Version value stored in the configuration under "LAST_SETUP_VERSION", or None if unavailable.

@@ -4,19 +4,24 @@ import pytest
 import requests
 
 from fetchtastic import downloader
+from tests.test_constants import (
+    TEST_VERSION_NEW,
+    TEST_VERSION_NEWER,
+    TEST_VERSION_OLD,
+)
 
 
 # Test cases for compare_versions
 @pytest.mark.parametrize(
     "version1, version2, expected",
     [
-        ("2.1.0", "2.0.0", 1),
+        (TEST_VERSION_OLD, "2.0.0", 1),
         ("2.0.1", "2.0.0", 1),
         ("2.0.0", "2.0.1", -1),
         ("1.9.0", "2.0.0", -1),
         ("2.0.0", "2.0.0", 0),
-        ("2.6.9.f93d031", "2.6.8.ef9d0d7", 1),
-        ("2.6.8.ef9d0d7", "2.6.9.f93d031", -1),
+        (TEST_VERSION_NEWER, TEST_VERSION_NEW, 1),
+        (TEST_VERSION_NEW, TEST_VERSION_NEWER, -1),
         ("2.3.0", "2.3.0.b123456", 0),  # Ignore hash for equality
         ("v1.2.3", "1.2.3", 0),  # Should handle 'v' prefix
         ("1.2", "1.2.3", -1),  # Handle different number of parts
@@ -145,7 +150,7 @@ def test_set_permissions_on_sh_files(tmp_path):
 def dummy_zip_file(tmp_path):
     """
     Create a dummy ZIP file containing sample firmware and support files used by extraction tests.
-    
+
     The archive contains:
     - firmware-rak4631-2.7.4.c1f4f79.bin (nRF52-style firmware)
     - firmware-tbeam-2.7.4.c1f4f79.uf2 (alternate firmware format)
@@ -154,7 +159,7 @@ def dummy_zip_file(tmp_path):
     - device-update.sh (shell updater script)
     - bleota.bin (BLE OTA payload)
     - notes.txt (auxiliary text file)
-    
+
     Returns:
         pathlib.Path: Path to the created ZIP file.
     """
