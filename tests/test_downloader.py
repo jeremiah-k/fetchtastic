@@ -372,7 +372,6 @@ def test_is_release_complete(tmp_path, mock_releases):
 
     # 4. Release is complete and valid
     # Mock the size check to pass
-    import os
 
     with patch("os.path.getsize", return_value=100):
         assert (

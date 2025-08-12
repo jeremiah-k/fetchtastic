@@ -1,4 +1,3 @@
-import sys
 from unittest.mock import patch
 
 import pytest
@@ -98,7 +97,7 @@ def test_cli_topic_command_with_config(mocker):
     mock_config = {"NTFY_SERVER": "https://ntfy.sh/", "NTFY_TOPIC": "test-topic-123"}
     mocker.patch("fetchtastic.setup_config.load_config", return_value=mock_config)
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
-    mock_input = mocker.patch("builtins.input", return_value="y")
+    mocker.patch("builtins.input", return_value="y")
     mock_copy = mocker.patch(
         "fetchtastic.cli.copy_to_clipboard_func", return_value=True
     )
@@ -120,7 +119,7 @@ def test_cli_topic_command_termux(mocker):
     mock_config = {"NTFY_SERVER": "https://ntfy.sh", "NTFY_TOPIC": "termux-topic"}
     mocker.patch("fetchtastic.setup_config.load_config", return_value=mock_config)
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
-    mock_input = mocker.patch("builtins.input", return_value="y")
+    mocker.patch("builtins.input", return_value="y")
     mock_copy = mocker.patch(
         "fetchtastic.cli.copy_to_clipboard_func", return_value=True
     )
@@ -150,7 +149,7 @@ def test_cli_topic_command_copy_declined(mocker):
     mock_config = {"NTFY_SERVER": "https://ntfy.sh", "NTFY_TOPIC": "test-topic"}
     mocker.patch("fetchtastic.setup_config.load_config", return_value=mock_config)
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
-    mock_input = mocker.patch("builtins.input", return_value="n")
+    mocker.patch("builtins.input", return_value="n")
     mock_copy = mocker.patch("fetchtastic.cli.copy_to_clipboard_func")
     mock_print = mocker.patch("builtins.print")
 

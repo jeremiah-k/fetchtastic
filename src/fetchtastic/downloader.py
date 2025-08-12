@@ -1204,10 +1204,10 @@ def cleanup_old_versions(directory: str, releases_to_keep: List[str]) -> None:
 def strip_unwanted_chars(text: str) -> str:
     """
     Removes non-ASCII characters, including emojis, from a string.
-    
+
     Args:
         text: The input string to clean.
-    
+
     Returns:
         The input string with all non-ASCII characters removed.
     """
@@ -1223,7 +1223,7 @@ def _is_release_complete(
 ) -> bool:
     """
     Determines if a release directory contains all required assets and valid zip files.
-    
+
     Checks that all expected asset files, filtered by selected and exclude patterns, exist in the release directory. For zip assets, verifies file integrity by testing for corruption. Returns True if all assets are present and valid; otherwise, returns False.
     """
     if not os.path.exists(release_dir):
@@ -1276,7 +1276,10 @@ def _is_release_complete(
                     for asset in release_data.get("assets", []):
                         if asset.get("name") == asset_name:
                             expected_size = asset.get("size")
-                            if expected_size is not None and actual_size != expected_size:
+                            if (
+                                expected_size is not None
+                                and actual_size != expected_size
+                            ):
                                 logger.debug(
                                     f"File size mismatch for {asset_path}: expected {expected_size}, got {actual_size}"
                                 )
@@ -1325,9 +1328,9 @@ def check_and_download(
 ) -> Tuple[List[str], List[str], List[Dict[str, str]]]:
     """
     Checks for missing or incomplete releases, downloads required assets, extracts files if configured, and cleans up old versions.
-    
+
     Downloads assets for the specified number of recent releases, skipping those already present and complete. Handles extraction of files from zip archives if enabled, saves release notes, sets permissions on shell scripts, and removes outdated release directories. Returns lists of successfully downloaded versions, new versions detected but not downloaded, and details of any failed downloads.
-    
+
     Args:
         releases: List of release data dictionaries from the GitHub API.
         latest_release_file: Path to the file storing the latest downloaded release tag.
@@ -1338,7 +1341,7 @@ def check_and_download(
         selected_patterns: Patterns for selecting specific assets to download.
         auto_extract: Whether to automatically extract files for this release type.
         exclude_patterns: Patterns to exclude from extraction.
-    
+
     Returns:
         A tuple containing:
             - List of downloaded version tags.

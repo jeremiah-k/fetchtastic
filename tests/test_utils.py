@@ -1,8 +1,7 @@
 import hashlib
 import os
-import platform
 import zipfile
-from unittest.mock import MagicMock, mock_open, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
@@ -74,7 +73,9 @@ def test_download_file_with_retry_success(mock_session, tmp_path):
     mock_session.return_value.get.return_value = mock_response
 
     download_path = tmp_path / "downloaded_file.txt"
-    result = utils.download_file_with_retry("http://example.com/file.txt", str(download_path))
+    result = utils.download_file_with_retry(
+        "http://example.com/file.txt", str(download_path)
+    )
 
     assert result is True
     assert download_path.read_bytes() == b"some data"
@@ -91,7 +92,9 @@ def test_download_file_with_retry_existing_valid(mock_session, tmp_path):
     file_hash = utils.calculate_sha256(str(download_path))
     utils.save_file_hash(str(download_path), file_hash)
 
-    result = utils.download_file_with_retry("http://example.com/file.txt", str(download_path))
+    result = utils.download_file_with_retry(
+        "http://example.com/file.txt", str(download_path)
+    )
 
     assert result is True
     mock_session.return_value.get.assert_not_called()
@@ -103,7 +106,7 @@ def test_download_file_with_retry_existing_corrupted_zip(mock_session, tmp_path)
     mock_response = MagicMock()
     mock_response.status_code = 200
     # Provide a minimal valid zip file as the new content
-    valid_zip_content = b'PK\x05\x06\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+    valid_zip_content = b"PK\x05\x06\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
     mock_response.iter_content.return_value = [valid_zip_content]
     mock_session.return_value.get.return_value = mock_response
 
@@ -113,14 +116,19 @@ def test_download_file_with_retry_existing_corrupted_zip(mock_session, tmp_path)
 
     # Mock zipfile.ZipFile to raise BadZipFile only on the first check
     original_zipfile_init = zipfile.ZipFile.__init__
+
     def mock_zipfile_init(self, file, *args, **kwargs):
         if str(file) == str(download_path):
             raise zipfile.BadZipFile
         else:
             original_zipfile_init(self, file, *args, **kwargs)
 
-    with patch("zipfile.ZipFile.__init__", side_effect=mock_zipfile_init, autospec=True):
-        result = utils.download_file_with_retry("http://example.com/file.zip", str(download_path))
+    with patch(
+        "zipfile.ZipFile.__init__", side_effect=mock_zipfile_init, autospec=True
+    ):
+        result = utils.download_file_with_retry(
+            "http://example.com/file.zip", str(download_path)
+        )
 
     assert result is True
     assert download_path.read_bytes() == valid_zip_content
@@ -133,7 +141,9 @@ def test_download_file_with_retry_network_error(mock_session, tmp_path):
     mock_session.return_value.get.side_effect = requests.exceptions.RequestException
 
     download_path = tmp_path / "downloaded_file.txt"
-    result = utils.download_file_with_retry("http://example.com/file.txt", str(download_path))
+    result = utils.download_file_with_retry(
+        "http://example.com/file.txt", str(download_path)
+    )
 
     assert result is False
     assert not os.path.exists(download_path)
@@ -155,14 +165,16 @@ def test_download_file_with_retry_windows_permission_error(
     mock_os_replace.side_effect = [
         PermissionError,
         PermissionError,
-        None, # Successful call
+        None,  # Successful call
     ]
 
     download_path = tmp_path / "windows_file.txt"
     temp_path = str(download_path) + ".tmp"
 
     with patch("fetchtastic.utils.time.sleep") as mock_sleep:
-        result = utils.download_file_with_retry("http://example.com/file.txt", str(download_path))
+        result = utils.download_file_with_retry(
+            "http://example.com/file.txt", str(download_path)
+        )
 
     # Assert that the function reports success
     assert result is True
