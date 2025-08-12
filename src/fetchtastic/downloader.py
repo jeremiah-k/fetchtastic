@@ -1273,18 +1273,21 @@ def _is_release_complete(
                 # Also check file size for zip files
                 try:
                     actual_size = os.path.getsize(asset_path)
-                    for asset in release_data.get("assets", []):
-                        if asset.get("name") == asset_name:
-                            expected_size = asset.get("size")
-                            if (
-                                expected_size is not None
-                                and actual_size != expected_size
-                            ):
-                                logger.debug(
-                                    f"File size mismatch for {asset_path}: expected {expected_size}, got {actual_size}"
-                                )
-                                return False
-                            break
+                    asset_data = next(
+                        (
+                            a
+                            for a in release_data.get("assets", [])
+                            if a.get("name") == asset_name
+                        ),
+                        None,
+                    )
+                    if asset_data:
+                        expected_size = asset_data.get("size")
+                        if expected_size is not None and actual_size != expected_size:
+                            logger.debug(
+                                f"File size mismatch for {asset_path}: expected {expected_size}, got {actual_size}"
+                            )
+                            return False
                 except (OSError, TypeError):
                     logger.debug(f"Error checking file size for {asset_path}")
                     return False
