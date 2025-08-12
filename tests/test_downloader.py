@@ -34,7 +34,7 @@ def test_compare_versions(version1, version2, expected):
         ("firmware-rak4631-2.7.4.c1f4f79.bin", "firmware-rak4631.bin"),
         ("firmware-heltec-v3-2.7.4.c1f4f79.zip", "firmware-heltec-v3.zip"),
         ("firmware-tbeam-2.7.4.c1f4f79-update.bin", "firmware-tbeam-update.bin"),
-        ("littlefs-rak4631-2.7.4.c1f4f79.bin", "littlefs-rak4631.bin"),
+        ("littlefs-rak11200-2.7.4.c1f4f79.bin", "littlefs-rak11200.bin"),
         ("device-install-2.3.2.sh", "device-install.sh"),
         ("some_file_without_version.txt", "some_file_without_version.txt"),
         ("file-with-v1.2.3-in-name.bin", "file-with-in-name.bin"),
@@ -148,9 +148,12 @@ def dummy_zip_file(tmp_path):
 
     zip_path = tmp_path / "test.zip"
     with zipfile.ZipFile(zip_path, "w") as zf:
+        # nRF52 devices (like RAK4631) - no littlefs files
         zf.writestr("firmware-rak4631-2.7.4.c1f4f79.bin", "rak_data")
         zf.writestr("firmware-tbeam-2.7.4.c1f4f79.uf2", "tbeam_data")
-        zf.writestr("littlefs-rak4631-2.7.4.c1f4f79.bin", "littlefs_data")
+        # ESP32 devices (like RAK11200) - have littlefs files
+        zf.writestr("firmware-rak11200-2.7.4.c1f4f79.bin", "rak11200_data")
+        zf.writestr("littlefs-rak11200-2.7.4.c1f4f79.bin", "littlefs_data")
         zf.writestr("device-update.sh", "echo updating")
         zf.writestr("bleota.bin", "bleota_data")
         zf.writestr("notes.txt", "some notes")
@@ -162,15 +165,15 @@ def test_extract_files(dummy_zip_file, tmp_path):
     extract_dir = tmp_path / "extracted"
     extract_dir.mkdir()
 
-    patterns = ["rak4631", "device-update.sh"]
+    patterns = ["rak11200", "device-update.sh"]
     exclude_patterns = []
 
     downloader.extract_files(
         str(dummy_zip_file), str(extract_dir), patterns, exclude_patterns
     )
 
-    assert (extract_dir / "firmware-rak4631-2.7.4.c1f4f79.bin").exists()
-    assert (extract_dir / "littlefs-rak4631-2.7.4.c1f4f79.bin").exists()
+    assert (extract_dir / "firmware-rak11200-2.7.4.c1f4f79.bin").exists()
+    assert (extract_dir / "littlefs-rak11200-2.7.4.c1f4f79.bin").exists()
     assert (extract_dir / "device-update.sh").exists()
     assert not (extract_dir / "firmware-tbeam-2.7.4.c1f4f79.uf2").exists()
     assert not (extract_dir / "notes.txt").exists()
@@ -185,7 +188,7 @@ def test_check_extraction_needed(dummy_zip_file, tmp_path):
     """Test the logic for checking if extraction is needed."""
     extract_dir = tmp_path / "extract_check"
     extract_dir.mkdir()
-    patterns = ["rak4631", "tbeam"]
+    patterns = ["rak4631", "rak11200", "tbeam"]
     exclude_patterns = []
 
     # 1. No files extracted yet, should be needed
@@ -207,7 +210,8 @@ def test_check_extraction_needed(dummy_zip_file, tmp_path):
 
     # 3. All files extracted, should not be needed
     (extract_dir / "firmware-tbeam-2.7.4.c1f4f79.uf2").write_text("tbeam_data")
-    (extract_dir / "littlefs-rak4631-2.7.4.c1f4f79.bin").write_text("littlefs_data")
+    (extract_dir / "firmware-rak11200-2.7.4.c1f4f79.bin").write_text("rak11200_data")
+    (extract_dir / "littlefs-rak11200-2.7.4.c1f4f79.bin").write_text("littlefs_data")
     assert (
         downloader.check_extraction_needed(
             str(dummy_zip_file), str(extract_dir), patterns, exclude_patterns
