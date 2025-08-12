@@ -10,3 +10,6 @@ __pycache__/
 *.pyo
 *.pyd
 fetchtastic.egg-info/
+.venv/
+.coverage
+.pytest_cache/
