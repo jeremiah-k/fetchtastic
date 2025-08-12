@@ -1,8 +1,14 @@
 # src/fetchtastic/menu_repo.py
 
 
+import time
+
 import requests
 from pick import pick
+
+# Constants
+GITHUB_API_TIMEOUT = 10  # seconds
+API_CALL_DELAY = 0.1  # seconds - small delay to be respectful to GitHub API
 
 
 def fetch_repo_contents(path=""):
@@ -15,11 +21,20 @@ def fetch_repo_contents(path=""):
     """
     # GitHub API URL for the repository contents
     base_url = "https://api.github.com/repos/meshtastic/meshtastic.github.io/contents"
-    api_url = f"{base_url}/{path}" if path else base_url
+    # Ensure proper URL construction - avoid double slashes
+    if path:
+        path = path.strip("/")  # Remove leading/trailing slashes
+        api_url = f"{base_url}/{path}"
+    else:
+        api_url = base_url
 
     try:
-        response = requests.get(api_url, timeout=10)
+        response = requests.get(api_url, timeout=GITHUB_API_TIMEOUT)
         response.raise_for_status()
+
+        # Small delay to be respectful to GitHub API
+        time.sleep(API_CALL_DELAY)
+
         contents = response.json()
 
         # Filter for directories and files, excluding specific directories and files
@@ -74,8 +89,14 @@ def fetch_repo_contents(path=""):
         sorted_items = firmware_dirs + other_dirs + files
 
         return sorted_items
+    except requests.RequestException as e:
+        print(f"Error fetching repository contents from GitHub API: {e}")
+        return []
+    except (ValueError, KeyError) as e:
+        print(f"Error parsing repository contents response: {e}")
+        return []
     except Exception as e:
-        print(f"Error fetching repository contents: {e}")
+        print(f"Unexpected error fetching repository contents: {e}")
         return []
 
 

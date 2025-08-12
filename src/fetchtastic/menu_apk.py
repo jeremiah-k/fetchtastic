@@ -1,17 +1,26 @@
 # src/fetchtastic/menu_apk.py
 
 import re
+import time
 
 import requests
 from pick import pick
+
+# Constants
+GITHUB_API_TIMEOUT = 10  # seconds
+API_CALL_DELAY = 0.1  # seconds - small delay to be respectful to GitHub API
 
 
 def fetch_apk_assets():
     apk_releases_url = (
         "https://api.github.com/repos/meshtastic/Meshtastic-Android/releases"
     )
-    response = requests.get(apk_releases_url, timeout=10)
+    response = requests.get(apk_releases_url, timeout=GITHUB_API_TIMEOUT)
     response.raise_for_status()
+
+    # Small delay to be respectful to GitHub API
+    time.sleep(API_CALL_DELAY)
+
     releases = response.json()
     # Get the latest release
     latest_release = releases[0]
@@ -27,12 +36,12 @@ def extract_base_name(filename):
     # Example: 'fdroidRelease-2.5.9.apk' -> 'fdroidRelease-.apk'
     """
     Return a filename with a trailing semantic-version segment removed.
-    
+
     Removes a single version segment matching the pattern `-X.Y.Z` or `_X.Y.Z` (digits separated by dots) from the input filename and returns the resulting string. The file extension and other parts of the name are preserved.
-    
+
     Parameters:
         filename (str): The original filename (e.g., "fdroidRelease-2.5.9.apk").
-    
+
     Returns:
         str: The filename with the `[-_]X.Y.Z` version segment removed (e.g., "fdroidRelease.apk").
     """

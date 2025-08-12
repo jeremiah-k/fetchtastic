@@ -1,9 +1,14 @@
 # src/fetchtastic/menu_firmware.py
 
 import re
+import time
 
 import requests
 from pick import pick
+
+# Constants
+GITHUB_API_TIMEOUT = 10  # seconds
+API_CALL_DELAY = 0.1  # seconds - small delay to be respectful to GitHub API
 
 
 def fetch_firmware_assets():
@@ -11,8 +16,12 @@ def fetch_firmware_assets():
     Fetches the list of firmware assets from the latest release on GitHub.
     """
     firmware_releases_url = "https://api.github.com/repos/meshtastic/firmware/releases"
-    response = requests.get(firmware_releases_url, timeout=10)
+    response = requests.get(firmware_releases_url, timeout=GITHUB_API_TIMEOUT)
     response.raise_for_status()
+
+    # Small delay to be respectful to GitHub API
+    time.sleep(API_CALL_DELAY)
+
     releases = response.json()
     # Get the latest release
     latest_release = releases[0]
@@ -25,17 +34,17 @@ def fetch_firmware_assets():
 def extract_base_name(filename):
     """
     Return a filename with version and optional commit-hash segments removed.
-    
+
     Removes a version pattern (optionally prefixed with `v`) and any trailing short commit/hash portion from the input filename.
     The matched substring includes a preceding '-' or '_' so the separator is removed along with the version, preserving other parts
     such as architecture or classifier.
-    
+
     Parameters:
         filename (str): Original asset filename.
-    
+
     Returns:
         str: Filename with the version/hash segment removed.
-    
+
     Examples:
         'meshtasticd_2.5.13.1a06f88_amd64.deb' -> 'meshtasticd_amd64.deb'
         'firmware-rak4631-2.5.13.1a06f88-ota.zip' -> 'firmware-rak4631-ota.zip'

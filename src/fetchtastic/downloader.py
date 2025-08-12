@@ -25,21 +25,23 @@ NTFY_REQUEST_TIMEOUT: int = 10  # seconds
 # Constants for check_for_prereleases internal download
 PRERELEASE_REQUEST_TIMEOUT: int = 30
 PRERELEASE_CHUNK_SIZE: int = 8 * 1024
+# Rate limiting - small delay between API calls to be respectful
+API_CALL_DELAY: float = 0.1  # seconds
 
 
 def compare_versions(version1, version2):
     """
     Compare two version strings and determine their ordering.
-    
+
     Strips a leading 'v' from each input, then compares the major, minor, and patch components numerically.
     - If either version has fewer than three dot-separated components, a simple string comparison is used.
     - Non-numeric components in the first three segments fall back to lexicographic comparison.
     - Any additional segments (e.g., a commit hash in a fourth segment) are ignored for ordering.
-    
+
     Parameters:
         version1 (str): First version string to compare.
         version2 (str): Second version string to compare.
-    
+
     Returns:
         int: 1 if version1 > version2, 0 if equal, -1 if version1 < version2.
     """
@@ -57,8 +59,11 @@ def compare_versions(version1, version2):
 
     # Make sure we have at least 3 parts for each version
     if len(v1_parts) < 3 or len(v2_parts) < 3:
-        # If either version doesn't have at least 3 parts, do a simple string comparison
-        return 1 if version1 > version2 else (-1 if version1 < version2 else 0)
+        # If either version doesn't have at least 3 parts, pad with zeros
+        while len(v1_parts) < 3:
+            v1_parts.append("0")
+        while len(v2_parts) < 3:
+            v2_parts.append("0")
 
     # Compare major, minor, patch versions numerically
     for i in range(3):  # Only compare the first 3 parts (major.minor.patch)
@@ -119,6 +124,13 @@ def check_promoted_prereleases(
         if dir_name.startswith("firmware-"):
             dir_version = dir_name[9:]  # Remove 'firmware-' prefix
 
+            # Validate version format before processing (hash part is optional)
+            if not re.match(r"^\d+\.\d+\.\d+(?:\.[a-f0-9]+)?$", dir_version):
+                logger.warning(
+                    f"Invalid version format in prerelease directory {dir_name}, skipping"
+                )
+                continue
+
             # If this pre-release matches the latest release version
             if dir_version == latest_release_version:
                 logger.info(
@@ -158,6 +170,13 @@ def check_promoted_prereleases(
                                     f"File {file_name} in pre-release doesn't match the release version"
                                 )
                                 break
+                        else:
+                            # File exists in prerelease but not in release - they don't match
+                            files_match = False
+                            logger.warning(
+                                f"File {file_name} exists in pre-release but not in release directory"
+                            )
+                            break
                 except OSError as e:
                     logger.error(
                         f"Error listing files in {prerelease_path} for hash comparison: {e}"
@@ -197,6 +216,11 @@ def compare_file_hashes(file1, file2):
     import hashlib
 
     def get_file_hash(file_path: str) -> Optional[str]:
+        # Check if file exists first
+        if not os.path.exists(file_path):
+            logger.warning(f"File does not exist for hashing: {file_path}")
+            return None
+
         sha256_hash = hashlib.sha256()
         try:
             with open(file_path, "rb") as f:
@@ -211,7 +235,10 @@ def compare_file_hashes(file1, file2):
     hash1 = get_file_hash(file1)
     hash2 = get_file_hash(file2)
 
-    return hash1 is not None and hash2 is not None and hash1 == hash2
+    if hash1 is None or hash2 is None:
+        return False
+
+    return hash1 == hash2
 
 
 def check_for_prereleases(
@@ -307,8 +334,13 @@ def check_for_prereleases(
                 if dir_name.startswith("firmware-"):
                     dir_version = dir_name[9:]  # Remove 'firmware-' prefix
 
-                    # Check if it exists in the repository
-                    if dir_name in repo_firmware_dirs:
+                    # Validate version format (should be X.Y.Z or X.Y.Z.hash)
+                    if not re.match(r"^\d+\.\d+\.\d+(?:\.[a-f0-9]+)?$", dir_version):
+                        logger.warning(
+                            f"Invalid version format in directory {dir_name}, removing"
+                        )
+                        should_keep = False
+                    elif dir_name in repo_firmware_dirs:
                         # Check if it's newer than the latest release
                         comparison_result = compare_versions(
                             dir_version, latest_release_version
@@ -589,6 +621,10 @@ def _get_latest_releases_data(url: str, scan_count: int = 10) -> List[Dict[str, 
 
         response: requests.Response = requests.get(url, timeout=NTFY_REQUEST_TIMEOUT)
         response.raise_for_status()
+
+        # Small delay to be respectful to GitHub API
+        time.sleep(API_CALL_DELAY)
+
         releases: List[Dict[str, Any]] = response.json()
 
         # Log how many releases were fetched
@@ -1165,12 +1201,12 @@ def extract_files(
 def strip_version_numbers(filename: str) -> str:
     """
     Strip embedded version numbers and optional commit-hash segments from a filename.
-    
+
     Removes common version patterns (for example: "v1.2.3", "_v1.2.3", "-1.2.3" and variants with a fourth dot-separated commit/hash like ".1a2b3c4") including an optional leading '-' or '_' separator. Returns the filename with those version portions removed while leaving other parts of the name intact.
-    
+
     Args:
         filename (str): The input filename.
-    
+
     Returns:
         str: The filename with version and short commit-hash segments removed.
     """
@@ -1232,7 +1268,7 @@ def _is_release_complete(
     """
     Return True if the given release directory contains all expected assets (filtered by patterns)
     and those assets pass basic integrity checks; otherwise False.
-    
+
     Detailed behavior:
     - Builds the list of expected asset filenames from release_data["assets"], keeping only assets
       whose stripped names match any string in selected_patterns (if provided) and that do not
@@ -1243,7 +1279,7 @@ def _is_release_complete(
         to the asset's declared size (when available).
       - For non-ZIP files, compares actual file size to the asset's declared size (when available).
     - Any missing file, ZIP corruption, size mismatch, or I/O error causes the function to return False.
-    
+
     Parameters:
         release_data: Release metadata (dict) containing an "assets" list with entries that include
             "name" and optionally "size". Only used to determine expected filenames and expected sizes.
@@ -1252,7 +1288,7 @@ def _is_release_complete(
             version-stripped filename contains any of these substrings. If None, no inclusion filtering is applied.
         exclude_patterns: List of fnmatch-style patterns; any asset whose original filename matches
             one of these patterns will be ignored.
-    
+
     Returns:
         bool: True if all expected assets are present and pass integrity/size checks; False otherwise.
     """
@@ -1361,18 +1397,18 @@ def check_and_download(
 ) -> Tuple[List[str], List[str], List[Dict[str, str]]]:
     """
     Check for missing or incomplete releases, download required assets, optionally extract them, and clean up old versions.
-    
+
     For the newest `versions_to_keep` releases, verifies completeness, downloads any missing assets (respecting `selected_patterns` and `exclude_patterns`), saves release notes, sets executable permission on `.sh` files, and removes older release directories. If `auto_extract` is True and `release_type` is "Firmware", zip assets matching `extract_patterns` will be extracted into the release directory. Returns lists of successfully downloaded release tags, new release tags that are available but not downloaded, and details of failed downloads.
-     
+
     Parameters:
         versions_to_keep (int): Number of most recent releases to consider for download/retention.
         extract_patterns (List[str]): Patterns used to select files to extract from zip archives.
         selected_patterns (Optional[List[str]]): If provided, only assets whose stripped filename contains any of these patterns are downloaded.
         auto_extract (bool): If True and `release_type` == "Firmware", zip assets will be checked and extracted when needed.
         exclude_patterns (Optional[List[str]]): Patterns to exclude from downloads and extraction.
-    
+
     Returns:
-        Tuple[List[str], List[str], List[Dict[str, str]]]: 
+        Tuple[List[str], List[str], List[Dict[str, str]]]:
             - downloaded_versions: tags of releases where at least one asset was successfully downloaded.
             - new_versions_available: tags of newer releases detected but not downloaded.
             - failed_downloads_details: list of failure records with keys like `url`, `path_to_download`, `release_tag`, `file_name`, `reason`, and `type`.
