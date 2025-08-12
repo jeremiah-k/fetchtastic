@@ -12,7 +12,6 @@ from datetime import datetime
 import platformdirs
 import yaml
 
-from fetchtastic import downloader  # Import downloader to perform first run
 from fetchtastic import menu_apk, menu_firmware
 
 # Import Windows-specific modules if on Windows
@@ -334,7 +333,7 @@ def check_storage_setup():
 def run_setup():
     """
     Runs the interactive setup process for Fetchtastic, guiding the user through configuration, migration, asset selection, scheduling, and notification setup.
-    
+
     This function handles platform-specific requirements such as Termux package installation, Windows shortcut creation, and scheduling via cron or boot scripts on Linux, macOS, and Termux. It prompts the user for key configuration options including the base directory, asset types to download (APKs, firmware, or both), version retention, firmware extraction patterns, Wi-Fi-only downloads (Termux), and NTFY notification preferences. The setup process migrates old configuration files if present, records the setup version and date, saves all settings to the configuration file, and offers to perform the first download run or provides instructions for manual execution.
     """
     global BASE_DIR, CONFIG_FILE
@@ -1160,6 +1159,10 @@ def run_setup():
             or "y"
         )
         if perform_first_run == "y":
+            from fetchtastic import (
+                downloader,  # Local import to break circular dependency
+            )
+
             print("Setup complete. Starting first run, this may take a few minutes...")
             downloader.main()
         else:
@@ -1206,7 +1209,7 @@ def check_for_updates():
 def get_upgrade_command():
     """
     Returns the appropriate shell command to upgrade Fetchtastic for the current platform and installation method.
-    
+
     On Termux, selects between pip and pipx based on how Fetchtastic was installed. On other platforms, defaults to pipx.
     """
     if is_termux():
@@ -1223,14 +1226,15 @@ def get_upgrade_command():
 
 def should_recommend_setup():
     """
-    Determines if the setup process should be recommended based on configuration presence and version changes.
+    Determine whether running the interactive setup should be recommended.
     
-    Returns:
-        A tuple (should_recommend, reason, last_setup_version, current_version), where:
-        - should_recommend (bool): True if setup is recommended, False otherwise.
-        - reason (str): Explanation for the recommendation.
-        - last_setup_version (str or None): The version recorded during the last setup, or None if unavailable.
-        - current_version (str or None): The currently installed version, or None if unavailable.
+    Checks for an existing configuration and compares the recorded setup version to the currently installed package version.
+    Returns a tuple (should_recommend, reason, last_setup_version, current_version):
+    
+    - should_recommend (bool): True if setup is recommended (no config, missing recorded setup version, version changed, or an error occurred); False if setup appears up-to-date.
+    - reason (str): Short human-readable explanation for the recommendation.
+    - last_setup_version (str | None): Version value stored in the configuration under "LAST_SETUP_VERSION", or None if unavailable.
+    - current_version (str | None): Currently installed fetchtastic package version as reported by importlib.metadata, or None if it could not be determined.
     """
     try:
         config = load_config()
@@ -1263,7 +1267,7 @@ def should_recommend_setup():
 def display_version_info(show_update_message=True):
     """
     Retrieves the current and latest Fetchtastic version information and update status.
-    
+
     Returns:
         A tuple of (current_version, latest_version, update_available), where update_available is True if a newer version is available.
     """
