@@ -5,7 +5,11 @@ from fetchtastic import menu_apk
 
 @pytest.fixture
 def mock_apk_assets():
-    """Provides a mock list of APK asset names."""
+    """
+    Return a list of dictionaries simulating release assets.
+    
+    Each dict contains a "name" key. The list includes three APK filenames and one non-APK file to emulate mixed release assets for tests.
+    """
     return [
         {"name": "meshtastic-app-release-2.7.4.apk"},
         {"name": "meshtastic-app-debug-2.7.4.apk"},

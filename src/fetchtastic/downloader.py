@@ -29,12 +29,19 @@ PRERELEASE_CHUNK_SIZE: int = 8 * 1024
 
 def compare_versions(version1, version2):
     """
-    Compares two version strings (e.g., 2.6.9.f93d031 vs 2.6.8.ef9d0d7).
-
+    Compare two version strings and determine their ordering.
+    
+    Strips a leading 'v' from each input, then compares the major, minor, and patch components numerically.
+    - If either version has fewer than three dot-separated components, a simple string comparison is used.
+    - Non-numeric components in the first three segments fall back to lexicographic comparison.
+    - Any additional segments (e.g., a commit hash in a fourth segment) are ignored for ordering.
+    
+    Parameters:
+        version1 (str): First version string to compare.
+        version2 (str): Second version string to compare.
+    
     Returns:
-        1 if version1 > version2
-        0 if version1 == version2
-        -1 if version1 < version2
+        int: 1 if version1 > version2, 0 if equal, -1 if version1 < version2.
     """
     # Strip 'v' prefix if it exists
     v1 = version1.lstrip("v")
@@ -1157,14 +1164,15 @@ def extract_files(
 
 def strip_version_numbers(filename: str) -> str:
     """
-    Removes version numbers and commit hashes from a filename.
-    Uses the same regex as in menu_firmware.py for consistency.
-
+    Strip embedded version numbers and optional commit-hash segments from a filename.
+    
+    Removes common version patterns (for example: "v1.2.3", "_v1.2.3", "-1.2.3" and variants with a fourth dot-separated commit/hash like ".1a2b3c4") including an optional leading '-' or '_' separator. Returns the filename with those version portions removed while leaving other parts of the name intact.
+    
     Args:
-        filename (str): The filename to strip.
-
+        filename (str): The input filename.
+    
     Returns:
-        str: The filename with version numbers and commit hashes removed.
+        str: The filename with version and short commit-hash segments removed.
     """
     # This regex removes separators and version numbers like -2.3.2.1a2b3c4 or _v1.2.3
     base_name: str = re.sub(r"[-_]v?\d+\.\d+\.\d+(?:\.[\da-f]+)?", "", filename)
@@ -1222,9 +1230,31 @@ def _is_release_complete(
     exclude_patterns: List[str],
 ) -> bool:
     """
-    Determines if a release directory contains all required assets and valid zip files.
-
-    Checks that all expected asset files, filtered by selected and exclude patterns, exist in the release directory. For zip assets, verifies file integrity by testing for corruption. Returns True if all assets are present and valid; otherwise, returns False.
+    Return True if the given release directory contains all expected assets (filtered by patterns)
+    and those assets pass basic integrity checks; otherwise False.
+    
+    Detailed behavior:
+    - Builds the list of expected asset filenames from release_data["assets"], keeping only assets
+      whose stripped names match any string in selected_patterns (if provided) and that do not
+      match any fnmatch pattern in exclude_patterns.
+    - For each expected asset:
+      - Verifies the file exists in release_dir.
+      - If the file is a ZIP, runs a ZIP integrity check (testzip) and compares the actual file size
+        to the asset's declared size (when available).
+      - For non-ZIP files, compares actual file size to the asset's declared size (when available).
+    - Any missing file, ZIP corruption, size mismatch, or I/O error causes the function to return False.
+    
+    Parameters:
+        release_data: Release metadata (dict) containing an "assets" list with entries that include
+            "name" and optionally "size". Only used to determine expected filenames and expected sizes.
+        release_dir: Path to the local release directory to inspect.
+        selected_patterns: Optional list of substrings; an asset is considered only if its
+            version-stripped filename contains any of these substrings. If None, no inclusion filtering is applied.
+        exclude_patterns: List of fnmatch-style patterns; any asset whose original filename matches
+            one of these patterns will be ignored.
+    
+    Returns:
+        bool: True if all expected assets are present and pass integrity/size checks; False otherwise.
     """
     if not os.path.exists(release_dir):
         return False
@@ -1330,26 +1360,22 @@ def check_and_download(
     exclude_patterns: Optional[List[str]] = None,
 ) -> Tuple[List[str], List[str], List[Dict[str, str]]]:
     """
-    Checks for missing or incomplete releases, downloads required assets, extracts files if configured, and cleans up old versions.
-
-    Downloads assets for the specified number of recent releases, skipping those already present and complete. Handles extraction of files from zip archives if enabled, saves release notes, sets permissions on shell scripts, and removes outdated release directories. Returns lists of successfully downloaded versions, new versions detected but not downloaded, and details of any failed downloads.
-
-    Args:
-        releases: List of release data dictionaries from the GitHub API.
-        latest_release_file: Path to the file storing the latest downloaded release tag.
-        release_type: Type of release (e.g., "Firmware", "Android APK").
-        download_dir_path: Directory where releases are downloaded.
-        versions_to_keep: Number of latest versions to retain.
-        extract_patterns: Patterns for extracting files from zip archives.
-        selected_patterns: Patterns for selecting specific assets to download.
-        auto_extract: Whether to automatically extract files for this release type.
-        exclude_patterns: Patterns to exclude from extraction.
-
+    Check for missing or incomplete releases, download required assets, optionally extract them, and clean up old versions.
+    
+    For the newest `versions_to_keep` releases, verifies completeness, downloads any missing assets (respecting `selected_patterns` and `exclude_patterns`), saves release notes, sets executable permission on `.sh` files, and removes older release directories. If `auto_extract` is True and `release_type` is "Firmware", zip assets matching `extract_patterns` will be extracted into the release directory. Returns lists of successfully downloaded release tags, new release tags that are available but not downloaded, and details of failed downloads.
+     
+    Parameters:
+        versions_to_keep (int): Number of most recent releases to consider for download/retention.
+        extract_patterns (List[str]): Patterns used to select files to extract from zip archives.
+        selected_patterns (Optional[List[str]]): If provided, only assets whose stripped filename contains any of these patterns are downloaded.
+        auto_extract (bool): If True and `release_type` == "Firmware", zip assets will be checked and extracted when needed.
+        exclude_patterns (Optional[List[str]]): Patterns to exclude from downloads and extraction.
+    
     Returns:
-        A tuple containing:
-            - List of downloaded version tags.
-            - List of new version tags available but not downloaded.
-            - List of dictionaries with details about failed downloads.
+        Tuple[List[str], List[str], List[Dict[str, str]]]: 
+            - downloaded_versions: tags of releases where at least one asset was successfully downloaded.
+            - new_versions_available: tags of newer releases detected but not downloaded.
+            - failed_downloads_details: list of failure records with keys like `url`, `path_to_download`, `release_tag`, `file_name`, `reason`, and `type`.
     """
     global downloads_skipped
     downloaded_versions: List[str] = []

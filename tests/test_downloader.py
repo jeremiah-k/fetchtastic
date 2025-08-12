@@ -143,7 +143,21 @@ def test_set_permissions_on_sh_files(tmp_path):
 
 @pytest.fixture
 def dummy_zip_file(tmp_path):
-    """Create a dummy zip file for testing extraction."""
+    """
+    Create a dummy ZIP file containing sample firmware and support files used by extraction tests.
+    
+    The archive contains:
+    - firmware-rak4631-2.7.4.c1f4f79.bin (nRF52-style firmware)
+    - firmware-tbeam-2.7.4.c1f4f79.uf2 (alternate firmware format)
+    - firmware-rak11200-2.7.4.c1f4f79.bin (ESP32-style firmware)
+    - littlefs-rak11200-2.7.4.c1f4f79.bin (ESP32 littlefs image)
+    - device-update.sh (shell updater script)
+    - bleota.bin (BLE OTA payload)
+    - notes.txt (auxiliary text file)
+    
+    Returns:
+        pathlib.Path: Path to the created ZIP file.
+    """
     import zipfile
 
     zip_path = tmp_path / "test.zip"

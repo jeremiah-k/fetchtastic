@@ -1226,14 +1226,15 @@ def get_upgrade_command():
 
 def should_recommend_setup():
     """
-    Determines if the setup process should be recommended based on configuration presence and version changes.
-
-    Returns:
-        A tuple (should_recommend, reason, last_setup_version, current_version), where:
-        - should_recommend (bool): True if setup is recommended, False otherwise.
-        - reason (str): Explanation for the recommendation.
-        - last_setup_version (str or None): The version recorded during the last setup, or None if unavailable.
-        - current_version (str or None): The currently installed version, or None if unavailable.
+    Determine whether running the interactive setup should be recommended.
+    
+    Checks for an existing configuration and compares the recorded setup version to the currently installed package version.
+    Returns a tuple (should_recommend, reason, last_setup_version, current_version):
+    
+    - should_recommend (bool): True if setup is recommended (no config, missing recorded setup version, version changed, or an error occurred); False if setup appears up-to-date.
+    - reason (str): Short human-readable explanation for the recommendation.
+    - last_setup_version (str | None): Version value stored in the configuration under "LAST_SETUP_VERSION", or None if unavailable.
+    - current_version (str | None): Currently installed fetchtastic package version as reported by importlib.metadata, or None if it could not be determined.
     """
     try:
         config = load_config()

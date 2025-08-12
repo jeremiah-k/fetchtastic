@@ -24,12 +24,21 @@ def fetch_firmware_assets():
 
 def extract_base_name(filename):
     """
-    Removes version numbers and commit hashes from the filename to get a base pattern.
-    Preserves architecture identifiers and other important parts of the filename.
-
-    Example:
-    - 'meshtasticd_2.5.13.1a06f88_amd64.deb' -> 'meshtasticd__amd64.deb'
-    - 'firmware-rak4631-2.5.13.1a06f88-ota.zip' -> 'firmware-rak4631--ota.zip'
+    Return a filename with version and optional commit-hash segments removed.
+    
+    Removes a version pattern (optionally prefixed with `v`) and any trailing short commit/hash portion from the input filename.
+    The matched substring includes a preceding '-' or '_' so the separator is removed along with the version, preserving other parts
+    such as architecture or classifier.
+    
+    Parameters:
+        filename (str): Original asset filename.
+    
+    Returns:
+        str: Filename with the version/hash segment removed.
+    
+    Examples:
+        'meshtasticd_2.5.13.1a06f88_amd64.deb' -> 'meshtasticd_amd64.deb'
+        'firmware-rak4631-2.5.13.1a06f88-ota.zip' -> 'firmware-rak4631-ota.zip'
     """
     # Regular expression to match version numbers and commit hashes
     # Matches patterns like '-2.5.13.1a06f88' or '_2.5.13.1a06f88'
