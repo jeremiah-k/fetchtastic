@@ -5,7 +5,16 @@ from fetchtastic import menu_repo
 
 @pytest.fixture
 def mock_repo_contents():
-    """Provides a mock list of items from the GitHub contents API."""
+    """
+    Return a mock list of items shaped like the GitHub repository contents API.
+    
+    The list includes a mix of directories and files used by tests:
+    - Directories: three firmware/event entries and one `.git` (the `.git` entry is intended to be excluded by the fetching logic).
+    - Files: `index.html`, `meshtastic-deb.asc`, and `README.md` (the README and some other files are expected to be filtered out by the production logic).
+    
+    Returns:
+        list[dict]: Mock content entries with keys like `name`, `path`, `type`, and optionally `download_url`.
+    """
     return [
         # Directories
         {

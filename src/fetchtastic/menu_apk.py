@@ -25,6 +25,17 @@ def fetch_apk_assets():
 def extract_base_name(filename):
     # Remove version numbers and extensions from filename to get base pattern
     # Example: 'fdroidRelease-2.5.9.apk' -> 'fdroidRelease-.apk'
+    """
+    Return a filename with a trailing semantic-version segment removed.
+    
+    Removes a single version segment matching the pattern `-X.Y.Z` or `_X.Y.Z` (digits separated by dots) from the input filename and returns the resulting string. The file extension and other parts of the name are preserved.
+    
+    Parameters:
+        filename (str): The original filename (e.g., "fdroidRelease-2.5.9.apk").
+    
+    Returns:
+        str: The filename with the `[-_]X.Y.Z` version segment removed (e.g., "fdroidRelease.apk").
+    """
     base_name = re.sub(r"[-_]\d+\.\d+\.\d+", "", filename)
     return base_name
 

@@ -5,7 +5,14 @@ from fetchtastic import menu_firmware
 
 @pytest.fixture
 def mock_firmware_assets():
-    """Provides a mock list of firmware asset names."""
+    """
+    Test fixture: returns a list of mock asset records.
+    
+    Each item is a dict with a "name" key representing a filename. The list includes three firmware ZIP filenames and one non-firmware file (used to verify filtering/handling in tests).
+    
+    Returns:
+        list[dict]: Mock asset records, e.g. [{"name": "firmware-rak4631-2.7.4.c1f4f79.zip"}, ...].
+    """
     return [
         {"name": "firmware-rak4631-2.7.4.c1f4f79.zip"},
         {"name": "firmware-tbeam-2.7.4.c1f4f79.zip"},

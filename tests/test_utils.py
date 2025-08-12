@@ -11,7 +11,14 @@ from fetchtastic import utils
 
 @pytest.fixture
 def temp_file(tmp_path):
-    """Create a temporary file with some content."""
+    """
+    Create a temporary file named "test_file.txt" under the provided pytest tmp_path and write a short byte string to it.
+    
+    The function writes the bytes b"This is a test file." to the file and returns the file path and the written content.
+    
+    Returns:
+        tuple[pathlib.Path, bytes]: (file_path, content) where `file_path` is the path to the created file and `content` is the exact bytes written.
+    """
     file_path = tmp_path / "test_file.txt"
     content = b"This is a test file."
     file_path.write_bytes(content)
@@ -118,6 +125,13 @@ def test_download_file_with_retry_existing_corrupted_zip(mock_session, tmp_path)
     original_zipfile_init = zipfile.ZipFile.__init__
 
     def mock_zipfile_init(self, file, *args, **kwargs):
+        """
+        Mock replacement for zipfile.ZipFile.__init__ used in tests.
+        
+        If the provided `file` (path) equals the outer-scope `download_path`, this mock raises zipfile.BadZipFile to simulate a corrupted/invalid ZIP on first validation. For any other path it delegates to the original ZipFile.__init__ implementation.
+        
+        Note: relies on `original_zipfile_init` and `download_path` being available in the enclosing scope.
+        """
         if str(file) == str(download_path):
             raise zipfile.BadZipFile
         else:
