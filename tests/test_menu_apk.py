@@ -1,15 +1,20 @@
-import pytest
 from unittest.mock import patch
+
+import pytest
+
 from fetchtastic import menu_apk
+
 
 @pytest.fixture
 def mock_apk_assets():
     """Provides a mock list of APK asset names."""
     return [
-        {"name": "meshtastic-app-release-2.3.2.apk"},
-        {"name": "meshtastic-app-debug-2.3.2.apk"},
+        {"name": "meshtastic-app-release-2.7.4.apk"},
+        {"name": "meshtastic-app-debug-2.7.4.apk"},
+        {"name": "nRF_Connect_Device_Manager-release-2.7.4.apk"},
         {"name": "some-other-file.txt"},
     ]
+
 
 def test_fetch_apk_assets(mocker, mock_apk_assets):
     """Test fetching APK assets from GitHub."""
@@ -21,17 +26,21 @@ def test_fetch_apk_assets(mocker, mock_apk_assets):
 
     assets = menu_apk.fetch_apk_assets()
 
-    assert len(assets) == 2
-    assert "meshtastic-app-debug-2.3.2.apk" in assets
-    assert "meshtastic-app-release-2.3.2.apk" in assets
+    assert len(assets) == 3
+    assert "meshtastic-app-debug-2.7.4.apk" in assets
+    assert "meshtastic-app-release-2.7.4.apk" in assets
+    assert "nRF_Connect_Device_Manager-release-2.7.4.apk" in assets
     # Check sorting
-    assert assets[0] == "meshtastic-app-debug-2.3.2.apk"
+    assert assets[0] == "meshtastic-app-debug-2.7.4.apk"
 
 
-@pytest.mark.parametrize("filename, expected", [
-    ("meshtastic-app-release-2.3.2.apk", "meshtastic-app-release.apk"),
-    ("app-debug-1.0.0.apk", "app-debug.apk"),
-])
+@pytest.mark.parametrize(
+    "filename, expected",
+    [
+        ("meshtastic-app-release-2.3.2.apk", "meshtastic-app-release.apk"),
+        ("app-debug-1.0.0.apk", "app-debug.apk"),
+    ],
+)
 def test_extract_base_name(filename, expected):
     """Test the base name extraction logic."""
     assert menu_apk.extract_base_name(filename) == expected
@@ -55,8 +64,12 @@ def test_select_assets(mocker):
 
 def test_run_menu(mocker):
     """Test the main menu orchestration."""
-    mock_fetch = mocker.patch("fetchtastic.menu_apk.fetch_apk_assets", return_value=["asset1.apk"])
-    mock_select = mocker.patch("fetchtastic.menu_apk.select_assets", return_value=["base-pattern"])
+    mock_fetch = mocker.patch(
+        "fetchtastic.menu_apk.fetch_apk_assets", return_value=["asset1.apk"]
+    )
+    mock_select = mocker.patch(
+        "fetchtastic.menu_apk.select_assets", return_value=["base-pattern"]
+    )
 
     # 1. Successful flow
     result = menu_apk.run_menu()

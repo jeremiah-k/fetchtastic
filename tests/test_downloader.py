@@ -1,57 +1,77 @@
+from unittest.mock import patch
+
 import pytest
 import requests
-from unittest.mock import patch
+
 from fetchtastic import downloader
 
+
 # Test cases for compare_versions
-@pytest.mark.parametrize("version1, version2, expected", [
-    ("2.1.0", "2.0.0", 1),
-    ("2.0.1", "2.0.0", 1),
-    ("2.0.0", "2.0.1", -1),
-    ("1.9.0", "2.0.0", -1),
-    ("2.0.0", "2.0.0", 0),
-    ("2.6.9.f93d031", "2.6.8.ef9d0d7", 1),
-    ("2.6.8.ef9d0d7", "2.6.9.f93d031", -1),
-    ("2.3.0", "2.3.0.b123456", 0), # Ignore hash for equality
-    ("v1.2.3", "1.2.3", 0), # Should handle 'v' prefix
-    ("1.2", "1.2.3", -1), # Handle different number of parts
-])
+@pytest.mark.parametrize(
+    "version1, version2, expected",
+    [
+        ("2.1.0", "2.0.0", 1),
+        ("2.0.1", "2.0.0", 1),
+        ("2.0.0", "2.0.1", -1),
+        ("1.9.0", "2.0.0", -1),
+        ("2.0.0", "2.0.0", 0),
+        ("2.6.9.f93d031", "2.6.8.ef9d0d7", 1),
+        ("2.6.8.ef9d0d7", "2.6.9.f93d031", -1),
+        ("2.3.0", "2.3.0.b123456", 0),  # Ignore hash for equality
+        ("v1.2.3", "1.2.3", 0),  # Should handle 'v' prefix
+        ("1.2", "1.2.3", -1),  # Handle different number of parts
+    ],
+)
 def test_compare_versions(version1, version2, expected):
     """Test the version comparison logic."""
     assert downloader.compare_versions(version1, version2) == expected
 
+
 # Test cases for strip_version_numbers
-@pytest.mark.parametrize("filename, expected", [
-    ("firmware-2.3.2.1a2b3c4.bin", "firmware.bin"),
-    ("firmware-rak4631-2.3.2.1a2b3c4.zip", "firmware-rak4631.zip"),
-    ("device-install-2.3.2.sh", "device-install.sh"),
-    ("some_file_without_version.txt", "some_file_without_version.txt"),
-    ("file-with-v1.2.3-in-name.bin", "file-with-in-name.bin"),
-])
+@pytest.mark.parametrize(
+    "filename, expected",
+    [
+        ("firmware-rak4631-2.7.4.c1f4f79.bin", "firmware-rak4631.bin"),
+        ("firmware-heltec-v3-2.7.4.c1f4f79.zip", "firmware-heltec-v3.zip"),
+        ("firmware-tbeam-2.7.4.c1f4f79-update.bin", "firmware-tbeam-update.bin"),
+        ("littlefs-rak4631-2.7.4.c1f4f79.bin", "littlefs-rak4631.bin"),
+        ("device-install-2.3.2.sh", "device-install.sh"),
+        ("some_file_without_version.txt", "some_file_without_version.txt"),
+        ("file-with-v1.2.3-in-name.bin", "file-with-in-name.bin"),
+    ],
+)
 def test_strip_version_numbers(filename, expected):
     """Test the logic for stripping version numbers from filenames."""
     assert downloader.strip_version_numbers(filename) == expected
 
+
 # Test cases for strip_unwanted_chars
-@pytest.mark.parametrize("text, expected", [
-    ("Hello 👋 World", "Hello  World"),
-    ("This is a test.", "This is a test."),
-    ("✅ New release", " New release"),
-    ("", ""),
-])
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ("Hello 👋 World", "Hello  World"),
+        ("This is a test.", "This is a test."),
+        ("✅ New release", " New release"),
+        ("", ""),
+    ],
+)
 def test_strip_unwanted_chars(text, expected):
     """Test the removal of non-ASCII characters."""
     assert downloader.strip_unwanted_chars(text) == expected
 
+
 # Test cases for safe_extract_path
-@pytest.mark.parametrize("extract_dir, file_path, should_raise", [
-    ("/safe/dir", "file.txt", False),
-    ("/safe/dir", "subdir/file.txt", False),
-    ("/safe/dir", "../file.txt", True),
-    ("/safe/dir", "/etc/passwd", True),
-    ("/safe/dir", "subdir/../../file.txt", True),
-    ("/safe/dir", "subdir/../safe_again.txt", False),
-])
+@pytest.mark.parametrize(
+    "extract_dir, file_path, should_raise",
+    [
+        ("/safe/dir", "file.txt", False),
+        ("/safe/dir", "subdir/file.txt", False),
+        ("/safe/dir", "../file.txt", True),
+        ("/safe/dir", "/etc/passwd", True),
+        ("/safe/dir", "subdir/../../file.txt", True),
+        ("/safe/dir", "subdir/../safe_again.txt", False),
+    ],
+)
 def test_safe_extract_path(extract_dir, file_path, should_raise):
     """Test the safe path extraction logic to prevent directory traversal."""
     if should_raise:
@@ -88,8 +108,8 @@ def test_cleanup_old_versions(tmp_path):
     (firmware_dir / "v1.0").mkdir()
     (firmware_dir / "v2.0").mkdir()
     (firmware_dir / "v3.0").mkdir()
-    (firmware_dir / "repo-dls").mkdir() # Should be ignored
-    (firmware_dir / "prerelease").mkdir() # Should be ignored
+    (firmware_dir / "repo-dls").mkdir()  # Should be ignored
+    (firmware_dir / "prerelease").mkdir()  # Should be ignored
 
     releases_to_keep = ["v2.0", "v3.0"]
     downloader.cleanup_old_versions(str(firmware_dir), releases_to_keep)
@@ -111,6 +131,7 @@ def test_set_permissions_on_sh_files(tmp_path):
 
     # Set initial permissions to non-executable
     import os
+
     os.chmod(script_path, 0o644)
     os.chmod(other_file_path, 0o644)
 
@@ -124,11 +145,14 @@ def test_set_permissions_on_sh_files(tmp_path):
 def dummy_zip_file(tmp_path):
     """Create a dummy zip file for testing extraction."""
     import zipfile
+
     zip_path = tmp_path / "test.zip"
-    with zipfile.ZipFile(zip_path, 'w') as zf:
-        zf.writestr("rak4631-firmware.bin", "rak_data")
-        zf.writestr("tbeam-firmware.uf2", "tbeam_data")
-        zf.writestr("update.sh", "echo updating")
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("firmware-rak4631-2.7.4.c1f4f79.bin", "rak_data")
+        zf.writestr("firmware-tbeam-2.7.4.c1f4f79.uf2", "tbeam_data")
+        zf.writestr("littlefs-rak4631-2.7.4.c1f4f79.bin", "littlefs_data")
+        zf.writestr("device-update.sh", "echo updating")
+        zf.writestr("bleota.bin", "bleota_data")
         zf.writestr("notes.txt", "some notes")
     return zip_path
 
@@ -138,19 +162,23 @@ def test_extract_files(dummy_zip_file, tmp_path):
     extract_dir = tmp_path / "extracted"
     extract_dir.mkdir()
 
-    patterns = ["rak4631", "update.sh"]
+    patterns = ["rak4631", "device-update.sh"]
     exclude_patterns = []
 
-    downloader.extract_files(str(dummy_zip_file), str(extract_dir), patterns, exclude_patterns)
+    downloader.extract_files(
+        str(dummy_zip_file), str(extract_dir), patterns, exclude_patterns
+    )
 
-    assert (extract_dir / "rak4631-firmware.bin").exists()
-    assert (extract_dir / "update.sh").exists()
-    assert not (extract_dir / "tbeam-firmware.uf2").exists()
+    assert (extract_dir / "firmware-rak4631-2.7.4.c1f4f79.bin").exists()
+    assert (extract_dir / "littlefs-rak4631-2.7.4.c1f4f79.bin").exists()
+    assert (extract_dir / "device-update.sh").exists()
+    assert not (extract_dir / "firmware-tbeam-2.7.4.c1f4f79.uf2").exists()
     assert not (extract_dir / "notes.txt").exists()
 
     # Check that the shell script was made executable
     import os
-    assert os.access(extract_dir / "update.sh", os.X_OK)
+
+    assert os.access(extract_dir / "device-update.sh", os.X_OK)
 
 
 def test_check_extraction_needed(dummy_zip_file, tmp_path):
@@ -161,15 +189,31 @@ def test_check_extraction_needed(dummy_zip_file, tmp_path):
     exclude_patterns = []
 
     # 1. No files extracted yet, should be needed
-    assert downloader.check_extraction_needed(str(dummy_zip_file), str(extract_dir), patterns, exclude_patterns) is True
+    assert (
+        downloader.check_extraction_needed(
+            str(dummy_zip_file), str(extract_dir), patterns, exclude_patterns
+        )
+        is True
+    )
 
     # 2. Extract one file, should still be needed
-    (extract_dir / "rak4631-firmware.bin").write_text("rak_data")
-    assert downloader.check_extraction_needed(str(dummy_zip_file), str(extract_dir), patterns, exclude_patterns) is True
+    (extract_dir / "firmware-rak4631-2.7.4.c1f4f79.bin").write_text("rak_data")
+    assert (
+        downloader.check_extraction_needed(
+            str(dummy_zip_file), str(extract_dir), patterns, exclude_patterns
+        )
+        is True
+    )
 
     # 3. All files extracted, should not be needed
-    (extract_dir / "tbeam-firmware.uf2").write_text("tbeam_data")
-    assert downloader.check_extraction_needed(str(dummy_zip_file), str(extract_dir), patterns, exclude_patterns) is False
+    (extract_dir / "firmware-tbeam-2.7.4.c1f4f79.uf2").write_text("tbeam_data")
+    (extract_dir / "littlefs-rak4631-2.7.4.c1f4f79.bin").write_text("littlefs_data")
+    assert (
+        downloader.check_extraction_needed(
+            str(dummy_zip_file), str(extract_dir), patterns, exclude_patterns
+        )
+        is False
+    )
 
 
 def test_check_promoted_prereleases(tmp_path):
@@ -198,7 +242,9 @@ def test_send_ntfy_notification(mocker):
     mock_post = mocker.patch("requests.post")
 
     # 1. Test successful notification
-    downloader._send_ntfy_notification("https://ntfy.sh", "mytopic", "Test message", "Test Title")
+    downloader._send_ntfy_notification(
+        "https://ntfy.sh", "mytopic", "Test message", "Test Title"
+    )
     mock_post.assert_called_once_with(
         "https://ntfy.sh/mytopic",
         data="Test message".encode("utf-8"),
@@ -224,17 +270,31 @@ def mock_releases():
     """Provides a mock list of GitHub release data, pre-sorted by date."""
     return [
         {
-            "tag_name": "v3.0", "published_at": "2023-01-03T00:00:00Z", "assets": [
-                {"name": "firmware-v3.0.zip", "size": 100, "browser_download_url": "http://fake.url/v3.zip"}
-            ]
+            "tag_name": "v2.7.4.c1f4f79",
+            "published_at": "2023-01-03T00:00:00Z",
+            "assets": [
+                {
+                    "name": "firmware-2.7.4.c1f4f79.zip",
+                    "size": 100,
+                    "browser_download_url": "http://fake.url/v2.7.4.zip",
+                }
+            ],
         },
         {
-            "tag_name": "v2.0", "published_at": "2023-01-02T00:00:00Z", "assets": [
-                {"name": "firmware-v2.0.zip", "size": 100, "browser_download_url": "http://fake.url/v2.zip"}
-            ]
+            "tag_name": "v2.7.3.cf574c7",
+            "published_at": "2023-01-02T00:00:00Z",
+            "assets": [
+                {
+                    "name": "firmware-2.7.3.cf574c7.zip",
+                    "size": 100,
+                    "browser_download_url": "http://fake.url/v2.7.3.zip",
+                }
+            ],
         },
         {
-            "tag_name": "v1.0", "published_at": "2023-01-01T00:00:00Z", "assets": []
+            "tag_name": "v2.7.2.f6d3782",
+            "published_at": "2023-01-01T00:00:00Z",
+            "assets": [],
         },
     ]
 
@@ -252,14 +312,16 @@ def test_get_latest_releases_data(mocker, mock_releases):
     # 1. Test successful fetch and sort
     releases = downloader._get_latest_releases_data("http://fake.url/releases")
     assert len(releases) == 3
-    assert releases[0]["tag_name"] == "v3.0"
-    assert releases[1]["tag_name"] == "v2.0"
-    assert releases[2]["tag_name"] == "v1.0"
+    assert releases[0]["tag_name"] == "v2.7.4.c1f4f79"
+    assert releases[1]["tag_name"] == "v2.7.3.cf574c7"
+    assert releases[2]["tag_name"] == "v2.7.2.f6d3782"
 
     # 2. Test limited scan count
-    releases = downloader._get_latest_releases_data("http://fake.url/releases", scan_count=2)
+    releases = downloader._get_latest_releases_data(
+        "http://fake.url/releases", scan_count=2
+    )
     assert len(releases) == 2
-    assert releases[0]["tag_name"] == "v3.0"
+    assert releases[0]["tag_name"] == "v2.7.4.c1f4f79"
 
     # 3. Test request exception
     mock_get.side_effect = requests.exceptions.RequestException
@@ -269,38 +331,66 @@ def test_get_latest_releases_data(mocker, mock_releases):
 
 def test_is_release_complete(tmp_path, mock_releases):
     """Test the logic for checking if a release is completely downloaded."""
-    release_dir = tmp_path / "v2.0"
+    release_dir = tmp_path / "v2.7.3.cf574c7"
     release_dir.mkdir()
-    # Use the correct release data for v2.0
+    # Use the correct release data for v2.7.3.cf574c7
     release_data = mock_releases[1]
 
     # 1. Asset is missing
-    assert downloader._is_release_complete(release_data, str(release_dir), ["firmware"], []) is False
+    assert (
+        downloader._is_release_complete(
+            release_data, str(release_dir), ["firmware"], []
+        )
+        is False
+    )
 
     # 2. Asset exists, but is a corrupted zip
-    zip_path = release_dir / "firmware-v2.0.zip"
+    zip_path = release_dir / "firmware-2.7.3.cf574c7.zip"
     zip_path.write_bytes(b"corrupt zip")
-    assert downloader._is_release_complete(release_data, str(release_dir), ["firmware"], []) is False
+    assert (
+        downloader._is_release_complete(
+            release_data, str(release_dir), ["firmware"], []
+        )
+        is False
+    )
 
     # 3. Asset exists and is a valid zip, but the size is wrong
     import zipfile
-    with zipfile.ZipFile(zip_path, 'w') as zf:
+
+    with zipfile.ZipFile(zip_path, "w") as zf:
         zf.writestr("test.txt", "data")
-    assert downloader._is_release_complete(release_data, str(release_dir), ["firmware"], []) is False
+    assert (
+        downloader._is_release_complete(
+            release_data, str(release_dir), ["firmware"], []
+        )
+        is False
+    )
 
     # 4. Release is complete and valid
     # Mock the size check to pass
     import os
+
     with patch("os.path.getsize", return_value=100):
-         assert downloader._is_release_complete(release_data, str(release_dir), ["firmware"], []) is True
+        assert (
+            downloader._is_release_complete(
+                release_data, str(release_dir), ["firmware"], []
+            )
+            is True
+        )
 
 
 def test_check_and_download(mocker, tmp_path, mock_releases):
     """Test the main download orchestration logic."""
     # Setup mocks for all dependencies
-    mocker.patch("fetchtastic.downloader._get_latest_releases_data", return_value=mock_releases)
-    mock_is_complete = mocker.patch("fetchtastic.downloader._is_release_complete", return_value=False)
-    mock_download_file = mocker.patch("fetchtastic.downloader.download_file_with_retry", return_value=True)
+    mocker.patch(
+        "fetchtastic.downloader._get_latest_releases_data", return_value=mock_releases
+    )
+    mock_is_complete = mocker.patch(
+        "fetchtastic.downloader._is_release_complete", return_value=False
+    )
+    mock_download_file = mocker.patch(
+        "fetchtastic.downloader.download_file_with_retry", return_value=True
+    )
     mock_cleanup = mocker.patch("fetchtastic.downloader.cleanup_old_versions")
     mocker.patch("fetchtastic.downloader.extract_files")
     mocker.patch("fetchtastic.downloader.set_permissions_on_sh_files")
@@ -309,7 +399,9 @@ def test_check_and_download(mocker, tmp_path, mock_releases):
     download_dir = tmp_path / "firmware"
     download_dir.mkdir()
     latest_release_file = tmp_path / "latest.txt"
-    latest_release_file.write_text("v1.0") # Pretend v1.0 was the last one we saw
+    latest_release_file.write_text(
+        "v2.7.1.f35ca81"
+    )  # Pretend v2.7.1 was the last one we saw
 
     # --- Scenario 1: New versions available and downloaded successfully ---
     downloaded, new, failed = downloader.check_and_download(
@@ -317,24 +409,25 @@ def test_check_and_download(mocker, tmp_path, mock_releases):
         latest_release_file=str(latest_release_file),
         release_type="Firmware",
         download_dir_path=str(download_dir),
-        versions_to_keep=2, # Should keep v3.0 and v2.0
+        versions_to_keep=2,  # Should keep v2.7.4 and v2.7.3
         extract_patterns=[],
         selected_patterns=["firmware"],
         auto_extract=False,
-        exclude_patterns=[]
+        exclude_patterns=[],
     )
 
-    assert "v3.0" in downloaded
-    assert "v2.0" in downloaded
+    assert "v2.7.4.c1f4f79" in downloaded
+    assert "v2.7.3.cf574c7" in downloaded
     assert failed == []
     # Check that cleanup was called with the correct versions to keep
-    mock_cleanup.assert_called_once_with(str(download_dir), ["v3.0", "v2.0"])
+    mock_cleanup.assert_called_once_with(
+        str(download_dir), ["v2.7.4.c1f4f79", "v2.7.3.cf574c7"]
+    )
     # Check that the latest release file was updated
-    assert latest_release_file.read_text() == "v3.0"
-
+    assert latest_release_file.read_text() == "v2.7.4.c1f4f79"
 
     # --- Scenario 2: All releases are up to date ---
-    mock_is_complete.return_value = True # Pretend all releases are already downloaded
+    mock_is_complete.return_value = True  # Pretend all releases are already downloaded
     mock_download_file.reset_mock()
     mock_cleanup.reset_mock()
     latest_release_file.write_text("v3.0")
@@ -355,7 +448,6 @@ def test_check_and_download(mocker, tmp_path, mock_releases):
     # Cleanup should NOT be called if no other actions were taken
     mock_cleanup.assert_not_called()
 
-
     # --- Scenario 3: Download fails ---
     mock_is_complete.return_value = False
     mock_download_file.return_value = False
@@ -373,4 +465,4 @@ def test_check_and_download(mocker, tmp_path, mock_releases):
 
     assert downloaded == []
     assert len(failed) > 0
-    assert failed[0]['release_tag'] == "v3.0" # It tries v3.0 first
+    assert failed[0]["release_tag"] == "v2.7.4.c1f4f79"  # It tries v2.7.4 first

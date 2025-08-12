@@ -1,38 +1,57 @@
-import pytest
 from unittest.mock import patch
+
+import pytest
+
 from fetchtastic import repo_downloader
+
 
 @pytest.fixture
 def mock_selected_files():
     """Provides a mock dictionary of selected files for download."""
     return {
-        "directory": "firmware-2.0",
+        "directory": "firmware-2.7.4.c1f4f79",
         "files": [
-            {"name": "firmware.bin", "download_url": "http://fake.url/firmware.bin"},
-            {"name": "update.sh", "download_url": "http://fake.url/update.sh"},
-        ]
+            {
+                "name": "firmware-rak4631-2.7.4.c1f4f79.bin",
+                "download_url": "http://fake.url/firmware-rak4631.bin",
+            },
+            {
+                "name": "littlefs-rak4631-2.7.4.c1f4f79.bin",
+                "download_url": "http://fake.url/littlefs-rak4631.bin",
+            },
+            {
+                "name": "device-update.sh",
+                "download_url": "http://fake.url/device-update.sh",
+            },
+            {"name": "bleota.bin", "download_url": "http://fake.url/bleota.bin"},
+        ],
     }
+
 
 def test_download_repo_files(mocker, tmp_path, mock_selected_files):
     """Test the file download logic for the repo browser."""
-    mock_download = mocker.patch("fetchtastic.repo_downloader.download_file_with_retry", return_value=True)
+    mock_download = mocker.patch(
+        "fetchtastic.repo_downloader.download_file_with_retry", return_value=True
+    )
     mock_chmod = mocker.patch("os.chmod")
 
     download_dir = tmp_path
 
-    downloaded = repo_downloader.download_repo_files(mock_selected_files, str(download_dir))
+    downloaded = repo_downloader.download_repo_files(
+        mock_selected_files, str(download_dir)
+    )
 
     # Check that download_file_with_retry was called for each file
-    assert mock_download.call_count == 2
+    assert mock_download.call_count == 4
 
     # Check that directories were created
-    expected_dir = tmp_path / "firmware" / "repo-dls" / "firmware-2.0"
+    expected_dir = tmp_path / "firmware" / "repo-dls" / "firmware-2.7.4.c1f4f79"
     assert expected_dir.exists()
 
     # Check that chmod was called for the .sh file
-    mock_chmod.assert_called_once_with(str(expected_dir / "update.sh"), 0o755)
+    mock_chmod.assert_called_once_with(str(expected_dir / "device-update.sh"), 0o755)
 
-    assert len(downloaded) == 2
+    assert len(downloaded) == 4
 
 
 def test_clean_repo_directory(tmp_path):
@@ -52,7 +71,9 @@ def test_clean_repo_directory(tmp_path):
 def test_main_orchestration(mocker, mock_selected_files):
     """Test the main orchestration logic of the repo downloader."""
     mock_run_menu = mocker.patch("fetchtastic.menu_repo.run_menu")
-    mock_download = mocker.patch("fetchtastic.repo_downloader.download_repo_files", return_value=["path/to/file"])
+    mock_download = mocker.patch(
+        "fetchtastic.repo_downloader.download_repo_files", return_value=["path/to/file"]
+    )
     mock_config = {"DOWNLOAD_DIR": "/fake/dir"}
 
     # 1. Test successful flow
