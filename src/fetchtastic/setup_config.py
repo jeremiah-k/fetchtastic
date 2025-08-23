@@ -13,6 +13,7 @@ import platformdirs
 import yaml
 
 from fetchtastic import menu_apk, menu_firmware
+from fetchtastic.constants import CONFIG_FILE_NAME, MESHTASTIC_DIR_NAME
 
 # Import Windows-specific modules if on Windows
 if platform.system() == "Windows":
@@ -257,9 +258,6 @@ def get_downloads_dir():
     # Fallback to home directory
     return home_dir
 
-
-# Import constants
-from fetchtastic.constants import CONFIG_FILE_NAME, MESHTASTIC_DIR_NAME
 
 # Default directories
 DOWNLOADS_DIR = get_downloads_dir()

@@ -100,7 +100,7 @@ MOCK_ANDROID_RELEASE = {
 
 # Test configuration values
 TEST_CONFIG = {
-    "BASE_DIR": "/tmp/test_meshtastic",
+    "BASE_DIR": "/home/test/test_meshtastic",  # nosec B108
     "FIRMWARE_VERSIONS_TO_KEEP": 2,
     "ANDROID_VERSIONS_TO_KEEP": 2,
     "AUTO_EXTRACT": False,

@@ -7,7 +7,7 @@ from fetchtastic import menu_apk
 def mock_apk_assets():
     """
     Return a list of dictionaries simulating release assets.
-    
+
     Each dict contains a "name" key. The list includes three APK filenames and one non-APK file to emulate mixed release assets for tests.
     """
     return [

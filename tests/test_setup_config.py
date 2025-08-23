@@ -1,6 +1,5 @@
 import importlib
 import os
-import platform
 import subprocess
 from unittest.mock import MagicMock, patch
 

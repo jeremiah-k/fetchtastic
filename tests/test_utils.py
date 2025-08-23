@@ -7,7 +7,6 @@ import pytest
 import requests
 
 from fetchtastic import utils
-from tests.test_constants import TEST_FILE_CONTENT, TEST_FILE_HASH
 
 
 @pytest.fixture
