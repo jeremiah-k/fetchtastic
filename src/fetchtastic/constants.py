@@ -58,8 +58,14 @@ DEBUG_LOG_FORMAT = "%(asctime)s - %(levelname)s - %(name)s - %(module)s.%(funcNa
 LOG_FILE_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
 LOG_FILE_BACKUP_COUNT = 5
 
-# Version validation regex
-VERSION_REGEX_PATTERN = r"^\d+\.\d+\.\d+(?:\.[a-f0-9]+)?$"
+# Version validation regex - supports semantic versions with optional prerelease and build metadata
+VERSION_REGEX_PATTERN = (
+    r"^\d+\.\d+\.\d+"  # core version (major.minor.patch)
+    r"(?:\.[a-f0-9]+)?"  # optional hex hash (e.g., .f93d031)
+    r"(?:[-\.]?(?:rc|dev|b|beta|alpha)\d+)?"  # optional prerelease (rc1, dev1, b1, beta1, alpha1)
+    r"(?:\+[0-9A-Za-z]+)?"  # optional local/build metadata (e.g., +local)
+    r"$"
+)
 
 # Default extraction patterns (examples for documentation)
 DEFAULT_EXTRACTION_PATTERNS = [

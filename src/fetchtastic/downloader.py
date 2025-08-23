@@ -47,6 +47,8 @@ def compare_versions(version1, version2):
     Compare two version strings and determine their ordering using the `packaging` library.
 
     This handles PEP 440 compliant versions, including pre-releases and build metadata.
+    For non-standard versions, attempts to coerce common patterns like X.Y.Z.<hash>
+    to PEP 440 local versions, then falls back to natural sorting.
 
     Parameters:
         version1 (str): First version string to compare.
@@ -55,23 +57,40 @@ def compare_versions(version1, version2):
     Returns:
         int: 1 if version1 > version2, 0 if equal, -1 if version1 < version2.
     """
-    try:
-        v1 = parse_version(version1)
-        v2 = parse_version(version2)
+
+    def _try_parse(v: str):
+        try:
+            return parse_version(v)
+        except InvalidVersion:
+            # Coerce common pattern "X.Y.Z.<hash>" to PEP440 local version "X.Y.Z+<hash>"
+            m = re.match(r"^(\d+(?:\.\d+)*)\\.([A-Za-z0-9][A-Za-z0-9\\.-]*)$", v)
+            if m:
+                try:
+                    return parse_version(f"{m.group(1)}+{m.group(2)}")
+                except InvalidVersion:
+                    return None
+            return None
+
+    v1 = _try_parse(version1)
+    v2 = _try_parse(version2)
+    if v1 is not None and v2 is not None:
         if v1 > v2:
             return 1
         elif v1 < v2:
             return -1
         else:
             return 0
-    except InvalidVersion:
-        # Fallback for non-standard versions that packaging can't parse.
-        if version1 > version2:
-            return 1
-        elif version1 < version2:
-            return -1
-        else:
-            return 0
+
+    # Natural comparison fallback for truly non-standard versions
+    def _nat_key(s: str):
+        return [int(p) if p.isdigit() else p for p in re.split(r"(\d+)", s)]
+
+    k1, k2 = _nat_key(version1), _nat_key(version2)
+    if k1 > k2:
+        return 1
+    elif k1 < k2:
+        return -1
+    return 0
 
 
 def check_promoted_prereleases(
