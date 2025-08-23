@@ -302,16 +302,18 @@ def show_help(parser, repo_parser, repo_subparsers, help_command, help_subcomman
     else:
         # Unknown command
         print(f"Unknown command: {help_command}")
-        # Derive available commands dynamically
-        main_subparsers = next(
-            (a for a in parser._actions if isinstance(a, argparse._SubParsersAction)),
-            None,
-        )
-        if main_subparsers:
-            command_list = ", ".join(sorted(main_subparsers.choices.keys()))
-            print(f"Available commands: {command_list}")
-        else:
-            print("No subcommands are available.")
+        # Use a predefined list of available commands to avoid relying on internal argparse attributes
+        available_commands = [
+            "setup",
+            "download",
+            "topic",
+            "clean",
+            "version",
+            "repo",
+            "help",
+        ]
+        command_list = ", ".join(sorted(available_commands))
+        print(f"Available commands: {command_list}")
         print("\nFor general help, use: fetchtastic help")
 
 

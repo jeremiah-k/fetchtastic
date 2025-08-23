@@ -498,25 +498,7 @@ def test_show_help_unknown_command(mocker, capsys):
     mock_repo_parser = mocker.MagicMock()
     mock_repo_subparsers = mocker.MagicMock()
 
-    # Mock the parser structure for dynamic command discovery
-    mock_subparsers_action = mocker.MagicMock()
-    mock_subparsers_action.choices = {
-        "setup": mocker.MagicMock(),
-        "download": mocker.MagicMock(),
-        "topic": mocker.MagicMock(),
-        "clean": mocker.MagicMock(),
-        "version": mocker.MagicMock(),
-        "repo": mocker.MagicMock(),
-        "help": mocker.MagicMock(),
-    }
-    mock_parser._actions = [mock_subparsers_action]
-
-    # Mock the isinstance check in the cli module
-    mock_isinstance = mocker.patch("fetchtastic.cli.isinstance")
-    mock_isinstance.side_effect = (
-        lambda obj, cls: obj is mock_subparsers_action
-        and cls is argparse._SubParsersAction
-    )
+    # No complex mocking needed since we use a predefined command list
 
     cli.show_help(mock_parser, mock_repo_parser, mock_repo_subparsers, "unknown", None)
 

@@ -11,6 +11,8 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
+from packaging.version import InvalidVersion
+from packaging.version import parse as parse_version
 
 from fetchtastic import menu_repo, setup_config
 
@@ -42,12 +44,9 @@ from fetchtastic.utils import download_file_with_retry
 
 def compare_versions(version1, version2):
     """
-    Compare two version strings and determine their ordering.
+    Compare two version strings and determine their ordering using the `packaging` library.
 
-    Strips a leading 'v' from each input, then compares the major, minor, and patch components numerically.
-    - If either version has fewer than three dot-separated components, it pads with zeros to three parts and compares numerically.
-    - Non-numeric components in the first three segments fall back to lexicographic comparison.
-    - Any additional segments (e.g., a commit hash in a fourth segment) are ignored for ordering.
+    This handles PEP 440 compliant versions, including pre-releases and build metadata.
 
     Parameters:
         version1 (str): First version string to compare.
@@ -56,45 +55,23 @@ def compare_versions(version1, version2):
     Returns:
         int: 1 if version1 > version2, 0 if equal, -1 if version1 < version2.
     """
-    # Strip 'v' prefix if it exists
-    v1 = version1.lstrip("v")
-    v2 = version2.lstrip("v")
-
-    # Handle exact matches immediately
-    if v1 == v2:
-        return 0
-
-    # Split versions into components
-    v1_parts = v1.split(".")
-    v2_parts = v2.split(".")
-
-    # Make sure we have at least 3 parts for each version
-    if len(v1_parts) < 3 or len(v2_parts) < 3:
-        # If either version doesn't have at least 3 parts, pad with zeros
-        while len(v1_parts) < 3:
-            v1_parts.append("0")
-        while len(v2_parts) < 3:
-            v2_parts.append("0")
-
-    # Compare major, minor, patch versions numerically
-    for i in range(3):  # Only compare the first 3 parts (major.minor.patch)
-        try:
-            v1_num = int(v1_parts[i])
-            v2_num = int(v2_parts[i])
-            if v1_num > v2_num:
-                return 1
-            elif v1_num < v2_num:
-                return -1
-        except ValueError:
-            # If conversion fails, fall back to string comparison
-            if v1_parts[i] > v2_parts[i]:
-                return 1
-            elif v1_parts[i] < v2_parts[i]:
-                return -1
-
-    # If major.minor.patch are equal, versions are considered equal
-    # The commit hash (4th part) doesn't affect version ordering
-    return 0
+    try:
+        v1 = parse_version(version1)
+        v2 = parse_version(version2)
+        if v1 > v2:
+            return 1
+        elif v1 < v2:
+            return -1
+        else:
+            return 0
+    except InvalidVersion:
+        # Fallback for non-standard versions that packaging can't parse.
+        if version1 > version2:
+            return 1
+        elif version1 < version2:
+            return -1
+        else:
+            return 0
 
 
 def check_promoted_prereleases(
