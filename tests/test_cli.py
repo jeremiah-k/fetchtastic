@@ -323,3 +323,140 @@ def test_cli_repo_help_command(mocker):
     # This should trigger SystemExit due to argparse help
     with pytest.raises(SystemExit):
         cli.main()
+
+
+def test_copy_to_clipboard_func_termux_success(mocker):
+    """Test clipboard functionality on Termux (success)."""
+    mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
+    mock_run = mocker.patch("subprocess.run")
+
+    result = cli.copy_to_clipboard_func("test text")
+
+    assert result is True
+    mock_run.assert_called_once_with(
+        ["termux-clipboard-set"], input=b"test text", check=True
+    )
+
+
+def test_copy_to_clipboard_func_termux_failure(mocker):
+    """Test clipboard functionality on Termux (failure)."""
+    mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
+    mocker.patch("subprocess.run", side_effect=Exception("Termux error"))
+    mock_print = mocker.patch("builtins.print")
+
+    result = cli.copy_to_clipboard_func("test text")
+
+    assert result is False
+    mock_print.assert_called_with(
+        "An error occurred while copying to clipboard: Termux error"
+    )
+
+
+def test_copy_to_clipboard_func_macos_success(mocker):
+    """Test clipboard functionality on macOS (success)."""
+    mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
+    mocker.patch("platform.system", return_value="Darwin")
+    mock_run = mocker.patch("subprocess.run")
+
+    result = cli.copy_to_clipboard_func("test text")
+
+    assert result is True
+    mock_run.assert_called_once_with("pbcopy", text=True, input="test text", check=True)
+
+
+def test_copy_to_clipboard_func_linux_xclip_success(mocker):
+    """Test clipboard functionality on Linux with xclip (success)."""
+    mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
+    mocker.patch("platform.system", return_value="Linux")
+    mocker.patch(
+        "shutil.which", side_effect=lambda x: "/usr/bin/xclip" if x == "xclip" else None
+    )
+    mock_run = mocker.patch("subprocess.run")
+
+    result = cli.copy_to_clipboard_func("test text")
+
+    assert result is True
+    mock_run.assert_called_once_with(
+        ["xclip", "-selection", "clipboard"], input=b"test text", check=True
+    )
+
+
+def test_copy_to_clipboard_func_linux_xsel_success(mocker):
+    """Test clipboard functionality on Linux with xsel (success)."""
+    mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
+    mocker.patch("platform.system", return_value="Linux")
+    mocker.patch(
+        "shutil.which", side_effect=lambda x: "/usr/bin/xsel" if x == "xsel" else None
+    )
+    mock_run = mocker.patch("subprocess.run")
+
+    result = cli.copy_to_clipboard_func("test text")
+
+    assert result is True
+    mock_run.assert_called_once_with(
+        ["xsel", "--clipboard", "--input"], input=b"test text", check=True
+    )
+
+
+def test_copy_to_clipboard_func_linux_no_tools(mocker):
+    """Test clipboard functionality on Linux with no clipboard tools."""
+    mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
+    mocker.patch("platform.system", return_value="Linux")
+    mocker.patch("shutil.which", return_value=None)  # No clipboard tools available
+    mock_print = mocker.patch("builtins.print")
+
+    result = cli.copy_to_clipboard_func("test text")
+
+    assert result is False
+    mock_print.assert_called_with(
+        "xclip or xsel not found. Install xclip or xsel to use clipboard functionality."
+    )
+
+
+def test_copy_to_clipboard_func_unsupported_platform(mocker):
+    """Test clipboard functionality on unsupported platform."""
+    mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
+    mocker.patch("platform.system", return_value="FreeBSD")
+    mock_print = mocker.patch("builtins.print")
+
+    result = cli.copy_to_clipboard_func("test text")
+
+    assert result is False
+    mock_print.assert_called_with(
+        "Clipboard functionality is not supported on this platform."
+    )
+
+
+def test_copy_to_clipboard_func_subprocess_error(mocker):
+    """Test clipboard functionality with subprocess error."""
+    mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
+    mocker.patch("platform.system", return_value="Darwin")
+    mocker.patch("subprocess.run", side_effect=Exception("Subprocess error"))
+    mock_print = mocker.patch("builtins.print")
+
+    result = cli.copy_to_clipboard_func("test text")
+
+    assert result is False
+    mock_print.assert_called_with(
+        "An error occurred while copying to clipboard: Subprocess error"
+    )
+
+
+def test_run_clean_cancelled(mocker):
+    """Test run_clean when user cancels."""
+    mocker.patch("builtins.input", return_value="n")
+    mock_print = mocker.patch("builtins.print")
+
+    cli.run_clean()
+
+    mock_print.assert_any_call("Clean operation cancelled.")
+
+
+def test_run_clean_user_says_no_explicitly(mocker):
+    """Test run_clean when user explicitly says no."""
+    mocker.patch("builtins.input", return_value="no")
+    mock_print = mocker.patch("builtins.print")
+
+    cli.run_clean()
+
+    mock_print.assert_any_call("Clean operation cancelled.")
