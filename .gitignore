@@ -11,6 +11,7 @@ __pycache__/
 *.pyd
 fetchtastic.egg-info/
 .venv/
+venv/
 .coverage
 .pytest_cache/
 coverage.xml

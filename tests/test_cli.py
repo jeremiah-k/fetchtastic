@@ -1,3 +1,5 @@
+import os
+import subprocess
 from unittest.mock import patch
 
 import pytest
@@ -30,6 +32,25 @@ def test_cli_download_command(mocker):
     mock_downloader_main.assert_not_called()
 
 
+def test_cli_download_with_migration(mocker):
+    """Test the 'download' command with an old config file that needs migration."""
+    mocker.patch("sys.argv", ["fetchtastic", "download"])
+    mock_downloader_main = mocker.patch("fetchtastic.downloader.main")
+    mocker.patch(
+        "fetchtastic.setup_config.config_exists",
+        return_value=(True, "/path/to/old/config"),
+    )
+    mocker.patch(
+        "fetchtastic.setup_config.OLD_CONFIG_FILE", "/path/to/old/config"
+    )
+    mocker.patch("fetchtastic.setup_config.migrate_config", return_value=True)
+    mocker.patch("os.path.exists", return_value=False)
+    mocker.patch("fetchtastic.setup_config.load_config", return_value={"key": "val"})
+
+    cli.main()
+    mock_downloader_main.assert_called_once()
+
+
 def test_cli_setup_command(mocker):
     """Test the 'setup' command dispatch."""
     mocker.patch("sys.argv", ["fetchtastic", "setup"])
@@ -59,6 +80,22 @@ def test_cli_repo_browse_command(mocker):
     mock_repo_main.assert_called_once()
 
 
+def test_cli_repo_clean_command(mocker):
+    """Test the 'repo clean' command dispatch."""
+    mocker.patch("sys.argv", ["fetchtastic", "repo", "clean"])
+    mocker.patch(
+        "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
+    )
+    mocker.patch("fetchtastic.setup_config.load_config", return_value={"key": "val"})
+    mock_run_repo_clean = mocker.patch("fetchtastic.cli.run_repo_clean")
+    mocker.patch(
+        "fetchtastic.cli.display_version_info", return_value=("1.0", "1.0", False)
+    )
+
+    cli.main()
+    mock_run_repo_clean.assert_called_once()
+
+
 def test_cli_clean_command(mocker):
     """Test the 'clean' command dispatch."""
     mocker.patch("sys.argv", ["fetchtastic", "clean"])
@@ -66,6 +103,54 @@ def test_cli_clean_command(mocker):
     mock_run_clean = mocker.patch("fetchtastic.cli.run_clean")
     cli.main()
     mock_run_clean.assert_called_once()
+
+
+@patch("builtins.input", return_value="y")
+@patch("os.path.exists")
+@patch("os.remove")
+@patch("shutil.rmtree")
+@patch("os.listdir")
+@patch("os.rmdir")
+@patch("subprocess.run")
+@patch("platform.system", return_value="Linux")
+@patch("fetchtastic.setup_config.CONFIG_FILE", "/tmp/config/fetchtastic.yaml")
+@patch("fetchtastic.setup_config.OLD_CONFIG_FILE", "/tmp/old_config/fetchtastic.yaml")
+@patch("fetchtastic.setup_config.BASE_DIR", "/tmp/meshtastic")
+@patch("os.path.isdir")
+def test_run_clean(
+    mock_isdir,
+    mock_platform_system,
+    mock_subprocess_run,
+    mock_rmdir,
+    mock_listdir,
+    mock_rmtree,
+    mock_os_remove,
+    mock_os_path_exists,
+    mock_input,
+):
+    """Test the run_clean function."""
+    # Simulate existing files and directories
+    mock_os_path_exists.return_value = True
+    mock_listdir.return_value = ["some_dir"]
+    mock_isdir.return_value = True
+    mock_subprocess_run.return_value.stdout = "# fetchtastic cron job"
+
+    cli.run_clean()
+
+    # Check that config files are removed
+    mock_os_remove.assert_any_call("/tmp/config/fetchtastic.yaml")
+    mock_os_remove.assert_any_call("/tmp/old_config/fetchtastic.yaml")
+
+    # Check that download directory is cleaned
+    mock_rmtree.assert_any_call(os.path.join("/tmp/meshtastic", "some_dir"))
+
+    # Check that cron jobs are removed
+    mock_subprocess_run.assert_any_call(
+        ["crontab", "-l"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
 
 
 def test_cli_version_command(mocker):
@@ -225,18 +310,6 @@ def test_cli_version_with_update_available(mocker):
     mock_logger.info.assert_any_call("Fetchtastic v1.0.0")
     mock_logger.info.assert_any_call("A newer version (v1.1.0) is available!")
     mock_logger.info.assert_any_call("Run 'pipx upgrade fetchtastic' to upgrade.")
-
-
-def test_cli_help_command(mocker):
-    """Test the 'help' command."""
-    mocker.patch("sys.argv", ["fetchtastic", "help"])
-    # Mock the parser.print_help method instead of print
-    mock_print_help = mocker.patch("argparse.ArgumentParser.print_help")
-
-    cli.main()
-
-    # Should call print_help on the parser
-    mock_print_help.assert_called_once()
 
 
 def test_cli_repo_help_command(mocker):

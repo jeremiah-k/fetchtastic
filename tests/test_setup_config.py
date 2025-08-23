@@ -1,7 +1,7 @@
 import importlib
 import os
 import subprocess
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 import yaml
@@ -516,3 +516,314 @@ def test_windows_shortcut_creation(mocker):
 
     # It's good practice to restore the original module to avoid side effects
     importlib.reload(setup_config)
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("builtins.input")
+@patch("fetchtastic.setup_config.platform.system", return_value="Linux")
+@patch("fetchtastic.setup_config.is_termux", return_value=False)
+@patch("fetchtastic.setup_config.config_exists", return_value=(False, None))
+@patch("fetchtastic.setup_config.os.path.exists", return_value=False)
+@patch("fetchtastic.setup_config.os.makedirs")
+@patch("fetchtastic.setup_config.yaml.dump")
+@patch("fetchtastic.setup_config.menu_apk.run_menu")
+@patch("fetchtastic.setup_config.menu_firmware.run_menu")
+@patch("fetchtastic.setup_config.check_any_cron_jobs_exist", return_value=False)
+@patch("fetchtastic.setup_config.setup_cron_job")
+@patch("fetchtastic.setup_config.setup_reboot_cron_job")
+@patch("fetchtastic.downloader.main")
+@patch("shutil.which")
+@patch("fetchtastic.setup_config.platformdirs.user_config_dir", return_value="/tmp/config")
+def test_run_setup_first_run_linux_simple(
+    mock_user_config_dir,
+    mock_shutil_which,
+    mock_downloader_main,
+    mock_setup_reboot_cron_job,
+    mock_setup_cron_job,
+    mock_check_any_cron_jobs_exist,
+    mock_menu_firmware,
+    mock_menu_apk,
+    mock_yaml_dump,
+    mock_makedirs,
+    mock_os_path_exists,
+    mock_config_exists,
+    mock_is_termux,
+    mock_platform_system,
+    mock_input,
+):
+    """Test a simple first-run setup process on a Linux system."""
+    user_inputs = [
+        "",  # Use default base directory
+        "b",  # Both APKs and firmware
+        "2",  # Keep 2 versions of Android app
+        "2",  # Keep 2 versions of firmware
+        "n",  # No pre-releases
+        "n",  # No auto-extract
+        "n",  # No cron job
+        "n",  # No reboot cron job
+        "n",  # No NTFY notifications
+        "n",  # Don't perform first run now
+    ]
+    mock_input.side_effect = user_inputs
+
+    mock_menu_apk.return_value = {"selected_assets": ["meshtastic-apk"]}
+    mock_menu_firmware.return_value = {"selected_assets": ["meshtastic-firmware"]}
+
+    with patch("builtins.open", mock_open()) as mock_file:
+        setup_config.run_setup()
+
+        mock_yaml_dump.assert_called()
+        saved_config = mock_yaml_dump.call_args[0][0]
+
+        assert saved_config["SAVE_APKS"] is True
+        assert saved_config["SAVE_FIRMWARE"] is True
+        assert saved_config["ANDROID_VERSIONS_TO_KEEP"] == 2
+        assert saved_config["FIRMWARE_VERSIONS_TO_KEEP"] == 2
+        assert saved_config["CHECK_PRERELEASES"] is False
+        assert saved_config["AUTO_EXTRACT"] is False
+        assert saved_config["EXTRACT_PATTERNS"] == []
+        assert saved_config["EXCLUDE_PATTERNS"] == []
+        assert saved_config["NTFY_TOPIC"] == ""
+        assert saved_config["NTFY_SERVER"] == ""
+
+        mock_setup_cron_job.assert_not_called()
+        mock_setup_reboot_cron_job.assert_not_called()
+        mock_downloader_main.assert_not_called()
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("builtins.input")
+@patch("fetchtastic.setup_config.platform.system", return_value="Windows")
+@patch("fetchtastic.setup_config.is_termux", return_value=False)
+@patch("fetchtastic.setup_config.config_exists", return_value=(False, None))
+@patch("fetchtastic.setup_config.os.path.exists", return_value=False)
+@patch("fetchtastic.setup_config.os.makedirs")
+@patch("fetchtastic.setup_config.yaml.dump")
+@patch("fetchtastic.setup_config.menu_apk.run_menu")
+@patch("fetchtastic.setup_config.menu_firmware.run_menu")
+@patch("fetchtastic.setup_config.create_windows_menu_shortcuts")
+@patch("fetchtastic.setup_config.create_config_shortcut")
+@patch("fetchtastic.setup_config.create_startup_shortcut")
+@patch("fetchtastic.downloader.main")
+@patch("shutil.which")
+@patch("fetchtastic.setup_config.platformdirs.user_config_dir", return_value="/tmp/config")
+@patch("fetchtastic.setup_config.WINDOWS_MODULES_AVAILABLE", True)
+def test_run_setup_first_run_windows(
+    mock_user_config_dir,
+    mock_shutil_which,
+    mock_downloader_main,
+    mock_create_startup_shortcut,
+    mock_create_config_shortcut,
+    mock_create_windows_menu_shortcuts,
+    mock_menu_firmware,
+    mock_menu_apk,
+    mock_yaml_dump,
+    mock_makedirs,
+    mock_os_path_exists,
+    mock_config_exists,
+    mock_is_termux,
+    mock_platform_system,
+    mock_input,
+):
+    """Test a simple first-run setup process on a Windows system."""
+    user_inputs = [
+        "",  # Use default base directory
+        "y", # create menu
+        "b",  # Both APKs and firmware
+        "2",  # Keep 2 versions of Android app
+        "2",  # Keep 2 versions of firmware
+        "n",  # No pre-releases
+        "n",  # No auto-extract
+        "y",  # create startup shortcut
+        "n",  # No NTFY notifications
+        "",  # press enter to close
+    ]
+    mock_input.side_effect = user_inputs
+
+    mock_menu_apk.return_value = {"selected_assets": ["meshtastic-apk"]}
+    mock_menu_firmware.return_value = {"selected_assets": ["meshtastic-firmware"]}
+
+    with patch("builtins.open", mock_open()) as mock_file:
+        setup_config.run_setup()
+
+        mock_create_windows_menu_shortcuts.assert_called_once()
+        mock_create_config_shortcut.assert_called_once()
+        mock_create_startup_shortcut.assert_called_once()
+        mock_downloader_main.assert_not_called()
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("builtins.input")
+@patch("fetchtastic.setup_config.platform.system", return_value="Linux")
+@patch("fetchtastic.setup_config.is_termux", return_value=True)
+@patch("fetchtastic.setup_config.config_exists", return_value=(False, None))
+@patch("fetchtastic.setup_config.os.path.exists", return_value=False)
+@patch("fetchtastic.setup_config.os.makedirs")
+@patch("fetchtastic.setup_config.yaml.dump")
+@patch("fetchtastic.setup_config.menu_apk.run_menu")
+@patch("fetchtastic.setup_config.menu_firmware.run_menu")
+@patch("fetchtastic.setup_config.install_termux_packages")
+@patch("fetchtastic.setup_config.check_storage_setup")
+@patch("fetchtastic.setup_config.get_fetchtastic_installation_method", return_value="pip")
+@patch("fetchtastic.setup_config.migrate_pip_to_pipx")
+@patch("fetchtastic.setup_config.setup_cron_job")
+@patch("fetchtastic.setup_config.setup_boot_script")
+@patch("fetchtastic.setup_config.check_cron_job_exists", return_value=False)
+@patch("fetchtastic.setup_config.check_boot_script_exists", return_value=False)
+@patch("fetchtastic.downloader.main")
+@patch("shutil.which")
+@patch("fetchtastic.setup_config.platformdirs.user_config_dir", return_value="/tmp/config")
+def test_run_setup_first_run_termux(
+    mock_user_config_dir,
+    mock_shutil_which,
+    mock_downloader_main,
+    mock_check_boot_script_exists,
+    mock_check_cron_job_exists,
+    mock_setup_boot_script,
+    mock_setup_cron_job,
+    mock_migrate_pip_to_pipx,
+    mock_get_install_method,
+    mock_check_storage_setup,
+    mock_install_termux_packages,
+    mock_menu_firmware,
+    mock_menu_apk,
+    mock_yaml_dump,
+    mock_makedirs,
+    mock_os_path_exists,
+    mock_config_exists,
+    mock_is_termux,
+    mock_platform_system,
+    mock_input,
+):
+    """Test a simple first-run setup process on a Termux system."""
+    user_inputs = [
+        "y",  # migrate to pipx
+        "",  # Use default base directory
+        "b",  # Both APKs and firmware
+        "1",  # Keep 1 version of Android app
+        "1",  # Keep 1 version of firmware
+        "n",  # No pre-releases
+        "n",  # No auto-extract
+        "y",  # wifi only
+        "y",  # cron job
+        "y",  # boot script
+        "n",  # No NTFY notifications
+        "n",  # Don't perform first run now
+    ]
+    mock_input.side_effect = user_inputs
+
+    mock_menu_apk.return_value = {"selected_assets": ["meshtastic-apk"]}
+    mock_menu_firmware.return_value = {"selected_assets": ["meshtastic-firmware"]}
+
+    with patch("builtins.open", mock_open()) as mock_file:
+        setup_config.run_setup()
+
+        mock_install_termux_packages.assert_called_once()
+        mock_check_storage_setup.assert_called_once()
+        mock_migrate_pip_to_pipx.assert_called_once()
+        mock_setup_cron_job.assert_called_once()
+        mock_setup_boot_script.assert_called_once()
+
+        mock_yaml_dump.assert_called()
+        saved_config = mock_yaml_dump.call_args[0][0]
+        assert saved_config["WIFI_ONLY"] is True
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("builtins.input")
+@patch("fetchtastic.setup_config.platform.system", return_value="Linux")
+@patch("fetchtastic.setup_config.is_termux", return_value=False)
+@patch("fetchtastic.setup_config.os.path.exists")
+@patch("fetchtastic.setup_config.os.makedirs")
+@patch("fetchtastic.setup_config.yaml.dump")
+@patch("fetchtastic.setup_config.yaml.safe_load")
+@patch("fetchtastic.setup_config.menu_apk.run_menu")
+@patch("fetchtastic.setup_config.menu_firmware.run_menu")
+@patch("fetchtastic.setup_config.check_any_cron_jobs_exist", return_value=True)
+@patch("fetchtastic.setup_config.remove_cron_job")
+@patch("fetchtastic.setup_config.remove_reboot_cron_job")
+@patch("fetchtastic.setup_config.setup_cron_job")
+@patch("fetchtastic.setup_config.setup_reboot_cron_job")
+@patch("fetchtastic.downloader.main")
+@patch("shutil.which")
+@patch("fetchtastic.setup_config.platformdirs.user_config_dir", return_value="/tmp/config")
+def test_run_setup_existing_config(
+    mock_user_config_dir,
+    mock_shutil_which,
+    mock_downloader_main,
+    mock_setup_reboot_cron_job,
+    mock_setup_cron_job,
+    mock_remove_reboot_cron_job,
+    mock_remove_cron_job,
+    mock_check_any_cron_jobs_exist,
+    mock_menu_firmware,
+    mock_menu_apk,
+    mock_yaml_safe_load,
+    mock_yaml_dump,
+    mock_makedirs,
+    mock_os_path_exists,
+    mock_is_termux,
+    mock_platform_system,
+    mock_input,
+):
+    """Test the setup process when a configuration file already exists."""
+    existing_config = {
+        "BASE_DIR": "/tmp/meshtastic",
+        "SAVE_APKS": True,
+        "SAVE_FIRMWARE": True,
+        "ANDROID_VERSIONS_TO_KEEP": 2,
+        "FIRMWARE_VERSIONS_TO_KEEP": 2,
+        "CHECK_PRERELEASES": False,
+        "AUTO_EXTRACT": False,
+        "EXTRACT_PATTERNS": [],
+        "EXCLUDE_PATTERNS": [],
+        "NTFY_TOPIC": "old-topic",
+        "NTFY_SERVER": "https://ntfy.sh/old",
+    }
+    mock_os_path_exists.return_value = True
+    mock_yaml_safe_load.return_value = existing_config
+
+    user_inputs = [
+        "/new/base/dir",  # New base directory
+        "f",  # Only firmware
+        "5",  # Keep 5 versions of firmware
+        "y",  # Check for pre-releases
+        "n",  # No auto-extract
+        "y",  # reconfigure cron
+        "n",  # no daily cron
+        "n",  # no reboot cron
+        "y",  # reconfigure ntfy
+        "https://ntfy.sh/new", # new server
+        "new-topic", # new topic
+        "n", # no copy
+        "n", # no notify on download only
+        "n",  # Don't perform first run now
+    ]
+    mock_input.side_effect = user_inputs
+
+    mock_menu_firmware.return_value = {"selected_assets": ["new-firmware"]}
+
+    with patch("builtins.open", mock_open()) as mock_file:
+        setup_config.run_setup()
+
+        mock_yaml_dump.assert_called()
+        saved_config = mock_yaml_dump.call_args[0][0]
+
+        assert saved_config["BASE_DIR"] == "/new/base/dir"
+        assert saved_config["SAVE_APKS"] is False
+        assert saved_config["SAVE_FIRMWARE"] is True
+        assert saved_config["FIRMWARE_VERSIONS_TO_KEEP"] == 5
+        assert saved_config["CHECK_PRERELEASES"] is True
+        assert saved_config["SELECTED_FIRMWARE_ASSETS"] == ["new-firmware"]
+        assert "SELECTED_APK_ASSETS" not in saved_config
+        assert saved_config["NTFY_SERVER"] == "https://ntfy.sh/new"
+        assert saved_config["NTFY_TOPIC"] == "new-topic"
+
+        mock_remove_cron_job.assert_called_once()
+        mock_remove_reboot_cron_job.assert_called_once()
+        mock_setup_cron_job.assert_not_called()
+        mock_setup_reboot_cron_job.assert_not_called()

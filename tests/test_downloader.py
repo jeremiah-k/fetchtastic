@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import mock_open, patch
 
 import pytest
 import requests
@@ -488,3 +488,178 @@ def test_check_and_download(mocker, tmp_path, mock_releases):
     assert downloaded == []
     assert len(failed) > 0
     assert failed[0]["release_tag"] == "v2.7.4.c1f4f79"  # It tries v2.7.4 first
+
+
+@patch("fetchtastic.downloader._initial_setup_and_config")
+@patch("fetchtastic.downloader._check_wifi_connection")
+@patch("fetchtastic.downloader._process_firmware_downloads")
+@patch("fetchtastic.downloader._process_apk_downloads")
+@patch("fetchtastic.downloader._finalize_and_notify")
+def test_main(
+    mock_finalize,
+    mock_process_apk,
+    mock_process_firmware,
+    mock_check_wifi,
+    mock_initial_setup,
+):
+    """Test the main downloader orchestration."""
+    # Simulate successful setup
+    mock_initial_setup.return_value = (
+        {"SAVE_FIRMWARE": True, "SAVE_APKS": True},
+        "1.0.0",
+        "1.1.0",
+        True,
+        {"download_dir": "/tmp"},
+    )
+    mock_process_firmware.return_value = (["v1"], ["v1"], [], "v1")
+    mock_process_apk.return_value = (["v2"], ["v2"], [], "v2")
+
+    downloader.main()
+
+    mock_initial_setup.assert_called_once()
+    mock_check_wifi.assert_called_once()
+    mock_process_firmware.assert_called_once()
+    mock_process_apk.assert_called_once()
+    mock_finalize.assert_called_once()
+
+
+@patch("fetchtastic.downloader.display_version_info")
+@patch("fetchtastic.downloader.setup_config.load_config")
+@patch("os.path.exists")
+@patch("os.makedirs")
+def test_initial_setup_and_config(
+    mock_makedirs, mock_exists, mock_load_config, mock_display_version
+):
+    """Test the initial setup and configuration loading."""
+    # 1. Test with existing config
+    mock_load_config.return_value = {"DOWNLOAD_DIR": "/tmp/test_downloads"}
+    mock_display_version.return_value = ("1.0.0", "1.1.0", True)
+    mock_exists.return_value = True
+
+    config, _, _, _, paths = downloader._initial_setup_and_config()
+
+    assert config["DOWNLOAD_DIR"] == "/tmp/test_downloads"
+    mock_makedirs.assert_not_called()
+
+    # 2. Test with no config
+    mock_load_config.return_value = None
+    config, _, _, _, paths = downloader._initial_setup_and_config()
+    assert config is None
+
+    # 3. Test directory creation
+    mock_load_config.return_value = {"DOWNLOAD_DIR": "/tmp/test_downloads"}
+    mock_exists.return_value = False
+    downloader._initial_setup_and_config()
+    assert mock_makedirs.call_count == 3
+
+
+@patch("fetchtastic.downloader.setup_config.is_termux", return_value=True)
+@patch("os.popen")
+def test_check_wifi_connection(mock_popen, mocker):
+    """Test the Wi-Fi connection check on Termux."""
+    config = {"WIFI_ONLY": True}
+
+    # 1. Test when connected to Wi-Fi
+    mock_popen.return_value.read.return_value = '{"supplicant_state": "COMPLETED", "ip": "192.168.1.100"}'
+    downloader.downloads_skipped = False
+    downloader._check_wifi_connection(config)
+    assert downloader.downloads_skipped is False
+
+
+@patch("fetchtastic.downloader._get_latest_releases_data")
+@patch("fetchtastic.downloader.check_and_download")
+@patch("fetchtastic.downloader.check_promoted_prereleases")
+@patch("fetchtastic.downloader.check_for_prereleases")
+@patch("os.path.exists", return_value=True)
+def test_process_firmware_downloads(
+    mock_exists,
+    mock_check_for_prereleases,
+    mock_check_promoted,
+    mock_check_and_download,
+    mock_get_releases,
+):
+    """Test the firmware download processing logic."""
+    config = {
+        "SAVE_FIRMWARE": True,
+        "SELECTED_FIRMWARE_ASSETS": ["pattern1"],
+        "FIRMWARE_VERSIONS_TO_KEEP": 2,
+        "CHECK_PRERELEASES": True,
+        "EXTRACT_PATTERNS": [],
+        "EXCLUDE_PATTERNS": [],
+        "AUTO_EXTRACT": False,
+    }
+    paths = {
+        "firmware_releases_url": "url",
+        "latest_firmware_release_file": "file",
+        "firmware_dir": "/tmp/firmware",
+        "download_dir": "/tmp",
+    }
+    with patch("builtins.open", mock_open(read_data="v1.0")):
+        mock_get_releases.return_value = [{"tag_name": "v1.0"}]
+        mock_check_and_download.return_value = (["v1.0"], ["v1.0"], [])
+        mock_check_promoted.return_value = False
+        mock_check_for_prereleases.return_value = (True, ["v1.1-pre"])
+
+        downloaded, new, failed, latest = downloader._process_firmware_downloads(
+            config, paths
+        )
+
+        assert "v1.0" in downloaded
+        assert "pre-release v1.1-pre" in downloaded
+        assert latest == "v1.0"
+
+
+@patch("fetchtastic.downloader._send_ntfy_notification")
+def test_finalize_and_notify(mock_send_ntfy):
+    """Test the finalize and notify function."""
+    config = {"NTFY_SERVER": "https://ntfy.sh", "NTFY_TOPIC": "test"}
+
+    # 1. Test with downloaded files
+    downloader._finalize_and_notify(
+        start_time=0,
+        config=config,
+        downloaded_firmwares=["v1"],
+        downloaded_apks=["v2"],
+        new_firmware_versions=[],
+        new_apk_versions=[],
+        current_version="1.0.0",
+        latest_version="1.0.0",
+        update_available=False,
+    )
+    mock_send_ntfy.assert_called_once()
+    assert "Downloaded Firmware versions: v1" in mock_send_ntfy.call_args[0][2]
+    assert "Downloaded Android APK versions: v2" in mock_send_ntfy.call_args[0][2]
+
+    # 2. Test with no downloaded files
+    mock_send_ntfy.reset_mock()
+    downloader._finalize_and_notify(
+        start_time=0,
+        config=config,
+        downloaded_firmwares=[],
+        downloaded_apks=[],
+        new_firmware_versions=[],
+        new_apk_versions=[],
+        current_version="1.0.0",
+        latest_version="1.0.0",
+        update_available=False,
+    )
+    mock_send_ntfy.assert_called_once()
+    assert "All assets are up to date" in mock_send_ntfy.call_args[0][2]
+
+    # 3. Test with downloads skipped
+    mock_send_ntfy.reset_mock()
+    downloader.downloads_skipped = True
+    downloader._finalize_and_notify(
+        start_time=0,
+        config=config,
+        downloaded_firmwares=[],
+        downloaded_apks=[],
+        new_firmware_versions=["v3"],
+        new_apk_versions=[],
+        current_version="1.0.0",
+        latest_version="1.0.0",
+        update_available=False,
+    )
+    mock_send_ntfy.assert_called_once()
+    assert "downloads were skipped" in mock_send_ntfy.call_args[0][2]
+    downloader.downloads_skipped = False

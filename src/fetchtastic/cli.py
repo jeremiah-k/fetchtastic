@@ -47,9 +47,6 @@ def main():
     # Command to display version
     subparsers.add_parser("version", help="Display Fetchtastic version")
 
-    # Command to display help
-    subparsers.add_parser("help", help="Display help information")
-
     # Command to interact with the meshtastic.github.io repository
     repo_parser = subparsers.add_parser(
         "repo",
@@ -193,40 +190,6 @@ def main():
             upgrade_cmd = get_upgrade_command()
             logger.info(f"A newer version (v{latest_version}) is available!")
             logger.info(f"Run '{upgrade_cmd}' to upgrade.")
-    elif args.command == "help":
-        # Check if a subcommand was specified
-        if len(sys.argv) > 2:
-            help_command = sys.argv[2]
-            if help_command == "repo":
-                # Show help for repo command
-                repo_parser.print_help()
-                # Check if there's a repo subcommand specified
-                if len(sys.argv) > 3:
-                    repo_subcommand = sys.argv[3]
-                    if repo_subcommand == "browse":
-                        # Find the browse subparser and print its help
-                        for action in repo_subparsers._actions:
-                            if isinstance(action, argparse._SubParsersAction):
-                                browse_parser = action.choices.get("browse")
-                                if browse_parser:
-                                    print("\nRepo browse command help:")
-                                    browse_parser.print_help()
-                                break
-                    elif repo_subcommand == "clean":
-                        # Find the clean subparser and print its help
-                        for action in repo_subparsers._actions:
-                            if isinstance(action, argparse._SubParsersAction):
-                                clean_parser = action.choices.get("clean")
-                                if clean_parser:
-                                    print("\nRepo clean command help:")
-                                    clean_parser.print_help()
-                                break
-            else:
-                # Show general help
-                parser.print_help()
-        else:
-            # No subcommand specified, show general help
-            parser.print_help()
     elif args.command == "repo":
         # Display version information
         current_version, latest_version, update_available = display_version_info()
