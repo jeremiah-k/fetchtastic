@@ -268,12 +268,13 @@ def test_send_ntfy_notification(mocker):
     downloader._send_ntfy_notification(
         "https://ntfy.sh", "mytopic", "Test message", "Test Title"
     )
-    mock_post.assert_called_once_with(
-        "https://ntfy.sh/mytopic",
-        data="Test message".encode("utf-8"),
-        headers={"Content-Type": "text/plain; charset=utf-8", "Title": "Test Title"},
-        timeout=10,
-    )
+    mock_post.assert_called_once()
+    args, kwargs = mock_post.call_args
+    assert args[0] == "https://ntfy.sh/mytopic"
+    assert kwargs["data"] == "Test message".encode("utf-8")
+    assert kwargs["headers"]["Content-Type"] == "text/plain; charset=utf-8"
+    assert kwargs["headers"]["Title"] == "Test Title"
+    assert kwargs["timeout"] == downloader.NTFY_REQUEST_TIMEOUT
 
     # 2. Test request exception
     mock_post.reset_mock()

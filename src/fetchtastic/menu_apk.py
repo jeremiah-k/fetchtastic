@@ -45,7 +45,9 @@ def extract_base_name(filename):
     Returns:
         str: The filename with the `[-_]X.Y.Z` version segment removed (e.g., "fdroidRelease.apk").
     """
-    base_name = re.sub(r"[-_]\d+\.\d+\.\d+", "", filename)
+    # Remove '-/_' + optional 'v' + semver + optional suffix segments (e.g., '-beta.1', '.c1f4f79')
+    # But preserve the file extension
+    base_name = re.sub(r"[-_]v?\d+\.\d+\.\d+(?:[._-][0-9A-Za-z]+)*(?=\.)", "", filename)
     return base_name
 
 
@@ -66,16 +68,16 @@ Note: These are files from the latest release. Version numbers may change in oth
     for asset_name in selected_assets:
         pattern = extract_base_name(asset_name)
         base_patterns.append(pattern)
-    return base_patterns
+    return {"selected_assets": base_patterns}
 
 
 def run_menu():
     try:
         assets = fetch_apk_assets()
-        selected_patterns = select_assets(assets)
-        if selected_patterns is None:
+        selected_result = select_assets(assets)
+        if selected_result is None:
             return None
-        return {"selected_assets": selected_patterns}
+        return selected_result
     except Exception as e:
         print(f"An error occurred: {e}")
         return None
