@@ -46,6 +46,19 @@ def main():
     # Command to display version
     subparsers.add_parser("version", help="Display Fetchtastic version")
 
+    # Command to display help
+    help_parser = subparsers.add_parser("help", help="Display help information")
+    help_parser.add_argument(
+        "help_command",
+        nargs="?",
+        help="Command to get help for (e.g., 'repo', 'setup')",
+    )
+    help_parser.add_argument(
+        "help_subcommand",
+        nargs="?",
+        help="Subcommand to get help for (e.g., 'browse', 'clean')",
+    )
+
     # Command to interact with the meshtastic.github.io repository
     repo_parser = subparsers.add_parser(
         "repo",
@@ -189,6 +202,15 @@ def main():
             upgrade_cmd = get_upgrade_command()
             logger.info(f"A newer version (v{latest_version}) is available!")
             logger.info(f"Run '{upgrade_cmd}' to upgrade.")
+    elif args.command == "help":
+        # Handle help command
+        help_command = getattr(
+            args, "help_command", None
+        )  # The command to get help for
+        help_subcommand = getattr(
+            args, "help_subcommand", None
+        )  # The subcommand to get help for
+        show_help(parser, repo_parser, repo_subparsers, help_command, help_subcommand)
     elif args.command == "repo":
         # Display version information
         current_version, latest_version, update_available = display_version_info()
@@ -236,6 +258,52 @@ def main():
         parser.print_help()
     else:
         parser.print_help()
+
+
+def show_help(parser, repo_parser, repo_subparsers, help_command, help_subcommand):
+    """
+    Display contextual help information based on the provided command and subcommand.
+
+    Args:
+        parser: Main argument parser
+        repo_parser: Repository command parser
+        repo_subparsers: Repository subcommand parsers
+        help_command: Command to show help for (e.g., 'repo', 'setup')
+        help_subcommand: Subcommand to show help for (e.g., 'browse', 'clean')
+    """
+    if not help_command:
+        # No specific command requested, show general help
+        parser.print_help()
+        return
+
+    if help_command == "repo":
+        # Show repo command help
+        repo_parser.print_help()
+
+        if help_subcommand:
+            # Show specific repo subcommand help
+            if help_subcommand in ["browse", "clean"]:
+                # Get the specific subparser and print its help
+                subparser = repo_subparsers.choices.get(help_subcommand)
+                if subparser:
+                    print(f"\nRepo {help_subcommand} command help:")
+                    subparser.print_help()
+                else:
+                    print(f"\nSubcommand '{help_subcommand}' not found")
+            else:
+                print(f"\nUnknown repo subcommand: {help_subcommand}")
+                print("Available repo subcommands: browse, clean")
+    elif help_command in ["setup", "download", "topic", "clean", "version"]:
+        # For other main commands, show general help with a note about the specific command
+        parser.print_help()
+        print(
+            f"\nFor more information about the '{help_command}' command, use: fetchtastic {help_command} --help"
+        )
+    else:
+        # Unknown command
+        print(f"Unknown command: {help_command}")
+        print("Available commands: setup, download, topic, clean, version, repo, help")
+        print("\nFor general help, use: fetchtastic help")
 
 
 def copy_to_clipboard_func(text):

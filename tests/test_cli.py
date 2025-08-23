@@ -325,6 +325,193 @@ def test_cli_repo_help_command(mocker):
         cli.main()
 
 
+def test_cli_help_command_general(mocker):
+    """Test the 'help' command with no arguments."""
+    mocker.patch("sys.argv", ["fetchtastic", "help"])
+    mock_print_help = mocker.patch("argparse.ArgumentParser.print_help")
+
+    cli.main()
+
+    mock_print_help.assert_called_once()
+
+
+def test_cli_help_command_repo(mocker):
+    """Test the 'help repo' command."""
+    mocker.patch("sys.argv", ["fetchtastic", "help", "repo"])
+    mock_show_help = mocker.patch("fetchtastic.cli.show_help")
+
+    cli.main()
+
+    mock_show_help.assert_called_once()
+    # Verify the arguments passed to show_help
+    args = mock_show_help.call_args[0]
+    help_command = args[3]  # 4th argument is help_command
+    help_subcommand = args[4]  # 5th argument is help_subcommand
+    assert help_command == "repo"
+    assert help_subcommand is None
+
+
+def test_cli_help_command_repo_browse(mocker):
+    """Test the 'help repo browse' command."""
+    mocker.patch("sys.argv", ["fetchtastic", "help", "repo", "browse"])
+    mock_show_help = mocker.patch("fetchtastic.cli.show_help")
+
+    cli.main()
+
+    mock_show_help.assert_called_once()
+    # Verify the arguments passed to show_help
+    args = mock_show_help.call_args[0]
+    help_command = args[3]  # 4th argument is help_command
+    help_subcommand = args[4]  # 5th argument is help_subcommand
+    assert help_command == "repo"
+    assert help_subcommand == "browse"
+
+
+def test_cli_help_command_setup(mocker):
+    """Test the 'help setup' command."""
+    mocker.patch("sys.argv", ["fetchtastic", "help", "setup"])
+    mock_show_help = mocker.patch("fetchtastic.cli.show_help")
+
+    cli.main()
+
+    mock_show_help.assert_called_once()
+    # Verify the arguments passed to show_help
+    args = mock_show_help.call_args[0]
+    help_command = args[3]  # 4th argument is help_command
+    help_subcommand = args[4]  # 5th argument is help_subcommand
+    assert help_command == "setup"
+    assert help_subcommand is None
+
+
+def test_cli_help_command_unknown(mocker):
+    """Test the 'help unknown' command."""
+    mocker.patch("sys.argv", ["fetchtastic", "help", "unknown"])
+    mock_show_help = mocker.patch("fetchtastic.cli.show_help")
+
+    cli.main()
+
+    mock_show_help.assert_called_once()
+    # Verify the arguments passed to show_help
+    args = mock_show_help.call_args[0]
+    help_command = args[3]  # 4th argument is help_command
+    help_subcommand = args[4]  # 5th argument is help_subcommand
+    assert help_command == "unknown"
+    assert help_subcommand is None
+
+
+def test_show_help_general(mocker):
+    """Test show_help function with no specific command."""
+    mock_parser = mocker.MagicMock()
+    mock_repo_parser = mocker.MagicMock()
+    mock_repo_subparsers = mocker.MagicMock()
+
+    cli.show_help(mock_parser, mock_repo_parser, mock_repo_subparsers, None, None)
+
+    mock_parser.print_help.assert_called_once()
+    mock_repo_parser.print_help.assert_not_called()
+
+
+def test_show_help_repo_command(mocker):
+    """Test show_help function with repo command."""
+    mock_parser = mocker.MagicMock()
+    mock_repo_parser = mocker.MagicMock()
+    mock_repo_subparsers = mocker.MagicMock()
+
+    cli.show_help(mock_parser, mock_repo_parser, mock_repo_subparsers, "repo", None)
+
+    mock_parser.print_help.assert_not_called()
+    mock_repo_parser.print_help.assert_called_once()
+
+
+def test_show_help_repo_browse_subcommand(mocker, capsys):
+    """Test show_help function with repo browse subcommand."""
+    mock_parser = mocker.MagicMock()
+    mock_repo_parser = mocker.MagicMock()
+    mock_repo_subparsers = mocker.MagicMock()
+    mock_browse_parser = mocker.MagicMock()
+
+    # Mock the choices dictionary to return the browse parser
+    mock_repo_subparsers.choices = {
+        "browse": mock_browse_parser,
+        "clean": mocker.MagicMock(),
+    }
+
+    cli.show_help(mock_parser, mock_repo_parser, mock_repo_subparsers, "repo", "browse")
+
+    mock_repo_parser.print_help.assert_called_once()
+    mock_browse_parser.print_help.assert_called_once()
+
+    # Check that the correct message was printed
+    captured = capsys.readouterr()
+    assert "Repo browse command help:" in captured.out
+
+
+def test_show_help_repo_unknown_subcommand(mocker, capsys):
+    """Test show_help function with unknown repo subcommand."""
+    mock_parser = mocker.MagicMock()
+    mock_repo_parser = mocker.MagicMock()
+    mock_repo_subparsers = mocker.MagicMock()
+    mock_repo_subparsers.choices = {
+        "browse": mocker.MagicMock(),
+        "clean": mocker.MagicMock(),
+    }
+
+    cli.show_help(
+        mock_parser, mock_repo_parser, mock_repo_subparsers, "repo", "unknown"
+    )
+
+    mock_repo_parser.print_help.assert_called_once()
+
+    # Check that the correct error message was printed
+    captured = capsys.readouterr()
+    assert "Unknown repo subcommand: unknown" in captured.out
+    assert "Available repo subcommands: browse, clean" in captured.out
+
+
+def test_show_help_other_commands(mocker, capsys):
+    """Test show_help function with other main commands."""
+    mock_parser = mocker.MagicMock()
+    mock_repo_parser = mocker.MagicMock()
+    mock_repo_subparsers = mocker.MagicMock()
+
+    for command in ["setup", "download", "topic", "clean", "version"]:
+        cli.show_help(
+            mock_parser, mock_repo_parser, mock_repo_subparsers, command, None
+        )
+
+    # Should call print_help once for each command
+    assert mock_parser.print_help.call_count == 5
+    mock_repo_parser.print_help.assert_not_called()
+
+    # Check that the correct message was printed
+    captured = capsys.readouterr()
+    assert (
+        "For more information about the 'setup' command, use: fetchtastic setup --help"
+        in captured.out
+    )
+
+
+def test_show_help_unknown_command(mocker, capsys):
+    """Test show_help function with unknown command."""
+    mock_parser = mocker.MagicMock()
+    mock_repo_parser = mocker.MagicMock()
+    mock_repo_subparsers = mocker.MagicMock()
+
+    cli.show_help(mock_parser, mock_repo_parser, mock_repo_subparsers, "unknown", None)
+
+    mock_parser.print_help.assert_not_called()
+    mock_repo_parser.print_help.assert_not_called()
+
+    # Check that the correct error message was printed
+    captured = capsys.readouterr()
+    assert "Unknown command: unknown" in captured.out
+    assert (
+        "Available commands: setup, download, topic, clean, version, repo, help"
+        in captured.out
+    )
+    assert "For general help, use: fetchtastic help" in captured.out
+
+
 def test_copy_to_clipboard_func_termux_success(mocker):
     """Test clipboard functionality on Termux (success)."""
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
