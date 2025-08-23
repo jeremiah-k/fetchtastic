@@ -118,9 +118,14 @@ def download_file_with_retry(
     # Using type: ignore for Retry as it might not be perfectly typed by stubs,
     # but the parameters are standard for urllib3.
     retry_strategy: Retry = Retry(
+        total=DEFAULT_CONNECT_RETRIES,
         connect=DEFAULT_CONNECT_RETRIES,
+        read=DEFAULT_CONNECT_RETRIES,
+        status=DEFAULT_CONNECT_RETRIES,
         backoff_factor=DEFAULT_BACKOFF_FACTOR,
         status_forcelist=[502, 503, 504],
+        allowed_methods=frozenset({"GET", "HEAD"}),
+        raise_on_status=False,
     )  # type: ignore
     adapter = HTTPAdapter(max_retries=retry_strategy)
     session.mount("https://", adapter)
@@ -128,7 +133,7 @@ def download_file_with_retry(
 
     # Check if file exists and is valid (especially for zips)
     if os.path.exists(download_path):
-        if download_path.endswith(ZIP_EXTENSION):
+        if download_path.lower().endswith(ZIP_EXTENSION.lower()):
             try:
                 with zipfile.ZipFile(download_path, "r") as zf:
                     if zf.testzip() is not None:  # None means no errors
@@ -232,7 +237,7 @@ def download_file_with_retry(
         logger.debug(
             f"Attempting to download file from URL: {url} to temp path: {temp_path}"
         )
-        time.time()
+        start_time = time.time()
         response = session.get(url, stream=True, timeout=DEFAULT_REQUEST_TIMEOUT)
 
         # Log HTTP response status code
@@ -254,17 +259,16 @@ def download_file_with_retry(
                             f"Downloaded {downloaded_chunks} chunks ({downloaded_bytes} bytes) so far for {url}"
                         )
 
-        # end-to-end download duration is available in
-        #   elapsed = time.time() - start_time
-        # if you intend to log or return it later.
+        elapsed = time.time() - start_time
         file_size_mb = downloaded_bytes / (1024 * 1024)
         logger.debug(
             f"Finished downloading {url}. Total chunks: {downloaded_chunks}, total bytes: {downloaded_bytes}."
         )
+        logger.debug("Download elapsed time: %.2fs for %s", elapsed, url)
 
         # Log completion after successful file replacement (moved below)
 
-        if download_path.endswith(ZIP_EXTENSION):
+        if download_path.lower().endswith(ZIP_EXTENSION.lower()):
             try:
                 with zipfile.ZipFile(temp_path, "r") as zf_temp:
                     if zf_temp.testzip() is not None:

@@ -626,7 +626,15 @@ def _get_latest_releases_data(url: str, scan_count: int = 10) -> List[Dict[str, 
         else:
             logger.info("Fetching releases from GitHub...")
 
-        response: requests.Response = requests.get(url, timeout=GITHUB_API_TIMEOUT)
+        response: requests.Response = requests.get(
+            url,
+            timeout=GITHUB_API_TIMEOUT,
+            headers={
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+            params={"per_page": scan_count},
+        )
         response.raise_for_status()
 
         # Small delay to be respectful to GitHub API
@@ -1015,7 +1023,10 @@ def _finalize_and_notify(
             message_lines.append(
                 f"Android APK versions available: {', '.join(new_apk_versions)}"
             )
-        notification_message = "\n".join(message_lines) + f"\n{datetime.now()}"
+        notification_message = (
+            "\n".join(message_lines)
+            + f"\n{datetime.now().isoformat(timespec='seconds')}"
+        )
         logger.info("\n".join(message_lines))
         _send_ntfy_notification(
             ntfy_server,
@@ -1032,7 +1043,10 @@ def _finalize_and_notify(
         if downloaded_apks:
             message = f"Downloaded Android APK versions: {', '.join(downloaded_apks)}"
             notification_messages.append(message)
-        notification_message = "\n".join(notification_messages) + f"\n{datetime.now()}"
+        notification_message = (
+            "\n".join(notification_messages)
+            + f"\n{datetime.now().isoformat(timespec='seconds')}"
+        )
         _send_ntfy_notification(
             ntfy_server,
             ntfy_topic,
@@ -1040,7 +1054,9 @@ def _finalize_and_notify(
             title="Fetchtastic Download Completed",
         )
     else:
-        message: str = f"All assets are up to date.\n{datetime.now()}"
+        message: str = (
+            f"All assets are up to date.\n{datetime.now().isoformat(timespec='seconds')}"
+        )
         logger.info(message)
         if not notify_on_download_only:
             _send_ntfy_notification(
@@ -1572,6 +1588,9 @@ def check_and_download(
                     pattern in stripped_file_name for pattern in selected_patterns
                 ):
                     continue
+                # Honor exclude patterns at download-time as well
+                if any(fnmatch.fnmatch(file_name, ex) for ex in exclude_patterns_list):
+                    continue
                 asset_download_path = os.path.join(release_dir, file_name)
                 if not os.path.exists(asset_download_path):
                     assets_to_download.append(
@@ -1633,7 +1652,7 @@ def check_and_download(
                     if not file_name:
                         continue
 
-                    if file_name.endswith(".zip"):
+                    if file_name.endswith(ZIP_EXTENSION):
                         zip_path: str = os.path.join(release_dir, file_name)
                         if os.path.exists(zip_path):
                             extraction_needed: bool = check_extraction_needed(
