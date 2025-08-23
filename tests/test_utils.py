@@ -300,3 +300,61 @@ def test_download_file_with_retry_partial_content(mock_session, tmp_path):
 
     assert result is True
     assert download_path.read_bytes() == b"chunk1chunk2chunk3"
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
+def test_extract_base_name():
+    """Test extract_base_name function with various filename patterns."""
+    test_cases = [
+        ("fdroidRelease-2.5.9.apk", "fdroidRelease.apk"),
+        ("firmware-rak4631-2.7.4.c1f4f79-ota.zip", "firmware-rak4631-ota.zip"),
+        ("meshtasticd_2.5.13.1a06f88_amd64.deb", "meshtasticd_amd64.deb"),
+        ("app_v1.2.3_release.apk", "app_release.apk"),
+        ("tool-1.0.0.zip", "tool.zip"),
+        ("simple.txt", "simple.txt"),  # No version to remove
+        ("file-with-dashes.log", "file-with-dashes.log"),  # No version pattern
+        # Test new prerelease patterns
+        ("app-2.6.9-rc1.apk", "app.apk"),
+        ("firmware-2.6.9.dev1-test.zip", "firmware-test.zip"),
+        ("tool_2.5.13-beta2_linux.tar.gz", "tool_linux.tar.gz"),
+        ("package-1.0.0-alpha3.deb", "package.deb"),
+        ("app-2.6.9.rc1.apk", "app.apk"),  # dot-separated
+        ("firmware_2.6.9.dev1_test.zip", "firmware_test.zip"),  # underscore-separated
+    ]
+
+    for input_filename, expected_output in test_cases:
+        result = utils.extract_base_name(input_filename)
+        assert (
+            result == expected_output
+        ), f"extract_base_name('{input_filename}') returned '{result}', expected '{expected_output}'"
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
+@patch("fetchtastic.utils.Retry")
+def test_urllib3_v1_fallback_retry_creation(mock_retry):
+    """Test urllib3 v1 fallback when v2 parameters cause TypeError."""
+    # Mock Retry to raise TypeError on first call (v2 params), succeed on second (v1 params)
+    mock_retry.side_effect = [TypeError("unsupported parameter"), MagicMock()]
+
+    # Just test the retry creation part by calling the function that creates the retry strategy
+    # This will exercise the try/except block we added for urllib3 compatibility
+    try:
+        utils.download_file_with_retry("http://test.com/file.zip", "/test/file.zip")
+    except Exception:
+        # We expect this to fail due to other reasons, but the retry creation should work
+        pass
+
+    # Verify urllib3 v1 fallback was attempted
+    assert mock_retry.call_count == 2
+    # First call should have v2 parameters
+    first_call_kwargs = mock_retry.call_args_list[0][1]
+    assert "respect_retry_after_header" in first_call_kwargs
+    assert "allowed_methods" in first_call_kwargs
+
+    # Second call should have v1 parameters
+    second_call_kwargs = mock_retry.call_args_list[1][1]
+    assert "respect_retry_after_header" not in second_call_kwargs
+    assert "method_whitelist" in second_call_kwargs
+    assert "allowed_methods" not in second_call_kwargs
