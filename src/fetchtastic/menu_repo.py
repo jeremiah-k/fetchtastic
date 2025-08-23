@@ -11,6 +11,7 @@ from fetchtastic.constants import (
     GITHUB_API_TIMEOUT,
     MESHTASTIC_GITHUB_IO_CONTENTS_URL,
 )
+from fetchtastic.log_utils import logger
 
 
 def fetch_repo_contents(path=""):
@@ -92,13 +93,15 @@ def fetch_repo_contents(path=""):
 
         return sorted_items
     except requests.RequestException as e:
-        print(f"Error fetching repository contents from GitHub API: {e}")
+        logger.error(f"Error fetching repository contents from GitHub API: {e}")
         return []
     except (ValueError, KeyError) as e:
-        print(f"Error parsing repository contents response: {e}")
+        logger.error(f"Error parsing repository contents response: {e}")
         return []
     except Exception as e:
-        print(f"Unexpected error fetching repository contents: {e}")
+        logger.error(
+            f"Unexpected error fetching repository contents: {e}", exc_info=True
+        )
         return []
 
 

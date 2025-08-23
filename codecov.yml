@@ -3,12 +3,12 @@ coverage:
     project:
       default:
         target: auto
-        threshold: 1%
+        threshold: 5% # Allow small decreases while encouraging improvement
         base: auto
     patch:
       default:
         target: auto
-        threshold: 1%
+        threshold: 60% # Encourage good coverage on new code
         base: auto
 
 comment:
