@@ -534,7 +534,10 @@ def test_windows_shortcut_creation(mocker):
 @patch("fetchtastic.setup_config.setup_reboot_cron_job")
 @patch("fetchtastic.downloader.main")
 @patch("shutil.which")
-@patch("fetchtastic.setup_config.platformdirs.user_config_dir", return_value="/tmp/config")
+@patch(
+    "fetchtastic.setup_config.platformdirs.user_config_dir",
+    return_value="/tmp/config",  # nosec B108
+)
 def test_run_setup_first_run_linux_simple(
     mock_user_config_dir,
     mock_shutil_which,
@@ -570,7 +573,7 @@ def test_run_setup_first_run_linux_simple(
     mock_menu_apk.return_value = {"selected_assets": ["meshtastic-apk"]}
     mock_menu_firmware.return_value = {"selected_assets": ["meshtastic-firmware"]}
 
-    with patch("builtins.open", mock_open()) as mock_file:
+    with patch("builtins.open", mock_open()):
         setup_config.run_setup()
 
         mock_yaml_dump.assert_called()
@@ -608,7 +611,10 @@ def test_run_setup_first_run_linux_simple(
 @patch("fetchtastic.setup_config.create_startup_shortcut")
 @patch("fetchtastic.downloader.main")
 @patch("shutil.which")
-@patch("fetchtastic.setup_config.platformdirs.user_config_dir", return_value="/tmp/config")
+@patch(
+    "fetchtastic.setup_config.platformdirs.user_config_dir",
+    return_value="/tmp/config",  # nosec B108
+)
 @patch("fetchtastic.setup_config.WINDOWS_MODULES_AVAILABLE", True)
 def test_run_setup_first_run_windows(
     mock_user_config_dir,
@@ -630,7 +636,7 @@ def test_run_setup_first_run_windows(
     """Test a simple first-run setup process on a Windows system."""
     user_inputs = [
         "",  # Use default base directory
-        "y", # create menu
+        "y",  # create menu
         "b",  # Both APKs and firmware
         "2",  # Keep 2 versions of Android app
         "2",  # Keep 2 versions of firmware
@@ -645,7 +651,7 @@ def test_run_setup_first_run_windows(
     mock_menu_apk.return_value = {"selected_assets": ["meshtastic-apk"]}
     mock_menu_firmware.return_value = {"selected_assets": ["meshtastic-firmware"]}
 
-    with patch("builtins.open", mock_open()) as mock_file:
+    with patch("builtins.open", mock_open()):
         setup_config.run_setup()
 
         mock_create_windows_menu_shortcuts.assert_called_once()
@@ -667,7 +673,9 @@ def test_run_setup_first_run_windows(
 @patch("fetchtastic.setup_config.menu_firmware.run_menu")
 @patch("fetchtastic.setup_config.install_termux_packages")
 @patch("fetchtastic.setup_config.check_storage_setup")
-@patch("fetchtastic.setup_config.get_fetchtastic_installation_method", return_value="pip")
+@patch(
+    "fetchtastic.setup_config.get_fetchtastic_installation_method", return_value="pip"
+)
 @patch("fetchtastic.setup_config.migrate_pip_to_pipx")
 @patch("fetchtastic.setup_config.setup_cron_job")
 @patch("fetchtastic.setup_config.setup_boot_script")
@@ -675,7 +683,10 @@ def test_run_setup_first_run_windows(
 @patch("fetchtastic.setup_config.check_boot_script_exists", return_value=False)
 @patch("fetchtastic.downloader.main")
 @patch("shutil.which")
-@patch("fetchtastic.setup_config.platformdirs.user_config_dir", return_value="/tmp/config")
+@patch(
+    "fetchtastic.setup_config.platformdirs.user_config_dir",
+    return_value="/tmp/config",  # nosec B108
+)
 def test_run_setup_first_run_termux(
     mock_user_config_dir,
     mock_shutil_which,
@@ -718,7 +729,7 @@ def test_run_setup_first_run_termux(
     mock_menu_apk.return_value = {"selected_assets": ["meshtastic-apk"]}
     mock_menu_firmware.return_value = {"selected_assets": ["meshtastic-firmware"]}
 
-    with patch("builtins.open", mock_open()) as mock_file:
+    with patch("builtins.open", mock_open()):
         setup_config.run_setup()
 
         mock_install_termux_packages.assert_called_once()
@@ -750,7 +761,10 @@ def test_run_setup_first_run_termux(
 @patch("fetchtastic.setup_config.setup_reboot_cron_job")
 @patch("fetchtastic.downloader.main")
 @patch("shutil.which")
-@patch("fetchtastic.setup_config.platformdirs.user_config_dir", return_value="/tmp/config")
+@patch(
+    "fetchtastic.setup_config.platformdirs.user_config_dir",
+    return_value="/tmp/config",  # nosec B108
+)
 def test_run_setup_existing_config(
     mock_user_config_dir,
     mock_shutil_which,
@@ -772,7 +786,7 @@ def test_run_setup_existing_config(
 ):
     """Test the setup process when a configuration file already exists."""
     existing_config = {
-        "BASE_DIR": "/tmp/meshtastic",
+        "BASE_DIR": "/tmp/meshtastic",  # nosec B108
         "SAVE_APKS": True,
         "SAVE_FIRMWARE": True,
         "ANDROID_VERSIONS_TO_KEEP": 2,
@@ -797,17 +811,17 @@ def test_run_setup_existing_config(
         "n",  # no daily cron
         "n",  # no reboot cron
         "y",  # reconfigure ntfy
-        "https://ntfy.sh/new", # new server
-        "new-topic", # new topic
-        "n", # no copy
-        "n", # no notify on download only
+        "https://ntfy.sh/new",  # new server
+        "new-topic",  # new topic
+        "n",  # no copy
+        "n",  # no notify on download only
         "n",  # Don't perform first run now
     ]
     mock_input.side_effect = user_inputs
 
     mock_menu_firmware.return_value = {"selected_assets": ["new-firmware"]}
 
-    with patch("builtins.open", mock_open()) as mock_file:
+    with patch("builtins.open", mock_open()):
         setup_config.run_setup()
 
         mock_yaml_dump.assert_called()

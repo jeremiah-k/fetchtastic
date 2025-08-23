@@ -509,7 +509,7 @@ def test_main(
         "1.0.0",
         "1.1.0",
         True,
-        {"download_dir": "/tmp"},
+        {"download_dir": "/tmp"},  # nosec B108
     )
     mock_process_firmware.return_value = (["v1"], ["v1"], [], "v1")
     mock_process_apk.return_value = (["v2"], ["v2"], [], "v2")
@@ -532,13 +532,15 @@ def test_initial_setup_and_config(
 ):
     """Test the initial setup and configuration loading."""
     # 1. Test with existing config
-    mock_load_config.return_value = {"DOWNLOAD_DIR": "/tmp/test_downloads"}
+    mock_load_config.return_value = {
+        "DOWNLOAD_DIR": "/tmp/test_downloads"
+    }  # nosec B108
     mock_display_version.return_value = ("1.0.0", "1.1.0", True)
     mock_exists.return_value = True
 
     config, _, _, _, paths = downloader._initial_setup_and_config()
 
-    assert config["DOWNLOAD_DIR"] == "/tmp/test_downloads"
+    assert config["DOWNLOAD_DIR"] == "/tmp/test_downloads"  # nosec B108
     mock_makedirs.assert_not_called()
 
     # 2. Test with no config
@@ -547,7 +549,9 @@ def test_initial_setup_and_config(
     assert config is None
 
     # 3. Test directory creation
-    mock_load_config.return_value = {"DOWNLOAD_DIR": "/tmp/test_downloads"}
+    mock_load_config.return_value = {
+        "DOWNLOAD_DIR": "/tmp/test_downloads"
+    }  # nosec B108
     mock_exists.return_value = False
     downloader._initial_setup_and_config()
     assert mock_makedirs.call_count == 3
@@ -560,7 +564,9 @@ def test_check_wifi_connection(mock_popen, mocker):
     config = {"WIFI_ONLY": True}
 
     # 1. Test when connected to Wi-Fi
-    mock_popen.return_value.read.return_value = '{"supplicant_state": "COMPLETED", "ip": "192.168.1.100"}'
+    mock_popen.return_value.read.return_value = (
+        '{"supplicant_state": "COMPLETED", "ip": "192.168.1.100"}'
+    )
     downloader.downloads_skipped = False
     downloader._check_wifi_connection(config)
     assert downloader.downloads_skipped is False
@@ -591,8 +597,8 @@ def test_process_firmware_downloads(
     paths = {
         "firmware_releases_url": "url",
         "latest_firmware_release_file": "file",
-        "firmware_dir": "/tmp/firmware",
-        "download_dir": "/tmp",
+        "firmware_dir": "/tmp/firmware",  # nosec B108
+        "download_dir": "/tmp",  # nosec B108
     }
     with patch("builtins.open", mock_open(read_data="v1.0")):
         mock_get_releases.return_value = [{"tag_name": "v1.0"}]
