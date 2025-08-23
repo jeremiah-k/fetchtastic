@@ -644,8 +644,8 @@ def _get_latest_releases_data(url: str, scan_count: int = 10) -> List[Dict[str, 
             rl = response.headers.get("X-RateLimit-Remaining")
             if rl is not None:
                 logger.debug(f"GitHub API rate-limit remaining: {rl}")
-        except Exception:
-            pass
+        except (KeyError, ValueError, AttributeError) as e:
+            logger.debug(f"Could not parse rate-limit header: {e}")
 
         releases: List[Dict[str, Any]] = response.json()
 
