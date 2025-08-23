@@ -134,7 +134,7 @@ def test_fetch_repo_contents_with_path(mocker, mock_repo_contents):
     mock_response.json.return_value = mock_repo_contents
     mock_get.return_value = mock_response
 
-    items = menu_repo.fetch_repo_contents("firmware-2.7.4.c1f4f79")
+    menu_repo.fetch_repo_contents("firmware-2.7.4.c1f4f79")
 
     # Verify the URL was constructed correctly
     expected_url = "https://api.github.com/repos/meshtastic/meshtastic.github.io/contents/firmware-2.7.4.c1f4f79"

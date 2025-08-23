@@ -74,7 +74,13 @@ def download_repo_files(selected_files, download_dir):  # log_message_func remov
                 )
                 continue
 
-            file_path = os.path.join(dir_path, file_name)
+            # Ensure we only ever write to the intended directory
+            safe_name = os.path.basename(file_name)
+            if safe_name != file_name:
+                logger.warning(
+                    f"Sanitized file name from '{file_name}' to '{safe_name}'"
+                )
+            file_path = os.path.join(dir_path, safe_name)
 
             # download_file_with_retry now uses the global logger
             if download_file_with_retry(

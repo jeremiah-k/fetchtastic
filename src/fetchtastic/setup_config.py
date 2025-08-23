@@ -289,7 +289,7 @@ def config_exists(directory=None):
                and path is the path to the config file if it exists, otherwise None.
     """
     if directory:
-        config_path = os.path.join(directory, "fetchtastic.yaml")
+        config_path = os.path.join(directory, CONFIG_FILE_NAME)
         if os.path.exists(config_path):
             return True, config_path
         return False, None
@@ -403,7 +403,7 @@ def run_setup():
             config_path = CONFIG_FILE
             # Re-load the configuration from the new location if it exists
             if os.path.exists(CONFIG_FILE):
-                exists = True
+                pass  # Configuration successfully migrated
         else:
             logger.error(
                 "Failed to migrate configuration. Continuing with old location."
@@ -2151,7 +2151,7 @@ def load_config(directory=None):
 
     if directory:
         # This is for backward compatibility or when explicitly loading from a specific directory
-        config_path = os.path.join(directory, "fetchtastic.yaml")
+        config_path = os.path.join(directory, CONFIG_FILE_NAME)
         if not os.path.exists(config_path):
             return None
 

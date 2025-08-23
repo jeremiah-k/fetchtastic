@@ -19,6 +19,7 @@ from fetchtastic.constants import (
     API_CALL_DELAY,
     DEFAULT_ANDROID_VERSIONS_TO_KEEP,
     DEFAULT_FIRMWARE_VERSIONS_TO_KEEP,
+    EXECUTABLE_PERMISSIONS,
     LATEST_ANDROID_RELEASE_FILE,
     LATEST_FIRMWARE_RELEASE_FILE,
     MESHTASTIC_ANDROID_RELEASES_URL,
@@ -27,7 +28,9 @@ from fetchtastic.constants import (
     PRERELEASE_CHUNK_SIZE,
     PRERELEASE_REQUEST_TIMEOUT,
     RELEASE_SCAN_COUNT,
+    SHELL_SCRIPT_EXTENSION,
     VERSION_REGEX_PATTERN,
+    ZIP_EXTENSION,
 )
 
 # Removed log_info, setup_logging
@@ -520,9 +523,9 @@ def check_for_prereleases(
                                 f.write(chunk)
 
                     # Set executable permissions for .sh files
-                    if file_name.endswith(".sh"):
+                    if file_name.endswith(SHELL_SCRIPT_EXTENSION):
                         try:
-                            os.chmod(file_path, 0o755)
+                            os.chmod(file_path, EXECUTABLE_PERMISSIONS)
                             logger.debug(f"Set executable permissions for {file_name}")
                         except OSError as e:
                             logger.warning(
@@ -640,7 +643,7 @@ def _get_latest_releases_data(url: str, scan_count: int = 10) -> List[Dict[str, 
     except requests.exceptions.RequestException as e:
         logger.error(f"Failed to fetch releases data from {url}: {e}")
         return []  # Return empty list on error
-    except requests.exceptions.JSONDecodeError as e:  # Or ValueError for older requests
+    except (ValueError, json.JSONDecodeError) as e:
         logger.error(f"Failed to decode JSON response from {url}: {e}")
         return []
 
@@ -1160,9 +1163,11 @@ def extract_files(
                                 ) as target_file:  # Can raise IOError
                                     target_file.write(source.read())
                                 logger.info(f"  Extracted: {base_name}")
-                            if base_name.endswith(".sh"):
+                            if base_name.endswith(SHELL_SCRIPT_EXTENSION):
                                 if not os.access(target_path, os.X_OK):
-                                    os.chmod(target_path, 0o755)  # Can raise OSError
+                                    os.chmod(
+                                        target_path, EXECUTABLE_PERMISSIONS
+                                    )  # Can raise OSError
                                     logger.debug(
                                         f"Set executable permissions for {base_name}"
                                     )
@@ -1341,7 +1346,7 @@ def _is_release_complete(
             return False
 
         # For zip files, verify they're not corrupted
-        if asset_name.endswith(".zip"):
+        if asset_name.endswith(ZIP_EXTENSION):
             try:
                 with zipfile.ZipFile(asset_path, "r") as zf:
                     if zf.testzip() is not None:
@@ -1526,7 +1531,7 @@ def check_and_download(
                     )
                     continue
 
-                if file_name.endswith(".zip"):
+                if file_name.endswith(ZIP_EXTENSION):
                     asset_download_path: str = os.path.join(release_dir, file_name)
                     if os.path.exists(asset_download_path):
                         try:
@@ -1729,11 +1734,11 @@ def set_permissions_on_sh_files(directory: str) -> None:
         for root, _dirs, files in os.walk(directory):
             file_in_dir: str
             for file_in_dir in files:
-                if file_in_dir.endswith(".sh"):
+                if file_in_dir.endswith(SHELL_SCRIPT_EXTENSION):
                     file_path: str = os.path.join(root, file_in_dir)
                     try:
                         if not os.access(file_path, os.X_OK):
-                            os.chmod(file_path, 0o755)
+                            os.chmod(file_path, EXECUTABLE_PERMISSIONS)
                             logger.debug(
                                 f"Set executable permissions for {file_in_dir}"
                             )
