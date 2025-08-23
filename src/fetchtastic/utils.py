@@ -123,9 +123,10 @@ def download_file_with_retry(
         read=DEFAULT_CONNECT_RETRIES,
         status=DEFAULT_CONNECT_RETRIES,
         backoff_factor=DEFAULT_BACKOFF_FACTOR,
-        status_forcelist=[502, 503, 504],
+        status_forcelist=[408, 429, 500, 502, 503, 504],
         allowed_methods=frozenset({"GET", "HEAD"}),
         raise_on_status=False,
+        respect_retry_after_header=True,
     )  # type: ignore
     adapter = HTTPAdapter(max_retries=retry_strategy)
     session.mount("https://", adapter)
@@ -454,9 +455,12 @@ def extract_base_name(filename: str) -> str:
         'firmware-rak4631-2.7.4.c1f4f79-ota.zip' -> 'firmware-rak4631-ota.zip'
         'meshtasticd_2.5.13.1a06f88_amd64.deb' -> 'meshtasticd_amd64.deb'
     """
-    # This regex removes version segments like '-2.5.13.1a2b3c4' or '_v1.2.3'
-    # Use word boundaries to avoid matching parts of extensions
-    base_name = re.sub(r"[-_]v?\d+\.\d+\.\d+(?:\.[\da-f]+)?(?=[-_.]|$)", "", filename)
+    # Remove versions like: -2.5.13, _v1.2.3, -2.5.13.abcdef1, and optional prerelease: -rc1/.dev1/-beta2/-alpha3
+    base_name = re.sub(
+        r"[-_]v?\d+\.\d+\.\d+(?:\.[\da-f]+)?(?:[-_.]?(?:rc|dev|beta|alpha)\d*)?(?=[-_.]|$)",
+        "",
+        filename,
+    )
     # Clean up double separators that might result from the substitution
     base_name = re.sub(r"[-_]{2,}", lambda m: m.group(0)[0], base_name)
     return base_name

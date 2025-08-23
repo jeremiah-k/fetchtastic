@@ -55,11 +55,13 @@ def main():
     help_parser.add_argument(
         "help_command",
         nargs="?",
+        metavar="COMMAND",
         help="Command to get help for (e.g., 'repo', 'setup')",
     )
     help_parser.add_argument(
         "help_subcommand",
         nargs="?",
+        metavar="SUBCOMMAND",
         help="Subcommand to get help for (e.g., 'browse', 'clean')",
     )
 
