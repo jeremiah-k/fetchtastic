@@ -1,6 +1,5 @@
 # src/fetchtastic/menu_apk.py
 
-import re
 import time
 
 import requests

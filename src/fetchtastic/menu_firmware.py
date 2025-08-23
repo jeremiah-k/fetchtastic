@@ -1,6 +1,5 @@
 # src/fetchtastic/menu_firmware.py
 
-import re
 import time
 
 import requests
