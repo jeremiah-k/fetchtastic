@@ -1,7 +1,3 @@
-import os
-import platform
-from unittest.mock import MagicMock, patch
-
 import pytest
 
 from fetchtastic import repo_downloader
@@ -123,7 +119,7 @@ def test_download_repo_files_no_files_selected():
 def test_download_repo_files_directory_creation_error(mocker, mock_selected_files):
     """Test download_repo_files when directory creation fails."""
     # Mock exists to return False so makedirs is called
-    mock_exists = mocker.patch("os.path.exists", return_value=False)
+    mocker.patch("os.path.exists", return_value=False)
     # Mock makedirs to fail on the second call (dir_path creation)
     mock_makedirs = mocker.patch("os.makedirs")
     mock_makedirs.side_effect = [
@@ -192,7 +188,7 @@ def test_download_repo_files_chmod_error(mocker, tmp_path):
         ],
     }
 
-    mock_download = mocker.patch(
+    mocker.patch(
         "fetchtastic.repo_downloader.download_file_with_retry", return_value=True
     )
     mock_chmod = mocker.patch("os.chmod", side_effect=OSError("Permission denied"))
@@ -309,8 +305,8 @@ def test_clean_repo_directory_remove_error(mocker, tmp_path):
 
     # Mock os.remove to raise an error
     mock_remove = mocker.patch("os.remove", side_effect=OSError("Permission denied"))
-    mock_isfile = mocker.patch("os.path.isfile", return_value=True)
-    mock_islink = mocker.patch("os.path.islink", return_value=False)
+    mocker.patch("os.path.isfile", return_value=True)
+    mocker.patch("os.path.islink", return_value=False)
 
     result = repo_downloader.clean_repo_directory(str(tmp_path))
 
@@ -362,12 +358,12 @@ def test_main_no_files_downloaded(mocker, mock_selected_files):
 @pytest.mark.integration
 def test_main_windows_open_folder_success(mocker, mock_selected_files):
     """Test main function on Windows with successful folder opening."""
-    mock_platform = mocker.patch("platform.system", return_value="Windows")
-    mock_input = mocker.patch("builtins.input", return_value="y")
+    mocker.patch("platform.system", return_value="Windows")
+    mocker.patch("builtins.input", return_value="y")
     mock_startfile = mocker.patch("os.startfile", create=True)
 
     mock_run_menu = mocker.patch("fetchtastic.menu_repo.run_menu")
-    mock_download = mocker.patch(
+    mocker.patch(
         "fetchtastic.repo_downloader.download_repo_files",
         return_value=["/tmp/test/firmware/repo-dls/test-dir/file.bin"],  # nosec B108
     )
@@ -386,12 +382,12 @@ def test_main_windows_open_folder_success(mocker, mock_selected_files):
 @pytest.mark.integration
 def test_main_windows_decline_open_folder(mocker, mock_selected_files):
     """Test main function on Windows when user declines to open folder."""
-    mock_platform = mocker.patch("platform.system", return_value="Windows")
-    mock_input = mocker.patch("builtins.input", return_value="n")
+    mocker.patch("platform.system", return_value="Windows")
+    mocker.patch("builtins.input", return_value="n")
     mock_startfile = mocker.patch("os.startfile", create=True)
 
     mock_run_menu = mocker.patch("fetchtastic.menu_repo.run_menu")
-    mock_download = mocker.patch(
+    mocker.patch(
         "fetchtastic.repo_downloader.download_repo_files",
         return_value=["/tmp/test/firmware/repo-dls/test-dir/file.bin"],  # nosec B108
     )
@@ -408,14 +404,14 @@ def test_main_windows_decline_open_folder(mocker, mock_selected_files):
 @pytest.mark.integration
 def test_main_windows_open_folder_error(mocker, mock_selected_files):
     """Test main function on Windows when folder opening fails."""
-    mock_platform = mocker.patch("platform.system", return_value="Windows")
-    mock_input = mocker.patch("builtins.input", return_value="y")
+    mocker.patch("platform.system", return_value="Windows")
+    mocker.patch("builtins.input", return_value="y")
     mock_startfile = mocker.patch(
         "os.startfile", create=True, side_effect=OSError("Cannot open folder")
     )
 
     mock_run_menu = mocker.patch("fetchtastic.menu_repo.run_menu")
-    mock_download = mocker.patch(
+    mocker.patch(
         "fetchtastic.repo_downloader.download_repo_files",
         return_value=["/tmp/test/firmware/repo-dls/test-dir/file.bin"],  # nosec B108
     )
@@ -432,14 +428,14 @@ def test_main_windows_open_folder_error(mocker, mock_selected_files):
 @pytest.mark.integration
 def test_main_windows_open_folder_unexpected_error(mocker, mock_selected_files):
     """Test main function on Windows with unexpected error opening folder."""
-    mock_platform = mocker.patch("platform.system", return_value="Windows")
-    mock_input = mocker.patch("builtins.input", return_value="y")
+    mocker.patch("platform.system", return_value="Windows")
+    mocker.patch("builtins.input", return_value="y")
     mock_startfile = mocker.patch(
         "os.startfile", create=True, side_effect=RuntimeError("Unexpected error")
     )
 
     mock_run_menu = mocker.patch("fetchtastic.menu_repo.run_menu")
-    mock_download = mocker.patch(
+    mocker.patch(
         "fetchtastic.repo_downloader.download_repo_files",
         return_value=["/tmp/test/firmware/repo-dls/test-dir/file.bin"],  # nosec B108
     )
