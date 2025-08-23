@@ -20,6 +20,7 @@ from fetchtastic.constants import (
     DEFAULT_ANDROID_VERSIONS_TO_KEEP,
     DEFAULT_FIRMWARE_VERSIONS_TO_KEEP,
     EXECUTABLE_PERMISSIONS,
+    GITHUB_API_TIMEOUT,
     LATEST_ANDROID_RELEASE_FILE,
     LATEST_FIRMWARE_RELEASE_FILE,
     MESHTASTIC_ANDROID_RELEASES_URL,
@@ -44,7 +45,7 @@ def compare_versions(version1, version2):
     Compare two version strings and determine their ordering.
 
     Strips a leading 'v' from each input, then compares the major, minor, and patch components numerically.
-    - If either version has fewer than three dot-separated components, a simple string comparison is used.
+    - If either version has fewer than three dot-separated components, it pads with zeros to three parts and compares numerically.
     - Non-numeric components in the first three segments fall back to lexicographic comparison.
     - Any additional segments (e.g., a commit hash in a fourth segment) are ignored for ordering.
 
@@ -629,7 +630,7 @@ def _get_latest_releases_data(url: str, scan_count: int = 10) -> List[Dict[str, 
         else:
             logger.info("Fetching releases from GitHub...")
 
-        response: requests.Response = requests.get(url, timeout=NTFY_REQUEST_TIMEOUT)
+        response: requests.Response = requests.get(url, timeout=GITHUB_API_TIMEOUT)
         response.raise_for_status()
 
         # Small delay to be respectful to GitHub API
@@ -1163,14 +1164,15 @@ def extract_files(
                                 ) as target_file:  # Can raise IOError
                                     target_file.write(source.read())
                                 logger.info(f"  Extracted: {base_name}")
-                            if base_name.endswith(SHELL_SCRIPT_EXTENSION):
-                                if not os.access(target_path, os.X_OK):
-                                    os.chmod(
-                                        target_path, EXECUTABLE_PERMISSIONS
-                                    )  # Can raise OSError
-                                    logger.debug(
-                                        f"Set executable permissions for {base_name}"
-                                    )
+                            if base_name.endswith(
+                                SHELL_SCRIPT_EXTENSION
+                            ) and not os.access(target_path, os.X_OK):
+                                os.chmod(
+                                    target_path, EXECUTABLE_PERMISSIONS
+                                )  # Can raise OSError
+                                logger.debug(
+                                    f"Set executable permissions for {base_name}"
+                                )
                             break
                         except ValueError as e_val:  # From safe_extract_path
                             logger.warning(

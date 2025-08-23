@@ -399,11 +399,9 @@ def run_setup():
         prompt_for_migration()  # Just logs the migration message
         if migrate_config():
             logger.info("Configuration successfully migrated to the new location.")
-            # Update config_path to the new location for subsequent operations
-            config_path = CONFIG_FILE
-            # Re-load the configuration from the new location if it exists
+            # Optionally validate by loading migrated config (no-op if not needed)
             if os.path.exists(CONFIG_FILE):
-                pass  # Configuration successfully migrated
+                _ = load_config()
         else:
             logger.error(
                 "Failed to migrate configuration. Continuing with old location."
@@ -441,7 +439,8 @@ def run_setup():
         base_dir = os.path.expanduser(base_dir_input)
 
         # Check if there's a config file in the specified directory
-        if config_exists(base_dir) and base_dir != BASE_DIR:
+        exists_in_dir, _ = config_exists(base_dir)
+        if exists_in_dir and base_dir != BASE_DIR:
             print(f"Found existing configuration in {base_dir}")
             # Load the configuration from the specified directory
             config = load_config(base_dir)
@@ -1550,7 +1549,7 @@ def create_windows_menu_shortcuts(config_file_path, base_dir):
         winshell.CreateShortcut(
             Path=config_shortcut_path,
             Target=config_file_path,
-            Description="Edit Fetchtastic Configuration File (fetchtastic.yaml)",
+            Description=f"Edit Fetchtastic Configuration File ({CONFIG_FILE_NAME})",
             Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0),
         )
 
@@ -1636,7 +1635,7 @@ def create_config_shortcut(config_file_path, target_dir):
         winshell.CreateShortcut(
             Path=shortcut_path,
             Target=config_file_path,
-            Description="Fetchtastic Configuration File (fetchtastic.yaml)",
+            Description=f"Fetchtastic Configuration File ({CONFIG_FILE_NAME})",
             Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0),
         )
 

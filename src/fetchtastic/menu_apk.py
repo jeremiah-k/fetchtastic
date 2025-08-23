@@ -12,6 +12,7 @@ from fetchtastic.constants import (
     GITHUB_API_TIMEOUT,
     MESHTASTIC_ANDROID_RELEASES_URL,
 )
+from fetchtastic.log_utils import logger
 
 
 def fetch_apk_assets():
@@ -22,11 +23,17 @@ def fetch_apk_assets():
     time.sleep(API_CALL_DELAY)
 
     releases = response.json()
-    # Get the latest release
-    latest_release = releases[0]
-    assets = latest_release["assets"]
+    if not isinstance(releases, list) or not releases:
+        logger.warning("No Android releases found from GitHub API.")
+        return []
+    latest_release = releases[0] or {}
+    assets = latest_release.get("assets", []) or []
     asset_names = sorted(
-        [asset["name"] for asset in assets if asset["name"].endswith(APK_EXTENSION)]
+        [
+            (asset.get("name") or "")
+            for asset in assets
+            if str(asset.get("name") or "").lower().endswith(APK_EXTENSION.lower())
+        ]
     )  # Sorted alphabetically
     return asset_names
 
@@ -78,6 +85,6 @@ def run_menu():
         if selected_result is None:
             return None
         return selected_result
-    except Exception as e:
-        print(f"An error occurred: {e}")
+    except Exception:
+        logger.exception("APK menu failed")
         return None

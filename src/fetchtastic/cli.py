@@ -10,7 +10,11 @@ import platformdirs
 
 from fetchtastic import downloader, repo_downloader, setup_config
 from fetchtastic.log_utils import logger
-from fetchtastic.setup_config import display_version_info, get_upgrade_command
+from fetchtastic.setup_config import (
+    copy_to_clipboard_func,
+    display_version_info,
+    get_upgrade_command,
+)
 
 
 def main():
@@ -204,12 +208,8 @@ def main():
             logger.info(f"Run '{upgrade_cmd}' to upgrade.")
     elif args.command == "help":
         # Handle help command
-        help_command = getattr(
-            args, "help_command", None
-        )  # The command to get help for
-        help_subcommand = getattr(
-            args, "help_subcommand", None
-        )  # The subcommand to get help for
+        help_command = args.help_command
+        help_subcommand = args.help_subcommand
         show_help(parser, repo_parser, repo_subparsers, help_command, help_subcommand)
     elif args.command == "repo":
         # Display version information
@@ -302,56 +302,17 @@ def show_help(parser, repo_parser, repo_subparsers, help_command, help_subcomman
     else:
         # Unknown command
         print(f"Unknown command: {help_command}")
-        print("Available commands: setup, download, topic, clean, version, repo, help")
+        # Derive available commands dynamically
+        main_subparsers = next(
+            (a for a in parser._actions if isinstance(a, argparse._SubParsersAction)),
+            None,
+        )
+        if main_subparsers:
+            command_list = ", ".join(sorted(main_subparsers.choices.keys()))
+            print(f"Available commands: {command_list}")
+        else:
+            print("No subcommands are available.")
         print("\nFor general help, use: fetchtastic help")
-
-
-def copy_to_clipboard_func(text):
-    if setup_config.is_termux():
-        # Termux environment
-        try:
-            subprocess.run(
-                ["termux-clipboard-set"], input=text.encode("utf-8"), check=True
-            )
-            return True
-        except Exception as e:
-            print(f"An error occurred while copying to clipboard: {e}")
-            return False
-    else:
-        # Other platforms
-        system = platform.system()
-        try:
-            if system == "Darwin":
-                # macOS
-                subprocess.run("pbcopy", text=True, input=text, check=True)
-                return True
-            elif system == "Linux":
-                # Linux
-                if shutil.which("xclip"):
-                    subprocess.run(
-                        ["xclip", "-selection", "clipboard"],
-                        input=text.encode("utf-8"),
-                        check=True,
-                    )
-                    return True
-                elif shutil.which("xsel"):
-                    subprocess.run(
-                        ["xsel", "--clipboard", "--input"],
-                        input=text.encode("utf-8"),
-                        check=True,
-                    )
-                    return True
-                else:
-                    print(
-                        "xclip or xsel not found. Install xclip or xsel to use clipboard functionality."
-                    )
-                    return False
-            else:
-                print("Clipboard functionality is not supported on this platform.")
-                return False
-        except Exception as e:
-            print(f"An error occurred while copying to clipboard: {e}")
-            return False
 
 
 def run_clean():
