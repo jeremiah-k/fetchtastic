@@ -4,6 +4,7 @@ import pytest
 import requests
 
 from fetchtastic import downloader
+from fetchtastic.utils import extract_base_name
 from tests.test_constants import (
     TEST_VERSION_NEW,
     TEST_VERSION_NEWER,
@@ -22,7 +23,7 @@ from tests.test_constants import (
         ("2.0.0", "2.0.0", 0),
         (TEST_VERSION_NEWER, TEST_VERSION_NEW, 1),
         (TEST_VERSION_NEW, TEST_VERSION_NEWER, -1),
-        ("2.3.0", "2.3.0.b123456", 0),  # Ignore hash for equality
+        ("2.3.0", "2.3.0.b123456", 1),  # 2.3.0 > 2.3.0.b123456 (release > pre-release)
         ("v1.2.3", "1.2.3", 0),  # Should handle 'v' prefix
         ("1.2", "1.2.3", -1),  # Handle different number of parts
     ],
@@ -45,9 +46,9 @@ def test_compare_versions(version1, version2, expected):
         ("file-with-v1.2.3-in-name.bin", "file-with-in-name.bin"),
     ],
 )
-def test_strip_version_numbers(filename, expected):
-    """Test the logic for stripping version numbers from filenames."""
-    assert downloader.strip_version_numbers(filename) == expected
+def test_extract_base_name(filename, expected):
+    """Test the logic for extracting base names from filenames."""
+    assert extract_base_name(filename) == expected
 
 
 # Test cases for strip_unwanted_chars

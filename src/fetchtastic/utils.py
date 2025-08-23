@@ -3,6 +3,7 @@ import gc  # For Windows file operation retries
 import hashlib
 import os
 import platform
+import re
 import time
 import zipfile
 from typing import Optional  # Callable removed
@@ -426,3 +427,40 @@ def download_file_with_retry(
                 f"Error removing temporary file {temp_path} after failure: {e_rm_final_tmp}"
             )
     return False
+
+
+def extract_base_name(filename: str) -> str:
+    """
+    Extract base name from filename by removing version and commit hash segments.
+
+    Removes version patterns like '-2.5.13', '_v1.2.3', or '-2.5.13.1a2b3c4'
+    from filenames while preserving the rest of the filename structure.
+
+    This consolidated function replaces similar functions in menu_apk.py,
+    menu_firmware.py, and downloader.py to reduce code duplication.
+
+    Args:
+        filename (str): The input filename to process.
+
+    Returns:
+        str: The filename with version/hash segments removed.
+
+    Examples:
+        'fdroidRelease-2.5.9.apk' -> 'fdroidRelease.apk'
+        'firmware-rak4631-2.7.4.c1f4f79-ota.zip' -> 'firmware-rak4631-ota.zip'
+        'meshtasticd_2.5.13.1a06f88_amd64.deb' -> 'meshtasticd_amd64.deb'
+    """
+    # Enhanced regex pattern that handles both APK and firmware files correctly
+    # This pattern removes version segments while preserving other parts of the filename
+
+    # Split filename into name and extension parts for safer processing
+    if "." in filename:
+        name_part, ext_part = filename.rsplit(".", 1)
+        # Remove version pattern from the name part only
+        clean_name = re.sub(r"[-_]v?\d+\.\d+\.\d+(?:\.[\da-f]+)?", "", name_part)
+        base_name = f"{clean_name}.{ext_part}"
+    else:
+        # No extension, process the whole filename
+        base_name = re.sub(r"[-_]v?\d+\.\d+\.\d+(?:\.[\da-f]+)?", "", filename)
+
+    return base_name

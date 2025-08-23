@@ -39,7 +39,7 @@ from fetchtastic.constants import (
 # Removed log_info, setup_logging
 from fetchtastic.log_utils import logger  # Import new logger
 from fetchtastic.setup_config import display_version_info, get_upgrade_command
-from fetchtastic.utils import download_file_with_retry
+from fetchtastic.utils import download_file_with_retry, extract_base_name
 
 
 def compare_versions(version1, version2):
@@ -389,7 +389,7 @@ def check_for_prereleases(
                             file_name = file["name"]
 
                             # Apply same filtering logic as download
-                            stripped_file_name = strip_version_numbers(file_name)
+                            stripped_file_name = extract_base_name(file_name)
                             if not any(
                                 pattern in stripped_file_name
                                 for pattern in selected_patterns
@@ -473,7 +473,7 @@ def check_for_prereleases(
             file_path = os.path.join(dir_path, file_name)
 
             # Only download files that match the selected patterns and don't match exclude patterns
-            stripped_file_name = strip_version_numbers(file_name)
+            stripped_file_name = extract_base_name(file_name)
             if not any(pattern in stripped_file_name for pattern in selected_patterns):
                 continue  # Skip this file
 
@@ -1121,7 +1121,7 @@ def extract_files(
                 ):
                     continue
 
-                stripped_base_name: str = strip_version_numbers(base_name)
+                stripped_base_name: str = extract_base_name(base_name)
                 pattern: str
                 for pattern in patterns:
                     if pattern in stripped_base_name:
@@ -1191,23 +1191,6 @@ def extract_files(
             f"An unexpected error occurred while processing zip file {zip_path}: {e_outer_extract}",
             exc_info=True,
         )
-
-
-def strip_version_numbers(filename: str) -> str:
-    """
-    Strip embedded version numbers and optional commit-hash segments from a filename.
-
-    Removes common version patterns (for example: "v1.2.3", "_v1.2.3", "-1.2.3" and variants with a fourth dot-separated commit/hash like ".1a2b3c4") including an optional leading '-' or '_' separator. Returns the filename with those version portions removed while leaving other parts of the name intact.
-
-    Args:
-        filename (str): The input filename.
-
-    Returns:
-        str: The filename with version and short commit-hash segments removed.
-    """
-    # This regex removes separators and version numbers like -2.3.2.1a2b3c4 or _v1.2.3
-    base_name: str = re.sub(r"[-_]v?\d+\.\d+\.\d+(?:\.[\da-f]+)?", "", filename)
-    return base_name
 
 
 def cleanup_old_versions(directory: str, releases_to_keep: List[str]) -> None:
@@ -1298,7 +1281,7 @@ def _is_release_complete(
             continue
 
         # Apply same filtering logic as download
-        stripped_file_name = strip_version_numbers(file_name)
+        stripped_file_name = extract_base_name(file_name)
         if selected_patterns and not any(
             pattern in stripped_file_name for pattern in selected_patterns
         ):
@@ -1565,7 +1548,7 @@ def check_and_download(
                     )
                     continue
 
-                stripped_file_name: str = strip_version_numbers(file_name)
+                stripped_file_name: str = extract_base_name(file_name)
                 if selected_patterns and not any(
                     pattern in stripped_file_name for pattern in selected_patterns
                 ):
@@ -1758,7 +1741,7 @@ def check_extraction_needed(
                     fnmatch.fnmatch(base_name, exclude) for exclude in exclude_patterns
                 ):
                     continue
-                stripped_base_name: str = strip_version_numbers(base_name)
+                stripped_base_name: str = extract_base_name(base_name)
                 pattern: str
                 for pattern in patterns:
                     if pattern in stripped_base_name:

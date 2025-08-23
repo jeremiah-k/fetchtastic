@@ -11,6 +11,7 @@ from fetchtastic.constants import (
     GITHUB_API_TIMEOUT,
     MESHTASTIC_FIRMWARE_RELEASES_URL,
 )
+from fetchtastic.utils import extract_base_name
 
 
 def fetch_firmware_assets():
@@ -32,30 +33,6 @@ def fetch_firmware_assets():
     # Sorted alphabetically
     asset_names = sorted([asset["name"] for asset in assets])
     return asset_names
-
-
-def extract_base_name(filename):
-    """
-    Return a filename with version and optional commit-hash segments removed.
-
-    Removes a version pattern (optionally prefixed with `v`) and any trailing short commit/hash portion from the input filename.
-    The matched substring includes a preceding '-' or '_' so the separator is removed along with the version, preserving other parts
-    such as architecture or classifier.
-
-    Parameters:
-        filename (str): Original asset filename.
-
-    Returns:
-        str: Filename with the version/hash segment removed.
-
-    Examples:
-        'meshtasticd_2.5.13.1a06f88_amd64.deb' -> 'meshtasticd_amd64.deb'
-        'firmware-rak4631-2.5.13.1a06f88-ota.zip' -> 'firmware-rak4631-ota.zip'
-    """
-    # Regular expression to match version numbers and commit hashes
-    # Matches patterns like '-2.5.13.1a06f88' or '_2.5.13.1a06f88'
-    base_name = re.sub(r"[-_]v?\d+\.\d+\.\d+(?:\.[\da-f]+)?", "", filename)
-    return base_name
 
 
 def select_assets(assets):

@@ -13,6 +13,7 @@ from fetchtastic.constants import (
     MESHTASTIC_ANDROID_RELEASES_URL,
 )
 from fetchtastic.log_utils import logger
+from fetchtastic.utils import extract_base_name
 
 
 def fetch_apk_assets():
@@ -36,26 +37,6 @@ def fetch_apk_assets():
         ]
     )  # Sorted alphabetically
     return asset_names
-
-
-def extract_base_name(filename):
-    # Remove version numbers and extensions from filename to get base pattern
-    # Example: 'fdroidRelease-2.5.9.apk' -> 'fdroidRelease-.apk'
-    """
-    Return a filename with a trailing semantic-version segment removed.
-
-    Removes a single version segment matching the pattern `-X.Y.Z` or `_X.Y.Z` (digits separated by dots) from the input filename and returns the resulting string. The file extension and other parts of the name are preserved.
-
-    Parameters:
-        filename (str): The original filename (e.g., "fdroidRelease-2.5.9.apk").
-
-    Returns:
-        str: The filename with the `[-_]X.Y.Z` version segment removed (e.g., "fdroidRelease.apk").
-    """
-    # Remove '-/_' + optional 'v' + semver + optional suffix segments (e.g., '-beta.1', '.c1f4f79')
-    # But preserve the file extension
-    base_name = re.sub(r"[-_]v?\d+\.\d+\.\d+(?:[._-][0-9A-Za-z]+)*(?=\.)", "", filename)
-    return base_name
 
 
 def select_assets(assets):
