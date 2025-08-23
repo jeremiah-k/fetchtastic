@@ -284,6 +284,7 @@ def show_help(
         repo_subparsers: Repository subcommand parsers
         help_command: Command to show help for (e.g., 'repo', 'setup')
         help_subcommand: Subcommand to show help for (e.g., 'browse', 'clean')
+        main_subparsers: Main subparsers action (for discovering available commands)
     """
     if not help_command:
         # No specific command requested, show general help
@@ -295,19 +296,16 @@ def show_help(
         repo_parser.print_help()
 
         if help_subcommand:
-            # Show specific repo subcommand help
-            if help_subcommand in ["browse", "clean"]:
-                # Get the specific subparser and print its help
-                subparser = repo_subparsers.choices.get(help_subcommand)
-                if subparser:
-                    print(f"\nRepo {help_subcommand} command help:")
-                    subparser.print_help()
-                else:
-                    print(f"\nSubcommand '{help_subcommand}' not found")
+            # Show specific repo subcommand help (derived from argparse choices)
+            subparser = repo_subparsers.choices.get(help_subcommand)
+            if subparser:
+                print(f"\nRepo '{help_subcommand}' command help:")
+                subparser.print_help()
             else:
+                available = ", ".join(sorted(repo_subparsers.choices.keys()))
                 print(f"\nUnknown repo subcommand: {help_subcommand}")
-                print("Available repo subcommands: browse, clean")
-    elif help_command in ["setup", "download", "topic", "clean", "version"]:
+                print(f"Available repo subcommands: {available}")
+    elif help_command in ["setup", "download", "topic", "clean", "version", "help"]:
         # For other main commands, show specific help if subparsers are available
         if main_subparsers and help_command in main_subparsers.choices:
             subparser = main_subparsers.choices[help_command]
@@ -316,23 +314,27 @@ def show_help(
         else:
             # Fallback to general help with a note
             parser.print_help()
-            print(
-                f"\nFor more information about the '{help_command}' command, use: fetchtastic {help_command} --help"
-            )
+            if help_command != "help":
+                print(
+                    f"\nFor more information about the '{help_command}' command, use: fetchtastic {help_command} --help"
+                )
     else:
         # Unknown command
         print(f"Unknown command: {help_command}")
-        # Use a predefined list of available commands to avoid relying on internal argparse attributes
-        available_commands = [
-            "setup",
-            "download",
-            "topic",
-            "clean",
-            "version",
-            "repo",
-            "help",
-        ]
-        command_list = ", ".join(sorted(available_commands))
+        # Derive available commands from argparse if possible
+        if main_subparsers:
+            available_commands = sorted(main_subparsers.choices.keys())
+        else:
+            available_commands = [
+                "setup",
+                "download",
+                "topic",
+                "clean",
+                "version",
+                "repo",
+                "help",
+            ]
+        command_list = ", ".join(available_commands)
         print(f"Available commands: {command_list}")
         print("\nFor general help, use: fetchtastic help")
 

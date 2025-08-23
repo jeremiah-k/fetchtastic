@@ -1175,16 +1175,16 @@ def extract_files(
                                     os.makedirs(
                                         target_dir_for_file, exist_ok=True
                                     )  # Can raise OSError
-                                source: Any = zip_ref.open(
+                                with zip_ref.open(
                                     file_info
-                                )  # Can raise BadZipFile, LargeZipFile
-                                with open(
-                                    target_path, "wb"
-                                ) as target_file:  # Can raise IOError
-                                    target_file.write(source.read())
+                                ) as source:  # Can raise BadZipFile, LargeZipFile
+                                    with open(
+                                        target_path, "wb"
+                                    ) as target_file:  # Can raise IOError
+                                        target_file.write(source.read())
                                 logger.info(f"  Extracted: {base_name}")
-                            if base_name.endswith(
-                                SHELL_SCRIPT_EXTENSION
+                            if base_name.lower().endswith(
+                                SHELL_SCRIPT_EXTENSION.lower()
                             ) and not os.access(target_path, os.X_OK):
                                 os.chmod(
                                     target_path, EXECUTABLE_PERMISSIONS

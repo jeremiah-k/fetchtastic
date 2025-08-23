@@ -2,12 +2,12 @@ coverage:
   status:
     project:
       default:
-        target: 40%
-        threshold: 2%
+        target: 70%
+        threshold: 1%
     patch:
       default:
-        target: 40%
-        threshold: 2%
+        target: 80%
+        threshold: 1%
 
 component_management:
   default_rules:

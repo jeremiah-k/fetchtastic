@@ -443,7 +443,7 @@ def test_show_help_repo_browse_subcommand(mocker, capsys):
 
     # Check that the correct message was printed
     captured = capsys.readouterr()
-    assert "Repo browse command help:" in captured.out
+    assert "Repo 'browse' command help:" in captured.out
 
 
 def test_show_help_repo_unknown_subcommand(mocker, capsys):
