@@ -1,0 +1,57 @@
+[run]
+source = src/fetchtastic
+omit =
+    */tests/*
+    */test_*
+    */__pycache__/*
+    */venv/*
+    */env/*
+    */.venv/*
+    */build/*
+    */dist/*
+    */setup.py
+    */conftest.py
+    */tools/*
+branch = True
+
+[report]
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    if self.debug:
+    if settings.DEBUG
+    raise AssertionError
+    raise NotImplementedError
+    if 0:
+    if __name__ == "__main__":
+    class .*\bProtocol\):
+    @(abc\.)?abstractmethod
+ignore_errors = True
+
+[html]
+directory = htmlcov
+
+[xml]
+output = coverage.xml
+
+# Component-based coverage tracking
+# Components are logical groupings of related functionality
+[coverage:components]
+core =
+    src/fetchtastic/downloader.py
+    src/fetchtastic/repo_downloader.py
+    src/fetchtastic/utils.py
+
+interface =
+    src/fetchtastic/cli.py
+    src/fetchtastic/menu_apk.py
+    src/fetchtastic/menu_firmware.py
+    src/fetchtastic/menu_repo.py
+
+configuration =
+    src/fetchtastic/setup_config.py
+
+infrastructure =
+    src/fetchtastic/log_utils.py
+    src/fetchtastic/constants.py
+    src/fetchtastic/__init__.py

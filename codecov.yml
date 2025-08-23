@@ -2,29 +2,76 @@ coverage:
   status:
     project:
       default:
-        target: auto
-        threshold: 5% # Allow small decreases while encouraging improvement
-        base: auto
+        target: 40%
+        threshold: 2%
     patch:
       default:
+        target: 40%
+        threshold: 2%
+
+component_management:
+  default_rules:
+    statuses:
+      - type: project
         target: auto
-        threshold: 60% # Encourage good coverage on new code
-        base: auto
+        threshold: 2%
+      - type: patch
+        target: 40%
+        threshold: 2%
+  individual_components:
+    - component_id: core_downloads
+      name: Core Downloads
+      paths:
+        - src/fetchtastic/downloader.py
+        - src/fetchtastic/repo_downloader.py
+        - src/fetchtastic/utils.py
+      statuses:
+        - type: project
+          target: 60%
+          threshold: 3%
+        - type: patch
+          target: 60%
+          threshold: 3%
+    - component_id: user_interface
+      name: User Interface
+      paths:
+        - src/fetchtastic/cli.py
+        - src/fetchtastic/menu_apk.py
+        - src/fetchtastic/menu_firmware.py
+        - src/fetchtastic/menu_repo.py
+      statuses:
+        - type: project
+          target: 80%
+          threshold: 3%
+        - type: patch
+          target: 80%
+          threshold: 3%
+    - component_id: configuration
+      name: Configuration
+      paths:
+        - src/fetchtastic/setup_config.py
+      statuses:
+        - type: project
+          target: 50%
+          threshold: 2%
+        - type: patch
+          target: 50%
+          threshold: 2%
+    - component_id: infrastructure
+      name: Infrastructure
+      paths:
+        - src/fetchtastic/constants.py
+        - src/fetchtastic/log_utils.py
+        - src/fetchtastic/__init__.py
+      statuses:
+        - type: project
+          target: 95%
+          threshold: 2%
+        - type: patch
+          target: 95%
+          threshold: 2%
 
 comment:
-  layout: "reach,diff,flags,tree"
+  layout: header, diff, flags, components
   behavior: default
   require_changes: false
-
-ignore:
-  - "tests/"
-  - "**/__pycache__/"
-  - "**/venv/"
-  - "**/.venv/"
-  - "setup.py"
-  - "setup.cfg"
-
-flags:
-  unittests:
-    paths:
-      - src/fetchtastic/

@@ -7,15 +7,16 @@ import pytest
 import requests
 
 from fetchtastic import utils
+from tests.test_constants import TEST_FILE_CONTENT, TEST_FILE_HASH
 
 
 @pytest.fixture
 def temp_file(tmp_path):
     """
     Create a temporary file named "test_file.txt" under the provided pytest tmp_path and write a short byte string to it.
-    
+
     The function writes the bytes b"This is a test file." to the file and returns the file path and the written content.
-    
+
     Returns:
         tuple[pathlib.Path, bytes]: (file_path, content) where `file_path` is the path to the created file and `content` is the exact bytes written.
     """
@@ -25,6 +26,8 @@ def temp_file(tmp_path):
     return file_path, content
 
 
+@pytest.mark.core_downloads
+@pytest.mark.unit
 def test_get_hash_file_path(temp_file):
     """Test that get_hash_file_path returns the correct path."""
     file_path, _ = temp_file
@@ -32,6 +35,8 @@ def test_get_hash_file_path(temp_file):
     assert hash_path == str(file_path) + ".sha256"
 
 
+@pytest.mark.core_downloads
+@pytest.mark.unit
 def test_hash_functions(temp_file):
     """Test calculate_sha256, save_file_hash, and load_file_hash."""
     file_path, content = temp_file
@@ -47,6 +52,8 @@ def test_hash_functions(temp_file):
     assert loaded_hash == actual_hash
 
 
+@pytest.mark.core_downloads
+@pytest.mark.unit
 def test_verify_file_integrity(tmp_path):
     """Test verify_file_integrity function."""
     file_path = tmp_path / "test_integrity.txt"
@@ -71,6 +78,8 @@ def test_verify_file_integrity(tmp_path):
     assert utils.verify_file_integrity("non_existent_file.txt") is False
 
 
+@pytest.mark.core_downloads
+@pytest.mark.unit
 @patch("fetchtastic.utils.requests.Session")
 def test_download_file_with_retry_success(mock_session, tmp_path):
     """Test successful download."""
@@ -89,6 +98,8 @@ def test_download_file_with_retry_success(mock_session, tmp_path):
     mock_session.return_value.get.assert_called_once()
 
 
+@pytest.mark.core_downloads
+@pytest.mark.unit
 @patch("fetchtastic.utils.requests.Session")
 def test_download_file_with_retry_existing_valid(mock_session, tmp_path):
     """Test download when file exists and is valid."""
@@ -107,6 +118,8 @@ def test_download_file_with_retry_existing_valid(mock_session, tmp_path):
     mock_session.return_value.get.assert_not_called()
 
 
+@pytest.mark.core_downloads
+@pytest.mark.integration
 @patch("fetchtastic.utils.requests.Session")
 def test_download_file_with_retry_existing_corrupted_zip(mock_session, tmp_path):
     """Test download when a zip file exists but is corrupted."""
@@ -127,9 +140,9 @@ def test_download_file_with_retry_existing_corrupted_zip(mock_session, tmp_path)
     def mock_zipfile_init(self, file, *args, **kwargs):
         """
         Mock replacement for zipfile.ZipFile.__init__ used in tests.
-        
+
         If the provided `file` (path) equals the outer-scope `download_path`, this mock raises zipfile.BadZipFile to simulate a corrupted/invalid ZIP on first validation. For any other path it delegates to the original ZipFile.__init__ implementation.
-        
+
         Note: relies on `original_zipfile_init` and `download_path` being available in the enclosing scope.
         """
         if str(file) == str(download_path):
@@ -149,6 +162,8 @@ def test_download_file_with_retry_existing_corrupted_zip(mock_session, tmp_path)
     mock_session.return_value.get.assert_called_once()
 
 
+@pytest.mark.core_downloads
+@pytest.mark.unit
 @patch("fetchtastic.utils.requests.Session")
 def test_download_file_with_retry_network_error(mock_session, tmp_path):
     """Test download with a network error."""
@@ -163,6 +178,8 @@ def test_download_file_with_retry_network_error(mock_session, tmp_path):
     assert not os.path.exists(download_path)
 
 
+@pytest.mark.core_downloads
+@pytest.mark.integration
 @patch("fetchtastic.utils.platform.system", return_value="Windows")
 @patch("fetchtastic.utils.os.replace")
 @patch("fetchtastic.utils.requests.Session")
@@ -199,3 +216,88 @@ def test_download_file_with_retry_windows_permission_error(
 
     # Assert that the final successful call was made with the correct arguments
     mock_os_replace.assert_called_with(temp_path, str(download_path))
+
+
+# Additional comprehensive tests for better coverage
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
+def test_calculate_sha256_nonexistent_file():
+    """Test calculate_sha256 with non-existent file."""
+    result = utils.calculate_sha256("nonexistent_file.txt")
+    assert result is None
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
+def test_load_file_hash_nonexistent_hash_file(tmp_path):
+    """Test load_file_hash when hash file doesn't exist."""
+    file_path = tmp_path / "test_file.txt"
+    file_path.write_text("test content")
+
+    result = utils.load_file_hash(str(file_path))
+    assert result is None
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
+def test_save_file_hash_io_error(tmp_path):
+    """Test save_file_hash handles IO errors gracefully."""
+    file_path = tmp_path / "test_file.txt"
+    file_path.write_text("test content")
+
+    # Try to save hash to a directory that doesn't exist
+    with patch("builtins.open", side_effect=IOError("Permission denied")):
+        # Should not raise an exception
+        utils.save_file_hash(str(file_path), "test_hash")
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
+def test_verify_file_integrity_io_error():
+    """Test verify_file_integrity handles IO errors gracefully."""
+    with patch("fetchtastic.utils.calculate_sha256", return_value=None):
+        result = utils.verify_file_integrity("nonexistent_file.txt")
+        assert result is False
+
+
+@pytest.mark.core_downloads
+@pytest.mark.integration
+@patch("fetchtastic.utils.requests.Session")
+def test_download_file_with_retry_http_error(mock_session, tmp_path):
+    """Test download with HTTP error response."""
+    mock_response = MagicMock()
+    mock_response.status_code = 404
+    mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
+        "404 Not Found"
+    )
+    mock_session.return_value.get.return_value = mock_response
+
+    download_path = tmp_path / "not_found.txt"
+    result = utils.download_file_with_retry(
+        "http://example.com/notfound.txt", str(download_path)
+    )
+
+    assert result is False
+    assert not download_path.exists()
+
+
+@pytest.mark.core_downloads
+@pytest.mark.integration
+@patch("fetchtastic.utils.requests.Session")
+def test_download_file_with_retry_partial_content(mock_session, tmp_path):
+    """Test download with partial content and retry logic."""
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    # Simulate chunked download
+    mock_response.iter_content.return_value = [b"chunk1", b"chunk2", b"chunk3"]
+    mock_session.return_value.get.return_value = mock_response
+
+    download_path = tmp_path / "chunked_file.txt"
+    result = utils.download_file_with_retry(
+        "http://example.com/chunked.txt", str(download_path)
+    )
+
+    assert result is True
+    assert download_path.read_bytes() == b"chunk1chunk2chunk3"
