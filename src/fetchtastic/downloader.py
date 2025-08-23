@@ -561,8 +561,6 @@ def check_for_prereleases(
             f"Successfully downloaded {len(downloaded_files)} pre-release files."
         )
         # Extract unique directory names from downloaded files
-        import os
-
         for dir_name in prerelease_dirs:
             if any(
                 os.path.basename(os.path.dirname(p)) == dir_name
