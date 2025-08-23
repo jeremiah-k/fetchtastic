@@ -63,7 +63,7 @@ def compare_versions(version1, version2):
             return parse_version(v)
         except InvalidVersion:
             # Coerce common pattern "X.Y.Z.<hash>" to PEP440 local version "X.Y.Z+<hash>"
-            m = re.match(r"^(\d+(?:\.\d+)*)\\.([A-Za-z0-9][A-Za-z0-9\\.-]*)$", v)
+            m = re.match(r"^(\d+(?:\.\d+)*)\.([A-Za-z0-9][A-Za-z0-9.-]*)$", v)
             if m:
                 try:
                     return parse_version(f"{m.group(1)}+{m.group(2)}")
