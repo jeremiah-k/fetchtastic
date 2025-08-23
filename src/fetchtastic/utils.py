@@ -454,17 +454,9 @@ def extract_base_name(filename: str) -> str:
         'firmware-rak4631-2.7.4.c1f4f79-ota.zip' -> 'firmware-rak4631-ota.zip'
         'meshtasticd_2.5.13.1a06f88_amd64.deb' -> 'meshtasticd_amd64.deb'
     """
-    # Enhanced regex pattern that handles both APK and firmware files correctly
-    # This pattern removes version segments while preserving other parts of the filename
-
-    # Split filename into name and extension parts for safer processing
-    if "." in filename:
-        name_part, ext_part = filename.rsplit(".", 1)
-        # Remove version pattern from the name part only
-        clean_name = re.sub(r"[-_]v?\d+\.\d+\.\d+(?:\.[\da-f]+)?", "", name_part)
-        base_name = f"{clean_name}.{ext_part}"
-    else:
-        # No extension, process the whole filename
-        base_name = re.sub(r"[-_]v?\d+\.\d+\.\d+(?:\.[\da-f]+)?", "", filename)
-
+    # This regex removes version segments like '-2.5.13.1a2b3c4' or '_v1.2.3'
+    # Use word boundaries to avoid matching parts of extensions
+    base_name = re.sub(r"[-_]v?\d+\.\d+\.\d+(?:\.[\da-f]+)?(?=[-_.]|$)", "", filename)
+    # Clean up double separators that might result from the substitution
+    base_name = re.sub(r"[-_]{2,}", lambda m: m.group(0)[0], base_name)
     return base_name

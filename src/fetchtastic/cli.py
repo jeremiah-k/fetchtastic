@@ -210,7 +210,14 @@ def main():
         # Handle help command
         help_command = args.help_command
         help_subcommand = args.help_subcommand
-        show_help(parser, repo_parser, repo_subparsers, help_command, help_subcommand)
+        show_help(
+            parser,
+            repo_parser,
+            repo_subparsers,
+            help_command,
+            help_subcommand,
+            subparsers,
+        )
     elif args.command == "repo":
         # Display version information
         current_version, latest_version, update_available = display_version_info()
@@ -260,7 +267,14 @@ def main():
         parser.print_help()
 
 
-def show_help(parser, repo_parser, repo_subparsers, help_command, help_subcommand):
+def show_help(
+    parser,
+    repo_parser,
+    repo_subparsers,
+    help_command,
+    help_subcommand,
+    main_subparsers=None,
+):
     """
     Display contextual help information based on the provided command and subcommand.
 
@@ -294,11 +308,17 @@ def show_help(parser, repo_parser, repo_subparsers, help_command, help_subcomman
                 print(f"\nUnknown repo subcommand: {help_subcommand}")
                 print("Available repo subcommands: browse, clean")
     elif help_command in ["setup", "download", "topic", "clean", "version"]:
-        # For other main commands, show general help with a note about the specific command
-        parser.print_help()
-        print(
-            f"\nFor more information about the '{help_command}' command, use: fetchtastic {help_command} --help"
-        )
+        # For other main commands, show specific help if subparsers are available
+        if main_subparsers and help_command in main_subparsers.choices:
+            subparser = main_subparsers.choices[help_command]
+            print(f"Help for '{help_command}' command:")
+            subparser.print_help()
+        else:
+            # Fallback to general help with a note
+            parser.print_help()
+            print(
+                f"\nFor more information about the '{help_command}' command, use: fetchtastic {help_command} --help"
+            )
     else:
         # Unknown command
         print(f"Unknown command: {help_command}")
