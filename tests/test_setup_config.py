@@ -179,8 +179,8 @@ def test_load_config_new_location(tmp_path, mocker):
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_load_config_old_location_with_migration(tmp_path, mocker):
-    """Test loading config from old location and automatic migration."""
+def test_load_config_old_location_suggests_migration(tmp_path, mocker):
+    """Test loading config from old location suggests migration."""
     new_config_path = tmp_path / "new_config.yaml"
     old_config_path = tmp_path / "old_config.yaml"
     mocker.patch("fetchtastic.setup_config.CONFIG_FILE", str(new_config_path))
@@ -193,23 +193,24 @@ def test_load_config_old_location_with_migration(tmp_path, mocker):
 
     config = setup_config.load_config()
     assert config["BASE_DIR"] == TEST_CONFIG["BASE_DIR"]
-    # Check that migration occurred
-    assert new_config_path.exists()
+    # Migration is suggested but not automatic - new file should not exist
+    assert not new_config_path.exists()
 
 
 @pytest.mark.configuration
 @pytest.mark.unit
 def test_load_config_invalid_yaml(tmp_path, mocker):
-    """Test loading config with invalid YAML."""
+    """Test loading config with invalid YAML raises appropriate error."""
     new_config_path = tmp_path / "new_config.yaml"
     mocker.patch("fetchtastic.setup_config.CONFIG_FILE", str(new_config_path))
 
-    # Create invalid YAML
+    # Create invalid YAML that will cause a parsing error
     with open(new_config_path, "w") as f:
-        f.write("invalid: yaml: content: [")
+        f.write("invalid: yaml: content: [unclosed")
 
-    config = setup_config.load_config()
-    assert config is None
+    # The function should raise a YAML parsing error
+    with pytest.raises(yaml.YAMLError):
+        setup_config.load_config()
 
 
 @pytest.mark.configuration
@@ -306,8 +307,8 @@ def test_check_for_updates_available(mock_version, mock_get):
     """Test update check when newer version is available."""
     mock_version.return_value = "1.0.0"
     mock_response = MagicMock()
+    mock_response.status_code = 200
     mock_response.json.return_value = {"info": {"version": "1.1.0"}}
-    mock_response.raise_for_status.return_value = None
     mock_get.return_value = mock_response
 
     current, latest, available = setup_config.check_for_updates()
@@ -324,8 +325,8 @@ def test_check_for_updates_current(mock_version, mock_get):
     """Test update check when current version is latest."""
     mock_version.return_value = "1.0.0"
     mock_response = MagicMock()
+    mock_response.status_code = 200
     mock_response.json.return_value = {"info": {"version": "1.0.0"}}
-    mock_response.raise_for_status.return_value = None
     mock_get.return_value = mock_response
 
     current, latest, available = setup_config.check_for_updates()
@@ -352,10 +353,16 @@ def test_check_for_updates_network_error(mock_get):
 @pytest.mark.configuration
 @pytest.mark.unit
 def test_get_downloads_dir_termux():
-    """Test downloads directory for Termux."""
+    """Test downloads directory for Termux when storage exists."""
     with patch("fetchtastic.setup_config.is_termux", return_value=True):
-        downloads_dir = setup_config.get_downloads_dir()
-        assert "storage/downloads" in downloads_dir
+        with patch("os.path.exists") as mock_exists:
+            with patch("os.path.expanduser") as mock_expanduser:
+                mock_expanduser.return_value = (
+                    "/data/data/com.termux/files/home/storage/downloads"
+                )
+                mock_exists.return_value = True
+                downloads_dir = setup_config.get_downloads_dir()
+                assert "storage/downloads" in downloads_dir
 
 
 @pytest.mark.configuration
@@ -363,11 +370,14 @@ def test_get_downloads_dir_termux():
 def test_get_downloads_dir_non_termux():
     """Test downloads directory for non-Termux platforms."""
     with patch("fetchtastic.setup_config.is_termux", return_value=False):
-        with patch(
-            "platformdirs.user_downloads_dir", return_value="/home/user/Downloads"
-        ):
-            downloads_dir = setup_config.get_downloads_dir()
-            assert downloads_dir == "/home/user/Downloads"
+        with patch("os.path.exists") as mock_exists:
+            with patch("os.path.expanduser") as mock_expanduser:
+                mock_expanduser.side_effect = lambda path: path.replace(
+                    "~", "/home/user"
+                )
+                mock_exists.side_effect = lambda path: path == "/home/user/Downloads"
+                downloads_dir = setup_config.get_downloads_dir()
+                assert downloads_dir == "/home/user/Downloads"
 
 
 @pytest.mark.configuration
