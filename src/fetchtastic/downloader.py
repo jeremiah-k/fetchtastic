@@ -83,7 +83,7 @@ def compare_versions(version1, version2):
 
     # Natural comparison fallback for truly non-standard versions
     def _nat_key(s: str):
-        return [int(p) if p.isdigit() else p for p in re.split(r"(\d+)", s)]
+        return [int(p) if p.isdigit() else p.lower() for p in re.split(r"(\d+)", s)]
 
     k1, k2 = _nat_key(version1), _nat_key(version2)
     if k1 > k2:
@@ -507,20 +507,19 @@ def check_for_prereleases(
                     logger.debug(
                         f"Downloading pre-release file: {file_name} from {download_url}"
                     )
-                    response = requests.get(
+                    with requests.get(
                         download_url, stream=True, timeout=PRERELEASE_REQUEST_TIMEOUT
-                    )
-                    response.raise_for_status()
-
-                    with open(file_path, "wb") as f:
-                        for chunk in response.iter_content(
-                            chunk_size=PRERELEASE_CHUNK_SIZE
-                        ):
-                            if chunk:
-                                f.write(chunk)
+                    ) as response:
+                        response.raise_for_status()
+                        with open(file_path, "wb") as f:
+                            for chunk in response.iter_content(
+                                chunk_size=PRERELEASE_CHUNK_SIZE
+                            ):
+                                if chunk:
+                                    f.write(chunk)
 
                     # Set executable permissions for .sh files
-                    if file_name.endswith(SHELL_SCRIPT_EXTENSION):
+                    if file_name.lower().endswith(SHELL_SCRIPT_EXTENSION.lower()):
                         try:
                             os.chmod(file_path, EXECUTABLE_PERMISSIONS)
                             logger.debug(f"Set executable permissions for {file_name}")
@@ -626,6 +625,8 @@ def _get_latest_releases_data(url: str, scan_count: int = 10) -> List[Dict[str, 
         else:
             logger.info("Fetching releases from GitHub...")
 
+        # Clamp scan_count to GitHub's per_page bounds
+        scan_count = max(1, min(100, scan_count))
         response: requests.Response = requests.get(
             url,
             timeout=GITHUB_API_TIMEOUT,
@@ -639,6 +640,12 @@ def _get_latest_releases_data(url: str, scan_count: int = 10) -> List[Dict[str, 
 
         # Small delay to be respectful to GitHub API
         time.sleep(API_CALL_DELAY)
+        try:
+            rl = response.headers.get("X-RateLimit-Remaining")
+            if rl is not None:
+                logger.debug(f"GitHub API rate-limit remaining: {rl}")
+        except Exception:
+            pass
 
         releases: List[Dict[str, Any]] = response.json()
 
@@ -856,7 +863,7 @@ def _process_firmware_downloads(
                     check_for_prereleases(  # logger.info removed
                         paths_and_urls["download_dir"],
                         latest_release_tag,
-                        config.get("EXTRACT_PATTERNS", []),  # type: ignore
+                        config.get("SELECTED_FIRMWARE_ASSETS", []),  # type: ignore
                         exclude_patterns=config.get("EXCLUDE_PATTERNS", []),  # type: ignore
                     )
                 )
@@ -1025,7 +1032,7 @@ def _finalize_and_notify(
             )
         notification_message = (
             "\n".join(message_lines)
-            + f"\n{datetime.now().isoformat(timespec='seconds')}"
+            + f"\n{datetime.now().astimezone().isoformat(timespec='seconds')}"
         )
         logger.info("\n".join(message_lines))
         _send_ntfy_notification(
@@ -1045,7 +1052,7 @@ def _finalize_and_notify(
             notification_messages.append(message)
         notification_message = (
             "\n".join(notification_messages)
-            + f"\n{datetime.now().isoformat(timespec='seconds')}"
+            + f"\n{datetime.now().astimezone().isoformat(timespec='seconds')}"
         )
         _send_ntfy_notification(
             ntfy_server,
@@ -1055,7 +1062,7 @@ def _finalize_and_notify(
         )
     else:
         message: str = (
-            f"All assets are up to date.\n{datetime.now().isoformat(timespec='seconds')}"
+            f"All assets are up to date.\n{datetime.now().astimezone().isoformat(timespec='seconds')}"
         )
         logger.info(message)
         if not notify_on_download_only:
@@ -1343,7 +1350,7 @@ def _is_release_complete(
             return False
 
         # For zip files, verify they're not corrupted
-        if asset_name.endswith(ZIP_EXTENSION):
+        if asset_name.lower().endswith(ZIP_EXTENSION.lower()):
             try:
                 with zipfile.ZipFile(asset_path, "r") as zf:
                     if zf.testzip() is not None:
@@ -1528,7 +1535,7 @@ def check_and_download(
                     )
                     continue
 
-                if file_name.endswith(ZIP_EXTENSION):
+                if file_name.lower().endswith(ZIP_EXTENSION.lower()):
                     asset_download_path: str = os.path.join(release_dir, file_name)
                     if os.path.exists(asset_download_path):
                         try:
@@ -1652,7 +1659,7 @@ def check_and_download(
                     if not file_name:
                         continue
 
-                    if file_name.endswith(ZIP_EXTENSION):
+                    if file_name.lower().endswith(ZIP_EXTENSION.lower()):
                         zip_path: str = os.path.join(release_dir, file_name)
                         if os.path.exists(zip_path):
                             extraction_needed: bool = check_extraction_needed(
@@ -1734,7 +1741,7 @@ def set_permissions_on_sh_files(directory: str) -> None:
         for root, _dirs, files in os.walk(directory):
             file_in_dir: str
             for file_in_dir in files:
-                if file_in_dir.endswith(SHELL_SCRIPT_EXTENSION):
+                if file_in_dir.lower().endswith(SHELL_SCRIPT_EXTENSION.lower()):
                     file_path: str = os.path.join(root, file_in_dir)
                     try:
                         if not os.access(file_path, os.X_OK):
