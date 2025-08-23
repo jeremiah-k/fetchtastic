@@ -179,8 +179,8 @@ def main():
                 copy_prompt_text = "Do you want to copy the topic URL to the clipboard? [y/n] (default: yes): "
                 text_to_copy = full_url
 
-            copy_to_clipboard = input(copy_prompt_text).strip().lower() or "y"
-            if copy_to_clipboard == "y":
+            resp = input(copy_prompt_text).strip().lower() or "y"
+            if resp in ("y", "yes"):
                 success = copy_to_clipboard_func(text_to_copy)
                 if success:
                     if setup_config.is_termux():

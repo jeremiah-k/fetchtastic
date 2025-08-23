@@ -136,8 +136,12 @@ def test_run_clean(
     mock_listdir.return_value = ["some_dir"]
     mock_isdir.return_value = True
     mock_subprocess_run.return_value.stdout = "# fetchtastic cron job"
-
-    cli.run_clean()
+    mock_subprocess_run.return_value.returncode = 0
+    with patch("subprocess.Popen") as mock_popen:
+        mock_proc = mock_popen.return_value
+        mock_proc.communicate.return_value = (None, None)
+        cli.run_clean()
+        mock_popen.assert_called_once()
 
     # Check that config files are removed
     mock_os_remove.assert_any_call("/tmp/config/fetchtastic.yaml")  # nosec B108

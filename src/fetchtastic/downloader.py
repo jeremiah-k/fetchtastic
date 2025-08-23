@@ -62,13 +62,24 @@ def compare_versions(version1, version2):
         try:
             return parse_version(v)
         except InvalidVersion:
-            # Coerce common pattern "X.Y.Z.<hash>" to PEP440 local version "X.Y.Z+<hash>"
+            # 1) Coerce dot/dash prerelease: e.g., 2.3.0.rc1 -> 2.3.0rc1, 2.3.0-beta2 -> 2.3.0b2
+            m_pr = re.match(
+                r"^(\d+(?:\.\d+){2})[.-](rc|dev|alpha|beta|b)(\d*)$", v, re.IGNORECASE
+            )
+            if m_pr:
+                kind = m_pr.group(2).lower().replace("alpha", "a").replace("beta", "b")
+                num = m_pr.group(3) or "0"
+                try:
+                    return parse_version(f"{m_pr.group(1)}{kind}{num}")
+                except InvalidVersion:
+                    pass
+            # 2) Coerce common pattern "X.Y.Z.<hash>" to PEP 440 local version "X.Y.Z+<hash>"
             m = re.match(r"^(\d+(?:\.\d+)*)\.([A-Za-z0-9][A-Za-z0-9.-]*)$", v)
             if m:
                 try:
                     return parse_version(f"{m.group(1)}+{m.group(2)}")
                 except InvalidVersion:
-                    return None
+                    pass
             return None
 
     v1 = _try_parse(version1)
@@ -550,8 +561,13 @@ def check_for_prereleases(
             f"Successfully downloaded {len(downloaded_files)} pre-release files."
         )
         # Extract unique directory names from downloaded files
+        import os
+
         for dir_name in prerelease_dirs:
-            if any(dir_name in file_path for file_path in downloaded_files):
+            if any(
+                os.path.basename(os.path.dirname(p)) == dir_name
+                for p in downloaded_files
+            ):
                 downloaded_versions.append(dir_name)
         return True, downloaded_versions
     else:
@@ -1175,13 +1191,14 @@ def extract_files(
                                     os.makedirs(
                                         target_dir_for_file, exist_ok=True
                                     )  # Can raise OSError
-                                with zip_ref.open(
-                                    file_info
-                                ) as source:  # Can raise BadZipFile, LargeZipFile
-                                    with open(
-                                        target_path, "wb"
-                                    ) as target_file:  # Can raise IOError
-                                        target_file.write(source.read())
+                                with zip_ref.open(file_info) as source, open(
+                                    target_path, "wb"
+                                ) as target_file:
+                                    import shutil
+
+                                    shutil.copyfileobj(
+                                        source, target_file, length=1024 * 64
+                                    )
                                 logger.info(f"  Extracted: {base_name}")
                             if base_name.lower().endswith(
                                 SHELL_SCRIPT_EXTENSION.lower()
