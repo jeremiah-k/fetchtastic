@@ -56,7 +56,7 @@ def test_select_assets(mocker):
     # 1. User selects one asset
     mock_pick.return_value = [("meshtastic-app-release-2.3.2.apk", 0)]
     selected = menu_apk.select_assets(assets)
-    assert selected == ["meshtastic-app-release.apk"]
+    assert selected == {"selected_assets": ["meshtastic-app-release.apk"]}
 
     # 2. User selects nothing
     mock_pick.return_value = []
