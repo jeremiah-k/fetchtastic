@@ -1,3 +1,4 @@
+import argparse
 import os
 import subprocess
 from unittest.mock import patch
@@ -497,6 +498,26 @@ def test_show_help_unknown_command(mocker, capsys):
     mock_repo_parser = mocker.MagicMock()
     mock_repo_subparsers = mocker.MagicMock()
 
+    # Mock the parser structure for dynamic command discovery
+    mock_subparsers_action = mocker.MagicMock()
+    mock_subparsers_action.choices = {
+        "setup": mocker.MagicMock(),
+        "download": mocker.MagicMock(),
+        "topic": mocker.MagicMock(),
+        "clean": mocker.MagicMock(),
+        "version": mocker.MagicMock(),
+        "repo": mocker.MagicMock(),
+        "help": mocker.MagicMock(),
+    }
+    mock_parser._actions = [mock_subparsers_action]
+
+    # Mock the isinstance check in the cli module
+    mock_isinstance = mocker.patch("fetchtastic.cli.isinstance")
+    mock_isinstance.side_effect = (
+        lambda obj, cls: obj is mock_subparsers_action
+        and cls is argparse._SubParsersAction
+    )
+
     cli.show_help(mock_parser, mock_repo_parser, mock_repo_subparsers, "unknown", None)
 
     mock_parser.print_help.assert_not_called()
@@ -505,10 +526,10 @@ def test_show_help_unknown_command(mocker, capsys):
     # Check that the correct error message was printed
     captured = capsys.readouterr()
     assert "Unknown command: unknown" in captured.out
-    assert (
-        "Available commands: setup, download, topic, clean, version, repo, help"
-        in captured.out
-    )
+    assert "Available commands:" in captured.out
+    # Check that all expected commands are present (order may vary due to sorting)
+    for cmd in ["setup", "download", "topic", "clean", "version", "repo", "help"]:
+        assert cmd in captured.out
     assert "For general help, use: fetchtastic help" in captured.out
 
 
