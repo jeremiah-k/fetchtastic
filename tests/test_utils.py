@@ -342,9 +342,14 @@ def test_urllib3_v1_fallback_retry_creation(mock_retry):
     # This will exercise the try/except block we added for urllib3 compatibility
     try:
         utils.download_file_with_retry("http://test.com/file.zip", "/test/file.zip")
-    except Exception:
+    except Exception as e:
         # We expect this to fail due to other reasons, but the retry creation should work
-        pass
+        # The important thing is that the urllib3 retry creation was attempted
+        assert (
+            "test.com" in str(e)
+            or "file.zip" in str(e)
+            or isinstance(e, (OSError, IOError))
+        )
 
     # Verify urllib3 v1 fallback was attempted
     assert mock_retry.call_count == 2
