@@ -552,6 +552,90 @@ def test_show_help_unknown_command(mocker, capsys):
     assert "For general help, use: fetchtastic help" in captured.out
 
 
+def test_clipboard_prompt_eoferror_handling(mocker, capsys):
+    """Test clipboard prompt handles EOFError gracefully in non-interactive contexts."""
+    # Mock the config and setup
+    mock_config = {"NTFY_SERVER": "https://ntfy.sh", "NTFY_TOPIC": "test-topic-123"}
+    mocker.patch("fetchtastic.setup_config.load_config", return_value=mock_config)
+    mocker.patch("sys.argv", ["fetchtastic", "topic"])
+
+    # Mock input to raise EOFError (simulating closed stdin in CI/pipes)
+    mocker.patch("builtins.input", side_effect=EOFError())
+
+    # Mock clipboard function where it's imported in CLI
+    mock_copy = mocker.patch(
+        "fetchtastic.cli.copy_to_clipboard_func", return_value=True
+    )
+
+    # Run the command
+    cli.main()
+
+    # Should default to "y" and copy to clipboard
+    mock_copy.assert_called_once_with("https://ntfy.sh/test-topic-123")
+
+    # Check output
+    captured = capsys.readouterr()
+    assert "Current NTFY topic URL: https://ntfy.sh/test-topic-123" in captured.out
+    assert "Topic URL copied to clipboard." in captured.out
+
+
+def test_clipboard_prompt_yes_variations(mocker, capsys):
+    """Test clipboard prompt accepts both 'y' and 'yes' responses."""
+    mock_config = {"NTFY_SERVER": "https://ntfy.sh", "NTFY_TOPIC": "test-topic-123"}
+    mocker.patch("fetchtastic.setup_config.load_config", return_value=mock_config)
+    mocker.patch("sys.argv", ["fetchtastic", "topic"])
+    mock_copy = mocker.patch(
+        "fetchtastic.cli.copy_to_clipboard_func", return_value=True
+    )
+
+    # Test "yes" response
+    mocker.patch("builtins.input", return_value="yes")
+    cli.main()
+    mock_copy.assert_called_with("https://ntfy.sh/test-topic-123")
+
+    # Reset mock
+    mock_copy.reset_mock()
+
+    # Test "y" response
+    mocker.patch("builtins.input", return_value="y")
+    cli.main()
+    mock_copy.assert_called_with("https://ntfy.sh/test-topic-123")
+
+
+def test_show_help_early_return_behavior(mocker, capsys):
+    """Test that show_help returns early after handling repo command."""
+    mock_parser = mocker.MagicMock()
+    mock_repo_parser = mocker.MagicMock()
+    mock_repo_subparsers = mocker.MagicMock()
+    mock_repo_subparsers.choices = {
+        "browse": mocker.MagicMock(),
+        "clean": mocker.MagicMock(),
+    }
+    mock_main_subparsers = mocker.MagicMock()
+    mock_main_subparsers.choices = {"setup": mocker.MagicMock()}
+
+    # Test repo command with subcommand
+    cli.show_help(
+        mock_parser,
+        mock_repo_parser,
+        mock_repo_subparsers,
+        "repo",
+        "browse",
+        mock_main_subparsers,
+    )
+
+    # Should have called repo parser and subcommand parser
+    mock_repo_parser.print_help.assert_called_once()
+    mock_repo_subparsers.choices["browse"].print_help.assert_called_once()
+
+    # Should NOT have called main parser (due to early return)
+    mock_parser.print_help.assert_not_called()
+
+    # Check output
+    captured = capsys.readouterr()
+    assert "Repo 'browse' command help:" in captured.out
+
+
 def test_copy_to_clipboard_func_termux_success(mocker):
     """Test clipboard functionality on Termux (success)."""
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)

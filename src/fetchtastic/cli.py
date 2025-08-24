@@ -179,8 +179,12 @@ def main():
                 copy_prompt_text = "Do you want to copy the topic URL to the clipboard? [y/n] (default: yes): "
                 text_to_copy = full_url
 
-            resp = input(copy_prompt_text).strip().lower() or "y"
-            if resp in ("y", "yes"):
+            try:
+                resp = input(copy_prompt_text)
+            except EOFError:
+                resp = ""
+            resp = (resp or "y").strip().lower()
+            if resp in {"y", "yes"}:
                 success = copy_to_clipboard_func(text_to_copy)
                 if success:
                     if setup_config.is_termux():
@@ -307,6 +311,7 @@ def show_help(
                 available = ", ".join(sorted(repo_subparsers.choices.keys()))
                 print(f"\nUnknown repo subcommand: {help_subcommand}")
                 print(f"Available repo subcommands: {available}")
+        return
     # Handle other main commands
     elif main_subparsers and help_command in main_subparsers.choices:
         subparser = main_subparsers.choices[help_command]
