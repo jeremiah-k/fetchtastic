@@ -4,9 +4,6 @@ import fnmatch
 import json
 import os
 import re
-
-# Compiled regex for performance
-NON_ASCII_RX = re.compile(r"[^\x00-\x7F]+")
 import shutil
 import time
 import zipfile
@@ -41,6 +38,9 @@ from fetchtastic.constants import (
 from fetchtastic.log_utils import logger  # Import new logger
 from fetchtastic.setup_config import display_version_info, get_upgrade_command
 from fetchtastic.utils import download_file_with_retry, extract_base_name
+
+# Compiled regex for performance
+NON_ASCII_RX = re.compile(r"[^\x00-\x7F]+")
 
 
 def compare_versions(version1, version2):
