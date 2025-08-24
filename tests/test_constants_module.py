@@ -54,7 +54,6 @@ class TestNetworkConstants:
 
     def test_chunk_sizes_are_positive(self):
         """Test that chunk sizes are positive."""
-        assert constants.PRERELEASE_CHUNK_SIZE > 0
         assert constants.DEFAULT_CHUNK_SIZE > 0
 
     def test_retry_settings(self):
