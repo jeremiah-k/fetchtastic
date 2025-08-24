@@ -4,6 +4,9 @@ import fnmatch
 import json
 import os
 import re
+
+# Compiled regex for performance
+NON_ASCII_RX = re.compile(r"[^\x00-\x7F]+")
 import shutil
 import time
 import zipfile
@@ -62,7 +65,9 @@ def compare_versions(version1, version2):
         except InvalidVersion:
             # 1) Coerce dot/dash prerelease: e.g., 2.3.0.rc1 -> 2.3.0rc1, 2.3.0-beta2 -> 2.3.0b2
             m_pr = re.match(
-                r"^(\d+(?:\.\d+){2})[.-](rc|dev|alpha|beta|b)(\d*)$", v, re.IGNORECASE
+                r"^(\d+(?:\.\d+){2})[.-](rc|dev|alpha|beta|b)\.?(\d*)$",
+                v,
+                re.IGNORECASE,
             )
             if m_pr:
                 kind = m_pr.group(2).lower().replace("alpha", "a").replace("beta", "b")
@@ -92,7 +97,9 @@ def compare_versions(version1, version2):
 
     # Natural comparison fallback for truly non-standard versions
     def _nat_key(s: str):
-        return [int(p) if p.isdigit() else p.lower() for p in re.split(r"(\d+)", s)]
+        # Split into digit or alpha runs; drop punctuation to avoid lexical noise
+        parts = re.findall(r"\d+|[A-Za-z]+", s.lower())
+        return [int(p) if p.isdigit() else p for p in parts]
 
     k1, k2 = _nat_key(version1), _nat_key(version2)
     if k1 > k2:
@@ -1280,8 +1287,7 @@ def strip_unwanted_chars(text: str) -> str:
     Returns:
         The input string with all non-ASCII characters removed.
     """
-    printable_regex = re.compile(r"[^\x00-\x7F]+")
-    return printable_regex.sub("", text)
+    return NON_ASCII_RX.sub("", text)
 
 
 def _is_release_complete(

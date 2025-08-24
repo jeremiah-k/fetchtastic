@@ -31,6 +31,8 @@ from tests.test_constants import (
 def test_compare_versions(version1, version2, expected):
     """Test the version comparison logic."""
     assert downloader.compare_versions(version1, version2) == expected
+    # Antisymmetry: reversing operands should flip the sign
+    assert downloader.compare_versions(version2, version1) == -expected
 
 
 def test_compare_versions_prerelease_parsing():
@@ -46,6 +48,9 @@ def test_compare_versions_prerelease_parsing():
     assert downloader.compare_versions("2.3.0-dev1", "2.3.0") == -1  # dev1 < final
     assert downloader.compare_versions("2.3.0-alpha1", "2.3.0") == -1  # alpha1 < final
     assert downloader.compare_versions("2.3.0-beta2", "2.3.0") == -1  # beta2 < final
+
+    # rc ordering
+    assert downloader.compare_versions("2.3.0.rc0", "2.3.0.rc1") == -1
 
     # Test prerelease ordering
     assert (
@@ -345,6 +350,12 @@ def test_send_ntfy_notification(mocker):
     downloader._send_ntfy_notification(None, None, "Test message")
     mock_post.assert_not_called()
 
+    # 4. Header omission when no title is provided
+    mock_post.reset_mock()
+    downloader._send_ntfy_notification("https://ntfy.sh", "mytopic", "No title here")
+    args, kwargs = mock_post.call_args
+    assert "Title" not in kwargs["headers"]
+
 
 @pytest.fixture
 def mock_releases():
@@ -403,6 +414,13 @@ def test_get_latest_releases_data(mocker, mock_releases):
     )
     assert len(releases) == 2
     assert releases[0]["tag_name"] == "v2.7.4.c1f4f79"
+
+    # Validate request options on the last call
+    _, kwargs = mock_get.call_args
+    assert kwargs["timeout"] == downloader.GITHUB_API_TIMEOUT
+    assert kwargs["params"]["per_page"] == 2
+    assert kwargs["headers"]["Accept"] == "application/vnd.github+json"
+    assert kwargs["headers"]["X-GitHub-Api-Version"] == "2022-11-28"
 
     # 3. Test request exception
     mock_get.side_effect = requests.exceptions.RequestException
@@ -505,6 +523,8 @@ def test_check_and_download(mocker, tmp_path, mock_releases):
     )
     # Check that the latest release file was updated
     assert latest_release_file.read_text() == "v2.7.4.c1f4f79"
+    # Ensure permissions pass executed
+    assert downloader.set_permissions_on_sh_files.called
 
     # --- Scenario 2: All releases are up to date ---
     mock_is_complete.return_value = True  # Pretend all releases are already downloaded
@@ -693,6 +713,9 @@ def test_finalize_and_notify(mock_send_ntfy):
     mock_send_ntfy.assert_called_once()
     assert "Downloaded Firmware versions: v1" in mock_send_ntfy.call_args[0][2]
     assert "Downloaded Android APK versions: v2" in mock_send_ntfy.call_args[0][2]
+    # Assert the title
+    _, kwargs = mock_send_ntfy.call_args
+    assert kwargs["title"] == "Fetchtastic Download Completed"
 
     # 2. Test with no downloaded files
     mock_send_ntfy.reset_mock()
@@ -709,6 +732,9 @@ def test_finalize_and_notify(mock_send_ntfy):
     )
     mock_send_ntfy.assert_called_once()
     assert "All assets are up to date" in mock_send_ntfy.call_args[0][2]
+    # Assert the title
+    _, kwargs = mock_send_ntfy.call_args
+    assert kwargs["title"] == "Fetchtastic Up to Date"
 
     # 3. Test with downloads skipped
     mock_send_ntfy.reset_mock()
@@ -726,6 +752,9 @@ def test_finalize_and_notify(mock_send_ntfy):
     )
     mock_send_ntfy.assert_called_once()
     assert "downloads were skipped" in mock_send_ntfy.call_args[0][2]
+    # Assert the title
+    _, kwargs = mock_send_ntfy.call_args
+    assert kwargs["title"] == "Fetchtastic Downloads Skipped"
     downloader.downloads_skipped = False
 
 
