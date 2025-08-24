@@ -279,11 +279,11 @@ BASE_DIR = DEFAULT_BASE_DIR
 def config_exists(directory=None):
     """
     Return whether a Fetchtastic configuration file exists and its path.
-    
+
     If `directory` is provided, checks for CONFIG_FILE_NAME inside that directory.
     If `directory` is None, checks the new platformdirs location (CONFIG_FILE) first,
     then the legacy location (OLD_CONFIG_FILE).
-    
+
     Returns:
         (bool, str|None): Tuple where the first element is True if a config file was
         found, and the second element is the full path to the found config file or
@@ -1348,22 +1348,22 @@ def prompt_for_migration():
 def create_windows_menu_shortcuts(config_file_path, base_dir):
     """
     Create Windows Start Menu shortcuts and supporting batch files for Fetchtastic.
-    
+
     Creates a Fetchtastic folder in the user's Start Menu containing shortcuts to:
     - a download runner, repository browser, setup, update checker (all implemented as batch files placed in CONFIG_DIR/batch),
     - the Fetchtastic configuration file,
     - the Meshtastic downloads base directory,
     - the Fetchtastic log file.
-    
+
     This function is a no-op on non-Windows platforms or when required Windows modules are unavailable.
-    
+
     Parameters:
         config_file_path (str): Full path to the Fetchtastic YAML configuration file used as the target for the configuration shortcut.
         base_dir (str): Path to the Meshtastic downloads base directory used as the target for the downloads-folder shortcut.
-    
+
     Returns:
         bool: True if shortcuts and batch files were created successfully; False if running on a non-Windows platform, required Windows modules are missing, or any error occurred while creating files/shortcuts.
-    
+
     Side effects:
         - May create CONFIG_DIR/batch and several .bat files.
         - May create or recreate the Start Menu folder at WINDOWS_START_MENU_FOLDER and write .lnk shortcuts.
@@ -2154,16 +2154,16 @@ def check_any_cron_jobs_exist():
 def load_config(directory=None):
     """
     Load the Fetchtastic configuration YAML and update module state.
-    
+
     If `directory` is provided, loads CONFIG_FILE_NAME from that directory (backwards-compatibility or explicit load),
     sets the global BASE_DIR to that directory, and warns if the file is in a non-standard location.
     If `directory` is not provided, prefers the platformdirs-managed CONFIG_FILE, falling back to the old location OLD_CONFIG_FILE.
     When a loaded config contains a "BASE_DIR" key, the global BASE_DIR is updated from that value.
-    
+
     Parameters:
         directory (str | None): Optional directory to load the config from. If None, the function checks CONFIG_FILE
             then OLD_CONFIG_FILE.
-    
+
     Returns:
         dict | None: The parsed configuration dictionary on success, or None if no configuration file was found.
     """

@@ -28,7 +28,7 @@ from fetchtastic.log_utils import logger  # Import the new logger
 def calculate_sha256(file_path: str) -> Optional[str]:
     """
     Return the SHA-256 hex digest of the file at file_path, or None if the file cannot be read.
-    
+
     Reads the file in binary chunks and computes its SHA-256 checksum. If an I/O or OS error occurs (for example: file not found or permission denied), the function returns None.
     """
     try:
@@ -106,7 +106,7 @@ def download_file_with_retry(
 ) -> bool:
     """
     Download a file from a URL with retries, integrity checks, and platform-specific atomic replacement.
-    
+
     Performs these behaviors:
     - Uses a requests.Session with a robust Retry policy for network resilience.
     - If download_path already exists:
@@ -118,15 +118,15 @@ def download_file_with_retry(
       - On non-Windows platforms, attempts a single replace.
     - After a successful replace, computes and saves a SHA-256 hash alongside the file (via a .sha256 file).
     - Cleans up temporary files and removes partially downloaded or corrupted files on error.
-    
+
     Return value:
         True if the file was successfully downloaded or an existing file was present and verified; False on any failure.
-    
+
     Side effects:
     - Creates, replaces, and removes files at download_path and download_path + ".tmp".
     - Writes a companion SHA-256 file next to the downloaded file when a hash can be computed.
     - Logs progress, validation results, and errors via the module logger.
-    
+
     Errors and exceptions:
     - Network, IO, ZIP validation, and unexpected exceptions are caught internally; the function returns False on failure rather than propagating exceptions.
     """
@@ -465,12 +465,12 @@ def download_file_with_retry(
 def extract_base_name(filename: str) -> str:
     """
     Return a filename with trailing version and commit/hash segments removed.
-    
+
     This normalizes names like "-2.5.13", "_v1.2.3", "-2.5.13.1a2b3c4" and optional prerelease suffixes
     (e.g., rc, dev, beta, alpha) by stripping those version/hash segments while preserving other
     filename parts and separators. Consecutive separators produced by removal are collapsed to a single
     '-' or '_' as appropriate.
-    
+
     Examples:
       'fdroidRelease-2.5.9.apk' -> 'fdroidRelease.apk'
       'firmware-rak4631-2.7.4.c1f4f79-ota.zip' -> 'firmware-rak4631-ota.zip'

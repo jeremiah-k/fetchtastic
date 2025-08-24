@@ -22,8 +22,8 @@ def main():
 
     """
     Entry point for the Fetchtastic command-line interface.
-    
-    Parses command-line arguments and dispatches commands: 
+
+    Parses command-line arguments and dispatches commands:
     - setup: run initial configuration or update Windows integrations (--update-integrations on Windows).
     - download: ensure configuration (migrating if necessary) and run the firmware/APK downloader.
     - topic: show configured NTFY topic/URL and optionally copy it to the clipboard.
@@ -33,11 +33,11 @@ def main():
         - browse: browse and download repository files.
         - clean: remove files from the repository download directory.
     - help: show contextual help for commands and repo subcommands.
-    
+
     Side effects:
     - May read/write configuration, modify files/directories, invoke setup and downloader routines, modify crontab/startup entries, and copy text to the clipboard.
     - Prints information and logs status messages.
-    
+
     Returns:
         None
     """
@@ -304,18 +304,18 @@ def show_help(
 ):
     """
     Show contextual CLI help for a specific command or subcommand.
-    
+
     If no command is supplied, prints the general help. Handles the "repo" command specially:
     prints repo help and, if a repo subcommand is supplied, prints that subcommand's help or an
     available-subcommands listing. For other known top-level commands, prints that command's help.
     If an unknown command is requested, prints an error and lists available commands when possible.
-    
+
     Parameters:
         help_command (str or None): The top-level command to show help for (e.g., "repo", "setup").
         help_subcommand (str or None): The subcommand to show help for (e.g., "browse", "clean").
         main_subparsers (argparse._SubParsersAction, optional): The main parser's subparsers used
             to detect available top-level commands and print their help when present.
-    
+
     Notes:
         - `parser`, `repo_parser`, and `repo_subparsers` are the argument parser objects used to
           render help; their types are evident from usage and are not documented here.
@@ -357,7 +357,7 @@ def show_help(
 def run_clean():
     """
     Permanently removes Fetchtastic configuration, downloaded files, and related system integrations.
-    
+
     This is a destructive operation that:
     - Prompts the user for confirmation (defaults to "no") before proceeding.
     - Deletes current and legacy configuration files and attempts to remove the configuration directory (and a "batch" subdirectory) if empty.
@@ -366,11 +366,11 @@ def run_clean():
     - On non-Windows systems, removes Fetchtastic-related crontab entries if present.
     - Removes a Termux boot script (~/.termux/boot/fetchtastic.sh) if present.
     - Removes the Fetchtastic log file in the user log directory.
-    
+
     Side effects:
     - Irreversibly deletes files and may modify the user's crontab and Start Menu/startup items.
     - The function prints progress and error messages to stdout.
-    
+
     Use with caution; run only when you intend to fully remove Fetchtastic data and integrations.
     """
     print(

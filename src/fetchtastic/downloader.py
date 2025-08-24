@@ -62,14 +62,14 @@ def compare_versions(version1, version2):
     def _try_parse(v: str):
         """
         Attempt to parse a version string into a packaging.version object, returning None if it cannot be normalized.
-        
+
         This function tries to coerce several common non-PEP 440 version formats into parseable forms before calling packaging.version.parse:
         - Normalizes dotted or dashed prerelease markers (e.g., "2.3.0.rc1" or "2.3.0-beta2") into PEP 440 prerelease notation ("2.3.0rc1", "2.3.0b2").
         - Converts trailing hash-like segments such as "1.2.3.abcd123" into a PEP 440 local version ("1.2.3+abcd123").
-        
+
         Parameters:
             v (str): Input version string.
-        
+
         Returns:
             packaging.version.Version or packaging.version.LegacyVersion or None:
                 A parsed version object on success, or None if the input could not be parsed or normalized.
@@ -114,7 +114,7 @@ def compare_versions(version1, version2):
         # Split into digit or alpha runs; drop punctuation to avoid lexical noise
         """
         Return a natural-sort key for a string by splitting it into digit and alphabetic runs.
-        
+
         The function lowercases the input, removes punctuation by only capturing contiguous digits or letters,
         and returns a list where numeric runs are converted to int and alphabetic runs remain as strings.
         This key can be used with sorted(..., key=_nat_key) to achieve human-friendly ordering (e.g., "v2" < "v10").
@@ -135,7 +135,7 @@ def check_promoted_prereleases(
 ):  # log_message_func parameter removed
     """
     Check for prerelease firmware directories that have been promoted to an official release.
-    
+
     Scans the firmware/prerelease subdirectory under download_dir for entries named
     "firmware-<version>". For any prerelease whose version (the "v" prefix, if present,
     is ignored) matches latest_release_tag, the function compares file contents with the
@@ -144,11 +144,11 @@ def check_promoted_prereleases(
     does not exist, the prerelease directory is removed (it is expected the official
     release will be downloaded separately). Invalidly formatted prerelease directory
     names (not matching VERSION_REGEX_PATTERN) are skipped.
-    
+
     Parameters:
         download_dir (str): Base download directory containing firmware/{prerelease, <tag>}.
         latest_release_tag (str): Latest official release tag (may include a leading 'v').
-    
+
     Returns:
         bool: True if one or more prerelease directories were promoted/removed; False otherwise.
     """
@@ -255,9 +255,9 @@ def check_promoted_prereleases(
 def compare_file_hashes(file1, file2):
     """
     Return True if the two files have identical SHA-256 hashes.
-    
+
     Computes SHA-256 digests by reading each file in 4KB chunks. If either file does not exist or cannot be read, a warning/error is logged and the function returns False.
-    
+
     Returns:
         bool: True when both files were read successfully and their SHA-256 hashes match; False otherwise.
     """
@@ -267,10 +267,10 @@ def compare_file_hashes(file1, file2):
         # Check if file exists first
         """
         Compute the SHA-256 hash of a file and return it as a hex string.
-        
+
         Parameters:
             file_path (str): Path to the file to hash.
-        
+
         Returns:
             Optional[str]: Hexadecimal SHA-256 digest of the file, or None if the file does not exist or cannot be read.
         """
@@ -306,15 +306,15 @@ def check_for_prereleases(
 ):
     """
     Check the Meshtastic github.io site for firmware prerelease directories newer than the latest official release, download missing assets, and clean up stale prerelease folders.
-    
+
     This inspects repository directories under "firmware-*" to find prerelease versions newer than latest_release_tag, removes local prerelease entries that are no longer valid or older than the official release, and downloads missing files for prereleases that need processing. Created prerelease directories and downloaded files may be written under <download_dir>/firmware/prerelease. Shell scripts will have their executable bit set when possible.
-    
+
     Parameters:
         download_dir: Base path where firmware/prerelease directories live.
         latest_release_tag: Latest official release tag (e.g., "v2.6.8" or "2.6.8.ef9d0d7"); a leading "v" is tolerated and stripped for comparison.
         selected_patterns: Iterable of substrings used to select which firmware asset basenames should be considered for download.
         exclude_patterns: Optional iterable of fnmatch-style patterns; matching filenames are skipped.
-    
+
     Returns:
         Tuple (found_and_downloaded: bool, downloaded_versions: list[str])
         - found_and_downloaded: True if any prerelease files were downloaded.
@@ -655,16 +655,16 @@ def _send_ntfy_notification(
 def _get_latest_releases_data(url: str, scan_count: int = 10) -> List[Dict[str, Any]]:
     """
     Return a list of the most recent releases fetched from a GitHub releases API endpoint.
-    
+
     Fetches up to `scan_count` releases from the provided GitHub API `url` (clamped to 1–100),
     parses the JSON response, and returns releases sorted by their `published_at` timestamp
     in descending order. Respects a short polite delay after the request and logs GitHub
     rate-limit remaining when available.
-    
+
     Parameters:
         url (str): GitHub API URL that returns a list of releases (JSON).
         scan_count (int): Maximum number of releases to return (clamped to GitHub's per_page bounds).
-    
+
     Returns:
         List[Dict[str, Any]]: Sorted list of release dictionaries (newest first). Returns an empty
         list on network or JSON parse errors. If sorting by `published_at` is not possible due
@@ -745,7 +745,7 @@ def _initial_setup_and_config() -> Tuple[
 ]:
     """
     Perform initial startup tasks: display version information, load configuration, ensure download directories exist, and assemble key paths/URLs.
-    
+
     Returns:
         A tuple of five elements:
         - config (Optional[Dict[str, Any]]): Loaded configuration dictionary, or None if configuration could not be loaded.
@@ -753,7 +753,7 @@ def _initial_setup_and_config() -> Tuple[
         - latest_version (Optional[str]): The latest available application version (may be None if unknown).
         - update_available (bool): True if a newer version is available, False otherwise.
         - paths_and_urls (Optional[Dict[str, str]]): Dictionary of important paths and repository/release URLs (download_dir, firmware_dir, apks_dir, latest release file paths, and releases URLs), or None if setup failed.
-    
+
     Side effects:
         - Logs version and upgrade guidance.
         - Creates the download, firmware, and apks directories if they do not exist (may log errors on failure).
@@ -840,17 +840,17 @@ def _process_firmware_downloads(
 ) -> Tuple[List[str], List[str], List[Dict[str, str]], Optional[str]]:
     """
     Process firmware release downloads and optional prerelease handling.
-    
+
     When enabled in config (SAVE_FIRMWARE and SELECTED_FIRMWARE_ASSETS), fetches the latest firmware releases,
     downloads missing assets (honoring selected and excluded asset patterns), optionally extracts archives,
     updates the latest-release tracking file, and performs cleanup/retention according to configured
     FIRMWARE_VERSIONS_TO_KEEP. If a latest release tag exists, checks for promoted prereleases and — when
     CHECK_PRERELEASES is enabled and downloads have not been skipped due to Wi‑Fi gating — attempts to
     discover and download newer prerelease firmware that matches the selection criteria.
-    
+
     Configuration keys referenced: SAVE_FIRMWARE, SELECTED_FIRMWARE_ASSETS, FIRMWARE_VERSIONS_TO_KEEP,
     EXTRACT_PATTERNS, AUTO_EXTRACT, EXCLUDE_PATTERNS, CHECK_PRERELEASES.
-    
+
     Returns a tuple of:
     - downloaded firmware versions (List[str]) — includes strings like "pre-release X.Y.Z" for prereleases,
     - newly detected release versions that were not previously recorded (List[str]),
@@ -957,9 +957,9 @@ def _process_apk_downloads(
 ) -> Tuple[List[str], List[str], List[Dict[str, str]], Optional[str]]:
     """
     Process Android APK releases: fetch latest Android releases, download selected APK assets, and report results.
-    
+
     The function consults config keys (notably SAVE_APKS and SELECTED_APK_ASSETS, and ANDROID_VERSIONS_TO_KEEP when present) to decide whether to fetch releases from the configured Android releases URL and to download chosen assets into the configured apks directory.
-    
+
     Returns:
         A tuple of (downloaded_apk_versions, new_apk_versions, failed_downloads, latest_apk_version):
         - downloaded_apk_versions (List[str]): Versions that were successfully downloaded during this run.
@@ -1037,12 +1037,12 @@ def _finalize_and_notify(
 ) -> None:
     """
     Finalize processing: log a concise summary, display/app-update messaging, and send NTFY notifications about download results.
-    
+
     Computes total runtime from start_time, logs the number of downloaded firmware/APK files and the latest firmware/APK versions when available, and logs an upgrade command if update_available is True. Sends a notification via _send_ntfy_notification based on three states:
     - downloads_skipped (global): reports available new versions but indicates downloads were skipped,
     - downloaded items present: reports the downloaded firmware/APK versions,
     - no downloads and not skipped: reports that assets are up to date (suppressed when config['NOTIFY_ON_DOWNLOAD_ONLY'] is True).
-    
+
     Reads notification settings from config keys "NTFY_SERVER", "NTFY_TOPIC", and "NOTIFY_ON_DOWNLOAD_ONLY". Side effects: logging and conditional network notifications.
     """
     global downloads_skipped
@@ -1200,25 +1200,25 @@ def extract_files(
 ) -> None:
     """
     Extract selected files from a ZIP archive into a target directory.
-    
+
     Only entries whose base filename (stripped of incidental version/metadata via extract_base_name)
     contain any of the provided `patterns` and do not match any `exclude_patterns` are extracted.
     Preserves archive subdirectories, creates target directories as needed, and sets executable
     permissions on extracted files ending with SHELL_SCRIPT_EXTENSION. Uses safe_extract_path to
     prevent directory traversal; unsafe entries are skipped. If the archive is corrupted it will
     be removed.
-    
+
     Parameters:
         zip_path (str): Path to the ZIP archive to read.
         extract_dir (str): Destination directory where files will be extracted.
         patterns (List[str]): Substring patterns to include (matches against extract_base_name).
         exclude_patterns (List[str]): Glob-style patterns (fnmatch) to exclude based on the base filename.
-    
+
     Side effects:
         - Creates directories and writes files under extract_dir.
         - May set executable permissions on shell scripts.
         - On a BadZipFile error, attempts to remove the corrupted zip file.
-    
+
     Exceptions:
         This function handles and logs IO, OS, and ZIP errors internally; it does not raise on these
         conditions.
@@ -1310,13 +1310,13 @@ def extract_files(
 def cleanup_old_versions(directory: str, releases_to_keep: List[str]) -> None:
     """
     Remove versioned subdirectories under `directory` except for the ones specified in `releases_to_keep`.
-    
+
     This scans `directory` for immediate subdirectories and deletes any that are not listed in `releases_to_keep` and are not in the internal exclusion list ("repo-dls", "prerelease"). Deletion is performed with shutil.rmtree; failures are caught and logged but not re-raised.
-    
+
     Parameters:
         directory (str): Path containing versioned subdirectories to prune.
         releases_to_keep (List[str]): Release names (subdirectory basenames) that must be preserved.
-    
+
     Side effects:
         Permanently removes directories on disk (and their contents) for versions not kept; logs actions and warnings on errors.
     """
@@ -1345,10 +1345,10 @@ def cleanup_old_versions(directory: str, releases_to_keep: List[str]) -> None:
 def strip_unwanted_chars(text: str) -> str:
     """
     Return a copy of `text` with all non-ASCII characters removed (e.g., emojis, accented letters).
-    
+
     Parameters:
         text: String potentially containing non-ASCII characters to be stripped.
-    
+
     Returns:
         A string containing only ASCII characters from the original input.
     """
@@ -1493,7 +1493,7 @@ def check_and_download(
 ) -> Tuple[List[str], List[str], List[Dict[str, str]]]:
     """
     Check releases, download missing or corrupted assets, optionally extract firmware ZIPs, and prune old versions.
-    
+
     For the most recent `versions_to_keep` releases this function:
     - Verifies whether each release directory already contains the expected assets (honoring `selected_patterns` and `exclude_patterns`) and skips fully-complete releases.
     - Downloads any missing assets and records per-file failures.
@@ -1502,7 +1502,7 @@ def check_and_download(
     - Ensures `.sh` files are executable and removes older release directories not in the retention list.
     - Updates `latest_release_file` when a newer release has been successfully processed.
     If global downloads were skipped (e.g., due to Wi‑Fi gating), the function returns the list of newer release tags without performing downloads.
-    
+
     Parameters:
         releases: List of release dictionaries as returned by the GitHub/Meshtastic API.
         latest_release_file: Path to a file that stores the most recently recorded release tag.
@@ -1513,7 +1513,7 @@ def check_and_download(
         selected_patterns: If provided, only assets whose base name contains any of these strings are considered for download.
         auto_extract: If True and `release_type` == "Firmware", ZIP assets will be checked and extracted when needed.
         exclude_patterns: Optional glob patterns; matching filenames are excluded from download and extraction.
-    
+
     Returns:
         Tuple containing:
         - downloaded_versions (List[str]): Release tags for which at least one asset was successfully downloaded.
@@ -1818,7 +1818,7 @@ def check_and_download(
 def set_permissions_on_sh_files(directory: str) -> None:
     """
     Ensure all files ending with the shell script extension under `directory` are executable.
-    
+
     Recursively walks `directory` and sets executable permissions (using EXECUTABLE_PERMISSIONS) on files whose names end with `SHELL_SCRIPT_EXTENSION` (case-insensitive) when they lack execute permission. IO and permission errors are caught and logged; the function does not raise on such errors.
     """
     root: str
@@ -1848,9 +1848,9 @@ def check_extraction_needed(
 ) -> bool:
     """
     Return True if the ZIP contains files that match `patterns` (after base-name normalization) which are not present in `extract_dir`.
-    
+
     This inspects the ZIP's file list, ignores entries whose base filename matches any pattern in `exclude_patterns`, and normalizes filenames with `extract_base_name` before matching. If any matched file does not already exist under `extract_dir`, the function returns True (extraction needed); otherwise False.
-    
+
     Behavioral notes:
     - If the ZIP is corrupted (zipfile.BadZipFile) the function will attempt to remove the ZIP and returns False.
     - On IO/OS errors or other unexpected exceptions the function conservatively returns True (assume extraction is needed).

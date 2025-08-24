@@ -143,8 +143,9 @@ class TestValidationConstants:
 
     def test_version_regex_pattern(self):
         """Assert VERSION_REGEX_PATTERN is a string and a valid regular expression.
-        
-        Verifies that constants.VERSION_REGEX_PATTERN is a str and that re.compile can compile it without error."""
+
+        Verifies that constants.VERSION_REGEX_PATTERN is a str and that re.compile can compile it without error.
+        """
         assert isinstance(constants.VERSION_REGEX_PATTERN, str)
         # Test that it's a valid regex by compiling it
         import re

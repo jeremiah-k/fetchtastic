@@ -64,7 +64,7 @@ def set_log_level(level_name: str) -> None:
 def add_file_logging(log_dir_path: Path, level_name: str = "INFO") -> None:
     """
     Enable rotating file logging for the fetchtastic logger.
-    
+
     Creates the directory if necessary and attaches a RotatingFileHandler writing to
     `fetchtastic.log` inside the provided directory. The handler's level is taken
     from `level_name` (falls back to INFO for invalid names). Formatter verbosity is
@@ -104,7 +104,7 @@ def add_file_logging(log_dir_path: Path, level_name: str = "INFO") -> None:
 def _initialize_logger() -> None:
     """
     Initialize the fetchtastic logger with a console RichHandler and an initial log level.
-    
+
     This removes any existing handlers, disables propagation to the root logger, and attaches a RichHandler configured for console output. The initial log level is read from the environment variable named by LOG_LEVEL_ENV_VAR (defaults to "INFO" if unset) and applied to both the logger and the console handler. When the level is INFO or higher a terse formatter ("%(message)s") is used; for levels below INFO a more verbose formatter including module, function and line number is applied. File logging is not enabled by default; call add_file_logging() to enable rotating file output.
     """
     # Prevent propagation to root logger
