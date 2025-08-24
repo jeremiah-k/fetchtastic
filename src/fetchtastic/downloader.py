@@ -518,16 +518,10 @@ def check_for_prereleases(
                     logger.debug(
                         f"Downloading pre-release file: {file_name} from {download_url}"
                     )
-                    with requests.get(
-                        download_url, stream=True, timeout=PRERELEASE_REQUEST_TIMEOUT
-                    ) as response:
-                        response.raise_for_status()
-                        with open(file_path, "wb") as f:
-                            for chunk in response.iter_content(
-                                chunk_size=PRERELEASE_CHUNK_SIZE
-                            ):
-                                if chunk:
-                                    f.write(chunk)
+                    if not download_file_with_retry(download_url, file_path):
+                        raise requests.RequestException(
+                            "download_file_with_retry returned False"
+                        )
 
                     # Set executable permissions for .sh files
                     if file_name.lower().endswith(SHELL_SCRIPT_EXTENSION.lower()):
@@ -647,6 +641,7 @@ def _get_latest_releases_data(url: str, scan_count: int = 10) -> List[Dict[str, 
             headers={
                 "Accept": "application/vnd.github+json",
                 "X-GitHub-Api-Version": "2022-11-28",
+                "User-Agent": "Fetchtastic",
             },
             params={"per_page": scan_count},
         )
@@ -1195,7 +1190,7 @@ def extract_files(
                                     shutil.copyfileobj(
                                         source, target_file, length=1024 * 64
                                     )
-                                logger.info(f"  Extracted: {base_name}")
+                                logger.debug(f"  Extracted: {base_name}")
                             if base_name.lower().endswith(
                                 SHELL_SCRIPT_EXTENSION.lower()
                             ) and not os.access(target_path, os.X_OK):
