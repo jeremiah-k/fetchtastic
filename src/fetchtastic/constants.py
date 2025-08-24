@@ -26,7 +26,6 @@ API_CALL_DELAY = 0.1  # Small delay to be respectful to GitHub API
 RELEASE_SCAN_COUNT = 10
 DEFAULT_CONNECT_RETRIES = 3
 DEFAULT_BACKOFF_FACTOR = 1.0
-PRERELEASE_CHUNK_SIZE = 8 * 1024  # 8KB
 DEFAULT_CHUNK_SIZE = 8 * 1024  # 8KB
 
 # Windows-specific retry settings

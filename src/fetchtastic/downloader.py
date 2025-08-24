@@ -517,9 +517,8 @@ def check_for_prereleases(
                         f"Downloading pre-release file: {file_name} from {download_url}"
                     )
                     if not download_file_with_retry(download_url, file_path):
-                        raise requests.RequestException(
-                            "download_file_with_retry returned False"
-                        )
+                        # Download_file_with_retry logs the specific error, so we just continue.
+                        continue
 
                     # Set executable permissions for .sh files
                     if file_name.lower().endswith(SHELL_SCRIPT_EXTENSION.lower()):
