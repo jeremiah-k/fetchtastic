@@ -477,22 +477,33 @@ def test_show_help_other_commands(mocker, capsys):
     mock_parser = mocker.MagicMock()
     mock_repo_parser = mocker.MagicMock()
     mock_repo_subparsers = mocker.MagicMock()
+    mock_main_subparsers = mocker.MagicMock()
+
+    # Create mock subparsers for each command
+    mock_subparsers = {}
+    for command in ["setup", "download", "topic", "clean", "version"]:
+        mock_subparsers[command] = mocker.MagicMock()
+    mock_main_subparsers.choices = mock_subparsers
 
     for command in ["setup", "download", "topic", "clean", "version"]:
         cli.show_help(
-            mock_parser, mock_repo_parser, mock_repo_subparsers, command, None
+            mock_parser,
+            mock_repo_parser,
+            mock_repo_subparsers,
+            command,
+            None,
+            mock_main_subparsers,
         )
 
-    # Should call print_help once for each command
-    assert mock_parser.print_help.call_count == 5
+    # Should call print_help once for each command's subparser
+    for command in ["setup", "download", "topic", "clean", "version"]:
+        mock_subparsers[command].print_help.assert_called_once()
     mock_repo_parser.print_help.assert_not_called()
 
-    # Check that the correct message was printed
+    # Check that the correct messages were printed
     captured = capsys.readouterr()
-    assert (
-        "For more information about the 'setup' command, use: fetchtastic setup --help"
-        in captured.out
-    )
+    for command in ["setup", "download", "topic", "clean", "version"]:
+        assert f"Help for '{command}' command:" in captured.out
 
 
 def test_show_help_unknown_command(mocker, capsys):
@@ -500,10 +511,25 @@ def test_show_help_unknown_command(mocker, capsys):
     mock_parser = mocker.MagicMock()
     mock_repo_parser = mocker.MagicMock()
     mock_repo_subparsers = mocker.MagicMock()
+    mock_main_subparsers = mocker.MagicMock()
+    mock_main_subparsers.choices = {
+        "setup": mocker.MagicMock(),
+        "download": mocker.MagicMock(),
+        "topic": mocker.MagicMock(),
+        "clean": mocker.MagicMock(),
+        "version": mocker.MagicMock(),
+        "repo": mocker.MagicMock(),
+        "help": mocker.MagicMock(),
+    }
 
-    # No complex mocking needed since we use a predefined command list
-
-    cli.show_help(mock_parser, mock_repo_parser, mock_repo_subparsers, "unknown", None)
+    cli.show_help(
+        mock_parser,
+        mock_repo_parser,
+        mock_repo_subparsers,
+        "unknown",
+        None,
+        mock_main_subparsers,
+    )
 
     mock_parser.print_help.assert_not_called()
     mock_repo_parser.print_help.assert_not_called()
@@ -512,9 +538,17 @@ def test_show_help_unknown_command(mocker, capsys):
     captured = capsys.readouterr()
     assert "Unknown command: unknown" in captured.out
     assert "Available commands:" in captured.out
-    # Check that all expected commands are present (order may vary due to sorting)
-    for cmd in ["setup", "download", "topic", "clean", "version", "repo", "help"]:
-        assert cmd in captured.out
+    # Check that all expected commands are present (should be sorted)
+    expected_commands = [
+        "clean",
+        "download",
+        "help",
+        "repo",
+        "setup",
+        "topic",
+        "version",
+    ]
+    assert ", ".join(expected_commands) in captured.out
     assert "For general help, use: fetchtastic help" in captured.out
 
 
