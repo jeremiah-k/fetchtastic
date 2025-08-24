@@ -61,7 +61,32 @@ def test_compare_versions_invalid_version_exception():
     # This should exercise the InvalidVersion exception handling in the _try_parse function
     result = downloader.compare_versions("1.0.0.invalid+hash", "1.0.0")
     # The function should handle the exception gracefully and return a comparison result
-    assert isinstance(result, int)  # Should return an integer comparison result
+    # Natural sort fallback should determine "1.0.0.invalid+hash" > "1.0.0"
+    assert result == 1  # Should be greater due to natural sort fallback
+
+
+def test_compare_versions_hash_coercion():
+    """Test hash coercion in version parsing."""
+    # Test versions with hash patterns that get coerced to local versions
+    assert downloader.compare_versions("1.0.0.abc123", "1.0.0") == 1  # local > base
+    assert (
+        downloader.compare_versions("2.1.0.def456", "2.1.0.abc123") == 1
+    )  # lexical comparison
+
+    # Test edge cases that might trigger InvalidVersion in hash coercion
+    result = downloader.compare_versions("1.0.0.invalid-hash+more", "1.0.0")
+    assert isinstance(result, int)  # Should handle gracefully
+
+
+def test_compare_versions_prerelease_edge_cases():
+    """Test edge cases in prerelease version parsing."""
+    # Test prerelease versions that might trigger InvalidVersion during coercion
+    assert downloader.compare_versions("2.3.0.rc", "2.3.0") == -1  # rc without number
+    assert downloader.compare_versions("2.3.0-dev", "2.3.0") == -1  # dev without number
+
+    # Test mixed separators and edge cases
+    result = downloader.compare_versions("2.3.0.invalid-pre", "2.3.0")
+    assert isinstance(result, int)  # Should handle gracefully
 
 
 # Test cases for strip_version_numbers
@@ -702,3 +727,65 @@ def test_finalize_and_notify(mock_send_ntfy):
     mock_send_ntfy.assert_called_once()
     assert "downloads were skipped" in mock_send_ntfy.call_args[0][2]
     downloader.downloads_skipped = False
+
+
+def test_strip_unwanted_chars_additional():
+    """Test additional cases for strip_unwanted_chars function."""
+    # Test with mixed content
+    assert downloader.strip_unwanted_chars("Hello 🌟 World! 👍") == "Hello  World! "
+
+    # Test with only ASCII
+    assert downloader.strip_unwanted_chars("Regular ASCII text") == "Regular ASCII text"
+
+    # Test with only non-ASCII
+    assert downloader.strip_unwanted_chars("🎉🎊🎈") == ""
+
+    # Test with numbers and symbols
+    assert downloader.strip_unwanted_chars("Test 123 @#$ 🚀") == "Test 123 @#$ "
+
+
+def test_is_connected_to_wifi_non_termux(mocker):
+    """Test is_connected_to_wifi for non-Termux platforms."""
+    # Mock setup_config.is_termux to return False
+    mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
+
+    # Should return True for non-Termux platforms
+    assert downloader.is_connected_to_wifi() is True
+
+
+def test_compare_file_hashes_identical(tmp_path):
+    """Test compare_file_hashes with identical files."""
+    # Create two identical files
+    file1 = tmp_path / "file1.txt"
+    file2 = tmp_path / "file2.txt"
+    content = "This is test content for hash comparison"
+
+    file1.write_text(content)
+    file2.write_text(content)
+
+    # Files should have identical hashes
+    assert downloader.compare_file_hashes(str(file1), str(file2)) is True
+
+
+def test_compare_file_hashes_different(tmp_path):
+    """Test compare_file_hashes with different files."""
+    # Create two different files
+    file1 = tmp_path / "file1.txt"
+    file2 = tmp_path / "file2.txt"
+
+    file1.write_text("Content A")
+    file2.write_text("Content B")
+
+    # Files should have different hashes
+    assert downloader.compare_file_hashes(str(file1), str(file2)) is False
+
+
+def test_compare_file_hashes_missing_file(tmp_path):
+    """Test compare_file_hashes with missing files."""
+    file1 = tmp_path / "file1.txt"
+    file2 = tmp_path / "nonexistent.txt"
+
+    file1.write_text("Content")
+
+    # Should return False when one file doesn't exist
+    assert downloader.compare_file_hashes(str(file1), str(file2)) is False
