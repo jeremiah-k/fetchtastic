@@ -1192,8 +1192,6 @@ def extract_files(
                                 with zip_ref.open(file_info) as source, open(
                                     target_path, "wb"
                                 ) as target_file:
-                                    import shutil
-
                                     shutil.copyfileobj(
                                         source, target_file, length=1024 * 64
                                     )
