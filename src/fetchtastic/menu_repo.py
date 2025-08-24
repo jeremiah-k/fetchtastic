@@ -244,9 +244,6 @@ def run_menu():
         selected_files = []
 
         while True:
-            print(
-                f"Fetching contents from meshtastic.github.io repository{' - ' + current_path if current_path else ''}..."
-            )
             items = fetch_repo_contents(current_path)
 
             if not items:
