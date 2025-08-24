@@ -20,6 +20,27 @@ from fetchtastic.setup_config import (
 def main():
     # Logging is automatically initialized by importing log_utils
 
+    """
+    Entry point for the Fetchtastic command-line interface.
+    
+    Parses command-line arguments and dispatches commands: 
+    - setup: run initial configuration or update Windows integrations (--update-integrations on Windows).
+    - download: ensure configuration (migrating if necessary) and run the firmware/APK downloader.
+    - topic: show configured NTFY topic/URL and optionally copy it to the clipboard.
+    - clean: remove Fetchtastic configuration, downloads, and scheduled tasks.
+    - version: display current and available Fetchtastic versions and upgrade instructions if applicable.
+    - repo: interact with the meshtastic.github.io repository with subcommands:
+        - browse: browse and download repository files.
+        - clean: remove files from the repository download directory.
+    - help: show contextual help for commands and repo subcommands.
+    
+    Side effects:
+    - May read/write configuration, modify files/directories, invoke setup and downloader routines, modify crontab/startup entries, and copy text to the clipboard.
+    - Prints information and logs status messages.
+    
+    Returns:
+        None
+    """
     parser = argparse.ArgumentParser(
         description="Fetchtastic - Meshtastic Firmware and APK Downloader"
     )
@@ -282,15 +303,22 @@ def show_help(
     main_subparsers=None,
 ):
     """
-    Display contextual help information based on the provided command and subcommand.
-
-    Args:
-        parser: Main argument parser
-        repo_parser: Repository command parser
-        repo_subparsers: Repository subcommand parsers
-        help_command: Command to show help for (e.g., 'repo', 'setup')
-        help_subcommand: Subcommand to show help for (e.g., 'browse', 'clean')
-        main_subparsers: Main subparsers action (for discovering available commands)
+    Show contextual CLI help for a specific command or subcommand.
+    
+    If no command is supplied, prints the general help. Handles the "repo" command specially:
+    prints repo help and, if a repo subcommand is supplied, prints that subcommand's help or an
+    available-subcommands listing. For other known top-level commands, prints that command's help.
+    If an unknown command is requested, prints an error and lists available commands when possible.
+    
+    Parameters:
+        help_command (str or None): The top-level command to show help for (e.g., "repo", "setup").
+        help_subcommand (str or None): The subcommand to show help for (e.g., "browse", "clean").
+        main_subparsers (argparse._SubParsersAction, optional): The main parser's subparsers used
+            to detect available top-level commands and print their help when present.
+    
+    Notes:
+        - `parser`, `repo_parser`, and `repo_subparsers` are the argument parser objects used to
+          render help; their types are evident from usage and are not documented here.
     """
     if not help_command:
         # No specific command requested, show general help
@@ -327,6 +355,24 @@ def show_help(
 
 
 def run_clean():
+    """
+    Permanently removes Fetchtastic configuration, downloaded files, and related system integrations.
+    
+    This is a destructive operation that:
+    - Prompts the user for confirmation (defaults to "no") before proceeding.
+    - Deletes current and legacy configuration files and attempts to remove the configuration directory (and a "batch" subdirectory) if empty.
+    - On Windows, attempts to remove Start Menu shortcuts, a startup shortcut, and a configuration shortcut when Windows-specific modules are available.
+    - Deletes all files, symlinks, and subdirectories inside the configured download/base directory.
+    - On non-Windows systems, removes Fetchtastic-related crontab entries if present.
+    - Removes a Termux boot script (~/.termux/boot/fetchtastic.sh) if present.
+    - Removes the Fetchtastic log file in the user log directory.
+    
+    Side effects:
+    - Irreversibly deletes files and may modify the user's crontab and Start Menu/startup items.
+    - The function prints progress and error messages to stdout.
+    
+    Use with caution; run only when you intend to fully remove Fetchtastic data and integrations.
+    """
     print(
         "This will remove Fetchtastic configuration files, downloaded files, and cron job entries."
     )

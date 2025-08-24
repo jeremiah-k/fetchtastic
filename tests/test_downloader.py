@@ -359,7 +359,16 @@ def test_send_ntfy_notification(mocker):
 
 @pytest.fixture
 def mock_releases():
-    """Provides a mock list of GitHub release data, pre-sorted by date."""
+    """
+    Return a pre-built list of mock GitHub release dictionaries used in tests.
+    
+    The list is pre-sorted by `published_at` descending (newest first). Each release dict contains:
+    - `tag_name` (str)
+    - `published_at` (ISO 8601 str)
+    - `assets` (list of dicts), where each asset dict includes `name`, `size`, and `browser_download_url`.
+    
+    One entry intentionally has an empty `assets` list to simulate an incomplete release.
+    """
     return [
         {
             "tag_name": "v2.7.4.c1f4f79",
