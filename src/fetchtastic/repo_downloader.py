@@ -5,21 +5,33 @@ import platform
 import shutil
 
 from fetchtastic import menu_repo
+from fetchtastic.constants import (
+    EXECUTABLE_PERMISSIONS,
+    REPO_DOWNLOADS_DIR,
+    SHELL_SCRIPT_EXTENSION,
+)
 from fetchtastic.log_utils import logger  # Import new logger
 from fetchtastic.utils import download_file_with_retry
 
 
 def download_repo_files(selected_files, download_dir):  # log_message_func removed
     """
-    Downloads selected files from the meshtastic.github.io repository.
-
-    Args:
-        selected_files: Dictionary containing directory and files information
-        download_dir: Base download directory
-        # log_message_func removed
-
+    Download files listed in selected_files into a repository-specific downloads directory and return their local paths.
+    
+    This function:
+    - Validates selected_files contains a "directory" and "files" list; returns [] if missing or empty.
+    - Ensures a repository downloads directory exists under download_dir/firmware/{REPO_DOWNLOADS_DIR} and creates a matching subdirectory for the selected_files["directory"]. If directory creation fails, the function aborts and returns [].
+    - Iterates each file item and, for items that include both "name" and "download_url", downloads the file to the computed directory and appends the absolute local path to the returned list.
+    - Sanitizes file names with os.path.basename to prevent path traversal; items with differing sanitized names will be renamed to the basename.
+    - For files whose original names end with SHELL_SCRIPT_EXTENSION, attempts to set executable permissions after a successful download.
+    - Skips items missing required fields and continues on per-item errors; malformed item structures and unexpected per-item exceptions are handled per-item and do not stop the whole operation.
+    
+    Parameters:
+        selected_files (dict): Expected to contain "directory" (str) and "files" (iterable of dicts with keys "name" and "download_url").
+        download_dir (str): Base path under which the repository downloads directory (firmware/{REPO_DOWNLOADS_DIR}) will be created.
+    
     Returns:
-        List of downloaded file paths
+        list[str]: Paths to successfully downloaded files (empty list if none or on fatal directory-creation failure).
     """
     # Removed local log_message_func definition
 
@@ -34,8 +46,8 @@ def download_repo_files(selected_files, download_dir):  # log_message_func remov
     directory = selected_files["directory"]
     files = selected_files["files"]
 
-    # Create repo-dls directory if it doesn't exist
-    repo_dir = os.path.join(download_dir, "firmware", "repo-dls")
+    # Create repo downloads directory if it doesn't exist
+    repo_dir = os.path.join(download_dir, "firmware", REPO_DOWNLOADS_DIR)
     try:
         if not os.path.exists(repo_dir):
             os.makedirs(repo_dir)
@@ -69,17 +81,23 @@ def download_repo_files(selected_files, download_dir):  # log_message_func remov
                 )
                 continue
 
-            file_path = os.path.join(dir_path, file_name)
+            # Ensure we only ever write to the intended directory
+            safe_name = os.path.basename(file_name)
+            if safe_name != file_name:
+                logger.warning(
+                    f"Sanitized file name from '{file_name}' to '{safe_name}'"
+                )
+            file_path = os.path.join(dir_path, safe_name)
 
             # download_file_with_retry now uses the global logger
             if download_file_with_retry(
                 download_url, file_path
             ):  # Removed log_message_func
                 # download_file_with_retry already logs the download completion
-                # Set executable permissions for .sh files (moved here, after successful download)
-                if file_name.endswith(".sh"):
+                # Set executable permissions for shell script files (moved here, after successful download)
+                if file_name.endswith(SHELL_SCRIPT_EXTENSION):
                     try:
-                        os.chmod(file_path, 0o755)
+                        os.chmod(file_path, EXECUTABLE_PERMISSIONS)
                         logger.debug(
                             f"Set executable permissions for {file_name}"
                         )  # Was current_log_func
@@ -123,18 +141,19 @@ def download_repo_files(selected_files, download_dir):  # log_message_func remov
 
 def clean_repo_directory(download_dir):  # log_message_func removed
     """
-    Cleans the repo directory by removing all files and subdirectories.
-
-    Args:
-        download_dir: Base download directory
-        # log_message_func removed
-
+    Remove all contents of the repository downloads directory under the given download directory.
+    
+    This function targets the directory "<download_dir>/firmware/{REPO_DOWNLOADS_DIR}". If that directory does not exist it returns True (nothing to clean). It attempts to remove every file, symlink, and subdirectory inside that repo directory.
+    
+    Parameters:
+        download_dir (str): Base download directory that contains the 'firmware' folder.
+    
     Returns:
-        Boolean indicating success
+        bool: True if the repository downloads directory was cleaned (or did not exist); False if an I/O error occurred while removing contents.
     """
     # Removed local log_message_func definition
 
-    repo_dir = os.path.join(download_dir, "firmware", "repo-dls")
+    repo_dir = os.path.join(download_dir, "firmware", REPO_DOWNLOADS_DIR)
 
     if not os.path.exists(repo_dir):
         logger.info(

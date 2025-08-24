@@ -3,6 +3,7 @@ import gc  # For Windows file operation retries
 import hashlib
 import os
 import platform
+import re
 import time
 import zipfile
 from typing import Optional  # Callable removed
@@ -11,19 +12,25 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry  # type: ignore
 
+# Import constants from constants module
+from fetchtastic.constants import (
+    DEFAULT_BACKOFF_FACTOR,
+    DEFAULT_CHUNK_SIZE,
+    DEFAULT_CONNECT_RETRIES,
+    DEFAULT_REQUEST_TIMEOUT,
+    WINDOWS_INITIAL_RETRY_DELAY,
+    WINDOWS_MAX_REPLACE_RETRIES,
+    ZIP_EXTENSION,
+)
 from fetchtastic.log_utils import logger  # Import the new logger
-
-# Constants for download_file_with_retry
-DEFAULT_CONNECT_RETRIES: int = 3
-DEFAULT_BACKOFF_FACTOR: float = 1.0  # Make it float for potential fractional backoff
-DEFAULT_REQUEST_TIMEOUT: int = 30  # seconds
-DEFAULT_CHUNK_SIZE: int = 8 * 1024  # 8KB
-WINDOWS_MAX_REPLACE_RETRIES: int = 3
-WINDOWS_INITIAL_RETRY_DELAY: float = 1.0  # seconds
 
 
 def calculate_sha256(file_path: str) -> Optional[str]:
-    """Calculate SHA-256 hash of a file."""
+    """
+    Return the SHA-256 hex digest of the file at file_path, or None if the file cannot be read.
+    
+    Reads the file in binary chunks and computes its SHA-256 checksum. If an I/O or OS error occurs (for example: file not found or permission denied), the function returns None.
+    """
     try:
         sha256_hash = hashlib.sha256()
         with open(file_path, "rb") as f:
@@ -98,34 +105,64 @@ def download_file_with_retry(
     # log_message_func: Callable[[str], None] # Removed
 ) -> bool:
     """
-    Downloads a file with a robust retry mechanism and platform-specific handling.
-    Checks for existing valid files (especially zips) before downloading.
-    Validates zip files after download. Handles temporary files and cleanup.
-
-    Args:
-        url (str): The URL to download the file from.
-        download_path (str): The final path to save the downloaded file.
-        # log_message_func removed from args
-
-    Returns:
-        bool: True if the file was successfully downloaded (or already existed and was valid),
-              False otherwise.
+    Download a file from a URL with retries, integrity checks, and platform-specific atomic replacement.
+    
+    Performs these behaviors:
+    - Uses a requests.Session with a robust Retry policy for network resilience.
+    - If download_path already exists:
+      - For ZIP files (by ZIP_EXTENSION), validates with zipfile.testzip() and then with the stored SHA-256 hash; if valid, skips download and returns True. Corrupted or mismatched files are removed before attempting a re-download.
+      - For non-ZIP files, skips download if a non-empty file passes SHA-256 verification; empty or invalid files are removed before re-download.
+    - Streams the HTTP response to a temporary file (download_path + ".tmp"), writing in chunks and validating ZIP integrity for downloaded archives.
+    - Replaces the target file atomically using os.replace:
+      - On Windows, retries replacements (with exponential backoff) to work around transient PermissionError conditions.
+      - On non-Windows platforms, attempts a single replace.
+    - After a successful replace, computes and saves a SHA-256 hash alongside the file (via a .sha256 file).
+    - Cleans up temporary files and removes partially downloaded or corrupted files on error.
+    
+    Return value:
+        True if the file was successfully downloaded or an existing file was present and verified; False on any failure.
+    
+    Side effects:
+    - Creates, replaces, and removes files at download_path and download_path + ".tmp".
+    - Writes a companion SHA-256 file next to the downloaded file when a hash can be computed.
+    - Logs progress, validation results, and errors via the module logger.
+    
+    Errors and exceptions:
+    - Network, IO, ZIP validation, and unexpected exceptions are caught internally; the function returns False on failure rather than propagating exceptions.
     """
     session = requests.Session()
     # Using type: ignore for Retry as it might not be perfectly typed by stubs,
     # but the parameters are standard for urllib3.
-    retry_strategy: Retry = Retry(
-        connect=DEFAULT_CONNECT_RETRIES,
-        backoff_factor=DEFAULT_BACKOFF_FACTOR,
-        status_forcelist=[502, 503, 504],
-    )  # type: ignore
+    try:
+        retry_strategy: Retry = Retry(
+            total=DEFAULT_CONNECT_RETRIES,
+            connect=DEFAULT_CONNECT_RETRIES,
+            read=DEFAULT_CONNECT_RETRIES,
+            status=DEFAULT_CONNECT_RETRIES,
+            backoff_factor=DEFAULT_BACKOFF_FACTOR,
+            status_forcelist=[408, 429, 500, 502, 503, 504],
+            allowed_methods=frozenset({"GET", "HEAD"}),
+            raise_on_status=False,
+            respect_retry_after_header=True,
+        )
+    except TypeError:
+        # urllib3 v1 fallback
+        retry_strategy = Retry(
+            total=DEFAULT_CONNECT_RETRIES,
+            connect=DEFAULT_CONNECT_RETRIES,
+            read=DEFAULT_CONNECT_RETRIES,
+            backoff_factor=DEFAULT_BACKOFF_FACTOR,
+            status_forcelist=[408, 429, 500, 502, 503, 504],
+            method_whitelist=frozenset({"GET", "HEAD"}),  # type: ignore[arg-type]
+            raise_on_status=False,
+        )
     adapter = HTTPAdapter(max_retries=retry_strategy)
     session.mount("https://", adapter)
     session.mount("http://", adapter)
 
     # Check if file exists and is valid (especially for zips)
     if os.path.exists(download_path):
-        if download_path.endswith(".zip"):
+        if download_path.lower().endswith(ZIP_EXTENSION.lower()):
             try:
                 with zipfile.ZipFile(download_path, "r") as zf:
                     if zf.testzip() is not None:  # None means no errors
@@ -229,7 +266,7 @@ def download_file_with_retry(
         logger.debug(
             f"Attempting to download file from URL: {url} to temp path: {temp_path}"
         )
-        time.time()
+        start_time = time.time()
         response = session.get(url, stream=True, timeout=DEFAULT_REQUEST_TIMEOUT)
 
         # Log HTTP response status code
@@ -251,17 +288,16 @@ def download_file_with_retry(
                             f"Downloaded {downloaded_chunks} chunks ({downloaded_bytes} bytes) so far for {url}"
                         )
 
-        # end-to-end download duration is available in
-        #   elapsed = time.time() - start_time
-        # if you intend to log or return it later.
+        elapsed = time.time() - start_time
         file_size_mb = downloaded_bytes / (1024 * 1024)
         logger.debug(
             f"Finished downloading {url}. Total chunks: {downloaded_chunks}, total bytes: {downloaded_bytes}."
         )
+        logger.debug("Download elapsed time: %.2fs for %s", elapsed, url)
 
         # Log completion after successful file replacement (moved below)
 
-        if download_path.endswith(".zip"):
+        if download_path.lower().endswith(ZIP_EXTENSION.lower()):
             try:
                 with zipfile.ZipFile(temp_path, "r") as zf_temp:
                     if zf_temp.testzip() is not None:
@@ -424,3 +460,28 @@ def download_file_with_retry(
                 f"Error removing temporary file {temp_path} after failure: {e_rm_final_tmp}"
             )
     return False
+
+
+def extract_base_name(filename: str) -> str:
+    """
+    Return a filename with trailing version and commit/hash segments removed.
+    
+    This normalizes names like "-2.5.13", "_v1.2.3", "-2.5.13.1a2b3c4" and optional prerelease suffixes
+    (e.g., rc, dev, beta, alpha) by stripping those version/hash segments while preserving other
+    filename parts and separators. Consecutive separators produced by removal are collapsed to a single
+    '-' or '_' as appropriate.
+    
+    Examples:
+      'fdroidRelease-2.5.9.apk' -> 'fdroidRelease.apk'
+      'firmware-rak4631-2.7.4.c1f4f79-ota.zip' -> 'firmware-rak4631-ota.zip'
+      'meshtasticd_2.5.13.1a06f88_amd64.deb' -> 'meshtasticd_amd64.deb'
+    """
+    # Remove versions like: -2.5.13, _v1.2.3, -2.5.13.abcdef1, and optional prerelease: -rc1/.dev1/-beta2/-alpha3
+    base_name = re.sub(
+        r"[-_]v?\d+\.\d+\.\d+(?:\.[\da-f]+)?(?:[-_.]?(?:rc|dev|beta|alpha)\d*)?(?=[-_.]|$)",
+        "",
+        filename,
+    )
+    # Clean up double separators that might result from the substitution
+    base_name = re.sub(r"[-_]{2,}", lambda m: m.group(0)[0], base_name)
+    return base_name

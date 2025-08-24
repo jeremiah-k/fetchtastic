@@ -7,7 +7,7 @@ from fetchtastic import menu_apk
 def mock_apk_assets():
     """
     Return a list of dictionaries simulating release assets.
-    
+
     Each dict contains a "name" key. The list includes three APK filenames and one non-APK file to emulate mixed release assets for tests.
     """
     return [
@@ -56,7 +56,7 @@ def test_select_assets(mocker):
     # 1. User selects one asset
     mock_pick.return_value = [("meshtastic-app-release-2.3.2.apk", 0)]
     selected = menu_apk.select_assets(assets)
-    assert selected == ["meshtastic-app-release.apk"]
+    assert selected == {"selected_assets": ["meshtastic-app-release.apk"]}
 
     # 2. User selects nothing
     mock_pick.return_value = []
@@ -70,7 +70,8 @@ def test_run_menu(mocker):
         "fetchtastic.menu_apk.fetch_apk_assets", return_value=["asset1.apk"]
     )
     mock_select = mocker.patch(
-        "fetchtastic.menu_apk.select_assets", return_value=["base-pattern"]
+        "fetchtastic.menu_apk.select_assets",
+        return_value={"selected_assets": ["base-pattern"]},
     )
 
     # 1. Successful flow

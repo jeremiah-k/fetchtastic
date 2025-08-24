@@ -1,25 +1,52 @@
 # src/fetchtastic/menu_repo.py
 
 
+import time
+
 import requests
 from pick import pick
+
+from fetchtastic.constants import (
+    API_CALL_DELAY,
+    GITHUB_API_TIMEOUT,
+    MESHTASTIC_GITHUB_IO_CONTENTS_URL,
+)
+from fetchtastic.log_utils import logger
 
 
 def fetch_repo_contents(path=""):
     """
-    Fetches contents (directories and files) from the meshtastic.github.io repository.
-    Returns a list of items with their names, paths, and types.
-
-    Args:
-        path: Optional path within the repository to fetch contents from
+    Fetch contents (directories and files) from the Meshtastic GitHub Pages repository.
+    
+    Given an optional repository-relative path (no leading or trailing slashes required), queries the GitHub Contents API for that path and returns a list of items describing directories and files found. Hidden and common infrastructure directories (e.g., .git, node_modules) and common repo-level files (e.g., README.md, LICENSE) are excluded. Returned directory entries have keys: "name", "path", "type" == "dir". File entries have keys: "name", "path", "type" == "file", and "download_url".
+    
+    Sorting:
+    - Directories are returned before files.
+    - Directories whose names start with "firmware-" are listed first (sorted descending by name), then other directories sorted ascending.
+    - Files are sorted ascending by name.
+    
+    Parameters:
+        path (str): Optional repository-relative path to list (leading/trailing slashes will be trimmed). Use an empty string to list the repository root.
+    
+    Returns:
+        list: A list of dictionaries representing directories and files. Returns an empty list on network, parsing, or unexpected errors.
     """
     # GitHub API URL for the repository contents
-    base_url = "https://api.github.com/repos/meshtastic/meshtastic.github.io/contents"
-    api_url = f"{base_url}/{path}" if path else base_url
+    base_url = MESHTASTIC_GITHUB_IO_CONTENTS_URL
+    # Ensure proper URL construction - avoid double slashes
+    if path:
+        path = path.strip("/")  # Remove leading/trailing slashes
+        api_url = f"{base_url}/{path}"
+    else:
+        api_url = base_url
 
     try:
-        response = requests.get(api_url, timeout=10)
+        response = requests.get(api_url, timeout=GITHUB_API_TIMEOUT)
         response.raise_for_status()
+
+        # Small delay to be respectful to GitHub API
+        time.sleep(API_CALL_DELAY)
+
         contents = response.json()
 
         # Filter for directories and files, excluding specific directories and files
@@ -74,8 +101,16 @@ def fetch_repo_contents(path=""):
         sorted_items = firmware_dirs + other_dirs + files
 
         return sorted_items
+    except requests.RequestException as e:
+        logger.error(f"Error fetching repository contents from GitHub API: {e}")
+        return []
+    except (ValueError, KeyError) as e:
+        logger.error(f"Error parsing repository contents response: {e}")
+        return []
     except Exception as e:
-        print(f"Error fetching repository contents: {e}")
+        logger.error(
+            f"Unexpected error fetching repository contents: {e}", exc_info=True
+        )
         return []
 
 
@@ -211,16 +246,29 @@ Select "[Quit]" to exit without downloading."""
 
 def run_menu():
     """
-    Runs the repository browsing menu and returns the selected files.
+    Run an interactive CLI to browse the Meshtastic GitHub Pages repository and select files to download.
+    
+    Presents a navigable menu of directories and files (using fetch_repo_contents, select_item, and select_files), allowing the user to:
+    - navigate into directories,
+    - go back to parent directories,
+    - multi-select files to download, or
+    - quit/cancel at any time.
+    
+    Returns:
+        dict: On success, a dictionary with:
+            - "directory" (str): the repository path containing the selected files (empty string for root).
+            - "files" (list): list of file dictionaries chosen by the user (each item matches entries returned by fetch_repo_contents).
+        None: If the user quits/cancels, if no items/files are found, or if an error occurs during execution.
+    
+    Notes:
+        - This function is interactive and intended for CLI use.
+        - All errors are caught internally; on error it prints a message and returns None.
     """
     try:
         current_path = ""
         selected_files = []
 
         while True:
-            print(
-                f"Fetching contents from meshtastic.github.io repository{' - ' + current_path if current_path else ''}..."
-            )
             items = fetch_repo_contents(current_path)
 
             if not items:

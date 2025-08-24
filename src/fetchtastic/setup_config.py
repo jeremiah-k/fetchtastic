@@ -13,6 +13,7 @@ import platformdirs
 import yaml
 
 from fetchtastic import menu_apk, menu_firmware
+from fetchtastic.constants import CONFIG_FILE_NAME, MESHTASTIC_DIR_NAME
 
 # Import Windows-specific modules if on Windows
 if platform.system() == "Windows":
@@ -260,16 +261,16 @@ def get_downloads_dir():
 
 # Default directories
 DOWNLOADS_DIR = get_downloads_dir()
-DEFAULT_BASE_DIR = os.path.join(DOWNLOADS_DIR, "Meshtastic")
+DEFAULT_BASE_DIR = os.path.join(DOWNLOADS_DIR, MESHTASTIC_DIR_NAME)
 
 # Get the config directory using platformdirs
 CONFIG_DIR = platformdirs.user_config_dir("fetchtastic")
 
 # Old config file location (for migration)
-OLD_CONFIG_FILE = os.path.join(DEFAULT_BASE_DIR, "fetchtastic.yaml")
+OLD_CONFIG_FILE = os.path.join(DEFAULT_BASE_DIR, CONFIG_FILE_NAME)
 
 # New config file location using platformdirs
-CONFIG_FILE = os.path.join(CONFIG_DIR, "fetchtastic.yaml")
+CONFIG_FILE = os.path.join(CONFIG_DIR, CONFIG_FILE_NAME)
 
 # These will be set during setup or when loading config
 BASE_DIR = DEFAULT_BASE_DIR
@@ -277,18 +278,19 @@ BASE_DIR = DEFAULT_BASE_DIR
 
 def config_exists(directory=None):
     """
-    Check if the configuration file exists.
-
-    Args:
-        directory: Optional directory to check for config file. If None, checks both the new
-                  platformdirs location and the old location.
-
+    Return whether a Fetchtastic configuration file exists and its path.
+    
+    If `directory` is provided, checks for CONFIG_FILE_NAME inside that directory.
+    If `directory` is None, checks the new platformdirs location (CONFIG_FILE) first,
+    then the legacy location (OLD_CONFIG_FILE).
+    
     Returns:
-        tuple: (exists, path) where exists is a boolean indicating if the config exists,
-               and path is the path to the config file if it exists, otherwise None.
+        (bool, str|None): Tuple where the first element is True if a config file was
+        found, and the second element is the full path to the found config file or
+        None if not found.
     """
     if directory:
-        config_path = os.path.join(directory, "fetchtastic.yaml")
+        config_path = os.path.join(directory, CONFIG_FILE_NAME)
         if os.path.exists(config_path):
             return True, config_path
         return False, None
@@ -398,11 +400,9 @@ def run_setup():
         prompt_for_migration()  # Just logs the migration message
         if migrate_config():
             logger.info("Configuration successfully migrated to the new location.")
-            # Update config_path to the new location for subsequent operations
-            config_path = CONFIG_FILE
-            # Re-load the configuration from the new location if it exists
+            # Optionally validate by loading migrated config (no-op if not needed)
             if os.path.exists(CONFIG_FILE):
-                exists = True
+                _ = load_config()
         else:
             logger.error(
                 "Failed to migrate configuration. Continuing with old location."
@@ -440,7 +440,8 @@ def run_setup():
         base_dir = os.path.expanduser(base_dir_input)
 
         # Check if there's a config file in the specified directory
-        if config_exists(base_dir) and base_dir != BASE_DIR:
+        exists_in_dir, _ = config_exists(base_dir)
+        if exists_in_dir and base_dir != BASE_DIR:
             print(f"Found existing configuration in {base_dir}")
             # Load the configuration from the specified directory
             config = load_config(base_dir)
@@ -1227,10 +1228,10 @@ def get_upgrade_command():
 def should_recommend_setup():
     """
     Determine whether running the interactive setup should be recommended.
-    
+
     Checks for an existing configuration and compares the recorded setup version to the currently installed package version.
     Returns a tuple (should_recommend, reason, last_setup_version, current_version):
-    
+
     - should_recommend (bool): True if setup is recommended (no config, missing recorded setup version, version changed, or an error occurred); False if setup appears up-to-date.
     - reason (str): Short human-readable explanation for the recommendation.
     - last_setup_version (str | None): Version value stored in the configuration under "LAST_SETUP_VERSION", or None if unavailable.
@@ -1346,14 +1347,27 @@ def prompt_for_migration():
 
 def create_windows_menu_shortcuts(config_file_path, base_dir):
     """
-    Creates Windows Start Menu shortcuts for fetchtastic.
-
-    Args:
-        config_file_path: Path to the configuration file
-        base_dir: Base directory for Meshtastic downloads
-
+    Create Windows Start Menu shortcuts and supporting batch files for Fetchtastic.
+    
+    Creates a Fetchtastic folder in the user's Start Menu containing shortcuts to:
+    - a download runner, repository browser, setup, update checker (all implemented as batch files placed in CONFIG_DIR/batch),
+    - the Fetchtastic configuration file,
+    - the Meshtastic downloads base directory,
+    - the Fetchtastic log file.
+    
+    This function is a no-op on non-Windows platforms or when required Windows modules are unavailable.
+    
+    Parameters:
+        config_file_path (str): Full path to the Fetchtastic YAML configuration file used as the target for the configuration shortcut.
+        base_dir (str): Path to the Meshtastic downloads base directory used as the target for the downloads-folder shortcut.
+    
     Returns:
-        bool: True if shortcuts were created successfully, False otherwise
+        bool: True if shortcuts and batch files were created successfully; False if running on a non-Windows platform, required Windows modules are missing, or any error occurred while creating files/shortcuts.
+    
+    Side effects:
+        - May create CONFIG_DIR/batch and several .bat files.
+        - May create or recreate the Start Menu folder at WINDOWS_START_MENU_FOLDER and write .lnk shortcuts.
+        - May create the user log directory and an empty log file if none exists.
     """
     if platform.system() != "Windows" or not WINDOWS_MODULES_AVAILABLE:
         return False
@@ -1549,7 +1563,7 @@ def create_windows_menu_shortcuts(config_file_path, base_dir):
         winshell.CreateShortcut(
             Path=config_shortcut_path,
             Target=config_file_path,
-            Description="Edit Fetchtastic Configuration File (fetchtastic.yaml)",
+            Description=f"Edit Fetchtastic Configuration File ({CONFIG_FILE_NAME})",
             Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0),
         )
 
@@ -1635,7 +1649,7 @@ def create_config_shortcut(config_file_path, target_dir):
         winshell.CreateShortcut(
             Path=shortcut_path,
             Target=config_file_path,
-            Description="Fetchtastic Configuration File (fetchtastic.yaml)",
+            Description=f"Fetchtastic Configuration File ({CONFIG_FILE_NAME})",
             Icon=(os.path.join(sys.exec_prefix, "pythonw.exe"), 0),
         )
 
@@ -2139,18 +2153,25 @@ def check_any_cron_jobs_exist():
 
 def load_config(directory=None):
     """
-    Loads the configuration from the YAML file.
-    Updates global variables based on the loaded configuration.
-
-    Args:
-        directory: Optional directory to load config from. If None, uses the platformdirs location
-                  or falls back to the old location.
+    Load the Fetchtastic configuration YAML and update module state.
+    
+    If `directory` is provided, loads CONFIG_FILE_NAME from that directory (backwards-compatibility or explicit load),
+    sets the global BASE_DIR to that directory, and warns if the file is in a non-standard location.
+    If `directory` is not provided, prefers the platformdirs-managed CONFIG_FILE, falling back to the old location OLD_CONFIG_FILE.
+    When a loaded config contains a "BASE_DIR" key, the global BASE_DIR is updated from that value.
+    
+    Parameters:
+        directory (str | None): Optional directory to load the config from. If None, the function checks CONFIG_FILE
+            then OLD_CONFIG_FILE.
+    
+    Returns:
+        dict | None: The parsed configuration dictionary on success, or None if no configuration file was found.
     """
     global BASE_DIR
 
     if directory:
         # This is for backward compatibility or when explicitly loading from a specific directory
-        config_path = os.path.join(directory, "fetchtastic.yaml")
+        config_path = os.path.join(directory, CONFIG_FILE_NAME)
         if not os.path.exists(config_path):
             return None
 

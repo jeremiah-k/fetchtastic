@@ -6,14 +6,18 @@ from typing import Optional  # Added Optional and Any
 
 from rich.logging import RichHandler  # Keep Rich for console
 
-# 1. Initialize a Logger
-LOGGER_NAME = "fetchtastic"
-logger = logging.getLogger(LOGGER_NAME)
+from fetchtastic.constants import (
+    DEBUG_LOG_FORMAT,
+    INFO_LOG_FORMAT,
+    LOG_DATE_FORMAT,
+    LOG_FILE_BACKUP_COUNT,
+    LOG_FILE_MAX_BYTES,
+    LOG_LEVEL_ENV_VAR,
+    LOGGER_NAME,
+)
 
-# Log message formats - split between INFO and DEBUG levels
-LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
-INFO_LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
-DEBUG_LOG_FORMAT = "%(asctime)s - %(levelname)s - %(name)s - %(module)s.%(funcName)s:%(lineno)d - %(message)s"
+# 1. Initialize a Logger
+logger = logging.getLogger(LOGGER_NAME)
 
 # Global variable for the file handler to allow removal/reconfiguration if needed
 _file_handler: Optional[RotatingFileHandler] = None
@@ -59,11 +63,15 @@ def set_log_level(level_name: str) -> None:
 
 def add_file_logging(log_dir_path: Path, level_name: str = "INFO") -> None:
     """
-    Adds file logging to the 'fetchtastic' logger.
-
-    Args:
-        log_dir_path (Path): The directory to store log files.
-        level_name (str): The logging level for the file handler.
+    Enable rotating file logging for the fetchtastic logger.
+    
+    Creates the directory if necessary and attaches a RotatingFileHandler writing to
+    `fetchtastic.log` inside the provided directory. The handler's level is taken
+    from `level_name` (falls back to INFO for invalid names). Formatter verbosity is
+    chosen based on the resolved level (INFO-or-higher uses the informational format;
+    below INFO uses the debug format). Existing file logging configured by this
+    module is removed and closed before reconfiguring. The handler uses the module's
+    configured max-bytes and backup-count rotation constants.
     """
     global _file_handler
     if _file_handler and _file_handler in logger.handlers:
@@ -82,8 +90,8 @@ def add_file_logging(log_dir_path: Path, level_name: str = "INFO") -> None:
 
     _file_handler = RotatingFileHandler(
         log_file,
-        maxBytes=10 * 1024 * 1024,  # 10 MB
-        backupCount=5,
+        maxBytes=LOG_FILE_MAX_BYTES,
+        backupCount=LOG_FILE_BACKUP_COUNT,
         encoding="utf-8",
     )
     _file_handler.setFormatter(file_formatter)
@@ -95,8 +103,9 @@ def add_file_logging(log_dir_path: Path, level_name: str = "INFO") -> None:
 
 def _initialize_logger() -> None:
     """
-    Initializes the 'fetchtastic' logger with a default console handler.
-    Reads log level from FETCHTASTIC_LOG_LEVEL environment variable if set.
+    Initialize the fetchtastic logger with a console RichHandler and an initial log level.
+    
+    This removes any existing handlers, disables propagation to the root logger, and attaches a RichHandler configured for console output. The initial log level is read from the environment variable named by LOG_LEVEL_ENV_VAR (defaults to "INFO" if unset) and applied to both the logger and the console handler. When the level is INFO or higher a terse formatter ("%(message)s") is used; for levels below INFO a more verbose formatter including module, function and line number is applied. File logging is not enabled by default; call add_file_logging() to enable rotating file output.
     """
     # Prevent propagation to root logger
     logger.propagate = False
@@ -117,7 +126,7 @@ def _initialize_logger() -> None:
     )
 
     # Set initial log level from environment variable or default to INFO
-    default_log_level = os.environ.get("FETCHTASTIC_LOG_LEVEL", "INFO").upper()
+    default_log_level = os.environ.get(LOG_LEVEL_ENV_VAR, "INFO").upper()
     initial_level = getattr(logging, default_log_level, logging.INFO)
 
     # Choose console formatter based on log level

@@ -1,3 +1,82 @@
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q --strict-markers --cov=src/fetchtastic --cov-report=xml --cov-report=html --cov-report=term-missing --cov-branch"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+  "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+  "performance: marks tests as performance benchmarks (deselect with '-m \"not performance\"')",
+  "integration: marks tests as integration tests",
+  "unit: marks tests as unit tests",
+  "asyncio: marks tests as asyncio tests",
+  "no_global_mocks: disables global autouse fixtures for real module execution and coverage measurement",
+  "core_downloads: marks tests for core download functionality",
+  "user_interface: marks tests for CLI and menu systems",
+  "configuration: marks tests for setup and configuration",
+  "infrastructure: marks tests for logging, constants, and utilities",
+]
+
+[tool.coverage.run]
+source = ["src/fetchtastic"]
+omit = [
+  "*/tests/*",
+  "*/test_*",
+  "*/__pycache__/*",
+  "*/venv/*",
+  "*/env/*",
+  "*/.venv/*",
+  "*/build/*",
+  "*/dist/*",
+  "*/setup.py",
+  "*/conftest.py",
+  "*/tools/*",
+]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+  "pragma: no cover",
+  "def __repr__",
+  "if self.debug:",
+  "if settings.DEBUG",
+  "raise AssertionError",
+  "raise NotImplementedError",
+  "if 0:",
+  "if __name__ == \"__main__\":",
+  "class .*\\bProtocol\\):",
+  "@(abc\\.)?abstractmethod",
+]
+show_missing = true
+precision = 2
+ignore_errors = true
+
+[tool.coverage.xml]
+output = "coverage.xml"
+
+[tool.coverage.html]
+directory = "htmlcov"
+
+[tool.coverage.components]
+core = [
+  "src/fetchtastic/downloader.py",
+  "src/fetchtastic/repo_downloader.py",
+  "src/fetchtastic/utils.py",
+]
+interface = [
+  "src/fetchtastic/cli.py",
+  "src/fetchtastic/menu_apk.py",
+  "src/fetchtastic/menu_firmware.py",
+  "src/fetchtastic/menu_repo.py",
+]
+configuration = ["src/fetchtastic/setup_config.py"]
+infrastructure = [
+  "src/fetchtastic/log_utils.py",
+  "src/fetchtastic/constants.py",
+  "src/fetchtastic/__init__.py",
+]

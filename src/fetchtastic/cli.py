@@ -5,18 +5,42 @@ import os
 import platform
 import shutil
 import subprocess
-import sys
 
 import platformdirs
 
 from fetchtastic import downloader, repo_downloader, setup_config
 from fetchtastic.log_utils import logger
-from fetchtastic.setup_config import display_version_info, get_upgrade_command
+from fetchtastic.setup_config import (
+    copy_to_clipboard_func,
+    display_version_info,
+    get_upgrade_command,
+)
 
 
 def main():
     # Logging is automatically initialized by importing log_utils
 
+    """
+    Entry point for the Fetchtastic command-line interface.
+    
+    Parses command-line arguments and dispatches commands: 
+    - setup: run initial configuration or update Windows integrations (--update-integrations on Windows).
+    - download: ensure configuration (migrating if necessary) and run the firmware/APK downloader.
+    - topic: show configured NTFY topic/URL and optionally copy it to the clipboard.
+    - clean: remove Fetchtastic configuration, downloads, and scheduled tasks.
+    - version: display current and available Fetchtastic versions and upgrade instructions if applicable.
+    - repo: interact with the meshtastic.github.io repository with subcommands:
+        - browse: browse and download repository files.
+        - clean: remove files from the repository download directory.
+    - help: show contextual help for commands and repo subcommands.
+    
+    Side effects:
+    - May read/write configuration, modify files/directories, invoke setup and downloader routines, modify crontab/startup entries, and copy text to the clipboard.
+    - Prints information and logs status messages.
+    
+    Returns:
+        None
+    """
     parser = argparse.ArgumentParser(
         description="Fetchtastic - Meshtastic Firmware and APK Downloader"
     )
@@ -48,7 +72,19 @@ def main():
     subparsers.add_parser("version", help="Display Fetchtastic version")
 
     # Command to display help
-    subparsers.add_parser("help", help="Display help information")
+    help_parser = subparsers.add_parser("help", help="Display help information")
+    help_parser.add_argument(
+        "help_command",
+        nargs="?",
+        metavar="COMMAND",
+        help="Command to get help for (e.g., 'repo', 'setup')",
+    )
+    help_parser.add_argument(
+        "help_subcommand",
+        nargs="?",
+        metavar="SUBCOMMAND",
+        help="Subcommand to get help for (e.g., 'browse', 'clean')",
+    )
 
     # Command to interact with the meshtastic.github.io repository
     repo_parser = subparsers.add_parser(
@@ -164,8 +200,12 @@ def main():
                 copy_prompt_text = "Do you want to copy the topic URL to the clipboard? [y/n] (default: yes): "
                 text_to_copy = full_url
 
-            copy_to_clipboard = input(copy_prompt_text).strip().lower() or "y"
-            if copy_to_clipboard == "y":
+            try:
+                resp = input(copy_prompt_text)
+            except EOFError:
+                resp = ""
+            resp = (resp or "y").strip().lower()
+            if resp in {"y", "yes"}:
                 success = copy_to_clipboard_func(text_to_copy)
                 if success:
                     if setup_config.is_termux():
@@ -194,39 +234,17 @@ def main():
             logger.info(f"A newer version (v{latest_version}) is available!")
             logger.info(f"Run '{upgrade_cmd}' to upgrade.")
     elif args.command == "help":
-        # Check if a subcommand was specified
-        if len(sys.argv) > 2:
-            help_command = sys.argv[2]
-            if help_command == "repo":
-                # Show help for repo command
-                repo_parser.print_help()
-                # Check if there's a repo subcommand specified
-                if len(sys.argv) > 3:
-                    repo_subcommand = sys.argv[3]
-                    if repo_subcommand == "browse":
-                        # Find the browse subparser and print its help
-                        for action in repo_subparsers._actions:
-                            if isinstance(action, argparse._SubParsersAction):
-                                browse_parser = action.choices.get("browse")
-                                if browse_parser:
-                                    print("\nRepo browse command help:")
-                                    browse_parser.print_help()
-                                break
-                    elif repo_subcommand == "clean":
-                        # Find the clean subparser and print its help
-                        for action in repo_subparsers._actions:
-                            if isinstance(action, argparse._SubParsersAction):
-                                clean_parser = action.choices.get("clean")
-                                if clean_parser:
-                                    print("\nRepo clean command help:")
-                                    clean_parser.print_help()
-                                break
-            else:
-                # Show general help
-                parser.print_help()
-        else:
-            # No subcommand specified, show general help
-            parser.print_help()
+        # Handle help command
+        help_command = args.help_command
+        help_subcommand = args.help_subcommand
+        show_help(
+            parser,
+            repo_parser,
+            repo_subparsers,
+            help_command,
+            help_subcommand,
+            subparsers,
+        )
     elif args.command == "repo":
         # Display version information
         current_version, latest_version, update_available = display_version_info()
@@ -276,55 +294,85 @@ def main():
         parser.print_help()
 
 
-def copy_to_clipboard_func(text):
-    if setup_config.is_termux():
-        # Termux environment
-        try:
-            subprocess.run(
-                ["termux-clipboard-set"], input=text.encode("utf-8"), check=True
-            )
-            return True
-        except Exception as e:
-            print(f"An error occurred while copying to clipboard: {e}")
-            return False
-    else:
-        # Other platforms
-        system = platform.system()
-        try:
-            if system == "Darwin":
-                # macOS
-                subprocess.run("pbcopy", text=True, input=text, check=True)
-                return True
-            elif system == "Linux":
-                # Linux
-                if shutil.which("xclip"):
-                    subprocess.run(
-                        ["xclip", "-selection", "clipboard"],
-                        input=text.encode("utf-8"),
-                        check=True,
-                    )
-                    return True
-                elif shutil.which("xsel"):
-                    subprocess.run(
-                        ["xsel", "--clipboard", "--input"],
-                        input=text.encode("utf-8"),
-                        check=True,
-                    )
-                    return True
-                else:
-                    print(
-                        "xclip or xsel not found. Install xclip or xsel to use clipboard functionality."
-                    )
-                    return False
+def show_help(
+    parser,
+    repo_parser,
+    repo_subparsers,
+    help_command,
+    help_subcommand,
+    main_subparsers=None,
+):
+    """
+    Show contextual CLI help for a specific command or subcommand.
+    
+    If no command is supplied, prints the general help. Handles the "repo" command specially:
+    prints repo help and, if a repo subcommand is supplied, prints that subcommand's help or an
+    available-subcommands listing. For other known top-level commands, prints that command's help.
+    If an unknown command is requested, prints an error and lists available commands when possible.
+    
+    Parameters:
+        help_command (str or None): The top-level command to show help for (e.g., "repo", "setup").
+        help_subcommand (str or None): The subcommand to show help for (e.g., "browse", "clean").
+        main_subparsers (argparse._SubParsersAction, optional): The main parser's subparsers used
+            to detect available top-level commands and print their help when present.
+    
+    Notes:
+        - `parser`, `repo_parser`, and `repo_subparsers` are the argument parser objects used to
+          render help; their types are evident from usage and are not documented here.
+    """
+    if not help_command:
+        # No specific command requested, show general help
+        parser.print_help()
+        return
+
+    if help_command == "repo":
+        # Show repo command help
+        repo_parser.print_help()
+
+        if help_subcommand:
+            # Show specific repo subcommand help (derived from argparse choices)
+            subparser = repo_subparsers.choices.get(help_subcommand)
+            if subparser:
+                print(f"\nRepo '{help_subcommand}' command help:")
+                subparser.print_help()
             else:
-                print("Clipboard functionality is not supported on this platform.")
-                return False
-        except Exception as e:
-            print(f"An error occurred while copying to clipboard: {e}")
-            return False
+                available = ", ".join(sorted(repo_subparsers.choices.keys()))
+                print(f"\nUnknown repo subcommand: {help_subcommand}")
+                print(f"Available repo subcommands: {available}")
+        return
+    # Handle other main commands
+    elif main_subparsers and help_command in main_subparsers.choices:
+        subparser = main_subparsers.choices[help_command]
+        print(f"Help for '{help_command}' command:")
+        subparser.print_help()
+    else:
+        # Unknown command
+        print(f"Unknown command: {help_command}")
+        if main_subparsers:
+            available_commands = sorted(main_subparsers.choices.keys())
+            print(f"Available commands: {', '.join(available_commands)}")
+        print("\nFor general help, use: fetchtastic help")
 
 
 def run_clean():
+    """
+    Permanently removes Fetchtastic configuration, downloaded files, and related system integrations.
+    
+    This is a destructive operation that:
+    - Prompts the user for confirmation (defaults to "no") before proceeding.
+    - Deletes current and legacy configuration files and attempts to remove the configuration directory (and a "batch" subdirectory) if empty.
+    - On Windows, attempts to remove Start Menu shortcuts, a startup shortcut, and a configuration shortcut when Windows-specific modules are available.
+    - Deletes all files, symlinks, and subdirectories inside the configured download/base directory.
+    - On non-Windows systems, removes Fetchtastic-related crontab entries if present.
+    - Removes a Termux boot script (~/.termux/boot/fetchtastic.sh) if present.
+    - Removes the Fetchtastic log file in the user log directory.
+    
+    Side effects:
+    - Irreversibly deletes files and may modify the user's crontab and Start Menu/startup items.
+    - The function prints progress and error messages to stdout.
+    
+    Use with caution; run only when you intend to fully remove Fetchtastic data and integrations.
+    """
     print(
         "This will remove Fetchtastic configuration files, downloaded files, and cron job entries."
     )

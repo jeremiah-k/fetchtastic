@@ -1,3 +1,5 @@
+import os
+import subprocess
 from unittest.mock import patch
 
 import pytest
@@ -30,6 +32,23 @@ def test_cli_download_command(mocker):
     mock_downloader_main.assert_not_called()
 
 
+def test_cli_download_with_migration(mocker):
+    """Test the 'download' command with an old config file that needs migration."""
+    mocker.patch("sys.argv", ["fetchtastic", "download"])
+    mock_downloader_main = mocker.patch("fetchtastic.downloader.main")
+    mocker.patch(
+        "fetchtastic.setup_config.config_exists",
+        return_value=(True, "/path/to/old/config"),
+    )
+    mocker.patch("fetchtastic.setup_config.OLD_CONFIG_FILE", "/path/to/old/config")
+    mocker.patch("fetchtastic.setup_config.migrate_config", return_value=True)
+    mocker.patch("os.path.exists", return_value=False)
+    mocker.patch("fetchtastic.setup_config.load_config", return_value={"key": "val"})
+
+    cli.main()
+    mock_downloader_main.assert_called_once()
+
+
 def test_cli_setup_command(mocker):
     """Test the 'setup' command dispatch."""
     mocker.patch("sys.argv", ["fetchtastic", "setup"])
@@ -59,6 +78,22 @@ def test_cli_repo_browse_command(mocker):
     mock_repo_main.assert_called_once()
 
 
+def test_cli_repo_clean_command(mocker):
+    """Test the 'repo clean' command dispatch."""
+    mocker.patch("sys.argv", ["fetchtastic", "repo", "clean"])
+    mocker.patch(
+        "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
+    )
+    mocker.patch("fetchtastic.setup_config.load_config", return_value={"key": "val"})
+    mock_run_repo_clean = mocker.patch("fetchtastic.cli.run_repo_clean")
+    mocker.patch(
+        "fetchtastic.cli.display_version_info", return_value=("1.0", "1.0", False)
+    )
+
+    cli.main()
+    mock_run_repo_clean.assert_called_once()
+
+
 def test_cli_clean_command(mocker):
     """Test the 'clean' command dispatch."""
     mocker.patch("sys.argv", ["fetchtastic", "clean"])
@@ -66,6 +101,64 @@ def test_cli_clean_command(mocker):
     mock_run_clean = mocker.patch("fetchtastic.cli.run_clean")
     cli.main()
     mock_run_clean.assert_called_once()
+
+
+@patch("builtins.input", return_value="y")
+@patch("os.path.exists")
+@patch("os.remove")
+@patch("shutil.rmtree")
+@patch("os.listdir")
+@patch("os.rmdir")
+@patch("subprocess.run")
+@patch("platform.system", return_value="Linux")
+@patch(
+    "fetchtastic.setup_config.CONFIG_FILE", "/tmp/config/fetchtastic.yaml"
+)  # nosec B108
+@patch(
+    "fetchtastic.setup_config.OLD_CONFIG_FILE", "/tmp/old_config/fetchtastic.yaml"
+)  # nosec B108
+@patch("fetchtastic.setup_config.BASE_DIR", "/tmp/meshtastic")  # nosec B108
+@patch("os.path.isdir")
+def test_run_clean(
+    mock_isdir,
+    mock_platform_system,
+    mock_subprocess_run,
+    mock_rmdir,
+    mock_listdir,
+    mock_rmtree,
+    mock_os_remove,
+    mock_os_path_exists,
+    mock_input,
+):
+    """Test the run_clean function."""
+    # Simulate existing files and directories
+    mock_os_path_exists.return_value = True
+    mock_listdir.return_value = ["some_dir"]
+    mock_isdir.return_value = True
+    mock_subprocess_run.return_value.stdout = "# fetchtastic cron job"
+    mock_subprocess_run.return_value.returncode = 0
+    with patch("subprocess.Popen") as mock_popen:
+        mock_proc = mock_popen.return_value
+        mock_proc.communicate.return_value = (None, None)
+        cli.run_clean()
+        mock_popen.assert_called_once()
+
+    # Check that config files are removed
+    mock_os_remove.assert_any_call("/tmp/config/fetchtastic.yaml")  # nosec B108
+    mock_os_remove.assert_any_call("/tmp/old_config/fetchtastic.yaml")  # nosec B108
+
+    # Check that download directory is cleaned
+    mock_rmtree.assert_any_call(
+        os.path.join("/tmp/meshtastic", "some_dir")  # nosec B108
+    )
+
+    # Check that cron jobs are removed
+    mock_subprocess_run.assert_any_call(
+        ["crontab", "-l"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
 
 
 def test_cli_version_command(mocker):
@@ -227,18 +320,6 @@ def test_cli_version_with_update_available(mocker):
     mock_logger.info.assert_any_call("Run 'pipx upgrade fetchtastic' to upgrade.")
 
 
-def test_cli_help_command(mocker):
-    """Test the 'help' command."""
-    mocker.patch("sys.argv", ["fetchtastic", "help"])
-    # Mock the parser.print_help method instead of print
-    mock_print_help = mocker.patch("argparse.ArgumentParser.print_help")
-
-    cli.main()
-
-    # Should call print_help on the parser
-    mock_print_help.assert_called_once()
-
-
 def test_cli_repo_help_command(mocker):
     """Test the 'repo --help' command."""
     mocker.patch("sys.argv", ["fetchtastic", "repo", "--help"])
@@ -246,3 +327,447 @@ def test_cli_repo_help_command(mocker):
     # This should trigger SystemExit due to argparse help
     with pytest.raises(SystemExit):
         cli.main()
+
+
+def test_cli_help_command_general(mocker):
+    """Test the 'help' command with no arguments."""
+    mocker.patch("sys.argv", ["fetchtastic", "help"])
+    mock_print_help = mocker.patch("argparse.ArgumentParser.print_help")
+
+    cli.main()
+
+    mock_print_help.assert_called_once()
+
+
+def test_cli_help_command_repo(mocker):
+    """Test the 'help repo' command."""
+    mocker.patch("sys.argv", ["fetchtastic", "help", "repo"])
+    mock_show_help = mocker.patch("fetchtastic.cli.show_help")
+
+    cli.main()
+
+    mock_show_help.assert_called_once()
+    # Verify the arguments passed to show_help
+    args = mock_show_help.call_args[0]
+    help_command = args[3]  # 4th argument is help_command
+    help_subcommand = args[4]  # 5th argument is help_subcommand
+    assert help_command == "repo"
+    assert help_subcommand is None
+
+
+def test_cli_help_command_repo_browse(mocker):
+    """Test the 'help repo browse' command."""
+    mocker.patch("sys.argv", ["fetchtastic", "help", "repo", "browse"])
+    mock_show_help = mocker.patch("fetchtastic.cli.show_help")
+
+    cli.main()
+
+    mock_show_help.assert_called_once()
+    # Verify the arguments passed to show_help
+    args = mock_show_help.call_args[0]
+    help_command = args[3]  # 4th argument is help_command
+    help_subcommand = args[4]  # 5th argument is help_subcommand
+    assert help_command == "repo"
+    assert help_subcommand == "browse"
+
+
+def test_cli_help_command_setup(mocker):
+    """Test the 'help setup' command."""
+    mocker.patch("sys.argv", ["fetchtastic", "help", "setup"])
+    mock_show_help = mocker.patch("fetchtastic.cli.show_help")
+
+    cli.main()
+
+    mock_show_help.assert_called_once()
+    # Verify the arguments passed to show_help
+    args = mock_show_help.call_args[0]
+    help_command = args[3]  # 4th argument is help_command
+    help_subcommand = args[4]  # 5th argument is help_subcommand
+    assert help_command == "setup"
+    assert help_subcommand is None
+
+
+def test_cli_help_command_unknown(mocker):
+    """Test the 'help unknown' command."""
+    mocker.patch("sys.argv", ["fetchtastic", "help", "unknown"])
+    mock_show_help = mocker.patch("fetchtastic.cli.show_help")
+
+    cli.main()
+
+    mock_show_help.assert_called_once()
+    # Verify the arguments passed to show_help
+    args = mock_show_help.call_args[0]
+    help_command = args[3]  # 4th argument is help_command
+    help_subcommand = args[4]  # 5th argument is help_subcommand
+    assert help_command == "unknown"
+    assert help_subcommand is None
+
+
+def test_show_help_general(mocker):
+    """Test show_help function with no specific command."""
+    mock_parser = mocker.MagicMock()
+    mock_repo_parser = mocker.MagicMock()
+    mock_repo_subparsers = mocker.MagicMock()
+
+    cli.show_help(mock_parser, mock_repo_parser, mock_repo_subparsers, None, None)
+
+    mock_parser.print_help.assert_called_once()
+    mock_repo_parser.print_help.assert_not_called()
+
+
+def test_show_help_repo_command(mocker):
+    """Test show_help function with repo command."""
+    mock_parser = mocker.MagicMock()
+    mock_repo_parser = mocker.MagicMock()
+    mock_repo_subparsers = mocker.MagicMock()
+
+    cli.show_help(mock_parser, mock_repo_parser, mock_repo_subparsers, "repo", None)
+
+    mock_parser.print_help.assert_not_called()
+    mock_repo_parser.print_help.assert_called_once()
+
+
+def test_show_help_repo_browse_subcommand(mocker, capsys):
+    """Test show_help function with repo browse subcommand."""
+    mock_parser = mocker.MagicMock()
+    mock_repo_parser = mocker.MagicMock()
+    mock_repo_subparsers = mocker.MagicMock()
+    mock_browse_parser = mocker.MagicMock()
+
+    # Mock the choices dictionary to return the browse parser
+    mock_repo_subparsers.choices = {
+        "browse": mock_browse_parser,
+        "clean": mocker.MagicMock(),
+    }
+
+    cli.show_help(mock_parser, mock_repo_parser, mock_repo_subparsers, "repo", "browse")
+
+    mock_repo_parser.print_help.assert_called_once()
+    mock_browse_parser.print_help.assert_called_once()
+
+    # Check that the correct message was printed
+    captured = capsys.readouterr()
+    assert "Repo 'browse' command help:" in captured.out
+
+
+def test_show_help_repo_unknown_subcommand(mocker, capsys):
+    """Test show_help function with unknown repo subcommand."""
+    mock_parser = mocker.MagicMock()
+    mock_repo_parser = mocker.MagicMock()
+    mock_repo_subparsers = mocker.MagicMock()
+    mock_repo_subparsers.choices = {
+        "browse": mocker.MagicMock(),
+        "clean": mocker.MagicMock(),
+    }
+
+    cli.show_help(
+        mock_parser, mock_repo_parser, mock_repo_subparsers, "repo", "unknown"
+    )
+
+    mock_repo_parser.print_help.assert_called_once()
+
+    # Check that the correct error message was printed
+    captured = capsys.readouterr()
+    assert "Unknown repo subcommand: unknown" in captured.out
+    assert "Available repo subcommands: browse, clean" in captured.out
+
+
+def test_show_help_other_commands(mocker, capsys):
+    """Test show_help function with other main commands."""
+    mock_parser = mocker.MagicMock()
+    mock_repo_parser = mocker.MagicMock()
+    mock_repo_subparsers = mocker.MagicMock()
+    mock_main_subparsers = mocker.MagicMock()
+
+    # Create mock subparsers for each command
+    mock_subparsers = {}
+    for command in ["setup", "download", "topic", "clean", "version"]:
+        mock_subparsers[command] = mocker.MagicMock()
+    mock_main_subparsers.choices = mock_subparsers
+
+    for command in ["setup", "download", "topic", "clean", "version"]:
+        cli.show_help(
+            mock_parser,
+            mock_repo_parser,
+            mock_repo_subparsers,
+            command,
+            None,
+            mock_main_subparsers,
+        )
+
+    # Should call print_help once for each command's subparser
+    for command in ["setup", "download", "topic", "clean", "version"]:
+        mock_subparsers[command].print_help.assert_called_once()
+    mock_repo_parser.print_help.assert_not_called()
+
+    # Check that the correct messages were printed
+    captured = capsys.readouterr()
+    for command in ["setup", "download", "topic", "clean", "version"]:
+        assert f"Help for '{command}' command:" in captured.out
+
+
+def test_show_help_unknown_command(mocker, capsys):
+    """Test show_help function with unknown command."""
+    mock_parser = mocker.MagicMock()
+    mock_repo_parser = mocker.MagicMock()
+    mock_repo_subparsers = mocker.MagicMock()
+    mock_main_subparsers = mocker.MagicMock()
+    mock_main_subparsers.choices = {
+        "setup": mocker.MagicMock(),
+        "download": mocker.MagicMock(),
+        "topic": mocker.MagicMock(),
+        "clean": mocker.MagicMock(),
+        "version": mocker.MagicMock(),
+        "repo": mocker.MagicMock(),
+        "help": mocker.MagicMock(),
+    }
+
+    cli.show_help(
+        mock_parser,
+        mock_repo_parser,
+        mock_repo_subparsers,
+        "unknown",
+        None,
+        mock_main_subparsers,
+    )
+
+    mock_parser.print_help.assert_not_called()
+    mock_repo_parser.print_help.assert_not_called()
+
+    # Check that the correct error message was printed
+    captured = capsys.readouterr()
+    assert "Unknown command: unknown" in captured.out
+    assert "Available commands:" in captured.out
+    # Check that all expected commands are present (should be sorted)
+    expected_commands = [
+        "clean",
+        "download",
+        "help",
+        "repo",
+        "setup",
+        "topic",
+        "version",
+    ]
+    assert ", ".join(expected_commands) in captured.out
+    assert "For general help, use: fetchtastic help" in captured.out
+
+
+def test_clipboard_prompt_eoferror_handling(mocker, capsys):
+    """Test clipboard prompt handles EOFError gracefully in non-interactive contexts."""
+    # Mock the config and setup
+    mock_config = {"NTFY_SERVER": "https://ntfy.sh", "NTFY_TOPIC": "test-topic-123"}
+    mocker.patch("fetchtastic.setup_config.load_config", return_value=mock_config)
+    mocker.patch("sys.argv", ["fetchtastic", "topic"])
+
+    # Mock input to raise EOFError (simulating closed stdin in CI/pipes)
+    mocker.patch("builtins.input", side_effect=EOFError())
+
+    # Mock clipboard function where it's imported in CLI
+    mock_copy = mocker.patch(
+        "fetchtastic.cli.copy_to_clipboard_func", return_value=True
+    )
+
+    # Run the command
+    cli.main()
+
+    # Should default to "y" and copy to clipboard
+    mock_copy.assert_called_once_with("https://ntfy.sh/test-topic-123")
+
+    # Check output
+    captured = capsys.readouterr()
+    assert "Current NTFY topic URL: https://ntfy.sh/test-topic-123" in captured.out
+    assert "Topic URL copied to clipboard." in captured.out
+
+
+def test_clipboard_prompt_yes_variations(mocker, capsys):
+    """Test clipboard prompt accepts both 'y' and 'yes' responses."""
+    mock_config = {"NTFY_SERVER": "https://ntfy.sh", "NTFY_TOPIC": "test-topic-123"}
+    mocker.patch("fetchtastic.setup_config.load_config", return_value=mock_config)
+    mocker.patch("sys.argv", ["fetchtastic", "topic"])
+    mock_copy = mocker.patch(
+        "fetchtastic.cli.copy_to_clipboard_func", return_value=True
+    )
+
+    # Test "yes" response
+    mocker.patch("builtins.input", return_value="yes")
+    cli.main()
+    mock_copy.assert_called_with("https://ntfy.sh/test-topic-123")
+
+    # Reset mock
+    mock_copy.reset_mock()
+
+    # Test "y" response
+    mocker.patch("builtins.input", return_value="y")
+    cli.main()
+    mock_copy.assert_called_with("https://ntfy.sh/test-topic-123")
+
+
+def test_show_help_early_return_behavior(mocker, capsys):
+    """Test that show_help returns early after handling repo command."""
+    mock_parser = mocker.MagicMock()
+    mock_repo_parser = mocker.MagicMock()
+    mock_repo_subparsers = mocker.MagicMock()
+    mock_repo_subparsers.choices = {
+        "browse": mocker.MagicMock(),
+        "clean": mocker.MagicMock(),
+    }
+    mock_main_subparsers = mocker.MagicMock()
+    mock_main_subparsers.choices = {"setup": mocker.MagicMock()}
+
+    # Test repo command with subcommand
+    cli.show_help(
+        mock_parser,
+        mock_repo_parser,
+        mock_repo_subparsers,
+        "repo",
+        "browse",
+        mock_main_subparsers,
+    )
+
+    # Should have called repo parser and subcommand parser
+    mock_repo_parser.print_help.assert_called_once()
+    mock_repo_subparsers.choices["browse"].print_help.assert_called_once()
+
+    # Should NOT have called main parser (due to early return)
+    mock_parser.print_help.assert_not_called()
+
+    # Check output
+    captured = capsys.readouterr()
+    assert "Repo 'browse' command help:" in captured.out
+
+
+def test_copy_to_clipboard_func_termux_success(mocker):
+    """Test clipboard functionality on Termux (success)."""
+    mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
+    mock_run = mocker.patch("subprocess.run")
+
+    result = cli.copy_to_clipboard_func("test text")
+
+    assert result is True
+    mock_run.assert_called_once_with(
+        ["termux-clipboard-set"], input=b"test text", check=True
+    )
+
+
+def test_copy_to_clipboard_func_termux_failure(mocker):
+    """Test clipboard functionality on Termux (failure)."""
+    mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
+    mocker.patch("subprocess.run", side_effect=Exception("Termux error"))
+    mock_print = mocker.patch("builtins.print")
+
+    result = cli.copy_to_clipboard_func("test text")
+
+    assert result is False
+    mock_print.assert_called_with(
+        "An error occurred while copying to clipboard: Termux error"
+    )
+
+
+def test_copy_to_clipboard_func_macos_success(mocker):
+    """Test clipboard functionality on macOS (success)."""
+    mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
+    mocker.patch("platform.system", return_value="Darwin")
+    mock_run = mocker.patch("subprocess.run")
+
+    result = cli.copy_to_clipboard_func("test text")
+
+    assert result is True
+    mock_run.assert_called_once_with("pbcopy", text=True, input="test text", check=True)
+
+
+def test_copy_to_clipboard_func_linux_xclip_success(mocker):
+    """Test clipboard functionality on Linux with xclip (success)."""
+    mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
+    mocker.patch("platform.system", return_value="Linux")
+    mocker.patch(
+        "shutil.which", side_effect=lambda x: "/usr/bin/xclip" if x == "xclip" else None
+    )
+    mock_run = mocker.patch("subprocess.run")
+
+    result = cli.copy_to_clipboard_func("test text")
+
+    assert result is True
+    mock_run.assert_called_once_with(
+        ["xclip", "-selection", "clipboard"], input=b"test text", check=True
+    )
+
+
+def test_copy_to_clipboard_func_linux_xsel_success(mocker):
+    """Test clipboard functionality on Linux with xsel (success)."""
+    mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
+    mocker.patch("platform.system", return_value="Linux")
+    mocker.patch(
+        "shutil.which", side_effect=lambda x: "/usr/bin/xsel" if x == "xsel" else None
+    )
+    mock_run = mocker.patch("subprocess.run")
+
+    result = cli.copy_to_clipboard_func("test text")
+
+    assert result is True
+    mock_run.assert_called_once_with(
+        ["xsel", "--clipboard", "--input"], input=b"test text", check=True
+    )
+
+
+def test_copy_to_clipboard_func_linux_no_tools(mocker):
+    """Test clipboard functionality on Linux with no clipboard tools."""
+    mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
+    mocker.patch("platform.system", return_value="Linux")
+    mocker.patch("shutil.which", return_value=None)  # No clipboard tools available
+    mock_print = mocker.patch("builtins.print")
+
+    result = cli.copy_to_clipboard_func("test text")
+
+    assert result is False
+    mock_print.assert_called_with(
+        "xclip or xsel not found. Install xclip or xsel to use clipboard functionality."
+    )
+
+
+def test_copy_to_clipboard_func_unsupported_platform(mocker):
+    """Test clipboard functionality on unsupported platform."""
+    mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
+    mocker.patch("platform.system", return_value="FreeBSD")
+    mock_print = mocker.patch("builtins.print")
+
+    result = cli.copy_to_clipboard_func("test text")
+
+    assert result is False
+    mock_print.assert_called_with(
+        "Clipboard functionality is not supported on this platform."
+    )
+
+
+def test_copy_to_clipboard_func_subprocess_error(mocker):
+    """Test clipboard functionality with subprocess error."""
+    mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
+    mocker.patch("platform.system", return_value="Darwin")
+    mocker.patch("subprocess.run", side_effect=Exception("Subprocess error"))
+    mock_print = mocker.patch("builtins.print")
+
+    result = cli.copy_to_clipboard_func("test text")
+
+    assert result is False
+    mock_print.assert_called_with(
+        "An error occurred while copying to clipboard: Subprocess error"
+    )
+
+
+def test_run_clean_cancelled(mocker):
+    """Test run_clean when user cancels."""
+    mocker.patch("builtins.input", return_value="n")
+    mock_print = mocker.patch("builtins.print")
+
+    cli.run_clean()
+
+    mock_print.assert_any_call("Clean operation cancelled.")
+
+
+def test_run_clean_user_says_no_explicitly(mocker):
+    """Test run_clean when user explicitly says no."""
+    mocker.patch("builtins.input", return_value="no")
+    mock_print = mocker.patch("builtins.print")
+
+    cli.run_clean()
+
+    mock_print.assert_any_call("Clean operation cancelled.")

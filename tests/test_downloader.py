@@ -1,23 +1,29 @@
-from unittest.mock import patch
+from unittest.mock import mock_open, patch
 
 import pytest
 import requests
 
 from fetchtastic import downloader
+from fetchtastic.utils import extract_base_name
+from tests.test_constants import (
+    TEST_VERSION_NEW,
+    TEST_VERSION_NEWER,
+    TEST_VERSION_OLD,
+)
 
 
 # Test cases for compare_versions
 @pytest.mark.parametrize(
     "version1, version2, expected",
     [
-        ("2.1.0", "2.0.0", 1),
+        (TEST_VERSION_OLD, "2.0.0", 1),
         ("2.0.1", "2.0.0", 1),
         ("2.0.0", "2.0.1", -1),
         ("1.9.0", "2.0.0", -1),
         ("2.0.0", "2.0.0", 0),
-        ("2.6.9.f93d031", "2.6.8.ef9d0d7", 1),
-        ("2.6.8.ef9d0d7", "2.6.9.f93d031", -1),
-        ("2.3.0", "2.3.0.b123456", 0),  # Ignore hash for equality
+        (TEST_VERSION_NEWER, TEST_VERSION_NEW, 1),
+        (TEST_VERSION_NEW, TEST_VERSION_NEWER, -1),
+        ("2.3.0", "2.3.0.b123456", 1),  # 2.3.0 > 2.3.0.b123456 (release > pre-release)
         ("v1.2.3", "1.2.3", 0),  # Should handle 'v' prefix
         ("1.2", "1.2.3", -1),  # Handle different number of parts
     ],
@@ -25,6 +31,67 @@ from fetchtastic import downloader
 def test_compare_versions(version1, version2, expected):
     """Test the version comparison logic."""
     assert downloader.compare_versions(version1, version2) == expected
+    # Antisymmetry: reversing operands should flip the sign
+    assert downloader.compare_versions(version2, version1) == -expected
+
+
+def test_compare_versions_prerelease_parsing():
+    """Test new prerelease version parsing logic."""
+    # Test dot-separated prerelease versions
+    assert downloader.compare_versions("2.3.0.rc1", "2.3.0") == -1  # rc1 < final
+    assert downloader.compare_versions("2.3.0.dev1", "2.3.0") == -1  # dev1 < final
+    assert downloader.compare_versions("2.3.0.alpha1", "2.3.0") == -1  # alpha1 < final
+    assert downloader.compare_versions("2.3.0.beta2", "2.3.0") == -1  # beta2 < final
+
+    # Test dash-separated prerelease versions
+    assert downloader.compare_versions("2.3.0-rc1", "2.3.0") == -1  # rc1 < final
+    assert downloader.compare_versions("2.3.0-dev1", "2.3.0") == -1  # dev1 < final
+    assert downloader.compare_versions("2.3.0-alpha1", "2.3.0") == -1  # alpha1 < final
+    assert downloader.compare_versions("2.3.0-beta2", "2.3.0") == -1  # beta2 < final
+
+    # rc ordering
+    assert downloader.compare_versions("2.3.0.rc0", "2.3.0.rc1") == -1
+
+    # Test prerelease ordering
+    assert (
+        downloader.compare_versions("2.3.0.alpha1", "2.3.0.beta1") == -1
+    )  # alpha < beta
+    assert downloader.compare_versions("2.3.0.beta1", "2.3.0.rc1") == -1  # beta < rc
+    assert downloader.compare_versions("2.3.0.rc1", "2.3.0.dev1") == 1  # rc > dev
+
+
+def test_compare_versions_invalid_version_exception():
+    """Test InvalidVersion exception handling in version parsing."""
+    # Test with a version that will trigger the hash coercion and InvalidVersion exception
+    # This should exercise the InvalidVersion exception handling in the _try_parse function
+    result = downloader.compare_versions("1.0.0.invalid+hash", "1.0.0")
+    # The function should handle the exception gracefully and return a comparison result
+    # Natural sort fallback should determine "1.0.0.invalid+hash" > "1.0.0"
+    assert result == 1  # Should be greater due to natural sort fallback
+
+
+def test_compare_versions_hash_coercion():
+    """Test hash coercion in version parsing."""
+    # Test versions with hash patterns that get coerced to local versions
+    assert downloader.compare_versions("1.0.0.abc123", "1.0.0") == 1  # local > base
+    assert (
+        downloader.compare_versions("2.1.0.def456", "2.1.0.abc123") == 1
+    )  # lexical comparison
+
+    # Test edge cases that might trigger InvalidVersion in hash coercion
+    result = downloader.compare_versions("1.0.0.invalid-hash+more", "1.0.0")
+    assert isinstance(result, int)  # Should handle gracefully
+
+
+def test_compare_versions_prerelease_edge_cases():
+    """Test edge cases in prerelease version parsing."""
+    # Test prerelease versions that might trigger InvalidVersion during coercion
+    assert downloader.compare_versions("2.3.0.rc", "2.3.0") == -1  # rc without number
+    assert downloader.compare_versions("2.3.0-dev", "2.3.0") == -1  # dev without number
+
+    # Test mixed separators and edge cases
+    result = downloader.compare_versions("2.3.0.invalid-pre", "2.3.0")
+    assert isinstance(result, int)  # Should handle gracefully
 
 
 # Test cases for strip_version_numbers
@@ -40,9 +107,9 @@ def test_compare_versions(version1, version2, expected):
         ("file-with-v1.2.3-in-name.bin", "file-with-in-name.bin"),
     ],
 )
-def test_strip_version_numbers(filename, expected):
-    """Test the logic for stripping version numbers from filenames."""
-    assert downloader.strip_version_numbers(filename) == expected
+def test_extract_base_name(filename, expected):
+    """Test the logic for extracting base names from filenames."""
+    assert extract_base_name(filename) == expected
 
 
 # Test cases for strip_unwanted_chars
@@ -145,7 +212,7 @@ def test_set_permissions_on_sh_files(tmp_path):
 def dummy_zip_file(tmp_path):
     """
     Create a dummy ZIP file containing sample firmware and support files used by extraction tests.
-    
+
     The archive contains:
     - firmware-rak4631-2.7.4.c1f4f79.bin (nRF52-style firmware)
     - firmware-tbeam-2.7.4.c1f4f79.uf2 (alternate firmware format)
@@ -154,7 +221,7 @@ def dummy_zip_file(tmp_path):
     - device-update.sh (shell updater script)
     - bleota.bin (BLE OTA payload)
     - notes.txt (auxiliary text file)
-    
+
     Returns:
         pathlib.Path: Path to the created ZIP file.
     """
@@ -263,12 +330,13 @@ def test_send_ntfy_notification(mocker):
     downloader._send_ntfy_notification(
         "https://ntfy.sh", "mytopic", "Test message", "Test Title"
     )
-    mock_post.assert_called_once_with(
-        "https://ntfy.sh/mytopic",
-        data="Test message".encode("utf-8"),
-        headers={"Content-Type": "text/plain; charset=utf-8", "Title": "Test Title"},
-        timeout=10,
-    )
+    mock_post.assert_called_once()
+    args, kwargs = mock_post.call_args
+    assert args[0] == "https://ntfy.sh/mytopic"
+    assert kwargs["data"] == "Test message".encode("utf-8")
+    assert kwargs["headers"]["Content-Type"] == "text/plain; charset=utf-8"
+    assert kwargs["headers"]["Title"] == "Test Title"
+    assert kwargs["timeout"] == downloader.NTFY_REQUEST_TIMEOUT
 
     # 2. Test request exception
     mock_post.reset_mock()
@@ -282,10 +350,25 @@ def test_send_ntfy_notification(mocker):
     downloader._send_ntfy_notification(None, None, "Test message")
     mock_post.assert_not_called()
 
+    # 4. Header omission when no title is provided
+    mock_post.reset_mock()
+    downloader._send_ntfy_notification("https://ntfy.sh", "mytopic", "No title here")
+    args, kwargs = mock_post.call_args
+    assert "Title" not in kwargs["headers"]
+
 
 @pytest.fixture
 def mock_releases():
-    """Provides a mock list of GitHub release data, pre-sorted by date."""
+    """
+    Return a pre-built list of mock GitHub release dictionaries used in tests.
+    
+    The list is pre-sorted by `published_at` descending (newest first). Each release dict contains:
+    - `tag_name` (str)
+    - `published_at` (ISO 8601 str)
+    - `assets` (list of dicts), where each asset dict includes `name`, `size`, and `browser_download_url`.
+    
+    One entry intentionally has an empty `assets` list to simulate an incomplete release.
+    """
     return [
         {
             "tag_name": "v2.7.4.c1f4f79",
@@ -340,6 +423,13 @@ def test_get_latest_releases_data(mocker, mock_releases):
     )
     assert len(releases) == 2
     assert releases[0]["tag_name"] == "v2.7.4.c1f4f79"
+
+    # Validate request options on the last call
+    _, kwargs = mock_get.call_args
+    assert kwargs["timeout"] == downloader.GITHUB_API_TIMEOUT
+    assert kwargs["params"]["per_page"] == 2
+    assert kwargs["headers"]["Accept"] == "application/vnd.github+json"
+    assert kwargs["headers"]["X-GitHub-Api-Version"] == "2022-11-28"
 
     # 3. Test request exception
     mock_get.side_effect = requests.exceptions.RequestException
@@ -442,6 +532,8 @@ def test_check_and_download(mocker, tmp_path, mock_releases):
     )
     # Check that the latest release file was updated
     assert latest_release_file.read_text() == "v2.7.4.c1f4f79"
+    # Ensure permissions pass executed
+    assert downloader.set_permissions_on_sh_files.called
 
     # --- Scenario 2: All releases are up to date ---
     mock_is_complete.return_value = True  # Pretend all releases are already downloaded
@@ -483,3 +575,255 @@ def test_check_and_download(mocker, tmp_path, mock_releases):
     assert downloaded == []
     assert len(failed) > 0
     assert failed[0]["release_tag"] == "v2.7.4.c1f4f79"  # It tries v2.7.4 first
+
+
+@patch("fetchtastic.downloader._initial_setup_and_config")
+@patch("fetchtastic.downloader._check_wifi_connection")
+@patch("fetchtastic.downloader._process_firmware_downloads")
+@patch("fetchtastic.downloader._process_apk_downloads")
+@patch("fetchtastic.downloader._finalize_and_notify")
+def test_main(
+    mock_finalize,
+    mock_process_apk,
+    mock_process_firmware,
+    mock_check_wifi,
+    mock_initial_setup,
+):
+    """Test the main downloader orchestration."""
+    # Simulate successful setup
+    mock_initial_setup.return_value = (
+        {"SAVE_FIRMWARE": True, "SAVE_APKS": True},
+        "1.0.0",
+        "1.1.0",
+        True,
+        {"download_dir": "/tmp"},  # nosec B108
+    )
+    mock_process_firmware.return_value = (["v1"], ["v1"], [], "v1")
+    mock_process_apk.return_value = (["v2"], ["v2"], [], "v2")
+
+    downloader.main()
+
+    mock_initial_setup.assert_called_once()
+    mock_check_wifi.assert_called_once()
+    mock_process_firmware.assert_called_once()
+    mock_process_apk.assert_called_once()
+    mock_finalize.assert_called_once()
+
+
+@patch("fetchtastic.downloader.display_version_info")
+@patch("fetchtastic.downloader.setup_config.load_config")
+@patch("os.path.exists")
+@patch("os.makedirs")
+def test_initial_setup_and_config(
+    mock_makedirs, mock_exists, mock_load_config, mock_display_version
+):
+    """Test the initial setup and configuration loading."""
+    # 1. Test with existing config
+    mock_load_config.return_value = {
+        "DOWNLOAD_DIR": "/tmp/test_downloads"
+    }  # nosec B108
+    mock_display_version.return_value = ("1.0.0", "1.1.0", True)
+    mock_exists.return_value = True
+
+    config, _, _, _, paths = downloader._initial_setup_and_config()
+
+    assert config["DOWNLOAD_DIR"] == "/tmp/test_downloads"  # nosec B108
+    mock_makedirs.assert_not_called()
+
+    # 2. Test with no config
+    mock_load_config.return_value = None
+    config, _, _, _, paths = downloader._initial_setup_and_config()
+    assert config is None
+
+    # 3. Test directory creation
+    mock_load_config.return_value = {
+        "DOWNLOAD_DIR": "/tmp/test_downloads"
+    }  # nosec B108
+    mock_exists.return_value = False
+    downloader._initial_setup_and_config()
+    assert mock_makedirs.call_count == 3
+
+
+@patch("fetchtastic.downloader.setup_config.is_termux", return_value=True)
+@patch("os.popen")
+def test_check_wifi_connection(mock_popen, mocker):
+    """Test the Wi-Fi connection check on Termux."""
+    config = {"WIFI_ONLY": True}
+
+    # 1. Test when connected to Wi-Fi
+    mock_popen.return_value.read.return_value = (
+        '{"supplicant_state": "COMPLETED", "ip": "192.168.1.100"}'
+    )
+    downloader.downloads_skipped = False
+    downloader._check_wifi_connection(config)
+    assert downloader.downloads_skipped is False
+
+
+@patch("fetchtastic.downloader._get_latest_releases_data")
+@patch("fetchtastic.downloader.check_and_download")
+@patch("fetchtastic.downloader.check_promoted_prereleases")
+@patch("fetchtastic.downloader.check_for_prereleases")
+@patch("os.path.exists", return_value=True)
+def test_process_firmware_downloads(
+    mock_exists,
+    mock_check_for_prereleases,
+    mock_check_promoted,
+    mock_check_and_download,
+    mock_get_releases,
+):
+    """Test the firmware download processing logic."""
+    config = {
+        "SAVE_FIRMWARE": True,
+        "SELECTED_FIRMWARE_ASSETS": ["pattern1"],
+        "FIRMWARE_VERSIONS_TO_KEEP": 2,
+        "CHECK_PRERELEASES": True,
+        "EXTRACT_PATTERNS": [],
+        "EXCLUDE_PATTERNS": [],
+        "AUTO_EXTRACT": False,
+    }
+    paths = {
+        "firmware_releases_url": "url",
+        "latest_firmware_release_file": "file",
+        "firmware_dir": "/tmp/firmware",  # nosec B108
+        "download_dir": "/tmp",  # nosec B108
+    }
+    with patch("builtins.open", mock_open(read_data="v1.0")):
+        mock_get_releases.return_value = [{"tag_name": "v1.0"}]
+        mock_check_and_download.return_value = (["v1.0"], ["v1.0"], [])
+        mock_check_promoted.return_value = False
+        mock_check_for_prereleases.return_value = (True, ["v1.1-pre"])
+
+        downloaded, new, failed, latest = downloader._process_firmware_downloads(
+            config, paths
+        )
+
+        assert "v1.0" in downloaded
+        assert "pre-release v1.1-pre" in downloaded
+        assert latest == "v1.0"
+
+
+@patch("fetchtastic.downloader._send_ntfy_notification")
+def test_finalize_and_notify(mock_send_ntfy):
+    """Test the finalize and notify function."""
+    config = {"NTFY_SERVER": "https://ntfy.sh", "NTFY_TOPIC": "test"}
+
+    # 1. Test with downloaded files
+    downloader._finalize_and_notify(
+        start_time=0,
+        config=config,
+        downloaded_firmwares=["v1"],
+        downloaded_apks=["v2"],
+        new_firmware_versions=[],
+        new_apk_versions=[],
+        current_version="1.0.0",
+        latest_version="1.0.0",
+        update_available=False,
+    )
+    mock_send_ntfy.assert_called_once()
+    assert "Downloaded Firmware versions: v1" in mock_send_ntfy.call_args[0][2]
+    assert "Downloaded Android APK versions: v2" in mock_send_ntfy.call_args[0][2]
+    # Assert the title
+    _, kwargs = mock_send_ntfy.call_args
+    assert kwargs["title"] == "Fetchtastic Download Completed"
+
+    # 2. Test with no downloaded files
+    mock_send_ntfy.reset_mock()
+    downloader._finalize_and_notify(
+        start_time=0,
+        config=config,
+        downloaded_firmwares=[],
+        downloaded_apks=[],
+        new_firmware_versions=[],
+        new_apk_versions=[],
+        current_version="1.0.0",
+        latest_version="1.0.0",
+        update_available=False,
+    )
+    mock_send_ntfy.assert_called_once()
+    assert "All assets are up to date" in mock_send_ntfy.call_args[0][2]
+    # Assert the title
+    _, kwargs = mock_send_ntfy.call_args
+    assert kwargs["title"] == "Fetchtastic Up to Date"
+
+    # 3. Test with downloads skipped
+    mock_send_ntfy.reset_mock()
+    downloader.downloads_skipped = True
+    downloader._finalize_and_notify(
+        start_time=0,
+        config=config,
+        downloaded_firmwares=[],
+        downloaded_apks=[],
+        new_firmware_versions=["v3"],
+        new_apk_versions=[],
+        current_version="1.0.0",
+        latest_version="1.0.0",
+        update_available=False,
+    )
+    mock_send_ntfy.assert_called_once()
+    assert "downloads were skipped" in mock_send_ntfy.call_args[0][2]
+    # Assert the title
+    _, kwargs = mock_send_ntfy.call_args
+    assert kwargs["title"] == "Fetchtastic Downloads Skipped"
+    downloader.downloads_skipped = False
+
+
+def test_strip_unwanted_chars_additional():
+    """Test additional cases for strip_unwanted_chars function."""
+    # Test with mixed content
+    assert downloader.strip_unwanted_chars("Hello 🌟 World! 👍") == "Hello  World! "
+
+    # Test with only ASCII
+    assert downloader.strip_unwanted_chars("Regular ASCII text") == "Regular ASCII text"
+
+    # Test with only non-ASCII
+    assert downloader.strip_unwanted_chars("🎉🎊🎈") == ""
+
+    # Test with numbers and symbols
+    assert downloader.strip_unwanted_chars("Test 123 @#$ 🚀") == "Test 123 @#$ "
+
+
+def test_is_connected_to_wifi_non_termux(mocker):
+    """Test is_connected_to_wifi for non-Termux platforms."""
+    # Mock setup_config.is_termux to return False
+    mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
+
+    # Should return True for non-Termux platforms
+    assert downloader.is_connected_to_wifi() is True
+
+
+def test_compare_file_hashes_identical(tmp_path):
+    """Test compare_file_hashes with identical files."""
+    # Create two identical files
+    file1 = tmp_path / "file1.txt"
+    file2 = tmp_path / "file2.txt"
+    content = "This is test content for hash comparison"
+
+    file1.write_text(content)
+    file2.write_text(content)
+
+    # Files should have identical hashes
+    assert downloader.compare_file_hashes(str(file1), str(file2)) is True
+
+
+def test_compare_file_hashes_different(tmp_path):
+    """Test compare_file_hashes with different files."""
+    # Create two different files
+    file1 = tmp_path / "file1.txt"
+    file2 = tmp_path / "file2.txt"
+
+    file1.write_text("Content A")
+    file2.write_text("Content B")
+
+    # Files should have different hashes
+    assert downloader.compare_file_hashes(str(file1), str(file2)) is False
+
+
+def test_compare_file_hashes_missing_file(tmp_path):
+    """Test compare_file_hashes with missing files."""
+    file1 = tmp_path / "file1.txt"
+    file2 = tmp_path / "nonexistent.txt"
+
+    file1.write_text("Content")
+
+    # Should return False when one file doesn't exist
+    assert downloader.compare_file_hashes(str(file1), str(file2)) is False
