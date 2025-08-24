@@ -139,10 +139,12 @@ def test_download_file_with_retry_existing_corrupted_zip(mock_session, tmp_path)
     def mock_zipfile_init(self, file, *args, **kwargs):
         """
         Mock replacement for zipfile.ZipFile.__init__ used in tests.
-
-        If the provided `file` (path) equals the outer-scope `download_path`, this mock raises zipfile.BadZipFile to simulate a corrupted/invalid ZIP on first validation. For any other path it delegates to the original ZipFile.__init__ implementation.
-
-        Note: relies on `original_zipfile_init` and `download_path` being available in the enclosing scope.
+        
+        Raises zipfile.BadZipFile when called with the path equal to the enclosing-scope `download_path`
+        to simulate a corrupted ZIP on first validation; for any other path it delegates to
+        `original_zipfile_init` from the enclosing scope.
+        
+        Depends on `original_zipfile_init` and `download_path` being defined in the surrounding scope.
         """
         if str(file) == str(download_path):
             raise zipfile.BadZipFile

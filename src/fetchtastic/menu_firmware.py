@@ -15,7 +15,17 @@ from fetchtastic.utils import extract_base_name
 
 def fetch_firmware_assets():
     """
-    Fetches the list of firmware assets from the latest release on GitHub.
+    Return a sorted list of firmware asset filenames from the latest Meshtastic GitHub release.
+    
+    Makes an HTTP GET request to MESHTASTIC_FIRMWARE_RELEASES_URL (with timeout GITHUB_API_TIMEOUT),
+    pauses for API_CALL_DELAY after the request, then parses the JSON and returns the asset names
+    from the first release entry, sorted alphabetically.
+    
+    Returns:
+        list[str]: Sorted asset filenames present in the latest release.
+    
+    Raises:
+        requests.HTTPError: If the HTTP request returns a non-2xx status (raised by response.raise_for_status()).
     """
     response = requests.get(
         MESHTASTIC_FIRMWARE_RELEASES_URL, timeout=GITHUB_API_TIMEOUT
@@ -36,8 +46,16 @@ def fetch_firmware_assets():
 
 def select_assets(assets):
     """
-    Displays a menu for the user to select firmware assets to download.
-    Returns a dictionary containing the selected base patterns.
+    Present an interactive multiselect menu of firmware asset filenames and return their base-name patterns.
+    
+    Displays a prompt (SPACE to select, ENTER to confirm) built from the provided list of asset filenames, lets the user choose zero or more entries, and converts each selected filename into a base pattern via extract_base_name.
+    
+    Parameters:
+        assets (list[str]): List of firmware asset filenames (as returned by the releases API).
+    
+    Returns:
+        dict[str, list[str]]: {"selected_assets": [base_pattern, ...]} for the chosen files.
+        None: If the user makes no selection.
     """
     title = """Select the firmware files you want to download (press SPACE to select, ENTER to confirm):
 Note: These are files from the latest release. Version numbers may change in other releases."""
