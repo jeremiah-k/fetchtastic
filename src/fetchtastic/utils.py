@@ -138,7 +138,7 @@ def download_file_with_retry(
     Errors and exceptions:
     - Network, IO, ZIP validation, and unexpected exceptions are caught internally; the function returns False on failure rather than propagating exceptions.
     """
-    # Create a Session and ensure it is closed deterministically
+    # Note: Session is created after pre-checks and closed in finally
 
     # Check if file exists and is valid (especially for zips)
     if os.path.exists(download_path):
@@ -261,7 +261,7 @@ def download_file_with_retry(
                 )
                 return False
 
-    temp_path = download_path + ".tmp"
+    temp_path = f"{download_path}.tmp.{os.getpid()}.{int(time.time()*1000)}"
     session = requests.Session()
     response = None  # ensure we can close the Response in finally
     try:
@@ -290,6 +290,7 @@ def download_file_with_retry(
                 total=DEFAULT_CONNECT_RETRIES,
                 connect=DEFAULT_CONNECT_RETRIES,
                 read=DEFAULT_CONNECT_RETRIES,
+                status=DEFAULT_CONNECT_RETRIES,
                 backoff_factor=DEFAULT_BACKOFF_FACTOR,
                 status_forcelist=[408, 429, 500, 502, 503, 504],
                 method_whitelist=frozenset({"GET", "HEAD"}),  # type: ignore[arg-type]
