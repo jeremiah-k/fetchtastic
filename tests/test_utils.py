@@ -201,7 +201,6 @@ def test_download_file_with_retry_windows_permission_error(
     ]
 
     download_path = tmp_path / "windows_file.txt"
-    temp_path = str(download_path) + ".tmp"
 
     with patch("fetchtastic.utils.time.sleep") as mock_sleep:
         result = utils.download_file_with_retry(
@@ -216,7 +215,10 @@ def test_download_file_with_retry_windows_permission_error(
     assert mock_sleep.call_count == 2
 
     # Assert that the final successful call was made with the correct arguments
-    mock_os_replace.assert_called_with(temp_path, str(download_path))
+    # The implementation may add a uniqueness suffix to the temp file name; allow prefix match
+    args, kwargs = mock_os_replace.call_args
+    assert args[1] == str(download_path)
+    assert args[0].startswith(str(download_path) + ".tmp")
 
 
 # Additional comprehensive tests for better coverage
