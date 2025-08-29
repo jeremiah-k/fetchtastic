@@ -364,6 +364,26 @@ def test_matches_selected_patterns_rak4631_variants():
     assert matches_selected_patterns("anything.bin", None) is True
 
 
+def test_legacy_strip_version_numbers():
+    """Directly test legacy normalization which preserves the separator before versions."""
+    from fetchtastic.utils import legacy_strip_version_numbers
+
+    # Preserves '-' immediately before version
+    assert (
+        legacy_strip_version_numbers("firmware-rak4631-2.7.4.c1f4f79.zip")
+        == "firmware-rak4631-.zip"
+    )
+
+    # Preserves '_' immediately before version and collapses repeated separators
+    assert (
+        legacy_strip_version_numbers("meshtasticd_2.5.13.1a06f88_amd64.deb")
+        == "meshtasticd_amd64.deb"
+    )
+
+    # Does not alter filenames without version-like tokens
+    assert legacy_strip_version_numbers("simple.txt") == "simple.txt"
+
+
 @pytest.mark.core_downloads
 @pytest.mark.unit
 @patch("fetchtastic.utils.Retry")

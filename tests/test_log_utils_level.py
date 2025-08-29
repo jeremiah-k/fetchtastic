@@ -1,0 +1,30 @@
+import logging
+
+from fetchtastic.log_utils import logger, set_log_level
+
+
+def _get_rich_handler():
+    for h in logger.handlers:
+        # Avoid importing RichHandler in test; duck-type by class name
+        if h.__class__.__name__ == "RichHandler":
+            return h
+    return None
+
+
+def test_set_log_level_updates_handler_formatters():
+    rich = _get_rich_handler()
+    assert rich is not None, "Expected a RichHandler on the fetchtastic logger"
+
+    # Switch to DEBUG and verify verbose formatter
+    set_log_level("DEBUG")
+    assert logger.level == logging.DEBUG
+    assert rich.level == logging.DEBUG
+    fmt_debug = getattr(rich.formatter, "_fmt", "")
+    assert "%(module)s" in fmt_debug or "%(funcName)s" in fmt_debug
+
+    # Switch back to INFO and verify terse formatter
+    set_log_level("INFO")
+    assert logger.level == logging.INFO
+    assert rich.level == logging.INFO
+    fmt_info = getattr(rich.formatter, "_fmt", "")
+    assert fmt_info.strip() == "%(message)s"

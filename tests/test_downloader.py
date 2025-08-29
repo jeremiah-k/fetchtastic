@@ -363,6 +363,73 @@ def test_check_promoted_prereleases(tmp_path):
     assert (prerelease_dir / "firmware-2.2.0").exists()
 
 
+@patch("fetchtastic.downloader.menu_repo.fetch_repo_directories")
+@patch("fetchtastic.downloader.menu_repo.fetch_directory_contents")
+@patch("fetchtastic.downloader.download_file_with_retry")
+def test_check_for_prereleases_download_and_cleanup(
+    mock_dl, mock_fetch_contents, mock_fetch_dirs, tmp_path
+):
+    """Check that prerelease discovery downloads matching assets and cleans stale entries."""
+    # Repo has a newer prerelease and some other dirs
+    mock_fetch_dirs.return_value = [
+        "firmware-2.7.7.abcdef",
+        "random-not-firmware",
+    ]
+    # The prerelease contains a matching asset and a non-matching one
+    mock_fetch_contents.return_value = [
+        {
+            "name": "firmware-rak4631-2.7.7.abcdef.uf2",
+            "download_url": "https://example.invalid/rak4631.uf2",
+        },
+        {
+            "name": "firmware-heltec-v3-2.7.7.abcdef.zip",
+            "download_url": "https://example.invalid/heltec.zip",
+        },
+    ]
+
+    # Simulate successful download only for the matching file
+    def _mock_dl(url, dest):
+        # Create the file to emulate a successful download
+        import os
+
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        with open(dest, "wb") as f:
+            f.write(b"data")
+        return True
+
+    mock_dl.side_effect = _mock_dl
+
+    download_dir = tmp_path
+    firmware_dir = download_dir / "firmware"
+    prerelease_dir = firmware_dir / "prerelease"
+    prerelease_dir.mkdir(parents=True)
+
+    # Create a stale prerelease that is older than the latest release; function should remove it
+    stale_dir = prerelease_dir / "firmware-2.6.0.zzz"
+    stale_dir.mkdir()
+    # Also drop a stray file to verify file cleanup
+    stray = prerelease_dir / "stray.txt"
+    stray.write_text("stale")
+
+    latest_release_tag = "v2.7.6.111111"
+    found, versions = downloader.check_for_prereleases(
+        str(download_dir), latest_release_tag, ["rak4631-"], exclude_patterns=[]
+    )
+
+    assert found is True
+    assert versions == ["firmware-2.7.7.abcdef"]
+
+    # Matching file should exist; non-matching file should not be created by our stub
+    target_file = (
+        prerelease_dir / "firmware-2.7.7.abcdef" / "firmware-rak4631-2.7.7.abcdef.uf2"
+    )
+    assert target_file.exists()
+
+    # Stale directory and stray file should be removed
+    assert not stale_dir.exists()
+    assert not stray.exists()
+
+
 def test_send_ntfy_notification(mocker):
     """Test the NTFY notification sending logic."""
     mock_post = mocker.patch("requests.post")
