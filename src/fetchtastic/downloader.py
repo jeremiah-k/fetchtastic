@@ -1238,57 +1238,54 @@ def extract_files(
                 ):
                     continue
 
-                stripped_base_name: str = extract_base_name(base_name)
-                pattern: str
-                for pattern in patterns:
-                    if pattern in stripped_base_name:
-                        try:
-                            target_path: str = safe_extract_path(extract_dir, base_name)
-                            if not os.path.exists(target_path):
-                                target_dir_for_file: str = os.path.dirname(target_path)
-                                if not os.path.exists(target_dir_for_file):
-                                    os.makedirs(
-                                        target_dir_for_file, exist_ok=True
-                                    )  # Can raise OSError
-                                with zip_ref.open(file_info) as source, open(
-                                    target_path, "wb"
-                                ) as target_file:
-                                    shutil.copyfileobj(
-                                        source, target_file, length=1024 * 64
-                                    )
-                                logger.debug(f"  Extracted: {base_name}")
-                            if base_name.lower().endswith(
-                                SHELL_SCRIPT_EXTENSION.lower()
-                            ) and not os.access(target_path, os.X_OK):
-                                os.chmod(
-                                    target_path, EXECUTABLE_PERMISSIONS
+                # Use the same back-compat matcher used for selection (modern + legacy normalization)
+                if not patterns or matches_selected_patterns(base_name, patterns):
+                    try:
+                        target_path: str = safe_extract_path(extract_dir, base_name)
+                        if not os.path.exists(target_path):
+                            target_dir_for_file: str = os.path.dirname(target_path)
+                            if not os.path.exists(target_dir_for_file):
+                                os.makedirs(
+                                    target_dir_for_file, exist_ok=True
                                 )  # Can raise OSError
-                                logger.debug(
-                                    f"Set executable permissions for {base_name}"
+                            with zip_ref.open(file_info) as source, open(
+                                target_path, "wb"
+                            ) as target_file:
+                                shutil.copyfileobj(
+                                    source, target_file, length=1024 * 64
                                 )
-                            break
-                        except ValueError as e_val:  # From safe_extract_path
-                            logger.warning(
-                                f"Skipping extraction of '{base_name}' due to unsafe path: {e_val}"
-                            )
-                        except (IOError, OSError) as e_io_os:
-                            logger.warning(
-                                f"File/OS error during extraction of '{base_name}': {e_io_os}"
-                            )
-                        except (
-                            zipfile.BadZipFile
-                        ) as e_bzf_inner:  # Should ideally be caught by outer, but just in case
-                            logger.warning(
-                                f"Bad zip file encountered while processing member '{base_name}' of '{zip_path}': {e_bzf_inner}"
-                            )
-                        except (
-                            Exception
-                        ) as e_inner_extract:  # Catch other unexpected errors for this specific file
-                            logger.error(
-                                f"Unexpected error extracting file '{base_name}' from '{zip_path}': {e_inner_extract}",
-                                exc_info=True,
-                            )
-                        continue  # Continue to next pattern or file in zip
+                            logger.debug(f"  Extracted: {base_name}")
+                        if base_name.lower().endswith(
+                            SHELL_SCRIPT_EXTENSION.lower()
+                        ) and not os.access(target_path, os.X_OK):
+                            os.chmod(
+                                target_path, EXECUTABLE_PERMISSIONS
+                            )  # Can raise OSError
+                            logger.debug(f"Set executable permissions for {base_name}")
+                        # Proceed to next entry after extracting this one
+                        continue
+                    except ValueError as e_val:  # From safe_extract_path
+                        logger.warning(
+                            f"Skipping extraction of '{base_name}' due to unsafe path: {e_val}"
+                        )
+                    except (IOError, OSError) as e_io_os:
+                        logger.warning(
+                            f"File/OS error during extraction of '{base_name}': {e_io_os}"
+                        )
+                    except (
+                        zipfile.BadZipFile
+                    ) as e_bzf_inner:  # Should ideally be caught by outer, but just in case
+                        logger.warning(
+                            f"Bad zip file encountered while processing member '{base_name}' of '{zip_path}': {e_bzf_inner}"
+                        )
+                    except (
+                        Exception
+                    ) as e_inner_extract:  # Catch other unexpected errors for this specific file
+                        logger.error(
+                            f"Unexpected error extracting file '{base_name}' from '{zip_path}': {e_inner_extract}",
+                            exc_info=True,
+                        )
+                    continue  # Continue to next pattern or file in zip
     except zipfile.BadZipFile:
         logger.error(
             f"Error: {zip_path} is a bad zip file and cannot be opened. Removing file."
@@ -1817,7 +1814,13 @@ def check_and_download(
             )
 
     if not actions_taken:
-        logger.info(f"All {release_type} assets are up to date.")
+        has_new = any(
+            (rd.get("tag_name") not in downloaded_versions)
+            and (rd.get("tag_name") != (saved_release_tag or ""))
+            for rd in releases_to_download
+        )
+        if not has_new:
+            logger.info(f"All {release_type} assets are up to date.")
 
     for release_data in releases_to_download:
         release_tag = release_data["tag_name"]
@@ -1863,7 +1866,7 @@ def check_extraction_needed(
     """
     Return True if the ZIP contains files that match `patterns` (after base-name normalization) which are not present in `extract_dir`.
 
-    This inspects the ZIP's file list, ignores entries whose base filename matches any pattern in `exclude_patterns`, and normalizes filenames with `extract_base_name` before matching. If any matched file does not already exist under `extract_dir`, the function returns True (extraction needed); otherwise False.
+    This inspects the ZIP's file list, ignores entries whose base filename matches any pattern in `exclude_patterns`, and uses the same back‑compat pattern matching as selection (supporting dashed/underscored tokens). If any matched file does not already exist under `extract_dir`, the function returns True (extraction needed); otherwise False.
 
     Behavioral notes:
     - If the ZIP is corrupted (zipfile.BadZipFile) the function will attempt to remove the ZIP and returns False.
@@ -1882,12 +1885,8 @@ def check_extraction_needed(
                     fnmatch.fnmatch(base_name, exclude) for exclude in exclude_patterns
                 ):
                     continue
-                stripped_base_name: str = extract_base_name(base_name)
-                pattern: str
-                for pattern in patterns:
-                    if pattern in stripped_base_name:
-                        files_to_extract.append(base_name)
-                        break
+                if not patterns or matches_selected_patterns(base_name, patterns):
+                    files_to_extract.append(base_name)
         base_name_to_check: str
         for base_name_to_check in files_to_extract:
             extracted_file_path: str = os.path.join(extract_dir, base_name_to_check)
@@ -1905,7 +1904,7 @@ def check_extraction_needed(
             logger.error(
                 f"Error removing corrupted zip file {zip_path} (in check_extraction_needed): {e_rm}"
             )
-        return False  # Indicate extraction is needed as we couldn't verify or had to remove
+        return False  # Extraction cannot proceed; ZIP removed or invalid
     except (IOError, OSError) as e_io_check:  # For other IO errors with the zip file
         logger.warning(
             f"IO/OS error checking extraction needed for {zip_path}: {e_io_check}"

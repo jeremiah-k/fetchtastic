@@ -530,17 +530,18 @@ def run_setup():
     config["SAVE_FIRMWARE"] = save_firmware
 
     # Run the menu scripts based on user choices
-    # Small tip to help users choose precise patterns
-    print("\nTips for precise selection:")
-    print(
-        "- Use the separator seen in filenames to target a family (e.g., 'rak4631-' vs 'rak4631_')."
-    )
-    print(
-        "- 'rak4631-' matches base RAK4631 files (e.g., firmware-rak4631-...),"
-        " while 'rak4631_' matches underscore variants (e.g., firmware-rak4631_eink-...).",
-        sep="",
-    )
-    print("- You can re-run 'fetchtastic setup' anytime to adjust your patterns.\n")
+    # Small tip to help users choose precise firmware patterns
+    if save_firmware:
+        print("\nTips for precise selection:")
+        print(
+            "- Use the separator seen in filenames to target a family (e.g., 'rak4631-' vs 'rak4631_')."
+        )
+        print(
+            "- 'rak4631-' matches base RAK4631 files (e.g., firmware-rak4631-...),"
+            " while 'rak4631_' matches underscore variants (e.g., firmware-rak4631_eink-...).",
+            sep="",
+        )
+        print("- You can re-run 'fetchtastic setup' anytime to adjust your patterns.\n")
     if save_apks:
         apk_selection = menu_apk.run_menu()
         if not apk_selection:

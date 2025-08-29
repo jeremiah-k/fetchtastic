@@ -238,6 +238,7 @@ Example patterns:
 
 - `rak4631-` - Extract RAK4631 firmware
 - `tbeam` - Extract T-Beam firmware
+- `device-` - Extract device installation scripts
 
 ## Choosing Patterns
 
@@ -246,7 +247,7 @@ When you select assets during setup, Fetchtastic saves simple substring patterns
 Guidelines:
 
 - Be specific with separators: Include the character that naturally follows the device token in filenames. This reduces accidental matches with similarly named variants.
-- Match how releases are named: Most firmware files follow a structure like `firmware-<device><sep><version>...` where `<sep>` is `-` or `_` depending on the device family.
+- Match how releases are named: Most firmware files follow a structure like `firmware-<device><sep><version>...`, where `<sep>` is `-` or `_` depending on the device family.
 - Keep patterns short and stable: Use the device token rather than the full filename. Avoid including version numbers or long suffixes.
 
 Examples (what each pattern tends to include):
@@ -268,7 +269,6 @@ Tips:
 - If your goal is to download only one device family, prefer the pattern with the exact separator you see in filenames (e.g., `rak4631-` vs `rak4631_`).
 - For closely related variants you want together (e.g., `rak4631-` base and `rak4631_eink`), add both patterns during selection.
 - You can adjust patterns later by re-running `fetchtastic setup` and updating your selections.
-- `device-` - Extract device installation scripts
 
 ### Pre-release Downloads
 
