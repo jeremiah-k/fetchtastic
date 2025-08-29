@@ -56,11 +56,7 @@ def _newer_tags_since_saved(
     (or is an unexpected type), all tags are considered newer.
     """
     try:
-        idx_saved = (
-            tags_order.index(saved_release_tag)
-            if saved_release_tag in tags_order
-            else len(tags_order)
-        )
+        idx_saved = tags_order.index(saved_release_tag)
     except (ValueError, TypeError):
         idx_saved = len(tags_order)
     return tags_order[:idx_saved]
