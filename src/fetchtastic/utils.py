@@ -493,11 +493,11 @@ def extract_base_name(filename: str) -> str:
 
 def legacy_strip_version_numbers(filename: str) -> str:
     """
-    Legacy variant of version stripping that preserves the separator before the version token.
-
-    This mirrors the behavior used in v0.6.3 where the character immediately preceding the
-    version (a '-' or '_') is retained. Kept to maintain compatibility with user configs
-    that include separators in their selection patterns (e.g., "rak4631-", "t1000-e-").
+    Return a filename with trailing version/commit/hash segments removed while preserving the separator immediately before the version token.
+    
+    This legacy behavior (used in v0.6.3) keeps the '-' or '_' that directly precedes the version so user selection patterns that include that separator still match (e.g., "rak4631-", "t1000-e-"). Consecutive separators are collapsed to a single '-' or '_'.
+    Returns:
+    	The normalized filename with the legacy-style version portion stripped.
     """
     legacy = LEGACY_VER_RX.sub(r"\1", filename)
     legacy = re.sub(r"[-_]{2,}", lambda m: m.group(0)[0], legacy)
@@ -508,11 +508,17 @@ def matches_selected_patterns(
     filename: str, selected_patterns: Optional[List[str]]
 ) -> bool:
     """
-    Return True if any of the selected_patterns appear in either the modern or legacy normalized
-    base names for `filename`.
-
-    This ensures backward compatibility for users whose patterns include a trailing separator
-    (e.g., "rak4631-") by checking both normalization styles.
+    Return True if any of the provided patterns match the filename's normalized base name.
+    
+    Checks both the modern normalization (which removes the version token and its preceding separator)
+    and the legacy normalization (which preserves the separator before the version token). If
+    `selected_patterns` is falsy (None or empty) the function returns True.
+    
+    Parameters:
+        selected_patterns: Iterable of substring patterns to search for; empty or None means "match all".
+    
+    Returns:
+        True if any non-empty pattern appears in either normalized base name; otherwise False.
     """
     if not selected_patterns:
         return True
