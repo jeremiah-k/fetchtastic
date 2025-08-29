@@ -334,9 +334,9 @@ def check_storage_setup():
 
 def run_setup():
     """
-    Runs the interactive setup process for Fetchtastic, guiding the user through configuration, migration, asset selection, scheduling, and notification setup.
-
-    This function handles platform-specific requirements such as Termux package installation, Windows shortcut creation, and scheduling via cron or boot scripts on Linux, macOS, and Termux. It prompts the user for key configuration options including the base directory, asset types to download (APKs, firmware, or both), version retention, firmware extraction patterns, Wi-Fi-only downloads (Termux), and NTFY notification preferences. The setup process migrates old configuration files if present, records the setup version and date, saves all settings to the configuration file, and offers to perform the first download run or provides instructions for manual execution.
+    Run the interactive Fetchtastic setup wizard.
+    
+    Guides the user through creating or migrating configuration, selecting assets (APKs and/or firmware), retention and extraction settings, notification (NTFY) setup, and scheduling/startup options. Behavior is platform-aware: on Termux it may install required packages, configure storage, and offer pip→pipx migration; on Windows it can create Start Menu and startup shortcuts; on Linux/macOS/Termux it can install/remove cron or boot jobs. The function persists settings to the configured YAML file, updates the global BASE_DIR (and related config keys), may create or migrate CONFIG_FILE, and optionally triggers an initial download run (calls downloader.main()).
     """
     global BASE_DIR, CONFIG_FILE
     print("Running Fetchtastic Setup...")

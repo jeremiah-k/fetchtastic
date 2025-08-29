@@ -50,10 +50,9 @@ def _newer_tags_since_saved(
     tags_order: List[str], saved_release_tag: Optional[str]
 ) -> List[str]:
     """
-    Return the sublist of tags in tags_order that are newer than saved_release_tag.
-
-    tags_order is expected to be newest-first. If saved_release_tag is not present
-    (or is an unexpected type), all tags are considered newer.
+    Return the subset of tags from newest to oldest that are strictly newer than the saved release tag.
+    
+    If tags_order is ordered newest-first, this returns all tags preceding the first occurrence of saved_release_tag. If saved_release_tag is None, missing, or not found in tags_order, the full tags_order is returned (treated as all newer).
     """
     try:
         idx_saved = tags_order.index(saved_release_tag)
@@ -64,16 +63,19 @@ def _newer_tags_since_saved(
 
 def compare_versions(version1, version2):
     """
-    Compare two version strings and determine their ordering using the `packaging` library.
-
-    This handles PEP 440 compliant versions, including pre-releases and build metadata.
-    For non-standard versions, attempts to coerce common patterns like X.Y.Z.<hash>
-    to PEP 440 local versions, then falls back to natural sorting.
-
+    Compare two version strings and determine their ordering.
+    
+    Attempts to parse both inputs as PEP 440 versions (using packaging); before parsing it normalizes
+    common non-PEP-440 forms (e.g., dotted/dashed prerelease markers like "2.3.0.rc1" → "2.3.0rc1",
+    or trailing hash-like segments "1.2.3.abcd" → "1.2.3+abcd"). If both versions parse, they are
+    compared according to PEP 440 semantics (including pre-releases and local version segments).
+    If one or both cannot be parsed, a conservative natural-sort fallback is used that splits strings
+    into numeric and alphabetic runs for human-friendly ordering.
+    
     Parameters:
         version1 (str): First version string to compare.
         version2 (str): Second version string to compare.
-
+    
     Returns:
         int: 1 if version1 > version2, 0 if equal, -1 if version1 < version2.
     """
@@ -1411,25 +1413,25 @@ def _is_release_complete(
     exclude_patterns: List[str],
 ) -> bool:
     """
-    Return True if the local release directory contains all expected assets (subject to include/exclude
-    patterns) and those assets pass basic integrity checks; otherwise False.
-
-    Checks performed:
-    - Builds the expected asset list from release_data["assets"], keeping only names that match
-      selected_patterns (when provided, using the centralized matcher) and that do not match any
-      fnmatch pattern in exclude_patterns.
-    - Verifies each expected file exists under release_dir.
-    - For ZIP files: runs zipfile.testzip() and compares on-disk size to the asset's declared size when available.
-    - For non-ZIP files: compares on-disk size to the asset's declared size when available.
-
+    Return True if the local release directory contains all expected assets (filtered by include/exclude patterns)
+    and those assets pass basic integrity checks; otherwise False.
+    
+    This verifies presence and basic integrity of release assets as declared in release_data["assets"]:
+    - Assets are selected if they match selected_patterns (when provided, via the centralized matcher)
+      and do not match any fnmatch pattern in exclude_patterns.
+    - For each expected asset:
+      - Existence is required.
+      - Zip files are opened and tested with ZipFile.testzip(); file size is compared to the declared asset size when available.
+      - Non-zip files have their on-disk size compared to the declared asset size when available.
+    
     Parameters:
         release_data: Release metadata dict containing an "assets" list (each asset should include "name"
-            and may include "size") used to determine expected filenames and expected sizes.
+            and may include "size") used to determine expected filenames and sizes.
         release_dir: Filesystem path to the local release directory to inspect.
-        selected_patterns: Optional list of patterns used to include assets; if None, no inclusion filtering
-            is applied.
-        exclude_patterns: List of fnmatch-style patterns; assets matching any of these are ignored.
-
+        selected_patterns: Optional list of inclusion patterns; when provided only assets matching these
+            (via matches_selected_patterns) are considered expected.
+        exclude_patterns: List of fnmatch-style patterns; any asset matching one of these is ignored.
+    
     Returns:
         True if all expected assets are present and pass integrity/size checks; False otherwise.
     """
@@ -1929,13 +1931,16 @@ def check_extraction_needed(
     zip_path: str, extract_dir: str, patterns: List[str], exclude_patterns: List[str]
 ) -> bool:
     """
-    Return True if the ZIP contains files that match `patterns` (after base-name normalization) which are not present in `extract_dir`.
-
-    This inspects the ZIP's file list, ignores entries whose base filename matches any pattern in `exclude_patterns`, and uses the same back-compat pattern matching as selection (supporting dashed/underscored tokens). If `patterns` is empty, no extraction is considered necessary (returns False). Otherwise, if any matched file does not already exist under `extract_dir`, the function returns True (extraction needed); else False.
-
-    Behavioral notes:
-    - If the ZIP is corrupted (zipfile.BadZipFile) the function will attempt to remove the ZIP and returns False.
-    - On IO/OS errors or other unexpected exceptions the function conservatively returns True (assume extraction is needed).
+    Return whether a ZIP archive contains any files matching `patterns` that are not yet present in `extract_dir`.
+    
+    Checks archive entries (skipping directories) and filters out entries whose base filename matches any pattern in `exclude_patterns`. Matching against `patterns` uses the module's back-compat matcher (matches_selected_patterns). If `patterns` is empty this function returns False.
+    
+    Returns:
+        bool: True if at least one matched file in the ZIP is missing from `extract_dir` (extraction needed); False otherwise.
+    
+    Notes:
+    - If the ZIP is corrupted (zipfile.BadZipFile) the function will attempt to remove the ZIP file and returns False.
+    - On IO/OSError or other unexpected exceptions the function conservatively returns True (assume extraction is needed).
     """
     # Preserve historical behavior: empty list of patterns means "do not extract".
     if not patterns:
