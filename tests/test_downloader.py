@@ -487,6 +487,54 @@ def test_extract_files_preserves_subdirectories(tmp_path):
     assert not (out_dir / "sub/notes.txt").exists()
 
 
+def test_check_extraction_needed_with_nested_paths(tmp_path):
+    """check_extraction_needed should consider nested archive paths and base-name filters."""
+    import os
+    import zipfile
+
+    zip_path = tmp_path / "nested2.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("dir/inner/firmware-rak11200-2.7.4.c1f4f79.bin", "rak11200_data")
+        zf.writestr("dir/inner/device-install.sh", "echo hi")
+
+    out_dir = tmp_path / "out2"
+    out_dir.mkdir()
+
+    # 1) Empty patterns -> never needed
+    assert (
+        downloader.check_extraction_needed(str(zip_path), str(out_dir), [], []) is False
+    )
+
+    # 2) Specific patterns: both files missing -> needed
+    assert (
+        downloader.check_extraction_needed(
+            str(zip_path), str(out_dir), ["rak11200", "device-install.sh"], []
+        )
+        is True
+    )
+
+    # Create one of the expected files, still needed for the other
+    os.makedirs(out_dir / "dir/inner", exist_ok=True)
+    (out_dir / "dir/inner/firmware-rak11200-2.7.4.c1f4f79.bin").write_text(
+        "rak11200_data"
+    )
+    assert (
+        downloader.check_extraction_needed(
+            str(zip_path), str(out_dir), ["rak11200", "device-install.sh"], []
+        )
+        is True
+    )
+
+    # Create the second expected file -> no extraction needed
+    (out_dir / "dir/inner/device-install.sh").write_text("echo hi")
+    assert (
+        downloader.check_extraction_needed(
+            str(zip_path), str(out_dir), ["rak11200", "device-install.sh"], []
+        )
+        is False
+    )
+
+
 def test_check_extraction_needed(dummy_zip_file, tmp_path):
     """Test the logic for checking if extraction is needed."""
     extract_dir = tmp_path / "extract_check"
