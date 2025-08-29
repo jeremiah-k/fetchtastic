@@ -1265,7 +1265,7 @@ def extract_files(
         conditions.
     """
     # Historical behavior: empty pattern list means "do not extract anything".
-    if patterns is not None and len(patterns) == 0:
+    if not patterns:
         logger.debug(
             "extract_files called with empty patterns; skipping extraction entirely"
         )
@@ -1820,7 +1820,7 @@ def check_and_download(
                     )
                     # Consider the latest release processed even without downloads to avoid re-scanning
                     try:
-                        if idx == 1 and release_tag != (saved_release_tag or ""):
+                        if idx == 1:
                             with open(latest_release_file, "w") as f:
                                 f.write(release_tag)
                             saved_release_tag = release_tag
@@ -1937,7 +1937,7 @@ def check_extraction_needed(
     - On IO/OS errors or other unexpected exceptions the function conservatively returns True (assume extraction is needed).
     """
     # Preserve historical behavior: empty list of patterns means "do not extract".
-    if patterns is not None and len(patterns) == 0:
+    if not patterns:
         logger.debug(
             "check_extraction_needed called with empty patterns; returning False"
         )
