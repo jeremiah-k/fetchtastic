@@ -39,7 +39,6 @@ from fetchtastic.log_utils import logger  # Import new logger
 from fetchtastic.setup_config import display_version_info, get_upgrade_command
 from fetchtastic.utils import (
     download_file_with_retry,
-    extract_base_name,
     matches_selected_patterns,
 )
 
@@ -1203,17 +1202,17 @@ def extract_files(
     """
     Extract selected files from a ZIP archive into a target directory.
 
-    Only entries whose base filename (stripped of incidental version/metadata via extract_base_name)
+    Only entries whose base filename (matched via the centralized legacy-aware matcher)
     contain any of the provided `patterns` and do not match any `exclude_patterns` are extracted.
-    Preserves archive subdirectories, creates target directories as needed, and sets executable
-    permissions on extracted files ending with SHELL_SCRIPT_EXTENSION. Uses safe_extract_path to
-    prevent directory traversal; unsafe entries are skipped. If the archive is corrupted it will
-    be removed.
+    Extracts by filename only (archive subdirectories are not preserved), creates target directories
+    as needed, and sets executable permissions on extracted files ending with SHELL_SCRIPT_EXTENSION.
+    Uses safe_extract_path to prevent directory traversal; unsafe entries are skipped. If the archive
+    is corrupted it will be removed.
 
     Parameters:
         zip_path (str): Path to the ZIP archive to read.
         extract_dir (str): Destination directory where files will be extracted.
-        patterns (List[str]): Substring patterns to include (matches against extract_base_name).
+        patterns (List[str]): Substring patterns to include (matched via centralized matcher).
         exclude_patterns (List[str]): Glob-style patterns (fnmatch) to exclude based on the base filename.
 
     Side effects:
@@ -1366,8 +1365,8 @@ def _is_release_complete(
 
     Detailed behavior:
     - Builds the list of expected asset filenames from release_data["assets"], keeping only assets
-      whose stripped names match any string in selected_patterns (if provided) and that do not
-      match any fnmatch pattern in exclude_patterns.
+      whose names match selected_patterns (if provided, via the centralized legacy-aware matcher) and
+      that do not match any fnmatch pattern in exclude_patterns.
     - For each expected asset:
       - Verifies the file exists in release_dir.
       - If the file is a ZIP, runs a ZIP integrity check (testzip) and compares the actual file size
@@ -1379,8 +1378,8 @@ def _is_release_complete(
         release_data: Release metadata (dict) containing an "assets" list with entries that include
             "name" and optionally "size". Only used to determine expected filenames and expected sizes.
         release_dir: Path to the local release directory to inspect.
-        selected_patterns: Optional list of substrings; an asset is considered only if its
-            version-stripped filename contains any of these substrings. If None, no inclusion filtering is applied.
+        selected_patterns: Optional list of substrings; an asset is considered only if its name matches
+            any of these substrings via the centralized matcher. If None, no inclusion filtering is applied.
         exclude_patterns: List of fnmatch-style patterns; any asset whose original filename matches
             one of these patterns will be ignored.
 

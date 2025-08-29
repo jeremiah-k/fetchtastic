@@ -383,27 +383,30 @@ def test_legacy_strip_version_numbers():
     # Does not alter filenames without version-like tokens
     assert legacy_strip_version_numbers("simple.txt") == "simple.txt"
 
+    # Extra dashes are collapsed appropriately by legacy normalizer
+    assert (
+        legacy_strip_version_numbers("firmware--rak4631---2.7.4.c1f4f79.zip")
+        == "firmware-rak4631-.zip"
+    )
+
 
 @pytest.mark.core_downloads
 @pytest.mark.unit
+@patch("fetchtastic.utils.requests.Session")
 @patch("fetchtastic.utils.Retry")
-def test_urllib3_v1_fallback_retry_creation(mock_retry):
+def test_urllib3_v1_fallback_retry_creation(mock_retry, mock_session):
     """Test urllib3 v1 fallback when v2 parameters cause TypeError."""
     # Mock Retry to raise TypeError on first call (v2 params), succeed on second (v1 params)
     mock_retry.side_effect = [TypeError("unsupported parameter"), MagicMock()]
 
     # Just test the retry creation part by calling the function that creates the retry strategy
     # This will exercise the try/except block we added for urllib3 compatibility
-    try:
-        utils.download_file_with_retry("http://test.com/file.zip", "/test/file.zip")
-    except Exception as e:
-        # We expect this to fail due to other reasons, but the retry creation should work
-        # The important thing is that the urllib3 retry creation was attempted
-        assert (
-            "test.com" in str(e)
-            or "file.zip" in str(e)
-            or isinstance(e, (OSError, IOError))
-        )
+    # Avoid real I/O
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.iter_content.return_value = []
+    mock_session.return_value.get.return_value = mock_resp
+    utils.download_file_with_retry("http://test.com/file.zip", "/tmp/file.zip")
 
     # Verify urllib3 v1 fallback was attempted
     assert mock_retry.call_count == 2
