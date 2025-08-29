@@ -1241,7 +1241,8 @@ def extract_files(
 
     Only entries whose base filename (matched via the centralized legacy-aware matcher)
     match the provided `patterns` and do not match any `exclude_patterns` are extracted.
-    If `patterns` is empty, all files are eligible (subject to `exclude_patterns`).
+    If `patterns` is empty, no files are extracted. This preserves the historical behavior
+    where an empty extraction pattern list means "do not auto-extract".
     Extracts by filename only (archive subdirectories are not preserved), creates target directories
     as needed, and sets executable permissions on extracted files ending with SHELL_SCRIPT_EXTENSION.
     Uses safe_extract_path to prevent directory traversal; unsafe entries are skipped. If the archive
@@ -1251,7 +1252,7 @@ def extract_files(
         zip_path (str): Path to the ZIP archive to read.
         extract_dir (str): Destination directory where files will be extracted.
         patterns (List[str]): Substring patterns to include (matched via centralized matcher).
-            An empty list means “include all files.”
+            An empty list means “extract nothing.”
         exclude_patterns (List[str]): Glob-style patterns (fnmatch) to exclude based on the base filename.
 
     Side effects:
@@ -1263,6 +1264,13 @@ def extract_files(
         This function handles and logs IO, OS, and ZIP errors internally; it does not raise on these
         conditions.
     """
+    # Historical behavior: empty pattern list means "do not extract anything".
+    if patterns is not None and len(patterns) == 0:
+        logger.debug(
+            "extract_files called with empty patterns; skipping extraction entirely"
+        )
+        return
+
     try:
         with zipfile.ZipFile(zip_path, "r") as zip_ref:
             file_info: zipfile.ZipInfo
@@ -1922,12 +1930,19 @@ def check_extraction_needed(
     """
     Return True if the ZIP contains files that match `patterns` (after base-name normalization) which are not present in `extract_dir`.
 
-    This inspects the ZIP's file list, ignores entries whose base filename matches any pattern in `exclude_patterns`, and uses the same back‑compat pattern matching as selection (supporting dashed/underscored tokens). If any matched file does not already exist under `extract_dir`, the function returns True (extraction needed); otherwise False.
+    This inspects the ZIP's file list, ignores entries whose base filename matches any pattern in `exclude_patterns`, and uses the same back‑compat pattern matching as selection (supporting dashed/underscored tokens). If `patterns` is empty, no extraction is considered necessary (returns False). Otherwise, if any matched file does not already exist under `extract_dir`, the function returns True (extraction needed); else False.
 
     Behavioral notes:
     - If the ZIP is corrupted (zipfile.BadZipFile) the function will attempt to remove the ZIP and returns False.
     - On IO/OS errors or other unexpected exceptions the function conservatively returns True (assume extraction is needed).
     """
+    # Preserve historical behavior: empty list of patterns means "do not extract".
+    if patterns is not None and len(patterns) == 0:
+        logger.debug(
+            "check_extraction_needed called with empty patterns; returning False"
+        )
+        return False
+
     files_to_extract: List[str] = []
     try:
         with zipfile.ZipFile(zip_path, "r") as zip_ref:

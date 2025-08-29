@@ -745,6 +745,65 @@ def test_check_and_download_happy_path_with_extraction(tmp_path, caplog):
     assert os.access(extracted, os.X_OK)
 
 
+def test_auto_extract_with_empty_patterns_does_not_extract(tmp_path, caplog):
+    """When AUTO_EXTRACT is True but EXTRACT_PATTERNS is empty, do not extract any files."""
+    caplog.set_level("INFO", logger="fetchtastic")
+
+    release_tag = "v1.2.3"
+    zip_name = "firmware-rak4631-1.2.3.zip"
+
+    releases = [
+        {
+            "tag_name": release_tag,
+            "published_at": "2024-02-01T00:00:00Z",
+            "assets": [
+                {
+                    "name": zip_name,
+                    "browser_download_url": "https://example.invalid/firmware.zip",
+                    "size": 100,
+                }
+            ],
+            "body": "Release notes",
+        }
+    ]
+
+    latest_release_file = str(tmp_path / "latest_firmware_release.txt")
+    download_dir = str(tmp_path)
+
+    # Mock downloader to write a real ZIP that contains a file that would normally be extracted
+    def _mock_dl(url, dest):
+        import os
+        import zipfile
+
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        with zipfile.ZipFile(dest, "w") as zf:
+            zf.writestr("device-install.sh", "echo hi")
+        return True
+
+    with patch("fetchtastic.downloader.download_file_with_retry", side_effect=_mock_dl):
+        downloaded, new_versions, failures = downloader.check_and_download(
+            releases,
+            latest_release_file,
+            "Firmware",
+            download_dir,
+            versions_to_keep=1,
+            extract_patterns=[],  # empty patterns
+            selected_patterns=["rak4631-"],
+            auto_extract=True,
+            exclude_patterns=[],
+        )
+
+    # The release should be downloaded
+    assert downloaded == [release_tag]
+    assert failures == []
+
+    # The ZIP should exist, but there should be no extracted files because patterns were empty
+    release_path = tmp_path / release_tag
+    zip_path = release_path / zip_name
+    assert zip_path.exists()
+    assert not (release_path / "device-install.sh").exists()
+
+
 def test_check_and_download_release_already_complete_logs_up_to_date(tmp_path, caplog):
     """Cover the path where release is complete; actions_taken False leads to up-to-date log."""
     caplog.set_level("INFO", logger="fetchtastic")
