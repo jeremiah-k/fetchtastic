@@ -138,7 +138,7 @@ def download_file_with_retry(
     Errors and exceptions:
     - Network, IO, ZIP validation, and unexpected exceptions are caught internally; the function returns False on failure rather than propagating exceptions.
     """
-    # Session is created and closed deterministically around the network call
+    # Create a Session and ensure it is closed deterministically
 
     # Check if file exists and is valid (especially for zips)
     if os.path.exists(download_path):
@@ -241,69 +241,69 @@ def download_file_with_retry(
                 return False
 
     temp_path = download_path + ".tmp"
+    session = requests.Session()
     try:
         # Log before session.get()
         logger.debug(
             f"Attempting to download file from URL: {url} to temp path: {temp_path}"
         )
         start_time = time.time()
-        with requests.Session() as session:
-            # Using type: ignore for Retry as it might not be perfectly typed by stubs,
-            # but the parameters are standard for urllib3.
-            try:
-                retry_strategy: Retry = Retry(
-                    total=DEFAULT_CONNECT_RETRIES,
-                    connect=DEFAULT_CONNECT_RETRIES,
-                    read=DEFAULT_CONNECT_RETRIES,
-                    status=DEFAULT_CONNECT_RETRIES,
-                    backoff_factor=DEFAULT_BACKOFF_FACTOR,
-                    status_forcelist=[408, 429, 500, 502, 503, 504],
-                    allowed_methods=frozenset({"GET", "HEAD"}),
-                    raise_on_status=False,
-                    respect_retry_after_header=True,
-                )
-            except TypeError:
-                # urllib3 v1 fallback
-                retry_strategy = Retry(
-                    total=DEFAULT_CONNECT_RETRIES,
-                    connect=DEFAULT_CONNECT_RETRIES,
-                    read=DEFAULT_CONNECT_RETRIES,
-                    backoff_factor=DEFAULT_BACKOFF_FACTOR,
-                    status_forcelist=[408, 429, 500, 502, 503, 504],
-                    method_whitelist=frozenset({"GET", "HEAD"}),  # type: ignore[arg-type]
-                    raise_on_status=False,
-                )
-            adapter = HTTPAdapter(max_retries=retry_strategy)
-            session.mount("https://", adapter)
-            session.mount("http://", adapter)
-
-            response = session.get(url, stream=True, timeout=DEFAULT_REQUEST_TIMEOUT)
-
-            # Log HTTP response status code
-            logger.debug(
-                f"Received HTTP response status code: {response.status_code} for URL: {url}"
+        # Using type: ignore for Retry as it might not be perfectly typed by stubs,
+        # but the parameters are standard for urllib3.
+        try:
+            retry_strategy: Retry = Retry(
+                total=DEFAULT_CONNECT_RETRIES,
+                connect=DEFAULT_CONNECT_RETRIES,
+                read=DEFAULT_CONNECT_RETRIES,
+                status=DEFAULT_CONNECT_RETRIES,
+                backoff_factor=DEFAULT_BACKOFF_FACTOR,
+                status_forcelist=[408, 429, 500, 502, 503, 504],
+                allowed_methods=frozenset({"GET", "HEAD"}),
+                raise_on_status=False,
+                respect_retry_after_header=True,
             )
-            response.raise_for_status()  # Handled by requests.exceptions.RequestException
-
-            downloaded_chunks = 0
-            downloaded_bytes = 0
-            with open(temp_path, "wb") as file:  # Can raise IOError
-                for chunk in response.iter_content(chunk_size=DEFAULT_CHUNK_SIZE):
-                    if chunk:
-                        file.write(chunk)
-                        downloaded_chunks += 1
-                        downloaded_bytes += len(chunk)
-                        if downloaded_chunks % 100 == 0:
-                            logger.debug(
-                                f"Downloaded {downloaded_chunks} chunks ({downloaded_bytes} bytes) so far for {url}"
-                            )
-
-            elapsed = time.time() - start_time
-            file_size_mb = downloaded_bytes / (1024 * 1024)
-            logger.debug(
-                f"Finished downloading {url}. Total chunks: {downloaded_chunks}, total bytes: {downloaded_bytes}."
+        except TypeError:
+            # urllib3 v1 fallback
+            retry_strategy = Retry(
+                total=DEFAULT_CONNECT_RETRIES,
+                connect=DEFAULT_CONNECT_RETRIES,
+                read=DEFAULT_CONNECT_RETRIES,
+                backoff_factor=DEFAULT_BACKOFF_FACTOR,
+                status_forcelist=[408, 429, 500, 502, 503, 504],
+                method_whitelist=frozenset({"GET", "HEAD"}),  # type: ignore[arg-type]
+                raise_on_status=False,
             )
-            logger.debug("Download elapsed time: %.2fs for %s", elapsed, url)
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        session.mount("https://", adapter)
+        session.mount("http://", adapter)
+
+        response = session.get(url, stream=True, timeout=DEFAULT_REQUEST_TIMEOUT)
+
+        # Log HTTP response status code
+        logger.debug(
+            f"Received HTTP response status code: {response.status_code} for URL: {url}"
+        )
+        response.raise_for_status()  # Handled by requests.exceptions.RequestException
+
+        downloaded_chunks = 0
+        downloaded_bytes = 0
+        with open(temp_path, "wb") as file:  # Can raise IOError
+            for chunk in response.iter_content(chunk_size=DEFAULT_CHUNK_SIZE):
+                if chunk:
+                    file.write(chunk)
+                    downloaded_chunks += 1
+                    downloaded_bytes += len(chunk)
+                    if downloaded_chunks % 100 == 0:
+                        logger.debug(
+                            f"Downloaded {downloaded_chunks} chunks ({downloaded_bytes} bytes) so far for {url}"
+                        )
+
+        elapsed = time.time() - start_time
+        file_size_mb = downloaded_bytes / (1024 * 1024)
+        logger.debug(
+            f"Finished downloading {url}. Total chunks: {downloaded_chunks}, total bytes: {downloaded_bytes}."
+        )
+        logger.debug("Download elapsed time: %.2fs for %s", elapsed, url)
 
         # Log completion after successful file replacement (moved below)
 
@@ -453,22 +453,24 @@ def download_file_with_retry(
         logger.error(
             f"File I/O error during download process for {url} (temp path: {temp_path}): {e_io}"
         )
-    except (
-        Exception
-    ) as e_gen:  # Catch-all for truly unexpected errors in the download block
+    except Exception as e_gen:  # noqa: BLE001 - Catch-all for unexpected errors
         logger.error(
             f"An unexpected error occurred during download/processing for {url}: {e_gen}",
             exc_info=True,
         )
-
-    # Final cleanup of temp_path if it still exists due to an error
-    if os.path.exists(temp_path):
+    finally:
+        # Final cleanup of temp_path if it still exists due to an error
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except (IOError, OSError) as e_rm_final_tmp:
+                logger.warning(
+                    f"Error removing temporary file {temp_path} after failure: {e_rm_final_tmp}"
+                )
         try:
-            os.remove(temp_path)
-        except (IOError, OSError) as e_rm_final_tmp:
-            logger.warning(
-                f"Error removing temporary file {temp_path} after failure: {e_rm_final_tmp}"
-            )
+            session.close()
+        except Exception:
+            pass
     return False
 
 

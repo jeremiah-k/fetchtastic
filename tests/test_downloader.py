@@ -238,9 +238,11 @@ def test_check_and_download_logs_when_no_assets_match(tmp_path, caplog, capsys):
     assert downloaded == []
     assert failures == []
     assert new_versions == []
+    out = capsys.readouterr().out
+    collapsed = " ".join(out.split())
     assert (
         "Release v1.0.0 found, but no assets matched the current selection/exclude filters."
-        in caplog.text
+        in collapsed
     )
 
 
