@@ -1238,7 +1238,7 @@ def extract_files(
                     continue
 
                 # Use the same back-compat matcher used for selection (modern + legacy normalization)
-                if not patterns or matches_selected_patterns(base_name, patterns):
+                if matches_selected_patterns(base_name, patterns):
                     try:
                         target_path: str = safe_extract_path(extract_dir, base_name)
                         if not os.path.exists(target_path):
