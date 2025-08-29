@@ -1243,8 +1243,8 @@ def extract_files(
     match the provided `patterns` and do not match any `exclude_patterns` are extracted.
     If `patterns` is empty, no files are extracted. This preserves the historical behavior
     where an empty extraction pattern list means "do not auto-extract".
-    Extracts by filename only (archive subdirectories are not preserved), creates target directories
-    as needed, and sets executable permissions on extracted files ending with SHELL_SCRIPT_EXTENSION.
+    Preserves archive subdirectories when extracting, creates target directories as needed, and sets
+    executable permissions on extracted files ending with SHELL_SCRIPT_EXTENSION.
     Uses safe_extract_path to prevent directory traversal; unsafe entries are skipped. If the archive
     is corrupted it will be removed.
 
@@ -1278,7 +1278,7 @@ def extract_files(
                 # Skip directory entries in archives
                 if hasattr(file_info, "is_dir") and file_info.is_dir():
                     continue
-                file_name: str = file_info.filename
+                file_name: str = file_info.filename  # may include subdirectories
                 base_name: str = os.path.basename(file_name)
                 if not base_name:
                     continue
@@ -1290,7 +1290,8 @@ def extract_files(
                 # Use the same back-compat matcher used for selection (modern + legacy normalization)
                 if matches_selected_patterns(base_name, patterns):
                     try:
-                        target_path: str = safe_extract_path(extract_dir, base_name)
+                        # Preserve directory structure from within the archive
+                        target_path: str = safe_extract_path(extract_dir, file_name)
                         if not os.path.exists(target_path):
                             target_dir_for_file: str = os.path.dirname(target_path)
                             if not os.path.exists(target_dir_for_file):
@@ -1303,14 +1304,14 @@ def extract_files(
                                 shutil.copyfileobj(
                                     source, target_file, length=1024 * 64
                                 )
-                            logger.debug(f"  Extracted: {base_name}")
+                            logger.debug(f"  Extracted: {file_name}")
                         if base_name.lower().endswith(
                             SHELL_SCRIPT_EXTENSION.lower()
                         ) and not os.access(target_path, os.X_OK):
                             os.chmod(
                                 target_path, EXECUTABLE_PERMISSIONS
                             )  # Can raise OSError
-                            logger.debug(f"Set executable permissions for {base_name}")
+                            logger.debug(f"Set executable permissions for {file_name}")
                         # Proceed to next entry after extracting this one
                         continue
                     except ValueError as e_val:  # From safe_extract_path
@@ -1951,7 +1952,7 @@ def check_extraction_needed(
                 # Skip directory entries in archives
                 if hasattr(file_info, "is_dir") and file_info.is_dir():
                     continue
-                file_name: str = file_info.filename
+                file_name: str = file_info.filename  # may include subdirectories
                 base_name: str = os.path.basename(file_name)
                 if not base_name:
                     continue
@@ -1960,7 +1961,8 @@ def check_extraction_needed(
                 ):
                     continue
                 if matches_selected_patterns(base_name, patterns):
-                    files_to_extract.append(base_name)
+                    # Preserve path for existence checks
+                    files_to_extract.append(file_name)
         base_name_to_check: str
         for base_name_to_check in files_to_extract:
             extracted_file_path: str = os.path.join(extract_dir, base_name_to_check)

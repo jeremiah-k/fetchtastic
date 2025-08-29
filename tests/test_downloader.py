@@ -458,6 +458,35 @@ def test_extract_files(dummy_zip_file, tmp_path):
     assert os.access(extract_dir / "device-update.sh", os.X_OK)
 
 
+def test_extract_files_preserves_subdirectories(tmp_path):
+    """Extraction should preserve archive subdirectories when writing to disk."""
+    import os
+    import zipfile
+
+    zip_path = tmp_path / "nested.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("sub/dir/firmware-rak11200-2.7.4.c1f4f79.bin", "rak11200_data")
+        zf.writestr("sub/dir/device-install.sh", "echo hi")
+        zf.writestr("sub/notes.txt", "n")
+
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+
+    # Include rak11200 and the script; exclude notes
+    downloader.extract_files(
+        str(zip_path), str(out_dir), ["rak11200", "device-install.sh"], ["notes*"]
+    )
+
+    # Files extracted under their original subdirectories
+    bin_path = out_dir / "sub/dir/firmware-rak11200-2.7.4.c1f4f79.bin"
+    sh_path = out_dir / "sub/dir/device-install.sh"
+
+    assert bin_path.exists()
+    assert sh_path.exists()
+    assert os.access(sh_path, os.X_OK)
+    assert not (out_dir / "sub/notes.txt").exists()
+
+
 def test_check_extraction_needed(dummy_zip_file, tmp_path):
     """Test the logic for checking if extraction is needed."""
     extract_dir = tmp_path / "extract_check"
