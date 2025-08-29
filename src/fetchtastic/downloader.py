@@ -309,19 +309,19 @@ def check_for_prereleases(
 ):
     """
     Discover firmware prerelease directories newer than the provided latest release, clean up stale local prerelease folders, and download missing prerelease assets into <download_dir>/firmware/prerelease.
-    
+
     The function:
     - Treats a leading "v" in latest_release_tag as optional and strips it for comparisons.
     - Scans the remote repository for directories named "firmware-<version>" and keeps only those newer than latest_release_tag.
     - Removes stale local prerelease directories that are not present in the repository or not newer than the official release.
     - For each relevant prerelease, downloads assets that match selected_patterns (using the repository's back-compat matching helper) and do not match any exclude_patterns; sets executable permissions for shell scripts when possible.
     - Returns whether any prerelease assets were downloaded and a list of prerelease directory names that had files downloaded.
-    
+
     Parameters:
         latest_release_tag (str): Latest official release tag (e.g., "v2.6.8" or "2.6.8.ef9d0d7"); a leading "v" is tolerated and stripped for comparison.
         selected_patterns (Iterable[str]): Patterns/substrings used to select which asset basenames should be downloaded (applied with the module's back-compat matcher).
         exclude_patterns (Optional[Iterable[str]]): Optional fnmatch-style patterns; any filename matching an exclude pattern will be skipped.
-    
+
     Returns:
         tuple[bool, list[str]]: (found_and_downloaded, downloaded_versions)
           - found_and_downloaded: True if any prerelease files were downloaded.
@@ -878,6 +878,13 @@ def _process_firmware_downloads(
             ),  # Use RELEASE_SCAN_COUNT if versions_to_keep not in config
         )
 
+        keep_count = config.get(
+            "FIRMWARE_VERSIONS_TO_KEEP", DEFAULT_FIRMWARE_VERSIONS_TO_KEEP
+        )
+        logger.info(
+            f"Found {len(latest_firmware_releases)} firmware releases; scanning {min(len(latest_firmware_releases), keep_count)} (keep {keep_count})"
+        )
+
         # Extract the actual latest firmware version
         if latest_firmware_releases:
             latest_firmware_version = latest_firmware_releases[0].get("tag_name")
@@ -983,9 +990,14 @@ def _process_apk_downloads(
     if config.get("SAVE_APKS", False) and config.get("SELECTED_APK_ASSETS", []):
         latest_android_releases: List[Dict[str, Any]] = _get_latest_releases_data(
             paths_and_urls["android_releases_url"],
-            config.get(
-                "ANDROID_VERSIONS_TO_KEEP", RELEASE_SCAN_COUNT
-            ),  # Use RELEASE_SCAN_COUNT if versions_to_keep not in config
+            config.get("ANDROID_VERSIONS_TO_KEEP", RELEASE_SCAN_COUNT),
+        )
+
+        keep_count_apk = config.get(
+            "ANDROID_VERSIONS_TO_KEEP", DEFAULT_ANDROID_VERSIONS_TO_KEEP
+        )
+        logger.info(
+            f"Found {len(latest_android_releases)} Android releases; scanning {min(len(latest_android_releases), keep_count_apk)} (keep {keep_count_apk})"
         )
 
         # Extract the actual latest APK version
@@ -1366,7 +1378,7 @@ def _is_release_complete(
     """
     Return True if the local release directory contains all expected assets (subject to include/exclude
     patterns) and those assets pass basic integrity checks; otherwise False.
-    
+
     Checks performed:
     - Builds the expected asset list from release_data["assets"], keeping only names that match
       selected_patterns (when provided, using the centralized matcher) and that do not match any
@@ -1374,7 +1386,7 @@ def _is_release_complete(
     - Verifies each expected file exists under release_dir.
     - For ZIP files: runs zipfile.testzip() and compares on-disk size to the asset's declared size when available.
     - For non-ZIP files: compares on-disk size to the asset's declared size when available.
-    
+
     Parameters:
         release_data: Release metadata dict containing an "assets" list (each asset should include "name"
             and may include "size") used to determine expected filenames and expected sizes.
@@ -1382,7 +1394,7 @@ def _is_release_complete(
         selected_patterns: Optional list of patterns used to include assets; if None, no inclusion filtering
             is applied.
         exclude_patterns: List of fnmatch-style patterns; assets matching any of these are ignored.
-    
+
     Returns:
         True if all expected assets are present and pass integrity/size checks; False otherwise.
     """
@@ -1540,9 +1552,14 @@ def check_and_download(
 
     releases_to_download: List[Dict[str, Any]] = releases[:versions_to_keep]
 
+    total_to_scan = len(releases_to_download)
+    logger.info(
+        f"Scanning {total_to_scan} {release_type} releases (keep {versions_to_keep})"
+    )
+
     if downloads_skipped:
         release_data: Dict[str, Any]
-        for release_data in releases_to_download:
+        for idx, release_data in enumerate(releases_to_download, start=1):
             if release_data["tag_name"] != saved_release_tag:
                 new_versions_available.append(release_data["tag_name"])
         return (
@@ -1552,11 +1569,12 @@ def check_and_download(
         )  # Added failed_downloads_details
 
     release_data: Dict[str, Any]
-    for release_data in releases_to_download:
+    for idx, release_data in enumerate(releases_to_download, start=1):
         try:
             release_tag: str = release_data[
                 "tag_name"
             ]  # Potential KeyError if API response changes
+            logger.info(f"Checking {release_tag} ({idx}/{total_to_scan})…")
             release_dir: str = os.path.join(download_dir_path, release_tag)
             release_notes_file: str = os.path.join(
                 release_dir, f"release_notes-{release_tag}.md"
@@ -1813,20 +1831,31 @@ def check_and_download(
             )
 
     if not actions_taken:
-        has_new = any(
-            (rd.get("tag_name") not in downloaded_versions)
-            and (rd.get("tag_name") != (saved_release_tag or ""))
-            for rd in releases_to_download
-        )
-        if not has_new:
+        # Determine tags newer than the saved tag by position (list is newest-first)
+        tags_order: List[str] = [
+            rd.get("tag_name") for rd in releases_to_download if rd.get("tag_name")
+        ]
+        try:
+            idx_saved = (
+                tags_order.index(saved_release_tag)
+                if saved_release_tag in tags_order
+                else len(tags_order)
+            )
+        except Exception:
+            idx_saved = len(tags_order)
+
+        newer_tags: List[str] = tags_order[:idx_saved]
+        new_candidates: List[str] = [
+            t for t in newer_tags if t not in downloaded_versions
+        ]
+
+        if not new_candidates:
             logger.info(f"All {release_type} assets are up to date.")
 
-    for release_data in releases_to_download:
-        release_tag = release_data["tag_name"]
-        if release_tag != saved_release_tag and release_tag not in downloaded_versions:
-            # This logic for new_versions_available might need refinement if a release has partial success
-            # For now, if it wasn't fully downloaded (not in downloaded_versions), it's "new" or "still pending".
-            new_versions_available.append(release_tag)
+        # Merge uniquely with any earlier additions
+        new_versions_available = list(
+            dict.fromkeys(new_versions_available + new_candidates)
+        )
 
     return downloaded_versions, new_versions_available, failed_downloads_details
 

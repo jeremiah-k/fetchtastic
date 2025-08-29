@@ -204,7 +204,18 @@ def test_check_and_download_logs_when_no_assets_match(tmp_path, caplog):
                 }
             ],
             "body": "",
-        }
+        },
+        {
+            "tag_name": "v0.9.0",
+            "assets": [
+                {
+                    "name": "firmware-heltec-v3-0.9.0.zip",
+                    "browser_download_url": "https://example.invalid/heltec-0.9.zip",
+                    "size": 10,
+                }
+            ],
+            "body": "",
+        },
     ]
 
     latest_release_file = str(tmp_path / "latest_firmware_release.txt")
@@ -216,7 +227,7 @@ def test_check_and_download_logs_when_no_assets_match(tmp_path, caplog):
         latest_release_file,
         "Firmware",
         download_dir,
-        versions_to_keep=1,
+        versions_to_keep=2,
         extract_patterns=[],
         selected_patterns=["rak4631-"],
         auto_extract=False,
@@ -226,7 +237,140 @@ def test_check_and_download_logs_when_no_assets_match(tmp_path, caplog):
     # No downloads and no failures expected; should note new version available
     assert downloaded == []
     assert failures == []
-    assert new_versions == ["v1.0.0"]
+    assert new_versions == ["v1.0.0", "v0.9.0"]
+
+
+def test_new_versions_detection_with_saved_tag(tmp_path):
+    """New versions are detected relative to a saved tag using list position (newest-first)."""
+    releases = [
+        {
+            "tag_name": "v3",
+            "published_at": "2024-03-01T00:00:00Z",
+            "assets": [
+                {
+                    "name": "firmware-heltec-v3-3.zip",
+                    "browser_download_url": "https://example.invalid/3.zip",
+                    "size": 1,
+                }
+            ],
+            "body": "",
+        },
+        {
+            "tag_name": "v2",
+            "published_at": "2024-02-01T00:00:00Z",
+            "assets": [
+                {
+                    "name": "firmware-heltec-v3-2.zip",
+                    "browser_download_url": "https://example.invalid/2.zip",
+                    "size": 1,
+                }
+            ],
+            "body": "",
+        },
+        {
+            "tag_name": "v1",
+            "published_at": "2024-01-01T00:00:00Z",
+            "assets": [
+                {
+                    "name": "firmware-heltec-v3-1.zip",
+                    "browser_download_url": "https://example.invalid/1.zip",
+                    "size": 1,
+                }
+            ],
+            "body": "",
+        },
+    ]
+
+    latest_release_file = str(tmp_path / "latest.txt")
+    # Saved is v2; only v3 should be considered new
+    (tmp_path / "latest.txt").write_text("v2")
+    downloaded, new_versions, failures = downloader.check_and_download(
+        releases,
+        latest_release_file,
+        "Firmware",
+        str(tmp_path),
+        versions_to_keep=3,
+        extract_patterns=[],
+        selected_patterns=["rak4631-"],
+        auto_extract=False,
+        exclude_patterns=[],
+    )
+    assert downloaded == []
+    assert failures == []
+    assert new_versions == ["v3"]
+
+
+def test_new_versions_detection_when_no_saved_tag(tmp_path):
+    """When no saved tag exists, all tags are candidates (newest-first order)."""
+    releases = [
+        {
+            "tag_name": "v3",
+            "published_at": "2024-03-01T00:00:00Z",
+            "assets": [],
+            "body": "",
+        },
+        {
+            "tag_name": "v2",
+            "published_at": "2024-02-01T00:00:00Z",
+            "assets": [],
+            "body": "",
+        },
+        {
+            "tag_name": "v1",
+            "published_at": "2024-01-01T00:00:00Z",
+            "assets": [],
+            "body": "",
+        },
+    ]
+    latest_release_file = str(tmp_path / "latest.txt")
+    downloaded, new_versions, failures = downloader.check_and_download(
+        releases,
+        latest_release_file,
+        "Firmware",
+        str(tmp_path),
+        versions_to_keep=3,
+        extract_patterns=[],
+        selected_patterns=["rak4631-"],
+        auto_extract=False,
+        exclude_patterns=[],
+    )
+    assert downloaded == []
+    assert failures == []
+    assert new_versions == ["v3", "v2", "v1"]
+
+
+def test_new_versions_detection_when_saved_is_latest(tmp_path):
+    """When saved is the newest tag and no downloads occur, there are no new versions."""
+    releases = [
+        {
+            "tag_name": "v3",
+            "published_at": "2024-03-01T00:00:00Z",
+            "assets": [],
+            "body": "",
+        },
+        {
+            "tag_name": "v2",
+            "published_at": "2024-02-01T00:00:00Z",
+            "assets": [],
+            "body": "",
+        },
+    ]
+    latest_release_file = str(tmp_path / "latest.txt")
+    (tmp_path / "latest.txt").write_text("v3")
+    downloaded, new_versions, failures = downloader.check_and_download(
+        releases,
+        latest_release_file,
+        "Firmware",
+        str(tmp_path),
+        versions_to_keep=2,
+        extract_patterns=[],
+        selected_patterns=["rak4631-"],
+        auto_extract=False,
+        exclude_patterns=[],
+    )
+    assert downloaded == []
+    assert failures == []
+    assert new_versions == []
     # Note: Human-facing info message is printed; formatting via Rich can
     # move it outside caplog. State assertions above cover behavior.
 
@@ -431,7 +575,7 @@ def test_check_for_prereleases_download_and_cleanup(
         # Create the file to emulate a successful download
         """
         Mock download helper used in tests.
-        
+
         Creates parent directories for `dest` if needed, writes a small binary payload (b"data") to `dest`, and returns True to indicate a successful download. Overwrites any existing file at `dest`.
         """
         import os
@@ -547,15 +691,15 @@ def test_check_and_download_happy_path_with_extraction(tmp_path, caplog):
     def _mock_dl(url, dest):
         """
         Mock download helper used in tests.
-        
+
         Creates parent directories for dest (if needed) and writes a ZIP file at dest containing a single entry
         "device-install.sh" with the contents `echo hi`. The url parameter is unused; dest is the filesystem
         path where the ZIP will be created.
-        
+
         Parameters:
             url (str): Ignored. Present to match the downloader call signature.
             dest (str): Path to the ZIP file to create.
-        
+
         Returns:
             bool: Always True on success.
         """
