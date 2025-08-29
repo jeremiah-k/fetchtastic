@@ -175,6 +175,10 @@ def download_file_with_retry(
                 logger.debug(f"Removing corrupted zip file: {download_path}")
                 try:
                     os.remove(download_path)
+                    # Also remove hash sidecar if present
+                    hash_file = get_hash_file_path(download_path)
+                    if os.path.exists(hash_file):
+                        os.remove(hash_file)
                 except (IOError, OSError) as e_rm:
                     logger.error(
                         f"Error removing corrupted zip {download_path}: {e_rm}"
@@ -186,6 +190,10 @@ def download_file_with_retry(
                 )
                 try:
                     os.remove(download_path)
+                    # Also remove hash sidecar if present
+                    hash_file = get_hash_file_path(download_path)
+                    if os.path.exists(hash_file):
+                        os.remove(hash_file)
                 except (IOError, OSError) as e_rm_other:
                     logger.error(
                         f"Error removing file {download_path} before re-download: {e_rm_other}"
@@ -199,6 +207,10 @@ def download_file_with_retry(
                 )
                 try:
                     os.remove(download_path)
+                    # Also remove hash sidecar if present
+                    hash_file = get_hash_file_path(download_path)
+                    if os.path.exists(hash_file):
+                        os.remove(hash_file)
                 except (IOError, OSError) as e_rm_unexp:
                     logger.error(
                         f"Error removing file {download_path} after unexpected check error: {e_rm_unexp}"
@@ -299,6 +311,10 @@ def download_file_with_retry(
 
         downloaded_chunks = 0
         downloaded_bytes = 0
+        # Ensure destination directory exists for the temp file
+        parent_dir = os.path.dirname(download_path)
+        if parent_dir and not os.path.exists(parent_dir):
+            os.makedirs(parent_dir, exist_ok=True)
         with open(temp_path, "wb") as file:  # Can raise IOError
             for chunk in response.iter_content(chunk_size=DEFAULT_CHUNK_SIZE):
                 if chunk:
