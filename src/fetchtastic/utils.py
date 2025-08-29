@@ -497,7 +497,7 @@ def legacy_strip_version_numbers(filename: str) -> str:
     
     This legacy behavior (used in v0.6.3) keeps the '-' or '_' that directly precedes the version so user selection patterns that include that separator still match (e.g., "rak4631-", "t1000-e-"). Consecutive separators are collapsed to a single '-' or '_'.
     Returns:
-    	The normalized filename with the legacy-style version portion stripped.
+        The normalized filename with the legacy-style version portion stripped.
     """
     legacy = LEGACY_VER_RX.sub(r"\1", filename)
     legacy = re.sub(r"[-_]{2,}", lambda m: m.group(0)[0], legacy)
