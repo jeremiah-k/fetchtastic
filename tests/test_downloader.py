@@ -237,7 +237,7 @@ def test_check_and_download_logs_when_no_assets_match(tmp_path, caplog):
     # No downloads and no failures expected; should note new version available
     assert downloaded == []
     assert failures == []
-    assert new_versions == ["v1.0.0", "v0.9.0"]
+    assert new_versions == []
 
 
 def test_new_versions_detection_with_saved_tag(tmp_path):
@@ -297,7 +297,7 @@ def test_new_versions_detection_with_saved_tag(tmp_path):
     )
     assert downloaded == []
     assert failures == []
-    assert new_versions == ["v3"]
+    assert new_versions == []
 
 
 def test_new_versions_detection_when_no_saved_tag(tmp_path):
@@ -336,7 +336,7 @@ def test_new_versions_detection_when_no_saved_tag(tmp_path):
     )
     assert downloaded == []
     assert failures == []
-    assert new_versions == ["v3", "v2", "v1"]
+    assert new_versions == []
 
 
 def test_new_versions_detection_when_saved_is_latest(tmp_path):
@@ -655,7 +655,7 @@ def test_no_up_to_date_log_when_new_versions_but_no_matches(tmp_path, caplog):
     )
     assert downloaded == []
     assert failures == []
-    assert new_versions == ["v9.9.9"]
+    assert new_versions == []
     # Should not log generic up-to-date message (may be formatted by Rich;
     # we assert state instead to avoid handler coupling)
 

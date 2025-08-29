@@ -1219,7 +1219,8 @@ def extract_files(
     Extract selected files from a ZIP archive into a target directory.
 
     Only entries whose base filename (matched via the centralized legacy-aware matcher)
-    contain any of the provided `patterns` and do not match any `exclude_patterns` are extracted.
+    match the provided `patterns` and do not match any `exclude_patterns` are extracted.
+    If `patterns` is empty, all files are eligible (subject to `exclude_patterns`).
     Extracts by filename only (archive subdirectories are not preserved), creates target directories
     as needed, and sets executable permissions on extracted files ending with SHELL_SCRIPT_EXTENSION.
     Uses safe_extract_path to prevent directory traversal; unsafe entries are skipped. If the archive
@@ -1229,6 +1230,7 @@ def extract_files(
         zip_path (str): Path to the ZIP archive to read.
         extract_dir (str): Destination directory where files will be extracted.
         patterns (List[str]): Substring patterns to include (matched via centralized matcher).
+            An empty list means “include all files.”
         exclude_patterns (List[str]): Glob-style patterns (fnmatch) to exclude based on the base filename.
 
     Side effects:
@@ -1558,15 +1560,21 @@ def check_and_download(
     )
 
     if downloads_skipped:
-        release_data: Dict[str, Any]
-        for idx, release_data in enumerate(releases_to_download, start=1):
-            if release_data["tag_name"] != saved_release_tag:
-                new_versions_available.append(release_data["tag_name"])
-        return (
-            downloaded_versions,
-            new_versions_available,
-            failed_downloads_details,
-        )  # Added failed_downloads_details
+        # Mirror the “newer than saved” computation used later (newest-first list).
+        tags_order: List[str] = [
+            rd.get("tag_name") for rd in releases_to_download if rd.get("tag_name")
+        ]
+        try:
+            idx_saved = (
+                tags_order.index(saved_release_tag)
+                if saved_release_tag in tags_order
+                else len(tags_order)
+            )
+        except Exception:
+            idx_saved = len(tags_order)
+        newer_tags: List[str] = tags_order[:idx_saved]
+        new_versions_available = list(dict.fromkeys(newer_tags))
+        return (downloaded_versions, new_versions_available, failed_downloads_details)
 
     release_data: Dict[str, Any]
     for idx, release_data in enumerate(releases_to_download, start=1):
@@ -1786,6 +1794,19 @@ def check_and_download(
                     logger.info(
                         f"Release {release_tag} found, but no assets matched the current selection/exclude filters."
                     )
+                    # Consider the latest release processed even without downloads to avoid re-scanning
+                    try:
+                        if idx == 1 and release_tag != (saved_release_tag or ""):
+                            with open(latest_release_file, "w") as f:
+                                f.write(release_tag)
+                            saved_release_tag = release_tag
+                            logger.debug(
+                                f"Updated latest release tag to {release_tag} (no matching assets)"
+                            )
+                    except IOError as e:
+                        logger.debug(
+                            f"Could not record latest release tag {release_tag}: {e}"
+                        )
             except TypeError:
                 # Avoid breaking flow on unexpected edge cases in saved tag reading
                 logger.debug(

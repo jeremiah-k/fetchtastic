@@ -394,7 +394,7 @@ def test_legacy_strip_version_numbers():
 @pytest.mark.unit
 @patch("fetchtastic.utils.requests.Session")
 @patch("fetchtastic.utils.Retry")
-def test_urllib3_v1_fallback_retry_creation(mock_retry, mock_session):
+def test_urllib3_v1_fallback_retry_creation(mock_retry, mock_session, tmp_path):
     """Test urllib3 v1 fallback when v2 parameters cause TypeError."""
     # Mock Retry to raise TypeError on first call (v2 params), succeed on second (v1 params)
     mock_retry.side_effect = [TypeError("unsupported parameter"), MagicMock()]
@@ -406,7 +406,9 @@ def test_urllib3_v1_fallback_retry_creation(mock_retry, mock_session):
     mock_resp.status_code = 200
     mock_resp.iter_content.return_value = []
     mock_session.return_value.get.return_value = mock_resp
-    utils.download_file_with_retry("http://test.com/file.zip", "/tmp/file.zip")
+    utils.download_file_with_retry(
+        "http://test.com/file.zip", str(tmp_path / "file.zip")
+    )
 
     # Verify urllib3 v1 fallback was attempted
     assert mock_retry.call_count == 2
