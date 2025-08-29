@@ -253,7 +253,7 @@ def test_check_and_download_logs_when_no_assets_match(tmp_path, caplog):
 def test_new_versions_detection_with_saved_tag(tmp_path):
     """
     Verify new-release detection honors a saved latest-tag and that only releases newer than the saved tag (by list position, newest-first) are considered — but only releases with matching asset patterns are reported.
-    
+
     Detailed behavior:
     - Writes a saved tag of "v2" and provides releases in newest-first order (v3, v2, v1).
     - v3 is technically newer than the saved tag, but its asset names do not match the provided selected_patterns, so no new_versions or downloads should be recorded.
@@ -787,15 +787,15 @@ def test_check_and_download_happy_path_with_extraction(tmp_path, caplog):
     def _mock_dl(_url, dest):
         """
         Create a simple ZIP file at the given destination for use in tests.
-        
+
         Creates any missing parent directories for dest and writes a ZIP archive containing a single entry
         "device-install.sh" with the contents "echo hi". The _url parameter is ignored (present only to match
         the downloader call signature).
-        
+
         Parameters:
             _url (str): Ignored.
             dest (str): Filesystem path where the ZIP file will be created.
-        
+
         Returns:
             bool: True on success.
         """
@@ -862,14 +862,14 @@ def test_auto_extract_with_empty_patterns_does_not_extract(tmp_path, caplog):
     def _mock_dl(_url, dest):
         """
         Create a dummy ZIP file at the given destination to simulate a successful download.
-        
+
         This helper writes a ZIP archive containing a single file named `device-install.sh`
         with the contents `echo hi`. It ensures parent directories for `dest` exist.
-        
+
         Parameters:
             _url (str): Ignored; present to match the downloader function signature.
             dest (str): Path where the dummy ZIP file will be created.
-        
+
         Returns:
             bool: Always True to indicate the mock download succeeded.
         """

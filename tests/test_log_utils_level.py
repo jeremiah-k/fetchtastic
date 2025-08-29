@@ -8,7 +8,7 @@ from fetchtastic.log_utils import logger, set_log_level
 def _get_rich_handler():
     """
     Return the first logging handler attached to the module logger whose class name is "RichHandler", or None if not found.
-    
+
     Uses duck-typing (inspecting the handler's class name) instead of importing the Rich library.
     """
     for h in logger.handlers:
