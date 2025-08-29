@@ -37,24 +37,45 @@ from fetchtastic.constants import (
 # Removed log_info, setup_logging
 from fetchtastic.log_utils import logger  # Import new logger
 from fetchtastic.setup_config import display_version_info, get_upgrade_command
-from fetchtastic.utils import download_file_with_retry, extract_base_name
+from fetchtastic.utils import (
+    download_file_with_retry,
+    matches_selected_patterns,
+)
 
 # Compiled regex for performance
 NON_ASCII_RX = re.compile(r"[^\x00-\x7F]+")
 
 
+def _newer_tags_since_saved(
+    tags_order: List[str], saved_release_tag: Optional[str]
+) -> List[str]:
+    """
+    Return the subset of tags from newest to oldest that are strictly newer than the saved release tag.
+    
+    If tags_order is ordered newest-first, this returns all tags preceding the first occurrence of saved_release_tag. If saved_release_tag is None, missing, or not found in tags_order, the full tags_order is returned (treated as all newer).
+    """
+    try:
+        idx_saved = tags_order.index(saved_release_tag)
+    except (ValueError, TypeError):
+        idx_saved = len(tags_order)
+    return tags_order[:idx_saved]
+
+
 def compare_versions(version1, version2):
     """
-    Compare two version strings and determine their ordering using the `packaging` library.
-
-    This handles PEP 440 compliant versions, including pre-releases and build metadata.
-    For non-standard versions, attempts to coerce common patterns like X.Y.Z.<hash>
-    to PEP 440 local versions, then falls back to natural sorting.
-
+    Compare two version strings and determine their ordering.
+    
+    Attempts to parse both inputs as PEP 440 versions (using packaging); before parsing it normalizes
+    common non-PEP-440 forms (e.g., dotted/dashed prerelease markers like "2.3.0.rc1" → "2.3.0rc1",
+    or trailing hash-like segments "1.2.3.abcd" → "1.2.3+abcd"). If both versions parse, they are
+    compared according to PEP 440 semantics (including pre-releases and local version segments).
+    If one or both cannot be parsed, a conservative natural-sort fallback is used that splits strings
+    into numeric and alphabetic runs for human-friendly ordering.
+    
     Parameters:
         version1 (str): First version string to compare.
         version2 (str): Second version string to compare.
-
+    
     Returns:
         int: 1 if version1 > version2, 0 if equal, -1 if version1 < version2.
     """
@@ -305,20 +326,25 @@ def check_for_prereleases(
     exclude_patterns=None,  # log_message_func parameter removed
 ):
     """
-    Check the Meshtastic github.io site for firmware prerelease directories newer than the latest official release, download missing assets, and clean up stale prerelease folders.
+    Discover firmware prerelease directories newer than the provided latest release, clean up stale local prerelease folders, and download missing prerelease assets into <download_dir>/firmware/prerelease.
 
-    This inspects repository directories under "firmware-*" to find prerelease versions newer than latest_release_tag, removes local prerelease entries that are no longer valid or older than the official release, and downloads missing files for prereleases that need processing. Created prerelease directories and downloaded files may be written under <download_dir>/firmware/prerelease. Shell scripts will have their executable bit set when possible.
+    The function:
+    - Treats a leading "v" in latest_release_tag as optional and strips it for comparisons.
+    - Scans the remote repository for directories named "firmware-<version>" and keeps only those newer than latest_release_tag.
+    - Removes stale local prerelease directories that are not present in the repository or not newer than the official release.
+    - For each relevant prerelease, downloads assets that match selected_patterns (using the repository's back-compat matching helper) and do not match any exclude_patterns; sets executable permissions for shell scripts when possible.
+    - Returns whether any prerelease assets were downloaded and a list of prerelease directory names that had files downloaded.
 
     Parameters:
-        download_dir: Base path where firmware/prerelease directories live.
-        latest_release_tag: Latest official release tag (e.g., "v2.6.8" or "2.6.8.ef9d0d7"); a leading "v" is tolerated and stripped for comparison.
-        selected_patterns: Iterable of substrings used to select which firmware asset basenames should be considered for download.
-        exclude_patterns: Optional iterable of fnmatch-style patterns; matching filenames are skipped.
+        download_dir (str): Base path where firmware/prerelease directories live.
+        latest_release_tag (str): Latest official release tag (e.g., "v2.6.8" or "2.6.8.ef9d0d7"); a leading "v" is tolerated and stripped for comparison.
+        selected_patterns (Iterable[str]): Patterns/substrings used to select which asset basenames should be downloaded (applied with the module's back-compat matcher).
+        exclude_patterns (Optional[Iterable[str]]): Optional fnmatch-style patterns; any filename matching an exclude pattern will be skipped.
 
     Returns:
-        Tuple (found_and_downloaded: bool, downloaded_versions: list[str])
-        - found_and_downloaded: True if any prerelease files were downloaded.
-        - downloaded_versions: List of prerelease directory names (e.g., "firmware-2.6.9.f93d031") that had files downloaded.
+        tuple[bool, list[str]]: (found_and_downloaded, downloaded_versions)
+          - found_and_downloaded: True if any prerelease files were downloaded.
+          - downloaded_versions: List of prerelease directory names (e.g., "firmware-2.6.9.f93d031") that had files downloaded.
     """
     # Removed local log_message_func definition
 
@@ -414,7 +440,9 @@ def check_for_prereleases(
                     f"Error processing or removing directory {dir_path} during prerelease cleanup: {e}"
                 )
             except (
-                Exception
+                ValueError,
+                KeyError,
+                TypeError,
             ) as e_general:  # Catch other potential errors like from compare_versions
                 logger.error(
                     f"Unexpected error processing directory {dir_path} for prerelease cleanup: {e_general}",
@@ -458,11 +486,9 @@ def check_for_prereleases(
                         for file in expected_files:
                             file_name = file["name"]
 
-                            # Apply same filtering logic as download
-                            stripped_file_name = extract_base_name(file_name)
-                            if not any(
-                                pattern in stripped_file_name
-                                for pattern in selected_patterns
+                            # Apply same filtering logic as download (back-compat matching)
+                            if not matches_selected_patterns(
+                                file_name, selected_patterns
                             ):
                                 continue  # Skip this file
 
@@ -515,8 +541,10 @@ def check_for_prereleases(
     downloaded_files = []
 
     # Process each pre-release directory
-    for dir_name in prerelease_dirs:
-        logger.info(f"Found pre-release: {dir_name}")
+    total_pr = len(prerelease_dirs)
+    logger.info(f"Scanning {total_pr} prerelease directories")
+    for i, dir_name in enumerate(prerelease_dirs, start=1):
+        logger.info(f"Checking {dir_name} ({i}/{total_pr})…")
 
         # Fetch files from the directory
         files = menu_repo.fetch_directory_contents(dir_name)
@@ -543,8 +571,8 @@ def check_for_prereleases(
             file_path = os.path.join(dir_path, file_name)
 
             # Only download files that match the selected patterns and don't match exclude patterns
-            stripped_file_name = extract_base_name(file_name)
-            if not any(pattern in stripped_file_name for pattern in selected_patterns):
+            # Backward-compatible pattern matching (modern + legacy normalization)
+            if not matches_selected_patterns(file_name, selected_patterns):
                 continue  # Skip this file
 
             # Skip files that match exclude patterns
@@ -873,6 +901,13 @@ def _process_firmware_downloads(
             ),  # Use RELEASE_SCAN_COUNT if versions_to_keep not in config
         )
 
+        keep_count = config.get(
+            "FIRMWARE_VERSIONS_TO_KEEP", DEFAULT_FIRMWARE_VERSIONS_TO_KEEP
+        )
+        logger.info(
+            f"Found {len(latest_firmware_releases)} firmware releases; scanning {min(len(latest_firmware_releases), keep_count)} (keep {keep_count})"
+        )
+
         # Extract the actual latest firmware version
         if latest_firmware_releases:
             latest_firmware_version = latest_firmware_releases[0].get("tag_name")
@@ -978,9 +1013,14 @@ def _process_apk_downloads(
     if config.get("SAVE_APKS", False) and config.get("SELECTED_APK_ASSETS", []):
         latest_android_releases: List[Dict[str, Any]] = _get_latest_releases_data(
             paths_and_urls["android_releases_url"],
-            config.get(
-                "ANDROID_VERSIONS_TO_KEEP", RELEASE_SCAN_COUNT
-            ),  # Use RELEASE_SCAN_COUNT if versions_to_keep not in config
+            config.get("ANDROID_VERSIONS_TO_KEEP", RELEASE_SCAN_COUNT),
+        )
+
+        keep_count_apk = config.get(
+            "ANDROID_VERSIONS_TO_KEEP", DEFAULT_ANDROID_VERSIONS_TO_KEEP
+        )
+        logger.info(
+            f"Found {len(latest_android_releases)} Android releases; scanning {min(len(latest_android_releases), keep_count_apk)} (keep {keep_count_apk})"
         )
 
         # Extract the actual latest APK version
@@ -1201,17 +1241,20 @@ def extract_files(
     """
     Extract selected files from a ZIP archive into a target directory.
 
-    Only entries whose base filename (stripped of incidental version/metadata via extract_base_name)
-    contain any of the provided `patterns` and do not match any `exclude_patterns` are extracted.
-    Preserves archive subdirectories, creates target directories as needed, and sets executable
-    permissions on extracted files ending with SHELL_SCRIPT_EXTENSION. Uses safe_extract_path to
-    prevent directory traversal; unsafe entries are skipped. If the archive is corrupted it will
-    be removed.
+    Only entries whose base filename (matched via the centralized legacy-aware matcher)
+    match the provided `patterns` and do not match any `exclude_patterns` are extracted.
+    If `patterns` is empty, no files are extracted. This preserves the historical behavior
+    where an empty extraction pattern list means "do not auto-extract".
+    Preserves archive subdirectories when extracting, creates target directories as needed, and sets
+    executable permissions on extracted files ending with SHELL_SCRIPT_EXTENSION.
+    Uses safe_extract_path to prevent directory traversal; unsafe entries are skipped. If the archive
+    is corrupted it will be removed.
 
     Parameters:
         zip_path (str): Path to the ZIP archive to read.
         extract_dir (str): Destination directory where files will be extracted.
-        patterns (List[str]): Substring patterns to include (matches against extract_base_name).
+        patterns (List[str]): Substring patterns to include (matched via centralized matcher).
+            An empty list means “extract nothing.”
         exclude_patterns (List[str]): Glob-style patterns (fnmatch) to exclude based on the base filename.
 
     Side effects:
@@ -1223,11 +1266,21 @@ def extract_files(
         This function handles and logs IO, OS, and ZIP errors internally; it does not raise on these
         conditions.
     """
+    # Historical behavior: empty pattern list means "do not extract anything".
+    if not patterns:
+        logger.debug(
+            "extract_files called with empty patterns; skipping extraction entirely"
+        )
+        return
+
     try:
         with zipfile.ZipFile(zip_path, "r") as zip_ref:
             file_info: zipfile.ZipInfo
             for file_info in zip_ref.infolist():
-                file_name: str = file_info.filename
+                # Skip directory entries in archives
+                if hasattr(file_info, "is_dir") and file_info.is_dir():
+                    continue
+                file_name: str = file_info.filename  # may include subdirectories
                 base_name: str = os.path.basename(file_name)
                 if not base_name:
                     continue
@@ -1236,57 +1289,55 @@ def extract_files(
                 ):
                     continue
 
-                stripped_base_name: str = extract_base_name(base_name)
-                pattern: str
-                for pattern in patterns:
-                    if pattern in stripped_base_name:
-                        try:
-                            target_path: str = safe_extract_path(extract_dir, base_name)
-                            if not os.path.exists(target_path):
-                                target_dir_for_file: str = os.path.dirname(target_path)
-                                if not os.path.exists(target_dir_for_file):
-                                    os.makedirs(
-                                        target_dir_for_file, exist_ok=True
-                                    )  # Can raise OSError
-                                with zip_ref.open(file_info) as source, open(
-                                    target_path, "wb"
-                                ) as target_file:
-                                    shutil.copyfileobj(
-                                        source, target_file, length=1024 * 64
-                                    )
-                                logger.debug(f"  Extracted: {base_name}")
-                            if base_name.lower().endswith(
-                                SHELL_SCRIPT_EXTENSION.lower()
-                            ) and not os.access(target_path, os.X_OK):
-                                os.chmod(
-                                    target_path, EXECUTABLE_PERMISSIONS
+                # Use the same back-compat matcher used for selection (modern + legacy normalization)
+                if matches_selected_patterns(base_name, patterns):
+                    try:
+                        # Preserve directory structure from within the archive
+                        target_path: str = safe_extract_path(extract_dir, file_name)
+                        if not os.path.exists(target_path):
+                            target_dir_for_file: str = os.path.dirname(target_path)
+                            if not os.path.exists(target_dir_for_file):
+                                os.makedirs(
+                                    target_dir_for_file, exist_ok=True
                                 )  # Can raise OSError
-                                logger.debug(
-                                    f"Set executable permissions for {base_name}"
+                            with zip_ref.open(file_info) as source, open(
+                                target_path, "wb"
+                            ) as target_file:
+                                shutil.copyfileobj(
+                                    source, target_file, length=1024 * 64
                                 )
-                            break
-                        except ValueError as e_val:  # From safe_extract_path
-                            logger.warning(
-                                f"Skipping extraction of '{base_name}' due to unsafe path: {e_val}"
-                            )
-                        except (IOError, OSError) as e_io_os:
-                            logger.warning(
-                                f"File/OS error during extraction of '{base_name}': {e_io_os}"
-                            )
-                        except (
-                            zipfile.BadZipFile
-                        ) as e_bzf_inner:  # Should ideally be caught by outer, but just in case
-                            logger.warning(
-                                f"Bad zip file encountered while processing member '{base_name}' of '{zip_path}': {e_bzf_inner}"
-                            )
-                        except (
-                            Exception
-                        ) as e_inner_extract:  # Catch other unexpected errors for this specific file
-                            logger.error(
-                                f"Unexpected error extracting file '{base_name}' from '{zip_path}': {e_inner_extract}",
-                                exc_info=True,
-                            )
-                        continue  # Continue to next pattern or file in zip
+                            logger.debug(f"  Extracted: {file_name}")
+                        if base_name.lower().endswith(
+                            SHELL_SCRIPT_EXTENSION.lower()
+                        ) and not os.access(target_path, os.X_OK):
+                            os.chmod(
+                                target_path, EXECUTABLE_PERMISSIONS
+                            )  # Can raise OSError
+                            logger.debug(f"Set executable permissions for {file_name}")
+                        # Proceed to next entry after extracting this one
+                        continue
+                    except ValueError as e_val:  # From safe_extract_path
+                        logger.warning(
+                            f"Skipping extraction of '{base_name}' due to unsafe path: {e_val}"
+                        )
+                    except (IOError, OSError) as e_io_os:
+                        logger.warning(
+                            f"File/OS error during extraction of '{base_name}': {e_io_os}"
+                        )
+                    except (
+                        zipfile.BadZipFile
+                    ) as e_bzf_inner:  # Should ideally be caught by outer, but just in case
+                        logger.warning(
+                            f"Bad zip file encountered while processing member '{base_name}' of '{zip_path}': {e_bzf_inner}"
+                        )
+                    except (
+                        Exception
+                    ) as e_inner_extract:  # noqa: BLE001 - Catch-all is intentional for resilience
+                        logger.error(
+                            f"Unexpected error extracting file '{base_name}' from '{zip_path}': {e_inner_extract}",
+                            exc_info=True,
+                        )
+                    continue  # Continue to next pattern or file in zip
     except zipfile.BadZipFile:
         logger.error(
             f"Error: {zip_path} is a bad zip file and cannot be opened. Removing file."
@@ -1362,31 +1413,27 @@ def _is_release_complete(
     exclude_patterns: List[str],
 ) -> bool:
     """
-    Return True if the given release directory contains all expected assets (filtered by patterns)
+    Return True if the local release directory contains all expected assets (filtered by include/exclude patterns)
     and those assets pass basic integrity checks; otherwise False.
-
-    Detailed behavior:
-    - Builds the list of expected asset filenames from release_data["assets"], keeping only assets
-      whose stripped names match any string in selected_patterns (if provided) and that do not
-      match any fnmatch pattern in exclude_patterns.
+    
+    This verifies presence and basic integrity of release assets as declared in release_data["assets"]:
+    - Assets are selected if they match selected_patterns (when provided, via the centralized matcher)
+      and do not match any fnmatch pattern in exclude_patterns.
     - For each expected asset:
-      - Verifies the file exists in release_dir.
-      - If the file is a ZIP, runs a ZIP integrity check (testzip) and compares the actual file size
-        to the asset's declared size (when available).
-      - For non-ZIP files, compares actual file size to the asset's declared size (when available).
-    - Any missing file, ZIP corruption, size mismatch, or I/O error causes the function to return False.
-
+      - Existence is required.
+      - Zip files are opened and tested with ZipFile.testzip(); file size is compared to the declared asset size when available.
+      - Non-zip files have their on-disk size compared to the declared asset size when available.
+    
     Parameters:
-        release_data: Release metadata (dict) containing an "assets" list with entries that include
-            "name" and optionally "size". Only used to determine expected filenames and expected sizes.
-        release_dir: Path to the local release directory to inspect.
-        selected_patterns: Optional list of substrings; an asset is considered only if its
-            version-stripped filename contains any of these substrings. If None, no inclusion filtering is applied.
-        exclude_patterns: List of fnmatch-style patterns; any asset whose original filename matches
-            one of these patterns will be ignored.
-
+        release_data: Release metadata dict containing an "assets" list (each asset should include "name"
+            and may include "size") used to determine expected filenames and sizes.
+        release_dir: Filesystem path to the local release directory to inspect.
+        selected_patterns: Optional list of inclusion patterns; when provided only assets matching these
+            (via matches_selected_patterns) are considered expected.
+        exclude_patterns: List of fnmatch-style patterns; any asset matching one of these is ignored.
+    
     Returns:
-        bool: True if all expected assets are present and pass integrity/size checks; False otherwise.
+        True if all expected assets are present and pass integrity/size checks; False otherwise.
     """
     if not os.path.exists(release_dir):
         return False
@@ -1399,9 +1446,8 @@ def _is_release_complete(
             continue
 
         # Apply same filtering logic as download
-        stripped_file_name = extract_base_name(file_name)
-        if selected_patterns and not any(
-            pattern in stripped_file_name for pattern in selected_patterns
+        if selected_patterns and not matches_selected_patterns(
+            file_name, selected_patterns
         ):
             continue
 
@@ -1543,23 +1589,27 @@ def check_and_download(
 
     releases_to_download: List[Dict[str, Any]] = releases[:versions_to_keep]
 
+    total_to_scan = len(releases_to_download)
+    logger.info(
+        f"Scanning {total_to_scan} {release_type} releases (keep {versions_to_keep})"
+    )
+
     if downloads_skipped:
-        release_data: Dict[str, Any]
-        for release_data in releases_to_download:
-            if release_data["tag_name"] != saved_release_tag:
-                new_versions_available.append(release_data["tag_name"])
-        return (
-            downloaded_versions,
-            new_versions_available,
-            failed_downloads_details,
-        )  # Added failed_downloads_details
+        # Mirror the “newer than saved” computation used later (newest-first list).
+        tags_order: List[str] = [
+            rd.get("tag_name") for rd in releases_to_download if rd.get("tag_name")
+        ]
+        newer_tags: List[str] = _newer_tags_since_saved(tags_order, saved_release_tag)
+        new_versions_available = list(dict.fromkeys(newer_tags))
+        return (downloaded_versions, new_versions_available, failed_downloads_details)
 
     release_data: Dict[str, Any]
-    for release_data in releases_to_download:
+    for idx, release_data in enumerate(releases_to_download, start=1):
         try:
             release_tag: str = release_data[
                 "tag_name"
             ]  # Potential KeyError if API response changes
+            logger.info(f"Checking {release_tag} ({idx}/{total_to_scan})…")
             release_dir: str = os.path.join(download_dir_path, release_tag)
             release_notes_file: str = os.path.join(
                 release_dir, f"release_notes-{release_tag}.md"
@@ -1677,9 +1727,8 @@ def check_and_download(
                     )
                     continue
 
-                stripped_file_name: str = extract_base_name(file_name)
-                if selected_patterns and not any(
-                    pattern in stripped_file_name for pattern in selected_patterns
+                if selected_patterns and not matches_selected_patterns(
+                    file_name, selected_patterns
                 ):
                     continue
                 # Honor exclude patterns at download-time as well
@@ -1764,6 +1813,33 @@ def check_and_download(
                                     exclude_patterns_list,
                                 )
 
+        else:
+            # If this is a newer release than what we've saved but no assets
+            # matched the user's patterns, surface a helpful note.
+            try:
+                if saved_release_tag is None or release_tag != saved_release_tag:
+                    logger.info(
+                        f"Release {release_tag} found, but no assets matched the current selection/exclude filters."
+                    )
+                    # Consider the latest release processed even without downloads to avoid re-scanning
+                    try:
+                        if idx == 1:
+                            with open(latest_release_file, "w") as f:
+                                f.write(release_tag)
+                            saved_release_tag = release_tag
+                            logger.debug(
+                                f"Updated latest release tag to {release_tag} (no matching assets)"
+                            )
+                    except IOError as e:
+                        logger.debug(
+                            f"Could not record latest release tag {release_tag}: {e}"
+                        )
+            except TypeError:
+                # Avoid breaking flow on unexpected edge cases in saved tag reading
+                logger.debug(
+                    "Could not determine saved release tag state when evaluating matched assets due to a type issue."
+                )
+
         set_permissions_on_sh_files(release_dir)
 
     # Only update the latest release file if we actually downloaded something
@@ -1803,14 +1879,22 @@ def check_and_download(
             )
 
     if not actions_taken:
-        logger.info(f"All {release_type} assets are up to date.")
+        # Determine tags newer than the saved tag by position (list is newest-first)
+        tags_order: List[str] = [
+            rd.get("tag_name") for rd in releases_to_download if rd.get("tag_name")
+        ]
+        newer_tags: List[str] = _newer_tags_since_saved(tags_order, saved_release_tag)
+        new_candidates: List[str] = [
+            t for t in newer_tags if t not in downloaded_versions
+        ]
 
-    for release_data in releases_to_download:
-        release_tag = release_data["tag_name"]
-        if release_tag != saved_release_tag and release_tag not in downloaded_versions:
-            # This logic for new_versions_available might need refinement if a release has partial success
-            # For now, if it wasn't fully downloaded (not in downloaded_versions), it's "new" or "still pending".
-            new_versions_available.append(release_tag)
+        if not new_candidates:
+            logger.info(f"All {release_type} assets are up to date.")
+
+        # Merge uniquely with any earlier additions
+        new_versions_available = list(
+            dict.fromkeys(new_versions_available + new_candidates)
+        )
 
     return downloaded_versions, new_versions_available, failed_downloads_details
 
@@ -1847,20 +1931,33 @@ def check_extraction_needed(
     zip_path: str, extract_dir: str, patterns: List[str], exclude_patterns: List[str]
 ) -> bool:
     """
-    Return True if the ZIP contains files that match `patterns` (after base-name normalization) which are not present in `extract_dir`.
-
-    This inspects the ZIP's file list, ignores entries whose base filename matches any pattern in `exclude_patterns`, and normalizes filenames with `extract_base_name` before matching. If any matched file does not already exist under `extract_dir`, the function returns True (extraction needed); otherwise False.
-
-    Behavioral notes:
-    - If the ZIP is corrupted (zipfile.BadZipFile) the function will attempt to remove the ZIP and returns False.
-    - On IO/OS errors or other unexpected exceptions the function conservatively returns True (assume extraction is needed).
+    Return whether a ZIP archive contains any files matching `patterns` that are not yet present in `extract_dir`.
+    
+    Checks archive entries (skipping directories) and filters out entries whose base filename matches any pattern in `exclude_patterns`. Matching against `patterns` uses the module's back-compat matcher (matches_selected_patterns). If `patterns` is empty this function returns False.
+    
+    Returns:
+        bool: True if at least one matched file in the ZIP is missing from `extract_dir` (extraction needed); False otherwise.
+    
+    Notes:
+    - If the ZIP is corrupted (zipfile.BadZipFile) the function will attempt to remove the ZIP file and returns False.
+    - On IO/OSError or other unexpected exceptions the function conservatively returns True (assume extraction is needed).
     """
+    # Preserve historical behavior: empty list of patterns means "do not extract".
+    if not patterns:
+        logger.debug(
+            "check_extraction_needed called with empty patterns; returning False"
+        )
+        return False
+
     files_to_extract: List[str] = []
     try:
         with zipfile.ZipFile(zip_path, "r") as zip_ref:
             file_info: zipfile.ZipInfo
             for file_info in zip_ref.infolist():
-                file_name: str = file_info.filename
+                # Skip directory entries in archives
+                if hasattr(file_info, "is_dir") and file_info.is_dir():
+                    continue
+                file_name: str = file_info.filename  # may include subdirectories
                 base_name: str = os.path.basename(file_name)
                 if not base_name:
                     continue
@@ -1868,12 +1965,9 @@ def check_extraction_needed(
                     fnmatch.fnmatch(base_name, exclude) for exclude in exclude_patterns
                 ):
                     continue
-                stripped_base_name: str = extract_base_name(base_name)
-                pattern: str
-                for pattern in patterns:
-                    if pattern in stripped_base_name:
-                        files_to_extract.append(base_name)
-                        break
+                if matches_selected_patterns(base_name, patterns):
+                    # Preserve path for existence checks
+                    files_to_extract.append(file_name)
         base_name_to_check: str
         for base_name_to_check in files_to_extract:
             extracted_file_path: str = os.path.join(extract_dir, base_name_to_check)
@@ -1891,7 +1985,7 @@ def check_extraction_needed(
             logger.error(
                 f"Error removing corrupted zip file {zip_path} (in check_extraction_needed): {e_rm}"
             )
-        return False  # Indicate extraction is needed as we couldn't verify or had to remove
+        return False  # Extraction cannot proceed; ZIP removed or invalid
     except (IOError, OSError) as e_io_check:  # For other IO errors with the zip file
         logger.warning(
             f"IO/OS error checking extraction needed for {zip_path}: {e_io_check}"

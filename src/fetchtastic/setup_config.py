@@ -334,9 +334,9 @@ def check_storage_setup():
 
 def run_setup():
     """
-    Runs the interactive setup process for Fetchtastic, guiding the user through configuration, migration, asset selection, scheduling, and notification setup.
-
-    This function handles platform-specific requirements such as Termux package installation, Windows shortcut creation, and scheduling via cron or boot scripts on Linux, macOS, and Termux. It prompts the user for key configuration options including the base directory, asset types to download (APKs, firmware, or both), version retention, firmware extraction patterns, Wi-Fi-only downloads (Termux), and NTFY notification preferences. The setup process migrates old configuration files if present, records the setup version and date, saves all settings to the configuration file, and offers to perform the first download run or provides instructions for manual execution.
+    Run the interactive Fetchtastic setup wizard.
+    
+    Guides the user through creating or migrating configuration, selecting assets (APKs and/or firmware), retention and extraction settings, notification (NTFY) setup, and scheduling/startup options. Behavior is platform-aware: on Termux it may install required packages, configure storage, and offer pip→pipx migration; on Windows it can create Start Menu and startup shortcuts; on Linux/macOS/Termux it can install/remove cron or boot jobs. The function persists settings to the configured YAML file, updates the global BASE_DIR (and related config keys), may create or migrate CONFIG_FILE, and optionally triggers an initial download run (calls downloader.main()).
     """
     global BASE_DIR, CONFIG_FILE
     print("Running Fetchtastic Setup...")
@@ -530,6 +530,18 @@ def run_setup():
     config["SAVE_FIRMWARE"] = save_firmware
 
     # Run the menu scripts based on user choices
+    # Small tip to help users choose precise firmware patterns
+    if save_firmware:
+        print("\nTips for precise selection:")
+        print(
+            "- Use the separator seen in filenames to target a family (e.g., 'rak4631-' vs 'rak4631_')."
+        )
+        print(
+            "- 'rak4631-' matches base RAK4631 files (e.g., firmware-rak4631-...),"
+            " while 'rak4631_' matches underscore variants (e.g., firmware-rak4631_eink-...).",
+            sep="",
+        )
+        print("- You can re-run 'fetchtastic setup' anytime to adjust your patterns.\n")
     if save_apks:
         apk_selection = menu_apk.run_menu()
         if not apk_selection:

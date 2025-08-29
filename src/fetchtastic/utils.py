@@ -6,7 +6,7 @@ import platform
 import re
 import time
 import zipfile
-from typing import Optional  # Callable removed
+from typing import List, Optional  # Callable removed
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -23,6 +23,14 @@ from fetchtastic.constants import (
     ZIP_EXTENSION,
 )
 from fetchtastic.log_utils import logger  # Import the new logger
+
+# Precompiled regexes for version stripping
+MODERN_VER_RX = re.compile(
+    r"[-_]v?\d+\.\d+\.\d+(?:\.[\da-f]+)?(?:[-_.]?(?:rc|dev|beta|alpha)\d*)?(?=[-_.]|$)"
+)
+LEGACY_VER_RX = re.compile(
+    r"([-_])v?\d+\.\d+\.\d+(?:\.[\da-f]+)?(?:[-_.]?(?:rc|dev|beta|alpha)\d*)?(?=[-_.]|$)"
+)
 
 
 def calculate_sha256(file_path: str) -> Optional[str]:
@@ -48,7 +56,19 @@ def get_hash_file_path(file_path: str) -> str:
 
 
 def save_file_hash(file_path: str, hash_value: str) -> None:
-    """Save hash to a .sha256 file."""
+    """
+    Write the given SHA-256 hex digest to a companion `.sha256` sidecar file next to `file_path`.
+    
+    The sidecar file is created at the path returned by `get_hash_file_path(file_path)` and contains a single line in the format:
+        "<hash_value>  <basename>\n"
+    
+    Parameters:
+        file_path (str): Path to the original file whose hash is being recorded; only the basename is written into the sidecar.
+        hash_value (str): Hexadecimal SHA-256 digest to persist.
+    
+    Side effects:
+        Creates or overwrites the `.sha256` sidecar file. IO errors are caught and logged; this function does not raise on failure.
+    """
     hash_file = get_hash_file_path(file_path)
     try:
         with open(hash_file, "w") as f:
@@ -58,8 +78,30 @@ def save_file_hash(file_path: str, hash_value: str) -> None:
         logger.debug(f"Error saving hash file {hash_file}: {e}")
 
 
+def _remove_file_and_hash(path: str) -> bool:
+    """
+    Remove a file and its .sha256 sidecar if present. Returns True on success, False on error.
+
+    Errors are logged and False is returned; exceptions are not raised.
+    """
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+        hash_file = get_hash_file_path(path)
+        if os.path.exists(hash_file):
+            os.remove(hash_file)
+        return True
+    except (IOError, OSError) as e:
+        logger.error(f"Error removing {path} or its hash sidecar: {e}")
+        return False
+
+
 def load_file_hash(file_path: str) -> Optional[str]:
-    """Load hash from a .sha256 file."""
+    """
+    Return the SHA-256 hex string stored in the file_path's `.sha256` sidecar, if available.
+    
+    Reads the companion `<file_path>.sha256` file and returns the first whitespace-separated token from its first line (the stored hash). If the sidecar is missing, unreadable, or empty, returns None. Does not raise on I/O errors.
+    """
     hash_file = get_hash_file_path(file_path)
     try:
         with open(hash_file, "r") as f:
@@ -130,35 +172,7 @@ def download_file_with_retry(
     Errors and exceptions:
     - Network, IO, ZIP validation, and unexpected exceptions are caught internally; the function returns False on failure rather than propagating exceptions.
     """
-    session = requests.Session()
-    # Using type: ignore for Retry as it might not be perfectly typed by stubs,
-    # but the parameters are standard for urllib3.
-    try:
-        retry_strategy: Retry = Retry(
-            total=DEFAULT_CONNECT_RETRIES,
-            connect=DEFAULT_CONNECT_RETRIES,
-            read=DEFAULT_CONNECT_RETRIES,
-            status=DEFAULT_CONNECT_RETRIES,
-            backoff_factor=DEFAULT_BACKOFF_FACTOR,
-            status_forcelist=[408, 429, 500, 502, 503, 504],
-            allowed_methods=frozenset({"GET", "HEAD"}),
-            raise_on_status=False,
-            respect_retry_after_header=True,
-        )
-    except TypeError:
-        # urllib3 v1 fallback
-        retry_strategy = Retry(
-            total=DEFAULT_CONNECT_RETRIES,
-            connect=DEFAULT_CONNECT_RETRIES,
-            read=DEFAULT_CONNECT_RETRIES,
-            backoff_factor=DEFAULT_BACKOFF_FACTOR,
-            status_forcelist=[408, 429, 500, 502, 503, 504],
-            method_whitelist=frozenset({"GET", "HEAD"}),  # type: ignore[arg-type]
-            raise_on_status=False,
-        )
-    adapter = HTTPAdapter(max_retries=retry_strategy)
-    session.mount("https://", adapter)
-    session.mount("http://", adapter)
+    # Note: Session is created after pre-checks and closed in finally
 
     # Check if file exists and is valid (especially for zips)
     if os.path.exists(download_path):
@@ -180,36 +194,17 @@ def download_file_with_retry(
                     logger.info(
                         f"Hash verification failed for {os.path.basename(download_path)}, re-downloading"
                     )
-                    try:
-                        os.remove(download_path)
-                        # Also remove hash file
-                        hash_file = get_hash_file_path(download_path)
-                        if os.path.exists(hash_file):
-                            os.remove(hash_file)
-                    except (IOError, OSError) as e_rm:
-                        logger.error(
-                            f"Error removing file with hash mismatch {download_path}: {e_rm}"
-                        )
+                    if not _remove_file_and_hash(download_path):
                         return False
             except zipfile.BadZipFile:
                 logger.debug(f"Removing corrupted zip file: {download_path}")
-                try:
-                    os.remove(download_path)
-                except (IOError, OSError) as e_rm:
-                    logger.error(
-                        f"Error removing corrupted zip {download_path}: {e_rm}"
-                    )
+                if not _remove_file_and_hash(download_path):
                     return False
             except (IOError, OSError) as e_check:  # More specific for file check issues
                 logger.debug(
                     f"IO/OS Error checking existing zip file {download_path}: {e_check}. Attempting re-download."
                 )
-                try:
-                    os.remove(download_path)
-                except (IOError, OSError) as e_rm_other:
-                    logger.error(
-                        f"Error removing file {download_path} before re-download: {e_rm_other}"
-                    )
+                if not _remove_file_and_hash(download_path):
                     return False
             except (
                 Exception
@@ -217,12 +212,7 @@ def download_file_with_retry(
                 logger.error(
                     f"Unexpected error checking existing zip file {download_path}: {e_unexp_check}. Attempting re-download."
                 )
-                try:
-                    os.remove(download_path)
-                except (IOError, OSError) as e_rm_unexp:
-                    logger.error(
-                        f"Error removing file {download_path} after unexpected check error: {e_rm_unexp}"
-                    )
+                if not _remove_file_and_hash(download_path):
                     return False
         else:  # For non-zip files
             try:
@@ -251,6 +241,15 @@ def download_file_with_retry(
                 else:
                     logger.debug(f"Removing empty file: {download_path}")
                     os.remove(download_path)  # Try removing first
+                    # Remove any stale hash sidecar
+                    hash_file = get_hash_file_path(download_path)
+                    if os.path.exists(hash_file):
+                        try:
+                            os.remove(hash_file)
+                        except (IOError, OSError) as e_rm_hash:
+                            logger.debug(
+                                f"Error removing hash file {hash_file}: {e_rm_hash}"
+                            )
             except (
                 IOError,
                 OSError,
@@ -260,23 +259,61 @@ def download_file_with_retry(
                 )
                 return False
 
-    temp_path = download_path + ".tmp"
+    temp_path = f"{download_path}.tmp.{os.getpid()}.{int(time.time()*1000)}"
+    session = requests.Session()
+    response = None  # ensure we can close the Response in finally
     try:
         # Log before session.get()
         logger.debug(
             f"Attempting to download file from URL: {url} to temp path: {temp_path}"
         )
         start_time = time.time()
+        # Using type: ignore for Retry as it might not be perfectly typed by stubs,
+        # but the parameters are standard for urllib3.
+        try:
+            retry_strategy: Retry = Retry(
+                total=DEFAULT_CONNECT_RETRIES,
+                connect=DEFAULT_CONNECT_RETRIES,
+                read=DEFAULT_CONNECT_RETRIES,
+                status=DEFAULT_CONNECT_RETRIES,
+                backoff_factor=DEFAULT_BACKOFF_FACTOR,
+                status_forcelist=[408, 429, 500, 502, 503, 504],
+                allowed_methods=frozenset({"GET", "HEAD"}),
+                raise_on_status=False,
+                respect_retry_after_header=True,
+            )
+        except TypeError:
+            # urllib3 v1 fallback
+            retry_strategy = Retry(
+                total=DEFAULT_CONNECT_RETRIES,
+                connect=DEFAULT_CONNECT_RETRIES,
+                read=DEFAULT_CONNECT_RETRIES,
+                status=DEFAULT_CONNECT_RETRIES,
+                backoff_factor=DEFAULT_BACKOFF_FACTOR,
+                status_forcelist=[408, 429, 500, 502, 503, 504],
+                method_whitelist=frozenset({"GET", "HEAD"}),  # type: ignore[arg-type]
+                raise_on_status=False,
+            )
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        session.mount("https://", adapter)
+        session.mount("http://", adapter)
+
         response = session.get(url, stream=True, timeout=DEFAULT_REQUEST_TIMEOUT)
 
         # Log HTTP response status code
         logger.debug(
             f"Received HTTP response status code: {response.status_code} for URL: {url}"
         )
+        # Status-based retries have already been applied by urllib3's Retry;
+        # raise_for_status will surface the final HTTP error, if any.
         response.raise_for_status()  # Handled by requests.exceptions.RequestException
 
         downloaded_chunks = 0
         downloaded_bytes = 0
+        # Ensure destination directory exists for the temp file
+        parent_dir = os.path.dirname(download_path)
+        if parent_dir and not os.path.exists(parent_dir):
+            os.makedirs(parent_dir, exist_ok=True)
         with open(temp_path, "wb") as file:  # Can raise IOError
             for chunk in response.iter_content(chunk_size=DEFAULT_CHUNK_SIZE):
                 if chunk:
@@ -443,22 +480,27 @@ def download_file_with_retry(
         logger.error(
             f"File I/O error during download process for {url} (temp path: {temp_path}): {e_io}"
         )
-    except (
-        Exception
-    ) as e_gen:  # Catch-all for truly unexpected errors in the download block
+    except Exception as e_gen:  # noqa: BLE001 - Catch-all for unexpected errors
         logger.error(
             f"An unexpected error occurred during download/processing for {url}: {e_gen}",
             exc_info=True,
         )
-
-    # Final cleanup of temp_path if it still exists due to an error
-    if os.path.exists(temp_path):
-        try:
-            os.remove(temp_path)
-        except (IOError, OSError) as e_rm_final_tmp:
-            logger.warning(
-                f"Error removing temporary file {temp_path} after failure: {e_rm_final_tmp}"
-            )
+    finally:
+        # Final cleanup of temp_path if it still exists due to an error
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except (IOError, OSError) as e_rm_final_tmp:
+                logger.warning(
+                    f"Error removing temporary file {temp_path} after failure: {e_rm_final_tmp}"
+                )
+        # Close HTTP response explicitly to release the connection
+        if response is not None:
+            try:
+                response.close()
+            except Exception as e:
+                logger.debug(f"Error closing HTTP response for {url}: {e}")
+        session.close()
     return False
 
 
@@ -466,22 +508,57 @@ def extract_base_name(filename: str) -> str:
     """
     Return a filename with trailing version and commit/hash segments removed.
 
-    This normalizes names like "-2.5.13", "_v1.2.3", "-2.5.13.1a2b3c4" and optional prerelease suffixes
-    (e.g., rc, dev, beta, alpha) by stripping those version/hash segments while preserving other
-    filename parts and separators. Consecutive separators produced by removal are collapsed to a single
-    '-' or '_' as appropriate.
+    Removes the separator that immediately precedes the version token so results do not
+    contain a stray dash/underscore before the extension. This matches test expectations
+    and prior behavior used throughout the codebase.
 
     Examples:
       'fdroidRelease-2.5.9.apk' -> 'fdroidRelease.apk'
       'firmware-rak4631-2.7.4.c1f4f79-ota.zip' -> 'firmware-rak4631-ota.zip'
+      'firmware-rak4631-2.7.4.c1f4f79.zip' -> 'firmware-rak4631.zip'
       'meshtasticd_2.5.13.1a06f88_amd64.deb' -> 'meshtasticd_amd64.deb'
     """
     # Remove versions like: -2.5.13, _v1.2.3, -2.5.13.abcdef1, and optional prerelease: -rc1/.dev1/-beta2/-alpha3
-    base_name = re.sub(
-        r"[-_]v?\d+\.\d+\.\d+(?:\.[\da-f]+)?(?:[-_.]?(?:rc|dev|beta|alpha)\d*)?(?=[-_.]|$)",
-        "",
-        filename,
-    )
+    base_name = MODERN_VER_RX.sub("", filename)
     # Clean up double separators that might result from the substitution
     base_name = re.sub(r"[-_]{2,}", lambda m: m.group(0)[0], base_name)
     return base_name
+
+
+def legacy_strip_version_numbers(filename: str) -> str:
+    """
+    Return the filename with trailing version/commit/hash segments removed while preserving the separator immediately before the version token.
+    
+    Preserves the separator ('-' or '_') that directly precedes the removed version token so patterns that include that separator still match (for example, "rak4631-" or "t1000-e-"). Collapses consecutive separators into a single '-' or '_'.
+    
+    Returns:
+        The normalized filename with the legacy-style version portion stripped.
+    """
+    legacy = LEGACY_VER_RX.sub(r"\1", filename)
+    legacy = re.sub(r"[-_]{2,}", lambda m: m.group(0)[0], legacy)
+    return legacy
+
+
+def matches_selected_patterns(
+    filename: str, selected_patterns: Optional[List[str]]
+) -> bool:
+    """
+    Return True if any of the provided patterns match the filename's normalized base name.
+
+    Checks both the modern normalization (which removes the version token and its preceding separator)
+    and the legacy normalization (which preserves the separator before the version token). If
+    `selected_patterns` is falsy (None or empty) the function returns True.
+
+    Parameters:
+        selected_patterns: Iterable of substring patterns to search for; empty or None means "match all".
+
+    Returns:
+        True if any non-empty pattern appears in either normalized base name; otherwise False.
+    """
+    if not selected_patterns:
+        return True
+    base_modern = extract_base_name(filename)
+    base_legacy = legacy_strip_version_numbers(filename)
+    return any(
+        pat and (pat in base_modern or pat in base_legacy) for pat in selected_patterns
+    )
