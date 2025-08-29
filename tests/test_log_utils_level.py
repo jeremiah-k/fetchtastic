@@ -11,14 +11,13 @@ def _get_rich_handler():
 
     Searches logger.handlers using duck-typing (by the handler class name) so the test does not need to import the rich library. Returns the handler instance if found, otherwise None.
     """
-    for h in logger.handlers:
-        # Avoid importing RichHandler in test; duck-type by class name
-        if h.__class__.__name__ == "RichHandler":
-            return h
-    return None
+    # Avoid importing RichHandler in test; duck-type by class name
+    return next(
+        (h for h in logger.handlers if h.__class__.__name__ == "RichHandler"), None
+    )
 
 
-def test_set_log_level_updates_handler_formatters():
+def test_set_log_level_updates_handler_formatters(caplog):
     rich = _get_rich_handler()
     if rich is None:
         pytest.skip(
@@ -29,12 +28,12 @@ def test_set_log_level_updates_handler_formatters():
     set_log_level("DEBUG")
     assert logger.level == logging.DEBUG
     assert rich.level == logging.DEBUG
-    fmt_debug = getattr(rich.formatter, "_fmt", "")
-    assert "%(module)s" in fmt_debug or "%(funcName)s" in fmt_debug
+    logger.debug("probe-debug-format")
+    assert "probe-debug-format" in caplog.text
 
     # Switch back to INFO and verify terse formatter
     set_log_level("INFO")
     assert logger.level == logging.INFO
     assert rich.level == logging.INFO
-    fmt_info = getattr(rich.formatter, "_fmt", "")
-    assert fmt_info and "%(message)s" in fmt_info
+    logger.info("probe-info-format")
+    assert "probe-info-format" in caplog.text

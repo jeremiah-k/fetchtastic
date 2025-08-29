@@ -238,11 +238,9 @@ def test_check_and_download_logs_when_no_assets_match(tmp_path, caplog, capsys):
     assert downloaded == []
     assert failures == []
     assert new_versions == []
-    out = capsys.readouterr().out
-    collapsed = " ".join(out.split())
     assert (
         "Release v1.0.0 found, but no assets matched the current selection/exclude filters."
-        in collapsed
+        in caplog.text
     )
 
 
@@ -654,7 +652,7 @@ def test_check_for_prereleases_download_and_cleanup(
     ]
 
     # Simulate successful download only for the matching file
-    def _mock_dl(url, dest):
+    def _mock_dl(_url, dest):
         # Create the file to emulate a successful download
         """
         Mock download helper used in tests.
@@ -773,7 +771,7 @@ def test_check_and_download_happy_path_with_extraction(tmp_path, caplog):
     download_dir = str(tmp_path)
 
     # Mock downloader to write a real ZIP that contains a file we want to auto-extract
-    def _mock_dl(url, dest):
+    def _mock_dl(_url, dest):
         """
         Mock download helper used in tests.
 
@@ -848,7 +846,7 @@ def test_auto_extract_with_empty_patterns_does_not_extract(tmp_path, caplog):
     download_dir = str(tmp_path)
 
     # Mock downloader to write a real ZIP that contains a file that would normally be extracted
-    def _mock_dl(url, dest):
+    def _mock_dl(_url, dest):
         import os
         import zipfile
 

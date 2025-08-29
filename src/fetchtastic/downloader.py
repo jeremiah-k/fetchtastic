@@ -1330,7 +1330,7 @@ def extract_files(
                         )
                     except (
                         Exception
-                    ) as e_inner_extract:  # Catch other unexpected errors for this specific file
+                    ) as e_inner_extract:  # noqa: BLE001 - Catch-all is intentional for resilience
                         logger.error(
                             f"Unexpected error extracting file '{base_name}' from '{zip_path}': {e_inner_extract}",
                             exc_info=True,
@@ -1931,7 +1931,7 @@ def check_extraction_needed(
     """
     Return True if the ZIP contains files that match `patterns` (after base-name normalization) which are not present in `extract_dir`.
 
-    This inspects the ZIP's file list, ignores entries whose base filename matches any pattern in `exclude_patterns`, and uses the same back‑compat pattern matching as selection (supporting dashed/underscored tokens). If `patterns` is empty, no extraction is considered necessary (returns False). Otherwise, if any matched file does not already exist under `extract_dir`, the function returns True (extraction needed); else False.
+    This inspects the ZIP's file list, ignores entries whose base filename matches any pattern in `exclude_patterns`, and uses the same back-compat pattern matching as selection (supporting dashed/underscored tokens). If `patterns` is empty, no extraction is considered necessary (returns False). Otherwise, if any matched file does not already exist under `extract_dir`, the function returns True (extraction needed); else False.
 
     Behavioral notes:
     - If the ZIP is corrupted (zipfile.BadZipFile) the function will attempt to remove the ZIP and returns False.
