@@ -1576,7 +1576,7 @@ def check_and_download(
                 if saved_release_tag in tags_order
                 else len(tags_order)
             )
-        except Exception:
+        except (ValueError, TypeError):
             idx_saved = len(tags_order)
         newer_tags: List[str] = tags_order[:idx_saved]
         new_versions_available = list(dict.fromkeys(newer_tags))
@@ -1868,7 +1868,7 @@ def check_and_download(
                 if saved_release_tag in tags_order
                 else len(tags_order)
             )
-        except Exception:
+        except (ValueError, TypeError):
             idx_saved = len(tags_order)
 
         newer_tags: List[str] = tags_order[:idx_saved]
