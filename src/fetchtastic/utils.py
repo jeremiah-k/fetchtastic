@@ -6,7 +6,7 @@ import platform
 import re
 import time
 import zipfile
-from typing import Optional  # Callable removed
+from typing import List, Optional  # Callable removed
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -23,6 +23,14 @@ from fetchtastic.constants import (
     ZIP_EXTENSION,
 )
 from fetchtastic.log_utils import logger  # Import the new logger
+
+# Precompiled regexes for version stripping
+MODERN_VER_RX = re.compile(
+    r"[-_]v?\d+\.\d+\.\d+(?:\.[\da-f]+)?(?:[-_.]?(?:rc|dev|beta|alpha)\d*)?(?=[-_.]|$)"
+)
+LEGACY_VER_RX = re.compile(
+    r"([-_])v?\d+\.\d+\.\d+(?:\.[\da-f]+)?(?:[-_.]?(?:rc|dev|beta|alpha)\d*)?(?=[-_.]|$)"
+)
 
 
 def calculate_sha256(file_path: str) -> Optional[str]:
@@ -477,11 +485,7 @@ def extract_base_name(filename: str) -> str:
       'meshtasticd_2.5.13.1a06f88_amd64.deb' -> 'meshtasticd_amd64.deb'
     """
     # Remove versions like: -2.5.13, _v1.2.3, -2.5.13.abcdef1, and optional prerelease: -rc1/.dev1/-beta2/-alpha3
-    base_name = re.sub(
-        r"[-_]v?\d+\.\d+\.\d+(?:\.[\da-f]+)?(?:[-_.]?(?:rc|dev|beta|alpha)\d*)?(?=[-_.]|$)",
-        "",
-        filename,
-    )
+    base_name = MODERN_VER_RX.sub("", filename)
     # Clean up double separators that might result from the substitution
     base_name = re.sub(r"[-_]{2,}", lambda m: m.group(0)[0], base_name)
     return base_name
@@ -495,16 +499,14 @@ def legacy_strip_version_numbers(filename: str) -> str:
     version (a '-' or '_') is retained. Kept to maintain compatibility with user configs
     that include separators in their selection patterns (e.g., "rak4631-", "t1000-e-").
     """
-    legacy = re.sub(
-        r"([-_])v?\d+\.\d+\.\d+(?:\.[\da-f]+)?(?:[-_.]?(?:rc|dev|beta|alpha)\d*)?(?=[-_.]|$)",
-        r"\1",
-        filename,
-    )
+    legacy = LEGACY_VER_RX.sub(r"\1", filename)
     legacy = re.sub(r"[-_]{2,}", lambda m: m.group(0)[0], legacy)
     return legacy
 
 
-def matches_selected_patterns(filename: str, selected_patterns: Optional[list]) -> bool:
+def matches_selected_patterns(
+    filename: str, selected_patterns: Optional[List[str]]
+) -> bool:
     """
     Return True if any of the selected_patterns appear in either the modern or legacy normalized
     base names for `filename`.
@@ -516,7 +518,6 @@ def matches_selected_patterns(filename: str, selected_patterns: Optional[list]) 
         return True
     base_modern = extract_base_name(filename)
     base_legacy = legacy_strip_version_numbers(filename)
-    for pat in selected_patterns:
-        if pat and (pat in base_modern or pat in base_legacy):
-            return True
-    return False
+    return any(
+        pat and (pat in base_modern or pat in base_legacy) for pat in selected_patterns
+    )

@@ -462,11 +462,9 @@ def check_for_prereleases(
                         for file in expected_files:
                             file_name = file["name"]
 
-                            # Apply same filtering logic as download
-                            stripped_file_name = extract_base_name(file_name)
-                            if not any(
-                                pattern in stripped_file_name
-                                for pattern in selected_patterns
+                            # Apply same filtering logic as download (back-compat matching)
+                            if not matches_selected_patterns(
+                                file_name, selected_patterns
                             ):
                                 continue  # Skip this file
 
@@ -1774,10 +1772,10 @@ def check_and_download(
                     logger.info(
                         f"Release {release_tag} found, but no assets matched the current selection/exclude filters."
                     )
-            except Exception:
+            except TypeError:
                 # Avoid breaking flow on unexpected edge cases in saved tag reading
                 logger.debug(
-                    "Could not determine saved release tag state when evaluating matched assets"
+                    "Could not determine saved release tag state when evaluating matched assets due to a type issue."
                 )
 
         set_permissions_on_sh_files(release_dir)
