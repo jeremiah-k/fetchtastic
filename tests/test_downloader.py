@@ -238,6 +238,7 @@ def test_check_and_download_logs_when_no_assets_match(tmp_path, caplog):
     assert downloaded == []
     assert failures == []
     assert new_versions == []
+    assert "Release v1.0.0 found, but no assets matched the current selection/exclude filters." in caplog.text
 
 
 def test_new_versions_detection_with_saved_tag(tmp_path):
