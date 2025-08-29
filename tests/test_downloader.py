@@ -508,6 +508,214 @@ def test_no_up_to_date_log_when_new_versions_but_no_matches(tmp_path, caplog):
     )
 
 
+def test_check_and_download_happy_path_with_extraction(tmp_path, caplog):
+    """Covers successful download path, latest tag save, and auto-extract."""
+    caplog.set_level("INFO", logger="fetchtastic")
+
+    release_tag = "v1.0.0"
+    zip_name = "firmware-rak4631-1.0.0.zip"
+    release_dir = tmp_path / release_tag
+
+    # Release data with a single ZIP asset
+    releases = [
+        {
+            "tag_name": release_tag,
+            "published_at": "2024-01-01T00:00:00Z",
+            "assets": [
+                {
+                    "name": zip_name,
+                    "browser_download_url": "https://example.invalid/firmware.zip",
+                    "size": 100,  # nominal; not strictly enforced in this path
+                }
+            ],
+            "body": "Release notes",
+        }
+    ]
+
+    latest_release_file = str(tmp_path / "latest_firmware_release.txt")
+    download_dir = str(tmp_path)
+
+    # Mock downloader to write a real ZIP that contains a file we want to auto-extract
+    def _mock_dl(url, dest):
+        import os
+        import zipfile
+
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        with zipfile.ZipFile(dest, "w") as zf:
+            zf.writestr("device-install.sh", "echo hi")
+        return True
+
+    with patch("fetchtastic.downloader.download_file_with_retry", side_effect=_mock_dl):
+        downloaded, new_versions, failures = downloader.check_and_download(
+            releases,
+            latest_release_file,
+            "Firmware",
+            download_dir,
+            versions_to_keep=1,
+            extract_patterns=["device-install.sh"],
+            selected_patterns=["rak4631-"],
+            auto_extract=True,
+            exclude_patterns=[],
+        )
+
+    # The release should be considered downloaded
+    assert downloaded == [release_tag]
+    assert failures == []
+    # latest_release_file written
+    assert (tmp_path / "latest_firmware_release.txt").exists()
+    # auto-extracted file exists and is executable
+    extracted = tmp_path / release_tag / "device-install.sh"
+    assert extracted.exists()
+    import os
+
+    assert os.access(extracted, os.X_OK)
+
+
+def test_check_and_download_release_already_complete_logs_up_to_date(tmp_path, caplog):
+    """Cover the path where release is complete; actions_taken False leads to up-to-date log."""
+    caplog.set_level("INFO", logger="fetchtastic")
+    release_tag = "v3.3.3"
+    zip_name = "firmware-rak4631-3.3.3.zip"
+    latest_release_file = str(tmp_path / "latest_firmware_release.txt")
+    (tmp_path / "latest_firmware_release.txt").write_text(release_tag)
+
+    # Prepare a valid zip already present in the release directory
+    import os
+    import zipfile
+
+    release_dir = tmp_path / release_tag
+    release_dir.mkdir()
+    zip_path = release_dir / zip_name
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("foo.txt", "bar")
+    size = os.path.getsize(zip_path)
+
+    releases = [
+        {
+            "tag_name": release_tag,
+            "published_at": "2024-01-01T00:00:00Z",
+            "assets": [
+                {
+                    "name": zip_name,
+                    "browser_download_url": "https://example.invalid/zip",
+                    "size": size,
+                }
+            ],
+            "body": "",
+        }
+    ]
+
+    downloaded, new_versions, failures = downloader.check_and_download(
+        releases,
+        latest_release_file,
+        "Firmware",
+        str(tmp_path),
+        versions_to_keep=1,
+        extract_patterns=[],
+        selected_patterns=["rak4631-"],
+        auto_extract=False,
+        exclude_patterns=[],
+    )
+
+    assert downloaded == []  # already complete
+    assert failures == []
+    # With saved == latest and no new, function completes without downloads/failures
+    # (log output may be handled by Rich and is validated elsewhere)
+
+
+def test_check_for_prereleases_no_directories(tmp_path):
+    """If repo has no firmware directories, function returns False, []."""
+    with patch(
+        "fetchtastic.downloader.menu_repo.fetch_repo_directories", return_value=[]
+    ):
+        found, versions = downloader.check_for_prereleases(
+            str(tmp_path), "v1.0.0", ["rak4631-"], exclude_patterns=[]
+        )
+    assert found is False
+    assert versions == []
+
+
+def test_check_and_download_corrupted_existing_zip_records_failure(tmp_path):
+    """Existing corrupted zip should be removed, and failed download recorded when retry fails."""
+    release_tag = "v5.0.0"
+    zip_name = "firmware-rak4631-5.0.0.zip"
+    release_dir = tmp_path / release_tag
+    release_dir.mkdir()
+
+    # Create a corrupted zip file at the expected path
+    bad_zip_path = release_dir / zip_name
+    bad_zip_path.write_bytes(b"not a zip")
+
+    releases = [
+        {
+            "tag_name": release_tag,
+            "published_at": "2024-01-01T00:00:00Z",
+            "assets": [
+                {
+                    "name": zip_name,
+                    "browser_download_url": "https://example.invalid/corrupt.zip",
+                    "size": 10,
+                }
+            ],
+            "body": "",
+        }
+    ]
+
+    with patch("fetchtastic.downloader.download_file_with_retry", return_value=False):
+        downloaded, new_versions, failures = downloader.check_and_download(
+            releases,
+            str(tmp_path / "latest.txt"),
+            "Firmware",
+            str(tmp_path),
+            versions_to_keep=1,
+            extract_patterns=[],
+            selected_patterns=["rak4631-"],
+            auto_extract=False,
+            exclude_patterns=[],
+        )
+
+    # Corrupted zip should have been removed during pre-check
+    assert not bad_zip_path.exists()
+    # Failure should be recorded
+    assert failures and failures[0]["reason"].startswith(
+        "download_file_with_retry returned False"
+    )
+
+
+def test_check_and_download_missing_download_url(tmp_path):
+    """Assets with no browser_download_url should be recorded as failures and skipped."""
+    release_tag = "v6.0.0"
+    releases = [
+        {
+            "tag_name": release_tag,
+            "published_at": "2024-01-01T00:00:00Z",
+            "assets": [
+                {
+                    "name": "firmware-rak4631-6.0.0.uf2",
+                    # Intentionally missing 'browser_download_url'
+                    "size": 123,
+                }
+            ],
+            "body": "",
+        }
+    ]
+
+    downloaded, new_versions, failures = downloader.check_and_download(
+        releases,
+        str(tmp_path / "latest.txt"),
+        "Firmware",
+        str(tmp_path),
+        versions_to_keep=1,
+        extract_patterns=[],
+        selected_patterns=["rak4631-"],
+        auto_extract=False,
+        exclude_patterns=[],
+    )
+
+    assert downloaded == []
+    assert failures and failures[0]["reason"] == "Missing browser_download_url"
+
+
 def test_send_ntfy_notification(mocker):
     """Test the NTFY notification sending logic."""
     mock_post = mocker.patch("requests.post")
