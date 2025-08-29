@@ -7,9 +7,9 @@ from fetchtastic.log_utils import logger, set_log_level
 
 def _get_rich_handler():
     """
-    Find and return the first logging handler named "RichHandler" attached to the module logger.
-
-    Searches logger.handlers using duck-typing (by the handler class name) so the test does not need to import the rich library. Returns the handler instance if found, otherwise None.
+    Return the first logging handler attached to the module logger whose class name is "RichHandler", or None if not found.
+    
+    Uses duck-typing (inspecting the handler's class name) instead of importing the Rich library.
     """
     for h in logger.handlers:
         # Avoid importing RichHandler in test; duck-type by class name

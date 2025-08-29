@@ -56,7 +56,19 @@ def get_hash_file_path(file_path: str) -> str:
 
 
 def save_file_hash(file_path: str, hash_value: str) -> None:
-    """Save hash to a .sha256 file."""
+    """
+    Write the given SHA-256 hex digest to a companion `.sha256` sidecar file next to `file_path`.
+    
+    The sidecar file is created at the path returned by `get_hash_file_path(file_path)` and contains a single line in the format:
+        "<hash_value>  <basename>\n"
+    
+    Parameters:
+        file_path (str): Path to the original file whose hash is being recorded; only the basename is written into the sidecar.
+        hash_value (str): Hexadecimal SHA-256 digest to persist.
+    
+    Side effects:
+        Creates or overwrites the `.sha256` sidecar file. IO errors are caught and logged; this function does not raise on failure.
+    """
     hash_file = get_hash_file_path(file_path)
     try:
         with open(hash_file, "w") as f:
@@ -85,7 +97,11 @@ def _remove_file_and_hash(path: str) -> bool:
 
 
 def load_file_hash(file_path: str) -> Optional[str]:
-    """Load hash from a .sha256 file."""
+    """
+    Return the SHA-256 hex string stored in the file_path's `.sha256` sidecar, if available.
+    
+    Reads the companion `<file_path>.sha256` file and returns the first whitespace-separated token from its first line (the stored hash). If the sidecar is missing, unreadable, or empty, returns None. Does not raise on I/O errors.
+    """
     hash_file = get_hash_file_path(file_path)
     try:
         with open(hash_file, "r") as f:
@@ -511,9 +527,10 @@ def extract_base_name(filename: str) -> str:
 
 def legacy_strip_version_numbers(filename: str) -> str:
     """
-    Return a filename with trailing version/commit/hash segments removed while preserving the separator immediately before the version token.
-
-    This legacy behavior (used in v0.6.3) keeps the '-' or '_' that directly precedes the version so user selection patterns that include that separator still match (e.g., "rak4631-", "t1000-e-"). Consecutive separators are collapsed to a single '-' or '_'.
+    Return the filename with trailing version/commit/hash segments removed while preserving the separator immediately before the version token.
+    
+    Preserves the separator ('-' or '_') that directly precedes the removed version token so patterns that include that separator still match (for example, "rak4631-" or "t1000-e-"). Collapses consecutive separators into a single '-' or '_'.
+    
     Returns:
         The normalized filename with the legacy-style version portion stripped.
     """
