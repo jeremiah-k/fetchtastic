@@ -332,6 +332,38 @@ def test_extract_base_name():
         ), f"extract_base_name('{input_filename}') returned '{result}', expected '{expected_output}'"
 
 
+def test_matches_selected_patterns_rak4631_variants():
+    """Ensure backward-compatible matcher distinguishes dash vs underscore variants."""
+    from fetchtastic.utils import matches_selected_patterns
+
+    # Base device family (dash) should match only dash variant paths
+    assert (
+        matches_selected_patterns("firmware-rak4631-2.7.6.abc123.uf2", ["rak4631-"])
+        is True
+    )
+    assert (
+        matches_selected_patterns(
+            "firmware-rak4631_eink-2.7.6.abc123.uf2", ["rak4631-"]
+        )
+        is False
+    )
+
+    # Underscore family should match only underscore variant paths
+    assert (
+        matches_selected_patterns(
+            "firmware-rak4631_eink-2.7.6.abc123.uf2", ["rak4631_"]
+        )
+        is True
+    )
+    assert (
+        matches_selected_patterns("firmware-rak4631-2.7.6.abc123.uf2", ["rak4631_"])
+        is False
+    )
+
+    # No patterns provided defaults to permissive (handled upstream by checks)
+    assert matches_selected_patterns("anything.bin", None) is True
+
+
 @pytest.mark.core_downloads
 @pytest.mark.unit
 @patch("fetchtastic.utils.Retry")

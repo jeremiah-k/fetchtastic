@@ -188,6 +188,47 @@ def test_cleanup_old_versions(tmp_path):
     assert (firmware_dir / "prerelease").exists()
 
 
+def test_check_and_download_logs_when_no_assets_match(tmp_path, caplog):
+    """When a release is new but no assets match the selection, log a helpful message."""
+    # Capture logs from the 'fetchtastic' logger used by the downloader
+    caplog.set_level("INFO", logger="fetchtastic")
+    # One release with an asset that won't match the selected patterns
+    releases = [
+        {
+            "tag_name": "v1.0.0",
+            "assets": [
+                {
+                    "name": "firmware-heltec-v3-1.0.0.zip",
+                    "browser_download_url": "https://example.invalid/heltec-v3.zip",
+                    "size": 10,
+                }
+            ],
+            "body": "",
+        }
+    ]
+
+    latest_release_file = str(tmp_path / "latest_firmware_release.txt")
+    download_dir = str(tmp_path / "firmware")
+
+    # Run with a pattern that won't match the provided asset name
+    downloaded, new_versions, failures = downloader.check_and_download(
+        releases,
+        latest_release_file,
+        "Firmware",
+        download_dir,
+        versions_to_keep=1,
+        extract_patterns=[],
+        selected_patterns=["rak4631-"],
+        auto_extract=False,
+        exclude_patterns=[],
+    )
+
+    # No downloads and no failures expected; should note new version available
+    assert downloaded == []
+    assert failures == []
+    assert new_versions == ["v1.0.0"]
+
+
 def test_set_permissions_on_sh_files(tmp_path):
     """Test that .sh files are made executable."""
     script_path = tmp_path / "script.sh"
