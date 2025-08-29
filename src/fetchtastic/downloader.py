@@ -318,6 +318,7 @@ def check_for_prereleases(
     - Returns whether any prerelease assets were downloaded and a list of prerelease directory names that had files downloaded.
 
     Parameters:
+        download_dir (str): Base path where firmware/prerelease directories live.
         latest_release_tag (str): Latest official release tag (e.g., "v2.6.8" or "2.6.8.ef9d0d7"); a leading "v" is tolerated and stripped for comparison.
         selected_patterns (Iterable[str]): Patterns/substrings used to select which asset basenames should be downloaded (applied with the module's back-compat matcher).
         exclude_patterns (Optional[Iterable[str]]): Optional fnmatch-style patterns; any filename matching an exclude pattern will be skipped.
@@ -421,7 +422,10 @@ def check_for_prereleases(
                     f"Error processing or removing directory {dir_path} during prerelease cleanup: {e}"
                 )
             except (
-                Exception
+                OSError,
+                ValueError,
+                KeyError,
+                TypeError,
             ) as e_general:  # Catch other potential errors like from compare_versions
                 logger.error(
                     f"Unexpected error processing directory {dir_path} for prerelease cleanup: {e_general}",

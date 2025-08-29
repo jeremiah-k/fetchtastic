@@ -188,7 +188,7 @@ def test_cleanup_old_versions(tmp_path):
     assert (firmware_dir / "prerelease").exists()
 
 
-def test_check_and_download_logs_when_no_assets_match(tmp_path, caplog):
+def test_check_and_download_logs_when_no_assets_match(tmp_path, caplog, capsys):
     """When a release is new but no assets match the selection, log a helpful message."""
     # Capture logs from the 'fetchtastic' logger used by the downloader
     caplog.set_level("INFO", logger="fetchtastic")
@@ -238,7 +238,12 @@ def test_check_and_download_logs_when_no_assets_match(tmp_path, caplog):
     assert downloaded == []
     assert failures == []
     assert new_versions == []
-    assert "Release v1.0.0 found, but no assets matched the current selection/exclude filters." in caplog.text
+    out = capsys.readouterr().out
+    collapsed = " ".join(out.split())
+    assert (
+        "Release v1.0.0 found, but no assets matched the current selection/exclude filters."
+        in collapsed
+    )
 
 
 def test_new_versions_detection_with_saved_tag(tmp_path):
@@ -618,6 +623,9 @@ def test_check_for_prereleases_download_and_cleanup(
         prerelease_dir / "firmware-2.7.7.abcdef" / "firmware-heltec-v3-2.7.7.abcdef.zip"
     ).exists()
 
+    # Only matching asset should have been downloaded once
+    assert mock_dl.call_count == 1
+
     # Stale directory and stray file should be removed
     assert not stale_dir.exists()
     assert not stray.exists()
@@ -667,7 +675,6 @@ def test_check_and_download_happy_path_with_extraction(tmp_path, caplog):
 
     release_tag = "v1.0.0"
     zip_name = "firmware-rak4631-1.0.0.zip"
-    tmp_path / release_tag
 
     # Release data with a single ZIP asset
     releases = [
