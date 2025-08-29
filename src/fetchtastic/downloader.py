@@ -46,6 +46,26 @@ from fetchtastic.utils import (
 NON_ASCII_RX = re.compile(r"[^\x00-\x7F]+")
 
 
+def _newer_tags_since_saved(
+    tags_order: List[str], saved_release_tag: Optional[str]
+) -> List[str]:
+    """
+    Return the sublist of tags in tags_order that are newer than saved_release_tag.
+
+    tags_order is expected to be newest-first. If saved_release_tag is not present
+    (or is an unexpected type), all tags are considered newer.
+    """
+    try:
+        idx_saved = (
+            tags_order.index(saved_release_tag)
+            if saved_release_tag in tags_order
+            else len(tags_order)
+        )
+    except (ValueError, TypeError):
+        idx_saved = len(tags_order)
+    return tags_order[:idx_saved]
+
+
 def compare_versions(version1, version2):
     """
     Compare two version strings and determine their ordering using the `packaging` library.
@@ -1570,15 +1590,7 @@ def check_and_download(
         tags_order: List[str] = [
             rd.get("tag_name") for rd in releases_to_download if rd.get("tag_name")
         ]
-        try:
-            idx_saved = (
-                tags_order.index(saved_release_tag)
-                if saved_release_tag in tags_order
-                else len(tags_order)
-            )
-        except (ValueError, TypeError):
-            idx_saved = len(tags_order)
-        newer_tags: List[str] = tags_order[:idx_saved]
+        newer_tags: List[str] = _newer_tags_since_saved(tags_order, saved_release_tag)
         new_versions_available = list(dict.fromkeys(newer_tags))
         return (downloaded_versions, new_versions_available, failed_downloads_details)
 
@@ -1862,16 +1874,7 @@ def check_and_download(
         tags_order: List[str] = [
             rd.get("tag_name") for rd in releases_to_download if rd.get("tag_name")
         ]
-        try:
-            idx_saved = (
-                tags_order.index(saved_release_tag)
-                if saved_release_tag in tags_order
-                else len(tags_order)
-            )
-        except (ValueError, TypeError):
-            idx_saved = len(tags_order)
-
-        newer_tags: List[str] = tags_order[:idx_saved]
+        newer_tags: List[str] = _newer_tags_since_saved(tags_order, saved_release_tag)
         new_candidates: List[str] = [
             t for t in newer_tags if t not in downloaded_versions
         ]
