@@ -188,7 +188,7 @@ def test_cleanup_old_versions(tmp_path):
     assert (firmware_dir / "prerelease").exists()
 
 
-def test_check_and_download_logs_when_no_assets_match(tmp_path, caplog, capsys):
+def test_check_and_download_logs_when_no_assets_match(tmp_path, caplog):
     """When a release is new but no assets match the selection, log a helpful message."""
     # Capture logs from the 'fetchtastic' logger used by the downloader
     caplog.set_level("INFO", logger="fetchtastic")

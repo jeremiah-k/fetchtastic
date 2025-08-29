@@ -231,6 +231,15 @@ def download_file_with_retry(
                 else:
                     logger.debug(f"Removing empty file: {download_path}")
                     os.remove(download_path)  # Try removing first
+                    # Remove any stale hash sidecar
+                    hash_file = get_hash_file_path(download_path)
+                    if os.path.exists(hash_file):
+                        try:
+                            os.remove(hash_file)
+                        except (IOError, OSError) as e_rm_hash:
+                            logger.debug(
+                                f"Error removing hash file {hash_file}: {e_rm_hash}"
+                            )
             except (
                 IOError,
                 OSError,
@@ -242,6 +251,7 @@ def download_file_with_retry(
 
     temp_path = download_path + ".tmp"
     session = requests.Session()
+    response = None  # ensure we can close the Response in finally
     try:
         # Log before session.get()
         logger.debug(
@@ -469,10 +479,13 @@ def download_file_with_retry(
                 logger.warning(
                     f"Error removing temporary file {temp_path} after failure: {e_rm_final_tmp}"
                 )
-        try:
-            session.close()
-        except Exception:
-            pass
+        # Close HTTP response explicitly to release the connection
+        if response is not None:
+            try:
+                response.close()
+            except Exception as e:
+                logger.debug(f"Error closing HTTP response for {url}: {e}")
+        session.close()
     return False
 
 
