@@ -222,28 +222,32 @@ def test_check_and_download_logs_when_no_assets_match(tmp_path, caplog, capsys):
     download_dir = str(tmp_path / "firmware")
 
     # Run with a pattern that won't match the provided asset name
-    downloaded, new_versions, failures = downloader.check_and_download(
-        releases,
-        latest_release_file,
-        "Firmware",
-        download_dir,
-        versions_to_keep=2,
-        extract_patterns=[],
-        selected_patterns=["rak4631-"],
-        auto_extract=False,
-        exclude_patterns=[],
-    )
+    # Ensure logger propagates so caplog can capture records regardless of handlers
+    from fetchtastic.log_utils import logger as ft_logger
+
+    old_propagate = ft_logger.propagate
+    ft_logger.propagate = True
+    try:
+        downloaded, new_versions, failures = downloader.check_and_download(
+            releases,
+            latest_release_file,
+            "Firmware",
+            download_dir,
+            versions_to_keep=2,
+            extract_patterns=[],
+            selected_patterns=["rak4631-"],
+            auto_extract=False,
+            exclude_patterns=[],
+        )
+    finally:
+        ft_logger.propagate = old_propagate
 
     # No downloads and no failures expected; should note new version available
     assert downloaded == []
     assert failures == []
     assert new_versions == []
-    out = capsys.readouterr().out
-    collapsed = " ".join(out.split())
-    assert (
-        "Release v1.0.0 found, but no assets matched the current selection/exclude filters."
-        in collapsed
-    )
+    expected = "Release v1.0.0 found, but no assets matched the current selection/exclude filters."
+    assert expected in caplog.text
 
 
 def test_new_versions_detection_with_saved_tag(tmp_path):

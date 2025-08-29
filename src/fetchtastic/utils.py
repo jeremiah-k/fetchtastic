@@ -283,6 +283,8 @@ def download_file_with_retry(
         logger.debug(
             f"Received HTTP response status code: {response.status_code} for URL: {url}"
         )
+        # Status-based retries have already been applied by urllib3's Retry;
+        # raise_for_status will surface the final HTTP error, if any.
         response.raise_for_status()  # Handled by requests.exceptions.RequestException
 
         downloaded_chunks = 0
