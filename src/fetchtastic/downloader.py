@@ -37,7 +37,11 @@ from fetchtastic.constants import (
 # Removed log_info, setup_logging
 from fetchtastic.log_utils import logger  # Import new logger
 from fetchtastic.setup_config import display_version_info, get_upgrade_command
-from fetchtastic.utils import download_file_with_retry, extract_base_name
+from fetchtastic.utils import (
+    download_file_with_retry,
+    extract_base_name,
+    matches_selected_patterns,
+)
 
 # Compiled regex for performance
 NON_ASCII_RX = re.compile(r"[^\x00-\x7F]+")
@@ -543,8 +547,8 @@ def check_for_prereleases(
             file_path = os.path.join(dir_path, file_name)
 
             # Only download files that match the selected patterns and don't match exclude patterns
-            stripped_file_name = extract_base_name(file_name)
-            if not any(pattern in stripped_file_name for pattern in selected_patterns):
+            # Backward-compatible pattern matching (modern + legacy normalization)
+            if not matches_selected_patterns(file_name, selected_patterns):
                 continue  # Skip this file
 
             # Skip files that match exclude patterns
@@ -1399,9 +1403,8 @@ def _is_release_complete(
             continue
 
         # Apply same filtering logic as download
-        stripped_file_name = extract_base_name(file_name)
-        if selected_patterns and not any(
-            pattern in stripped_file_name for pattern in selected_patterns
+        if selected_patterns and not matches_selected_patterns(
+            file_name, selected_patterns
         ):
             continue
 
@@ -1677,9 +1680,8 @@ def check_and_download(
                     )
                     continue
 
-                stripped_file_name: str = extract_base_name(file_name)
-                if selected_patterns and not any(
-                    pattern in stripped_file_name for pattern in selected_patterns
+                if selected_patterns and not matches_selected_patterns(
+                    file_name, selected_patterns
                 ):
                     continue
                 # Honor exclude patterns at download-time as well
@@ -1763,6 +1765,20 @@ def check_and_download(
                                     extract_patterns,
                                     exclude_patterns_list,
                                 )
+
+        else:
+            # If this is a newer release than what we've saved but no assets
+            # matched the user's patterns, surface a helpful note.
+            try:
+                if saved_release_tag is None or release_tag != saved_release_tag:
+                    logger.info(
+                        f"Release {release_tag} found, but no assets matched the current selection/exclude filters."
+                    )
+            except Exception:
+                # Avoid breaking flow on unexpected edge cases in saved tag reading
+                logger.debug(
+                    "Could not determine saved release tag state when evaluating matched assets"
+                )
 
         set_permissions_on_sh_files(release_dir)
 

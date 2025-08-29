@@ -466,14 +466,14 @@ def extract_base_name(filename: str) -> str:
     """
     Return a filename with trailing version and commit/hash segments removed.
 
-    This normalizes names like "-2.5.13", "_v1.2.3", "-2.5.13.1a2b3c4" and optional prerelease suffixes
-    (e.g., rc, dev, beta, alpha) by stripping those version/hash segments while preserving other
-    filename parts and separators. Consecutive separators produced by removal are collapsed to a single
-    '-' or '_' as appropriate.
+    Removes the separator that immediately precedes the version token so results do not
+    contain a stray dash/underscore before the extension. This matches test expectations
+    and prior behavior used throughout the codebase.
 
     Examples:
       'fdroidRelease-2.5.9.apk' -> 'fdroidRelease.apk'
       'firmware-rak4631-2.7.4.c1f4f79-ota.zip' -> 'firmware-rak4631-ota.zip'
+      'firmware-rak4631-2.7.4.c1f4f79.zip' -> 'firmware-rak4631.zip'
       'meshtasticd_2.5.13.1a06f88_amd64.deb' -> 'meshtasticd_amd64.deb'
     """
     # Remove versions like: -2.5.13, _v1.2.3, -2.5.13.abcdef1, and optional prerelease: -rc1/.dev1/-beta2/-alpha3
@@ -485,3 +485,38 @@ def extract_base_name(filename: str) -> str:
     # Clean up double separators that might result from the substitution
     base_name = re.sub(r"[-_]{2,}", lambda m: m.group(0)[0], base_name)
     return base_name
+
+
+def legacy_strip_version_numbers(filename: str) -> str:
+    """
+    Legacy variant of version stripping that preserves the separator before the version token.
+
+    This mirrors the behavior used in v0.6.3 where the character immediately preceding the
+    version (a '-' or '_') is retained. Kept to maintain compatibility with user configs
+    that include separators in their selection patterns (e.g., "rak4631-", "t1000-e-").
+    """
+    legacy = re.sub(
+        r"([-_])v?\d+\.\d+\.\d+(?:\.[\da-f]+)?(?:[-_.]?(?:rc|dev|beta|alpha)\d*)?(?=[-_.]|$)",
+        r"\1",
+        filename,
+    )
+    legacy = re.sub(r"[-_]{2,}", lambda m: m.group(0)[0], legacy)
+    return legacy
+
+
+def matches_selected_patterns(filename: str, selected_patterns: Optional[list]) -> bool:
+    """
+    Return True if any of the selected_patterns appear in either the modern or legacy normalized
+    base names for `filename`.
+
+    This ensures backward compatibility for users whose patterns include a trailing separator
+    (e.g., "rak4631-") by checking both normalization styles.
+    """
+    if not selected_patterns:
+        return True
+    base_modern = extract_base_name(filename)
+    base_legacy = legacy_strip_version_numbers(filename)
+    for pat in selected_patterns:
+        if pat and (pat in base_modern or pat in base_legacy):
+            return True
+    return False
