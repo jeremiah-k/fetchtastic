@@ -238,6 +238,36 @@ Example patterns:
 
 - `rak4631-` - Extract RAK4631 firmware
 - `tbeam` - Extract T-Beam firmware
+
+## Choosing Patterns
+
+When you select assets during setup, Fetchtastic saves simple substring patterns that it uses to filter files for download. Because Meshtastic’s file names vary across devices and variants, choosing the right pattern is the key to getting exactly what you want — no more, no less.
+
+Guidelines:
+
+- Be specific with separators: Include the character that naturally follows the device token in filenames. This reduces accidental matches with similarly named variants.
+- Match how releases are named: Most firmware files follow a structure like `firmware-<device><sep><version>...` where `<sep>` is `-` or `_` depending on the device family.
+- Keep patterns short and stable: Use the device token rather than the full filename. Avoid including version numbers or long suffixes.
+
+Examples (what each pattern tends to include):
+
+- `rak4631-`: Matches the base RAK4631 family — e.g., `firmware-rak4631-2.7.6...uf2`, `firmware-rak4631-...ota.zip`. It does not include underscore variants like `rak4631_eink` or `rak4631_eth_gw`.
+- `rak4631_`: Targets RAK4631 underscore variants — e.g., `firmware-rak4631_eink-...`, `firmware-rak4631_eth_gw-...`. It does not include the base `rak4631-` files.
+- `heltec-v3-`: Focuses on Heltec v3 base images (hyphen form), excluding other Heltec device families unless they share the same token and separator.
+- `tbeam-` or `tbeam`: Captures T-Beam files; if you see multiple T-Beam families with underscores in release names, prefer the separator that appears in the filenames you need.
+
+A few real-world tokens you might use:
+
+- `tlora-v2-1-1_6-` for the TLORA V2.1.1_6 line
+- `t-deck-` for the T-Deck line
+- `meshtasticd_` for desktop packages like `meshtasticd_...deb`
+- `littlefs-heltec-v3-` for LittleFS images specific to Heltec v3
+
+Tips:
+
+- If your goal is to download only one device family, prefer the pattern with the exact separator you see in filenames (e.g., `rak4631-` vs `rak4631_`).
+- For closely related variants you want together (e.g., `rak4631-` base and `rak4631_eink`), add both patterns during selection.
+- You can adjust patterns later by re-running `fetchtastic setup` and updating your selections.
 - `device-` - Extract device installation scripts
 
 ### Pre-release Downloads
