@@ -520,8 +520,10 @@ def check_for_prereleases(
     downloaded_files = []
 
     # Process each pre-release directory
-    for dir_name in prerelease_dirs:
-        logger.info(f"Found pre-release: {dir_name}")
+    total_pr = len(prerelease_dirs)
+    logger.info(f"Scanning {total_pr} prerelease directories")
+    for i, dir_name in enumerate(prerelease_dirs, start=1):
+        logger.info(f"Checking {dir_name} ({i}/{total_pr})…")
 
         # Fetch files from the directory
         files = menu_repo.fetch_directory_contents(dir_name)
