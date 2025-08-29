@@ -66,6 +66,24 @@ def save_file_hash(file_path: str, hash_value: str) -> None:
         logger.debug(f"Error saving hash file {hash_file}: {e}")
 
 
+def _remove_file_and_hash(path: str) -> bool:
+    """
+    Remove a file and its .sha256 sidecar if present. Returns True on success, False on error.
+
+    Errors are logged and False is returned; exceptions are not raised.
+    """
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+        hash_file = get_hash_file_path(path)
+        if os.path.exists(hash_file):
+            os.remove(hash_file)
+        return True
+    except (IOError, OSError) as e:
+        logger.error(f"Error removing {path} or its hash sidecar: {e}")
+        return False
+
+
 def load_file_hash(file_path: str) -> Optional[str]:
     """Load hash from a .sha256 file."""
     hash_file = get_hash_file_path(file_path)
@@ -160,44 +178,17 @@ def download_file_with_retry(
                     logger.info(
                         f"Hash verification failed for {os.path.basename(download_path)}, re-downloading"
                     )
-                    try:
-                        os.remove(download_path)
-                        # Also remove hash file
-                        hash_file = get_hash_file_path(download_path)
-                        if os.path.exists(hash_file):
-                            os.remove(hash_file)
-                    except (IOError, OSError) as e_rm:
-                        logger.error(
-                            f"Error removing file with hash mismatch {download_path}: {e_rm}"
-                        )
+                    if not _remove_file_and_hash(download_path):
                         return False
             except zipfile.BadZipFile:
                 logger.debug(f"Removing corrupted zip file: {download_path}")
-                try:
-                    os.remove(download_path)
-                    # Also remove hash sidecar if present
-                    hash_file = get_hash_file_path(download_path)
-                    if os.path.exists(hash_file):
-                        os.remove(hash_file)
-                except (IOError, OSError) as e_rm:
-                    logger.error(
-                        f"Error removing corrupted zip {download_path}: {e_rm}"
-                    )
+                if not _remove_file_and_hash(download_path):
                     return False
             except (IOError, OSError) as e_check:  # More specific for file check issues
                 logger.debug(
                     f"IO/OS Error checking existing zip file {download_path}: {e_check}. Attempting re-download."
                 )
-                try:
-                    os.remove(download_path)
-                    # Also remove hash sidecar if present
-                    hash_file = get_hash_file_path(download_path)
-                    if os.path.exists(hash_file):
-                        os.remove(hash_file)
-                except (IOError, OSError) as e_rm_other:
-                    logger.error(
-                        f"Error removing file {download_path} before re-download: {e_rm_other}"
-                    )
+                if not _remove_file_and_hash(download_path):
                     return False
             except (
                 Exception
@@ -205,16 +196,7 @@ def download_file_with_retry(
                 logger.error(
                     f"Unexpected error checking existing zip file {download_path}: {e_unexp_check}. Attempting re-download."
                 )
-                try:
-                    os.remove(download_path)
-                    # Also remove hash sidecar if present
-                    hash_file = get_hash_file_path(download_path)
-                    if os.path.exists(hash_file):
-                        os.remove(hash_file)
-                except (IOError, OSError) as e_rm_unexp:
-                    logger.error(
-                        f"Error removing file {download_path} after unexpected check error: {e_rm_unexp}"
-                    )
+                if not _remove_file_and_hash(download_path):
                     return False
         else:  # For non-zip files
             try:

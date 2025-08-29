@@ -364,6 +364,14 @@ def test_matches_selected_patterns_rak4631_variants():
 
     # No patterns provided defaults to permissive (handled upstream by checks)
     assert matches_selected_patterns("anything.bin", None) is True
+    # Plain family token matches dashed and underscored variants (permissive intent)
+    assert (
+        matches_selected_patterns("firmware-rak4631-2.7.6.x.uf2", ["rak4631"]) is True
+    )
+    assert (
+        matches_selected_patterns("firmware-rak4631_eink-2.7.6.x.uf2", ["rak4631"])
+        is True
+    )
 
 
 def test_legacy_strip_version_numbers():
@@ -409,7 +417,7 @@ def test_urllib3_v1_fallback_retry_creation(mock_retry, mock_session, tmp_path):
     mock_resp.iter_content.return_value = []
     mock_session.return_value.get.return_value = mock_resp
     utils.download_file_with_retry(
-        "http://test.com/file.zip", str(tmp_path / "file.zip")
+        "http://test.com/file.bin", str(tmp_path / "file.bin")
     )
 
     # Verify urllib3 v1 fallback was attempted
