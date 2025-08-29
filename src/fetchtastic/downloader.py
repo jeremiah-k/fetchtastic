@@ -1884,7 +1884,7 @@ def check_extraction_needed(
                     fnmatch.fnmatch(base_name, exclude) for exclude in exclude_patterns
                 ):
                     continue
-                if not patterns or matches_selected_patterns(base_name, patterns):
+                if matches_selected_patterns(base_name, patterns):
                     files_to_extract.append(base_name)
         base_name_to_check: str
         for base_name_to_check in files_to_extract:
