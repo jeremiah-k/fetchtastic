@@ -308,20 +308,24 @@ def check_for_prereleases(
     exclude_patterns=None,  # log_message_func parameter removed
 ):
     """
-    Check the Meshtastic github.io site for firmware prerelease directories newer than the latest official release, download missing assets, and clean up stale prerelease folders.
-
-    This inspects repository directories under "firmware-*" to find prerelease versions newer than latest_release_tag, removes local prerelease entries that are no longer valid or older than the official release, and downloads missing files for prereleases that need processing. Created prerelease directories and downloaded files may be written under <download_dir>/firmware/prerelease. Shell scripts will have their executable bit set when possible.
-
+    Discover firmware prerelease directories newer than the provided latest release, clean up stale local prerelease folders, and download missing prerelease assets into <download_dir>/firmware/prerelease.
+    
+    The function:
+    - Treats a leading "v" in latest_release_tag as optional and strips it for comparisons.
+    - Scans the remote repository for directories named "firmware-<version>" and keeps only those newer than latest_release_tag.
+    - Removes stale local prerelease directories that are not present in the repository or not newer than the official release.
+    - For each relevant prerelease, downloads assets that match selected_patterns (using the repository's back-compat matching helper) and do not match any exclude_patterns; sets executable permissions for shell scripts when possible.
+    - Returns whether any prerelease assets were downloaded and a list of prerelease directory names that had files downloaded.
+    
     Parameters:
-        download_dir: Base path where firmware/prerelease directories live.
-        latest_release_tag: Latest official release tag (e.g., "v2.6.8" or "2.6.8.ef9d0d7"); a leading "v" is tolerated and stripped for comparison.
-        selected_patterns: Iterable of substrings used to select which firmware asset basenames should be considered for download.
-        exclude_patterns: Optional iterable of fnmatch-style patterns; matching filenames are skipped.
-
+        latest_release_tag (str): Latest official release tag (e.g., "v2.6.8" or "2.6.8.ef9d0d7"); a leading "v" is tolerated and stripped for comparison.
+        selected_patterns (Iterable[str]): Patterns/substrings used to select which asset basenames should be downloaded (applied with the module's back-compat matcher).
+        exclude_patterns (Optional[Iterable[str]]): Optional fnmatch-style patterns; any filename matching an exclude pattern will be skipped.
+    
     Returns:
-        Tuple (found_and_downloaded: bool, downloaded_versions: list[str])
-        - found_and_downloaded: True if any prerelease files were downloaded.
-        - downloaded_versions: List of prerelease directory names (e.g., "firmware-2.6.9.f93d031") that had files downloaded.
+        tuple[bool, list[str]]: (found_and_downloaded, downloaded_versions)
+          - found_and_downloaded: True if any prerelease files were downloaded.
+          - downloaded_versions: List of prerelease directory names (e.g., "firmware-2.6.9.f93d031") that had files downloaded.
     """
     # Removed local log_message_func definition
 
@@ -1360,31 +1364,27 @@ def _is_release_complete(
     exclude_patterns: List[str],
 ) -> bool:
     """
-    Return True if the given release directory contains all expected assets (filtered by patterns)
-    and those assets pass basic integrity checks; otherwise False.
-
-    Detailed behavior:
-    - Builds the list of expected asset filenames from release_data["assets"], keeping only assets
-      whose names match selected_patterns (if provided, via the centralized legacy-aware matcher) and
-      that do not match any fnmatch pattern in exclude_patterns.
-    - For each expected asset:
-      - Verifies the file exists in release_dir.
-      - If the file is a ZIP, runs a ZIP integrity check (testzip) and compares the actual file size
-        to the asset's declared size (when available).
-      - For non-ZIP files, compares actual file size to the asset's declared size (when available).
-    - Any missing file, ZIP corruption, size mismatch, or I/O error causes the function to return False.
-
+    Return True if the local release directory contains all expected assets (subject to include/exclude
+    patterns) and those assets pass basic integrity checks; otherwise False.
+    
+    Checks performed:
+    - Builds the expected asset list from release_data["assets"], keeping only names that match
+      selected_patterns (when provided, using the centralized matcher) and that do not match any
+      fnmatch pattern in exclude_patterns.
+    - Verifies each expected file exists under release_dir.
+    - For ZIP files: runs zipfile.testzip() and compares on-disk size to the asset's declared size when available.
+    - For non-ZIP files: compares on-disk size to the asset's declared size when available.
+    
     Parameters:
-        release_data: Release metadata (dict) containing an "assets" list with entries that include
-            "name" and optionally "size". Only used to determine expected filenames and expected sizes.
-        release_dir: Path to the local release directory to inspect.
-        selected_patterns: Optional list of substrings; an asset is considered only if its name matches
-            any of these substrings via the centralized matcher. If None, no inclusion filtering is applied.
-        exclude_patterns: List of fnmatch-style patterns; any asset whose original filename matches
-            one of these patterns will be ignored.
-
+        release_data: Release metadata dict containing an "assets" list (each asset should include "name"
+            and may include "size") used to determine expected filenames and expected sizes.
+        release_dir: Filesystem path to the local release directory to inspect.
+        selected_patterns: Optional list of patterns used to include assets; if None, no inclusion filtering
+            is applied.
+        exclude_patterns: List of fnmatch-style patterns; assets matching any of these are ignored.
+    
     Returns:
-        bool: True if all expected assets are present and pass integrity/size checks; False otherwise.
+        True if all expected assets are present and pass integrity/size checks; False otherwise.
     """
     if not os.path.exists(release_dir):
         return False

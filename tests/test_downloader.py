@@ -429,6 +429,11 @@ def test_check_for_prereleases_download_and_cleanup(
     # Simulate successful download only for the matching file
     def _mock_dl(url, dest):
         # Create the file to emulate a successful download
+        """
+        Mock download helper used in tests.
+        
+        Creates parent directories for `dest` if needed, writes a small binary payload (b"data") to `dest`, and returns True to indicate a successful download. Overwrites any existing file at `dest`.
+        """
         import os
 
         os.makedirs(os.path.dirname(dest), exist_ok=True)
@@ -540,6 +545,20 @@ def test_check_and_download_happy_path_with_extraction(tmp_path, caplog):
 
     # Mock downloader to write a real ZIP that contains a file we want to auto-extract
     def _mock_dl(url, dest):
+        """
+        Mock download helper used in tests.
+        
+        Creates parent directories for dest (if needed) and writes a ZIP file at dest containing a single entry
+        "device-install.sh" with the contents `echo hi`. The url parameter is unused; dest is the filesystem
+        path where the ZIP will be created.
+        
+        Parameters:
+            url (str): Ignored. Present to match the downloader call signature.
+            dest (str): Path to the ZIP file to create.
+        
+        Returns:
+            bool: Always True on success.
+        """
         import os
         import zipfile
 
