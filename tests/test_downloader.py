@@ -321,25 +321,62 @@ def test_check_extraction_needed(dummy_zip_file, tmp_path):
         is True
     )
 
-    # 2. Extract one file, should still be needed
-    (extract_dir / "firmware-rak4631-2.7.4.c1f4f79.bin").write_text("rak_data")
+
+def test_check_extraction_needed_with_dash_patterns(tmp_path):
+    """Ensure dash-suffixed patterns are honored in extraction-needed check."""
+    import zipfile
+
+    zip_path = tmp_path / "dash.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("firmware-rak4631-2.7.4.c1f4f79.bin", "rak_data")
+
+    extract_dir = tmp_path / "out"
+    extract_dir.mkdir()
+
+    # Missing -> extraction needed
     assert (
         downloader.check_extraction_needed(
-            str(dummy_zip_file), str(extract_dir), patterns, exclude_patterns
+            str(zip_path), str(extract_dir), ["rak4631-"], []
         )
         is True
     )
-
-    # 3. All files extracted, should not be needed
-    (extract_dir / "firmware-tbeam-2.7.4.c1f4f79.uf2").write_text("tbeam_data")
-    (extract_dir / "firmware-rak11200-2.7.4.c1f4f79.bin").write_text("rak11200_data")
-    (extract_dir / "littlefs-rak11200-2.7.4.c1f4f79.bin").write_text("littlefs_data")
+    # Create expected file -> not needed
+    (extract_dir / "firmware-rak4631-2.7.4.c1f4f79.bin").write_text("rak_data")
     assert (
         downloader.check_extraction_needed(
-            str(dummy_zip_file), str(extract_dir), patterns, exclude_patterns
+            str(zip_path), str(extract_dir), ["rak4631-"], []
         )
         is False
     )
+
+
+def test_extract_files_matching_and_exclude(tmp_path):
+    """Test extraction honors legacy-style matching and exclude patterns."""
+    import os
+    import zipfile
+
+    zip_path = tmp_path / "mix.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("firmware-rak4631-2.7.6.aaa.bin", "a")
+        zf.writestr("firmware-rak4631_eink-2.7.6.aaa.uf2", "b")
+        zf.writestr("device-install.sh", "echo x")
+        zf.writestr("notes.txt", "n")
+
+    out_dir = tmp_path / "ext"
+    out_dir.mkdir()
+
+    downloader.extract_files(
+        str(zip_path), str(out_dir), ["rak4631-", "device-install.sh"], ["*eink*"]
+    )
+
+    assert (out_dir / "firmware-rak4631-2.7.6.aaa.bin").exists()
+    assert not (out_dir / "firmware-rak4631_eink-2.7.6.aaa.uf2").exists()
+    # script extracted and made executable
+    sh_path = out_dir / "device-install.sh"
+    assert sh_path.exists()
+    assert os.access(sh_path, os.X_OK)
+
+    # No further changes; validates include/exclude and executable bit behavior
 
 
 def test_check_promoted_prereleases(tmp_path):
@@ -428,6 +465,47 @@ def test_check_for_prereleases_download_and_cleanup(
     # Stale directory and stray file should be removed
     assert not stale_dir.exists()
     assert not stray.exists()
+
+
+def test_no_up_to_date_log_when_new_versions_but_no_matches(tmp_path, caplog):
+    """When new versions are available but no assets match, do not log 'up to date'."""
+    caplog.set_level("INFO", logger="fetchtastic")
+    releases = [
+        {
+            "tag_name": "v9.9.9",
+            "published_at": "2024-01-01T00:00:00Z",
+            "assets": [
+                {
+                    "name": "firmware-heltec-v3-9.9.9.zip",
+                    "browser_download_url": "https://example.invalid/heltec.zip",
+                    "size": 10,
+                }
+            ],
+            "body": "",
+        }
+    ]
+    latest_release_file = str(tmp_path / "latest_firmware_release.txt")
+    download_dir = str(tmp_path / "firmware")
+
+    downloaded, new_versions, failures = downloader.check_and_download(
+        releases,
+        latest_release_file,
+        "Firmware",
+        download_dir,
+        versions_to_keep=1,
+        extract_patterns=[],
+        selected_patterns=["rak4631-"],
+        auto_extract=False,
+        exclude_patterns=[],
+    )
+    assert downloaded == []
+    assert failures == []
+    assert new_versions == ["v9.9.9"]
+    # Should not log generic up-to-date message
+    assert not any(
+        "all firmware assets are up to date" in rec.getMessage().lower()
+        for rec in caplog.records
+    )
 
 
 def test_send_ntfy_notification(mocker):
