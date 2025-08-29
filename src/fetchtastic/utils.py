@@ -494,7 +494,7 @@ def extract_base_name(filename: str) -> str:
 def legacy_strip_version_numbers(filename: str) -> str:
     """
     Return a filename with trailing version/commit/hash segments removed while preserving the separator immediately before the version token.
-    
+
     This legacy behavior (used in v0.6.3) keeps the '-' or '_' that directly precedes the version so user selection patterns that include that separator still match (e.g., "rak4631-", "t1000-e-"). Consecutive separators are collapsed to a single '-' or '_'.
     Returns:
         The normalized filename with the legacy-style version portion stripped.
@@ -509,14 +509,14 @@ def matches_selected_patterns(
 ) -> bool:
     """
     Return True if any of the provided patterns match the filename's normalized base name.
-    
+
     Checks both the modern normalization (which removes the version token and its preceding separator)
     and the legacy normalization (which preserves the separator before the version token). If
     `selected_patterns` is falsy (None or empty) the function returns True.
-    
+
     Parameters:
         selected_patterns: Iterable of substring patterns to search for; empty or None means "match all".
-    
+
     Returns:
         True if any non-empty pattern appears in either normalized base name; otherwise False.
     """

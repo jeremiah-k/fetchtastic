@@ -438,7 +438,6 @@ def check_for_prereleases(
                     f"Error processing or removing directory {dir_path} during prerelease cleanup: {e}"
                 )
             except (
-                OSError,
                 ValueError,
                 KeyError,
                 TypeError,
