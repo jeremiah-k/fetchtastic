@@ -645,7 +645,14 @@ def check_for_prereleases(
                     prerelease_dirs.append(dir_name)
 
     if not prerelease_dirs:
+        logger.debug(
+            "No prerelease directories found that are newer than latest release"
+        )
         return False, []
+
+    logger.debug(
+        f"Found {len(prerelease_dirs)} prerelease directories to process: {prerelease_dirs}"
+    )
 
     # Create prerelease directory if it doesn't exist
     if not os.path.exists(prerelease_dir):
@@ -692,7 +699,11 @@ def check_for_prereleases(
 
             # Only download files that match the selected patterns and don't match exclude patterns
             # Backward-compatible pattern matching (modern + legacy normalization)
-            if not matches_selected_patterns(file_name, selected_patterns):
+            pattern_match = matches_selected_patterns(file_name, selected_patterns)
+            logger.debug(
+                f"Pattern matching for {file_name}: {pattern_match} (patterns: {selected_patterns})"
+            )
+            if not pattern_match:
                 logger.debug(
                     "Skipping pre-release file %s (no pattern match)", file_name
                 )
