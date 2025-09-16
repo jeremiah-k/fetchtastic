@@ -57,7 +57,22 @@ def _summarise_release_scan(kind: str, total_found: int, keep_limit: int) -> str
 
 
 def _summarise_scan_window(release_type: str, scan_count: int, keep_limit: int) -> str:
-    """Return a log string describing the scanning window for the given release type."""
+    """
+    Build a concise log message describing the scanning window for a release type.
+    
+    Returns a message suitable for logging:
+    - If scan_count == 0 returns "No <release_type> releases to scan".
+    - Uses singular "release" when scan_count == 1, otherwise "releases".
+    - Appends " (limit <keep_limit>)" when keep_limit < scan_count to indicate a scanning cap.
+    
+    Parameters:
+        release_type (str): Human-readable name of the release kind (e.g., "firmware", "Android APK").
+        scan_count (int): Number of releases discovered for scanning.
+        keep_limit (int): Maximum number of releases allowed to be kept/scanned; used only to decide whether to append the limit note.
+    
+    Returns:
+        str: The formatted scan-window message.
+    """
 
     if scan_count == 0:
         return f"No {release_type} releases to scan"
@@ -1022,16 +1037,24 @@ def _process_apk_downloads(
     config: Dict[str, Any], paths_and_urls: Dict[str, str]
 ) -> Tuple[List[str], List[str], List[Dict[str, str]], Optional[str]]:
     """
-    Process Android APK releases: fetch latest Android releases, download selected APK assets, and report results.
-
-    The function consults config keys (notably SAVE_APKS and SELECTED_APK_ASSETS, and ANDROID_VERSIONS_TO_KEEP when present) to decide whether to fetch releases from the configured Android releases URL and to download chosen assets into the configured apks directory.
-
+    Process Android APK releases: fetch release metadata, download selected APK assets, and report what changed.
+    
+    When SAVE_APKS is true and SELECTED_APK_ASSETS is non-empty in `config`, this function:
+    - fetches up to ANDROID_VERSIONS_TO_KEEP releases from the configured Android releases URL,
+    - determines the latest release tag,
+    - invokes the shared download workflow to download APK assets that match SELECTED_APK_ASSETS,
+    - respects the configured keep count when pruning old versions.
+    
+    Expected keys used from inputs:
+    - config: SAVE_APKS, SELECTED_APK_ASSETS, ANDROID_VERSIONS_TO_KEEP (optional).
+    - paths_and_urls: "android_releases_url", "latest_android_release_file", "apks_dir".
+    
     Returns:
-        A tuple of (downloaded_apk_versions, new_apk_versions, failed_downloads, latest_apk_version):
-        - downloaded_apk_versions (List[str]): Versions that were successfully downloaded during this run.
-        - new_apk_versions (List[str]): Newly discovered release versions (not necessarily downloaded).
-        - failed_downloads (List[Dict[str, str]]): One-item-per-failure dictionaries describing download failures.
-        - latest_apk_version (Optional[str]): Tag/name of the most recent release discovered, or None if no releases were found.
+    A tuple (downloaded_apk_versions, new_apk_versions, failed_downloads, latest_apk_version):
+    - downloaded_apk_versions (List[str]): versions successfully downloaded in this run.
+    - new_apk_versions (List[str]): newly discovered release versions (may include ones not downloaded).
+    - failed_downloads (List[Dict[str, str]]): details for each failed asset download.
+    - latest_apk_version (Optional[str]): tag/name of the most recent release found, or None if none were available.
     """
     global downloads_skipped
     downloaded_apks: List[str] = []
@@ -1571,33 +1594,36 @@ def check_and_download(
     exclude_patterns: Optional[List[str]] = None,
 ) -> Tuple[List[str], List[str], List[Dict[str, str]]]:
     """
-    Check releases, download missing or corrupted assets, optionally extract firmware ZIPs, and prune old versions.
-
-    For the most recent `versions_to_keep` releases this function:
-    - Verifies whether each release directory already contains the expected assets (honoring `selected_patterns` and `exclude_patterns`) and skips fully-complete releases.
-    - Downloads any missing assets and records per-file failures.
-    - Saves release notes when present.
-    - Optionally extracts ZIP assets into the release directory when `auto_extract` is True and `release_type` is "Firmware".
-    - Ensures `.sh` files are executable and removes older release directories not in the retention list.
+    Check a list of releases, download any missing or corrupted assets, optionally extract ZIPs, and prune old release directories.
+    
+    Processes up to `versions_to_keep` newest entries from `releases`. For each release it:
+    - Skips releases that are already complete.
+    - Downloads assets that match `selected_patterns` (if provided) and do not match `exclude_patterns`.
+    - Optionally extracts files from ZIP assets when `auto_extract` is True and `release_type` == "Firmware"; extraction uses `extract_patterns` to select files.
+    - Saves release notes, ensures `.sh` files are executable, and removes older release subdirectories not in the retention window.
     - Updates `latest_release_file` when a newer release has been successfully processed.
-    If global downloads were skipped (e.g., due to Wi‑Fi gating), the function returns the list of newer release tags without performing downloads.
-
+    
+    Side effects:
+    - Creates release directories and may write `latest_release_file`.
+    - May remove corrupted ZIP files and delete old release directories during cleanup.
+    - Honors a global Wi‑Fi gating flag: if downloads were skipped, the function will not download and instead returns newer release tags.
+    
     Parameters:
-        releases: List of release dictionaries as returned by the GitHub/Meshtastic API.
-        latest_release_file: Path to a file that stores the most recently recorded release tag.
-        release_type: Human-readable release type (e.g., "Firmware" or "APK") used in logs and failure records.
-        download_dir_path: Root directory under which per-release subdirectories are created.
-        versions_to_keep: Number of most recent releases from `releases` to consider for download/retention.
-        extract_patterns: Filename patterns used to select files to extract from ZIP archives.
-        selected_patterns: If provided, only assets whose base name contains any of these strings are considered for download.
-        auto_extract: If True and `release_type` == "Firmware", ZIP assets will be checked and extracted when needed.
-        exclude_patterns: Optional glob patterns; matching filenames are excluded from download and extraction.
-
+    - releases: Iterable of release dicts from the API (newest-first order expected).
+    - latest_release_file: Path to a file storing the most recently recorded release tag.
+    - release_type: Human-readable type used in logs and failure records (e.g., "Firmware" or "APK").
+    - download_dir_path: Root directory where per-release subdirectories are created.
+    - versions_to_keep: Number of newest releases to consider for download/retention.
+    - extract_patterns: Patterns used to select files to extract from ZIP archives.
+    - selected_patterns: If provided, only assets whose names match any of these patterns are considered for download.
+    - auto_extract: When True and `release_type` == "Firmware`, ZIP assets will be extracted when needed.
+    - exclude_patterns: Optional patterns; matching filenames are excluded from download and extraction.
+    
     Returns:
-        Tuple containing:
-        - downloaded_versions (List[str]): Release tags for which at least one asset was successfully downloaded.
-        - new_versions_available (List[str]): Release tags that are newer than the saved/latest tag but were not downloaded (or remain pending).
-        - failed_downloads_details (List[Dict[str, str]]): Per-failure records with keys such as `url`, `path_to_download`, `release_tag`, `file_name`, `reason`, and `type`.
+    - Tuple(downloaded_versions, new_versions_available, failed_downloads_details)
+      - downloaded_versions: list of release tags for which at least one asset was successfully downloaded.
+      - new_versions_available: list of release tags newer than the saved/latest tag that remain pending or were not downloaded.
+      - failed_downloads_details: list of dicts describing individual failed downloads (keys include url, path_to_download, release_tag, file_name, reason, and type).
     """
     global downloads_skipped
     downloaded_versions: List[str] = []
