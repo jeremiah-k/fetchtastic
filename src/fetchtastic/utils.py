@@ -587,10 +587,19 @@ def matches_selected_patterns(
         if pat_lower in base_modern_lower or pat_lower in base_legacy_lower:
             return True
 
-        # Only fall back to punctuation-stripped matching when the pattern appears to target
-        # mixed-case or dotted segments (e.g., fdroidRelease-, *.zip), preserving the ability to
-        # distinguish dash vs underscore selections such as "rak4631-" vs "rak4631_".
-        needs_sanitised = any(ch.isupper() for ch in pat) or "." in pat
+        # Fall back to punctuation-stripped matching when the pattern appears to target
+        # mixed-case or dotted segments (e.g., fdroidRelease-, *.zip), or when it contains
+        # common keywords that are known to have changed naming schemes. This preserves the
+        # ability to distinguish dash vs underscore selections (e.g., "rak4631-" vs "rak4631_")
+        # while being more forgiving for patterns that are likely affected by upstream renames.
+        needs_sanitised = (
+            any(ch.isupper() for ch in pat)
+            or "." in pat
+            or any(
+                keyword in pat.lower()
+                for keyword in ["release", "apk", "aab", "fdroid"]
+            )
+        )
         if needs_sanitised:
             pat_sanitised = _strip_punctuation(pat)
             if pat_sanitised and (

@@ -379,17 +379,14 @@ def test_matches_selected_patterns_handles_renamed_android_assets():
     from fetchtastic.utils import matches_selected_patterns
 
     assert (
-        matches_selected_patterns("app-fdroid-release.apk", ["fdroidRelease-"])
-        is True
+        matches_selected_patterns("app-fdroid-release.apk", ["fdroidRelease-"]) is True
     )
     assert (
-        matches_selected_patterns("app-google-release.aab", ["googleRelease-"])
-        is True
+        matches_selected_patterns("app-google-release.aab", ["googleRelease-"]) is True
     )
     # Sanitised comparison should also cope with dots, underscores, or casing
     assert (
-        matches_selected_patterns("APP-GOOGLE-RELEASE.APK", ["googleRelease-"])
-        is True
+        matches_selected_patterns("APP-GOOGLE-RELEASE.APK", ["googleRelease-"]) is True
     )
 
 
@@ -451,3 +448,22 @@ def test_urllib3_v1_fallback_retry_creation(mock_retry, mock_session, tmp_path):
     assert "respect_retry_after_header" not in second_call_kwargs
     assert "method_whitelist" in second_call_kwargs
     assert "allowed_methods" not in second_call_kwargs
+
+
+def test_matches_selected_patterns_keyword_heuristic():
+    """Test that keyword-based heuristic enables sanitized matching for known problematic patterns."""
+    from fetchtastic.utils import matches_selected_patterns
+
+    # Test that lowercase patterns with known keywords use sanitized matching
+    assert (
+        matches_selected_patterns("app-fdroid-release.apk", ["fdroid-release"]) is True
+    )
+    assert matches_selected_patterns("my-app-release.apk", ["my-app-release"]) is True
+    assert matches_selected_patterns("some-app.aab", ["some-app-aab"]) is True
+
+    # Test that patterns without keywords still preserve dash/underscore distinction
+    assert (
+        matches_selected_patterns("firmware-rak4631_eink-2.7.6.uf2", ["rak4631-"])
+        is False
+    )
+    assert matches_selected_patterns("firmware-rak4631-2.7.6.uf2", ["rak4631-"]) is True
