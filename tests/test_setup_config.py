@@ -1122,8 +1122,8 @@ def test_run_setup_prompts_for_sections_when_config_exists(
                     with patch("os.makedirs"):
                         try:
                             run_setup()
-                        except Exception:
-                            pass  # We expect exceptions due to mocking
+                        except (ValueError, TypeError, AttributeError):
+                            pass  # We expect exceptions due to incomplete mocking
 
     mock_prompt.assert_called_once()
 
@@ -1145,7 +1145,7 @@ def test_run_setup_skips_prompt_when_sections_provided(mock_prompt, mock_config_
                     with patch("os.makedirs"):
                         try:
                             run_setup(sections=["firmware"])
-                        except Exception:
-                            pass  # We expect exceptions due to mocking
+                        except (ValueError, TypeError, AttributeError):
+                            pass  # We expect exceptions due to incomplete mocking
 
     mock_prompt.assert_not_called()
