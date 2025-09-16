@@ -1641,10 +1641,8 @@ def check_and_download(
                 "tag_name"
             ]  # Potential KeyError if API response changes
             if total_to_scan > 1:
-                logger.debug(
-                    "Checking %s (%d of %d)", release_tag, idx, total_to_scan
-                )
-            logger.info(f"Checking {release_tag}…")
+                logger.debug("Checking %s (%d of %d)", release_tag, idx, total_to_scan)
+            logger.info("Checking %s…", release_tag)
             release_dir: str = os.path.join(download_dir_path, release_tag)
             release_notes_file: str = os.path.join(
                 release_dir, f"release_notes-{release_tag}.md"

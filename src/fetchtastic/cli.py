@@ -151,11 +151,7 @@ def main():
                 logger.info("Integration updates are only available on Windows.")
         else:
             # Run the full setup process (optionally limited to specific sections)
-            combined_sections: List[str] = []
-            if args.section:
-                combined_sections.extend(args.section)
-            if args.sections:
-                combined_sections.extend(args.sections)
+            combined_sections: List[str] = (args.section or []) + (args.sections or [])
 
             # Validate and deduplicate sections
             if combined_sections:
@@ -167,10 +163,7 @@ def main():
                         f"(choose from {', '.join(sorted(allowed))})"
                     )
                 # Deduplicate while preserving order
-                seen = set()
-                combined_sections = [
-                    s for s in combined_sections if not (s in seen or seen.add(s))
-                ]
+                combined_sections = list(dict.fromkeys(combined_sections))
 
             setup_config.run_setup(sections=combined_sections or None)
 
