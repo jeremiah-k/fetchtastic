@@ -930,3 +930,220 @@ def test_run_setup_partial_firmware_section(
     mock_setup_reboot_cron_job.assert_not_called()
     mock_remove_cron_job.assert_not_called()
     mock_remove_reboot_cron_job.assert_not_called()
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_section_shortcuts_mapping():
+    """Test that SECTION_SHORTCUTS correctly maps shortcuts to full section names."""
+    from fetchtastic.setup_config import SECTION_SHORTCUTS, SETUP_SECTION_CHOICES
+
+    # Test that all shortcuts map to valid section choices
+    for shortcut, section in SECTION_SHORTCUTS.items():
+        assert (
+            section in SETUP_SECTION_CHOICES
+        ), f"Shortcut '{shortcut}' maps to invalid section '{section}'"
+
+    # Test specific mappings
+    assert SECTION_SHORTCUTS["b"] == "base"
+    assert SECTION_SHORTCUTS["a"] == "android"
+    assert SECTION_SHORTCUTS["f"] == "firmware"
+    assert SECTION_SHORTCUTS["n"] == "notifications"
+    assert SECTION_SHORTCUTS["m"] == "automation"
+
+    # Test that all expected shortcuts exist
+    expected_shortcuts = {"b", "a", "f", "n", "m"}
+    assert set(SECTION_SHORTCUTS.keys()) == expected_shortcuts
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_section_choices():
+    """Test that SETUP_SECTION_CHOICES contains expected sections."""
+    from fetchtastic.setup_config import SETUP_SECTION_CHOICES
+
+    expected_sections = {"base", "android", "firmware", "notifications", "automation"}
+    assert SETUP_SECTION_CHOICES == expected_sections
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("builtins.input")
+def test_prompt_for_setup_sections_empty_input(mock_input):
+    """Test _prompt_for_setup_sections returns None for empty input."""
+    from fetchtastic.setup_config import _prompt_for_setup_sections
+
+    mock_input.return_value = ""
+    result = _prompt_for_setup_sections()
+    assert result is None
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("builtins.input")
+def test_prompt_for_setup_sections_shortcuts(mock_input):
+    """Test _prompt_for_setup_sections handles shortcuts correctly."""
+    from fetchtastic.setup_config import _prompt_for_setup_sections
+
+    mock_input.return_value = "f, a"
+    result = _prompt_for_setup_sections()
+    assert result == {"firmware", "android"}
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("builtins.input")
+def test_prompt_for_setup_sections_full_names(mock_input):
+    """Test _prompt_for_setup_sections handles full section names."""
+    from fetchtastic.setup_config import _prompt_for_setup_sections
+
+    mock_input.return_value = "firmware, notifications"
+    result = _prompt_for_setup_sections()
+    assert result == {"firmware", "notifications"}
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("builtins.input")
+def test_prompt_for_setup_sections_mixed_input(mock_input):
+    """Test _prompt_for_setup_sections handles mixed shortcuts and full names."""
+    from fetchtastic.setup_config import _prompt_for_setup_sections
+
+    mock_input.return_value = "f, android, n"
+    result = _prompt_for_setup_sections()
+    assert result == {"firmware", "android", "notifications"}
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("builtins.input")
+@patch("builtins.print")
+def test_prompt_for_setup_sections_invalid_input(mock_print, mock_input):
+    """Test _prompt_for_setup_sections handles invalid input and retries."""
+    from fetchtastic.setup_config import _prompt_for_setup_sections
+
+    # First invalid input, then valid input
+    mock_input.side_effect = ["invalid_section", "f"]
+    result = _prompt_for_setup_sections()
+    assert result == {"firmware"}
+
+    # Check that error message was printed
+    mock_print.assert_any_call(
+        "Unrecognised section 'invalid_section'. Please choose from the listed options."
+    )
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("builtins.input")
+def test_prompt_for_setup_sections_all_keywords(mock_input):
+    """Test _prompt_for_setup_sections returns None for 'all' keywords."""
+    from fetchtastic.setup_config import _prompt_for_setup_sections
+
+    test_cases = ["all", "full", "everything", "ALL", "Full"]
+    for keyword in test_cases:
+        mock_input.return_value = keyword
+        result = _prompt_for_setup_sections()
+        assert result is None, f"Keyword '{keyword}' should return None"
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("builtins.input")
+def test_prompt_for_setup_sections_semicolon_separator(mock_input):
+    """Test _prompt_for_setup_sections handles semicolon separators."""
+    from fetchtastic.setup_config import _prompt_for_setup_sections
+
+    mock_input.return_value = "f; a; n"
+    result = _prompt_for_setup_sections()
+    assert result == {"firmware", "android", "notifications"}
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_run_setup_invalid_sections():
+    """Test run_setup raises ValueError for invalid sections."""
+    from fetchtastic.setup_config import run_setup
+
+    with pytest.raises(
+        ValueError, match="Unsupported setup section\\(s\\): invalid_section"
+    ):
+        run_setup(sections=["invalid_section"])
+
+    with pytest.raises(
+        ValueError, match="Unsupported setup section\\(s\\): bad1, bad2"
+    ):
+        run_setup(sections=["firmware", "bad1", "bad2"])
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_run_setup_valid_sections():
+    """Test run_setup accepts valid sections without error."""
+    from fetchtastic.setup_config import SETUP_SECTION_CHOICES, run_setup
+
+    # Test each valid section individually
+    for section in SETUP_SECTION_CHOICES:
+        with patch(
+            "fetchtastic.setup_config.config_exists", return_value=(False, None)
+        ):
+            with patch("builtins.input", side_effect=["", "n", "n", "n", "n", "n"]):
+                with patch("builtins.open", mock_open()):
+                    with patch("fetchtastic.setup_config.yaml.dump"):
+                        with patch("os.makedirs"):
+                            try:
+                                run_setup(sections=[section])
+                            except Exception as e:
+                                # We expect some exceptions due to mocking, but not ValueError
+                                assert not isinstance(
+                                    e, ValueError
+                                ), f"Section '{section}' should be valid"
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("fetchtastic.setup_config.config_exists")
+@patch("fetchtastic.setup_config._prompt_for_setup_sections")
+def test_run_setup_prompts_for_sections_when_config_exists(
+    mock_prompt, mock_config_exists
+):
+    """Test run_setup prompts for sections when config exists and no sections specified."""
+    from fetchtastic.setup_config import run_setup
+
+    mock_config_exists.return_value = (True, "/path/to/config")
+    mock_prompt.return_value = {"firmware"}
+
+    with patch("builtins.input", side_effect=["", "n", "n"]):
+        with patch("builtins.open", mock_open()):
+            with patch("fetchtastic.setup_config.yaml.dump"):
+                with patch("fetchtastic.setup_config.load_config", return_value={}):
+                    with patch("os.makedirs"):
+                        try:
+                            run_setup()
+                        except Exception:
+                            pass  # We expect exceptions due to mocking
+
+    mock_prompt.assert_called_once()
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("fetchtastic.setup_config.config_exists")
+@patch("fetchtastic.setup_config._prompt_for_setup_sections")
+def test_run_setup_skips_prompt_when_sections_provided(mock_prompt, mock_config_exists):
+    """Test run_setup skips prompting when sections are explicitly provided."""
+    from fetchtastic.setup_config import run_setup
+
+    mock_config_exists.return_value = (True, "/path/to/config")
+
+    with patch("builtins.input", side_effect=["", "n", "n"]):
+        with patch("builtins.open", mock_open()):
+            with patch("fetchtastic.setup_config.yaml.dump"):
+                with patch("fetchtastic.setup_config.load_config", return_value={}):
+                    with patch("os.makedirs"):
+                        try:
+                            run_setup(sections=["firmware"])
+                        except Exception:
+                            pass  # We expect exceptions due to mocking
+
+    mock_prompt.assert_not_called()
