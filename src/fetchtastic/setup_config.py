@@ -544,6 +544,185 @@ def _setup_android(config: dict, is_first_run: bool, default_versions: int) -> d
     return config
 
 
+def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> dict:
+    """
+    Handle firmware-specific configuration including prereleases and extraction.
+
+    Args:
+        config: Current configuration dictionary
+        is_first_run: Whether this is the first time setup is being run
+        default_versions: Default number of versions to keep
+
+    Returns:
+        Updated configuration dictionary
+    """
+    global CONFIG_FILE
+
+    # Prompt for firmware versions to keep
+    current_versions = config.get("FIRMWARE_VERSIONS_TO_KEEP", default_versions)
+    if is_first_run:
+        prompt_text = f"How many versions of the firmware would you like to keep? (default is {current_versions}): "
+    else:
+        prompt_text = f"How many versions of the firmware would you like to keep? (current: {current_versions}): "
+    firmware_versions_to_keep = input(prompt_text).strip() or str(current_versions)
+    config["FIRMWARE_VERSIONS_TO_KEEP"] = int(firmware_versions_to_keep)
+
+    # Prompt for pre-release downloads
+    check_prereleases_current = config.get("CHECK_PRERELEASES", False)
+    check_prereleases_default = "yes" if check_prereleases_current else "no"
+    check_prereleases = (
+        input(
+            f"Would you like to check for and download pre-release firmware from meshtastic.github.io? [y/n] (default: {check_prereleases_default}): "
+        )
+        .strip()
+        .lower()
+        or check_prereleases_default[0]
+    )
+    # Make sure we're setting a boolean value, not a string
+    config["CHECK_PRERELEASES"] = check_prereleases == "y"
+
+    # Save configuration immediately to ensure this setting is preserved
+    with open(CONFIG_FILE, "w") as f:
+        yaml.dump(config, f)
+
+    # Prompt for automatic extraction
+    auto_extract_current = config.get("AUTO_EXTRACT", False)
+    auto_extract_default = "yes" if auto_extract_current else "no"
+    auto_extract = (
+        input(
+            f"Would you like to automatically extract specific files from firmware zip archives? [y/n] (default: {auto_extract_default}): "
+        )
+        .strip()
+        .lower()
+        or auto_extract_default[0]
+    )
+
+    # Save the AUTO_EXTRACT setting immediately
+    config["AUTO_EXTRACT"] = auto_extract == "y"
+
+    # Save configuration to ensure this setting is preserved
+    with open(CONFIG_FILE, "w") as f:
+        yaml.dump(config, f)
+
+    if auto_extract == "y":
+        print(
+            "Enter the keywords to match for extraction from the firmware zip files, separated by spaces."
+        )
+        print("Example: rak4631- tbeam t1000-e- tlora-v2-1-1_6- device-")
+
+        # Check if there are existing patterns
+        if config.get("EXTRACT_PATTERNS"):
+            current_patterns = " ".join(config.get("EXTRACT_PATTERNS", []))
+            print(f"Current patterns: {current_patterns}")
+
+            # Ask if user wants to keep or change patterns
+            keep_patterns_default = "yes"
+            keep_patterns = (
+                input(
+                    f"Do you want to keep the current extraction patterns? [y/n] (default: {keep_patterns_default}): "
+                )
+                .strip()
+                .lower()
+                or keep_patterns_default[0]
+            )
+
+            if keep_patterns == "y":
+                # Keep existing patterns
+                print(f"Keeping current extraction patterns: {current_patterns}")
+            else:
+                # Get new patterns
+                extract_patterns = input("Enter new extraction patterns: ").strip()
+                if extract_patterns:
+                    config["EXTRACT_PATTERNS"] = extract_patterns.split()
+                    print(f"Extraction patterns updated to: {extract_patterns}")
+                else:
+                    print("No patterns entered. Keeping current patterns.")
+        else:
+            # No existing patterns, get new ones
+            extract_patterns = input("Extraction patterns: ").strip()
+            if extract_patterns:
+                config["EXTRACT_PATTERNS"] = extract_patterns.split()
+                print(f"Extraction patterns set to: {extract_patterns}")
+            else:
+                config["AUTO_EXTRACT"] = False
+                config["EXTRACT_PATTERNS"] = []
+                print(
+                    "No patterns selected, no files will be extracted. Run setup again if you wish to change this."
+                )
+                # Skip exclude patterns prompt
+                config["EXCLUDE_PATTERNS"] = []
+
+        # Save configuration again after updating patterns
+        with open(CONFIG_FILE, "w") as f:
+            yaml.dump(config, f)
+        # Prompt for exclude patterns if extraction is enabled
+        if config.get("AUTO_EXTRACT", False) and config.get("EXTRACT_PATTERNS"):
+            exclude_default = "yes" if config.get("EXCLUDE_PATTERNS") else "no"
+            exclude_prompt = f"Would you like to exclude any patterns from extraction? [y/n] (default: {exclude_default}): "
+            exclude_choice = input(exclude_prompt).strip().lower() or exclude_default[0]
+            if exclude_choice == "y":
+                print(
+                    "Enter the keywords to exclude from extraction, separated by spaces."
+                )
+                print("Example: .hex tcxo request s3-core")
+
+                # Check if there are existing exclude patterns
+                if config.get("EXCLUDE_PATTERNS"):
+                    current_excludes = " ".join(config.get("EXCLUDE_PATTERNS", []))
+                    print(f"Current exclude patterns: {current_excludes}")
+
+                    # Ask if user wants to keep or change exclude patterns
+                    keep_excludes_default = "yes"
+                    keep_excludes = (
+                        input(
+                            f"Do you want to keep the current exclude patterns? [y/n] (default: {keep_excludes_default}): "
+                        )
+                        .strip()
+                        .lower()
+                        or keep_excludes_default[0]
+                    )
+
+                    if keep_excludes == "y":
+                        # Keep existing exclude patterns
+                        print(f"Keeping current exclude patterns: {current_excludes}")
+                    else:
+                        # Get new exclude patterns
+                        exclude_patterns = input("Enter new exclude patterns: ").strip()
+                        if exclude_patterns:
+                            config["EXCLUDE_PATTERNS"] = exclude_patterns.split()
+                            print(f"Exclude patterns updated to: {exclude_patterns}")
+                        else:
+                            config["EXCLUDE_PATTERNS"] = []
+                            print(
+                                "No exclude patterns entered. All matching files will be extracted."
+                            )
+                else:
+                    # No existing exclude patterns, get new ones
+                    exclude_patterns = input("Exclude patterns: ").strip()
+                    if exclude_patterns:
+                        config["EXCLUDE_PATTERNS"] = exclude_patterns.split()
+                        print(f"Exclude patterns set to: {exclude_patterns}")
+                    else:
+                        config["EXCLUDE_PATTERNS"] = []
+                        print(
+                            "No exclude patterns entered. All matching files will be extracted."
+                        )
+            else:
+                # User chose not to exclude patterns
+                config["EXCLUDE_PATTERNS"] = []
+                print(
+                    "No exclude patterns will be used. All matching files will be extracted."
+                )
+        else:
+            config["EXCLUDE_PATTERNS"] = []
+    else:
+        config["AUTO_EXTRACT"] = False
+        config["EXTRACT_PATTERNS"] = []
+        config["EXCLUDE_PATTERNS"] = []
+
+    return config
+
+
 def _setup_base(
     config: dict, is_partial_run: bool, is_first_run: bool, wants: Callable[[str], bool]
 ) -> dict:
@@ -790,177 +969,9 @@ def run_setup(sections: Optional[Sequence[str]] = None):
     # Handle Android configuration
     if save_apks and (not is_partial_run or wants("android")):
         config = _setup_android(config, is_first_run, default_versions_to_keep)
+    # Handle firmware configuration
     if save_firmware and (not is_partial_run or wants("firmware")):
-        current_versions = config.get(
-            "FIRMWARE_VERSIONS_TO_KEEP", default_versions_to_keep
-        )
-        if is_first_run:
-            prompt_text = f"How many versions of the firmware would you like to keep? (default is {current_versions}): "
-        else:
-            prompt_text = f"How many versions of the firmware would you like to keep? (current: {current_versions}): "
-        firmware_versions_to_keep = input(prompt_text).strip() or str(current_versions)
-        config["FIRMWARE_VERSIONS_TO_KEEP"] = int(firmware_versions_to_keep)
-
-        # Prompt for pre-release downloads
-        check_prereleases_current = config.get("CHECK_PRERELEASES", False)
-        check_prereleases_default = "yes" if check_prereleases_current else "no"
-        check_prereleases = (
-            input(
-                f"Would you like to check for and download pre-release firmware from meshtastic.github.io? [y/n] (default: {check_prereleases_default}): "
-            )
-            .strip()
-            .lower()
-            or check_prereleases_default[0]
-        )
-        # Make sure we're setting a boolean value, not a string
-        config["CHECK_PRERELEASES"] = check_prereleases == "y"
-
-        # Save configuration immediately to ensure this setting is preserved
-        with open(CONFIG_FILE, "w") as f:
-            yaml.dump(config, f)
-
-        # Prompt for automatic extraction
-        auto_extract_current = config.get("AUTO_EXTRACT", False)
-        auto_extract_default = "yes" if auto_extract_current else "no"
-        auto_extract = (
-            input(
-                f"Would you like to automatically extract specific files from firmware zip archives? [y/n] (default: {auto_extract_default}): "
-            )
-            .strip()
-            .lower()
-            or auto_extract_default[0]
-        )
-
-        # Save the AUTO_EXTRACT setting immediately
-        config["AUTO_EXTRACT"] = auto_extract == "y"
-
-        # Save configuration to ensure this setting is preserved
-        with open(CONFIG_FILE, "w") as f:
-            yaml.dump(config, f)
-
-        if auto_extract == "y":
-            print(
-                "Enter the keywords to match for extraction from the firmware zip files, separated by spaces."
-            )
-            print("Example: rak4631- tbeam t1000-e- tlora-v2-1-1_6- device-")
-
-            # Check if there are existing patterns
-            if config.get("EXTRACT_PATTERNS"):
-                current_patterns = " ".join(config.get("EXTRACT_PATTERNS", []))
-                print(f"Current patterns: {current_patterns}")
-
-                # Ask if user wants to keep or change patterns
-                keep_patterns_default = "yes"
-                keep_patterns = (
-                    input(
-                        f"Do you want to keep the current extraction patterns? [y/n] (default: {keep_patterns_default}): "
-                    )
-                    .strip()
-                    .lower()
-                    or keep_patterns_default[0]
-                )
-
-                if keep_patterns == "y":
-                    # Keep existing patterns
-                    print(f"Keeping current extraction patterns: {current_patterns}")
-                else:
-                    # Get new patterns
-                    extract_patterns = input("Enter new extraction patterns: ").strip()
-                    if extract_patterns:
-                        config["EXTRACT_PATTERNS"] = extract_patterns.split()
-                        print(f"Extraction patterns updated to: {extract_patterns}")
-                    else:
-                        print("No patterns entered. Keeping current patterns.")
-            else:
-                # No existing patterns, get new ones
-                extract_patterns = input("Extraction patterns: ").strip()
-                if extract_patterns:
-                    config["EXTRACT_PATTERNS"] = extract_patterns.split()
-                    print(f"Extraction patterns set to: {extract_patterns}")
-                else:
-                    config["AUTO_EXTRACT"] = False
-                    config["EXTRACT_PATTERNS"] = []
-                    print(
-                        "No patterns selected, no files will be extracted. Run setup again if you wish to change this."
-                    )
-                    # Skip exclude patterns prompt
-                    config["EXCLUDE_PATTERNS"] = []
-
-            # Save configuration again after updating patterns
-            with open(CONFIG_FILE, "w") as f:
-                yaml.dump(config, f)
-            # Prompt for exclude patterns if extraction is enabled
-            if config.get("AUTO_EXTRACT", False) and config.get("EXTRACT_PATTERNS"):
-                exclude_default = "yes" if config.get("EXCLUDE_PATTERNS") else "no"
-                exclude_prompt = f"Would you like to exclude any patterns from extraction? [y/n] (default: {exclude_default}): "
-                exclude_choice = (
-                    input(exclude_prompt).strip().lower() or exclude_default[0]
-                )
-                if exclude_choice == "y":
-                    print(
-                        "Enter the keywords to exclude from extraction, separated by spaces."
-                    )
-                    print("Example: .hex tcxo request s3-core")
-
-                    # Check if there are existing exclude patterns
-                    if config.get("EXCLUDE_PATTERNS"):
-                        current_excludes = " ".join(config.get("EXCLUDE_PATTERNS", []))
-                        print(f"Current exclude patterns: {current_excludes}")
-
-                        # Ask if user wants to keep or change exclude patterns
-                        keep_excludes_default = "yes"
-                        keep_excludes = (
-                            input(
-                                f"Do you want to keep the current exclude patterns? [y/n] (default: {keep_excludes_default}): "
-                            )
-                            .strip()
-                            .lower()
-                            or keep_excludes_default[0]
-                        )
-
-                        if keep_excludes == "y":
-                            # Keep existing exclude patterns
-                            print(
-                                f"Keeping current exclude patterns: {current_excludes}"
-                            )
-                        else:
-                            # Get new exclude patterns
-                            exclude_patterns = input(
-                                "Enter new exclude patterns: "
-                            ).strip()
-                            if exclude_patterns:
-                                config["EXCLUDE_PATTERNS"] = exclude_patterns.split()
-                                print(
-                                    f"Exclude patterns updated to: {exclude_patterns}"
-                                )
-                            else:
-                                config["EXCLUDE_PATTERNS"] = []
-                                print(
-                                    "No exclude patterns entered. All matching files will be extracted."
-                                )
-                    else:
-                        # No existing exclude patterns, get new ones
-                        exclude_patterns = input("Exclude patterns: ").strip()
-                        if exclude_patterns:
-                            config["EXCLUDE_PATTERNS"] = exclude_patterns.split()
-                            print(f"Exclude patterns set to: {exclude_patterns}")
-                        else:
-                            config["EXCLUDE_PATTERNS"] = []
-                            print(
-                                "No exclude patterns entered. All matching files will be extracted."
-                            )
-                else:
-                    # User chose not to exclude patterns
-                    config["EXCLUDE_PATTERNS"] = []
-                    print(
-                        "No exclude patterns will be used. All matching files will be extracted."
-                    )
-            else:
-                config["EXCLUDE_PATTERNS"] = []
-        else:
-            config["AUTO_EXTRACT"] = False
-            config["EXTRACT_PATTERNS"] = []
-            config["EXCLUDE_PATTERNS"] = []
+        config = _setup_firmware(config, is_first_run, default_versions_to_keep)
 
     # Ask if the user wants to only download when connected to Wi-Fi (Termux only)
     if is_termux():
