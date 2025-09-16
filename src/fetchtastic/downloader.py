@@ -351,6 +351,82 @@ def compare_file_hashes(file1, file2):
     return hash1 == hash2
 
 
+def update_prerelease_tracking(prerelease_dir, latest_release_tag, prerelease_versions):
+    """
+    Update the prerelease tracking file to record how many prerelease versions
+    have been released since the last major release.
+
+    Parameters:
+        prerelease_dir (str): Path to the prerelease directory
+        latest_release_tag (str): Latest official release tag
+        prerelease_versions (List[str]): List of prerelease version directory names
+    """
+    tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
+
+    # Extract version from latest release tag
+    if latest_release_tag.startswith("v"):
+        base_version = latest_release_tag[1:]
+    else:
+        base_version = latest_release_tag
+
+    # Count total prereleases since this major release
+    total_prereleases = len(prerelease_versions)
+
+    # Get existing tracking data
+    tracking_data = {}
+    if os.path.exists(tracking_file):
+        try:
+            with open(tracking_file, "r") as f:
+                tracking_data = json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            logger.warning(f"Could not read prerelease tracking file: {e}")
+            tracking_data = {}
+
+    # Update tracking data
+    tracking_data.update(
+        {
+            "last_major_release": latest_release_tag,
+            "base_version": base_version,
+            "prerelease_count_since_major": total_prereleases,
+            "prerelease_versions": prerelease_versions,
+            "last_updated": datetime.now().isoformat(),
+        }
+    )
+
+    # Write updated tracking data
+    try:
+        with open(tracking_file, "w") as f:
+            json.dump(tracking_data, f, indent=2)
+        logger.info(
+            f"Updated prerelease tracking: {total_prereleases} prereleases since {latest_release_tag}"
+        )
+    except IOError as e:
+        logger.warning(f"Could not write prerelease tracking file: {e}")
+
+
+def get_prerelease_tracking_info(prerelease_dir):
+    """
+    Read and return prerelease tracking information.
+
+    Parameters:
+        prerelease_dir (str): Path to the prerelease directory
+
+    Returns:
+        dict: Tracking information or empty dict if not available
+    """
+    tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
+
+    if not os.path.exists(tracking_file):
+        return {}
+
+    try:
+        with open(tracking_file, "r") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError) as e:
+        logger.warning(f"Could not read prerelease tracking file: {e}")
+        return {}
+
+
 def check_for_prereleases(
     download_dir,
     latest_release_tag,
@@ -654,21 +730,44 @@ def check_for_prereleases(
                         f"Unexpected error downloading pre-release file {file_name}: {e}",
                         exc_info=True,
                     )
+            else:
+                # File already exists, add it to the list for tracking
+                logger.debug(f"Pre-release file already exists: {file_name}")
+                downloaded_files.append(file_path)
 
     downloaded_versions = []
     if downloaded_files:
-        logger.info(
-            f"Successfully downloaded {len(downloaded_files)} pre-release files."
-        )
-        # Extract unique directory names from downloaded files
+        logger.info(f"Pre-release files processed: {len(downloaded_files)} total files")
+
+        # Extract unique directory names from downloaded files and count files per version
+        version_file_counts = {}
         for dir_name in prerelease_dirs:
-            if any(
-                os.path.basename(os.path.dirname(p)) == dir_name
+            matching_files = [
+                p
                 for p in downloaded_files
-            ):
+                if os.path.basename(os.path.dirname(p)) == dir_name
+            ]
+            if matching_files:
                 downloaded_versions.append(dir_name)
+                version_file_counts[dir_name] = len(matching_files)
+
+        # Log per-version file counts
+        for version, count in version_file_counts.items():
+            logger.info(f"Pre-release {version}: {count} files")
+
+        # Update prerelease tracking
+        update_prerelease_tracking(
+            prerelease_dir, latest_release_tag, downloaded_versions
+        )
+
         return True, downloaded_versions
     else:
+        # Update tracking even if no files were downloaded (to track empty prereleases)
+        if prerelease_dirs:
+            update_prerelease_tracking(
+                prerelease_dir, latest_release_tag, prerelease_dirs
+            )
+
         # Don't log here - we'll log once at the caller level
         return False, []
 
@@ -1016,6 +1115,17 @@ def _process_firmware_downloads(
                         downloaded_firmwares.append(f"pre-release {version}")
                 else:
                     logger.info("No new pre-release firmware found or downloaded.")
+
+                # Display prerelease tracking information
+                prerelease_dir = os.path.join(
+                    paths_and_urls["download_dir"], "firmware", "prerelease"
+                )
+                tracking_info = get_prerelease_tracking_info(prerelease_dir)
+                if tracking_info:
+                    count = tracking_info.get("prerelease_count_since_major", 0)
+                    base_version = tracking_info.get("last_major_release", "unknown")
+                    if count > 0:
+                        logger.info(f"Total prereleases since {base_version}: {count}")
             else:
                 logger.info("No latest release tag found. Skipping pre-release check.")
     elif not config.get("SELECTED_FIRMWARE_ASSETS", []):

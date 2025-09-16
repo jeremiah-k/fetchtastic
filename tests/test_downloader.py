@@ -969,6 +969,101 @@ def test_check_for_prereleases_no_directories(tmp_path):
     assert versions == []
 
 
+@patch("fetchtastic.downloader.menu_repo.fetch_repo_directories")
+@patch("fetchtastic.downloader.menu_repo.fetch_directory_contents")
+@patch("fetchtastic.downloader.download_file_with_retry")
+def test_prerelease_tracking_functionality(
+    mock_dl, mock_fetch_contents, mock_fetch_dirs, tmp_path
+):
+    """Test that prerelease tracking file is created and updated correctly."""
+    # Setup mock data
+    mock_fetch_dirs.return_value = [
+        "firmware-2.7.7.abcdef",
+        "firmware-2.7.8.ghijkl",
+    ]
+    mock_fetch_contents.return_value = [
+        {
+            "name": "firmware-rak4631-2.7.7.abcdef.uf2",
+            "download_url": "https://example.invalid/rak4631.uf2",
+        }
+    ]
+
+    def _mock_dl(_url, dest):
+        import os
+
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        with open(dest, "wb") as f:
+            f.write(b"data")
+        return True
+
+    mock_dl.side_effect = _mock_dl
+
+    download_dir = tmp_path
+    latest_release_tag = "v2.7.6.111111"
+
+    # Run prerelease check
+    found, versions = downloader.check_for_prereleases(
+        str(download_dir), latest_release_tag, ["rak4631-"], exclude_patterns=[]
+    )
+
+    assert found is True
+    assert len(versions) > 0
+
+    # Check that tracking file was created
+    prerelease_dir = download_dir / "firmware" / "prerelease"
+    tracking_file = prerelease_dir / "prerelease_tracking.json"
+    assert tracking_file.exists()
+
+    # Check tracking file contents
+    import json
+
+    with open(tracking_file, "r") as f:
+        tracking_data = json.load(f)
+
+    assert tracking_data["last_major_release"] == latest_release_tag
+    assert tracking_data["base_version"] == "2.7.6.111111"
+    assert tracking_data["prerelease_count_since_major"] > 0
+    assert "prerelease_versions" in tracking_data
+    assert "last_updated" in tracking_data
+
+    # Test get_prerelease_tracking_info function
+    info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
+    assert info["last_major_release"] == latest_release_tag
+    assert info["prerelease_count_since_major"] > 0
+
+
+def test_prerelease_existing_files_tracking(tmp_path):
+    """Test that existing prerelease files are properly tracked."""
+    download_dir = tmp_path
+    prerelease_dir = download_dir / "firmware" / "prerelease"
+    version_dir = prerelease_dir / "firmware-2.7.7.abcdef"
+    version_dir.mkdir(parents=True)
+
+    # Create an existing file
+    existing_file = version_dir / "firmware-rak4631-2.7.7.abcdef.uf2"
+    existing_file.write_bytes(b"existing data")
+
+    with patch("fetchtastic.downloader.menu_repo.fetch_repo_directories") as mock_dirs:
+        with patch(
+            "fetchtastic.downloader.menu_repo.fetch_directory_contents"
+        ) as mock_contents:
+            mock_dirs.return_value = ["firmware-2.7.7.abcdef"]
+            mock_contents.return_value = [
+                {
+                    "name": "firmware-rak4631-2.7.7.abcdef.uf2",
+                    "download_url": "https://example.invalid/rak4631.uf2",
+                }
+            ]
+
+            found, versions = downloader.check_for_prereleases(
+                str(download_dir), "v2.7.6.111111", ["rak4631-"], exclude_patterns=[]
+            )
+
+            # Should find the existing file and track it
+            assert found is True
+            assert "firmware-2.7.7.abcdef" in versions
+
+
 def test_check_and_download_corrupted_existing_zip_records_failure(tmp_path):
     """Existing corrupted zip should be removed, and failed download recorded when retry fails."""
     release_tag = "v5.0.0"
