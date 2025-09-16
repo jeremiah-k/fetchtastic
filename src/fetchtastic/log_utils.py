@@ -42,7 +42,7 @@ def set_log_level(level_name: str) -> None:
     for handler in logger.handlers:
         handler.setLevel(level)
 
-        # Update formatter based on level
+        # Update formatter based on level - never show module/function/line for INFO and above
         if level >= logging.INFO:
             if isinstance(handler, RichHandler):
                 formatter = logging.Formatter("%(message)s")
