@@ -951,6 +951,8 @@ def _setup_base(
                     print(f"Migration failed: {e}")
                     print("You can migrate manually later using the steps above.")
 
+        from fetchtastic.log_utils import logger
+
         separator = "=" * 60
         logger.info(f"{separator}\n")
 

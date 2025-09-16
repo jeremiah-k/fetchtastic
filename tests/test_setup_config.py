@@ -683,12 +683,14 @@ def test_run_setup_first_run_windows(
 @patch("fetchtastic.setup_config.check_boot_script_exists", return_value=False)
 @patch("fetchtastic.downloader.main")
 @patch("shutil.which")
+@patch("subprocess.run")
 @patch(
     "fetchtastic.setup_config.platformdirs.user_config_dir",
     return_value="/tmp/config",  # nosec B108
 )
 def test_run_setup_first_run_termux(
     mock_user_config_dir,
+    mock_subprocess_run,
     mock_shutil_which,
     mock_downloader_main,
     mock_check_boot_script_exists,
@@ -711,7 +713,7 @@ def test_run_setup_first_run_termux(
 ):
     """Test a simple first-run setup process on a Termux system."""
     user_inputs = [
-        "y",  # migrate to pipx
+        "n",  # don't migrate to pipx (so setup continues)
         "",  # Use default base directory
         "b",  # Both APKs and firmware
         "1",  # Keep 1 version of Android app
@@ -734,7 +736,7 @@ def test_run_setup_first_run_termux(
 
         mock_install_termux_packages.assert_called_once()
         mock_check_storage_setup.assert_called_once()
-        mock_migrate_pip_to_pipx.assert_called_once()
+        mock_migrate_pip_to_pipx.assert_not_called()  # User chose not to migrate
         mock_setup_cron_job.assert_called_once()
         mock_setup_boot_script.assert_called_once()
 
