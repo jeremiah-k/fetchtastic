@@ -581,10 +581,6 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
     # Make sure we're setting a boolean value, not a string
     config["CHECK_PRERELEASES"] = check_prereleases == "y"
 
-    # Save configuration immediately to ensure this setting is preserved
-    with open(CONFIG_FILE, "w") as f:
-        yaml.dump(config, f)
-
     # Prompt for automatic extraction
     auto_extract_current = config.get("AUTO_EXTRACT", False)
     auto_extract_default = "yes" if auto_extract_current else "no"
@@ -597,12 +593,8 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
         or auto_extract_default[0]
     )
 
-    # Save the AUTO_EXTRACT setting immediately
+    # Save the AUTO_EXTRACT setting
     config["AUTO_EXTRACT"] = auto_extract == "y"
-
-    # Save configuration to ensure this setting is preserved
-    with open(CONFIG_FILE, "w") as f:
-        yaml.dump(config, f)
 
     if auto_extract == "y":
         print(
@@ -652,9 +644,6 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
                 # Skip exclude patterns prompt
                 config["EXCLUDE_PATTERNS"] = []
 
-        # Save configuration again after updating patterns
-        with open(CONFIG_FILE, "w") as f:
-            yaml.dump(config, f)
         # Prompt for exclude patterns if extraction is enabled
         if config.get("AUTO_EXTRACT", False) and config.get("EXTRACT_PATTERNS"):
             exclude_default = "yes" if config.get("EXCLUDE_PATTERNS") else "no"
@@ -778,10 +767,6 @@ def _setup_notifications(config: dict, is_partial_run: bool) -> dict:
         config["NTFY_TOPIC"] = topic_name
         config["NTFY_SERVER"] = ntfy_server
 
-        # Save configuration with NTFY settings
-        with open(CONFIG_FILE, "w") as f:
-            yaml.dump(config, f)
-
         # Display information
         full_topic_url = f"{ntfy_server.rstrip('/')}/{topic_name}"
         print(f"Notifications enabled using topic: {topic_name}")
@@ -828,12 +813,6 @@ def _setup_notifications(config: dict, is_partial_run: bool) -> dict:
             True if notify_on_download_only == "y" else False
         )
 
-        # Save configuration with the new setting
-        with open(CONFIG_FILE, "w") as f:
-            yaml.dump(config, f)
-
-        print("Notification settings have been saved.")
-
     else:
         # User chose not to use notifications
         if has_ntfy_config:
@@ -851,8 +830,6 @@ def _setup_notifications(config: dict, is_partial_run: bool) -> dict:
                 config["NTFY_TOPIC"] = ""
                 config["NTFY_SERVER"] = ""
                 config["NOTIFY_ON_DOWNLOAD_ONLY"] = False
-                with open(CONFIG_FILE, "w") as f:
-                    yaml.dump(config, f)
                 print("Notifications have been disabled.")
             else:
                 print("Keeping existing notification settings.")
@@ -861,8 +838,6 @@ def _setup_notifications(config: dict, is_partial_run: bool) -> dict:
             config["NTFY_TOPIC"] = ""
             config["NTFY_SERVER"] = ""
             config["NOTIFY_ON_DOWNLOAD_ONLY"] = False
-            with open(CONFIG_FILE, "w") as f:
-                yaml.dump(config, f)
             print("Notifications will remain disabled.")
 
     return config
@@ -949,6 +924,8 @@ def _setup_base(
 
                 except subprocess.CalledProcessError as e:
                     print(f"Migration failed: {e}")
+                    if e.stderr:
+                        print(f"Error details:\n{e.stderr.decode(errors='ignore')}")
                     print("You can migrate manually later using the steps above.")
 
         from fetchtastic.log_utils import logger
