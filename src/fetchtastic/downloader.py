@@ -59,17 +59,16 @@ def _summarise_release_scan(kind: str, total_found: int, keep_limit: int) -> str
 def _summarise_scan_window(release_type: str, scan_count: int, keep_limit: int) -> str:
     """
     Build a concise log message describing the scanning window for a release type.
-    
+
     Returns a message suitable for logging:
     - If scan_count == 0 returns "No <release_type> releases to scan".
     - Uses singular "release" when scan_count == 1, otherwise "releases".
-    - Appends " (limit <keep_limit>)" when keep_limit < scan_count to indicate a scanning cap.
-    
+
     Parameters:
         release_type (str): Human-readable name of the release kind (e.g., "firmware", "Android APK").
         scan_count (int): Number of releases discovered for scanning.
-        keep_limit (int): Maximum number of releases allowed to be kept/scanned; used only to decide whether to append the limit note.
-    
+        keep_limit (int): Maximum number of releases allowed to be kept/scanned (unused, kept for compatibility).
+
     Returns:
         str: The formatted scan-window message.
     """
@@ -77,10 +76,7 @@ def _summarise_scan_window(release_type: str, scan_count: int, keep_limit: int) 
     if scan_count == 0:
         return f"No {release_type} releases to scan"
     descriptor = "release" if scan_count == 1 else "releases"
-    message = f"Scanning {release_type} {descriptor}"
-    if keep_limit < scan_count:
-        message += f" (limit {keep_limit})"
-    return message
+    return f"Scanning {release_type} {descriptor}"
 
 
 def _newer_tags_since_saved(
@@ -744,9 +740,10 @@ def _get_latest_releases_data(url: str, scan_count: int = 10) -> List[Dict[str, 
     """
     try:
         # Add progress feedback
-        if "firmware" in url:
+        url_l = url.lower()
+        if "firmware" in url_l:
             logger.info("Fetching firmware releases from GitHub...")
-        elif "Android" in url:
+        elif "android" in url_l:
             logger.info("Fetching Android APK releases from GitHub...")
         else:
             logger.info("Fetching releases from GitHub...")
@@ -917,7 +914,7 @@ def _process_firmware_downloads(
     downloads missing assets (honoring selected and excluded asset patterns), optionally extracts archives,
     updates the latest-release tracking file, and performs cleanup/retention according to configured
     FIRMWARE_VERSIONS_TO_KEEP. If a latest release tag exists, checks for promoted prereleases and — when
-    CHECK_PRERELEASES is enabled and downloads have not been skipped due to Wi‑Fi gating — attempts to
+    CHECK_PRERELEASES is enabled and downloads have not been skipped due to Wi-Fi gating — attempts to
     discover and download newer prerelease firmware that matches the selection criteria.
 
     Configuration keys referenced: SAVE_FIRMWARE, SELECTED_FIRMWARE_ASSETS, FIRMWARE_VERSIONS_TO_KEEP,
@@ -1038,17 +1035,17 @@ def _process_apk_downloads(
 ) -> Tuple[List[str], List[str], List[Dict[str, str]], Optional[str]]:
     """
     Process Android APK releases: fetch release metadata, download selected APK assets, and report what changed.
-    
+
     When SAVE_APKS is true and SELECTED_APK_ASSETS is non-empty in `config`, this function:
     - fetches up to ANDROID_VERSIONS_TO_KEEP releases from the configured Android releases URL,
     - determines the latest release tag,
     - invokes the shared download workflow to download APK assets that match SELECTED_APK_ASSETS,
     - respects the configured keep count when pruning old versions.
-    
+
     Expected keys used from inputs:
     - config: SAVE_APKS, SELECTED_APK_ASSETS, ANDROID_VERSIONS_TO_KEEP (optional).
     - paths_and_urls: "android_releases_url", "latest_android_release_file", "apks_dir".
-    
+
     Returns:
     A tuple (downloaded_apk_versions, new_apk_versions, failed_downloads, latest_apk_version):
     - downloaded_apk_versions (List[str]): versions successfully downloaded in this run.
@@ -1595,19 +1592,19 @@ def check_and_download(
 ) -> Tuple[List[str], List[str], List[Dict[str, str]]]:
     """
     Check a list of releases, download any missing or corrupted assets, optionally extract ZIPs, and prune old release directories.
-    
+
     Processes up to `versions_to_keep` newest entries from `releases`. For each release it:
     - Skips releases that are already complete.
     - Downloads assets that match `selected_patterns` (if provided) and do not match `exclude_patterns`.
     - Optionally extracts files from ZIP assets when `auto_extract` is True and `release_type` == "Firmware"; extraction uses `extract_patterns` to select files.
     - Saves release notes, ensures `.sh` files are executable, and removes older release subdirectories not in the retention window.
     - Updates `latest_release_file` when a newer release has been successfully processed.
-    
+
     Side effects:
     - Creates release directories and may write `latest_release_file`.
     - May remove corrupted ZIP files and delete old release directories during cleanup.
-    - Honors a global Wi‑Fi gating flag: if downloads were skipped, the function will not download and instead returns newer release tags.
-    
+    - Honors a global Wi-Fi gating flag: if downloads were skipped, the function will not download and instead returns newer release tags.
+
     Parameters:
     - releases: Iterable of release dicts from the API (newest-first order expected).
     - latest_release_file: Path to a file storing the most recently recorded release tag.
@@ -1618,7 +1615,7 @@ def check_and_download(
     - selected_patterns: If provided, only assets whose names match any of these patterns are considered for download.
     - auto_extract: When True and `release_type` == "Firmware`, ZIP assets will be extracted when needed.
     - exclude_patterns: Optional patterns; matching filenames are excluded from download and extraction.
-    
+
     Returns:
     - Tuple(downloaded_versions, new_versions_available, failed_downloads_details)
       - downloaded_versions: list of release tags for which at least one asset was successfully downloaded.

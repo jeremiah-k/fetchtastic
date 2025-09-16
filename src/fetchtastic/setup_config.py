@@ -3,6 +3,7 @@
 import os
 import platform
 import random
+import re
 import shutil
 import string
 import subprocess
@@ -327,16 +328,16 @@ def config_exists(directory=None):
 def check_storage_setup():
     """
     Ensure Termux storage and the Downloads directory are available and writable.
-    
+
     This function is intended for Termux environments: it verifies that ~/storage and
     ~/storage/downloads exist and are writable. If they are not, it repeatedly
     invokes setup_storage() and prompts the user to grant storage permissions,
     waiting for the user to confirm before re-checking. The function returns only
     after storage access is confirmed.
-    
+
     Returns:
         bool: True when storage access and the Downloads directory are available and writable.
-    
+
     Side effects:
         - May call setup_storage().
         - Blocks for interactive user input while awaiting permission grant.
@@ -366,12 +367,12 @@ def check_storage_setup():
 def _prompt_for_setup_sections() -> Optional[Set[str]]:
     """
     Prompt the user to choose which setup sections to run when an existing configuration is detected.
-    
+
     Displays the available setup sections with single-letter shortcuts and accepts a comma/space/semicolon-separated
     selection. Pressing ENTER (an empty response) or entering one of the keywords "all", "full", or "everything"
     signals a full run and the function returns None. Shortcuts defined in SECTION_SHORTCUTS and full section names
     from SETUP_SECTION_CHOICES are accepted; invalid tokens cause the prompt to repeat until a valid selection is given.
-    
+
     Returns:
         Optional[Set[str]]: A set of chosen section names (subset of SETUP_SECTION_CHOICES), or None to indicate
         the full setup should be run.
@@ -395,8 +396,6 @@ def _prompt_for_setup_sections() -> Optional[Set[str]]:
         ).strip()
         if not response:
             return None
-
-        import re
 
         tokens = [tok for tok in re.split(r"[\s,;]+", response) if tok]
         selected: Set[str] = set()
@@ -427,20 +426,20 @@ def _setup_downloads(
 ) -> tuple[dict, bool, bool]:
     """
     Configure which asset types to download (APKs, firmware, or both), optionally re-run selection menus, and update the provided config.
-    
+
     If running a full setup (is_partial_run is False) the user is prompted to choose APKs, firmware, or both. In a partial run the function will prompt only for sections indicated by the `wants` callable and will default to values already present in `config`.
-    
+
     Behavior and side effects:
     - Updates `config["SAVE_APKS"]` and `config["SAVE_FIRMWARE"]`.
     - When APKs are enabled and the APK menu is (re)run, sets `config["SELECTED_APK_ASSETS"]` to the chosen assets.
     - When firmware is enabled and the firmware menu is (re)run, sets `config["SELECTED_FIRMWARE_ASSETS"]` to the chosen assets.
     - Prints guidance and informational messages; may return early if neither asset type is selected.
-    
+
     Parameters:
         config: Mutable configuration dictionary that will be updated.
         is_partial_run: If True, only prompts sections for which `wants(section)` returns True and will reuse existing config defaults when appropriate.
         wants: Callable that accepts a section name (e.g., "android" or "firmware") and returns True when that section should be processed in this run.
-    
+
     Returns:
         Tuple of (updated_config, save_apks, save_firmware) where save_apks and save_firmware are booleans indicating the final selection.
     """
@@ -558,14 +557,14 @@ def _setup_downloads(
 def _setup_android(config: dict, is_first_run: bool, default_versions: int) -> dict:
     """
     Prompt the user for how many Android app versions to keep and store the choice in the config.
-    
+
     If the config already contains "ANDROID_VERSIONS_TO_KEEP", that value is shown as the current default; otherwise default_versions is used. The prompt wording differs when is_first_run is True. The selected value is converted to an int and written back to config["ANDROID_VERSIONS_TO_KEEP"].
-    
+
     Parameters:
         config (dict): Configuration dictionary to read from and update.
         is_first_run (bool): When True, prompt wording uses a first-run message.
         default_versions (int): Fallback number of versions to propose when the config has no prior value.
-    
+
     Returns:
         dict: The updated configuration dictionary with "ANDROID_VERSIONS_TO_KEEP" set.
     """
@@ -582,14 +581,14 @@ def _setup_android(config: dict, is_first_run: bool, default_versions: int) -> d
 def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> dict:
     """
     Configure firmware-related settings in the provided config dictionary by interactively prompting the user.
-    
+
     Prompts and updates the following keys in `config`:
     - FIRMWARE_VERSIONS_TO_KEEP (int): number of firmware versions to retain.
     - CHECK_PRERELEASES (bool): whether to check/download prerelease firmware.
     - AUTO_EXTRACT (bool): whether to automatically extract files from firmware zip archives.
     - EXTRACT_PATTERNS (list[str]): space-separated keywords to match files to extract (set only if AUTO_EXTRACT is enabled).
     - EXCLUDE_PATTERNS (list[str]): space-separated keywords to exclude from extraction.
-    
+
     Behavior notes:
     - Uses current config values as defaults when present; otherwise falls back to provided defaults.
     - If AUTO_EXTRACT is enabled but no extract patterns are provided, AUTO_EXTRACT will be disabled and EXTRACT_PATTERNS/EXCLUDE_PATTERNS cleared.
@@ -753,16 +752,16 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
 def _setup_notifications(config: dict) -> dict:
     """
     Configure NTFY-based notifications interactively and return the updated config.
-    
+
     Prompts the user to enable or disable NTFY notifications, collect the NTFY server URL
     and topic name when enabling, and set whether notifications should be sent only for
     new downloads. Updates these keys in the provided config: `NTFY_TOPIC`, `NTFY_SERVER`,
     and `NOTIFY_ON_DOWNLOAD_ONLY`. If notifications are disabled (or the user confirms
     disabling), the corresponding keys are cleared/false.
-    
+
     Parameters:
         config (dict): Current configuration dictionary to be modified in-place and returned.
-    
+
     Returns:
         dict: The updated configuration dictionary.
     """
@@ -900,7 +899,7 @@ def _setup_base(
     Returns:
         Updated configuration dictionary
     """
-    global BASE_DIR, CONFIG_FILE
+    global BASE_DIR
 
     # Install required Termux packages first
     if is_termux() and (not is_partial_run or wants("base")):
@@ -1090,7 +1089,7 @@ def run_setup(sections: Optional[Sequence[str]] = None):
     configuration file, so users can quickly tweak a single area without stepping through the full
     workflow.
     """
-    global BASE_DIR, CONFIG_FILE
+    global BASE_DIR
     partial_sections: Optional[Set[str]] = None
     if sections:
         section_names = [s.lower() for s in sections]
@@ -1179,7 +1178,7 @@ def run_setup(sections: Optional[Sequence[str]] = None):
     if not os.path.exists(CONFIG_DIR):
         try:
             os.makedirs(CONFIG_DIR, exist_ok=True)
-        except Exception as e:
+        except OSError as e:
             print(f"Error creating config directory: {e}")
 
     # Save configuration to YAML file before proceeding
@@ -1464,10 +1463,10 @@ def run_setup(sections: Optional[Sequence[str]] = None):
 def check_for_updates():
     """
     Check whether a newer release of Fetchtastic is available on PyPI.
-    
+
     Performs a local read of the installed package version and queries the PyPI JSON API
     for the latest release. Compares versions using PEP 440-aware parsing.
-    
+
     Returns:
         tuple: (current_version, latest_version, update_available)
             - current_version (str): the installed fetchtastic version or "unknown" if it cannot be determined.

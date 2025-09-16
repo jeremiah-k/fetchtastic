@@ -39,7 +39,7 @@ _PUNC_RX = re.compile(r"[^a-z0-9]+")
 def calculate_sha256(file_path: str) -> Optional[str]:
     """
     Compute and return the SHA-256 hex digest of a file, or None if the file cannot be read.
-    
+
     Reads the file in binary mode and streams its contents to the SHA-256 digest (no full-file buffering). On success returns the 64-character lowercase hexadecimal digest string. If the file cannot be opened or read (e.g., missing file or permission error), the function logs the error at debug level and returns None instead of raising.
     """
     try:
@@ -581,6 +581,7 @@ def matches_selected_patterns(
     base_legacy_sanitised = _strip_punctuation(base_legacy)
 
     for pat in selected_patterns:
+        pat = pat.strip()
         if not pat:
             continue
         pat_lower = pat.lower()
