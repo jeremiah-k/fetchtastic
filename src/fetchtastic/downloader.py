@@ -7,6 +7,7 @@ import re
 import shutil
 import time
 import zipfile
+from collections import defaultdict
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -208,10 +209,7 @@ def check_promoted_prereleases(
     # Removed local log_message_func definition
 
     # Strip the 'v' prefix if present
-    if latest_release_tag.startswith("v"):
-        latest_release_version = latest_release_tag[1:]
-    else:
-        latest_release_version = latest_release_tag
+    latest_release_version = latest_release_tag.lstrip("v")
 
     # Path to prerelease directory
     prerelease_dir = os.path.join(download_dir, "firmware", "prerelease")
@@ -364,10 +362,7 @@ def update_prerelease_tracking(prerelease_dir, latest_release_tag, prerelease_ve
     tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
 
     # Extract version from latest release tag
-    if latest_release_tag.startswith("v"):
-        base_version = latest_release_tag[1:]
-    else:
-        base_version = latest_release_tag
+    base_version = latest_release_tag.lstrip("v")
 
     # Count total prereleases since this major release
     total_prereleases = len(prerelease_versions)
@@ -389,7 +384,7 @@ def update_prerelease_tracking(prerelease_dir, latest_release_tag, prerelease_ve
             "base_version": base_version,
             "prerelease_count_since_major": total_prereleases,
             "prerelease_versions": prerelease_versions,
-            "last_updated": datetime.now().isoformat(),
+            "last_updated": datetime.now().astimezone().isoformat(),
         }
     )
 
@@ -460,10 +455,7 @@ def check_for_prereleases(
     exclude_patterns_list = exclude_patterns or []
 
     # Strip the 'v' prefix if present
-    if latest_release_tag.startswith("v"):
-        latest_release_version = latest_release_tag[1:]
-    else:
-        latest_release_version = latest_release_tag
+    latest_release_version = latest_release_tag.lstrip("v")
 
     # Fetch directories from the meshtastic.github.io repository
     directories = menu_repo.fetch_repo_directories()
@@ -733,16 +725,17 @@ def check_for_prereleases(
         logger.info(f"Pre-release files processed: {len(downloaded_files)} total files")
 
         # Extract unique directory names from downloaded files and count files per version
+        # Group files by directory for better performance
+        files_by_dir = defaultdict(list)
+        for p in downloaded_files:
+            dir_name = os.path.basename(os.path.dirname(p))
+            files_by_dir[dir_name].append(p)
+
         version_file_counts = {}
         for dir_name in prerelease_dirs:
-            matching_files = [
-                p
-                for p in downloaded_files
-                if os.path.basename(os.path.dirname(p)) == dir_name
-            ]
-            if matching_files:
+            if dir_name in files_by_dir:
                 downloaded_versions.append(dir_name)
-                version_file_counts[dir_name] = len(matching_files)
+                version_file_counts[dir_name] = len(files_by_dir[dir_name])
 
         # Log per-version file counts
         for version, count in version_file_counts.items():
