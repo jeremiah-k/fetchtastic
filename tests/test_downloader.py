@@ -1144,8 +1144,8 @@ def test_prerelease_directory_cleanup(tmp_path):
                 assert new_dir.exists(), "New prerelease directory should be created"
 
 
-def test_prerelease_tracking_txt_format(tmp_path):
-    """Test the new .txt tracking file format and functions."""
+def test_prerelease_tracking_json_format(tmp_path):
+    """Test the new JSON tracking file format and functions."""
     prerelease_dir = tmp_path / "prerelease"
     prerelease_dir.mkdir()
 
@@ -2476,7 +2476,7 @@ def test_device_manager_integration_ui_scenarios(tmp_path, caplog):
         patterns = ["rak4631-", "tbeam-", "device-", "bleota"]
 
         for filename in test_files:
-            result = matches_extract_patterns(filename, patterns, manager)
+            _ = matches_extract_patterns(filename, patterns, manager)  # exercise path
             # Each call exercises the device manager integration
 
         # Verify device manager was used for pattern detection
@@ -2853,8 +2853,7 @@ def test_end_to_end_prerelease_workflow_ui_coverage(tmp_path, caplog):
                 assert found is True
                 assert "firmware-2.10.0.new789" in versions
 
-                # Check comprehensive logging coverage
-                log_messages = [record.message for record in caplog.records]
+                # Check comprehensive logging coverage (state verified below)
 
                 # Verify cleanup functionality worked
                 # Old directories should be cleaned up, new directory should exist

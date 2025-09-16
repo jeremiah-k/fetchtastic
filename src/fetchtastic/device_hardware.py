@@ -7,6 +7,7 @@ from the Meshtastic API to enable dynamic pattern matching for firmware download
 
 import json
 import logging
+import os
 import time
 from pathlib import Path
 from typing import Optional, Set
@@ -14,11 +15,16 @@ from urllib.parse import urlparse
 
 import requests
 
+from fetchtastic.constants import (
+    DEVICE_HARDWARE_API_URL,
+    DEVICE_HARDWARE_CACHE_HOURS,
+)
+
 logger = logging.getLogger(__name__)
 
 # Default configuration
-DEFAULT_API_URL = "https://api.meshtastic.org/resource/deviceHardware"
-DEFAULT_CACHE_HOURS = 24
+DEFAULT_API_URL = DEVICE_HARDWARE_API_URL
+DEFAULT_CACHE_HOURS = DEVICE_HARDWARE_CACHE_HOURS
 DEFAULT_TIMEOUT_SECONDS = 10
 
 # Fallback device patterns if API is unavailable
@@ -177,9 +183,9 @@ class DeviceHardwareManager:
 
             # Validate URL scheme to prevent SSRF attacks
             parsed_url = urlparse(self.api_url)
-            if parsed_url.scheme not in ("http", "https"):
+            if parsed_url.scheme not in ("http", "https") or not parsed_url.netloc:
                 logger.error(
-                    f"Unsupported URL scheme for device hardware API: {parsed_url.scheme}"
+                    f"Unsupported or invalid URL for device hardware API: {self.api_url}"
                 )
                 return None
 
@@ -274,8 +280,10 @@ class DeviceHardwareManager:
                 "api_url": self.api_url,
             }
 
-            with open(self.cache_file, "w", encoding="utf-8") as f:
+            tmp = self.cache_file.with_suffix(".json.tmp")
+            with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(cache_data, f, indent=2)
+            os.replace(tmp, self.cache_file)
 
             logger.debug(f"Cached {len(device_patterns)} device patterns")
 

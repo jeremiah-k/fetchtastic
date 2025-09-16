@@ -23,6 +23,8 @@ from fetchtastic.constants import (
     API_CALL_DELAY,
     DEFAULT_ANDROID_VERSIONS_TO_KEEP,
     DEFAULT_FIRMWARE_VERSIONS_TO_KEEP,
+    DEVICE_HARDWARE_API_URL,
+    DEVICE_HARDWARE_CACHE_HOURS,
     EXECUTABLE_PERMISSIONS,
     FILE_TYPE_PREFIXES,
     GITHUB_API_TIMEOUT,
@@ -371,7 +373,12 @@ def update_prerelease_tracking(prerelease_dir, latest_release_tag, current_prere
 
     # Extract commit hash from prerelease directory name using regex
     # e.g., firmware-2.7.7.abcdef -> abcdef
-    commit_match = re.search(r"\.([a-z0-9]{6,})$", current_prerelease)
+    commit_match = re.search(
+        r"\.([a-f0-9]{6,12})(?:[.-]|$)", current_prerelease, re.IGNORECASE
+    )
+    if not commit_match:
+        # Fallback to original pattern for backwards compatibility with test data
+        commit_match = re.search(r"\.([a-z0-9]{6,})$", current_prerelease)
     if commit_match:
         current_commit = commit_match.group(1)
     else:
@@ -392,7 +399,11 @@ def update_prerelease_tracking(prerelease_dir, latest_release_tag, current_prere
             # Try to read old text format for backwards compatibility
             try:
                 with open(
-                    tracking_file.replace(".json", ".txt"), "r", encoding="utf-8"
+                    os.path.join(
+                        os.path.dirname(tracking_file), "prerelease_commits.txt"
+                    ),
+                    "r",
+                    encoding="utf-8",
                 ) as f:
                     lines = [line.strip() for line in f.readlines() if line.strip()]
                     if lines and lines[0].startswith("Release: "):
@@ -419,7 +430,7 @@ def update_prerelease_tracking(prerelease_dir, latest_release_tag, current_prere
         tracking_data = {
             "release": current_release,
             "commits": commits,
-            "last_updated": datetime.now().isoformat(),
+            "last_updated": datetime.now().astimezone().isoformat(),
         }
         with open(tracking_file, "w", encoding="utf-8") as f:
             json.dump(tracking_data, f, indent=2)
@@ -957,16 +968,19 @@ def check_for_prereleases(
 
     # Update prerelease tracking (run once regardless of download success)
     if all_prerelease_dirs:
-        latest_prerelease = all_prerelease_dirs[0]  # First after version sort (newest)
-        prerelease_number = update_prerelease_tracking(
-            prerelease_dir, latest_release_tag, latest_prerelease
-        )
+        prerelease_number = 0
+        for pr in all_prerelease_dirs:
+            prerelease_number = update_prerelease_tracking(
+                prerelease_dir, latest_release_tag, pr
+            )
         if downloaded_files:
             logger.info(
-                f"Downloaded prerelease #{prerelease_number}: {latest_prerelease}"
+                f"Downloaded prereleases tracked up to #{prerelease_number}: {all_prerelease_dirs[0]}"
             )
         else:
-            logger.info(f"Tracked prerelease #{prerelease_number}: {latest_prerelease}")
+            logger.info(
+                f"Tracked prereleases up to #{prerelease_number}: {all_prerelease_dirs[0]}"
+            )
 
     # Return results
     if downloaded_files:
@@ -1234,9 +1248,11 @@ def _process_firmware_downloads(
     # Create device hardware manager for smart pattern matching
     device_manager = DeviceHardwareManager(
         enabled=config.get("DEVICE_HARDWARE_API", {}).get("enabled", True),
-        cache_hours=config.get("DEVICE_HARDWARE_API", {}).get("cache_hours", 24),
+        cache_hours=config.get("DEVICE_HARDWARE_API", {}).get(
+            "cache_hours", DEVICE_HARDWARE_CACHE_HOURS
+        ),
         api_url=config.get("DEVICE_HARDWARE_API", {}).get(
-            "api_url", "https://api.meshtastic.org/resource/deviceHardware"
+            "api_url", DEVICE_HARDWARE_API_URL
         ),
     )
     downloaded_firmwares: List[str] = []
