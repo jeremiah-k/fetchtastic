@@ -550,7 +550,8 @@ def check_for_prereleases(
                 )
 
     # Find directories in the repository that are newer than the latest release and don't already exist locally
-    prerelease_dirs = []
+    prerelease_dirs = []  # Directories that need processing (downloading)
+    all_prerelease_dirs = []  # All prerelease directories (for tracking)
     for dir_name in directories:
         # Extract version from directory name (e.g., firmware-2.6.9.f93d031)
         if dir_name.startswith("firmware-"):
@@ -559,6 +560,8 @@ def check_for_prereleases(
             # Check if this version is newer than the latest release
             comparison_result = compare_versions(dir_version, latest_release_version)
             if comparison_result > 0:
+                # This is a prerelease directory (newer than latest release)
+                all_prerelease_dirs.append(dir_name)
 
                 # Refresh the list of existing prerelease directories after cleanup
                 existing_prerelease_dirs = []
@@ -627,8 +630,16 @@ def check_for_prereleases(
                 if should_process:
                     prerelease_dirs.append(dir_name)
 
+    # If no prerelease directories need processing, but some exist, still return success
     if not prerelease_dirs:
-        return False, []
+        if all_prerelease_dirs:
+            # Prerelease directories exist but are complete, still track them
+            update_prerelease_tracking(
+                download_dir, latest_release_tag, all_prerelease_dirs
+            )
+            return True, all_prerelease_dirs
+        else:
+            return False, []
 
     # Create prerelease directory if it doesn't exist
     if not os.path.exists(prerelease_dir):
@@ -741,21 +752,23 @@ def check_for_prereleases(
         for version, count in version_file_counts.items():
             logger.info(f"Pre-release {version}: {count} files")
 
-        # Update prerelease tracking
+        # Update prerelease tracking with all prerelease directories
         update_prerelease_tracking(
-            prerelease_dir, latest_release_tag, downloaded_versions
+            download_dir, latest_release_tag, all_prerelease_dirs
         )
 
         return True, downloaded_versions
     else:
-        # Update tracking even if no files were downloaded (to track empty prereleases)
-        if prerelease_dirs:
-            update_prerelease_tracking(
-                prerelease_dir, latest_release_tag, prerelease_dirs
-            )
+        # Update tracking even if no files were downloaded (to track all prereleases)
+        update_prerelease_tracking(
+            download_dir, latest_release_tag, all_prerelease_dirs
+        )
 
-        # Don't log here - we'll log once at the caller level
-        return False, []
+        # Return success if any prerelease directories exist, even if no files were downloaded
+        if all_prerelease_dirs:
+            return True, all_prerelease_dirs
+        else:
+            return False, []
 
 
 # Use the version check function from setup_config
