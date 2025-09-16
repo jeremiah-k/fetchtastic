@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Optional, Set
 from urllib.parse import urlparse
 
+import platformdirs
 import requests
 
 from fetchtastic.constants import (
@@ -86,7 +87,7 @@ class DeviceHardwareManager:
 
         # Set up cache directory
         if cache_dir is None:
-            cache_dir = Path.home() / ".cache" / "fetchtastic"
+            cache_dir = Path(platformdirs.user_cache_dir("fetchtastic"))
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.cache_file = self.cache_dir / "device_hardware.json"

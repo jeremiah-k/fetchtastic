@@ -1152,7 +1152,7 @@ def test_prerelease_tracking_json_format(tmp_path):
     # Test update_prerelease_tracking function
     latest_release = "v2.7.6.111111"
     prerelease1 = "firmware-2.7.7.abcdef"
-    prerelease2 = "firmware-2.7.8.ghijkl"
+    prerelease2 = "firmware-2.7.8.fedcba"  # Valid hex commit hash
 
     # Add first prerelease
     num1 = downloader.update_prerelease_tracking(
@@ -1171,12 +1171,12 @@ def test_prerelease_tracking_json_format(tmp_path):
     assert info["release"] == latest_release
     assert info["prerelease_count"] == 2
     assert "abcdef" in info["commits"]
-    assert "ghijkl" in info["commits"]
+    assert "fedcba" in info["commits"]
 
     # Test that new release resets the tracking
     new_release = "v2.7.9.newrelease"
     num3 = downloader.update_prerelease_tracking(
-        str(prerelease_dir), new_release, "firmware-2.7.10.newcommit"
+        str(prerelease_dir), new_release, "firmware-2.7.10.abc123"  # Valid hex
     )
     assert num3 == 1, "First prerelease after new release should be #1"
 
@@ -1184,7 +1184,7 @@ def test_prerelease_tracking_json_format(tmp_path):
     info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
     assert info["release"] == new_release
     assert info["prerelease_count"] == 1
-    assert "newcommit" in info["commits"]
+    assert "abc123" in info["commits"]
     assert "abcdef" not in info["commits"], "Old commits should be cleared"
 
 

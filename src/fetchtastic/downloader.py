@@ -376,9 +376,6 @@ def update_prerelease_tracking(prerelease_dir, latest_release_tag, current_prere
     commit_match = re.search(
         r"\.([a-f0-9]{6,12})(?:[.-]|$)", current_prerelease, re.IGNORECASE
     )
-    if not commit_match:
-        # Fallback to original pattern for backwards compatibility with test data
-        commit_match = re.search(r"\.([a-z0-9]{6,})$", current_prerelease)
     if commit_match:
         current_commit = commit_match.group(1)
     else:
@@ -810,7 +807,7 @@ def check_for_prereleases(
             logger.error(f"Error creating pre-release directory {prerelease_dir}: {e}")
             return False, []  # Cannot proceed if directory creation fails
 
-    # Remove old prerelease directories - keep only the configured number of versions
+    # Remove old prerelease directories - keep only the latest existing version
     if prerelease_dirs and os.path.exists(prerelease_dir):
         # Get all existing prerelease directories and sort by version
         existing_dirs = []
