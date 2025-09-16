@@ -370,7 +370,7 @@ def update_prerelease_tracking(prerelease_dir, latest_release_tag, current_prere
 
     # Extract commit hash from prerelease directory name using regex
     # e.g., firmware-2.7.7.abcdef -> abcdef
-    commit_match = re.search(r"\.([a-f0-9]{6,})$", current_prerelease)
+    commit_match = re.search(r"\.([a-z0-9]{6,})$", current_prerelease)
     if commit_match:
         current_commit = commit_match.group(1)
     else:
@@ -455,7 +455,7 @@ def matches_extract_patterns(filename, extract_patterns, device_manager=None):
 
         # Handle special case: generic 'littlefs-' pattern
         if pattern_lower == "littlefs-":
-            if "littlefs-" in filename_lower:
+            if filename_lower.startswith("littlefs-"):
                 return True
             continue
 

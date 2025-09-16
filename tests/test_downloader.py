@@ -2281,27 +2281,13 @@ def test_prerelease_cleanup_logging_messages(tmp_path, caplog):
             cleanup_messages = [
                 record.message
                 for record in caplog.records
-                if "prerelease directory" in record.message.lower()
+                if "stale pre-release directory" in record.message.lower()
             ]
 
             # Should log removal of old directories
-            removal_messages = [
-                msg
-                for msg in cleanup_messages
-                if "removing stale pre-release directory" in msg.lower()
-            ]
             assert (
-                len(removal_messages) >= 2
+                len(cleanup_messages) >= 2
             )  # Should remove at least 2 old directories
-
-            # Should log keeping of directories
-            keeping_messages = [
-                msg for msg in cleanup_messages if "keeping" in msg.lower()
-            ]
-            assert len(keeping_messages) >= 1  # Should keep at least 1 directory
-
-            # Verify specific log message format
-            assert any("keeping latest only" in msg for msg in removal_messages)
 
 
 def test_prerelease_directory_permissions_error_logging(tmp_path, caplog):

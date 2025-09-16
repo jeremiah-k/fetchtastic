@@ -251,7 +251,7 @@ class DeviceHardwareManager:
 
             return valid_patterns
 
-        except (json.JSONDecodeError, IOError, KeyError) as e:
+        except (json.JSONDecodeError, IOError, KeyError, UnicodeDecodeError) as e:
             logger.warning(f"Failed to load device hardware cache: {e}")
             return None
 
