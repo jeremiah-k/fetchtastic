@@ -34,6 +34,7 @@ from fetchtastic.constants import (
     VERSION_REGEX_PATTERN,
     ZIP_EXTENSION,
 )
+from fetchtastic.device_hardware import DeviceHardwareManager
 
 # Removed log_info, setup_logging
 from fetchtastic.log_utils import logger  # Import new logger
@@ -425,7 +426,7 @@ def update_prerelease_tracking(prerelease_dir, latest_release_tag, current_prere
         return 1  # Default to 1 if we can't track
 
 
-def matches_extract_patterns(filename, extract_patterns):
+def matches_extract_patterns(filename, extract_patterns, device_manager=None):
     """
     Smart pattern matching for EXTRACT_PATTERNS that supports device-based matching.
 
@@ -436,6 +437,7 @@ def matches_extract_patterns(filename, extract_patterns):
     Args:
         filename: Name of the file to check
         extract_patterns: List of EXTRACT_PATTERNS from user config
+        device_manager: Optional DeviceHardwareManager for dynamic device detection
 
     Returns:
         bool: True if the file matches any pattern
@@ -444,37 +446,6 @@ def matches_extract_patterns(filename, extract_patterns):
     file_type_prefixes = {
         "device-",  # device-install.sh, device-update.sh
         "bleota",  # bleota.bin, bleota-c3.bin, bleota-s3.bin
-    }
-
-    # Known device patterns (these should match all file types for the device)
-    device_patterns = {
-        "rak4631-",
-        "tbeam-",
-        "t1000-e-",
-        "tlora-v2-1-1_6-",
-        "heltec-",
-        "nano-g1-",
-        "station-g1-",
-        "station-g2-",
-        "t-deck-",
-        "canaryone-",
-        "feather_diy-",
-        "tracker-t1000-e-",
-        "seeed-",
-        "pico-",
-        "wio-",
-        "m5stack-",
-        "hydra-",
-        "chatter2-",
-        "unphone-",
-        "tracksenger-",
-        "radiomaster_",
-        "link32-",
-        "picomputer-",
-        "elecrow-",
-        "thinknode_",
-        "meshtastic-",
-        "tlora-",
     }
 
     for pattern in extract_patterns:
@@ -490,13 +461,19 @@ def matches_extract_patterns(filename, extract_patterns):
                 return True
             continue
 
-        # Device patterns: smart matching across all file types
-        if any(
-            pattern.startswith(device) for device in device_patterns
-        ) or pattern.endswith("-"):
+        # Device patterns: use dynamic detection if available
+        if device_manager and device_manager.is_device_pattern(pattern):
             # For device patterns, match if the device name appears anywhere in the filename
             # This allows 'tbeam-' to match both 'firmware-tbeam-*' and 'littlefs-tbeam-*'
-            if pattern in filename:
+            clean_pattern = pattern.rstrip("-")
+            if clean_pattern in filename:
+                return True
+            continue
+
+        # Fallback for patterns ending with '-' (likely device patterns)
+        if pattern.endswith("-"):
+            clean_pattern = pattern.rstrip("-")
+            if clean_pattern in filename:
                 return True
             continue
 
@@ -554,6 +531,7 @@ def check_for_prereleases(
     latest_release_tag,
     selected_patterns,
     exclude_patterns=None,  # log_message_func parameter removed
+    device_manager=None,
 ):
     """
     Discover firmware prerelease directories newer than the provided latest release, clean up stale local prerelease folders, and download missing prerelease assets into <download_dir>/firmware/prerelease.
@@ -718,7 +696,7 @@ def check_for_prereleases(
 
                             # Apply same filtering logic as download (smart pattern matching for EXTRACT_PATTERNS)
                             if not matches_extract_patterns(
-                                file_name, selected_patterns
+                                file_name, selected_patterns, device_manager
                             ):
                                 continue  # Skip this file
 
@@ -855,7 +833,9 @@ def check_for_prereleases(
 
             # Only download files that match the selected patterns and don't match exclude patterns
             # For prereleases, selected_patterns contains EXTRACT_PATTERNS which support smart device matching
-            if not matches_extract_patterns(file_name, selected_patterns):
+            if not matches_extract_patterns(
+                file_name, selected_patterns, device_manager
+            ):
                 continue  # Skip this file
 
             # Skip files that match exclude patterns
@@ -1208,6 +1188,15 @@ def _process_firmware_downloads(
     - the latest firmware release tag string or None if no releases were found.
     """
     global downloads_skipped
+
+    # Create device hardware manager for smart pattern matching
+    device_manager = DeviceHardwareManager(
+        enabled=config.get("DEVICE_HARDWARE_API", {}).get("enabled", True),
+        cache_hours=config.get("DEVICE_HARDWARE_API", {}).get("cache_hours", 24),
+        api_url=config.get("DEVICE_HARDWARE_API", {}).get(
+            "api_url", "https://api.meshtastic.org/resource/deviceHardware"
+        ),
+    )
     downloaded_firmwares: List[str] = []
     new_firmware_versions: List[str] = []
     all_failed_firmware_downloads: List[Dict[str, str]] = []
@@ -1287,6 +1276,7 @@ def _process_firmware_downloads(
                         latest_release_tag,
                         config.get("EXTRACT_PATTERNS", []),  # type: ignore - Use EXTRACT_PATTERNS for prereleases
                         exclude_patterns=config.get("EXCLUDE_PATTERNS", []),  # type: ignore
+                        device_manager=device_manager,
                     )
                 )
                 if prerelease_found:

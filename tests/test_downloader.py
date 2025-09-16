@@ -1034,8 +1034,10 @@ def test_prerelease_tracking_functionality(
     assert len(info["commits"]) > 0
 
 
-def test_prerelease_simple_substring_matching():
-    """Test that prerelease downloads use simple substring matching for EXTRACT_PATTERNS."""
+def test_prerelease_smart_pattern_matching():
+    """Test that prerelease downloads use smart pattern matching for EXTRACT_PATTERNS."""
+    from fetchtastic.downloader import matches_extract_patterns
+
     # Test files and patterns
     test_files = [
         "firmware-rak4631-2.7.9.70724be-ota.zip",  # should match 'rak4631-'
@@ -1049,9 +1051,9 @@ def test_prerelease_simple_substring_matching():
 
     extract_patterns = ["rak4631-", "device-", "littlefs-", "bleota"]
 
-    # Test the simple substring matching logic used in prereleases
+    # Test the smart pattern matching logic used in prereleases
     for filename in test_files:
-        matches = any(pattern in filename for pattern in extract_patterns)
+        matches = matches_extract_patterns(filename, extract_patterns)
 
         if filename in [
             "firmware-rak4631-2.7.9.70724be-ota.zip",
@@ -1843,3 +1845,142 @@ def test_compare_file_hashes_missing_file(tmp_path):
 
     # Should return False when one file doesn't exist
     assert downloader.compare_file_hashes(str(file1), str(file2)) is False
+
+
+def test_device_hardware_manager_basic():
+    """Test basic DeviceHardwareManager functionality."""
+    import tempfile
+    from pathlib import Path
+
+    from fetchtastic.device_hardware import DeviceHardwareManager
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        cache_dir = Path(tmp_dir)
+
+        # Test with API disabled (fallback mode)
+        manager = DeviceHardwareManager(cache_dir=cache_dir, enabled=False)
+
+        patterns = manager.get_device_patterns()
+        assert isinstance(patterns, set)
+        assert len(patterns) > 0
+        assert "rak4631" in patterns or "rak4631-" in patterns
+        assert "tbeam" in patterns or "tbeam-" in patterns
+
+        # Test device pattern detection
+        assert manager.is_device_pattern("rak4631-")
+        assert manager.is_device_pattern("tbeam-")
+        assert not manager.is_device_pattern("device-")  # File type pattern
+        assert not manager.is_device_pattern("bleota")  # File type pattern
+
+
+def test_device_hardware_manager_caching():
+    """Test DeviceHardwareManager caching functionality."""
+    import json
+    import tempfile
+    import time
+    from pathlib import Path
+
+    from fetchtastic.device_hardware import DeviceHardwareManager
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        cache_dir = Path(tmp_dir)
+        cache_file = cache_dir / "device_hardware.json"
+
+        # Create a mock cache file
+        mock_cache = {
+            "device_patterns": ["rak4631", "tbeam", "test-device"],
+            "timestamp": time.time(),
+            "api_url": "https://api.meshtastic.org/resource/deviceHardware",
+        }
+
+        with open(cache_file, "w") as f:
+            json.dump(mock_cache, f)
+
+        # Test loading from cache
+        manager = DeviceHardwareManager(
+            cache_dir=cache_dir, enabled=True  # API enabled but should use cache
+        )
+
+        patterns = manager.get_device_patterns()
+        assert "rak4631" in patterns
+        assert "tbeam" in patterns
+        assert "test-device" in patterns
+
+        # Test cache clearing
+        manager.clear_cache()
+        assert not cache_file.exists()
+
+
+def test_matches_extract_patterns_with_device_manager():
+    """Test matches_extract_patterns with DeviceHardwareManager."""
+    import tempfile
+    from pathlib import Path
+
+    from fetchtastic.device_hardware import DeviceHardwareManager
+    from fetchtastic.downloader import matches_extract_patterns
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        cache_dir = Path(tmp_dir)
+
+        # Create manager with fallback patterns
+        manager = DeviceHardwareManager(
+            cache_dir=cache_dir, enabled=False  # Use fallback patterns
+        )
+
+        extract_patterns = ["rak4631-", "tbeam-", "device-", "bleota"]
+
+        # Test device pattern matching
+        assert matches_extract_patterns(
+            "firmware-rak4631-2.7.9.bin", extract_patterns, manager
+        )
+        assert matches_extract_patterns(
+            "littlefs-rak4631-2.7.9.bin", extract_patterns, manager
+        )
+        assert matches_extract_patterns(
+            "firmware-tbeam-2.7.9.bin", extract_patterns, manager
+        )
+        assert matches_extract_patterns(
+            "littlefs-tbeam-2.7.9.bin", extract_patterns, manager
+        )
+
+        # Test file type pattern matching
+        assert matches_extract_patterns("device-install.sh", extract_patterns, manager)
+        assert matches_extract_patterns("bleota.bin", extract_patterns, manager)
+        assert matches_extract_patterns("bleota-c3.bin", extract_patterns, manager)
+
+        # Test non-matching files
+        assert not matches_extract_patterns(
+            "firmware-canaryone-2.7.9.bin", extract_patterns, manager
+        )
+        assert not matches_extract_patterns(
+            "some-random-file.txt", extract_patterns, manager
+        )
+
+        # Test littlefs- special case
+        extract_patterns_with_littlefs = ["rak4631-", "littlefs-"]
+        assert matches_extract_patterns(
+            "littlefs-canaryone-2.7.9.bin", extract_patterns_with_littlefs, manager
+        )
+        assert matches_extract_patterns(
+            "littlefs-any-device-2.7.9.bin", extract_patterns_with_littlefs, manager
+        )
+
+
+def test_matches_extract_patterns_backwards_compatibility():
+    """Test that matches_extract_patterns works without device_manager (backwards compatibility)."""
+    from fetchtastic.downloader import matches_extract_patterns
+
+    extract_patterns = ["rak4631-", "tbeam-", "device-", "bleota"]
+
+    # Test without device_manager (should use fallback logic)
+    assert matches_extract_patterns("firmware-rak4631-2.7.9.bin", extract_patterns)
+    assert matches_extract_patterns("device-install.sh", extract_patterns)
+    assert matches_extract_patterns("bleota.bin", extract_patterns)
+
+    # Test patterns ending with dash (fallback device detection)
+    assert matches_extract_patterns(
+        "firmware-custom-device-2.7.9.bin", ["custom-device-"]
+    )
+    assert matches_extract_patterns(
+        "littlefs-custom-device-2.7.9.bin", ["custom-device-"]
+    )
