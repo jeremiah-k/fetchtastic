@@ -10,7 +10,7 @@ from typing import List
 import platformdirs
 
 from fetchtastic import downloader, repo_downloader, setup_config
-from fetchtastic.log_utils import logger
+from fetchtastic.log_utils import logger, set_log_level
 from fetchtastic.setup_config import (
     copy_to_clipboard_func,
     display_version_info,
@@ -207,6 +207,11 @@ def main():
 
             # Display the config file location
             logger.info(f"Using configuration from: {config_path}")
+
+            # Load config and set log level if specified
+            config = setup_config.load_config()
+            if config and config.get("LOG_LEVEL"):
+                set_log_level(config["LOG_LEVEL"])
 
             # Run the downloader
             downloader.main()
