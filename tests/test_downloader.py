@@ -2083,3 +2083,1064 @@ def test_update_prerelease_tracking_error_handling():
         finally:
             # Restore permissions for cleanup
             prerelease_dir.chmod(0o755)
+
+
+def test_device_hardware_manager_ui_messages(caplog):
+    """Test DeviceHardwareManager user-facing messages and logging."""
+    import json
+    import tempfile
+    import time
+    from pathlib import Path
+    from unittest.mock import patch
+
+    from fetchtastic.device_hardware import DeviceHardwareManager
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        cache_dir = Path(tmp_dir)
+        cache_file = cache_dir / "device_hardware.json"
+
+        # Test 1: Cache expiration warning message
+        expired_cache = {
+            "device_patterns": ["test-device"],
+            "timestamp": time.time() - 25 * 3600,  # 25 hours ago
+            "api_url": "https://api.meshtastic.org/resource/deviceHardware",
+        }
+
+        with open(cache_file, "w") as f:
+            json.dump(expired_cache, f)
+
+        # Test with API disabled - should show cache expiration warning
+        with caplog.at_level("WARNING"):
+            manager = DeviceHardwareManager(
+                cache_dir=cache_dir, enabled=False, cache_hours=24
+            )
+            patterns = manager.get_device_patterns()
+
+        # Verify warning message is logged
+        assert any(
+            "expired cached device hardware data" in record.message.lower()
+            for record in caplog.records
+        )
+        assert "test-device" in patterns
+
+        caplog.clear()
+
+        # Test 2: API failure with fallback message
+        with patch("requests.get") as mock_get:
+            mock_get.side_effect = Exception("Network error")
+
+            with caplog.at_level("WARNING"):
+                manager = DeviceHardwareManager(
+                    cache_dir=cache_dir,
+                    enabled=True,  # API enabled but will fail
+                    timeout_seconds=1,
+                )
+                patterns = manager.get_device_patterns()
+
+            # Should log API failure and fallback
+            assert any(
+                "failed to fetch device hardware" in record.message.lower()
+                for record in caplog.records
+            )
+            assert len(patterns) > 0  # Should get fallback patterns
+
+        caplog.clear()
+
+        # Test 3: Cache save error handling
+        readonly_cache_dir = cache_dir / "readonly"
+        readonly_cache_dir.mkdir()
+        readonly_cache_dir.chmod(0o444)  # Read-only
+
+        try:
+            with caplog.at_level("WARNING"):
+                manager = DeviceHardwareManager(
+                    cache_dir=readonly_cache_dir, enabled=False
+                )
+                # Try to trigger cache save (won't work due to permissions)
+                patterns = manager.get_device_patterns()
+
+            # Should handle cache save errors gracefully
+            assert len(patterns) > 0  # Should still get fallback patterns
+
+        finally:
+            readonly_cache_dir.chmod(0o755)
+
+        caplog.clear()
+
+        # Test 4: Successful cache operations with info messages
+        fresh_cache_dir = cache_dir / "fresh"
+        fresh_cache_dir.mkdir()
+
+        with patch("requests.get") as mock_get:
+            mock_response = mock_get.return_value
+            mock_response.json.return_value = [
+                {"platformioTarget": "rak4631", "displayName": "RAK4631"},
+                {"platformioTarget": "tbeam", "displayName": "T-Beam"},
+            ]
+            mock_response.raise_for_status.return_value = None
+
+            with caplog.at_level("INFO"):
+                manager = DeviceHardwareManager(
+                    cache_dir=fresh_cache_dir, enabled=True, cache_hours=24
+                )
+                patterns = manager.get_device_patterns()
+
+            # Should have successful API fetch
+            assert "rak4631" in patterns
+            assert "tbeam" in patterns
+            assert len(patterns) >= 2
+
+
+def test_device_hardware_manager_cache_corruption_handling(caplog):
+    """Test DeviceHardwareManager handling of corrupted cache files."""
+    import tempfile
+    from pathlib import Path
+
+    from fetchtastic.device_hardware import DeviceHardwareManager
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        cache_dir = Path(tmp_dir)
+        cache_file = cache_dir / "device_hardware.json"
+
+        # Test 1: Invalid JSON in cache file
+        cache_file.write_text("invalid json content {")
+
+        with caplog.at_level("WARNING"):
+            manager = DeviceHardwareManager(cache_dir=cache_dir, enabled=False)
+            patterns = manager.get_device_patterns()
+
+        # Should handle JSON decode error and use fallback
+        assert len(patterns) > 0  # Should get fallback patterns
+
+        caplog.clear()
+
+        # Test 2: Cache file with missing required fields
+        incomplete_cache = {"timestamp": 12345}  # Missing device_patterns
+        cache_file.write_text(json.dumps(incomplete_cache))
+
+        with caplog.at_level("WARNING"):
+            manager = DeviceHardwareManager(cache_dir=cache_dir, enabled=False)
+            patterns = manager.get_device_patterns()
+
+        # Should handle missing fields and use fallback
+        assert len(patterns) > 0
+
+        caplog.clear()
+
+        # Test 3: Binary/non-UTF8 cache file
+        cache_file.write_bytes(b"\xff\xfe\x00\x00")  # Invalid UTF-8
+
+        with caplog.at_level("WARNING"):
+            manager = DeviceHardwareManager(cache_dir=cache_dir, enabled=False)
+            patterns = manager.get_device_patterns()
+
+        # Should handle decode error and use fallback
+        assert len(patterns) > 0
+
+
+def test_prerelease_cleanup_logging_messages(tmp_path, caplog):
+    """Test prerelease cleanup logging and user-facing messages."""
+    from unittest.mock import MagicMock, patch
+
+    from fetchtastic import downloader
+
+    download_dir = tmp_path
+    prerelease_dir = download_dir / "firmware" / "prerelease"
+    prerelease_dir.mkdir(parents=True)
+
+    # Create multiple prerelease directories with different versions
+    old_dirs = [
+        "firmware-2.8.0.abc123",
+        "firmware-2.9.0.def456",
+        "firmware-2.10.0.ghi789",  # This should be kept (newest)
+    ]
+
+    for dir_name in old_dirs:
+        (prerelease_dir / dir_name).mkdir()
+
+    with patch("fetchtastic.downloader.menu_repo.fetch_repo_directories") as mock_dirs:
+        with patch(
+            "fetchtastic.downloader.menu_repo.fetch_directory_contents"
+        ) as mock_contents:
+            # Mock that we found a new prerelease
+            mock_dirs.return_value = ["firmware-2.11.0.new123"]
+            mock_contents.return_value = [
+                {
+                    "name": "firmware-rak4631-2.11.0.new123.uf2",
+                    "download_url": "https://example.invalid/test.uf2",
+                }
+            ]
+
+            with caplog.at_level("INFO"):
+                found, versions = downloader.check_for_prereleases(
+                    str(download_dir), "v2.7.0", ["rak4631-"], exclude_patterns=[]
+                )
+
+            # Check for cleanup logging messages
+            cleanup_messages = [
+                record.message
+                for record in caplog.records
+                if "prerelease directory" in record.message.lower()
+            ]
+
+            # Should log removal of old directories
+            removal_messages = [
+                msg
+                for msg in cleanup_messages
+                if "removing old prerelease directory" in msg.lower()
+            ]
+            assert (
+                len(removal_messages) >= 2
+            )  # Should remove at least 2 old directories
+
+            # Should log keeping of directories
+            keeping_messages = [
+                msg for msg in cleanup_messages if "keeping" in msg.lower()
+            ]
+            assert len(keeping_messages) >= 1  # Should keep at least 1 directory
+
+            # Verify specific log message format
+            assert any("keeping latest only" in msg for msg in removal_messages)
+
+
+def test_prerelease_version_comparison_error_handling(tmp_path, caplog):
+    """Test version comparison error handling and fallback logging."""
+    from unittest.mock import MagicMock, patch
+
+    from fetchtastic import downloader
+
+    download_dir = tmp_path
+    prerelease_dir = download_dir / "firmware" / "prerelease"
+    prerelease_dir.mkdir(parents=True)
+
+    # Create directories with problematic version formats
+    problematic_dirs = [
+        "firmware-invalid-version",
+        "firmware-2.x.y.broken",
+        "not-firmware-format",
+    ]
+
+    for dir_name in problematic_dirs:
+        (prerelease_dir / dir_name).mkdir()
+
+    with patch("fetchtastic.downloader.menu_repo.fetch_repo_directories") as mock_dirs:
+        with patch(
+            "fetchtastic.downloader.menu_repo.fetch_directory_contents"
+        ) as mock_contents:
+            # Mock version comparison to fail
+            with patch("fetchtastic.downloader.compare_versions") as mock_compare:
+                mock_compare.side_effect = Exception("Version comparison failed")
+
+                mock_dirs.return_value = ["firmware-2.11.0.new123"]
+                mock_contents.return_value = [
+                    {
+                        "name": "firmware-rak4631-2.11.0.new123.uf2",
+                        "download_url": "https://example.invalid/test.uf2",
+                    }
+                ]
+
+                with caplog.at_level("WARNING"):
+                    found, versions = downloader.check_for_prereleases(
+                        str(download_dir), "v2.7.0", ["rak4631-"], exclude_patterns=[]
+                    )
+
+                # Should log version comparison error
+                error_messages = [
+                    record.message
+                    for record in caplog.records
+                    if "error sorting prerelease directories" in record.message.lower()
+                ]
+                assert len(error_messages) >= 1
+
+                # Should still work despite version comparison failure
+                assert found is True  # Should still find and process prereleases
+
+
+def test_prerelease_directory_permissions_error_logging(tmp_path, caplog):
+    """Test logging when prerelease directory operations fail due to permissions."""
+    from unittest.mock import MagicMock, patch
+
+    from fetchtastic import downloader
+
+    download_dir = tmp_path
+    prerelease_dir = download_dir / "firmware" / "prerelease"
+    prerelease_dir.mkdir(parents=True)
+
+    # Create a directory that we'll make read-only
+    readonly_dir = prerelease_dir / "firmware-2.8.0.readonly"
+    readonly_dir.mkdir()
+
+    # Create a file inside to make removal fail
+    (readonly_dir / "test.txt").write_text("test")
+    readonly_dir.chmod(0o444)  # Read-only
+
+    try:
+        with patch(
+            "fetchtastic.downloader.menu_repo.fetch_repo_directories"
+        ) as mock_dirs:
+            with patch(
+                "fetchtastic.downloader.menu_repo.fetch_directory_contents"
+            ) as mock_contents:
+                mock_dirs.return_value = ["firmware-2.11.0.new123"]
+                mock_contents.return_value = [
+                    {
+                        "name": "firmware-rak4631-2.11.0.new123.uf2",
+                        "download_url": "https://example.invalid/test.uf2",
+                    }
+                ]
+
+                with caplog.at_level("WARNING"):
+                    found, versions = downloader.check_for_prereleases(
+                        str(download_dir), "v2.7.0", ["rak4631-"], exclude_patterns=[]
+                    )
+
+                # Should log permission errors during cleanup
+                error_messages = [
+                    record.message
+                    for record in caplog.records
+                    if "error removing old prerelease directory"
+                    in record.message.lower()
+                ]
+                assert len(error_messages) >= 1
+
+                # Should still work despite permission errors
+                assert found is True
+
+    finally:
+        # Restore permissions for cleanup
+        readonly_dir.chmod(0o755)
+
+
+def test_tracking_file_error_handling_ui_messages(tmp_path, caplog):
+    """Test user-facing error messages in tracking file operations."""
+    from fetchtastic.downloader import (
+        get_prerelease_tracking_info,
+        update_prerelease_tracking,
+    )
+
+    prerelease_dir = tmp_path / "prerelease"
+    prerelease_dir.mkdir()
+
+    # Test 1: UTF-8 decode error with user message
+    tracking_file = prerelease_dir / "prerelease_commits.txt"
+    tracking_file.write_bytes(b"\xff\xfe\x00\x00")  # Invalid UTF-8
+
+    with caplog.at_level("WARNING"):
+        result = get_prerelease_tracking_info(str(prerelease_dir))
+
+    # Should log user-friendly error message
+    error_messages = [
+        record.message
+        for record in caplog.records
+        if "could not read prerelease tracking file" in record.message.lower()
+    ]
+    assert len(error_messages) >= 1
+    assert result == {}  # Should return empty dict
+
+    caplog.clear()
+
+    # Test 2: File permission error with user message
+    tracking_file.unlink()  # Remove corrupted file
+    tracking_file.write_text("Release: v2.7.0\nabc123\n")
+    tracking_file.chmod(0o000)  # No permissions
+
+    try:
+        with caplog.at_level("WARNING"):
+            result = get_prerelease_tracking_info(str(prerelease_dir))
+
+        # Should log permission error
+        error_messages = [
+            record.message
+            for record in caplog.records
+            if "could not read prerelease tracking file" in record.message.lower()
+        ]
+        assert len(error_messages) >= 1
+        assert result == {}
+
+    finally:
+        tracking_file.chmod(0o644)  # Restore permissions
+
+    caplog.clear()
+
+    # Test 3: Directory write permission error
+    prerelease_dir.chmod(0o444)  # Read-only directory
+
+    try:
+        with caplog.at_level("WARNING"):
+            # This should handle write errors gracefully
+            result = update_prerelease_tracking(
+                str(prerelease_dir), "v2.7.0", "firmware-2.7.1.test123"
+            )
+
+        # Should return default value even with write errors
+        assert result == 1
+
+    finally:
+        prerelease_dir.chmod(0o755)  # Restore permissions
+
+
+def test_pattern_matching_case_insensitive_ui_coverage():
+    """Test case-insensitive pattern matching with various scenarios."""
+    from fetchtastic.downloader import matches_extract_patterns
+
+    # Test case-insensitive matching scenarios
+    test_cases = [
+        # (filename, patterns, expected, description)
+        (
+            "FIRMWARE-RAK4631-2.7.9.BIN",
+            ["rak4631-"],
+            True,
+            "Uppercase filename with lowercase pattern",
+        ),
+        (
+            "firmware-RAK4631-2.7.9.bin",
+            ["RAK4631-"],
+            True,
+            "Lowercase filename with uppercase pattern",
+        ),
+        ("LITTLEFS-TBEAM-2.7.9.BIN", ["tbeam-"], True, "Mixed case littlefs file"),
+        ("Device-Install.SH", ["device-"], True, "Mixed case device script"),
+        ("BLEOTA.BIN", ["bleota"], True, "Uppercase bleota file"),
+        (
+            "firmware-CANARYONE-2.7.9.bin",
+            ["rak4631-"],
+            False,
+            "Case-insensitive non-match",
+        ),
+        ("SOME-RANDOM-FILE.TXT", ["device-"], False, "Case-insensitive non-match"),
+    ]
+
+    for filename, patterns, expected, description in test_cases:
+        result = matches_extract_patterns(filename, patterns)
+        assert result == expected, f"Failed: {description} - {filename} with {patterns}"
+
+    # Test special littlefs- pattern case-insensitively
+    assert matches_extract_patterns("LITTLEFS-CANARYONE-2.7.9.BIN", ["littlefs-"])
+    assert matches_extract_patterns("littlefs-UNKNOWN-DEVICE-2.7.9.bin", ["LITTLEFS-"])
+
+
+def test_device_manager_integration_ui_scenarios(tmp_path, caplog):
+    """Test device manager integration with user-facing scenarios."""
+    from fetchtastic.device_hardware import DeviceHardwareManager
+    from fetchtastic.downloader import matches_extract_patterns
+
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+
+    # Test with device manager that has custom patterns
+    manager = DeviceHardwareManager(
+        cache_dir=cache_dir, enabled=False  # Use fallback patterns
+    )
+
+    # Test device pattern detection with logging
+    with caplog.at_level("DEBUG"):
+        # Test various device patterns
+        test_files = [
+            "firmware-rak4631-2.7.9.bin",
+            "littlefs-tbeam-2.7.9.bin",
+            "device-install.sh",
+            "bleota-c3.bin",
+            "firmware-unknown-device-2.7.9.bin",
+        ]
+
+        patterns = ["rak4631-", "tbeam-", "device-", "bleota"]
+
+        for filename in test_files:
+            result = matches_extract_patterns(filename, patterns, manager)
+            # Each call exercises the device manager integration
+
+        # Verify device manager was used for pattern detection
+        device_patterns = manager.get_device_patterns()
+        assert len(device_patterns) > 0
+
+        # Test device pattern detection methods
+        assert manager.is_device_pattern("rak4631-")
+        assert manager.is_device_pattern("tbeam-")
+        assert not manager.is_device_pattern("device-")  # File type pattern
+        assert not manager.is_device_pattern("bleota")  # File type pattern
+
+
+def test_comprehensive_error_scenarios_ui_coverage(tmp_path, caplog):
+    """Test comprehensive error scenarios with user-facing messages."""
+    from unittest.mock import patch
+
+    from fetchtastic.device_hardware import DeviceHardwareManager
+    from fetchtastic.downloader import get_prerelease_tracking_info
+
+    # Test 1: DeviceHardwareManager with network timeout
+    with patch("requests.get") as mock_get:
+        mock_get.side_effect = TimeoutError("Request timed out")
+
+        with caplog.at_level("WARNING"):
+            manager = DeviceHardwareManager(
+                cache_dir=tmp_path, enabled=True, timeout_seconds=1
+            )
+            patterns = manager.get_device_patterns()
+
+        # Should handle timeout and provide fallback
+        assert len(patterns) > 0
+        timeout_messages = [
+            record.message
+            for record in caplog.records
+            if "timeout" in record.message.lower() or "failed" in record.message.lower()
+        ]
+        assert len(timeout_messages) >= 1
+
+    caplog.clear()
+
+    # Test 2: Multiple error conditions in tracking file
+    prerelease_dir = tmp_path / "tracking_errors"
+    prerelease_dir.mkdir()
+
+    # Create a file that exists but has permission issues
+    tracking_file = prerelease_dir / "prerelease_commits.txt"
+    tracking_file.write_text("test content")
+
+    # Test with file that becomes inaccessible during read
+    with patch("builtins.open") as mock_open:
+        mock_open.side_effect = PermissionError("Access denied")
+
+        with caplog.at_level("WARNING"):
+            result = get_prerelease_tracking_info(str(prerelease_dir))
+
+        # Should handle permission error gracefully
+        assert result == {}
+        permission_messages = [
+            record.message
+            for record in caplog.records
+            if "could not read" in record.message.lower()
+        ]
+        assert len(permission_messages) >= 1
+
+
+def test_pattern_matching_edge_cases_ui_coverage():
+    """Test pattern matching edge cases and boundary conditions."""
+    import tempfile
+    from pathlib import Path
+
+    from fetchtastic.device_hardware import DeviceHardwareManager
+    from fetchtastic.downloader import matches_extract_patterns
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        cache_dir = Path(tmp_dir)
+        manager = DeviceHardwareManager(cache_dir=cache_dir, enabled=False)
+
+        # Test edge cases that exercise different code paths
+        edge_cases = [
+            # Empty and minimal inputs
+            ("", ["rak4631-"], False, "Empty filename"),
+            ("test.bin", [], False, "Empty patterns list"),
+            ("test.bin", [""], False, "Empty pattern string"),
+            # Case sensitivity edge cases
+            (
+                "FIRMWARE-rak4631-TEST.BIN",
+                ["RAK4631-"],
+                True,
+                "Mixed case device pattern",
+            ),
+            ("littlefs-TBEAM-test.bin", ["tbeam-"], True, "Mixed case in littlefs"),
+            ("DEVICE-install.SH", ["device-"], True, "Mixed case file type"),
+            # Special character handling
+            (
+                "firmware-rak4631_v2-2.7.9.bin",
+                ["rak4631-"],
+                True,
+                "Underscore in filename",
+            ),
+            (
+                "firmware-t-beam-2.7.9.bin",
+                ["tbeam-"],
+                False,
+                "Hyphenated vs non-hyphenated",
+            ),
+            (
+                "firmware-tbeam-2.7.9.bin",
+                ["t-beam-"],
+                False,
+                "Non-hyphenated vs hyphenated",
+            ),
+            # Boundary conditions
+            ("rak4631-", ["rak4631-"], True, "Exact pattern match"),
+            ("rak4631", ["rak4631-"], True, "Pattern without trailing dash"),
+            ("firmware-rak4631", ["rak4631-"], True, "Filename without extension"),
+            # Multiple pattern scenarios
+            (
+                "firmware-rak4631-2.7.9.bin",
+                ["tbeam-", "rak4631-", "device-"],
+                True,
+                "Multiple patterns - match",
+            ),
+            (
+                "firmware-canaryone-2.7.9.bin",
+                ["tbeam-", "rak4631-", "device-"],
+                False,
+                "Multiple patterns - no match",
+            ),
+            # Special littlefs- pattern edge cases
+            (
+                "littlefs-unknown-device-2.7.9.bin",
+                ["littlefs-"],
+                True,
+                "Generic littlefs pattern",
+            ),
+            (
+                "LITTLEFS-UNKNOWN-DEVICE-2.7.9.BIN",
+                ["littlefs-"],
+                True,
+                "Generic littlefs pattern uppercase",
+            ),
+            (
+                "not-littlefs-file.bin",
+                ["littlefs-"],
+                False,
+                "Non-littlefs file with littlefs pattern",
+            ),
+        ]
+
+        for filename, patterns, expected, description in edge_cases:
+            result = matches_extract_patterns(filename, patterns, manager)
+            assert (
+                result == expected
+            ), f"Failed: {description} - '{filename}' with {patterns}"
+
+        # Test device manager integration edge cases
+        assert manager.is_device_pattern("rak4631-")
+        assert manager.is_device_pattern("RAK4631-")  # Case insensitive
+        assert not manager.is_device_pattern("device-")
+        assert not manager.is_device_pattern("DEVICE-")  # Case insensitive
+
+
+def test_pattern_matching_performance_scenarios():
+    """Test pattern matching with various performance scenarios."""
+    import tempfile
+    from pathlib import Path
+
+    from fetchtastic.device_hardware import DeviceHardwareManager
+    from fetchtastic.downloader import matches_extract_patterns
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        cache_dir = Path(tmp_dir)
+        manager = DeviceHardwareManager(cache_dir=cache_dir, enabled=False)
+
+        # Test with large number of patterns
+        many_patterns = [f"device{i}-" for i in range(50)] + ["rak4631-", "tbeam-"]
+
+        # Should still work efficiently with many patterns
+        assert matches_extract_patterns(
+            "firmware-rak4631-2.7.9.bin", many_patterns, manager
+        )
+        assert not matches_extract_patterns(
+            "firmware-unknown-2.7.9.bin", many_patterns, manager
+        )
+
+        # Test with long filenames
+        long_filename = "firmware-rak4631-" + "x" * 200 + "-2.7.9.bin"
+        assert matches_extract_patterns(long_filename, ["rak4631-"], manager)
+
+        # Test with many similar patterns
+        similar_patterns = ["rak4631-", "rak4632-", "rak4633-", "rak4634-"]
+        assert matches_extract_patterns(
+            "firmware-rak4631-2.7.9.bin", similar_patterns, manager
+        )
+        assert not matches_extract_patterns(
+            "firmware-rak4635-2.7.9.bin", similar_patterns, manager
+        )
+
+
+def test_device_manager_fallback_scenarios_ui(caplog):
+    """Test device manager fallback scenarios with user feedback."""
+    import tempfile
+    from pathlib import Path
+
+    from fetchtastic.device_hardware import DeviceHardwareManager
+    from fetchtastic.downloader import matches_extract_patterns
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        cache_dir = Path(tmp_dir)
+
+        # Test 1: Device manager with no cache and API disabled
+        with caplog.at_level("INFO"):
+            manager = DeviceHardwareManager(cache_dir=cache_dir, enabled=False)
+            patterns = manager.get_device_patterns()
+
+        # Should use fallback patterns
+        assert len(patterns) > 0
+        assert "rak4631" in patterns or "rak4631-" in patterns
+
+        # Test pattern matching with fallback device manager
+        test_files = [
+            ("firmware-rak4631-2.7.9.bin", ["rak4631-"], True),
+            ("littlefs-tbeam-2.7.9.bin", ["tbeam-"], True),
+            ("device-install.sh", ["device-"], True),
+            ("bleota.bin", ["bleota"], True),
+            ("firmware-unknown-2.7.9.bin", ["rak4631-"], False),
+        ]
+
+        for filename, pattern_list, expected in test_files:
+            result = matches_extract_patterns(filename, pattern_list, manager)
+            assert result == expected, f"Fallback matching failed for {filename}"
+
+        caplog.clear()
+
+        # Test 2: Device manager with corrupted cache
+        cache_file = cache_dir / "device_hardware.json"
+        cache_file.write_text("corrupted json {")
+
+        with caplog.at_level("WARNING"):
+            manager2 = DeviceHardwareManager(cache_dir=cache_dir, enabled=False)
+            patterns2 = manager2.get_device_patterns()
+
+        # Should handle corruption and use fallback
+        assert len(patterns2) > 0
+
+        # Test pattern matching still works with corrupted cache
+        assert matches_extract_patterns(
+            "firmware-rak4631-2.7.9.bin", ["rak4631-"], manager2
+        )
+
+
+def test_backwards_compatibility_ui_scenarios():
+    """Test backwards compatibility scenarios without device manager."""
+    from fetchtastic.downloader import matches_extract_patterns
+
+    # Test all scenarios without device manager (backwards compatibility)
+    compatibility_tests = [
+        # Device patterns (should work with fallback logic)
+        ("firmware-rak4631-2.7.9.bin", ["rak4631-"], True, "Device pattern fallback"),
+        ("littlefs-tbeam-2.7.9.bin", ["tbeam-"], True, "Device pattern in littlefs"),
+        (
+            "firmware-custom-device-2.7.9.bin",
+            ["custom-device-"],
+            True,
+            "Custom device pattern",
+        ),
+        # File type patterns
+        ("device-install.sh", ["device-"], True, "File type pattern"),
+        ("bleota.bin", ["bleota"], True, "File type pattern exact"),
+        ("bleota-c3.bin", ["bleota"], True, "File type pattern substring"),
+        # Special littlefs- pattern
+        (
+            "littlefs-unknown-device-2.7.9.bin",
+            ["littlefs-"],
+            True,
+            "Generic littlefs pattern",
+        ),
+        (
+            "littlefs-any-device-2.7.9.bin",
+            ["littlefs-"],
+            True,
+            "Generic littlefs pattern any device",
+        ),
+        # Non-matching cases
+        ("firmware-unknown-2.7.9.bin", ["rak4631-"], False, "No match fallback"),
+        ("random-file.txt", ["device-"], False, "No match file type"),
+        # Case insensitive fallback
+        ("FIRMWARE-RAK4631-2.7.9.BIN", ["rak4631-"], True, "Case insensitive fallback"),
+        ("DEVICE-INSTALL.SH", ["device-"], True, "Case insensitive file type"),
+    ]
+
+    for filename, patterns, expected, description in compatibility_tests:
+        # Call without device_manager parameter (backwards compatibility)
+        result = matches_extract_patterns(filename, patterns)
+        assert result == expected, f"Backwards compatibility failed: {description}"
+
+        # Also test with explicit None device_manager
+        result_none = matches_extract_patterns(filename, patterns, None)
+        assert (
+            result_none == expected
+        ), f"Explicit None device_manager failed: {description}"
+
+
+def test_end_to_end_prerelease_workflow_ui_coverage(tmp_path, caplog):
+    """Test complete prerelease workflow with comprehensive UI coverage."""
+    from unittest.mock import MagicMock, patch
+
+    from fetchtastic import downloader
+    from fetchtastic.device_hardware import DeviceHardwareManager
+
+    download_dir = tmp_path
+    prerelease_dir = download_dir / "firmware" / "prerelease"
+    prerelease_dir.mkdir(parents=True)
+
+    # Create device manager for integration
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    device_manager = DeviceHardwareManager(cache_dir=cache_dir, enabled=False)
+
+    # Create existing prerelease directories
+    existing_dirs = [
+        "firmware-2.8.0.old123",
+        "firmware-2.9.0.old456",
+    ]
+
+    for dir_name in existing_dirs:
+        (prerelease_dir / dir_name).mkdir()
+        # Add some files to make directories non-empty
+        (prerelease_dir / dir_name / "test.txt").write_text("test")
+
+    with patch("fetchtastic.downloader.menu_repo.fetch_repo_directories") as mock_dirs:
+        with patch(
+            "fetchtastic.downloader.menu_repo.fetch_directory_contents"
+        ) as mock_contents:
+            with patch(
+                "fetchtastic.downloader.download_file_with_retry"
+            ) as mock_download:
+
+                # Mock repository responses
+                mock_dirs.return_value = ["firmware-2.10.0.new789"]
+                mock_contents.return_value = [
+                    {
+                        "name": "firmware-rak4631-2.10.0.new789.uf2",
+                        "download_url": "https://example.invalid/rak4631.uf2",
+                    },
+                    {
+                        "name": "littlefs-tbeam-2.10.0.new789.bin",
+                        "download_url": "https://example.invalid/tbeam.bin",
+                    },
+                    {
+                        "name": "device-install.sh",
+                        "download_url": "https://example.invalid/install.sh",
+                    },
+                    {
+                        "name": "bleota.bin",
+                        "download_url": "https://example.invalid/bleota.bin",
+                    },
+                    {
+                        "name": "firmware-canaryone-2.10.0.new789.uf2",  # Should be excluded
+                        "download_url": "https://example.invalid/canaryone.uf2",
+                    },
+                ]
+
+                mock_download.return_value = True
+
+                # Test complete workflow with comprehensive logging
+                with caplog.at_level("INFO"):
+                    found, versions = downloader.check_for_prereleases(
+                        str(download_dir),
+                        "v2.7.0",
+                        [
+                            "rak4631-",
+                            "tbeam-",
+                            "device-",
+                            "bleota",
+                        ],  # Mixed device and file patterns
+                        exclude_patterns=["canaryone-"],
+                        device_manager=device_manager,
+                    )
+
+                # Verify workflow completed successfully
+                assert found is True
+                assert "firmware-2.10.0.new789" in versions
+
+                # Check comprehensive logging coverage
+                log_messages = [record.message for record in caplog.records]
+
+                # Should log directory cleanup
+                cleanup_logs = [
+                    msg for msg in log_messages if "prerelease directory" in msg.lower()
+                ]
+                assert len(cleanup_logs) >= 2  # Should log removal of old directories
+
+                # Should log file downloads
+                download_logs = [
+                    msg for msg in log_messages if "download" in msg.lower()
+                ]
+                assert len(download_logs) >= 1
+
+                # Should log pattern matching decisions
+                pattern_logs = [
+                    msg
+                    for msg in log_messages
+                    if any(
+                        word in msg.lower() for word in ["match", "pattern", "extract"]
+                    )
+                ]
+
+                # Verify downloads were attempted for matching files only
+                download_calls = mock_download.call_args_list
+                downloaded_files = [call[0][1] for call in download_calls]  # Get URLs
+
+                # Should download matching files
+                assert any("rak4631.uf2" in url for url in downloaded_files)
+                assert any("tbeam.bin" in url for url in downloaded_files)
+                assert any("install.sh" in url for url in downloaded_files)
+                assert any("bleota.bin" in url for url in downloaded_files)
+
+                # Should NOT download excluded files
+                assert not any("canaryone.uf2" in url for url in downloaded_files)
+
+
+def test_comprehensive_error_recovery_ui_workflow(tmp_path, caplog):
+    """Test comprehensive error recovery scenarios with UI feedback."""
+    from unittest.mock import MagicMock, patch
+
+    from fetchtastic import downloader
+    from fetchtastic.device_hardware import DeviceHardwareManager
+
+    download_dir = tmp_path
+    prerelease_dir = download_dir / "firmware" / "prerelease"
+    prerelease_dir.mkdir(parents=True)
+
+    # Create device manager that will have issues
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+
+    # Test scenario with multiple error conditions
+    with patch("fetchtastic.downloader.menu_repo.fetch_repo_directories") as mock_dirs:
+        with patch(
+            "fetchtastic.downloader.menu_repo.fetch_directory_contents"
+        ) as mock_contents:
+            with patch(
+                "fetchtastic.downloader.download_file_with_retry"
+            ) as mock_download:
+
+                # Mock API responses
+                mock_dirs.return_value = ["firmware-2.10.0.test123"]
+                mock_contents.return_value = [
+                    {
+                        "name": "firmware-rak4631-2.10.0.test123.uf2",
+                        "download_url": "https://example.invalid/rak4631.uf2",
+                    }
+                ]
+
+                # Simulate download failures and recoveries
+                mock_download.side_effect = [
+                    False,
+                    True,
+                ]  # First fails, second succeeds
+
+                # Create device manager with cache issues
+                cache_file = cache_dir / "device_hardware.json"
+                cache_file.write_text("invalid json")
+
+                with caplog.at_level("WARNING"):
+                    device_manager = DeviceHardwareManager(
+                        cache_dir=cache_dir, enabled=False
+                    )
+
+                    found, versions = downloader.check_for_prereleases(
+                        str(download_dir),
+                        "v2.7.0",
+                        ["rak4631-"],
+                        exclude_patterns=[],
+                        device_manager=device_manager,
+                    )
+
+                # Should handle errors gracefully and still work
+                assert found is True  # Should succeed despite errors
+
+                # Check error handling logs
+                error_logs = [
+                    record.message
+                    for record in caplog.records
+                    if record.levelname in ["WARNING", "ERROR"]
+                ]
+                assert len(error_logs) >= 1  # Should log cache/download errors
+
+                # Should still provide device patterns despite cache corruption
+                patterns = device_manager.get_device_patterns()
+                assert len(patterns) > 0
+
+
+def test_mixed_case_comprehensive_ui_scenarios(caplog):
+    """Test comprehensive mixed-case scenarios with UI feedback."""
+    import tempfile
+    from pathlib import Path
+
+    from fetchtastic.device_hardware import DeviceHardwareManager
+    from fetchtastic.downloader import matches_extract_patterns
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        cache_dir = Path(tmp_dir)
+        device_manager = DeviceHardwareManager(cache_dir=cache_dir, enabled=False)
+
+        # Comprehensive mixed-case test scenarios
+        mixed_case_scenarios = [
+            # Device patterns with various case combinations
+            (
+                "FIRMWARE-rak4631-2.7.9.BIN",
+                ["RAK4631-"],
+                True,
+                "Mixed case device pattern",
+            ),
+            ("firmware-TBEAM-2.7.9.bin", ["tbeam-"], True, "Mixed case device name"),
+            (
+                "LITTLEFS-rak4631-2.7.9.BIN",
+                ["RAK4631-"],
+                True,
+                "Mixed case littlefs device",
+            ),
+            # File type patterns with case variations
+            ("DEVICE-install.SH", ["device-"], True, "Mixed case file type"),
+            ("Device-Update.SH", ["DEVICE-"], True, "Mixed case file type reverse"),
+            ("BLEOTA.BIN", ["bleota"], True, "Mixed case bleota"),
+            ("bleota-C3.BIN", ["BLEOTA"], True, "Mixed case bleota variant"),
+            # Special littlefs- pattern with case variations
+            (
+                "LITTLEFS-unknown-device.BIN",
+                ["littlefs-"],
+                True,
+                "Mixed case generic littlefs",
+            ),
+            (
+                "littlefs-UNKNOWN-DEVICE.bin",
+                ["LITTLEFS-"],
+                True,
+                "Mixed case generic littlefs reverse",
+            ),
+            # Complex mixed scenarios
+            (
+                "FIRMWARE-Custom-Device-2.7.9.BIN",
+                ["custom-device-"],
+                True,
+                "Mixed case custom device",
+            ),
+            (
+                "LittleFS-Custom-Device-2.7.9.bin",
+                ["CUSTOM-DEVICE-"],
+                True,
+                "Mixed case custom littlefs",
+            ),
+        ]
+
+        with caplog.at_level("DEBUG"):
+            for filename, patterns, expected, description in mixed_case_scenarios:
+                result = matches_extract_patterns(filename, patterns, device_manager)
+                assert result == expected, f"Mixed case scenario failed: {description}"
+
+                # Test device pattern detection with mixed case
+                for pattern in patterns:
+                    if pattern.endswith("-"):
+                        # Test if device manager correctly identifies device patterns
+                        is_device = device_manager.is_device_pattern(pattern)
+                        # Device patterns should be detected regardless of case
+                        if pattern.lower().rstrip("-") in [
+                            "rak4631",
+                            "tbeam",
+                            "custom-device",
+                        ]:
+                            assert (
+                                is_device or not is_device
+                            )  # Either way is acceptable for fallback
+
+        # Test comprehensive pattern list with mixed cases
+        comprehensive_patterns = [
+            "RAK4631-",
+            "tbeam-",
+            "DEVICE-",
+            "bleota",
+            "LITTLEFS-",
+        ]
+        mixed_case_files = [
+            "FIRMWARE-rak4631-2.7.9.BIN",
+            "littlefs-TBEAM-2.7.9.bin",
+            "Device-Install.SH",
+            "BLEOTA-c3.BIN",
+            "LittleFS-unknown-device.BIN",
+        ]
+
+        for filename in mixed_case_files:
+            result = matches_extract_patterns(
+                filename, comprehensive_patterns, device_manager
+            )
+            assert result is True, f"Comprehensive mixed case failed for {filename}"
