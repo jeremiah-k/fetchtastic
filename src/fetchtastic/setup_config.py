@@ -8,7 +8,7 @@ import string
 import subprocess
 import sys
 from datetime import datetime
-from typing import Optional, Sequence, Set
+from typing import Callable, Optional, Sequence, Set
 
 import platformdirs
 import yaml
@@ -353,8 +353,12 @@ def check_storage_setup():
 def _prompt_for_setup_sections() -> Optional[Set[str]]:
     """Interactively ask the user which setup sections to run when config exists."""
 
-    print("\nExisting configuration detected. You can re-run the full wizard or update specific areas.")
-    print("Press ENTER to run the full setup, or choose one or more sections (comma separated):")
+    print(
+        "\nExisting configuration detected. You can re-run the full wizard or update specific areas."
+    )
+    print(
+        "Press ENTER to run the full setup, or choose one or more sections (comma separated):"
+    )
     print("  [b] base           — base directory and general settings")
     print("  [a] android        — Android APK download preferences")
     print("  [f] firmware       — firmware download preferences")
@@ -383,53 +387,32 @@ def _prompt_for_setup_sections() -> Optional[Set[str]]:
             if lowered in SETUP_SECTION_CHOICES:
                 selected.add(lowered)
                 continue
-            print(f"Unrecognised section '{token}'. Please choose from the listed options.")
+            print(
+                f"Unrecognised section '{token}'. Please choose from the listed options."
+            )
             selected.clear()
             break
 
         if selected:
             return selected
 
-def run_setup(sections: Optional[Sequence[str]] = None):
+
+def _setup_base(
+    config: dict, is_partial_run: bool, is_first_run: bool, wants: Callable[[str], bool]
+) -> dict:
     """
-    Run the interactive Fetchtastic setup wizard.
+    Handle base directory setup, Termux packages, and Windows shortcuts.
 
-    Guides the user through creating or migrating configuration, selecting assets (APKs and/or firmware), retention and extraction settings, notification (NTFY) setup, and scheduling/startup options. Behavior is platform-aware: on Termux it may install required packages, configure storage, and offer pip→pipx migration; on Windows it can create Start Menu and startup shortcuts; on Linux/macOS/Termux it can install/remove cron or boot jobs. The function persists settings to the configured YAML file, updates the global BASE_DIR (and related config keys), may create or migrate CONFIG_FILE, and optionally triggers an initial download run (calls downloader.main()).
+    Args:
+        config: Current configuration dictionary
+        is_partial_run: Whether this is a partial setup run
+        is_first_run: Whether this is the first time setup is being run
+        wants: Function to check if a section should be processed
 
-    When ``sections`` is provided the wizard focuses only on those configuration areas (drawn from
-    :data:`SETUP_SECTION_CHOICES`). Other settings are preserved using the existing values from the
-    configuration file, so users can quickly tweak a single area without stepping through the full
-    workflow.
+    Returns:
+        Updated configuration dictionary
     """
     global BASE_DIR, CONFIG_FILE
-    partial_sections: Optional[Set[str]] = None
-    if sections:
-        section_names = [s.lower() for s in sections]
-        invalid = sorted({s for s in section_names if s not in SETUP_SECTION_CHOICES})
-        if invalid:
-            raise ValueError(
-                "Unsupported setup section(s): " + ", ".join(invalid)
-            )
-        partial_sections = set(section_names)
-
-    config_present, _ = config_exists()
-    if not partial_sections and config_present:
-        user_sections = _prompt_for_setup_sections()
-        if user_sections:
-            partial_sections = user_sections
-
-    is_partial_run = partial_sections is not None
-
-    def wants(section: str) -> bool:
-        """Return True when the current run should prompt for the given section."""
-
-        return partial_sections is None or section in partial_sections
-
-    if is_partial_run:
-        section_list = ", ".join(sorted(partial_sections))
-        print(f"Updating Fetchtastic setup sections: {section_list}")
-    else:
-        print("Running Fetchtastic Setup...")
 
     # Install required Termux packages first
     if is_termux() and (not is_partial_run or wants("base")):
@@ -448,59 +431,59 @@ def run_setup(sections: Optional[Sequence[str]] = None):
             print("• Isolated environments for each package")
             print("• Better dependency management")
             print("• Consistent experience across platforms")
-            print("• Easier upgrades and maintenance")
-            print()
+            print("\nTo migrate to pipx:")
+            print("1. Install pipx: pkg install python-pipx")
+            print("2. Uninstall current version: pip uninstall fetchtastic")
+            print("3. Install with pipx: pipx install fetchtastic")
+            print("4. Restart your terminal")
+            print("=" * 60)
 
-            offer_migration = (
-                input("Would you like to migrate to pipx now? [y/n] (default: yes): ")
+            migrate_to_pipx = (
+                input("Would you like to migrate to pipx now? [y/n] (default: no): ")
                 .strip()
                 .lower()
-                or "y"
+                or "n"
             )
-            if offer_migration == "y":
-                migration_success = migrate_pip_to_pipx()
-                if migration_success:
-                    print("Migration completed! Continuing with setup...")
-                else:
-                    print(
-                        "Migration failed or cancelled. Continuing with pip installation..."
+
+            if migrate_to_pipx == "y":
+                print("Starting migration to pipx...")
+                try:
+                    # Install pipx if not already installed
+                    subprocess.run(
+                        ["pkg", "install", "python-pipx"],
+                        check=True,
+                        capture_output=True,
                     )
-            else:
-                print("You can migrate later by running 'fetchtastic setup' again.")
-                print("For now, continuing with pip installation...")
-            print()
+                    print("✓ pipx installed")
 
-    # Check if config directory exists, create if not
-    if not os.path.exists(CONFIG_DIR):
-        try:
-            os.makedirs(CONFIG_DIR, exist_ok=True)
-        except Exception as e:
-            print(f"Error creating config directory: {e}")
+                    # Uninstall current fetchtastic
+                    subprocess.run(
+                        ["pip", "uninstall", "fetchtastic", "-y"],
+                        check=True,
+                        capture_output=True,
+                    )
+                    print("✓ Removed pip installation")
 
-    # Check for configuration in old location
-    if os.path.exists(OLD_CONFIG_FILE) and not os.path.exists(CONFIG_FILE):
-        # Import here to avoid circular imports
-        from fetchtastic.log_utils import logger
+                    # Install with pipx
+                    subprocess.run(
+                        ["pipx", "install", "fetchtastic"],
+                        check=True,
+                        capture_output=True,
+                    )
+                    print("✓ Installed with pipx")
 
-        separator = "=" * 80
-        logger.info(f"\n{separator}")
-        logger.info("Configuration Migration")
-        logger.info(separator)
-        # Automatically migrate without prompting
-        prompt_for_migration()  # Just logs the migration message
-        if migrate_config():
-            logger.info("Configuration successfully migrated to the new location.")
-            # Optionally validate by loading migrated config (no-op if not needed)
-            if os.path.exists(CONFIG_FILE):
-                _ = load_config()
-        else:
-            logger.error(
-                "Failed to migrate configuration. Continuing with old location."
-            )
+                    print("\nMigration complete! Please restart your terminal.")
+                    print("You can then run 'fetchtastic setup' to continue.")
+                    return config
+
+                except subprocess.CalledProcessError as e:
+                    print(f"Migration failed: {e}")
+                    print("You can migrate manually later using the steps above.")
+
+        separator = "=" * 60
         logger.info(f"{separator}\n")
 
     # Ask for base directory as the first question
-    config = {}
     exists, config_path = config_exists()
 
     if exists:
@@ -509,7 +492,6 @@ def run_setup(sections: Optional[Sequence[str]] = None):
         print(
             "Existing configuration found. You can keep current settings or change them."
         )
-        is_first_run = False
         current_base_dir = config.get("BASE_DIR", DEFAULT_BASE_DIR)
         base_dir_prompt = (
             f"Enter the base directory for Fetchtastic (current: {current_base_dir}): "
@@ -517,7 +499,6 @@ def run_setup(sections: Optional[Sequence[str]] = None):
     else:
         # Initialize default configuration
         config = {}
-        is_first_run = True
         base_dir_prompt = (
             f"Enter the base directory for Fetchtastic (default: {DEFAULT_BASE_DIR}): "
         )
@@ -536,7 +517,6 @@ def run_setup(sections: Optional[Sequence[str]] = None):
                 print(f"Found existing configuration in {base_dir}")
                 # Load the configuration from the specified directory
                 config = load_config(base_dir)
-                is_first_run = False
             else:
                 # No config in the specified directory or it's the same as current
                 BASE_DIR = base_dir
@@ -599,8 +579,56 @@ def run_setup(sections: Optional[Sequence[str]] = None):
             print(
                 "Windows shortcuts not available. Install optional dependencies for full Windows integration:"
             )
-            print("pipx install -e .[win]")
-            print("or if using pip: pip install fetchtastic[win]")
+            print("pip install fetchtastic[windows]")
+
+    return config
+
+
+def run_setup(sections: Optional[Sequence[str]] = None):
+    """
+    Run the interactive Fetchtastic setup wizard.
+
+    Guides the user through creating or migrating configuration, selecting assets (APKs and/or firmware), retention and extraction settings, notification (NTFY) setup, and scheduling/startup options. Behavior is platform-aware: on Termux it may install required packages, configure storage, and offer pip→pipx migration; on Windows it can create Start Menu and startup shortcuts; on Linux/macOS/Termux it can install/remove cron or boot jobs. The function persists settings to the configured YAML file, updates the global BASE_DIR (and related config keys), may create or migrate CONFIG_FILE, and optionally triggers an initial download run (calls downloader.main()).
+
+    When ``sections`` is provided the wizard focuses only on those configuration areas (drawn from
+    :data:`SETUP_SECTION_CHOICES`). Other settings are preserved using the existing values from the
+    configuration file, so users can quickly tweak a single area without stepping through the full
+    workflow.
+    """
+    global BASE_DIR, CONFIG_FILE
+    partial_sections: Optional[Set[str]] = None
+    if sections:
+        section_names = [s.lower() for s in sections]
+        invalid = sorted({s for s in section_names if s not in SETUP_SECTION_CHOICES})
+        if invalid:
+            raise ValueError("Unsupported setup section(s): " + ", ".join(invalid))
+        partial_sections = set(section_names)
+
+    config_present, _ = config_exists()
+    if not partial_sections and config_present:
+        user_sections = _prompt_for_setup_sections()
+        if user_sections:
+            partial_sections = user_sections
+
+    is_partial_run = partial_sections is not None
+
+    def wants(section: str) -> bool:
+        """Return True when the current run should prompt for the given section."""
+
+        return partial_sections is None or section in partial_sections
+
+    if is_partial_run:
+        section_list = ", ".join(sorted(partial_sections))
+        print(f"Updating Fetchtastic setup sections: {section_list}")
+    else:
+        print("Running Fetchtastic Setup...")
+
+    # Determine if this is a first run
+    config_present, _ = config_exists()
+    is_first_run = not config_present
+
+    # Handle base setup (Termux packages, base directory, Windows shortcuts)
+    config = _setup_base({}, is_partial_run, is_first_run, wants)
 
     # Prompt to save APKs, firmware, or both
     if not is_partial_run:
@@ -667,9 +695,7 @@ def run_setup(sections: Optional[Sequence[str]] = None):
         rerun_menu = True
         if is_partial_run:
             keep_existing = (
-                input(
-                    "Re-run the Android APK selection menu? [y/n] (default: yes): "
-                )
+                input("Re-run the Android APK selection menu? [y/n] (default: yes): ")
                 .strip()
                 .lower()
             )
@@ -702,7 +728,9 @@ def run_setup(sections: Optional[Sequence[str]] = None):
                 save_firmware = False
                 config["SAVE_FIRMWARE"] = False
             else:
-                config["SELECTED_FIRMWARE_ASSETS"] = firmware_selection["selected_assets"]
+                config["SELECTED_FIRMWARE_ASSETS"] = firmware_selection[
+                    "selected_assets"
+                ]
 
     # If both save_apks and save_firmware are False, inform the user and exit setup
     if not save_apks and not save_firmware:
@@ -964,7 +992,9 @@ def run_setup(sections: Optional[Sequence[str]] = None):
                         try:
                             # Also remove the batch file if it exists
                             batch_dir = os.path.join(CONFIG_DIR, "batch")
-                            batch_path = os.path.join(batch_dir, "fetchtastic_startup.bat")
+                            batch_path = os.path.join(
+                                batch_dir, "fetchtastic_startup.bat"
+                            )
                             if os.path.exists(batch_path):
                                 os.remove(batch_path)
 
@@ -1318,7 +1348,9 @@ def run_setup(sections: Optional[Sequence[str]] = None):
         else:
             # On other platforms, offer to run it now
             perform_first_run = (
-                input("Would you like to start the first run now? [y/n] (default: yes): ")
+                input(
+                    "Would you like to start the first run now? [y/n] (default: yes): "
+                )
                 .strip()
                 .lower()
                 or "y"
@@ -1333,7 +1365,9 @@ def run_setup(sections: Optional[Sequence[str]] = None):
                 )
                 downloader.main()
             else:
-                print("Setup complete. Run 'fetchtastic download' to start downloading.")
+                print(
+                    "Setup complete. Run 'fetchtastic download' to start downloading."
+                )
     else:
         print("Selected setup sections updated. Run 'fetchtastic download' when ready.")
 
