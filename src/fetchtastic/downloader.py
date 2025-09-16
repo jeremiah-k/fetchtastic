@@ -1146,7 +1146,7 @@ def _finalize_and_notify(
 
     logger.info(f"\nCompleted in {total_time:.1f}s")
     if downloaded_count > 0:
-        logger.info(f"Downloaded {downloaded_count} new files")
+        logger.info(f"Downloaded {downloaded_count} new versions")
 
     # Show latest versions if available
     if latest_firmware_version:
