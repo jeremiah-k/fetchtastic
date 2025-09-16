@@ -425,6 +425,88 @@ def update_prerelease_tracking(prerelease_dir, latest_release_tag, current_prere
         return 1  # Default to 1 if we can't track
 
 
+def matches_extract_patterns(filename, extract_patterns):
+    """
+    Smart pattern matching for EXTRACT_PATTERNS that supports device-based matching.
+
+    This function intelligently matches files based on device patterns:
+    - Device patterns (like 'tbeam-', 'rak4631-') match all file types for that device
+    - File type patterns (like 'device-', 'bleota') use exact substring matching
+
+    Args:
+        filename: Name of the file to check
+        extract_patterns: List of EXTRACT_PATTERNS from user config
+
+    Returns:
+        bool: True if the file matches any pattern
+    """
+    # Known file type prefixes that indicate this is a file type pattern, not device pattern
+    file_type_prefixes = {
+        "device-",  # device-install.sh, device-update.sh
+        "bleota",  # bleota.bin, bleota-c3.bin, bleota-s3.bin
+    }
+
+    # Known device patterns (these should match all file types for the device)
+    device_patterns = {
+        "rak4631-",
+        "tbeam-",
+        "t1000-e-",
+        "tlora-v2-1-1_6-",
+        "heltec-",
+        "nano-g1-",
+        "station-g1-",
+        "station-g2-",
+        "t-deck-",
+        "canaryone-",
+        "feather_diy-",
+        "tracker-t1000-e-",
+        "seeed-",
+        "pico-",
+        "wio-",
+        "m5stack-",
+        "hydra-",
+        "chatter2-",
+        "unphone-",
+        "tracksenger-",
+        "radiomaster_",
+        "link32-",
+        "picomputer-",
+        "elecrow-",
+        "thinknode_",
+        "meshtastic-",
+        "tlora-",
+    }
+
+    for pattern in extract_patterns:
+        # Handle special case: generic 'littlefs-' pattern
+        if pattern == "littlefs-":
+            if "littlefs-" in filename:
+                return True
+            continue
+
+        # File type patterns: exact substring matching
+        if any(pattern.startswith(prefix) for prefix in file_type_prefixes):
+            if pattern in filename:
+                return True
+            continue
+
+        # Device patterns: smart matching across all file types
+        if any(
+            pattern.startswith(device) for device in device_patterns
+        ) or pattern.endswith("-"):
+            # For device patterns, match if the device name appears anywhere in the filename
+            # This allows 'tbeam-' to match both 'firmware-tbeam-*' and 'littlefs-tbeam-*'
+            if pattern in filename:
+                return True
+            continue
+
+        # Fallback: simple substring matching for any other patterns
+        if pattern in filename:
+            return True
+
+    return False
+
+
 def get_prerelease_tracking_info(prerelease_dir):
     """
     Read and return prerelease tracking information.
@@ -634,9 +716,9 @@ def check_for_prereleases(
                         for file in expected_files:
                             file_name = file["name"]
 
-                            # Apply same filtering logic as download (simple substring matching for EXTRACT_PATTERNS)
-                            if not any(
-                                pattern in file_name for pattern in selected_patterns
+                            # Apply same filtering logic as download (smart pattern matching for EXTRACT_PATTERNS)
+                            if not matches_extract_patterns(
+                                file_name, selected_patterns
                             ):
                                 continue  # Skip this file
 
@@ -772,9 +854,8 @@ def check_for_prereleases(
             file_path = os.path.join(dir_path, file_name)
 
             # Only download files that match the selected patterns and don't match exclude patterns
-            # For prereleases, selected_patterns contains EXTRACT_PATTERNS which are simple substrings
-            # Use simple substring matching, not the complex matches_selected_patterns function
-            if not any(pattern in file_name for pattern in selected_patterns):
+            # For prereleases, selected_patterns contains EXTRACT_PATTERNS which support smart device matching
+            if not matches_extract_patterns(file_name, selected_patterns):
                 continue  # Skip this file
 
             # Skip files that match exclude patterns
