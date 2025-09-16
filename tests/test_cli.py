@@ -89,6 +89,24 @@ def test_cli_setup_command_with_positional_sections(mocker):
     mock_setup_run.assert_called_once_with(sections=["firmware", "android"])
 
 
+def test_cli_setup_command_with_invalid_positional_sections(mocker):
+    """Invalid positional section arguments should cause an error."""
+    mocker.patch("sys.argv", ["fetchtastic", "setup", "invalid_section", "firmware"])
+    mock_logger = mocker.patch("fetchtastic.cli.logger")
+    mocker.patch(
+        "fetchtastic.cli.display_version_info", return_value=("1.0", "1.0", False)
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main()
+
+    assert exc_info.value.code == 1
+    mock_logger.error.assert_any_call("Invalid section(s): invalid_section")
+    mock_logger.error.assert_any_call(
+        "Valid choices are: android, automation, base, firmware, notifications"
+    )
+
+
 def test_cli_repo_browse_command(mocker):
     """Test the 'repo browse' command dispatch."""
     mocker.patch("sys.argv", ["fetchtastic", "repo", "browse"])
