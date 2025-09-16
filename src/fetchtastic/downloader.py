@@ -23,7 +23,6 @@ from fetchtastic.constants import (
     API_CALL_DELAY,
     DEFAULT_ANDROID_VERSIONS_TO_KEEP,
     DEFAULT_FIRMWARE_VERSIONS_TO_KEEP,
-    DEFAULT_PRERELEASE_VERSIONS_TO_KEEP,
     EXECUTABLE_PERMISSIONS,
     GITHUB_API_TIMEOUT,
     LATEST_ANDROID_RELEASE_FILE,
@@ -529,7 +528,7 @@ def get_prerelease_tracking_info(prerelease_dir):
                     "commits": lines,
                     "prerelease_count": len(lines),
                 }
-    except IOError as e:
+    except (IOError, UnicodeDecodeError) as e:
         logger.warning(f"Could not read prerelease tracking file: {e}")
         return {}
 
@@ -540,7 +539,6 @@ def check_for_prereleases(
     selected_patterns,
     exclude_patterns=None,  # log_message_func parameter removed
     device_manager=None,
-    prerelease_versions_to_keep=DEFAULT_PRERELEASE_VERSIONS_TO_KEEP,
 ):
     """
     Discover firmware prerelease directories newer than the provided latest release, clean up stale local prerelease folders, and download missing prerelease assets into <download_dir>/firmware/prerelease.
@@ -799,8 +797,10 @@ def check_for_prereleases(
                 )
 
                 # Determine which directories to keep
-                # Keep the newest N directories, plus any new ones we're about to process
-                dirs_to_keep = set(sorted_existing[:prerelease_versions_to_keep])
+                # Keep only the newest existing directory, plus any new ones we're about to process
+                dirs_to_keep = set(
+                    sorted_existing[:1]
+                )  # Keep only 1 existing prerelease
                 dirs_to_keep.update(
                     prerelease_dirs
                 )  # Also keep new ones being processed
@@ -810,7 +810,7 @@ def check_for_prereleases(
                     if item not in dirs_to_keep:
                         item_path = os.path.join(prerelease_dir, item)
                         logger.info(
-                            f"Removing old prerelease directory: {item} (keeping {prerelease_versions_to_keep} versions)"
+                            f"Removing old prerelease directory: {item} (keeping latest only)"
                         )
                         try:
                             shutil.rmtree(item_path)
@@ -1303,10 +1303,6 @@ def _process_firmware_downloads(
                         config.get("EXTRACT_PATTERNS", []),  # type: ignore - Use EXTRACT_PATTERNS for prereleases
                         exclude_patterns=config.get("EXCLUDE_PATTERNS", []),  # type: ignore
                         device_manager=device_manager,
-                        prerelease_versions_to_keep=config.get(
-                            "PRERELEASE_VERSIONS_TO_KEEP",
-                            DEFAULT_PRERELEASE_VERSIONS_TO_KEEP,
-                        ),
                     )
                 )
                 if prerelease_found:

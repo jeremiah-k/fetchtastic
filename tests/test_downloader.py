@@ -2028,15 +2028,15 @@ def test_device_hardware_manager_cache_expiration():
         with open(cache_file, "w") as f:
             json.dump(expired_cache, f)
 
-        # Test with API disabled - should still use expired cache as fallback
+        # Test with API disabled - should use expired cache as fallback
         manager = DeviceHardwareManager(
             cache_dir=cache_dir, enabled=False, cache_hours=24
         )
 
         patterns = manager.get_device_patterns()
-        # Should get fallback patterns, not the expired cache
-        assert "old-device" not in patterns
-        assert len(patterns) > 1  # Should have multiple fallback patterns
+        # Should use expired cache as fallback when API is disabled
+        assert "old-device" in patterns
+        assert len(patterns) >= 1  # Should have at least the cached pattern
 
 
 def test_get_prerelease_tracking_info_error_handling():

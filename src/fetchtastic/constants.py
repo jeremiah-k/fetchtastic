@@ -41,7 +41,6 @@ LATEST_FIRMWARE_RELEASE_FILE = "latest_firmware_release.txt"
 # Default configuration values
 DEFAULT_FIRMWARE_VERSIONS_TO_KEEP = 2
 DEFAULT_ANDROID_VERSIONS_TO_KEEP = 2
-DEFAULT_PRERELEASE_VERSIONS_TO_KEEP = 1
 DEFAULT_AUTO_EXTRACT = False
 
 # File extensions and patterns
