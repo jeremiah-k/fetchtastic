@@ -397,6 +397,153 @@ def _prompt_for_setup_sections() -> Optional[Set[str]]:
             return selected
 
 
+def _setup_downloads(
+    config: dict, is_partial_run: bool, wants: Callable[[str], bool]
+) -> tuple[dict, bool, bool]:
+    """
+    Handle download type selection and asset menus.
+
+    Args:
+        config: Current configuration dictionary
+        is_partial_run: Whether this is a partial setup run
+        wants: Function to check if a section should be processed
+
+    Returns:
+        Tuple of (updated_config, save_apks, save_firmware)
+    """
+    # Prompt to save APKs, firmware, or both
+    if not is_partial_run:
+        save_choice = (
+            input(
+                "Would you like to download APKs, firmware, or both? [a/f/b] (default: both): "
+            )
+            .strip()
+            .lower()
+            or "both"
+        )
+        if save_choice == "a":
+            save_apks = True
+            save_firmware = False
+        elif save_choice == "f":
+            save_apks = False
+            save_firmware = True
+        else:
+            save_apks = True
+            save_firmware = True
+    else:
+        save_apks = config.get("SAVE_APKS", False)
+        save_firmware = config.get("SAVE_FIRMWARE", False)
+        if wants("android"):
+            current_apk_default = "y" if save_apks else "n"
+            choice = (
+                input(
+                    f"Download Android APKs? [y/n] (current: {current_apk_default}): "
+                )
+                .strip()
+                .lower()
+                or current_apk_default
+            )
+            save_apks = choice == "y"
+        if wants("firmware"):
+            current_fw_default = "y" if save_firmware else "n"
+            choice = (
+                input(
+                    f"Download firmware releases? [y/n] (current: {current_fw_default}): "
+                )
+                .strip()
+                .lower()
+                or current_fw_default
+            )
+            save_firmware = choice == "y"
+
+    config["SAVE_APKS"] = save_apks
+    config["SAVE_FIRMWARE"] = save_firmware
+
+    # Run the menu scripts based on user choices
+    # Small tip to help users choose precise firmware patterns
+    if save_firmware and (not is_partial_run or wants("firmware")):
+        print("\nTips for precise selection:")
+        print(
+            "- Use the separator seen in filenames to target a family (e.g., 'rak4631-' vs 'rak4631_')."
+        )
+        print(
+            "- 'rak4631-' matches base RAK4631 files (e.g., firmware-rak4631-...),"
+            " while 'rak4631_' matches underscore variants (e.g., firmware-rak4631_eink-...).",
+            sep="",
+        )
+        print("- You can re-run 'fetchtastic setup' anytime to adjust your patterns.\n")
+    if save_apks and (not is_partial_run or wants("android")):
+        rerun_menu = True
+        if is_partial_run:
+            keep_existing = (
+                input("Re-run the Android APK selection menu? [y/n] (default: yes): ")
+                .strip()
+                .lower()
+            )
+            if keep_existing == "n":
+                rerun_menu = False
+        if rerun_menu:
+            apk_selection = menu_apk.run_menu()
+            if not apk_selection:
+                print("No APK assets selected. APKs will not be downloaded.")
+                save_apks = False
+                config["SAVE_APKS"] = False
+            else:
+                config["SELECTED_APK_ASSETS"] = apk_selection["selected_assets"]
+    if save_firmware and (not is_partial_run or wants("firmware")):
+        rerun_menu = True
+        if is_partial_run:
+            keep_existing = (
+                input(
+                    "Re-run the firmware asset selection menu? [y/n] (default: yes): "
+                )
+                .strip()
+                .lower()
+            )
+            if keep_existing == "n":
+                rerun_menu = False
+        if rerun_menu:
+            firmware_selection = menu_firmware.run_menu()
+            if not firmware_selection:
+                print("No firmware assets selected. Firmware will not be downloaded.")
+                save_firmware = False
+                config["SAVE_FIRMWARE"] = False
+            else:
+                config["SELECTED_FIRMWARE_ASSETS"] = firmware_selection[
+                    "selected_assets"
+                ]
+
+    # If both save_apks and save_firmware are False, inform the user and exit setup
+    if not save_apks and not save_firmware:
+        print("Please select at least one type of asset to download (APK or firmware).")
+        print("Run 'fetchtastic setup' again and select at least one asset.")
+        return config, save_apks, save_firmware
+
+    return config, save_apks, save_firmware
+
+
+def _setup_android(config: dict, is_first_run: bool, default_versions: int) -> dict:
+    """
+    Handle Android-specific configuration.
+
+    Args:
+        config: Current configuration dictionary
+        is_first_run: Whether this is the first time setup is being run
+        default_versions: Default number of versions to keep
+
+    Returns:
+        Updated configuration dictionary
+    """
+    current_versions = config.get("ANDROID_VERSIONS_TO_KEEP", default_versions)
+    if is_first_run:
+        prompt_text = f"How many versions of the Android app would you like to keep? (default is {current_versions}): "
+    else:
+        prompt_text = f"How many versions of the Android app would you like to keep? (current: {current_versions}): "
+    android_versions_to_keep = input(prompt_text).strip() or str(current_versions)
+    config["ANDROID_VERSIONS_TO_KEEP"] = int(android_versions_to_keep)
+    return config
+
+
 def _setup_base(
     config: dict, is_partial_run: bool, is_first_run: bool, wants: Callable[[str], bool]
 ) -> dict:
@@ -630,128 +777,19 @@ def run_setup(sections: Optional[Sequence[str]] = None):
     # Handle base setup (Termux packages, base directory, Windows shortcuts)
     config = _setup_base({}, is_partial_run, is_first_run, wants)
 
-    # Prompt to save APKs, firmware, or both
-    if not is_partial_run:
-        save_choice = (
-            input(
-                "Would you like to download APKs, firmware, or both? [a/f/b] (default: both): "
-            )
-            .strip()
-            .lower()
-            or "both"
-        )
-        if save_choice == "a":
-            save_apks = True
-            save_firmware = False
-        elif save_choice == "f":
-            save_apks = False
-            save_firmware = True
-        else:
-            save_apks = True
-            save_firmware = True
-    else:
-        save_apks = config.get("SAVE_APKS", False)
-        save_firmware = config.get("SAVE_FIRMWARE", False)
-        if wants("android"):
-            current_apk_default = "y" if save_apks else "n"
-            choice = (
-                input(
-                    f"Download Android APKs? [y/n] (current: {current_apk_default}): "
-                )
-                .strip()
-                .lower()
-                or current_apk_default
-            )
-            save_apks = choice == "y"
-        if wants("firmware"):
-            current_fw_default = "y" if save_firmware else "n"
-            choice = (
-                input(
-                    f"Download firmware releases? [y/n] (current: {current_fw_default}): "
-                )
-                .strip()
-                .lower()
-                or current_fw_default
-            )
-            save_firmware = choice == "y"
+    # Handle download type selection and asset menus
+    config, save_apks, save_firmware = _setup_downloads(config, is_partial_run, wants)
 
-    config["SAVE_APKS"] = save_apks
-    config["SAVE_FIRMWARE"] = save_firmware
-
-    # Run the menu scripts based on user choices
-    # Small tip to help users choose precise firmware patterns
-    if save_firmware and (not is_partial_run or wants("firmware")):
-        print("\nTips for precise selection:")
-        print(
-            "- Use the separator seen in filenames to target a family (e.g., 'rak4631-' vs 'rak4631_')."
-        )
-        print(
-            "- 'rak4631-' matches base RAK4631 files (e.g., firmware-rak4631-...),"
-            " while 'rak4631_' matches underscore variants (e.g., firmware-rak4631_eink-...).",
-            sep="",
-        )
-        print("- You can re-run 'fetchtastic setup' anytime to adjust your patterns.\n")
-    if save_apks and (not is_partial_run or wants("android")):
-        rerun_menu = True
-        if is_partial_run:
-            keep_existing = (
-                input("Re-run the Android APK selection menu? [y/n] (default: yes): ")
-                .strip()
-                .lower()
-            )
-            if keep_existing == "n":
-                rerun_menu = False
-        if rerun_menu:
-            apk_selection = menu_apk.run_menu()
-            if not apk_selection:
-                print("No APK assets selected. APKs will not be downloaded.")
-                save_apks = False
-                config["SAVE_APKS"] = False
-            else:
-                config["SELECTED_APK_ASSETS"] = apk_selection["selected_assets"]
-    if save_firmware and (not is_partial_run or wants("firmware")):
-        rerun_menu = True
-        if is_partial_run:
-            keep_existing = (
-                input(
-                    "Re-run the firmware asset selection menu? [y/n] (default: yes): "
-                )
-                .strip()
-                .lower()
-            )
-            if keep_existing == "n":
-                rerun_menu = False
-        if rerun_menu:
-            firmware_selection = menu_firmware.run_menu()
-            if not firmware_selection:
-                print("No firmware assets selected. Firmware will not be downloaded.")
-                save_firmware = False
-                config["SAVE_FIRMWARE"] = False
-            else:
-                config["SELECTED_FIRMWARE_ASSETS"] = firmware_selection[
-                    "selected_assets"
-                ]
-
-    # If both save_apks and save_firmware are False, inform the user and exit setup
+    # If both save_apks and save_firmware are False, exit setup
     if not save_apks and not save_firmware:
-        print("Please select at least one type of asset to download (APK or firmware).")
-        print("Run 'fetchtastic setup' again and select at least one asset.")
         return
 
     # Determine default number of versions to keep based on platform
     default_versions_to_keep = 2 if is_termux() else 3
 
-    # Prompt for number of versions to keep
+    # Handle Android configuration
     if save_apks and (not is_partial_run or wants("android")):
-        current_versions = config.get(
-            "ANDROID_VERSIONS_TO_KEEP", default_versions_to_keep
-        )
-        if is_first_run:
-            prompt_text = f"How many versions of the Android app would you like to keep? (default is {current_versions}): "
-        else:
-            prompt_text = f"How many versions of the Android app would you like to keep? (current: {current_versions}): "
-        android_versions_to_keep = input(prompt_text).strip() or str(current_versions)
-        config["ANDROID_VERSIONS_TO_KEEP"] = int(android_versions_to_keep)
+        config = _setup_android(config, is_first_run, default_versions_to_keep)
     if save_firmware and (not is_partial_run or wants("firmware")):
         current_versions = config.get(
             "FIRMWARE_VERSIONS_TO_KEEP", default_versions_to_keep
