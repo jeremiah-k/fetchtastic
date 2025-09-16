@@ -56,7 +56,7 @@ def _summarise_release_scan(kind: str, total_found: int, keep_limit: int) -> str
     return message
 
 
-def _summarise_scan_window(release_type: str, scan_count: int, keep_limit: int) -> str:
+def _summarise_scan_window(release_type: str, scan_count: int) -> str:
     """
     Build a concise log message describing the scanning window for a release type.
 
@@ -67,7 +67,6 @@ def _summarise_scan_window(release_type: str, scan_count: int, keep_limit: int) 
     Parameters:
         release_type (str): Human-readable name of the release kind (e.g., "firmware", "Android APK").
         scan_count (int): Number of releases discovered for scanning.
-        keep_limit (int): Maximum number of releases allowed to be kept/scanned (unused, kept for compatibility).
 
     Returns:
         str: The formatted scan-window message.
@@ -1646,7 +1645,7 @@ def check_and_download(
     releases_to_download: List[Dict[str, Any]] = releases[:versions_to_keep]
 
     total_to_scan = len(releases_to_download)
-    logger.info(_summarise_scan_window(release_type, total_to_scan, versions_to_keep))
+    logger.info(_summarise_scan_window(release_type, total_to_scan))
 
     if downloads_skipped:
         # Mirror the “newer than saved” computation used later (newest-first list).
