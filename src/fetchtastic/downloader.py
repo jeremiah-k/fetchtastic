@@ -597,6 +597,9 @@ def check_for_prereleases(
 
                     # Fetch the list of files that should be in this directory
                     expected_files = menu_repo.fetch_directory_contents(dir_name)
+                    logger.debug(
+                        f"Fetched {len(expected_files) if expected_files else 0} files from {dir_name}"
+                    )
                     if expected_files:
                         # Filter expected files based on patterns (same logic as download)
                         expected_matching_files = []
@@ -604,9 +607,13 @@ def check_for_prereleases(
                             file_name = file["name"]
 
                             # Apply same filtering logic as download (back-compat matching)
-                            if not matches_selected_patterns(
+                            pattern_match = matches_selected_patterns(
                                 file_name, selected_patterns
-                            ):
+                            )
+                            logger.debug(
+                                f"Completeness check - Pattern matching for {file_name}: {pattern_match} (patterns: {selected_patterns})"
+                            )
+                            if not pattern_match:
                                 continue  # Skip this file
 
                             # Skip files that match exclude patterns
@@ -617,6 +624,10 @@ def check_for_prereleases(
                                 continue  # Skip this file
 
                             expected_matching_files.append(file_name)
+
+                        logger.debug(
+                            f"After pattern filtering: {len(expected_matching_files)} files match patterns out of {len(expected_files)} total files"
+                        )
 
                         # Check if all expected files are present locally
                         missing_files = []
@@ -632,7 +643,7 @@ def check_for_prereleases(
                             should_process = True
                         else:
                             logger.debug(
-                                f"Pre-release {dir_name} is complete with all expected files"
+                                f"Pre-release {dir_name} is complete with all expected files ({len(expected_matching_files)} files)"
                             )
                     else:
                         # Could not fetch expected files list, assume we need to process
