@@ -46,6 +46,28 @@ from fetchtastic.utils import (
 NON_ASCII_RX = re.compile(r"[^\x00-\x7F]+")
 
 
+def _summarise_release_scan(kind: str, total_found: int, keep_limit: int) -> str:
+    """Return a concise log message describing how many releases will be scanned."""
+
+    scan_count = min(total_found, keep_limit)
+    message = f"Found {total_found} {kind} releases; scanning newest {scan_count}"
+    if keep_limit > scan_count:
+        message += f" (keep limit {keep_limit})"
+    return message
+
+
+def _summarise_scan_window(release_type: str, scan_count: int, keep_limit: int) -> str:
+    """Return a log string describing the scanning window for the given release type."""
+
+    if scan_count == 0:
+        return f"No {release_type} releases to scan"
+    descriptor = "release" if scan_count == 1 else "releases"
+    message = f"Scanning {release_type} {descriptor}"
+    if keep_limit < scan_count:
+        message += f" (limit {keep_limit})"
+    return message
+
+
 def _newer_tags_since_saved(
     tags_order: List[str], saved_release_tag: Optional[str]
 ) -> List[str]:
@@ -573,12 +595,19 @@ def check_for_prereleases(
             # Only download files that match the selected patterns and don't match exclude patterns
             # Backward-compatible pattern matching (modern + legacy normalization)
             if not matches_selected_patterns(file_name, selected_patterns):
+                logger.debug(
+                    "Skipping pre-release file %s (no pattern match)", file_name
+                )
                 continue  # Skip this file
 
             # Skip files that match exclude patterns
             if any(
                 fnmatch.fnmatch(file_name, exclude) for exclude in exclude_patterns_list
             ):
+                logger.debug(
+                    "Skipping pre-release file %s (matched exclude pattern)",
+                    file_name,
+                )
                 continue  # Skip this file
 
             if not os.path.exists(file_path):
@@ -905,7 +934,9 @@ def _process_firmware_downloads(
             "FIRMWARE_VERSIONS_TO_KEEP", DEFAULT_FIRMWARE_VERSIONS_TO_KEEP
         )
         logger.info(
-            f"Found {len(latest_firmware_releases)} firmware releases; scanning {min(len(latest_firmware_releases), keep_count)} (keep {keep_count})"
+            _summarise_release_scan(
+                "firmware", len(latest_firmware_releases), keep_count
+            )
         )
 
         # Extract the actual latest firmware version
@@ -1020,7 +1051,9 @@ def _process_apk_downloads(
             "ANDROID_VERSIONS_TO_KEEP", DEFAULT_ANDROID_VERSIONS_TO_KEEP
         )
         logger.info(
-            f"Found {len(latest_android_releases)} Android releases; scanning {min(len(latest_android_releases), keep_count_apk)} (keep {keep_count_apk})"
+            _summarise_release_scan(
+                "Android APK", len(latest_android_releases), keep_count_apk
+            )
         )
 
         # Extract the actual latest APK version
@@ -1590,9 +1623,7 @@ def check_and_download(
     releases_to_download: List[Dict[str, Any]] = releases[:versions_to_keep]
 
     total_to_scan = len(releases_to_download)
-    logger.info(
-        f"Scanning {total_to_scan} {release_type} releases (keep {versions_to_keep})"
-    )
+    logger.info(_summarise_scan_window(release_type, total_to_scan, versions_to_keep))
 
     if downloads_skipped:
         # Mirror the “newer than saved” computation used later (newest-first list).
@@ -1609,7 +1640,11 @@ def check_and_download(
             release_tag: str = release_data[
                 "tag_name"
             ]  # Potential KeyError if API response changes
-            logger.info(f"Checking {release_tag} ({idx}/{total_to_scan})…")
+            if total_to_scan > 1:
+                logger.debug(
+                    "Checking %s (%d of %d)", release_tag, idx, total_to_scan
+                )
+            logger.info(f"Checking {release_tag}…")
             release_dir: str = os.path.join(download_dir_path, release_tag)
             release_notes_file: str = os.path.join(
                 release_dir, f"release_notes-{release_tag}.md"
@@ -1730,9 +1765,19 @@ def check_and_download(
                 if selected_patterns and not matches_selected_patterns(
                     file_name, selected_patterns
                 ):
+                    logger.debug(
+                        "Skipping %s asset %s (no pattern match)",
+                        release_type,
+                        file_name,
+                    )
                     continue
                 # Honor exclude patterns at download-time as well
                 if any(fnmatch.fnmatch(file_name, ex) for ex in exclude_patterns_list):
+                    logger.debug(
+                        "Skipping %s asset %s (matched exclude pattern)",
+                        release_type,
+                        file_name,
+                    )
                     continue
                 asset_download_path = os.path.join(release_dir, file_name)
                 if not os.path.exists(asset_download_path):

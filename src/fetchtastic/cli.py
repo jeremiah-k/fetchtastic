@@ -5,6 +5,7 @@ import os
 import platform
 import shutil
 import subprocess
+from typing import List
 
 import platformdirs
 
@@ -48,6 +49,18 @@ def main():
 
     # Command to run setup
     setup_parser = subparsers.add_parser("setup", help="Run the setup process")
+    setup_parser.add_argument(
+        "--section",
+        action="append",
+        choices=sorted(setup_config.SETUP_SECTION_CHOICES),
+        help="Only re-run specific setup sections (can be passed multiple times)",
+    )
+    setup_parser.add_argument(
+        "sections",
+        nargs="*",
+        choices=sorted(setup_config.SETUP_SECTION_CHOICES),
+        help="Positional shorthand for selecting setup sections (e.g. 'setup firmware')",
+    )
 
     # Only add Windows-specific flag on Windows
     if platform.system() == "Windows":
@@ -136,8 +149,13 @@ def main():
             else:
                 logger.info("Integration updates are only available on Windows.")
         else:
-            # Run the full setup process
-            setup_config.run_setup()
+            # Run the full setup process (optionally limited to specific sections)
+            combined_sections: List[str] = []
+            if args.section:
+                combined_sections.extend(args.section)
+            if args.sections:
+                combined_sections.extend(args.sections)
+            setup_config.run_setup(sections=combined_sections or None)
 
         # Remind about updates at the end if available
         if update_available:

@@ -8,6 +8,7 @@ import string
 import subprocess
 import sys
 from datetime import datetime
+from typing import Optional, Sequence, Set
 
 import platformdirs
 import yaml
@@ -40,6 +41,23 @@ WINDOWS_START_MENU_FOLDER = os.path.join(
     "Programs",
     "Fetchtastic",
 )
+
+# Supported setup sections for partial reconfiguration
+SETUP_SECTION_CHOICES: Set[str] = {
+    "base",  # Base directory and environment-specific options
+    "android",  # Android APK download preferences
+    "firmware",  # Firmware download preferences (including prereleases/extraction)
+    "notifications",  # NTFY configuration
+    "automation",  # Cron/startup automation choices
+}
+
+SECTION_SHORTCUTS = {
+    "b": "base",
+    "a": "android",
+    "f": "firmware",
+    "n": "notifications",
+    "m": "automation",
+}
 
 
 def is_termux():
@@ -332,17 +350,89 @@ def check_storage_setup():
             continue
 
 
-def run_setup():
+def _prompt_for_setup_sections() -> Optional[Set[str]]:
+    """Interactively ask the user which setup sections to run when config exists."""
+
+    print("\nExisting configuration detected. You can re-run the full wizard or update specific areas.")
+    print("Press ENTER to run the full setup, or choose one or more sections (comma separated):")
+    print("  [b] base           — base directory and general settings")
+    print("  [a] android        — Android APK download preferences")
+    print("  [f] firmware       — firmware download preferences")
+    print("  [n] notifications  — NTFY server/topic settings")
+    print("  [m] automation     — scheduled/automatic execution options")
+
+    while True:
+        response = input(
+            "Selection (examples: f, android; default: full setup): "
+        ).strip()
+        if not response:
+            return None
+
+        normalised = response.replace(";", " ").replace(",", " ")
+        tokens = [tok for tok in normalised.split() if tok]
+        selected: Set[str] = set()
+        for token in tokens:
+            lowered = token.strip().lower()
+            if not lowered:
+                continue
+            if lowered in {"all", "full", "everything"}:
+                return None
+            if lowered in SECTION_SHORTCUTS:
+                selected.add(SECTION_SHORTCUTS[lowered])
+                continue
+            if lowered in SETUP_SECTION_CHOICES:
+                selected.add(lowered)
+                continue
+            print(f"Unrecognised section '{token}'. Please choose from the listed options.")
+            selected.clear()
+            break
+
+        if selected:
+            return selected
+
+def run_setup(sections: Optional[Sequence[str]] = None):
     """
     Run the interactive Fetchtastic setup wizard.
 
     Guides the user through creating or migrating configuration, selecting assets (APKs and/or firmware), retention and extraction settings, notification (NTFY) setup, and scheduling/startup options. Behavior is platform-aware: on Termux it may install required packages, configure storage, and offer pip→pipx migration; on Windows it can create Start Menu and startup shortcuts; on Linux/macOS/Termux it can install/remove cron or boot jobs. The function persists settings to the configured YAML file, updates the global BASE_DIR (and related config keys), may create or migrate CONFIG_FILE, and optionally triggers an initial download run (calls downloader.main()).
+
+    When ``sections`` is provided the wizard focuses only on those configuration areas (drawn from
+    :data:`SETUP_SECTION_CHOICES`). Other settings are preserved using the existing values from the
+    configuration file, so users can quickly tweak a single area without stepping through the full
+    workflow.
     """
     global BASE_DIR, CONFIG_FILE
-    print("Running Fetchtastic Setup...")
+    partial_sections: Optional[Set[str]] = None
+    if sections:
+        section_names = [s.lower() for s in sections]
+        invalid = sorted({s for s in section_names if s not in SETUP_SECTION_CHOICES})
+        if invalid:
+            raise ValueError(
+                "Unsupported setup section(s): " + ", ".join(invalid)
+            )
+        partial_sections = set(section_names)
+
+    config_present, _ = config_exists()
+    if not partial_sections and config_present:
+        user_sections = _prompt_for_setup_sections()
+        if user_sections:
+            partial_sections = user_sections
+
+    is_partial_run = partial_sections is not None
+
+    def wants(section: str) -> bool:
+        """Return True when the current run should prompt for the given section."""
+
+        return partial_sections is None or section in partial_sections
+
+    if is_partial_run:
+        section_list = ", ".join(sorted(partial_sections))
+        print(f"Updating Fetchtastic setup sections: {section_list}")
+    else:
+        print("Running Fetchtastic Setup...")
 
     # Install required Termux packages first
-    if is_termux():
+    if is_termux() and (not is_partial_run or wants("base")):
         install_termux_packages()
         # Check if storage is set up
         check_storage_setup()
@@ -432,39 +522,43 @@ def run_setup():
             f"Enter the base directory for Fetchtastic (default: {DEFAULT_BASE_DIR}): "
         )
 
-    # Prompt for base directory
-    base_dir_input = input(base_dir_prompt).strip()
+    if not is_partial_run or wants("base"):
+        # Prompt for base directory
+        base_dir_input = input(base_dir_prompt).strip()
 
-    if base_dir_input:
-        # User entered a custom directory
-        base_dir = os.path.expanduser(base_dir_input)
+        if base_dir_input:
+            # User entered a custom directory
+            base_dir = os.path.expanduser(base_dir_input)
 
-        # Check if there's a config file in the specified directory
-        exists_in_dir, _ = config_exists(base_dir)
-        if exists_in_dir and base_dir != BASE_DIR:
-            print(f"Found existing configuration in {base_dir}")
-            # Load the configuration from the specified directory
-            config = load_config(base_dir)
-            is_first_run = False
+            # Check if there's a config file in the specified directory
+            exists_in_dir, _ = config_exists(base_dir)
+            if exists_in_dir and base_dir != BASE_DIR:
+                print(f"Found existing configuration in {base_dir}")
+                # Load the configuration from the specified directory
+                config = load_config(base_dir)
+                is_first_run = False
+            else:
+                # No config in the specified directory or it's the same as current
+                BASE_DIR = base_dir
+                # Keep CONFIG_FILE in the platformdirs location
+                # CONFIG_FILE should not be changed here
         else:
-            # No config in the specified directory or it's the same as current
+            # User accepted the default/current directory
+            if is_first_run:
+                base_dir = DEFAULT_BASE_DIR
+            else:
+                base_dir = config.get("BASE_DIR", DEFAULT_BASE_DIR)
+
+            # Expand user directory if needed (e.g., ~/Downloads/Meshtastic)
+            base_dir = os.path.expanduser(base_dir)
+
+            # Update global variables
             BASE_DIR = base_dir
             # Keep CONFIG_FILE in the platformdirs location
             # CONFIG_FILE should not be changed here
     else:
-        # User accepted the default/current directory
-        if is_first_run:
-            base_dir = DEFAULT_BASE_DIR
-        else:
-            base_dir = config.get("BASE_DIR", DEFAULT_BASE_DIR)
-
-        # Expand user directory if needed (e.g., ~/Downloads/Meshtastic)
-        base_dir = os.path.expanduser(base_dir)
-
-        # Update global variables
-        BASE_DIR = base_dir
-        # Keep CONFIG_FILE in the platformdirs location
-        # CONFIG_FILE should not be changed here
+        # Partial run retaining the existing base directory
+        BASE_DIR = os.path.expanduser(config.get("BASE_DIR", DEFAULT_BASE_DIR))
 
     # Store the base directory in the config
     config["BASE_DIR"] = BASE_DIR
@@ -474,7 +568,7 @@ def run_setup():
         os.makedirs(BASE_DIR)
 
     # On Windows, handle shortcuts
-    if platform.system() == "Windows":
+    if platform.system() == "Windows" and (not is_partial_run or wants("base")):
         # Always create a shortcut to the config file in the base directory without asking
         if WINDOWS_MODULES_AVAILABLE:
             create_config_shortcut(CONFIG_FILE, BASE_DIR)
@@ -509,29 +603,56 @@ def run_setup():
             print("or if using pip: pip install fetchtastic[win]")
 
     # Prompt to save APKs, firmware, or both
-    save_choice = (
-        input(
-            "Would you like to download APKs, firmware, or both? [a/f/b] (default: both): "
+    if not is_partial_run:
+        save_choice = (
+            input(
+                "Would you like to download APKs, firmware, or both? [a/f/b] (default: both): "
+            )
+            .strip()
+            .lower()
+            or "both"
         )
-        .strip()
-        .lower()
-        or "both"
-    )
-    if save_choice == "a":
-        save_apks = True
-        save_firmware = False
-    elif save_choice == "f":
-        save_apks = False
-        save_firmware = True
+        if save_choice == "a":
+            save_apks = True
+            save_firmware = False
+        elif save_choice == "f":
+            save_apks = False
+            save_firmware = True
+        else:
+            save_apks = True
+            save_firmware = True
     else:
-        save_apks = True
-        save_firmware = True
+        save_apks = config.get("SAVE_APKS", False)
+        save_firmware = config.get("SAVE_FIRMWARE", False)
+        if wants("android"):
+            current_apk_default = "y" if save_apks else "n"
+            choice = (
+                input(
+                    f"Download Android APKs? [y/n] (current: {current_apk_default}): "
+                )
+                .strip()
+                .lower()
+                or current_apk_default
+            )
+            save_apks = choice == "y"
+        if wants("firmware"):
+            current_fw_default = "y" if save_firmware else "n"
+            choice = (
+                input(
+                    f"Download firmware releases? [y/n] (current: {current_fw_default}): "
+                )
+                .strip()
+                .lower()
+                or current_fw_default
+            )
+            save_firmware = choice == "y"
+
     config["SAVE_APKS"] = save_apks
     config["SAVE_FIRMWARE"] = save_firmware
 
     # Run the menu scripts based on user choices
     # Small tip to help users choose precise firmware patterns
-    if save_firmware:
+    if save_firmware and (not is_partial_run or wants("firmware")):
         print("\nTips for precise selection:")
         print(
             "- Use the separator seen in filenames to target a family (e.g., 'rak4631-' vs 'rak4631_')."
@@ -542,22 +663,46 @@ def run_setup():
             sep="",
         )
         print("- You can re-run 'fetchtastic setup' anytime to adjust your patterns.\n")
-    if save_apks:
-        apk_selection = menu_apk.run_menu()
-        if not apk_selection:
-            print("No APK assets selected. APKs will not be downloaded.")
-            save_apks = False
-            config["SAVE_APKS"] = False
-        else:
-            config["SELECTED_APK_ASSETS"] = apk_selection["selected_assets"]
-    if save_firmware:
-        firmware_selection = menu_firmware.run_menu()
-        if not firmware_selection:
-            print("No firmware assets selected. Firmware will not be downloaded.")
-            save_firmware = False
-            config["SAVE_FIRMWARE"] = False
-        else:
-            config["SELECTED_FIRMWARE_ASSETS"] = firmware_selection["selected_assets"]
+    if save_apks and (not is_partial_run or wants("android")):
+        rerun_menu = True
+        if is_partial_run:
+            keep_existing = (
+                input(
+                    "Re-run the Android APK selection menu? [y/n] (default: yes): "
+                )
+                .strip()
+                .lower()
+            )
+            if keep_existing == "n":
+                rerun_menu = False
+        if rerun_menu:
+            apk_selection = menu_apk.run_menu()
+            if not apk_selection:
+                print("No APK assets selected. APKs will not be downloaded.")
+                save_apks = False
+                config["SAVE_APKS"] = False
+            else:
+                config["SELECTED_APK_ASSETS"] = apk_selection["selected_assets"]
+    if save_firmware and (not is_partial_run or wants("firmware")):
+        rerun_menu = True
+        if is_partial_run:
+            keep_existing = (
+                input(
+                    "Re-run the firmware asset selection menu? [y/n] (default: yes): "
+                )
+                .strip()
+                .lower()
+            )
+            if keep_existing == "n":
+                rerun_menu = False
+        if rerun_menu:
+            firmware_selection = menu_firmware.run_menu()
+            if not firmware_selection:
+                print("No firmware assets selected. Firmware will not be downloaded.")
+                save_firmware = False
+                config["SAVE_FIRMWARE"] = False
+            else:
+                config["SELECTED_FIRMWARE_ASSETS"] = firmware_selection["selected_assets"]
 
     # If both save_apks and save_firmware are False, inform the user and exit setup
     if not save_apks and not save_firmware:
@@ -569,7 +714,7 @@ def run_setup():
     default_versions_to_keep = 2 if is_termux() else 3
 
     # Prompt for number of versions to keep
-    if save_apks:
+    if save_apks and (not is_partial_run or wants("android")):
         current_versions = config.get(
             "ANDROID_VERSIONS_TO_KEEP", default_versions_to_keep
         )
@@ -579,7 +724,7 @@ def run_setup():
             prompt_text = f"How many versions of the Android app would you like to keep? (current: {current_versions}): "
         android_versions_to_keep = input(prompt_text).strip() or str(current_versions)
         config["ANDROID_VERSIONS_TO_KEEP"] = int(android_versions_to_keep)
-    if save_firmware:
+    if save_firmware and (not is_partial_run or wants("firmware")):
         current_versions = config.get(
             "FIRMWARE_VERSIONS_TO_KEEP", default_versions_to_keep
         )
@@ -753,19 +898,21 @@ def run_setup():
 
     # Ask if the user wants to only download when connected to Wi-Fi (Termux only)
     if is_termux():
-        wifi_only_default = "yes" if config.get("WIFI_ONLY", True) else "no"
-        wifi_only = (
-            input(
-                f"Do you want to only download when connected to Wi-Fi? [y/n] (default: {wifi_only_default}): "
+        if not is_partial_run or wants("base"):
+            wifi_only_default = "yes" if config.get("WIFI_ONLY", True) else "no"
+            wifi_only = (
+                input(
+                    f"Do you want to only download when connected to Wi-Fi? [y/n] (default: {wifi_only_default}): "
+                )
+                .strip()
+                .lower()
+                or wifi_only_default[0]
             )
-            .strip()
-            .lower()
-            or wifi_only_default[0]
-        )
-        config["WIFI_ONLY"] = True if wifi_only == "y" else False
+            config["WIFI_ONLY"] = True if wifi_only == "y" else False
     else:
-        # For non-Termux environments, remove WIFI_ONLY from config if it exists
-        config.pop("WIFI_ONLY", None)
+        if not is_partial_run or wants("base"):
+            # For non-Termux environments, remove WIFI_ONLY from config if it exists
+            config.pop("WIFI_ONLY", None)
 
     # Set the download directory to the same as the base directory
     download_dir = BASE_DIR
@@ -796,165 +943,201 @@ def run_setup():
     print(f"Configuration saved to: {CONFIG_FILE}")
 
     # Cron job setup
-    if platform.system() == "Windows":
-        # Windows doesn't support cron jobs, but we can offer to create a startup shortcut
-        if WINDOWS_MODULES_AVAILABLE:
-            # Check if startup shortcut already exists
-            startup_folder = winshell.startup()
-            startup_shortcut_path = os.path.join(startup_folder, "Fetchtastic.lnk")
+    if not is_partial_run or wants("automation"):
+        if platform.system() == "Windows":
+            # Windows doesn't support cron jobs, but we can offer to create a startup shortcut
+            if WINDOWS_MODULES_AVAILABLE:
+                # Check if startup shortcut already exists
+                startup_folder = winshell.startup()
+                startup_shortcut_path = os.path.join(startup_folder, "Fetchtastic.lnk")
 
-            if os.path.exists(startup_shortcut_path):
-                startup_option = (
+                if os.path.exists(startup_shortcut_path):
+                    startup_option = (
+                        input(
+                            "Fetchtastic is already set to run at startup. Would you like to remove this? [y/n] (default: no): "
+                        )
+                        .strip()
+                        .lower()
+                        or "n"
+                    )
+                    if startup_option == "y":
+                        try:
+                            # Also remove the batch file if it exists
+                            batch_dir = os.path.join(CONFIG_DIR, "batch")
+                            batch_path = os.path.join(batch_dir, "fetchtastic_startup.bat")
+                            if os.path.exists(batch_path):
+                                os.remove(batch_path)
+
+                            # Remove the shortcut
+                            os.remove(startup_shortcut_path)
+                            print(
+                                "✓ Startup shortcut removed. Fetchtastic will no longer run automatically at startup."
+                            )
+                        except Exception as e:
+                            print(f"Failed to remove startup shortcut: {e}")
+                            print("You can manually remove it from: " + startup_folder)
+                    else:
+                        print(
+                            "✓ Fetchtastic will continue to run automatically at startup."
+                        )
+                else:
+                    startup_option = (
+                        input(
+                            "Would you like to run Fetchtastic automatically on Windows startup? [y/n] (default: yes): "
+                        )
+                        .strip()
+                        .lower()
+                        or "y"
+                    )
+                    if startup_option == "y":
+                        if create_startup_shortcut():
+                            print(
+                                "✓ Fetchtastic will now run automatically when Windows starts."
+                            )
+                        else:
+                            print(
+                                "Failed to create startup shortcut. You can manually set up Fetchtastic to run at startup."
+                            )
+                            print(
+                                "You can use Windows Task Scheduler or add a shortcut to: "
+                                + startup_folder
+                            )
+                    else:
+                        print("Fetchtastic will not run automatically on startup.")
+            else:
+                # Don't show this message again since we already showed it earlier
+                pass
+        elif is_termux():
+            # Termux: Ask about cron job and boot script individually
+            # Check if cron job already exists
+            cron_job_exists = check_cron_job_exists()
+            if cron_job_exists:
+                cron_prompt = (
                     input(
-                        "Fetchtastic is already set to run at startup. Would you like to remove this? [y/n] (default: no): "
+                        "A cron job is already set up. Do you want to reconfigure it? [y/n] (default: no): "
                     )
                     .strip()
                     .lower()
                     or "n"
                 )
-                if startup_option == "y":
-                    try:
-                        # Also remove the batch file if it exists
-                        batch_dir = os.path.join(CONFIG_DIR, "batch")
-                        batch_path = os.path.join(batch_dir, "fetchtastic_startup.bat")
-                        if os.path.exists(batch_path):
-                            os.remove(batch_path)
+                if cron_prompt == "y":
+                    # First, remove existing cron job
+                    remove_cron_job()
+                    print("Existing cron job removed for reconfiguration.")
 
-                        # Remove the shortcut
-                        os.remove(startup_shortcut_path)
-                        print(
-                            "✓ Startup shortcut removed. Fetchtastic will no longer run automatically at startup."
-                        )
-                    except Exception as e:
-                        print(f"Failed to remove startup shortcut: {e}")
-                        print("You can manually remove it from: " + startup_folder)
+                    # Then set up new cron job
+                    install_crond()
+                    setup_cron_job()
+                    print("Cron job has been reconfigured.")
                 else:
-                    print(
-                        "✓ Fetchtastic will continue to run automatically at startup."
-                    )
+                    print("Cron job configuration left unchanged.")
             else:
-                startup_option = (
+                # Ask if the user wants to set up a cron job
+                cron_default = "yes"  # Default to 'yes'
+                setup_cron = (
                     input(
-                        "Would you like to run Fetchtastic automatically on Windows startup? [y/n] (default: yes): "
+                        f"Would you like to schedule Fetchtastic to run daily at 3 AM? [y/n] (default: {cron_default}): "
                     )
                     .strip()
                     .lower()
-                    or "y"
+                    or cron_default[0]
                 )
-                if startup_option == "y":
-                    if create_startup_shortcut():
-                        print(
-                            "✓ Fetchtastic will now run automatically when Windows starts."
-                        )
-                    else:
-                        print(
-                            "Failed to create startup shortcut. You can manually set up Fetchtastic to run at startup."
-                        )
-                        print(
-                            "You can use Windows Task Scheduler or add a shortcut to: "
-                            + startup_folder
-                        )
+                if setup_cron == "y":
+                    install_crond()
+                    setup_cron_job()
                 else:
-                    print("Fetchtastic will not run automatically on startup.")
+                    print("Cron job has not been set up.")
+
+            # Check if boot script already exists
+            boot_script_exists = check_boot_script_exists()
+            if boot_script_exists:
+                boot_prompt = (
+                    input(
+                        "A boot script is already set up. Do you want to reconfigure it? [y/n] (default: no): "
+                    )
+                    .strip()
+                    .lower()
+                    or "n"
+                )
+                if boot_prompt == "y":
+                    # First, remove existing boot script
+                    remove_boot_script()
+                    print("Existing boot script removed for reconfiguration.")
+
+                    # Then set up new boot script
+                    setup_boot_script()
+                    print("Boot script has been reconfigured.")
+                else:
+                    print("Boot script configuration left unchanged.")
+            else:
+                # Ask if the user wants to set up a boot script
+                boot_default = "yes"  # Default to 'yes'
+                setup_boot = (
+                    input(
+                        f"Do you want Fetchtastic to run on device boot? [y/n] (default: {boot_default}): "
+                    )
+                    .strip()
+                    .lower()
+                    or boot_default[0]
+                )
+                if setup_boot == "y":
+                    setup_boot_script()
+                else:
+                    print("Boot script has not been set up.")
+
         else:
-            # Don't show this message again since we already showed it earlier
-            pass
-    elif is_termux():
-        # Termux: Ask about cron job and boot script individually
-        # Check if cron job already exists
-        cron_job_exists = check_cron_job_exists()
-        if cron_job_exists:
-            cron_prompt = (
-                input(
-                    "A cron job is already set up. Do you want to reconfigure it? [y/n] (default: no): "
+            # Linux/Mac: Check if any Fetchtastic cron jobs exist
+            any_cron_jobs_exist = check_any_cron_jobs_exist()
+            if any_cron_jobs_exist:
+                cron_prompt = (
+                    input(
+                        "Fetchtastic cron jobs are already set up. Do you want to reconfigure them? [y/n] (default: no): "
+                    )
+                    .strip()
+                    .lower()
+                    or "n"
                 )
-                .strip()
-                .lower()
-                or "n"
-            )
-            if cron_prompt == "y":
-                # First, remove existing cron job
-                remove_cron_job()
-                print("Existing cron job removed for reconfiguration.")
+                if cron_prompt == "y":
+                    # First, remove existing cron jobs
+                    remove_cron_job()
+                    remove_reboot_cron_job()
+                    print("Existing cron jobs removed for reconfiguration.")
 
-                # Then set up new cron job
-                install_crond()
-                setup_cron_job()
-                print("Cron job has been reconfigured.")
+                    # Ask if they want to set up daily cron job
+                    cron_default = "yes"
+                    setup_cron = (
+                        input(
+                            f"Would you like to schedule Fetchtastic to run daily at 3 AM? [y/n] (default: {cron_default}): "
+                        )
+                        .strip()
+                        .lower()
+                        or cron_default[0]
+                    )
+                    if setup_cron == "y":
+                        setup_cron_job()
+                        print("Daily cron job has been set up.")
+                    else:
+                        print("Daily cron job will not be set up.")
+
+                    # Ask if they want to set up a reboot cron job
+                    boot_default = "yes"
+                    setup_reboot = (
+                        input(
+                            f"Do you want Fetchtastic to run on system startup? [y/n] (default: {boot_default}): "
+                        )
+                        .strip()
+                        .lower()
+                        or boot_default[0]
+                    )
+                    if setup_reboot == "y":
+                        setup_reboot_cron_job()
+                        print("Reboot cron job has been set up.")
+                    else:
+                        print("Reboot cron job will not be set up.")
+                else:
+                    print("Cron job configurations left unchanged.")
             else:
-                print("Cron job configuration left unchanged.")
-        else:
-            # Ask if the user wants to set up a cron job
-            cron_default = "yes"  # Default to 'yes'
-            setup_cron = (
-                input(
-                    f"Would you like to schedule Fetchtastic to run daily at 3 AM? [y/n] (default: {cron_default}): "
-                )
-                .strip()
-                .lower()
-                or cron_default[0]
-            )
-            if setup_cron == "y":
-                install_crond()
-                setup_cron_job()
-            else:
-                print("Cron job has not been set up.")
-
-        # Check if boot script already exists
-        boot_script_exists = check_boot_script_exists()
-        if boot_script_exists:
-            boot_prompt = (
-                input(
-                    "A boot script is already set up. Do you want to reconfigure it? [y/n] (default: no): "
-                )
-                .strip()
-                .lower()
-                or "n"
-            )
-            if boot_prompt == "y":
-                # First, remove existing boot script
-                remove_boot_script()
-                print("Existing boot script removed for reconfiguration.")
-
-                # Then set up new boot script
-                setup_boot_script()
-                print("Boot script has been reconfigured.")
-            else:
-                print("Boot script configuration left unchanged.")
-        else:
-            # Ask if the user wants to set up a boot script
-            boot_default = "yes"  # Default to 'yes'
-            setup_boot = (
-                input(
-                    f"Do you want Fetchtastic to run on device boot? [y/n] (default: {boot_default}): "
-                )
-                .strip()
-                .lower()
-                or boot_default[0]
-            )
-            if setup_boot == "y":
-                setup_boot_script()
-            else:
-                print("Boot script has not been set up.")
-
-    else:
-        # Linux/Mac: Check if any Fetchtastic cron jobs exist
-        any_cron_jobs_exist = check_any_cron_jobs_exist()
-        if any_cron_jobs_exist:
-            cron_prompt = (
-                input(
-                    "Fetchtastic cron jobs are already set up. Do you want to reconfigure them? [y/n] (default: no): "
-                )
-                .strip()
-                .lower()
-                or "n"
-            )
-            if cron_prompt == "y":
-                # First, remove existing cron jobs
-                remove_cron_job()
-                remove_reboot_cron_job()
-                print("Existing cron jobs removed for reconfiguration.")
-
+                # No existing cron jobs, ask if they want to set them up
                 # Ask if they want to set up daily cron job
                 cron_default = "yes"
                 setup_cron = (
@@ -967,9 +1150,8 @@ def run_setup():
                 )
                 if setup_cron == "y":
                     setup_cron_job()
-                    print("Daily cron job has been set up.")
                 else:
-                    print("Daily cron job will not be set up.")
+                    print("Daily cron job has not been set up.")
 
                 # Ask if they want to set up a reboot cron job
                 boot_default = "yes"
@@ -983,203 +1165,177 @@ def run_setup():
                 )
                 if setup_reboot == "y":
                     setup_reboot_cron_job()
-                    print("Reboot cron job has been set up.")
                 else:
-                    print("Reboot cron job will not be set up.")
-            else:
-                print("Cron job configurations left unchanged.")
-        else:
-            # No existing cron jobs, ask if they want to set them up
-            # Ask if they want to set up daily cron job
-            cron_default = "yes"
-            setup_cron = (
-                input(
-                    f"Would you like to schedule Fetchtastic to run daily at 3 AM? [y/n] (default: {cron_default}): "
-                )
-                .strip()
-                .lower()
-                or cron_default[0]
-            )
-            if setup_cron == "y":
-                setup_cron_job()
-            else:
-                print("Daily cron job has not been set up.")
-
-            # Ask if they want to set up a reboot cron job
-            boot_default = "yes"
-            setup_reboot = (
-                input(
-                    f"Do you want Fetchtastic to run on system startup? [y/n] (default: {boot_default}): "
-                )
-                .strip()
-                .lower()
-                or boot_default[0]
-            )
-            if setup_reboot == "y":
-                setup_reboot_cron_job()
-            else:
-                print("Reboot cron job has not been set up.")
+                    print("Reboot cron job has not been set up.")
 
     # Prompt for NTFY server configuration
-    has_ntfy_config = bool(config.get("NTFY_TOPIC")) and bool(config.get("NTFY_SERVER"))
-    notifications_default = "yes" if has_ntfy_config else "no"
-
-    notifications = (
-        input(
-            f"Would you like to set up notifications via NTFY? [y/n] (default: {notifications_default}): "
+    if not is_partial_run or wants("notifications"):
+        has_ntfy_config = bool(config.get("NTFY_TOPIC")) and bool(
+            config.get("NTFY_SERVER")
         )
-        .strip()
-        .lower()
-        or notifications_default[0]
-    )
+        notifications_default = "yes" if has_ntfy_config else "no"
 
-    if notifications == "y":
-        # Get NTFY server
-        current_server = config.get("NTFY_SERVER", "ntfy.sh")
-        ntfy_server = (
-            input(f"Enter the NTFY server (current: {current_server}): ").strip()
-            or current_server
-        )
-
-        if not ntfy_server.startswith("http://") and not ntfy_server.startswith(
-            "https://"
-        ):
-            ntfy_server = "https://" + ntfy_server
-
-        # Get topic name
-        if config.get("NTFY_TOPIC"):
-            current_topic = config.get("NTFY_TOPIC")
-        else:
-            current_topic = "fetchtastic-" + "".join(
-                random.choices(string.ascii_lowercase + string.digits, k=6)
-            )
-
-        topic_name = (
-            input(f"Enter a unique topic name (current: {current_topic}): ").strip()
-            or current_topic
-        )
-
-        # Update config
-        config["NTFY_TOPIC"] = topic_name
-        config["NTFY_SERVER"] = ntfy_server
-
-        # Save configuration with NTFY settings
-        with open(CONFIG_FILE, "w") as f:
-            yaml.dump(config, f)
-
-        # Display information
-        full_topic_url = f"{ntfy_server.rstrip('/')}/{topic_name}"
-        print(f"Notifications enabled using topic: {topic_name}")
-        if is_termux():
-            print("Subscribe by pasting the topic name in the ntfy app.")
-        else:
-            print(
-                "Subscribe by visiting the full topic URL in your browser or ntfy app."
-            )
-        print(f"Full topic URL: {full_topic_url}")
-
-        # Offer to copy to clipboard
-        if is_termux():
-            copy_prompt_text = "Do you want to copy the topic name to the clipboard? [y/n] (default: yes): "
-            text_to_copy = topic_name
-        else:
-            copy_prompt_text = "Do you want to copy the topic URL to the clipboard? [y/n] (default: yes): "
-            text_to_copy = full_topic_url
-
-        copy_to_clipboard = input(copy_prompt_text).strip().lower() or "y"
-        if copy_to_clipboard == "y":
-            success = copy_to_clipboard_func(text_to_copy)
-            if success:
-                if is_termux():
-                    print("Topic name copied to clipboard.")
-                else:
-                    print("Topic URL copied to clipboard.")
-            else:
-                print("Failed to copy to clipboard.")
-
-        # Ask if the user wants notifications only when new files are downloaded
-        notify_on_download_only_default = (
-            "yes" if config.get("NOTIFY_ON_DOWNLOAD_ONLY", False) else "no"
-        )
-        notify_on_download_only = (
+        notifications = (
             input(
-                f"Do you want to receive notifications only when new files are downloaded? [y/n] (default: {notify_on_download_only_default}): "
+                f"Would you like to set up notifications via NTFY? [y/n] (default: {notifications_default}): "
             )
             .strip()
             .lower()
-            or notify_on_download_only_default[0]
-        )
-        config["NOTIFY_ON_DOWNLOAD_ONLY"] = (
-            True if notify_on_download_only == "y" else False
+            or notifications_default[0]
         )
 
-        # Save configuration with the new setting
-        with open(CONFIG_FILE, "w") as f:
-            yaml.dump(config, f)
+        if notifications == "y":
+            # Get NTFY server
+            current_server = config.get("NTFY_SERVER", "ntfy.sh")
+            ntfy_server = (
+                input(f"Enter the NTFY server (current: {current_server}): ").strip()
+                or current_server
+            )
 
-        print("Notification settings have been saved.")
+            if not ntfy_server.startswith("http://") and not ntfy_server.startswith(
+                "https://"
+            ):
+                ntfy_server = "https://" + ntfy_server
 
-    else:
-        # User chose not to use notifications
-        if has_ntfy_config:
-            # Ask for confirmation to disable existing notifications
-            disable_confirm = (
+            # Get topic name
+            if config.get("NTFY_TOPIC"):
+                current_topic = config.get("NTFY_TOPIC")
+            else:
+                current_topic = "fetchtastic-" + "".join(
+                    random.choices(string.ascii_lowercase + string.digits, k=6)
+                )
+
+            topic_name = (
+                input(f"Enter a unique topic name (current: {current_topic}): ").strip()
+                or current_topic
+            )
+
+            # Update config
+            config["NTFY_TOPIC"] = topic_name
+            config["NTFY_SERVER"] = ntfy_server
+
+            # Save configuration with NTFY settings
+            with open(CONFIG_FILE, "w") as f:
+                yaml.dump(config, f)
+
+            # Display information
+            full_topic_url = f"{ntfy_server.rstrip('/')}/{topic_name}"
+            print(f"Notifications enabled using topic: {topic_name}")
+            if is_termux():
+                print("Subscribe by pasting the topic name in the ntfy app.")
+            else:
+                print(
+                    "Subscribe by visiting the full topic URL in your browser or ntfy app."
+                )
+            print(f"Full topic URL: {full_topic_url}")
+
+            # Offer to copy to clipboard
+            if is_termux():
+                copy_prompt_text = "Do you want to copy the topic name to the clipboard? [y/n] (default: yes): "
+                text_to_copy = topic_name
+            else:
+                copy_prompt_text = "Do you want to copy the topic URL to the clipboard? [y/n] (default: yes): "
+                text_to_copy = full_topic_url
+
+            copy_to_clipboard = input(copy_prompt_text).strip().lower() or "y"
+            if copy_to_clipboard == "y":
+                success = copy_to_clipboard_func(text_to_copy)
+                if success:
+                    if is_termux():
+                        print("Topic name copied to clipboard.")
+                    else:
+                        print("Topic URL copied to clipboard.")
+                else:
+                    print("Failed to copy to clipboard.")
+
+            # Ask if the user wants notifications only when new files are downloaded
+            notify_on_download_only_default = (
+                "yes" if config.get("NOTIFY_ON_DOWNLOAD_ONLY", False) else "no"
+            )
+            notify_on_download_only = (
                 input(
-                    "You currently have notifications enabled. Are you sure you want to disable them? [y/n] (default: no): "
+                    f"Do you want to receive notifications only when new files are downloaded? [y/n] (default: {notify_on_download_only_default}): "
                 )
                 .strip()
                 .lower()
-                or "n"
+                or notify_on_download_only_default[0]
+            )
+            config["NOTIFY_ON_DOWNLOAD_ONLY"] = (
+                True if notify_on_download_only == "y" else False
             )
 
-            if disable_confirm == "y":
+            # Save configuration with the new setting
+            with open(CONFIG_FILE, "w") as f:
+                yaml.dump(config, f)
+
+            print("Notification settings have been saved.")
+
+        else:
+            # User chose not to use notifications
+            if has_ntfy_config:
+                # Ask for confirmation to disable existing notifications
+                disable_confirm = (
+                    input(
+                        "You currently have notifications enabled. Are you sure you want to disable them? [y/n] (default: no): "
+                    )
+                    .strip()
+                    .lower()
+                    or "n"
+                )
+
+                if disable_confirm == "y":
+                    config["NTFY_TOPIC"] = ""
+                    config["NTFY_SERVER"] = ""
+                    config["NOTIFY_ON_DOWNLOAD_ONLY"] = False
+                    with open(CONFIG_FILE, "w") as f:
+                        yaml.dump(config, f)
+                    print("Notifications have been disabled.")
+                else:
+                    print("Keeping existing notification settings.")
+            else:
+                # No existing notifications, just confirm they're disabled
                 config["NTFY_TOPIC"] = ""
                 config["NTFY_SERVER"] = ""
                 config["NOTIFY_ON_DOWNLOAD_ONLY"] = False
                 with open(CONFIG_FILE, "w") as f:
                     yaml.dump(config, f)
-                print("Notifications have been disabled.")
-            else:
-                print("Keeping existing notification settings.")
-        else:
-            # No existing notifications, just confirm they're disabled
-            config["NTFY_TOPIC"] = ""
-            config["NTFY_SERVER"] = ""
-            config["NOTIFY_ON_DOWNLOAD_ONLY"] = False
-            with open(CONFIG_FILE, "w") as f:
-                yaml.dump(config, f)
-            print("Notifications will remain disabled.")
+                print("Notifications will remain disabled.")
 
-    # Ask if the user wants to perform a first run
-    if platform.system() == "Windows":
-        # On Windows, we'll just tell them how to run it
-        print("Setup complete. Run 'fetchtastic download' to start downloading.")
-        if WINDOWS_MODULES_AVAILABLE:
-            print("You can also use the shortcuts created in the Start Menu.")
-
-        # If running from a batch file or shortcut, pause at the end
-        if os.environ.get("PROMPT") is None or "cmd.exe" in os.environ.get(
-            "COMSPEC", ""
-        ):
-            print("\nPress Enter to close this window...")
-            input()
-    else:
-        # On other platforms, offer to run it now
-        perform_first_run = (
-            input("Would you like to start the first run now? [y/n] (default: yes): ")
-            .strip()
-            .lower()
-            or "y"
-        )
-        if perform_first_run == "y":
-            from fetchtastic import (
-                downloader,  # Local import to break circular dependency
-            )
-
-            print("Setup complete. Starting first run, this may take a few minutes...")
-            downloader.main()
-        else:
+    if not is_partial_run:
+        # Ask if the user wants to perform a first run
+        if platform.system() == "Windows":
+            # On Windows, we'll just tell them how to run it
             print("Setup complete. Run 'fetchtastic download' to start downloading.")
+            if WINDOWS_MODULES_AVAILABLE:
+                print("You can also use the shortcuts created in the Start Menu.")
+
+            # If running from a batch file or shortcut, pause at the end
+            if os.environ.get("PROMPT") is None or "cmd.exe" in os.environ.get(
+                "COMSPEC", ""
+            ):
+                print("\nPress Enter to close this window...")
+                input()
+        else:
+            # On other platforms, offer to run it now
+            perform_first_run = (
+                input("Would you like to start the first run now? [y/n] (default: yes): ")
+                .strip()
+                .lower()
+                or "y"
+            )
+            if perform_first_run == "y":
+                from fetchtastic import (
+                    downloader,  # Local import to break circular dependency
+                )
+
+                print(
+                    "Setup complete. Starting first run, this may take a few minutes..."
+                )
+                downloader.main()
+            else:
+                print("Setup complete. Run 'fetchtastic download' to start downloading.")
+    else:
+        print("Selected setup sections updated. Run 'fetchtastic download' when ready.")
 
 
 def check_for_updates():

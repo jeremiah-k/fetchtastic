@@ -802,6 +802,7 @@ def test_run_setup_existing_config(
     mock_yaml_safe_load.return_value = existing_config
 
     user_inputs = [
+        "",  # choose full setup at the new prompt
         "/new/base/dir",  # New base directory
         "f",  # Only firmware
         "5",  # Keep 5 versions of firmware
@@ -841,3 +842,91 @@ def test_run_setup_existing_config(
         mock_remove_reboot_cron_job.assert_called_once()
         mock_setup_cron_job.assert_not_called()
         mock_setup_reboot_cron_job.assert_not_called()
+
+
+def test_run_setup_invalid_section_raises_value_error():
+    """run_setup should reject unknown section filters."""
+
+    with pytest.raises(ValueError):
+        setup_config.run_setup(sections=["invalid"])
+
+
+@patch("builtins.input")
+@patch("fetchtastic.setup_config.platform.system", return_value="Linux")
+@patch("fetchtastic.setup_config.is_termux", return_value=False)
+@patch("fetchtastic.setup_config.os.path.exists")
+@patch("fetchtastic.setup_config.os.makedirs")
+@patch("fetchtastic.setup_config.yaml.dump")
+@patch("fetchtastic.setup_config.yaml.safe_load")
+@patch("fetchtastic.setup_config.menu_apk.run_menu")
+@patch("fetchtastic.setup_config.menu_firmware.run_menu")
+@patch("fetchtastic.setup_config.check_any_cron_jobs_exist", return_value=True)
+@patch("fetchtastic.setup_config.remove_cron_job")
+@patch("fetchtastic.setup_config.remove_reboot_cron_job")
+@patch("fetchtastic.setup_config.setup_cron_job")
+@patch("fetchtastic.setup_config.setup_reboot_cron_job")
+@patch("fetchtastic.downloader.main")
+@patch("shutil.which")
+@patch(
+    "fetchtastic.setup_config.platformdirs.user_config_dir",
+    return_value="/tmp/config",  # nosec B108
+)
+def test_run_setup_partial_firmware_section(
+    mock_user_config_dir,
+    mock_shutil_which,
+    mock_downloader_main,
+    mock_setup_reboot_cron_job,
+    mock_setup_cron_job,
+    mock_remove_reboot_cron_job,
+    mock_remove_cron_job,
+    mock_check_any_cron_jobs_exist,
+    mock_menu_firmware,
+    mock_menu_apk,
+    mock_yaml_safe_load,
+    mock_yaml_dump,
+    mock_makedirs,
+    mock_os_path_exists,
+    mock_is_termux,
+    mock_platform_system,
+    mock_input,
+):
+    """Partial firmware run should update firmware options without touching others."""
+
+    existing_config = {
+        "BASE_DIR": "/tmp/meshtastic",  # nosec B108
+        "SAVE_APKS": True,
+        "SAVE_FIRMWARE": True,
+        "FIRMWARE_VERSIONS_TO_KEEP": 3,
+        "CHECK_PRERELEASES": False,
+        "AUTO_EXTRACT": False,
+        "EXTRACT_PATTERNS": [],
+        "EXCLUDE_PATTERNS": [],
+    }
+    mock_os_path_exists.return_value = True
+    mock_yaml_safe_load.return_value = existing_config
+    mock_menu_firmware.return_value = {"selected_assets": ["firmware-esp32-.zip"]}
+
+    mock_yaml_dump.reset_mock()
+    mock_remove_cron_job.reset_mock()
+    mock_remove_reboot_cron_job.reset_mock()
+    mock_setup_cron_job.reset_mock()
+    mock_setup_reboot_cron_job.reset_mock()
+    mock_menu_firmware.reset_mock()
+    mock_menu_apk.reset_mock()
+
+    mock_input.side_effect = ["", "", "4", "y", "n"]
+
+    with patch("builtins.open", mock_open()):
+        setup_config.run_setup(sections=["firmware"])
+
+    mock_menu_firmware.assert_called_once()
+    mock_menu_apk.assert_not_called()
+
+    saved_configs = [args[0][0] for args in mock_yaml_dump.call_args_list]
+    assert any(cfg.get("FIRMWARE_VERSIONS_TO_KEEP") == 4 for cfg in saved_configs)
+    assert any(cfg.get("CHECK_PRERELEASES") is True for cfg in saved_configs)
+
+    mock_setup_cron_job.assert_not_called()
+    mock_setup_reboot_cron_job.assert_not_called()
+    mock_remove_cron_job.assert_not_called()
+    mock_remove_reboot_cron_job.assert_not_called()

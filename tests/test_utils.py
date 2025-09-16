@@ -374,6 +374,25 @@ def test_matches_selected_patterns_rak4631_variants():
     )
 
 
+def test_matches_selected_patterns_handles_renamed_android_assets():
+    """Legacy config patterns should recognise new Android asset naming."""
+    from fetchtastic.utils import matches_selected_patterns
+
+    assert (
+        matches_selected_patterns("app-fdroid-release.apk", ["fdroidRelease-"])
+        is True
+    )
+    assert (
+        matches_selected_patterns("app-google-release.aab", ["googleRelease-"])
+        is True
+    )
+    # Sanitised comparison should also cope with dots, underscores, or casing
+    assert (
+        matches_selected_patterns("APP-GOOGLE-RELEASE.APK", ["googleRelease-"])
+        is True
+    )
+
+
 def test_legacy_strip_version_numbers():
     """Directly test legacy normalization which preserves the separator before versions."""
     from fetchtastic.utils import legacy_strip_version_numbers

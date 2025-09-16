@@ -549,16 +549,51 @@ def matches_selected_patterns(
     and the legacy normalization (which preserves the separator before the version token). If
     `selected_patterns` is falsy (None or empty) the function returns True.
 
+    The matcher is forgiving about minor naming changes introduced upstream by normalising both the
+    candidate filename and the patterns to lower-case and by also performing a punctuation-stripped
+    comparison. This keeps existing configurations working when asset names switch between styles such
+    as ``fdroidRelease-`` and ``app-fdroid-release``.
+
     Parameters:
         selected_patterns: Iterable of substring patterns to search for; empty or None means "match all".
 
     Returns:
         True if any non-empty pattern appears in either normalized base name; otherwise False.
     """
+
     if not selected_patterns:
         return True
+
     base_modern = extract_base_name(filename)
     base_legacy = legacy_strip_version_numbers(filename)
-    return any(
-        pat and (pat in base_modern or pat in base_legacy) for pat in selected_patterns
-    )
+    base_modern_lower = base_modern.lower()
+    base_legacy_lower = base_legacy.lower()
+
+    def _strip_punctuation(value: str) -> str:
+        """Return a simplified token by removing punctuation characters and lower-casing."""
+
+        return re.sub(r"[^a-z0-9]+", "", value.lower())
+
+    base_modern_sanitised = _strip_punctuation(base_modern)
+    base_legacy_sanitised = _strip_punctuation(base_legacy)
+
+    for pat in selected_patterns:
+        if not pat:
+            continue
+        pat_lower = pat.lower()
+        if pat_lower in base_modern_lower or pat_lower in base_legacy_lower:
+            return True
+
+        # Only fall back to punctuation-stripped matching when the pattern appears to target
+        # mixed-case or dotted segments (e.g., fdroidRelease-, *.zip), preserving the ability to
+        # distinguish dash vs underscore selections such as "rak4631-" vs "rak4631_".
+        needs_sanitised = any(ch.isupper() for ch in pat) or "." in pat
+        if needs_sanitised:
+            pat_sanitised = _strip_punctuation(pat)
+            if pat_sanitised and (
+                pat_sanitised in base_modern_sanitised
+                or pat_sanitised in base_legacy_sanitised
+            ):
+                return True
+
+    return False
