@@ -557,7 +557,6 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
     Returns:
         Updated configuration dictionary
     """
-    global CONFIG_FILE
 
     # Prompt for firmware versions to keep
     current_versions = config.get("FIRMWARE_VERSIONS_TO_KEEP", default_versions)
@@ -723,7 +722,6 @@ def _setup_notifications(config: dict) -> dict:
     Returns:
         Updated configuration dictionary
     """
-    global CONFIG_FILE
 
     has_ntfy_config = bool(config.get("NTFY_TOPIC")) and bool(config.get("NTFY_SERVER"))
     notifications_default = "yes" if has_ntfy_config else "no"
@@ -923,7 +921,7 @@ def _setup_base(
 
                     print("\nMigration complete! Please restart your terminal.")
                     print("You can then run 'fetchtastic setup' to continue.")
-                    return config
+                    sys.exit(0)
 
                 except subprocess.CalledProcessError as e:
                     print(f"Migration failed: {e}")
