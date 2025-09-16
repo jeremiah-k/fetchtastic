@@ -749,6 +749,250 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
     return config
 
 
+def _setup_automation(
+    config: dict, is_partial_run: bool, wants: Callable[[str], bool]
+) -> dict:
+    """
+    Handle automation setup (cron jobs, Windows startup, Termux boot scripts).
+
+    Args:
+        config: Current configuration dictionary
+        is_partial_run: Whether this is a partial setup run
+        wants: Function to check if a section should be processed
+
+    Returns:
+        Updated configuration dictionary
+    """
+    if not is_partial_run or wants("automation"):
+        if platform.system() == "Windows":
+            # Windows doesn't support cron jobs, but we can offer to create a startup shortcut
+            if WINDOWS_MODULES_AVAILABLE:
+                # Check if startup shortcut already exists
+                startup_folder = winshell.startup()
+                startup_shortcut_path = os.path.join(startup_folder, "Fetchtastic.lnk")
+
+                if os.path.exists(startup_shortcut_path):
+                    startup_option = (
+                        input(
+                            "Fetchtastic is already set to run at startup. Would you like to remove this? [y/n] (default: no): "
+                        )
+                        .strip()
+                        .lower()
+                        or "n"
+                    )
+                    if startup_option == "y":
+                        try:
+                            # Also remove the batch file if it exists
+                            batch_dir = os.path.join(CONFIG_DIR, "batch")
+                            batch_path = os.path.join(
+                                batch_dir, "fetchtastic_startup.bat"
+                            )
+                            if os.path.exists(batch_path):
+                                os.remove(batch_path)
+
+                            # Remove the shortcut
+                            os.remove(startup_shortcut_path)
+                            print(
+                                "✓ Startup shortcut removed. Fetchtastic will no longer run automatically at startup."
+                            )
+                        except Exception as e:
+                            print(f"Failed to remove startup shortcut: {e}")
+                            print("You can manually remove it from: " + startup_folder)
+                    else:
+                        print(
+                            "✓ Fetchtastic will continue to run automatically at startup."
+                        )
+                else:
+                    startup_option = (
+                        input(
+                            "Would you like to run Fetchtastic automatically on Windows startup? [y/n] (default: yes): "
+                        )
+                        .strip()
+                        .lower()
+                        or "y"
+                    )
+                    if startup_option == "y":
+                        if create_startup_shortcut():
+                            print(
+                                "✓ Fetchtastic will now run automatically when Windows starts."
+                            )
+                        else:
+                            print(
+                                "Failed to create startup shortcut. You can manually set up Fetchtastic to run at startup."
+                            )
+                            print(
+                                "You can use Windows Task Scheduler or add a shortcut to: "
+                                + startup_folder
+                            )
+                    else:
+                        print("Fetchtastic will not run automatically on startup.")
+            else:
+                # Don't show this message again since we already showed it earlier
+                pass
+        elif is_termux():
+            # Termux: Ask about cron job and boot script individually
+            # Check if cron job already exists
+            cron_job_exists = check_cron_job_exists()
+            if cron_job_exists:
+                cron_prompt = (
+                    input(
+                        "A cron job is already set up. Do you want to reconfigure it? [y/n] (default: no): "
+                    )
+                    .strip()
+                    .lower()
+                    or "n"
+                )
+                if cron_prompt == "y":
+                    # First, remove existing cron job
+                    remove_cron_job()
+                    print("Existing cron job removed for reconfiguration.")
+
+                    # Then set up new cron job
+                    install_crond()
+                    setup_cron_job()
+                    print("Cron job has been reconfigured.")
+                else:
+                    print("Cron job configuration left unchanged.")
+            else:
+                # Ask if the user wants to set up a cron job
+                cron_default = "yes"  # Default to 'yes'
+                setup_cron = (
+                    input(
+                        f"Would you like to schedule Fetchtastic to run daily at 3 AM? [y/n] (default: {cron_default}): "
+                    )
+                    .strip()
+                    .lower()
+                    or cron_default[0]
+                )
+                if setup_cron == "y":
+                    install_crond()
+                    setup_cron_job()
+                else:
+                    print("Cron job has not been set up.")
+
+            # Check if boot script already exists
+            boot_script_exists = check_boot_script_exists()
+            if boot_script_exists:
+                boot_prompt = (
+                    input(
+                        "A boot script is already set up. Do you want to reconfigure it? [y/n] (default: no): "
+                    )
+                    .strip()
+                    .lower()
+                    or "n"
+                )
+                if boot_prompt == "y":
+                    # First, remove existing boot script
+                    remove_boot_script()
+                    print("Existing boot script removed for reconfiguration.")
+
+                    # Then set up new boot script
+                    setup_boot_script()
+                    print("Boot script has been reconfigured.")
+                else:
+                    print("Boot script configuration left unchanged.")
+            else:
+                # Ask if the user wants to set up a boot script
+                boot_default = "yes"  # Default to 'yes'
+                setup_boot = (
+                    input(
+                        f"Do you want Fetchtastic to run on device boot? [y/n] (default: {boot_default}): "
+                    )
+                    .strip()
+                    .lower()
+                    or boot_default[0]
+                )
+                if setup_boot == "y":
+                    setup_boot_script()
+                else:
+                    print("Boot script has not been set up.")
+
+        else:
+            # Linux/Mac: Check if any Fetchtastic cron jobs exist
+            any_cron_jobs_exist = check_any_cron_jobs_exist()
+            if any_cron_jobs_exist:
+                cron_prompt = (
+                    input(
+                        "Fetchtastic cron jobs are already set up. Do you want to reconfigure them? [y/n] (default: no): "
+                    )
+                    .strip()
+                    .lower()
+                    or "n"
+                )
+                if cron_prompt == "y":
+                    # First, remove existing cron jobs
+                    remove_cron_job()
+                    remove_reboot_cron_job()
+                    print("Existing cron jobs removed for reconfiguration.")
+
+                    # Ask if they want to set up daily cron job
+                    cron_default = "yes"
+                    setup_cron = (
+                        input(
+                            f"Would you like to schedule Fetchtastic to run daily at 3 AM? [y/n] (default: {cron_default}): "
+                        )
+                        .strip()
+                        .lower()
+                        or cron_default[0]
+                    )
+                    if setup_cron == "y":
+                        setup_cron_job()
+                        print("Daily cron job has been set up.")
+                    else:
+                        print("Daily cron job will not be set up.")
+
+                    # Ask if they want to set up a reboot cron job
+                    boot_default = "yes"
+                    setup_reboot = (
+                        input(
+                            f"Do you want Fetchtastic to run on system startup? [y/n] (default: {boot_default}): "
+                        )
+                        .strip()
+                        .lower()
+                        or boot_default[0]
+                    )
+                    if setup_reboot == "y":
+                        setup_reboot_cron_job()
+                        print("Reboot cron job has been set up.")
+                    else:
+                        print("Reboot cron job will not be set up.")
+                else:
+                    print("Cron job configurations left unchanged.")
+            else:
+                # No existing cron jobs, ask if they want to set them up
+                # Ask if they want to set up daily cron job
+                cron_default = "yes"
+                setup_cron = (
+                    input(
+                        f"Would you like to schedule Fetchtastic to run daily at 3 AM? [y/n] (default: {cron_default}): "
+                    )
+                    .strip()
+                    .lower()
+                    or cron_default[0]
+                )
+                if setup_cron == "y":
+                    setup_cron_job()
+                else:
+                    print("Daily cron job has not been set up.")
+
+                # Ask if they want to set up a reboot cron job
+                boot_default = "yes"
+                setup_reboot = (
+                    input(
+                        f"Do you want Fetchtastic to run on system startup? [y/n] (default: {boot_default}): "
+                    )
+                    .strip()
+                    .lower()
+                    or boot_default[0]
+                )
+                if setup_reboot == "y":
+                    setup_reboot_cron_job()
+                else:
+                    print("Reboot cron job has not been set up.")
+
+    return config
+
+
 def _setup_notifications(config: dict) -> dict:
     """
     Configure NTFY-based notifications interactively and return the updated config.
@@ -1187,233 +1431,8 @@ def run_setup(sections: Optional[Sequence[str]] = None):
 
     print(f"Configuration saved to: {CONFIG_FILE}")
 
-    # Cron job setup
-    if not is_partial_run or wants("automation"):
-        if platform.system() == "Windows":
-            # Windows doesn't support cron jobs, but we can offer to create a startup shortcut
-            if WINDOWS_MODULES_AVAILABLE:
-                # Check if startup shortcut already exists
-                startup_folder = winshell.startup()
-                startup_shortcut_path = os.path.join(startup_folder, "Fetchtastic.lnk")
-
-                if os.path.exists(startup_shortcut_path):
-                    startup_option = (
-                        input(
-                            "Fetchtastic is already set to run at startup. Would you like to remove this? [y/n] (default: no): "
-                        )
-                        .strip()
-                        .lower()
-                        or "n"
-                    )
-                    if startup_option == "y":
-                        try:
-                            # Also remove the batch file if it exists
-                            batch_dir = os.path.join(CONFIG_DIR, "batch")
-                            batch_path = os.path.join(
-                                batch_dir, "fetchtastic_startup.bat"
-                            )
-                            if os.path.exists(batch_path):
-                                os.remove(batch_path)
-
-                            # Remove the shortcut
-                            os.remove(startup_shortcut_path)
-                            print(
-                                "✓ Startup shortcut removed. Fetchtastic will no longer run automatically at startup."
-                            )
-                        except Exception as e:
-                            print(f"Failed to remove startup shortcut: {e}")
-                            print("You can manually remove it from: " + startup_folder)
-                    else:
-                        print(
-                            "✓ Fetchtastic will continue to run automatically at startup."
-                        )
-                else:
-                    startup_option = (
-                        input(
-                            "Would you like to run Fetchtastic automatically on Windows startup? [y/n] (default: yes): "
-                        )
-                        .strip()
-                        .lower()
-                        or "y"
-                    )
-                    if startup_option == "y":
-                        if create_startup_shortcut():
-                            print(
-                                "✓ Fetchtastic will now run automatically when Windows starts."
-                            )
-                        else:
-                            print(
-                                "Failed to create startup shortcut. You can manually set up Fetchtastic to run at startup."
-                            )
-                            print(
-                                "You can use Windows Task Scheduler or add a shortcut to: "
-                                + startup_folder
-                            )
-                    else:
-                        print("Fetchtastic will not run automatically on startup.")
-            else:
-                # Don't show this message again since we already showed it earlier
-                pass
-        elif is_termux():
-            # Termux: Ask about cron job and boot script individually
-            # Check if cron job already exists
-            cron_job_exists = check_cron_job_exists()
-            if cron_job_exists:
-                cron_prompt = (
-                    input(
-                        "A cron job is already set up. Do you want to reconfigure it? [y/n] (default: no): "
-                    )
-                    .strip()
-                    .lower()
-                    or "n"
-                )
-                if cron_prompt == "y":
-                    # First, remove existing cron job
-                    remove_cron_job()
-                    print("Existing cron job removed for reconfiguration.")
-
-                    # Then set up new cron job
-                    install_crond()
-                    setup_cron_job()
-                    print("Cron job has been reconfigured.")
-                else:
-                    print("Cron job configuration left unchanged.")
-            else:
-                # Ask if the user wants to set up a cron job
-                cron_default = "yes"  # Default to 'yes'
-                setup_cron = (
-                    input(
-                        f"Would you like to schedule Fetchtastic to run daily at 3 AM? [y/n] (default: {cron_default}): "
-                    )
-                    .strip()
-                    .lower()
-                    or cron_default[0]
-                )
-                if setup_cron == "y":
-                    install_crond()
-                    setup_cron_job()
-                else:
-                    print("Cron job has not been set up.")
-
-            # Check if boot script already exists
-            boot_script_exists = check_boot_script_exists()
-            if boot_script_exists:
-                boot_prompt = (
-                    input(
-                        "A boot script is already set up. Do you want to reconfigure it? [y/n] (default: no): "
-                    )
-                    .strip()
-                    .lower()
-                    or "n"
-                )
-                if boot_prompt == "y":
-                    # First, remove existing boot script
-                    remove_boot_script()
-                    print("Existing boot script removed for reconfiguration.")
-
-                    # Then set up new boot script
-                    setup_boot_script()
-                    print("Boot script has been reconfigured.")
-                else:
-                    print("Boot script configuration left unchanged.")
-            else:
-                # Ask if the user wants to set up a boot script
-                boot_default = "yes"  # Default to 'yes'
-                setup_boot = (
-                    input(
-                        f"Do you want Fetchtastic to run on device boot? [y/n] (default: {boot_default}): "
-                    )
-                    .strip()
-                    .lower()
-                    or boot_default[0]
-                )
-                if setup_boot == "y":
-                    setup_boot_script()
-                else:
-                    print("Boot script has not been set up.")
-
-        else:
-            # Linux/Mac: Check if any Fetchtastic cron jobs exist
-            any_cron_jobs_exist = check_any_cron_jobs_exist()
-            if any_cron_jobs_exist:
-                cron_prompt = (
-                    input(
-                        "Fetchtastic cron jobs are already set up. Do you want to reconfigure them? [y/n] (default: no): "
-                    )
-                    .strip()
-                    .lower()
-                    or "n"
-                )
-                if cron_prompt == "y":
-                    # First, remove existing cron jobs
-                    remove_cron_job()
-                    remove_reboot_cron_job()
-                    print("Existing cron jobs removed for reconfiguration.")
-
-                    # Ask if they want to set up daily cron job
-                    cron_default = "yes"
-                    setup_cron = (
-                        input(
-                            f"Would you like to schedule Fetchtastic to run daily at 3 AM? [y/n] (default: {cron_default}): "
-                        )
-                        .strip()
-                        .lower()
-                        or cron_default[0]
-                    )
-                    if setup_cron == "y":
-                        setup_cron_job()
-                        print("Daily cron job has been set up.")
-                    else:
-                        print("Daily cron job will not be set up.")
-
-                    # Ask if they want to set up a reboot cron job
-                    boot_default = "yes"
-                    setup_reboot = (
-                        input(
-                            f"Do you want Fetchtastic to run on system startup? [y/n] (default: {boot_default}): "
-                        )
-                        .strip()
-                        .lower()
-                        or boot_default[0]
-                    )
-                    if setup_reboot == "y":
-                        setup_reboot_cron_job()
-                        print("Reboot cron job has been set up.")
-                    else:
-                        print("Reboot cron job will not be set up.")
-                else:
-                    print("Cron job configurations left unchanged.")
-            else:
-                # No existing cron jobs, ask if they want to set them up
-                # Ask if they want to set up daily cron job
-                cron_default = "yes"
-                setup_cron = (
-                    input(
-                        f"Would you like to schedule Fetchtastic to run daily at 3 AM? [y/n] (default: {cron_default}): "
-                    )
-                    .strip()
-                    .lower()
-                    or cron_default[0]
-                )
-                if setup_cron == "y":
-                    setup_cron_job()
-                else:
-                    print("Daily cron job has not been set up.")
-
-                # Ask if they want to set up a reboot cron job
-                boot_default = "yes"
-                setup_reboot = (
-                    input(
-                        f"Do you want Fetchtastic to run on system startup? [y/n] (default: {boot_default}): "
-                    )
-                    .strip()
-                    .lower()
-                    or boot_default[0]
-                )
-                if setup_reboot == "y":
-                    setup_reboot_cron_job()
-                else:
-                    print("Reboot cron job has not been set up.")
+    # Handle automation configuration
+    config = _setup_automation(config, is_partial_run, wants)
 
     # Handle notifications configuration
     if not is_partial_run or wants("notifications"):
