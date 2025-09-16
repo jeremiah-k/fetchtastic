@@ -634,9 +634,9 @@ def check_for_prereleases(
                         for file in expected_files:
                             file_name = file["name"]
 
-                            # Apply same filtering logic as download (back-compat matching)
-                            if not matches_selected_patterns(
-                                file_name, selected_patterns
+                            # Apply same filtering logic as download (simple substring matching for EXTRACT_PATTERNS)
+                            if not any(
+                                pattern in file_name for pattern in selected_patterns
                             ):
                                 continue  # Skip this file
 
@@ -772,8 +772,9 @@ def check_for_prereleases(
             file_path = os.path.join(dir_path, file_name)
 
             # Only download files that match the selected patterns and don't match exclude patterns
-            # Backward-compatible pattern matching (modern + legacy normalization)
-            if not matches_selected_patterns(file_name, selected_patterns):
+            # For prereleases, selected_patterns contains EXTRACT_PATTERNS which are simple substrings
+            # Use simple substring matching, not the complex matches_selected_patterns function
+            if not any(pattern in file_name for pattern in selected_patterns):
                 continue  # Skip this file
 
             # Skip files that match exclude patterns
