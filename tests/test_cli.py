@@ -59,7 +59,73 @@ def test_cli_setup_command(mocker):
     )
 
     cli.main()
-    mock_setup_run.assert_called_once()
+    mock_setup_run.assert_called_once_with(sections=None)
+
+
+def test_cli_setup_command_with_sections(mocker):
+    """Ensure the setup command forwards section filters."""
+    mocker.patch(
+        "sys.argv",
+        ["fetchtastic", "setup", "--section", "firmware", "--section", "android"],
+    )
+    mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
+    mocker.patch(
+        "fetchtastic.cli.display_version_info", return_value=("1.0", "1.0", False)
+    )
+
+    cli.main()
+    mock_setup_run.assert_called_once_with(sections=["firmware", "android"])
+
+
+def test_cli_setup_command_with_positional_sections(mocker):
+    """Positional section arguments should be passed to setup."""
+    mocker.patch("sys.argv", ["fetchtastic", "setup", "firmware", "android"])
+    mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
+    mocker.patch(
+        "fetchtastic.cli.display_version_info", return_value=("1.0", "1.0", False)
+    )
+
+    cli.main()
+    mock_setup_run.assert_called_once_with(sections=["firmware", "android"])
+
+
+def test_cli_setup_command_with_invalid_positional_sections(mocker):
+    """Invalid positional section arguments should cause an error."""
+    mocker.patch("sys.argv", ["fetchtastic", "setup", "invalid_section", "firmware"])
+    mocker.patch(
+        "fetchtastic.cli.display_version_info", return_value=("1.0", "1.0", False)
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main()
+
+    # parser.error() causes SystemExit(2)
+    assert exc_info.value.code == 2
+
+
+def test_cli_setup_command_with_duplicate_sections(mocker):
+    """Duplicate section arguments should be deduplicated."""
+    mocker.patch(
+        "sys.argv",
+        [
+            "fetchtastic",
+            "setup",
+            "--section",
+            "firmware",
+            "firmware",
+            "android",
+            "firmware",
+        ],
+    )
+    mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
+    mocker.patch(
+        "fetchtastic.cli.display_version_info", return_value=("1.0", "1.0", False)
+    )
+
+    cli.main()
+
+    # Should deduplicate while preserving order: firmware, android
+    mock_setup_run.assert_called_once_with(sections=["firmware", "android"])
 
 
 def test_cli_repo_browse_command(mocker):

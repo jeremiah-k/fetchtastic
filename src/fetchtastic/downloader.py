@@ -46,6 +46,38 @@ from fetchtastic.utils import (
 NON_ASCII_RX = re.compile(r"[^\x00-\x7F]+")
 
 
+def _summarise_release_scan(kind: str, total_found: int, keep_limit: int) -> str:
+    """Return a concise log message describing how many releases will be scanned."""
+
+    scan_count = min(total_found, keep_limit)
+    message = f"Found {total_found} {kind} releases; scanning newest {scan_count}"
+    if keep_limit > scan_count:
+        message += f" (keep limit {keep_limit})"
+    return message
+
+
+def _summarise_scan_window(release_type: str, scan_count: int) -> str:
+    """
+    Build a concise log message describing the scanning window for a release type.
+
+    Returns a message suitable for logging:
+    - If scan_count == 0 returns "No <release_type> releases to scan".
+    - Uses singular "release" when scan_count == 1, otherwise "releases".
+
+    Parameters:
+        release_type (str): Human-readable name of the release kind (e.g., "firmware", "Android APK").
+        scan_count (int): Number of releases discovered for scanning.
+
+    Returns:
+        str: The formatted scan-window message.
+    """
+
+    if scan_count == 0:
+        return f"No {release_type} releases to scan"
+    descriptor = "release" if scan_count == 1 else "releases"
+    return f"Scanning {release_type} {descriptor}"
+
+
 def _newer_tags_since_saved(
     tags_order: List[str], saved_release_tag: Optional[str]
 ) -> List[str]:
@@ -573,12 +605,19 @@ def check_for_prereleases(
             # Only download files that match the selected patterns and don't match exclude patterns
             # Backward-compatible pattern matching (modern + legacy normalization)
             if not matches_selected_patterns(file_name, selected_patterns):
+                logger.debug(
+                    "Skipping pre-release file %s (no pattern match)", file_name
+                )
                 continue  # Skip this file
 
             # Skip files that match exclude patterns
             if any(
                 fnmatch.fnmatch(file_name, exclude) for exclude in exclude_patterns_list
             ):
+                logger.debug(
+                    "Skipping pre-release file %s (matched exclude pattern)",
+                    file_name,
+                )
                 continue  # Skip this file
 
             if not os.path.exists(file_path):
@@ -700,9 +739,10 @@ def _get_latest_releases_data(url: str, scan_count: int = 10) -> List[Dict[str, 
     """
     try:
         # Add progress feedback
-        if "firmware" in url:
+        url_l = url.lower()
+        if "firmware" in url_l:
             logger.info("Fetching firmware releases from GitHub...")
-        elif "Android" in url:
+        elif "android" in url_l:
             logger.info("Fetching Android APK releases from GitHub...")
         else:
             logger.info("Fetching releases from GitHub...")
@@ -873,7 +913,7 @@ def _process_firmware_downloads(
     downloads missing assets (honoring selected and excluded asset patterns), optionally extracts archives,
     updates the latest-release tracking file, and performs cleanup/retention according to configured
     FIRMWARE_VERSIONS_TO_KEEP. If a latest release tag exists, checks for promoted prereleases and — when
-    CHECK_PRERELEASES is enabled and downloads have not been skipped due to Wi‑Fi gating — attempts to
+    CHECK_PRERELEASES is enabled and downloads have not been skipped due to Wi-Fi gating — attempts to
     discover and download newer prerelease firmware that matches the selection criteria.
 
     Configuration keys referenced: SAVE_FIRMWARE, SELECTED_FIRMWARE_ASSETS, FIRMWARE_VERSIONS_TO_KEEP,
@@ -905,7 +945,9 @@ def _process_firmware_downloads(
             "FIRMWARE_VERSIONS_TO_KEEP", DEFAULT_FIRMWARE_VERSIONS_TO_KEEP
         )
         logger.info(
-            f"Found {len(latest_firmware_releases)} firmware releases; scanning {min(len(latest_firmware_releases), keep_count)} (keep {keep_count})"
+            _summarise_release_scan(
+                "firmware", len(latest_firmware_releases), keep_count
+            )
         )
 
         # Extract the actual latest firmware version
@@ -991,16 +1033,24 @@ def _process_apk_downloads(
     config: Dict[str, Any], paths_and_urls: Dict[str, str]
 ) -> Tuple[List[str], List[str], List[Dict[str, str]], Optional[str]]:
     """
-    Process Android APK releases: fetch latest Android releases, download selected APK assets, and report results.
+    Process Android APK releases: fetch release metadata, download selected APK assets, and report what changed.
 
-    The function consults config keys (notably SAVE_APKS and SELECTED_APK_ASSETS, and ANDROID_VERSIONS_TO_KEEP when present) to decide whether to fetch releases from the configured Android releases URL and to download chosen assets into the configured apks directory.
+    When SAVE_APKS is true and SELECTED_APK_ASSETS is non-empty in `config`, this function:
+    - fetches up to ANDROID_VERSIONS_TO_KEEP releases from the configured Android releases URL,
+    - determines the latest release tag,
+    - invokes the shared download workflow to download APK assets that match SELECTED_APK_ASSETS,
+    - respects the configured keep count when pruning old versions.
+
+    Expected keys used from inputs:
+    - config: SAVE_APKS, SELECTED_APK_ASSETS, ANDROID_VERSIONS_TO_KEEP (optional).
+    - paths_and_urls: "android_releases_url", "latest_android_release_file", "apks_dir".
 
     Returns:
-        A tuple of (downloaded_apk_versions, new_apk_versions, failed_downloads, latest_apk_version):
-        - downloaded_apk_versions (List[str]): Versions that were successfully downloaded during this run.
-        - new_apk_versions (List[str]): Newly discovered release versions (not necessarily downloaded).
-        - failed_downloads (List[Dict[str, str]]): One-item-per-failure dictionaries describing download failures.
-        - latest_apk_version (Optional[str]): Tag/name of the most recent release discovered, or None if no releases were found.
+    A tuple (downloaded_apk_versions, new_apk_versions, failed_downloads, latest_apk_version):
+    - downloaded_apk_versions (List[str]): versions successfully downloaded in this run.
+    - new_apk_versions (List[str]): newly discovered release versions (may include ones not downloaded).
+    - failed_downloads (List[Dict[str, str]]): details for each failed asset download.
+    - latest_apk_version (Optional[str]): tag/name of the most recent release found, or None if none were available.
     """
     global downloads_skipped
     downloaded_apks: List[str] = []
@@ -1020,7 +1070,9 @@ def _process_apk_downloads(
             "ANDROID_VERSIONS_TO_KEEP", DEFAULT_ANDROID_VERSIONS_TO_KEEP
         )
         logger.info(
-            f"Found {len(latest_android_releases)} Android releases; scanning {min(len(latest_android_releases), keep_count_apk)} (keep {keep_count_apk})"
+            _summarise_release_scan(
+                "Android APK", len(latest_android_releases), keep_count_apk
+            )
         )
 
         # Extract the actual latest APK version
@@ -1094,7 +1146,7 @@ def _finalize_and_notify(
 
     logger.info(f"\nCompleted in {total_time:.1f}s")
     if downloaded_count > 0:
-        logger.info(f"Downloaded {downloaded_count} new files")
+        logger.info(f"Downloaded {downloaded_count} new versions")
 
     # Show latest versions if available
     if latest_firmware_version:
@@ -1538,33 +1590,36 @@ def check_and_download(
     exclude_patterns: Optional[List[str]] = None,
 ) -> Tuple[List[str], List[str], List[Dict[str, str]]]:
     """
-    Check releases, download missing or corrupted assets, optionally extract firmware ZIPs, and prune old versions.
+    Check a list of releases, download any missing or corrupted assets, optionally extract ZIPs, and prune old release directories.
 
-    For the most recent `versions_to_keep` releases this function:
-    - Verifies whether each release directory already contains the expected assets (honoring `selected_patterns` and `exclude_patterns`) and skips fully-complete releases.
-    - Downloads any missing assets and records per-file failures.
-    - Saves release notes when present.
-    - Optionally extracts ZIP assets into the release directory when `auto_extract` is True and `release_type` is "Firmware".
-    - Ensures `.sh` files are executable and removes older release directories not in the retention list.
+    Processes up to `versions_to_keep` newest entries from `releases`. For each release it:
+    - Skips releases that are already complete.
+    - Downloads assets that match `selected_patterns` (if provided) and do not match `exclude_patterns`.
+    - Optionally extracts files from ZIP assets when `auto_extract` is True and `release_type` == "Firmware"; extraction uses `extract_patterns` to select files.
+    - Saves release notes, ensures `.sh` files are executable, and removes older release subdirectories not in the retention window.
     - Updates `latest_release_file` when a newer release has been successfully processed.
-    If global downloads were skipped (e.g., due to Wi‑Fi gating), the function returns the list of newer release tags without performing downloads.
+
+    Side effects:
+    - Creates release directories and may write `latest_release_file`.
+    - May remove corrupted ZIP files and delete old release directories during cleanup.
+    - Honors a global Wi-Fi gating flag: if downloads were skipped, the function will not download and instead returns newer release tags.
 
     Parameters:
-        releases: List of release dictionaries as returned by the GitHub/Meshtastic API.
-        latest_release_file: Path to a file that stores the most recently recorded release tag.
-        release_type: Human-readable release type (e.g., "Firmware" or "APK") used in logs and failure records.
-        download_dir_path: Root directory under which per-release subdirectories are created.
-        versions_to_keep: Number of most recent releases from `releases` to consider for download/retention.
-        extract_patterns: Filename patterns used to select files to extract from ZIP archives.
-        selected_patterns: If provided, only assets whose base name contains any of these strings are considered for download.
-        auto_extract: If True and `release_type` == "Firmware", ZIP assets will be checked and extracted when needed.
-        exclude_patterns: Optional glob patterns; matching filenames are excluded from download and extraction.
+    - releases: Iterable of release dicts from the API (newest-first order expected).
+    - latest_release_file: Path to a file storing the most recently recorded release tag.
+    - release_type: Human-readable type used in logs and failure records (e.g., "Firmware" or "APK").
+    - download_dir_path: Root directory where per-release subdirectories are created.
+    - versions_to_keep: Number of newest releases to consider for download/retention.
+    - extract_patterns: Patterns used to select files to extract from ZIP archives.
+    - selected_patterns: If provided, only assets whose names match any of these patterns are considered for download.
+    - auto_extract: When True and `release_type` == "Firmware`, ZIP assets will be extracted when needed.
+    - exclude_patterns: Optional patterns; matching filenames are excluded from download and extraction.
 
     Returns:
-        Tuple containing:
-        - downloaded_versions (List[str]): Release tags for which at least one asset was successfully downloaded.
-        - new_versions_available (List[str]): Release tags that are newer than the saved/latest tag but were not downloaded (or remain pending).
-        - failed_downloads_details (List[Dict[str, str]]): Per-failure records with keys such as `url`, `path_to_download`, `release_tag`, `file_name`, `reason`, and `type`.
+    - Tuple(downloaded_versions, new_versions_available, failed_downloads_details)
+      - downloaded_versions: list of release tags for which at least one asset was successfully downloaded.
+      - new_versions_available: list of release tags newer than the saved/latest tag that remain pending or were not downloaded.
+      - failed_downloads_details: list of dicts describing individual failed downloads (keys include url, path_to_download, release_tag, file_name, reason, and type).
     """
     global downloads_skipped
     downloaded_versions: List[str] = []
@@ -1590,9 +1645,7 @@ def check_and_download(
     releases_to_download: List[Dict[str, Any]] = releases[:versions_to_keep]
 
     total_to_scan = len(releases_to_download)
-    logger.info(
-        f"Scanning {total_to_scan} {release_type} releases (keep {versions_to_keep})"
-    )
+    logger.info(_summarise_scan_window(release_type, total_to_scan))
 
     if downloads_skipped:
         # Mirror the “newer than saved” computation used later (newest-first list).
@@ -1609,7 +1662,9 @@ def check_and_download(
             release_tag: str = release_data[
                 "tag_name"
             ]  # Potential KeyError if API response changes
-            logger.info(f"Checking {release_tag} ({idx}/{total_to_scan})…")
+            if total_to_scan > 1:
+                logger.debug("Checking %s (%d of %d)", release_tag, idx, total_to_scan)
+            logger.info("Checking %s…", release_tag)
             release_dir: str = os.path.join(download_dir_path, release_tag)
             release_notes_file: str = os.path.join(
                 release_dir, f"release_notes-{release_tag}.md"
@@ -1730,9 +1785,19 @@ def check_and_download(
                 if selected_patterns and not matches_selected_patterns(
                     file_name, selected_patterns
                 ):
+                    logger.debug(
+                        "Skipping %s asset %s (no pattern match)",
+                        release_type,
+                        file_name,
+                    )
                     continue
                 # Honor exclude patterns at download-time as well
                 if any(fnmatch.fnmatch(file_name, ex) for ex in exclude_patterns_list):
+                    logger.debug(
+                        "Skipping %s asset %s (matched exclude pattern)",
+                        release_type,
+                        file_name,
+                    )
                     continue
                 asset_download_path = os.path.join(release_dir, file_name)
                 if not os.path.exists(asset_download_path):
@@ -1747,7 +1812,7 @@ def check_and_download(
 
         if assets_to_download:  # This check is correct based on the first loop.
             actions_taken = True
-            logger.info(f"Processing release: {release_tag}")
+            logger.info("Processing release: %s", release_tag)
             any_downloaded: bool = False
             url: str
             # The assets_to_download list contains (url, path_to_download) tuples.

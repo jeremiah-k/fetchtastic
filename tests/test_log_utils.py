@@ -160,6 +160,29 @@ class TestLogUtils:
             log_utils.logger.info("Test message")
             mock_info.assert_called_once_with("Test message")
 
+    def test_set_log_level_with_non_rich_handler(self):
+        """Test setting log level with non-RichHandler to cover all formatter paths."""
+        # Add a standard StreamHandler to test non-RichHandler formatter paths
+        import io
+
+        stream = io.StringIO()
+        standard_handler = logging.StreamHandler(stream)
+        log_utils.logger.addHandler(standard_handler)
+
+        try:
+            # Test INFO level with standard handler (should use INFO_LOG_FORMAT)
+            log_utils.set_log_level("INFO")
+            assert standard_handler.formatter._fmt == log_utils.INFO_LOG_FORMAT
+            assert standard_handler.formatter.datefmt == log_utils.LOG_DATE_FORMAT
+
+            # Test DEBUG level with standard handler (should use DEBUG_LOG_FORMAT)
+            log_utils.set_log_level("DEBUG")
+            assert standard_handler.formatter._fmt == log_utils.DEBUG_LOG_FORMAT
+            assert standard_handler.formatter.datefmt == log_utils.LOG_DATE_FORMAT
+        finally:
+            # Clean up
+            log_utils.logger.removeHandler(standard_handler)
+
     def test_main_execution_block(self):
         """Test the main execution block functionality."""
         # Test that the main block can be executed without errors

@@ -32,12 +32,15 @@ LEGACY_VER_RX = re.compile(
     r"([-_])v?\d+\.\d+\.\d+(?:\.[\da-f]+)?(?:[-_.]?(?:rc|dev|beta|alpha)\d*)?(?=[-_.]|$)"
 )
 
+# Precompiled regex for punctuation stripping (performance optimization)
+_PUNC_RX = re.compile(r"[^a-z0-9]+")
+
 
 def calculate_sha256(file_path: str) -> Optional[str]:
     """
-    Return the SHA-256 hex digest of the file at file_path, or None if the file cannot be read.
+    Compute and return the SHA-256 hex digest of a file, or None if the file cannot be read.
 
-    Reads the file in binary chunks and computes its SHA-256 checksum. If an I/O or OS error occurs (for example: file not found or permission denied), the function returns None.
+    Reads the file in binary mode and streams its contents to the SHA-256 digest (no full-file buffering). On success returns the 64-character lowercase hexadecimal digest string. If the file cannot be opened or read (e.g., missing file or permission error), the function logs the error at debug level and returns None instead of raising.
     """
     try:
         sha256_hash = hashlib.sha256()
@@ -70,12 +73,19 @@ def save_file_hash(file_path: str, hash_value: str) -> None:
         Creates or overwrites the `.sha256` sidecar file. IO errors are caught and logged; this function does not raise on failure.
     """
     hash_file = get_hash_file_path(file_path)
+    tmp_file = f"{hash_file}.tmp.{os.getpid()}"
     try:
-        with open(hash_file, "w") as f:
+        with open(tmp_file, "w", encoding="ascii", newline="\n") as f:
             f.write(f"{hash_value}  {os.path.basename(file_path)}\n")
-        logger.debug(f"Saved hash for {os.path.basename(file_path)}")
+        os.replace(tmp_file, hash_file)
+        logger.debug("Saved hash for %s", os.path.basename(file_path))
     except (IOError, OSError) as e:
-        logger.debug(f"Error saving hash file {hash_file}: {e}")
+        logger.debug("Error saving hash file %s: %s", hash_file, e)
+        try:
+            if os.path.exists(tmp_file):
+                os.remove(tmp_file)
+        except OSError:
+            pass
 
 
 def _remove_file_and_hash(path: str) -> bool:
@@ -549,16 +559,86 @@ def matches_selected_patterns(
     and the legacy normalization (which preserves the separator before the version token). If
     `selected_patterns` is falsy (None or empty) the function returns True.
 
+    The matcher is forgiving about minor naming changes introduced upstream by normalising both the
+    candidate filename and the patterns to lower-case and by also performing a punctuation-stripped
+    comparison. This keeps existing configurations working when asset names switch between styles such
+    as ``fdroidRelease-`` and ``app-fdroid-release``.
+
     Parameters:
         selected_patterns: Iterable of substring patterns to search for; empty or None means "match all".
 
     Returns:
         True if any non-empty pattern appears in either normalized base name; otherwise False.
     """
+
     if not selected_patterns:
         return True
+
     base_modern = extract_base_name(filename)
     base_legacy = legacy_strip_version_numbers(filename)
-    return any(
-        pat and (pat in base_modern or pat in base_legacy) for pat in selected_patterns
-    )
+    base_modern_lower = base_modern.lower()
+    base_legacy_lower = base_legacy.lower()
+    base_modern_sanitised = None  # lazy
+    base_legacy_sanitised = None  # lazy
+
+    def _strip_punctuation(value: str) -> str:
+        """Return a simplified token by removing punctuation characters and lower-casing."""
+        return _PUNC_RX.sub("", value.lower())
+
+    for pat in selected_patterns:
+        pat = pat.strip()
+        if not pat:
+            continue
+        pat_lower = pat.lower()
+        if pat_lower in base_modern_lower or pat_lower in base_legacy_lower:
+            return True
+
+        # Fall back to punctuation-stripped matching when the pattern appears to target
+        # mixed-case or dotted segments (e.g., fdroidRelease-, *.zip), or when it contains
+        # common keywords that are known to have changed naming schemes. This preserves the
+        # ability to distinguish dash vs underscore selections (e.g., "rak4631-" vs "rak4631_")
+        # while being more forgiving for patterns that are likely affected by upstream renames.
+        needs_sanitised = (
+            any(ch.isupper() for ch in pat)
+            or "." in pat
+            or any(
+                keyword in pat.lower()
+                for keyword in ["release", "apk", "aab", "fdroid"]
+            )
+        )
+        if needs_sanitised:
+            pat_sanitised = _strip_punctuation(pat)
+            if pat_sanitised:
+                # Compute sanitised bases only when needed
+                if base_modern_sanitised is None:
+                    base_modern_sanitised = _strip_punctuation(base_modern)
+                if base_legacy_sanitised is None:
+                    base_legacy_sanitised = _strip_punctuation(base_legacy)
+
+                if (
+                    pat_sanitised in base_modern_sanitised
+                    or pat_sanitised in base_legacy_sanitised
+                ):
+                    return True
+
+    # Last-chance fallback: for very short patterns (≤3 chars), try sanitised matching
+    # This helps with patterns like "rak" matching "RAK4631" after sanitization
+    for pat in selected_patterns:
+        pat = pat.strip()
+        if not pat or len(pat) > 3:
+            continue
+        pat_sanitised = _strip_punctuation(pat)
+        if pat_sanitised:
+            # Compute sanitised bases only when needed
+            if base_modern_sanitised is None:
+                base_modern_sanitised = _strip_punctuation(base_modern)
+            if base_legacy_sanitised is None:
+                base_legacy_sanitised = _strip_punctuation(base_legacy)
+
+            if (
+                pat_sanitised in base_modern_sanitised
+                or pat_sanitised in base_legacy_sanitised
+            ):
+                return True
+
+    return False
