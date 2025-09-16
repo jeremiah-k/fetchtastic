@@ -467,8 +467,6 @@ def check_for_prereleases(
 
     # Fetch directories from the meshtastic.github.io repository
     directories = menu_repo.fetch_repo_directories()
-    logger.debug(f"Found {len(directories)} total directories from repository")
-    logger.debug(f"Repository directories: {directories}")
 
     if not directories:
         logger.info("No firmware directories found in the repository.")
@@ -496,9 +494,6 @@ def check_for_prereleases(
     repo_firmware_dirs = [
         dir_name for dir_name in directories if dir_name.startswith("firmware-")
     ]
-    logger.debug(
-        f"Found {len(repo_firmware_dirs)} firmware directories: {repo_firmware_dirs}"
-    )
 
     # Clean up the prerelease directory
     # Only keep directories that:
@@ -568,13 +563,9 @@ def check_for_prereleases(
         # Extract version from directory name (e.g., firmware-2.6.9.f93d031)
         if dir_name.startswith("firmware-"):
             dir_version = dir_name[9:]  # Remove 'firmware-' prefix
-            logger.debug(f"Checking directory {dir_name}, version: {dir_version}")
 
             # Check if this version is newer than the latest release
             comparison_result = compare_versions(dir_version, latest_release_version)
-            logger.debug(
-                f"Version comparison: {dir_version} vs {latest_release_version} = {comparison_result}"
-            )
             if comparison_result > 0:
 
                 # Refresh the list of existing prerelease directories after cleanup
@@ -597,9 +588,6 @@ def check_for_prereleases(
 
                     # Fetch the list of files that should be in this directory
                     expected_files = menu_repo.fetch_directory_contents(dir_name)
-                    logger.debug(
-                        f"Fetched {len(expected_files) if expected_files else 0} files from {dir_name}"
-                    )
                     if expected_files:
                         # Filter expected files based on patterns (same logic as download)
                         expected_matching_files = []
@@ -607,13 +595,9 @@ def check_for_prereleases(
                             file_name = file["name"]
 
                             # Apply same filtering logic as download (back-compat matching)
-                            pattern_match = matches_selected_patterns(
+                            if not matches_selected_patterns(
                                 file_name, selected_patterns
-                            )
-                            logger.debug(
-                                f"Completeness check - Pattern matching for {file_name}: {pattern_match} (patterns: {selected_patterns})"
-                            )
-                            if not pattern_match:
+                            ):
                                 continue  # Skip this file
 
                             # Skip files that match exclude patterns
@@ -624,10 +608,6 @@ def check_for_prereleases(
                                 continue  # Skip this file
 
                             expected_matching_files.append(file_name)
-
-                        logger.debug(
-                            f"After pattern filtering: {len(expected_matching_files)} files match patterns out of {len(expected_files)} total files"
-                        )
 
                         # Check if all expected files are present locally
                         missing_files = []
@@ -656,14 +636,7 @@ def check_for_prereleases(
                     prerelease_dirs.append(dir_name)
 
     if not prerelease_dirs:
-        logger.debug(
-            "No prerelease directories found that are newer than latest release"
-        )
         return False, []
-
-    logger.debug(
-        f"Found {len(prerelease_dirs)} prerelease directories to process: {prerelease_dirs}"
-    )
 
     # Create prerelease directory if it doesn't exist
     if not os.path.exists(prerelease_dir):
@@ -683,9 +656,6 @@ def check_for_prereleases(
 
         # Fetch files from the directory
         files = menu_repo.fetch_directory_contents(dir_name)
-        logger.debug(
-            f"Found {len(files)} files in {dir_name}: {[f.get('name', 'unknown') for f in files]}"
-        )
 
         if not files:
             logger.info(f"No files found in {dir_name}.")
@@ -710,24 +680,13 @@ def check_for_prereleases(
 
             # Only download files that match the selected patterns and don't match exclude patterns
             # Backward-compatible pattern matching (modern + legacy normalization)
-            pattern_match = matches_selected_patterns(file_name, selected_patterns)
-            logger.debug(
-                f"Pattern matching for {file_name}: {pattern_match} (patterns: {selected_patterns})"
-            )
-            if not pattern_match:
-                logger.debug(
-                    "Skipping pre-release file %s (no pattern match)", file_name
-                )
+            if not matches_selected_patterns(file_name, selected_patterns):
                 continue  # Skip this file
 
             # Skip files that match exclude patterns
             if any(
                 fnmatch.fnmatch(file_name, exclude) for exclude in exclude_patterns_list
             ):
-                logger.debug(
-                    "Skipping pre-release file %s (matched exclude pattern)",
-                    file_name,
-                )
                 continue  # Skip this file
 
             if not os.path.exists(file_path):
@@ -1136,7 +1095,7 @@ def _process_firmware_downloads(
                     check_for_prereleases(  # logger.info removed
                         paths_and_urls["download_dir"],
                         latest_release_tag,
-                        config.get("SELECTED_FIRMWARE_ASSETS", []),  # type: ignore
+                        config.get("EXTRACT_PATTERNS", []),  # type: ignore - Use EXTRACT_PATTERNS for prereleases
                         exclude_patterns=config.get("EXCLUDE_PATTERNS", []),  # type: ignore
                     )
                 )
