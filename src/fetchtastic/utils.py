@@ -32,6 +32,9 @@ LEGACY_VER_RX = re.compile(
     r"([-_])v?\d+\.\d+\.\d+(?:\.[\da-f]+)?(?:[-_.]?(?:rc|dev|beta|alpha)\d*)?(?=[-_.]|$)"
 )
 
+# Precompiled regex for punctuation stripping (performance optimization)
+_PUNC_RX = re.compile(r"[^a-z0-9]+")
+
 
 def calculate_sha256(file_path: str) -> Optional[str]:
     """
@@ -572,7 +575,7 @@ def matches_selected_patterns(
     def _strip_punctuation(value: str) -> str:
         """Return a simplified token by removing punctuation characters and lower-casing."""
 
-        return re.sub(r"[^a-z0-9]+", "", value.lower())
+        return _PUNC_RX.sub("", value.lower())
 
     base_modern_sanitised = _strip_punctuation(base_modern)
     base_legacy_sanitised = _strip_punctuation(base_legacy)

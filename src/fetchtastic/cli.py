@@ -59,6 +59,7 @@ def main():
     setup_parser.add_argument(
         "sections",
         nargs="*",
+        metavar="SECTION",
         help="Positional shorthand for selecting setup sections (e.g. 'setup firmware')",
     )
 
@@ -154,18 +155,23 @@ def main():
             if args.section:
                 combined_sections.extend(args.section)
             if args.sections:
-                # Validate positional section arguments
-                invalid_sections = [
-                    s
-                    for s in args.sections
-                    if s not in setup_config.SETUP_SECTION_CHOICES
-                ]
-                if invalid_sections:
-                    valid_choices = sorted(setup_config.SETUP_SECTION_CHOICES)
-                    logger.error(f"Invalid section(s): {', '.join(invalid_sections)}")
-                    logger.error(f"Valid choices are: {', '.join(valid_choices)}")
-                    sys.exit(1)
                 combined_sections.extend(args.sections)
+
+            # Validate and deduplicate sections
+            if combined_sections:
+                allowed = set(setup_config.SETUP_SECTION_CHOICES)
+                invalid = [s for s in combined_sections if s not in allowed]
+                if invalid:
+                    parser.error(
+                        f"invalid sections: {', '.join(invalid)} "
+                        f"(choose from {', '.join(sorted(allowed))})"
+                    )
+                # Deduplicate while preserving order
+                seen = set()
+                combined_sections = [
+                    s for s in combined_sections if not (s in seen or seen.add(s))
+                ]
+
             setup_config.run_setup(sections=combined_sections or None)
 
         # Remind about updates at the end if available
