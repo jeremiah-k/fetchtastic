@@ -372,8 +372,9 @@ def _prompt_for_setup_sections() -> Optional[Set[str]]:
         if not response:
             return None
 
-        normalised = response.replace(";", " ").replace(",", " ")
-        tokens = [tok for tok in normalised.split() if tok]
+        import re
+
+        tokens = [tok for tok in re.split(r"[\s,;]+", response) if tok]
         selected: Set[str] = set()
         for token in tokens:
             lowered = token.strip().lower()
@@ -712,13 +713,12 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
     return config
 
 
-def _setup_notifications(config: dict, is_partial_run: bool) -> dict:
+def _setup_notifications(config: dict) -> dict:
     """
     Handle NTFY notifications configuration.
 
     Args:
         config: Current configuration dictionary
-        is_partial_run: Whether this is a partial setup run
 
     Returns:
         Updated configuration dictionary
@@ -895,24 +895,27 @@ def _setup_base(
                 print("Starting migration to pipx...")
                 try:
                     # Install pipx if not already installed
+                    pkg_exe = shutil.which("pkg") or "pkg"
                     subprocess.run(
-                        ["pkg", "install", "python-pipx"],
+                        [pkg_exe, "install", "python-pipx"],
                         check=True,
                         capture_output=True,
                     )
                     print("✓ pipx installed")
 
                     # Uninstall current fetchtastic
+                    pip_exe = shutil.which("pip") or "pip"
                     subprocess.run(
-                        ["pip", "uninstall", "fetchtastic", "-y"],
+                        [pip_exe, "uninstall", "fetchtastic", "-y"],
                         check=True,
                         capture_output=True,
                     )
                     print("✓ Removed pip installation")
 
                     # Install with pipx
+                    pipx_exe = shutil.which("pipx") or "pipx"
                     subprocess.run(
-                        ["pipx", "install", "fetchtastic"],
+                        [pipx_exe, "install", "fetchtastic"],
                         check=True,
                         capture_output=True,
                     )
@@ -1121,12 +1124,12 @@ def run_setup(sections: Optional[Sequence[str]] = None):
 
     # Record the version at which setup was last run
     try:
-        from importlib.metadata import version
+        from importlib.metadata import PackageNotFoundError, version
 
         current_version = version("fetchtastic")
         config["LAST_SETUP_VERSION"] = current_version
         config["LAST_SETUP_DATE"] = datetime.now().isoformat()
-    except Exception:
+    except PackageNotFoundError:
         # If we can't get the version, just record the date
         config["LAST_SETUP_DATE"] = datetime.now().isoformat()
 
@@ -1373,7 +1376,7 @@ def run_setup(sections: Optional[Sequence[str]] = None):
 
     # Handle notifications configuration
     if not is_partial_run or wants("notifications"):
-        config = _setup_notifications(config, is_partial_run)
+        config = _setup_notifications(config)
 
     if not is_partial_run:
         # Ask if the user wants to perform a first run

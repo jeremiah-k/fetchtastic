@@ -1790,7 +1790,7 @@ def check_and_download(
 
         if assets_to_download:  # This check is correct based on the first loop.
             actions_taken = True
-            logger.info(f"Processing release: {release_tag}")
+            logger.info("Processing release: %s", release_tag)
             any_downloaded: bool = False
             url: str
             # The assets_to_download list contains (url, path_to_download) tuples.
