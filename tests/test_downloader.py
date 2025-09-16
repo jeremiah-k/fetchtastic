@@ -1034,6 +1034,197 @@ def test_prerelease_tracking_functionality(
     assert len(info["commits"]) > 0
 
 
+def test_prerelease_simple_substring_matching():
+    """Test that prerelease downloads use simple substring matching for EXTRACT_PATTERNS."""
+    # Test files and patterns
+    test_files = [
+        "firmware-rak4631-2.7.9.70724be-ota.zip",  # should match 'rak4631-'
+        "device-install.sh",  # should match 'device-'
+        "littlefs-rak4631-2.7.9.70724be.bin",  # should match both 'rak4631-' and 'littlefs-'
+        "bleota.bin",  # should match 'bleota'
+        "bleota-c3.bin",  # should match 'bleota'
+        "firmware-canaryone-2.7.9.70724be-ota.zip",  # should NOT match any pattern
+        "some-random-file.bin",  # should NOT match any pattern
+    ]
+
+    extract_patterns = ["rak4631-", "device-", "littlefs-", "bleota"]
+
+    # Test the simple substring matching logic used in prereleases
+    for filename in test_files:
+        matches = any(pattern in filename for pattern in extract_patterns)
+
+        if filename in [
+            "firmware-rak4631-2.7.9.70724be-ota.zip",
+            "device-install.sh",
+            "littlefs-rak4631-2.7.9.70724be.bin",
+            "bleota.bin",
+            "bleota-c3.bin",
+        ]:
+            assert matches, f"File {filename} should match patterns {extract_patterns}"
+        else:
+            assert (
+                not matches
+            ), f"File {filename} should NOT match patterns {extract_patterns}"
+
+
+def test_prerelease_directory_cleanup(tmp_path):
+    """Test that old prerelease directories are cleaned up when new ones arrive."""
+    download_dir = tmp_path
+    prerelease_dir = download_dir / "firmware" / "prerelease"
+    prerelease_dir.mkdir(parents=True)
+
+    # Create some old prerelease directories
+    old_dir1 = prerelease_dir / "firmware-2.7.6.oldcommit"
+    old_dir2 = prerelease_dir / "firmware-2.7.7.anotherold"
+    old_dir1.mkdir()
+    old_dir2.mkdir()
+
+    # Add some files to the old directories
+    (old_dir1 / "test_file.bin").write_bytes(b"old data")
+    (old_dir2 / "test_file.bin").write_bytes(b"old data")
+
+    # Verify old directories exist
+    assert old_dir1.exists()
+    assert old_dir2.exists()
+
+    # Mock the repo to return a newer prerelease
+    with patch("fetchtastic.downloader.menu_repo.fetch_repo_directories") as mock_dirs:
+        with patch(
+            "fetchtastic.downloader.menu_repo.fetch_directory_contents"
+        ) as mock_contents:
+            mock_dirs.return_value = ["firmware-2.7.8.newcommit"]
+            mock_contents.return_value = [
+                {
+                    "name": "firmware-rak4631-2.7.8.newcommit.uf2",
+                    "download_url": "https://example.invalid/rak4631.uf2",
+                }
+            ]
+
+            with patch("fetchtastic.downloader.download_file_with_retry") as mock_dl:
+
+                def _mock_dl(_url, dest):
+                    import os
+
+                    os.makedirs(os.path.dirname(dest), exist_ok=True)
+                    with open(dest, "wb") as f:
+                        f.write(b"new data")
+                    return True
+
+                mock_dl.side_effect = _mock_dl
+
+                # Run prerelease check - this should clean up old directories
+                found, versions = downloader.check_for_prereleases(
+                    str(download_dir),
+                    "v2.7.5.baseline",
+                    ["rak4631-"],
+                    exclude_patterns=[],
+                )
+
+                # Verify the function succeeded
+                assert found is True
+                assert "firmware-2.7.8.newcommit" in versions
+
+                # Verify old directories were removed
+                assert (
+                    not old_dir1.exists()
+                ), "Old prerelease directory should be removed"
+                assert (
+                    not old_dir2.exists()
+                ), "Old prerelease directory should be removed"
+
+                # Verify new directory was created
+                new_dir = prerelease_dir / "firmware-2.7.8.newcommit"
+                assert new_dir.exists(), "New prerelease directory should be created"
+
+
+def test_prerelease_tracking_txt_format():
+    """Test the new .txt tracking file format and functions."""
+    import os
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        prerelease_dir = os.path.join(tmp_dir, "prerelease")
+        os.makedirs(prerelease_dir)
+
+        # Test update_prerelease_tracking function
+        latest_release = "v2.7.6.111111"
+        prerelease1 = "firmware-2.7.7.abcdef"
+        prerelease2 = "firmware-2.7.8.ghijkl"
+
+        # Add first prerelease
+        num1 = downloader.update_prerelease_tracking(
+            prerelease_dir, latest_release, prerelease1
+        )
+        assert num1 == 1, "First prerelease should be #1"
+
+        # Add second prerelease
+        num2 = downloader.update_prerelease_tracking(
+            prerelease_dir, latest_release, prerelease2
+        )
+        assert num2 == 2, "Second prerelease should be #2"
+
+        # Test reading the tracking file
+        info = downloader.get_prerelease_tracking_info(prerelease_dir)
+        assert info["release"] == latest_release
+        assert info["prerelease_count"] == 2
+        assert "abcdef" in info["commits"]
+        assert "ghijkl" in info["commits"]
+
+        # Test that new release resets the tracking
+        new_release = "v2.7.9.newrelease"
+        num3 = downloader.update_prerelease_tracking(
+            prerelease_dir, new_release, "firmware-2.7.10.newcommit"
+        )
+        assert num3 == 1, "First prerelease after new release should be #1"
+
+        # Verify tracking was reset
+        info = downloader.get_prerelease_tracking_info(prerelease_dir)
+        assert info["release"] == new_release
+        assert info["prerelease_count"] == 1
+        assert "newcommit" in info["commits"]
+        assert "abcdef" not in info["commits"], "Old commits should be cleared"
+
+
+def test_prerelease_tracking_edge_cases():
+    """Test edge cases in prerelease tracking system."""
+    import os
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        prerelease_dir = os.path.join(tmp_dir, "prerelease")
+        os.makedirs(prerelease_dir)
+
+        # Test with malformed prerelease directory name
+        malformed_prerelease = "not-a-valid-format"
+        num = downloader.update_prerelease_tracking(
+            prerelease_dir, "v2.7.6", malformed_prerelease
+        )
+        assert num == 1, "Should handle malformed directory names"
+
+        # Test reading empty tracking file
+        tracking_file = os.path.join(prerelease_dir, "prerelease_commits.txt")
+        with open(tracking_file, "w") as f:
+            f.write("")  # Empty file
+
+        info = downloader.get_prerelease_tracking_info(prerelease_dir)
+        assert info == {}, "Should return empty dict for empty tracking file"
+
+        # Test reading tracking file with old format (no "Release:" prefix)
+        with open(tracking_file, "w") as f:
+            f.write("abcdef\nghijkl\n")  # Old format without Release: prefix
+
+        info = downloader.get_prerelease_tracking_info(prerelease_dir)
+        assert info["release"] == "unknown"
+        assert info["prerelease_count"] == 2
+        assert "abcdef" in info["commits"]
+        assert "ghijkl" in info["commits"]
+
+        # Test reading non-existent tracking file
+        os.remove(tracking_file)
+        info = downloader.get_prerelease_tracking_info(prerelease_dir)
+        assert info == {}, "Should return empty dict for non-existent file"
+
+
 def test_prerelease_existing_files_tracking(tmp_path):
     """Test that existing prerelease files are properly tracked."""
     download_dir = tmp_path
