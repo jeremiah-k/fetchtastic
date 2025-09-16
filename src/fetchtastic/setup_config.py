@@ -723,6 +723,151 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
     return config
 
 
+def _setup_notifications(config: dict, is_partial_run: bool) -> dict:
+    """
+    Handle NTFY notifications configuration.
+
+    Args:
+        config: Current configuration dictionary
+        is_partial_run: Whether this is a partial setup run
+
+    Returns:
+        Updated configuration dictionary
+    """
+    global CONFIG_FILE
+
+    has_ntfy_config = bool(config.get("NTFY_TOPIC")) and bool(config.get("NTFY_SERVER"))
+    notifications_default = "yes" if has_ntfy_config else "no"
+
+    notifications = (
+        input(
+            f"Would you like to set up notifications via NTFY? [y/n] (default: {notifications_default}): "
+        )
+        .strip()
+        .lower()
+        or notifications_default[0]
+    )
+
+    if notifications == "y":
+        # Get NTFY server
+        current_server = config.get("NTFY_SERVER", "ntfy.sh")
+        ntfy_server = (
+            input(f"Enter the NTFY server (current: {current_server}): ").strip()
+            or current_server
+        )
+
+        if not ntfy_server.startswith("http://") and not ntfy_server.startswith(
+            "https://"
+        ):
+            ntfy_server = "https://" + ntfy_server
+
+        # Get topic name
+        if config.get("NTFY_TOPIC"):
+            current_topic = config.get("NTFY_TOPIC")
+        else:
+            current_topic = "fetchtastic-" + "".join(
+                random.choices(string.ascii_lowercase + string.digits, k=6)
+            )
+
+        topic_name = (
+            input(f"Enter a unique topic name (current: {current_topic}): ").strip()
+            or current_topic
+        )
+
+        # Update config
+        config["NTFY_TOPIC"] = topic_name
+        config["NTFY_SERVER"] = ntfy_server
+
+        # Save configuration with NTFY settings
+        with open(CONFIG_FILE, "w") as f:
+            yaml.dump(config, f)
+
+        # Display information
+        full_topic_url = f"{ntfy_server.rstrip('/')}/{topic_name}"
+        print(f"Notifications enabled using topic: {topic_name}")
+        if is_termux():
+            print("Subscribe by pasting the topic name in the ntfy app.")
+        else:
+            print(
+                "Subscribe by visiting the full topic URL in your browser or ntfy app."
+            )
+        print(f"Full topic URL: {full_topic_url}")
+
+        # Offer to copy to clipboard
+        if is_termux():
+            copy_prompt_text = "Do you want to copy the topic name to the clipboard? [y/n] (default: yes): "
+            text_to_copy = topic_name
+        else:
+            copy_prompt_text = "Do you want to copy the topic URL to the clipboard? [y/n] (default: yes): "
+            text_to_copy = full_topic_url
+
+        copy_to_clipboard = input(copy_prompt_text).strip().lower() or "y"
+        if copy_to_clipboard == "y":
+            success = copy_to_clipboard_func(text_to_copy)
+            if success:
+                if is_termux():
+                    print("Topic name copied to clipboard.")
+                else:
+                    print("Topic URL copied to clipboard.")
+            else:
+                print("Failed to copy to clipboard.")
+
+        # Ask if the user wants notifications only when new files are downloaded
+        notify_on_download_only_default = (
+            "yes" if config.get("NOTIFY_ON_DOWNLOAD_ONLY", False) else "no"
+        )
+        notify_on_download_only = (
+            input(
+                f"Do you want to receive notifications only when new files are downloaded? [y/n] (default: {notify_on_download_only_default}): "
+            )
+            .strip()
+            .lower()
+            or notify_on_download_only_default[0]
+        )
+        config["NOTIFY_ON_DOWNLOAD_ONLY"] = (
+            True if notify_on_download_only == "y" else False
+        )
+
+        # Save configuration with the new setting
+        with open(CONFIG_FILE, "w") as f:
+            yaml.dump(config, f)
+
+        print("Notification settings have been saved.")
+
+    else:
+        # User chose not to use notifications
+        if has_ntfy_config:
+            # Ask for confirmation to disable existing notifications
+            disable_confirm = (
+                input(
+                    "You currently have notifications enabled. Are you sure you want to disable them? [y/n] (default: no): "
+                )
+                .strip()
+                .lower()
+                or "n"
+            )
+
+            if disable_confirm == "y":
+                config["NTFY_TOPIC"] = ""
+                config["NTFY_SERVER"] = ""
+                config["NOTIFY_ON_DOWNLOAD_ONLY"] = False
+                with open(CONFIG_FILE, "w") as f:
+                    yaml.dump(config, f)
+                print("Notifications have been disabled.")
+            else:
+                print("Keeping existing notification settings.")
+        else:
+            # No existing notifications, just confirm they're disabled
+            config["NTFY_TOPIC"] = ""
+            config["NTFY_SERVER"] = ""
+            config["NOTIFY_ON_DOWNLOAD_ONLY"] = False
+            with open(CONFIG_FILE, "w") as f:
+                yaml.dump(config, f)
+            print("Notifications will remain disabled.")
+
+    return config
+
+
 def _setup_base(
     config: dict, is_partial_run: bool, is_first_run: bool, wants: Callable[[str], bool]
 ) -> dict:
@@ -1247,138 +1392,9 @@ def run_setup(sections: Optional[Sequence[str]] = None):
                 else:
                     print("Reboot cron job has not been set up.")
 
-    # Prompt for NTFY server configuration
+    # Handle notifications configuration
     if not is_partial_run or wants("notifications"):
-        has_ntfy_config = bool(config.get("NTFY_TOPIC")) and bool(
-            config.get("NTFY_SERVER")
-        )
-        notifications_default = "yes" if has_ntfy_config else "no"
-
-        notifications = (
-            input(
-                f"Would you like to set up notifications via NTFY? [y/n] (default: {notifications_default}): "
-            )
-            .strip()
-            .lower()
-            or notifications_default[0]
-        )
-
-        if notifications == "y":
-            # Get NTFY server
-            current_server = config.get("NTFY_SERVER", "ntfy.sh")
-            ntfy_server = (
-                input(f"Enter the NTFY server (current: {current_server}): ").strip()
-                or current_server
-            )
-
-            if not ntfy_server.startswith("http://") and not ntfy_server.startswith(
-                "https://"
-            ):
-                ntfy_server = "https://" + ntfy_server
-
-            # Get topic name
-            if config.get("NTFY_TOPIC"):
-                current_topic = config.get("NTFY_TOPIC")
-            else:
-                current_topic = "fetchtastic-" + "".join(
-                    random.choices(string.ascii_lowercase + string.digits, k=6)
-                )
-
-            topic_name = (
-                input(f"Enter a unique topic name (current: {current_topic}): ").strip()
-                or current_topic
-            )
-
-            # Update config
-            config["NTFY_TOPIC"] = topic_name
-            config["NTFY_SERVER"] = ntfy_server
-
-            # Save configuration with NTFY settings
-            with open(CONFIG_FILE, "w") as f:
-                yaml.dump(config, f)
-
-            # Display information
-            full_topic_url = f"{ntfy_server.rstrip('/')}/{topic_name}"
-            print(f"Notifications enabled using topic: {topic_name}")
-            if is_termux():
-                print("Subscribe by pasting the topic name in the ntfy app.")
-            else:
-                print(
-                    "Subscribe by visiting the full topic URL in your browser or ntfy app."
-                )
-            print(f"Full topic URL: {full_topic_url}")
-
-            # Offer to copy to clipboard
-            if is_termux():
-                copy_prompt_text = "Do you want to copy the topic name to the clipboard? [y/n] (default: yes): "
-                text_to_copy = topic_name
-            else:
-                copy_prompt_text = "Do you want to copy the topic URL to the clipboard? [y/n] (default: yes): "
-                text_to_copy = full_topic_url
-
-            copy_to_clipboard = input(copy_prompt_text).strip().lower() or "y"
-            if copy_to_clipboard == "y":
-                success = copy_to_clipboard_func(text_to_copy)
-                if success:
-                    if is_termux():
-                        print("Topic name copied to clipboard.")
-                    else:
-                        print("Topic URL copied to clipboard.")
-                else:
-                    print("Failed to copy to clipboard.")
-
-            # Ask if the user wants notifications only when new files are downloaded
-            notify_on_download_only_default = (
-                "yes" if config.get("NOTIFY_ON_DOWNLOAD_ONLY", False) else "no"
-            )
-            notify_on_download_only = (
-                input(
-                    f"Do you want to receive notifications only when new files are downloaded? [y/n] (default: {notify_on_download_only_default}): "
-                )
-                .strip()
-                .lower()
-                or notify_on_download_only_default[0]
-            )
-            config["NOTIFY_ON_DOWNLOAD_ONLY"] = (
-                True if notify_on_download_only == "y" else False
-            )
-
-            # Save configuration with the new setting
-            with open(CONFIG_FILE, "w") as f:
-                yaml.dump(config, f)
-
-            print("Notification settings have been saved.")
-
-        else:
-            # User chose not to use notifications
-            if has_ntfy_config:
-                # Ask for confirmation to disable existing notifications
-                disable_confirm = (
-                    input(
-                        "You currently have notifications enabled. Are you sure you want to disable them? [y/n] (default: no): "
-                    )
-                    .strip()
-                    .lower()
-                    or "n"
-                )
-
-                if disable_confirm == "y":
-                    config["NTFY_TOPIC"] = ""
-                    config["NTFY_SERVER"] = ""
-                    config["NOTIFY_ON_DOWNLOAD_ONLY"] = False
-                    with open(CONFIG_FILE, "w") as f:
-                        yaml.dump(config, f)
-                    print("Notifications have been disabled.")
-                else:
-                    print("Keeping existing notification settings.")
-            else:
-                # No existing notifications, just confirm they're disabled
-                config["NTFY_TOPIC"] = ""
-                config["NTFY_SERVER"] = ""
-                config["NOTIFY_ON_DOWNLOAD_ONLY"] = False
-                with open(CONFIG_FILE, "w") as f:
-                    yaml.dump(config, f)
-                print("Notifications will remain disabled.")
+        config = _setup_notifications(config, is_partial_run)
 
     if not is_partial_run:
         # Ask if the user wants to perform a first run
