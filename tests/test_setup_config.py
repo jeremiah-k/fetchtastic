@@ -683,12 +683,12 @@ def test_run_setup_first_run_windows(
 @patch("fetchtastic.setup_config.check_boot_script_exists", return_value=False)
 @patch("fetchtastic.downloader.main")
 @patch("shutil.which")
-@patch("subprocess.run")
+@patch("fetchtastic.setup_config.subprocess.run")
 @patch(
     "fetchtastic.setup_config.platformdirs.user_config_dir",
-    return_value="/tmp/config",  # nosec B108
+    return_value="/tmp/config",  # nosec B108 - test-only path
 )
-def test_run_setup_first_run_termux(
+def test_run_setup_first_run_termux(  # noqa: ARG001
     mock_user_config_dir,
     mock_subprocess_run,
     mock_shutil_which,
@@ -846,11 +846,7 @@ def test_run_setup_existing_config(
         mock_setup_reboot_cron_job.assert_not_called()
 
 
-def test_run_setup_invalid_section_raises_value_error():
-    """run_setup should reject unknown section filters."""
-
-    with pytest.raises(ValueError):
-        setup_config.run_setup(sections=["invalid"])
+# Covered by test_run_setup_invalid_sections; removed to reduce duplication.
 
 
 @patch("builtins.input")
@@ -895,7 +891,7 @@ def test_run_setup_partial_firmware_section(
     """Partial firmware run should update firmware options without touching others."""
 
     existing_config = {
-        "BASE_DIR": "/tmp/meshtastic",  # nosec B108
+        "BASE_DIR": "/tmp/meshtastic",  # nosec B108 - test-only path
         "SAVE_APKS": True,
         "SAVE_FIRMWARE": True,
         "FIRMWARE_VERSIONS_TO_KEEP": 3,
@@ -1095,11 +1091,8 @@ def test_run_setup_valid_sections():
                         with patch("os.makedirs"):
                             try:
                                 run_setup(sections=[section])
-                            except Exception as e:
-                                # We expect some exceptions due to mocking, but not ValueError
-                                assert not isinstance(
-                                    e, ValueError
-                                ), f"Section '{section}' should be valid"
+                            except ValueError:
+                                pytest.fail(f"Section '{section}' should be valid")
 
 
 @pytest.mark.configuration
