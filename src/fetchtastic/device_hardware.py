@@ -8,10 +8,11 @@ from the Meshtastic API to enable dynamic pattern matching for firmware download
 import json
 import logging
 import time
-import urllib.error
-import urllib.request
 from pathlib import Path
 from typing import Optional, Set
+from urllib.parse import urlparse
+
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -169,17 +170,20 @@ class DeviceHardwareManager:
         try:
             logger.debug(f"Fetching device hardware data from {self.api_url}")
 
-            request = urllib.request.Request(self.api_url)
-            request.add_header("User-Agent", "fetchtastic/1.0")
+            # Validate URL scheme to prevent SSRF attacks
+            parsed_url = urlparse(self.api_url)
+            if parsed_url.scheme not in ("http", "https"):
+                logger.error(
+                    f"Unsupported URL scheme for device hardware API: {parsed_url.scheme}"
+                )
+                return None
 
-            with urllib.request.urlopen(
-                request, timeout=self.timeout_seconds
-            ) as response:
-                if response.status != 200:
-                    logger.error(f"API returned status {response.status}")
-                    return None
-
-                data = json.loads(response.read().decode("utf-8"))
+            headers = {"User-Agent": "fetchtastic/1.0"}
+            response = requests.get(
+                self.api_url, headers=headers, timeout=self.timeout_seconds
+            )
+            response.raise_for_status()
+            data = response.json()
 
             # Extract platformioTarget values
             device_patterns = set()
@@ -196,14 +200,14 @@ class DeviceHardwareManager:
             self._last_fetch_time = time.time()
             return device_patterns
 
-        except urllib.error.URLError as e:
+        except requests.exceptions.RequestException as e:
             logger.warning(f"Failed to fetch device hardware data: {e}")
             return None
-        except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON response from API: {e}")
+        except json.JSONDecodeError:
+            logger.exception("Invalid JSON response from API")
             return None
-        except Exception as e:
-            logger.error(f"Unexpected error fetching device hardware data: {e}")
+        except Exception:
+            logger.exception("Unexpected error fetching device hardware data")
             return None
 
     def _load_from_cache(self) -> Optional[Set[str]]:
@@ -230,8 +234,22 @@ class DeviceHardwareManager:
             if not patterns or not timestamp:
                 return None
 
-            self._last_fetch_time = timestamp
-            return set(patterns)
+            # Validate patterns is a list of strings
+            if not isinstance(patterns, list):
+                return None
+
+            # Filter out invalid patterns and ensure all are non-empty strings
+            valid_patterns = {p for p in patterns if isinstance(p, str) and p.strip()}
+            if not valid_patterns:
+                return None
+
+            # Validate timestamp is numeric
+            try:
+                self._last_fetch_time = float(timestamp)
+            except (ValueError, TypeError):
+                return None
+
+            return valid_patterns
 
         except (json.JSONDecodeError, IOError, KeyError) as e:
             logger.warning(f"Failed to load device hardware cache: {e}")

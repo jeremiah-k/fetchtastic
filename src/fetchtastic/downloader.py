@@ -368,14 +368,11 @@ def update_prerelease_tracking(prerelease_dir, latest_release_tag, current_prere
     """
     tracking_file = os.path.join(prerelease_dir, "prerelease_commits.txt")
 
-    # Extract commit hash from prerelease directory name
+    # Extract commit hash from prerelease directory name using regex
     # e.g., firmware-2.7.7.abcdef -> abcdef
-    if current_prerelease.startswith("firmware-") and "." in current_prerelease:
-        parts = current_prerelease.split(".")
-        if len(parts) >= 4:  # firmware-2.7.7.abcdef
-            current_commit = parts[-1]  # abcdef
-        else:
-            current_commit = current_prerelease
+    commit_match = re.search(r"\.([a-f0-9]{6,})$", current_prerelease)
+    if commit_match:
+        current_commit = commit_match.group(1)
     else:
         current_commit = current_prerelease
 
@@ -661,6 +658,13 @@ def check_for_prereleases(
                     exc_info=True,
                 )
 
+    # Get existing prerelease directories once (optimize I/O)
+    existing_prerelease_dirs = []
+    if os.path.exists(prerelease_dir):
+        for item in os.listdir(prerelease_dir):
+            if os.path.isdir(os.path.join(prerelease_dir, item)):
+                existing_prerelease_dirs.append(item)
+
     # Find directories in the repository that are newer than the latest release and don't already exist locally
     prerelease_dirs = []  # Directories that need processing (downloading)
     all_prerelease_dirs = []  # All prerelease directories (for tracking)
@@ -674,13 +678,6 @@ def check_for_prereleases(
             if comparison_result > 0:
                 # This is a prerelease directory (newer than latest release)
                 all_prerelease_dirs.append(dir_name)
-
-                # Refresh the list of existing prerelease directories after cleanup
-                existing_prerelease_dirs = []
-                if os.path.exists(prerelease_dir):
-                    for item in os.listdir(prerelease_dir):
-                        if os.path.isdir(os.path.join(prerelease_dir, item)):
-                            existing_prerelease_dirs.append(item)
 
                 # Check if we need to download this pre-release
                 # Either the directory doesn't exist, or it exists but is missing files
@@ -742,13 +739,27 @@ def check_for_prereleases(
                 if should_process:
                     prerelease_dirs.append(dir_name)
 
+    # Sort prerelease directories by version (newest first) for consistent "latest" selection
+    if all_prerelease_dirs:
+
+        def extract_version(dir_name: str) -> str:
+            return dir_name[9:] if dir_name.startswith("firmware-") else dir_name
+
+        all_prerelease_dirs = sorted(
+            all_prerelease_dirs,
+            key=cmp_to_key(
+                lambda a, b: compare_versions(extract_version(a), extract_version(b))
+            ),
+            reverse=True,  # Newest first
+        )
+
     # If no prerelease directories need processing, but some exist, still return success
     if not prerelease_dirs:
         if all_prerelease_dirs:
             # Prerelease directories exist but are complete, still track the latest one
             latest_prerelease = all_prerelease_dirs[
                 0
-            ]  # Take the first (should be latest)
+            ]  # First after version sort (newest)
             prerelease_number = update_prerelease_tracking(
                 prerelease_dir, latest_release_tag, latest_prerelease
             )
@@ -934,7 +945,7 @@ def check_for_prereleases(
         if all_prerelease_dirs:
             latest_prerelease = all_prerelease_dirs[
                 0
-            ]  # Take the first (should be latest)
+            ]  # First after version sort (newest)
             prerelease_number = update_prerelease_tracking(
                 prerelease_dir, latest_release_tag, latest_prerelease
             )
@@ -948,7 +959,7 @@ def check_for_prereleases(
         if all_prerelease_dirs:
             latest_prerelease = all_prerelease_dirs[
                 0
-            ]  # Take the first (should be latest)
+            ]  # First after version sort (newest)
             prerelease_number = update_prerelease_tracking(
                 prerelease_dir, latest_release_tag, latest_prerelease
             )
