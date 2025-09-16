@@ -1009,23 +1009,25 @@ def test_prerelease_tracking_functionality(
     assert found is True
     assert len(versions) > 0
 
-    # Check that tracking file was created
+    # Check that tracking file was created (now JSON format)
     prerelease_dir = download_dir / "firmware" / "prerelease"
-    tracking_file = prerelease_dir / "prerelease_commits.txt"
+    tracking_file = prerelease_dir / "prerelease_tracking.json"
     assert tracking_file.exists()
 
-    # Check tracking file contents
-    with open(tracking_file, "r") as f:
-        lines = [line.strip() for line in f.readlines() if line.strip()]
+    # Check tracking file contents (JSON format)
+    import json
 
-    # Check tracking file format: Release: <tag> followed by commit hashes
-    assert len(lines) >= 1
-    assert lines[0].startswith("Release: ")
-    assert lines[0] == f"Release: {latest_release_tag}"
+    with open(tracking_file, "r") as f:
+        tracking_data = json.load(f)
+
+    # Check JSON tracking file format
+    assert "release" in tracking_data
+    assert "commits" in tracking_data
+    assert "last_updated" in tracking_data
+    assert tracking_data["release"] == latest_release_tag
 
     # Should have at least one commit hash
-    commit_lines = lines[1:]
-    assert len(commit_lines) > 0
+    assert len(tracking_data["commits"]) > 0
 
     # Test get_prerelease_tracking_info function
     info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
@@ -1195,27 +1197,35 @@ def test_prerelease_tracking_edge_cases(tmp_path):
     )
     assert num == 1, "Should handle malformed directory names"
 
-    # Test reading empty tracking file
-    tracking_file = prerelease_dir / "prerelease_commits.txt"
-    with open(tracking_file, "w") as f:
+    # Test reading empty tracking file (create a fresh directory)
+    empty_test_dir = tmp_path / "empty_test"
+    empty_test_dir.mkdir()
+
+    # Create empty text file for backwards compatibility test
+    empty_tracking_file = empty_test_dir / "prerelease_commits.txt"
+    with open(empty_tracking_file, "w") as f:
         f.write("")  # Empty file
 
-    info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
+    info = downloader.get_prerelease_tracking_info(str(empty_test_dir))
     assert info == {}, "Should return empty dict for empty tracking file"
 
     # Test reading tracking file with old format (no "Release:" prefix)
-    with open(tracking_file, "w") as f:
+    old_format_dir = tmp_path / "old_format_test"
+    old_format_dir.mkdir()
+    old_format_file = old_format_dir / "prerelease_commits.txt"
+    with open(old_format_file, "w") as f:
         f.write("abcdef\nghijkl\n")  # Old format without Release: prefix
 
-    info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
+    info = downloader.get_prerelease_tracking_info(str(old_format_dir))
     assert info["release"] == "unknown"
     assert info["prerelease_count"] == 2
     assert "abcdef" in info["commits"]
     assert "ghijkl" in info["commits"]
 
     # Test reading non-existent tracking file
-    tracking_file.unlink()
-    info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
+    no_file_dir = tmp_path / "no_file_test"
+    no_file_dir.mkdir()
+    info = downloader.get_prerelease_tracking_info(str(no_file_dir))
     assert info == {}, "Should return empty dict for non-existent file"
 
 
