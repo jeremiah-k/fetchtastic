@@ -467,6 +467,8 @@ def check_for_prereleases(
 
     # Fetch directories from the meshtastic.github.io repository
     directories = menu_repo.fetch_repo_directories()
+    logger.debug(f"Found {len(directories)} total directories from repository")
+    logger.debug(f"Repository directories: {directories}")
 
     if not directories:
         logger.info("No firmware directories found in the repository.")
@@ -494,6 +496,9 @@ def check_for_prereleases(
     repo_firmware_dirs = [
         dir_name for dir_name in directories if dir_name.startswith("firmware-")
     ]
+    logger.debug(
+        f"Found {len(repo_firmware_dirs)} firmware directories: {repo_firmware_dirs}"
+    )
 
     # Clean up the prerelease directory
     # Only keep directories that:
@@ -563,9 +568,13 @@ def check_for_prereleases(
         # Extract version from directory name (e.g., firmware-2.6.9.f93d031)
         if dir_name.startswith("firmware-"):
             dir_version = dir_name[9:]  # Remove 'firmware-' prefix
+            logger.debug(f"Checking directory {dir_name}, version: {dir_version}")
 
             # Check if this version is newer than the latest release
             comparison_result = compare_versions(dir_version, latest_release_version)
+            logger.debug(
+                f"Version comparison: {dir_version} vs {latest_release_version} = {comparison_result}"
+            )
             if comparison_result > 0:
 
                 # Refresh the list of existing prerelease directories after cleanup
@@ -656,6 +665,9 @@ def check_for_prereleases(
 
         # Fetch files from the directory
         files = menu_repo.fetch_directory_contents(dir_name)
+        logger.debug(
+            f"Found {len(files)} files in {dir_name}: {[f.get('name', 'unknown') for f in files]}"
+        )
 
         if not files:
             logger.info(f"No files found in {dir_name}.")
