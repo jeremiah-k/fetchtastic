@@ -116,15 +116,15 @@ class DeviceHardwareManager:
         """
         device_patterns = self.get_device_patterns()
 
-        # Remove trailing dash for comparison if present and normalize case
-        clean_pattern = user_pattern.rstrip("-").lower()
+        # Remove trailing dash/underscore for comparison if present and normalize case
+        clean_pattern = user_pattern.rstrip("-_ ").lower()
 
         for device_pattern in device_patterns:
             # Check if pattern matches exactly or is contained in device pattern (case-insensitive)
             device_pattern_lower = device_pattern.lower()
             if (
                 clean_pattern == device_pattern_lower
-                or clean_pattern in device_pattern_lower
+                or device_pattern_lower.startswith(clean_pattern)
             ):
                 return True
 

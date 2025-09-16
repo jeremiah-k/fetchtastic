@@ -83,3 +83,13 @@ MESHTASTIC_DIR_NAME = "Meshtastic"
 
 # Environment variable names
 LOG_LEVEL_ENV_VAR = "FETCHTASTIC_LOG_LEVEL"
+
+# Device Hardware API Configuration
+DEVICE_HARDWARE_API_URL = "https://api.meshtastic.org/resource/deviceHardware"
+DEVICE_HARDWARE_CACHE_HOURS = 24
+
+# File Type Patterns (non-device-specific patterns)
+FILE_TYPE_PREFIXES = {
+    "device-",  # device-install.sh, device-update.sh
+    "bleota",  # bleota.bin, bleota-c3.bin, bleota-s3.bin
+}

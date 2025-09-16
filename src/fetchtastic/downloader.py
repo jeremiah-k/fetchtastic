@@ -24,6 +24,7 @@ from fetchtastic.constants import (
     DEFAULT_ANDROID_VERSIONS_TO_KEEP,
     DEFAULT_FIRMWARE_VERSIONS_TO_KEEP,
     EXECUTABLE_PERMISSIONS,
+    FILE_TYPE_PREFIXES,
     GITHUB_API_TIMEOUT,
     LATEST_ANDROID_RELEASE_FILE,
     LATEST_FIRMWARE_RELEASE_FILE,
@@ -366,7 +367,7 @@ def update_prerelease_tracking(prerelease_dir, latest_release_tag, current_prere
     Returns:
         int: The prerelease number (1, 2, 3, etc.) since the last release
     """
-    tracking_file = os.path.join(prerelease_dir, "prerelease_commits.txt")
+    tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
 
     # Extract commit hash from prerelease directory name using regex
     # e.g., firmware-2.7.7.abcdef -> abcdef
@@ -383,17 +384,22 @@ def update_prerelease_tracking(prerelease_dir, latest_release_tag, current_prere
     if os.path.exists(tracking_file):
         try:
             with open(tracking_file, "r", encoding="utf-8") as f:
-                lines = [line.strip() for line in f.readlines() if line.strip()]
-                if lines:
-                    # First line should be the release tag
-                    if lines[0].startswith("Release: "):
+                tracking_data = json.load(f)
+                current_release = tracking_data.get("release")
+                commits = tracking_data.get("commits", [])
+        except (IOError, json.JSONDecodeError, UnicodeDecodeError) as e:
+            logger.warning(f"Could not read prerelease tracking file: {e}")
+            # Try to read old text format for backwards compatibility
+            try:
+                with open(
+                    tracking_file.replace(".json", ".txt"), "r", encoding="utf-8"
+                ) as f:
+                    lines = [line.strip() for line in f.readlines() if line.strip()]
+                    if lines and lines[0].startswith("Release: "):
                         current_release = lines[0][9:]  # Remove "Release: " prefix
                         commits = lines[1:]  # Rest are commit hashes
-                    else:
-                        # Old format or corrupted, treat all as commits
-                        commits = lines
-        except IOError as e:
-            logger.warning(f"Could not read prerelease tracking file: {e}")
+            except (IOError, UnicodeDecodeError):
+                pass  # No old format file or can't read it
 
     # If release changed, reset the commit list
     if current_release != latest_release_tag:
@@ -410,10 +416,13 @@ def update_prerelease_tracking(prerelease_dir, latest_release_tag, current_prere
 
     # Write updated tracking data
     try:
+        tracking_data = {
+            "release": current_release,
+            "commits": commits,
+            "last_updated": datetime.now().isoformat(),
+        }
         with open(tracking_file, "w", encoding="utf-8") as f:
-            f.write(f"Release: {current_release}\n")
-            for commit in commits:
-                f.write(f"{commit}\n")
+            json.dump(tracking_data, f, indent=2)
 
         prerelease_number = len(commits)
         logger.info(f"Prerelease #{prerelease_number} since {current_release}")
@@ -441,10 +450,7 @@ def matches_extract_patterns(filename, extract_patterns, device_manager=None):
         bool: True if the file matches any pattern
     """
     # Known file type prefixes that indicate this is a file type pattern, not device pattern
-    file_type_prefixes = {
-        "device-",  # device-install.sh, device-update.sh
-        "bleota",  # bleota.bin, bleota-c3.bin, bleota-s3.bin
-    }
+    file_type_prefixes = FILE_TYPE_PREFIXES
 
     # Convert filename to lowercase for case-insensitive matching
     filename_lower = filename.lower()
@@ -469,14 +475,14 @@ def matches_extract_patterns(filename, extract_patterns, device_manager=None):
         if device_manager and device_manager.is_device_pattern(pattern):
             # For device patterns, match if the device name appears anywhere in the filename
             # This allows 'tbeam-' to match both 'firmware-tbeam-*' and 'littlefs-tbeam-*'
-            clean_pattern = pattern_lower.rstrip("-")
+            clean_pattern = pattern_lower.rstrip("-_ ")
             if clean_pattern in filename_lower:
                 return True
             continue
 
-        # Fallback for patterns ending with '-' (likely device patterns)
-        if pattern_lower.endswith("-"):
-            clean_pattern = pattern_lower.rstrip("-")
+        # Fallback for patterns ending with '-' or '_' (likely device patterns)
+        if pattern_lower.endswith(("-", "_")):
+            clean_pattern = pattern_lower.rstrip("-_ ")
             if clean_pattern in filename_lower:
                 return True
             continue
@@ -498,36 +504,50 @@ def get_prerelease_tracking_info(prerelease_dir):
     Returns:
         dict: Tracking information or empty dict if not available
     """
-    tracking_file = os.path.join(prerelease_dir, "prerelease_commits.txt")
-
-    if not os.path.exists(tracking_file):
-        return {}
-
-    try:
-        with open(tracking_file, "r", encoding="utf-8") as f:
-            lines = [line.strip() for line in f.readlines() if line.strip()]
-            if not lines:
-                return {}
-
-            # Parse the tracking file
-            if lines[0].startswith("Release: "):
-                release = lines[0][9:]  # Remove "Release: " prefix
-                commits = lines[1:]  # Rest are commit hashes
+    # Try JSON format first
+    json_tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
+    if os.path.exists(json_tracking_file):
+        try:
+            with open(json_tracking_file, "r", encoding="utf-8") as f:
+                tracking_data = json.load(f)
                 return {
-                    "release": release,
-                    "commits": commits,
-                    "prerelease_count": len(commits),
+                    "release": tracking_data.get("release", "unknown"),
+                    "commits": tracking_data.get("commits", []),
+                    "prerelease_count": len(tracking_data.get("commits", [])),
+                    "last_updated": tracking_data.get("last_updated"),
                 }
-            else:
-                # Old format, treat all as commits
-                return {
-                    "release": "unknown",
-                    "commits": lines,
-                    "prerelease_count": len(lines),
-                }
-    except (IOError, UnicodeDecodeError) as e:
-        logger.warning(f"Could not read prerelease tracking file: {e}")
-        return {}
+        except (IOError, json.JSONDecodeError, UnicodeDecodeError) as e:
+            logger.warning(f"Could not read JSON prerelease tracking file: {e}")
+
+    # Fall back to old text format for backwards compatibility
+    txt_tracking_file = os.path.join(prerelease_dir, "prerelease_commits.txt")
+    if os.path.exists(txt_tracking_file):
+        try:
+            with open(txt_tracking_file, "r", encoding="utf-8") as f:
+                lines = [line.strip() for line in f.readlines() if line.strip()]
+                if not lines:
+                    return {}
+
+                # Parse the tracking file
+                if lines[0].startswith("Release: "):
+                    release = lines[0][9:]  # Remove "Release: " prefix
+                    commits = lines[1:]  # Rest are commit hashes
+                    return {
+                        "release": release,
+                        "commits": commits,
+                        "prerelease_count": len(commits),
+                    }
+                else:
+                    # Old format, treat all as commits
+                    return {
+                        "release": "unknown",
+                        "commits": lines,
+                        "prerelease_count": len(lines),
+                    }
+        except (IOError, UnicodeDecodeError) as e:
+            logger.warning(f"Could not read text prerelease tracking file: {e}")
+
+    return {}
 
 
 def check_for_prereleases(
