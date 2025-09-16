@@ -38,9 +38,9 @@ _PUNC_RX = re.compile(r"[^a-z0-9]+")
 
 def calculate_sha256(file_path: str) -> Optional[str]:
     """
-    Return the SHA-256 hex digest of the file at file_path, or None if the file cannot be read.
-
-    Reads the file in binary chunks and computes its SHA-256 checksum. If an I/O or OS error occurs (for example: file not found or permission denied), the function returns None.
+    Compute and return the SHA-256 hex digest of a file, or None if the file cannot be read.
+    
+    Reads the file in binary mode and streams its contents to the SHA-256 digest (no full-file buffering). On success returns the 64-character lowercase hexadecimal digest string. If the file cannot be opened or read (e.g., missing file or permission error), the function logs the error at debug level and returns None instead of raising.
     """
     try:
         sha256_hash = hashlib.sha256()
