@@ -580,6 +580,11 @@ def check_for_prereleases(
     """
     # Removed local log_message_func definition
 
+    # Helper function to extract version from directory name (defined once to avoid duplication)
+    def extract_version(dir_name: str) -> str:
+        """Extract version from directory name like 'firmware-2.7.9.abcdef'"""
+        return dir_name[9:] if dir_name.startswith("firmware-") else dir_name
+
     # Initialize exclude patterns list
     exclude_patterns_list = exclude_patterns or []
 
@@ -761,10 +766,6 @@ def check_for_prereleases(
 
     # Sort prerelease directories by version (newest first) for consistent "latest" selection
     if all_prerelease_dirs:
-
-        def extract_version(dir_name: str) -> str:
-            return dir_name[9:] if dir_name.startswith("firmware-") else dir_name
-
         all_prerelease_dirs = sorted(
             all_prerelease_dirs,
             key=cmp_to_key(
@@ -809,13 +810,6 @@ def check_for_prereleases(
 
         if existing_dirs:
             try:
-
-                def extract_version(dir_name):
-                    """Extract version from directory name like 'firmware-2.7.9.abcdef'"""
-                    if dir_name.startswith("firmware-"):
-                        return dir_name[9:]  # Remove 'firmware-' prefix
-                    return dir_name
-
                 # Sort existing directories by version (newest first)
                 sorted_existing = sorted(
                     existing_dirs,
@@ -961,35 +955,26 @@ def check_for_prereleases(
         for version, count in version_file_counts.items():
             logger.info(f"Pre-release {version}: {count} files")
 
-        # Update prerelease tracking with the latest prerelease directory
-        if all_prerelease_dirs:
-            latest_prerelease = all_prerelease_dirs[
-                0
-            ]  # First after version sort (newest)
-            prerelease_number = update_prerelease_tracking(
-                prerelease_dir, latest_release_tag, latest_prerelease
-            )
+    # Update prerelease tracking (run once regardless of download success)
+    if all_prerelease_dirs:
+        latest_prerelease = all_prerelease_dirs[0]  # First after version sort (newest)
+        prerelease_number = update_prerelease_tracking(
+            prerelease_dir, latest_release_tag, latest_prerelease
+        )
+        if downloaded_files:
             logger.info(
                 f"Downloaded prerelease #{prerelease_number}: {latest_prerelease}"
             )
-
-        return True, downloaded_versions
-    else:
-        # Update tracking even if no files were downloaded (to track all prereleases)
-        if all_prerelease_dirs:
-            latest_prerelease = all_prerelease_dirs[
-                0
-            ]  # First after version sort (newest)
-            prerelease_number = update_prerelease_tracking(
-                prerelease_dir, latest_release_tag, latest_prerelease
-            )
+        else:
             logger.info(f"Tracked prerelease #{prerelease_number}: {latest_prerelease}")
 
-        # Return success if any prerelease directories exist, even if no files were downloaded
-        if all_prerelease_dirs:
-            return True, all_prerelease_dirs
-        else:
-            return False, []
+    # Return results
+    if downloaded_files:
+        return True, downloaded_versions
+    elif all_prerelease_dirs:
+        return True, all_prerelease_dirs
+    else:
+        return False, []
 
 
 # Use the version check function from setup_config

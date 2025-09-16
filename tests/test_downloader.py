@@ -1,9 +1,12 @@
+import json
 from unittest.mock import mock_open, patch
 
 import pytest
 import requests
 
 from fetchtastic import downloader
+from fetchtastic.device_hardware import DeviceHardwareManager
+from fetchtastic.downloader import matches_extract_patterns
 from fetchtastic.utils import extract_base_name
 from tests.test_constants import (
     TEST_VERSION_NEW,
@@ -3041,3 +3044,137 @@ def test_mixed_case_comprehensive_ui_scenarios(caplog):
                 filename, comprehensive_patterns, device_manager
             )
             assert result is True, f"Comprehensive mixed case failed for {filename}"
+
+
+def test_device_hardware_manager_additional_ui_paths(tmp_path, caplog):
+    """Test additional DeviceHardwareManager UI paths for better coverage."""
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+
+    # Test with invalid API URL scheme
+    manager = DeviceHardwareManager(
+        cache_dir=cache_dir,
+        enabled=True,
+        api_url="file:///etc/passwd",  # Invalid scheme
+        cache_hours=24,
+    )
+
+    patterns = manager.get_device_patterns()
+    # Should fall back to hardcoded patterns due to invalid URL
+    assert len(patterns) > 0
+
+    # Test cache file creation and validation
+    manager2 = DeviceHardwareManager(cache_dir=cache_dir, enabled=True, cache_hours=24)
+
+    # Create invalid cache file to test validation
+    cache_file = cache_dir / "device_hardware_cache.json"
+    with open(cache_file, "w") as f:
+        json.dump({"invalid": "data"}, f)  # Missing required fields
+
+    patterns = manager2.get_device_patterns()
+    # Should handle invalid cache gracefully
+    assert len(patterns) > 0
+
+    # Test with corrupted JSON cache
+    with open(cache_file, "w") as f:
+        f.write("invalid json content")
+
+    patterns = manager2.get_device_patterns()
+    # Should handle JSON decode error gracefully
+    assert len(patterns) > 0
+
+
+def test_prerelease_download_ui_messages(tmp_path, caplog):
+    """Test prerelease download UI messages and logging paths."""
+    download_dir = tmp_path
+    prerelease_dir = download_dir / "firmware" / "prerelease"
+    prerelease_dir.mkdir(parents=True)
+
+    # Create some existing prerelease directories
+    (prerelease_dir / "firmware-2.7.5.old123").mkdir()
+    (prerelease_dir / "firmware-2.7.6.old456").mkdir()
+
+    # Test with no matching patterns (should log appropriate messages)
+    with patch("fetchtastic.downloader.menu_repo.fetch_repo_directories") as mock_dirs:
+        mock_dirs.return_value = ["firmware-2.7.7.new123"]
+
+        with patch(
+            "fetchtastic.downloader.menu_repo.fetch_directory_contents"
+        ) as mock_contents:
+            mock_contents.return_value = [
+                {
+                    "name": "firmware-unknown-device-2.7.7.new123.bin",
+                    "download_url": "https://example.invalid/unknown.bin",
+                }
+            ]
+
+            with patch("fetchtastic.downloader.download_file_with_retry") as mock_dl:
+                mock_dl.return_value = True
+
+                # Test with patterns that don't match any files
+                found, versions = downloader.check_for_prereleases(
+                    str(download_dir),
+                    "v2.7.6.111111",
+                    ["nonexistent-device-"],  # Pattern that won't match
+                    exclude_patterns=[],
+                )
+
+                # Should still process directories but not download files
+                assert found is True  # Directories exist
+                assert len(versions) > 0  # Should track the prerelease
+
+
+def test_device_pattern_edge_cases_ui(tmp_path):
+    """Test device pattern edge cases that generate UI messages."""
+    device_manager = DeviceHardwareManager(
+        cache_dir=tmp_path, enabled=False, cache_hours=24
+    )
+
+    # Test edge cases that might generate different UI paths
+    edge_cases = [
+        "",  # Empty pattern
+        "-",  # Just dash
+        "_",  # Just underscore
+        "a",  # Single character
+        "very-long-device-name-that-might-not-exist-",  # Long pattern
+        "123-numeric-pattern-",  # Numeric pattern
+        "special!@#$%^&*()-pattern-",  # Special characters
+    ]
+
+    for pattern in edge_cases:
+        # Should handle all edge cases gracefully without crashing
+        result = device_manager.is_device_pattern(pattern)
+        assert isinstance(result, bool)  # Should always return boolean
+
+        # Test pattern matching with edge cases
+        test_result = matches_extract_patterns(
+            "firmware-test-device-2.7.6.bin", [pattern], device_manager
+        )
+        assert isinstance(test_result, bool)  # Should always return boolean
+
+
+def test_prerelease_tracking_ui_messages(tmp_path, caplog):
+    """Test prerelease tracking UI messages and logging."""
+    prerelease_dir = tmp_path / "prerelease"
+    prerelease_dir.mkdir()
+
+    # Test tracking with various scenarios that generate different messages
+    test_scenarios = [
+        ("firmware-2.7.7.abc123", "v2.7.6"),  # Normal case
+        ("firmware-2.7.8.def456", "v2.7.6"),  # Second prerelease
+        ("firmware-2.8.0.ghi789", "v2.8.0"),  # New release (should reset)
+        ("invalid-format-name", "v2.8.0"),  # Invalid format
+        ("firmware-2.8.1", "v2.8.0"),  # Missing commit hash
+    ]
+
+    for prerelease_name, release_tag in test_scenarios:
+        num = downloader.update_prerelease_tracking(
+            str(prerelease_dir), release_tag, prerelease_name
+        )
+        assert num >= 1  # Should always return valid prerelease number
+
+    # Test reading tracking info
+    info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
+    assert "release" in info
+    assert "commits" in info
+    assert "prerelease_count" in info

@@ -124,7 +124,8 @@ class DeviceHardwareManager:
             device_pattern_lower = device_pattern.lower()
             if (
                 clean_pattern == device_pattern_lower
-                or device_pattern_lower.startswith(clean_pattern)
+                or device_pattern_lower.startswith(f"{clean_pattern}-")
+                or device_pattern_lower.startswith(f"{clean_pattern}_")
             ):
                 return True
 
