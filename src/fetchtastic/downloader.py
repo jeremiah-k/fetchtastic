@@ -408,6 +408,20 @@ def update_prerelease_tracking(prerelease_dir, latest_release_tag, current_prere
                         commits = lines[1:]  # Rest are commit hashes
             except (IOError, UnicodeDecodeError):
                 pass  # No old format file or can't read it
+    else:
+        # No JSON yet — try importing legacy text format if present
+        try:
+            with open(
+                os.path.join(os.path.dirname(tracking_file), "prerelease_commits.txt"),
+                "r",
+                encoding="utf-8",
+            ) as f:
+                lines = [line.strip() for line in f.readlines() if line.strip()]
+                if lines and lines[0].startswith("Release: "):
+                    current_release = lines[0][9:]
+                    commits = lines[1:]
+        except (IOError, UnicodeDecodeError):
+            pass
 
     # If release changed, reset the commit list
     if current_release != latest_release_tag:
@@ -1232,7 +1246,8 @@ def _process_firmware_downloads(
     discover and download newer prerelease firmware that matches the selection criteria.
 
     Configuration keys referenced: SAVE_FIRMWARE, SELECTED_FIRMWARE_ASSETS, FIRMWARE_VERSIONS_TO_KEEP,
-    EXTRACT_PATTERNS, AUTO_EXTRACT, EXCLUDE_PATTERNS, CHECK_PRERELEASES.
+    EXTRACT_PATTERNS (dual purpose: file extraction AND prerelease file selection), AUTO_EXTRACT,
+    EXCLUDE_PATTERNS, CHECK_PRERELEASES.
 
     Returns a tuple of:
     - downloaded firmware versions (List[str]) — includes strings like "pre-release X.Y.Z" for prereleases,
@@ -1329,7 +1344,7 @@ def _process_firmware_downloads(
                     check_for_prereleases(  # logger.info removed
                         paths_and_urls["download_dir"],
                         latest_release_tag,
-                        config.get("EXTRACT_PATTERNS", []),  # type: ignore - Use EXTRACT_PATTERNS for prereleases
+                        config.get("EXTRACT_PATTERNS", []),  # type: ignore - EXTRACT_PATTERNS serves dual purpose: file extraction AND prerelease file selection
                         exclude_patterns=config.get("EXCLUDE_PATTERNS", []),  # type: ignore
                         device_manager=device_manager,
                     )

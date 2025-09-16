@@ -3045,7 +3045,7 @@ def test_mixed_case_comprehensive_ui_scenarios(caplog):
             assert result is True, f"Comprehensive mixed case failed for {filename}"
 
 
-def test_device_hardware_manager_additional_ui_paths(tmp_path, caplog):
+def test_device_hardware_manager_additional_ui_paths(tmp_path):
     """Test additional DeviceHardwareManager UI paths for better coverage."""
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
@@ -3066,7 +3066,7 @@ def test_device_hardware_manager_additional_ui_paths(tmp_path, caplog):
     manager2 = DeviceHardwareManager(cache_dir=cache_dir, enabled=True, cache_hours=24)
 
     # Create invalid cache file to test validation
-    cache_file = cache_dir / "device_hardware_cache.json"
+    cache_file = cache_dir / "device_hardware.json"
     with open(cache_file, "w") as f:
         json.dump({"invalid": "data"}, f)  # Missing required fields
 
@@ -3238,7 +3238,7 @@ def test_device_hardware_manager_error_scenarios(tmp_path, caplog):
         assert len(patterns) > 0  # Fallback patterns should be available
 
 
-def test_device_hardware_manager_cache_scenarios(tmp_path, caplog):
+def test_device_hardware_manager_cache_scenarios(tmp_path):
     """Test DeviceHardwareManager cache scenarios for UI coverage."""
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
@@ -3256,7 +3256,7 @@ def test_device_hardware_manager_cache_scenarios(tmp_path, caplog):
     assert non_existent_cache.exists()  # Should create directory
 
     # Test cache file permissions error
-    cache_file = cache_dir / "device_hardware_cache.json"
+    cache_file = cache_dir / "device_hardware.json"
     cache_file.write_text(
         '{"device_patterns": ["test-"], "timestamp": 0, "api_url": "test"}'
     )
@@ -3348,7 +3348,7 @@ def test_pattern_matching_logging_scenarios(tmp_path, caplog):
                 pass  # Non-matches are also handled gracefully
 
 
-def test_device_manager_integration_scenarios(tmp_path, caplog):
+def test_device_manager_integration_scenarios(tmp_path):
     """Test device manager integration scenarios for UI coverage."""
     # Test with enabled device manager and mock API response
     with patch("requests.get") as mock_get:
@@ -3381,7 +3381,7 @@ def test_device_manager_integration_scenarios(tmp_path, caplog):
         mock_get.assert_called_once()
 
 
-def test_comprehensive_error_handling_ui_paths(tmp_path, caplog):
+def test_comprehensive_error_handling_ui_paths(tmp_path):
     """Test comprehensive error handling paths for UI coverage."""
     # Test JSON decode error in tracking file
     prerelease_dir = tmp_path / "prerelease"
