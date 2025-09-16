@@ -9,6 +9,7 @@ import time
 import zipfile
 from collections import defaultdict
 from datetime import datetime
+from functools import cmp_to_key
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
@@ -22,6 +23,7 @@ from fetchtastic.constants import (
     API_CALL_DELAY,
     DEFAULT_ANDROID_VERSIONS_TO_KEEP,
     DEFAULT_FIRMWARE_VERSIONS_TO_KEEP,
+    DEFAULT_PRERELEASE_VERSIONS_TO_KEEP,
     EXECUTABLE_PERMISSIONS,
     GITHUB_API_TIMEOUT,
     LATEST_ANDROID_RELEASE_FILE,
@@ -448,16 +450,22 @@ def matches_extract_patterns(filename, extract_patterns, device_manager=None):
         "bleota",  # bleota.bin, bleota-c3.bin, bleota-s3.bin
     }
 
+    # Convert filename to lowercase for case-insensitive matching
+    filename_lower = filename.lower()
+
     for pattern in extract_patterns:
+        # Convert pattern to lowercase for case-insensitive matching
+        pattern_lower = pattern.lower()
+
         # Handle special case: generic 'littlefs-' pattern
-        if pattern == "littlefs-":
-            if "littlefs-" in filename:
+        if pattern_lower == "littlefs-":
+            if "littlefs-" in filename_lower:
                 return True
             continue
 
         # File type patterns: exact substring matching
-        if any(pattern.startswith(prefix) for prefix in file_type_prefixes):
-            if pattern in filename:
+        if any(pattern_lower.startswith(prefix) for prefix in file_type_prefixes):
+            if pattern_lower in filename_lower:
                 return True
             continue
 
@@ -465,20 +473,20 @@ def matches_extract_patterns(filename, extract_patterns, device_manager=None):
         if device_manager and device_manager.is_device_pattern(pattern):
             # For device patterns, match if the device name appears anywhere in the filename
             # This allows 'tbeam-' to match both 'firmware-tbeam-*' and 'littlefs-tbeam-*'
-            clean_pattern = pattern.rstrip("-")
-            if clean_pattern in filename:
+            clean_pattern = pattern_lower.rstrip("-")
+            if clean_pattern in filename_lower:
                 return True
             continue
 
         # Fallback for patterns ending with '-' (likely device patterns)
-        if pattern.endswith("-"):
-            clean_pattern = pattern.rstrip("-")
-            if clean_pattern in filename:
+        if pattern_lower.endswith("-"):
+            clean_pattern = pattern_lower.rstrip("-")
+            if clean_pattern in filename_lower:
                 return True
             continue
 
         # Fallback: simple substring matching for any other patterns
-        if pattern in filename:
+        if pattern_lower in filename_lower:
             return True
 
     return False
@@ -532,6 +540,7 @@ def check_for_prereleases(
     selected_patterns,
     exclude_patterns=None,  # log_message_func parameter removed
     device_manager=None,
+    prerelease_versions_to_keep=DEFAULT_PRERELEASE_VERSIONS_TO_KEEP,
 ):
     """
     Discover firmware prerelease directories newer than the provided latest release, clean up stale local prerelease folders, and download missing prerelease assets into <download_dir>/firmware/prerelease.
@@ -760,44 +769,61 @@ def check_for_prereleases(
             logger.error(f"Error creating pre-release directory {prerelease_dir}: {e}")
             return False, []  # Cannot proceed if directory creation fails
 
-    # Remove old prerelease directories - we only keep the latest one
-    # The reason a new prerelease exists is because there were issues with the old one
+    # Remove old prerelease directories - keep only the configured number of versions
     if prerelease_dirs and os.path.exists(prerelease_dir):
-        # Find the newest prerelease directory (highest version)
-        newest_prerelease = None
-        if all_prerelease_dirs:
-            # Sort by version to find the newest
-            try:
-                sorted_prereleases = sorted(
-                    all_prerelease_dirs,
-                    key=lambda x: x.split("-")[-1] if "-" in x else x,
-                    reverse=True,
-                )
-                newest_prerelease = sorted_prereleases[0]
-            except (IndexError, ValueError):
-                newest_prerelease = (
-                    all_prerelease_dirs[0] if all_prerelease_dirs else None
-                )
-
-        # Remove all existing prerelease directories except the newest one we're about to process
+        # Get all existing prerelease directories and sort by version
+        existing_dirs = []
         for item in os.listdir(prerelease_dir):
             item_path = os.path.join(prerelease_dir, item)
             if os.path.isdir(item_path) and item.startswith("firmware-"):
-                # Keep the newest prerelease if it exists and we're not processing a newer one
-                if (
-                    item == newest_prerelease
-                    and newest_prerelease not in prerelease_dirs
-                ):
-                    logger.info(f"Keeping existing prerelease directory: {item}")
-                    continue
+                existing_dirs.append(item)
 
-                logger.info(f"Removing old prerelease directory: {item}")
-                try:
-                    shutil.rmtree(item_path)
-                except OSError as e:
-                    logger.warning(
-                        f"Error removing old prerelease directory {item_path}: {e}"
-                    )
+        if existing_dirs:
+            try:
+
+                def extract_version(dir_name):
+                    """Extract version from directory name like 'firmware-2.7.9.abcdef'"""
+                    if dir_name.startswith("firmware-"):
+                        return dir_name[9:]  # Remove 'firmware-' prefix
+                    return dir_name
+
+                # Sort existing directories by version (newest first)
+                sorted_existing = sorted(
+                    existing_dirs,
+                    key=cmp_to_key(
+                        lambda a, b: compare_versions(
+                            extract_version(a), extract_version(b)
+                        )
+                    ),
+                    reverse=True,
+                )
+
+                # Determine which directories to keep
+                # Keep the newest N directories, plus any new ones we're about to process
+                dirs_to_keep = set(sorted_existing[:prerelease_versions_to_keep])
+                dirs_to_keep.update(
+                    prerelease_dirs
+                )  # Also keep new ones being processed
+
+                # Remove directories that exceed the limit
+                for item in existing_dirs:
+                    if item not in dirs_to_keep:
+                        item_path = os.path.join(prerelease_dir, item)
+                        logger.info(
+                            f"Removing old prerelease directory: {item} (keeping {prerelease_versions_to_keep} versions)"
+                        )
+                        try:
+                            shutil.rmtree(item_path)
+                        except OSError as e:
+                            logger.warning(
+                                f"Error removing old prerelease directory {item_path}: {e}"
+                            )
+                    else:
+                        logger.debug(f"Keeping prerelease directory: {item}")
+
+            except (IndexError, ValueError, Exception) as e:
+                logger.warning(f"Error sorting prerelease directories for cleanup: {e}")
+                # Fallback: don't remove anything if sorting fails
 
     downloaded_files = []
 
@@ -1277,6 +1303,10 @@ def _process_firmware_downloads(
                         config.get("EXTRACT_PATTERNS", []),  # type: ignore - Use EXTRACT_PATTERNS for prereleases
                         exclude_patterns=config.get("EXCLUDE_PATTERNS", []),  # type: ignore
                         device_manager=device_manager,
+                        prerelease_versions_to_keep=config.get(
+                            "PRERELEASE_VERSIONS_TO_KEEP",
+                            DEFAULT_PRERELEASE_VERSIONS_TO_KEEP,
+                        ),
                     )
                 )
                 if prerelease_found:
@@ -1295,8 +1325,8 @@ def _process_firmware_downloads(
                 )
                 tracking_info = get_prerelease_tracking_info(prerelease_dir)
                 if tracking_info:
-                    count = tracking_info.get("prerelease_count_since_major", 0)
-                    base_version = tracking_info.get("last_major_release", "unknown")
+                    count = tracking_info.get("prerelease_count", 0)
+                    base_version = tracking_info.get("release", "unknown")
                     if count > 0:
                         logger.info(f"Total prereleases since {base_version}: {count}")
             else:

@@ -1139,92 +1139,84 @@ def test_prerelease_directory_cleanup(tmp_path):
                 assert new_dir.exists(), "New prerelease directory should be created"
 
 
-def test_prerelease_tracking_txt_format():
+def test_prerelease_tracking_txt_format(tmp_path):
     """Test the new .txt tracking file format and functions."""
-    import os
-    import tempfile
+    prerelease_dir = tmp_path / "prerelease"
+    prerelease_dir.mkdir()
 
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        prerelease_dir = os.path.join(tmp_dir, "prerelease")
-        os.makedirs(prerelease_dir)
+    # Test update_prerelease_tracking function
+    latest_release = "v2.7.6.111111"
+    prerelease1 = "firmware-2.7.7.abcdef"
+    prerelease2 = "firmware-2.7.8.ghijkl"
 
-        # Test update_prerelease_tracking function
-        latest_release = "v2.7.6.111111"
-        prerelease1 = "firmware-2.7.7.abcdef"
-        prerelease2 = "firmware-2.7.8.ghijkl"
+    # Add first prerelease
+    num1 = downloader.update_prerelease_tracking(
+        str(prerelease_dir), latest_release, prerelease1
+    )
+    assert num1 == 1, "First prerelease should be #1"
 
-        # Add first prerelease
-        num1 = downloader.update_prerelease_tracking(
-            prerelease_dir, latest_release, prerelease1
-        )
-        assert num1 == 1, "First prerelease should be #1"
+    # Add second prerelease
+    num2 = downloader.update_prerelease_tracking(
+        str(prerelease_dir), latest_release, prerelease2
+    )
+    assert num2 == 2, "Second prerelease should be #2"
 
-        # Add second prerelease
-        num2 = downloader.update_prerelease_tracking(
-            prerelease_dir, latest_release, prerelease2
-        )
-        assert num2 == 2, "Second prerelease should be #2"
+    # Test reading the tracking file
+    info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
+    assert info["release"] == latest_release
+    assert info["prerelease_count"] == 2
+    assert "abcdef" in info["commits"]
+    assert "ghijkl" in info["commits"]
 
-        # Test reading the tracking file
-        info = downloader.get_prerelease_tracking_info(prerelease_dir)
-        assert info["release"] == latest_release
-        assert info["prerelease_count"] == 2
-        assert "abcdef" in info["commits"]
-        assert "ghijkl" in info["commits"]
+    # Test that new release resets the tracking
+    new_release = "v2.7.9.newrelease"
+    num3 = downloader.update_prerelease_tracking(
+        str(prerelease_dir), new_release, "firmware-2.7.10.newcommit"
+    )
+    assert num3 == 1, "First prerelease after new release should be #1"
 
-        # Test that new release resets the tracking
-        new_release = "v2.7.9.newrelease"
-        num3 = downloader.update_prerelease_tracking(
-            prerelease_dir, new_release, "firmware-2.7.10.newcommit"
-        )
-        assert num3 == 1, "First prerelease after new release should be #1"
-
-        # Verify tracking was reset
-        info = downloader.get_prerelease_tracking_info(prerelease_dir)
-        assert info["release"] == new_release
-        assert info["prerelease_count"] == 1
-        assert "newcommit" in info["commits"]
-        assert "abcdef" not in info["commits"], "Old commits should be cleared"
+    # Verify tracking was reset
+    info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
+    assert info["release"] == new_release
+    assert info["prerelease_count"] == 1
+    assert "newcommit" in info["commits"]
+    assert "abcdef" not in info["commits"], "Old commits should be cleared"
 
 
-def test_prerelease_tracking_edge_cases():
+def test_prerelease_tracking_edge_cases(tmp_path):
     """Test edge cases in prerelease tracking system."""
-    import os
-    import tempfile
+    prerelease_dir = tmp_path / "prerelease"
+    prerelease_dir.mkdir()
 
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        prerelease_dir = os.path.join(tmp_dir, "prerelease")
-        os.makedirs(prerelease_dir)
+    # Test with malformed prerelease directory name
+    malformed_prerelease = "not-a-valid-format"
+    num = downloader.update_prerelease_tracking(
+        str(prerelease_dir), "v2.7.6", malformed_prerelease
+    )
+    assert num == 1, "Should handle malformed directory names"
 
-        # Test with malformed prerelease directory name
-        malformed_prerelease = "not-a-valid-format"
-        num = downloader.update_prerelease_tracking(
-            prerelease_dir, "v2.7.6", malformed_prerelease
-        )
-        assert num == 1, "Should handle malformed directory names"
+    # Test reading empty tracking file
+    tracking_file = prerelease_dir / "prerelease_commits.txt"
+    with open(tracking_file, "w") as f:
+        f.write("")  # Empty file
 
-        # Test reading empty tracking file
-        tracking_file = os.path.join(prerelease_dir, "prerelease_commits.txt")
-        with open(tracking_file, "w") as f:
-            f.write("")  # Empty file
+    info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
+    assert info == {}, "Should return empty dict for empty tracking file"
 
-        info = downloader.get_prerelease_tracking_info(prerelease_dir)
-        assert info == {}, "Should return empty dict for empty tracking file"
+    # Test reading tracking file with old format (no "Release:" prefix)
+    with open(tracking_file, "w") as f:
+        f.write("abcdef\nghijkl\n")  # Old format without Release: prefix
 
-        # Test reading tracking file with old format (no "Release:" prefix)
-        with open(tracking_file, "w") as f:
-            f.write("abcdef\nghijkl\n")  # Old format without Release: prefix
+    info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
+    assert info["release"] == "unknown"
+    assert info["prerelease_count"] == 2
+    assert "abcdef" in info["commits"]
+    assert "ghijkl" in info["commits"]
 
-        info = downloader.get_prerelease_tracking_info(prerelease_dir)
-        assert info["release"] == "unknown"
-        assert info["prerelease_count"] == 2
-        assert "abcdef" in info["commits"]
-        assert "ghijkl" in info["commits"]
-
-        # Test reading non-existent tracking file
-        os.remove(tracking_file)
-        info = downloader.get_prerelease_tracking_info(prerelease_dir)
-        assert info == {}, "Should return empty dict for non-existent file"
+    # Test reading non-existent tracking file
+    tracking_file.unlink()
+    info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
+    assert info == {}, "Should return empty dict for non-existent file"
 
 
 def test_prerelease_existing_files_tracking(tmp_path):
@@ -1984,3 +1976,110 @@ def test_matches_extract_patterns_backwards_compatibility():
     assert matches_extract_patterns(
         "littlefs-custom-device-2.7.9.bin", ["custom-device-"]
     )
+
+
+def test_device_hardware_manager_api_failure():
+    """Test DeviceHardwareManager behavior when API fails."""
+    import tempfile
+    from pathlib import Path
+
+    from fetchtastic.device_hardware import DeviceHardwareManager
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        cache_dir = Path(tmp_dir)
+
+        # Test with API enabled but invalid URL (should fallback)
+        manager = DeviceHardwareManager(
+            cache_dir=cache_dir,
+            enabled=True,
+            api_url="https://invalid.example.com/nonexistent",
+            timeout_seconds=1,  # Short timeout to fail quickly
+        )
+
+        patterns = manager.get_device_patterns()
+        assert isinstance(patterns, set)
+        assert len(patterns) > 0  # Should get fallback patterns
+
+        # Should still be able to detect device patterns
+        assert manager.is_device_pattern("rak4631-")
+        assert manager.is_device_pattern("tbeam-")
+
+
+def test_device_hardware_manager_cache_expiration():
+    """Test DeviceHardwareManager cache expiration logic."""
+    import json
+    import tempfile
+    import time
+    from pathlib import Path
+
+    from fetchtastic.device_hardware import DeviceHardwareManager
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        cache_dir = Path(tmp_dir)
+        cache_file = cache_dir / "device_hardware.json"
+
+        # Create an expired cache file
+        expired_cache = {
+            "device_patterns": ["old-device"],
+            "timestamp": time.time() - 25 * 3600,  # 25 hours ago (expired)
+            "api_url": "https://api.meshtastic.org/resource/deviceHardware",
+        }
+
+        with open(cache_file, "w") as f:
+            json.dump(expired_cache, f)
+
+        # Test with API disabled - should still use expired cache as fallback
+        manager = DeviceHardwareManager(
+            cache_dir=cache_dir, enabled=False, cache_hours=24
+        )
+
+        patterns = manager.get_device_patterns()
+        # Should get fallback patterns, not the expired cache
+        assert "old-device" not in patterns
+        assert len(patterns) > 1  # Should have multiple fallback patterns
+
+
+def test_get_prerelease_tracking_info_error_handling():
+    """Test error handling in get_prerelease_tracking_info."""
+    import tempfile
+    from pathlib import Path
+
+    from fetchtastic.downloader import get_prerelease_tracking_info
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        prerelease_dir = Path(tmp_dir)
+
+        # Test with non-existent directory
+        result = get_prerelease_tracking_info(str(prerelease_dir / "nonexistent"))
+        assert result == {}
+
+        # Test with corrupted tracking file
+        tracking_file = prerelease_dir / "prerelease_commits.txt"
+        tracking_file.write_bytes(b"\xff\xfe\x00\x00")  # Invalid UTF-8
+
+        result = get_prerelease_tracking_info(str(prerelease_dir))
+        assert result == {}  # Should handle decode errors gracefully
+
+
+def test_update_prerelease_tracking_error_handling():
+    """Test error handling in update_prerelease_tracking."""
+    import tempfile
+    from pathlib import Path
+
+    from fetchtastic.downloader import update_prerelease_tracking
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        # Test with read-only directory (should handle write errors)
+        prerelease_dir = Path(tmp_dir) / "readonly"
+        prerelease_dir.mkdir()
+        prerelease_dir.chmod(0o444)  # Read-only
+
+        try:
+            # Should handle write errors gracefully and return default
+            result = update_prerelease_tracking(
+                str(prerelease_dir), "v2.7.8", "firmware-2.7.9.abc123"
+            )
+            assert result == 1  # Should return default value
+        finally:
+            # Restore permissions for cleanup
+            prerelease_dir.chmod(0o755)
