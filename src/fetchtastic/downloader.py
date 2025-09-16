@@ -349,54 +349,80 @@ def compare_file_hashes(file1, file2):
     return hash1 == hash2
 
 
-def update_prerelease_tracking(prerelease_dir, latest_release_tag, prerelease_versions):
+def update_prerelease_tracking(prerelease_dir, latest_release_tag, current_prerelease):
     """
-    Update the prerelease tracking file to record how many prerelease versions
-    have been released since the last major release.
+    Update the prerelease tracking file with information about the current prerelease.
+
+    This tracks all prerelease commits since the last release, even when old prerelease
+    directories are removed. Returns the prerelease number.
 
     Parameters:
         prerelease_dir (str): Path to the prerelease directory
-        latest_release_tag (str): Latest official release tag
-        prerelease_versions (List[str]): List of prerelease version directory names
+        latest_release_tag (str): Latest official release tag (e.g., v2.7.6.111111)
+        current_prerelease (str): Current prerelease directory name (e.g., firmware-2.7.7.abcdef)
+
+    Returns:
+        int: The prerelease number (1, 2, 3, etc.) since the last release
     """
-    tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
+    tracking_file = os.path.join(prerelease_dir, "prerelease_commits.txt")
 
-    # Extract version from latest release tag
-    base_version = latest_release_tag.lstrip("v")
+    # Extract commit hash from prerelease directory name
+    # e.g., firmware-2.7.7.abcdef -> abcdef
+    if current_prerelease.startswith("firmware-") and "." in current_prerelease:
+        parts = current_prerelease.split(".")
+        if len(parts) >= 4:  # firmware-2.7.7.abcdef
+            current_commit = parts[-1]  # abcdef
+        else:
+            current_commit = current_prerelease
+    else:
+        current_commit = current_prerelease
 
-    # Count total prereleases since this major release
-    total_prereleases = len(prerelease_versions)
+    # Read existing tracking data
+    commits = []
+    current_release = None
 
-    # Get existing tracking data
-    tracking_data = {}
     if os.path.exists(tracking_file):
         try:
-            with open(tracking_file, "r") as f:
-                tracking_data = json.load(f)
-        except (json.JSONDecodeError, IOError) as e:
+            with open(tracking_file, "r", encoding="utf-8") as f:
+                lines = [line.strip() for line in f.readlines() if line.strip()]
+                if lines:
+                    # First line should be the release tag
+                    if lines[0].startswith("Release: "):
+                        current_release = lines[0][9:]  # Remove "Release: " prefix
+                        commits = lines[1:]  # Rest are commit hashes
+                    else:
+                        # Old format or corrupted, treat all as commits
+                        commits = lines
+        except IOError as e:
             logger.warning(f"Could not read prerelease tracking file: {e}")
-            tracking_data = {}
 
-    # Update tracking data
-    tracking_data.update(
-        {
-            "last_major_release": latest_release_tag,
-            "base_version": base_version,
-            "prerelease_count_since_major": total_prereleases,
-            "prerelease_versions": prerelease_versions,
-            "last_updated": datetime.now().astimezone().isoformat(),
-        }
-    )
+    # If release changed, reset the commit list
+    if current_release != latest_release_tag:
+        logger.info(
+            f"New release detected ({latest_release_tag}), resetting prerelease tracking"
+        )
+        commits = []
+        current_release = latest_release_tag
+
+    # Add current commit if not already tracked
+    if current_commit not in commits:
+        commits.append(current_commit)
+        logger.info(f"Added prerelease commit {current_commit} to tracking")
 
     # Write updated tracking data
     try:
-        with open(tracking_file, "w") as f:
-            json.dump(tracking_data, f, indent=2)
-        logger.info(
-            f"Updated prerelease tracking: {total_prereleases} prereleases since {latest_release_tag}"
-        )
+        with open(tracking_file, "w", encoding="utf-8") as f:
+            f.write(f"Release: {current_release}\n")
+            for commit in commits:
+                f.write(f"{commit}\n")
+
+        prerelease_number = len(commits)
+        logger.info(f"Prerelease #{prerelease_number} since {current_release}")
+        return prerelease_number
+
     except IOError as e:
-        logger.warning(f"Could not write prerelease tracking file: {e}")
+        logger.error(f"Could not write prerelease tracking file: {e}")
+        return 1  # Default to 1 if we can't track
 
 
 def get_prerelease_tracking_info(prerelease_dir):
@@ -409,15 +435,34 @@ def get_prerelease_tracking_info(prerelease_dir):
     Returns:
         dict: Tracking information or empty dict if not available
     """
-    tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
+    tracking_file = os.path.join(prerelease_dir, "prerelease_commits.txt")
 
     if not os.path.exists(tracking_file):
         return {}
 
     try:
-        with open(tracking_file, "r") as f:
-            return json.load(f)
-    except (json.JSONDecodeError, IOError) as e:
+        with open(tracking_file, "r", encoding="utf-8") as f:
+            lines = [line.strip() for line in f.readlines() if line.strip()]
+            if not lines:
+                return {}
+
+            # Parse the tracking file
+            if lines[0].startswith("Release: "):
+                release = lines[0][9:]  # Remove "Release: " prefix
+                commits = lines[1:]  # Rest are commit hashes
+                return {
+                    "release": release,
+                    "commits": commits,
+                    "prerelease_count": len(commits),
+                }
+            else:
+                # Old format, treat all as commits
+                return {
+                    "release": "unknown",
+                    "commits": lines,
+                    "prerelease_count": len(lines),
+                }
+    except IOError as e:
         logger.warning(f"Could not read prerelease tracking file: {e}")
         return {}
 
@@ -633,9 +678,15 @@ def check_for_prereleases(
     # If no prerelease directories need processing, but some exist, still return success
     if not prerelease_dirs:
         if all_prerelease_dirs:
-            # Prerelease directories exist but are complete, still track them
-            update_prerelease_tracking(
-                download_dir, latest_release_tag, all_prerelease_dirs
+            # Prerelease directories exist but are complete, still track the latest one
+            latest_prerelease = all_prerelease_dirs[
+                0
+            ]  # Take the first (should be latest)
+            prerelease_number = update_prerelease_tracking(
+                prerelease_dir, latest_release_tag, latest_prerelease
+            )
+            logger.info(
+                f"Existing prerelease #{prerelease_number}: {latest_prerelease}"
             )
             return True, all_prerelease_dirs
         else:
@@ -648,6 +699,45 @@ def check_for_prereleases(
         except OSError as e:
             logger.error(f"Error creating pre-release directory {prerelease_dir}: {e}")
             return False, []  # Cannot proceed if directory creation fails
+
+    # Remove old prerelease directories - we only keep the latest one
+    # The reason a new prerelease exists is because there were issues with the old one
+    if prerelease_dirs and os.path.exists(prerelease_dir):
+        # Find the newest prerelease directory (highest version)
+        newest_prerelease = None
+        if all_prerelease_dirs:
+            # Sort by version to find the newest
+            try:
+                sorted_prereleases = sorted(
+                    all_prerelease_dirs,
+                    key=lambda x: x.split("-")[-1] if "-" in x else x,
+                    reverse=True,
+                )
+                newest_prerelease = sorted_prereleases[0]
+            except (IndexError, ValueError):
+                newest_prerelease = (
+                    all_prerelease_dirs[0] if all_prerelease_dirs else None
+                )
+
+        # Remove all existing prerelease directories except the newest one we're about to process
+        for item in os.listdir(prerelease_dir):
+            item_path = os.path.join(prerelease_dir, item)
+            if os.path.isdir(item_path) and item.startswith("firmware-"):
+                # Keep the newest prerelease if it exists and we're not processing a newer one
+                if (
+                    item == newest_prerelease
+                    and newest_prerelease not in prerelease_dirs
+                ):
+                    logger.info(f"Keeping existing prerelease directory: {item}")
+                    continue
+
+                logger.info(f"Removing old prerelease directory: {item}")
+                try:
+                    shutil.rmtree(item_path)
+                except OSError as e:
+                    logger.warning(
+                        f"Error removing old prerelease directory {item_path}: {e}"
+                    )
 
     downloaded_files = []
 
@@ -752,17 +842,29 @@ def check_for_prereleases(
         for version, count in version_file_counts.items():
             logger.info(f"Pre-release {version}: {count} files")
 
-        # Update prerelease tracking with all prerelease directories
-        update_prerelease_tracking(
-            download_dir, latest_release_tag, all_prerelease_dirs
-        )
+        # Update prerelease tracking with the latest prerelease directory
+        if all_prerelease_dirs:
+            latest_prerelease = all_prerelease_dirs[
+                0
+            ]  # Take the first (should be latest)
+            prerelease_number = update_prerelease_tracking(
+                prerelease_dir, latest_release_tag, latest_prerelease
+            )
+            logger.info(
+                f"Downloaded prerelease #{prerelease_number}: {latest_prerelease}"
+            )
 
         return True, downloaded_versions
     else:
         # Update tracking even if no files were downloaded (to track all prereleases)
-        update_prerelease_tracking(
-            download_dir, latest_release_tag, all_prerelease_dirs
-        )
+        if all_prerelease_dirs:
+            latest_prerelease = all_prerelease_dirs[
+                0
+            ]  # Take the first (should be latest)
+            prerelease_number = update_prerelease_tracking(
+                prerelease_dir, latest_release_tag, latest_prerelease
+            )
+            logger.info(f"Tracked prerelease #{prerelease_number}: {latest_prerelease}")
 
         # Return success if any prerelease directories exist, even if no files were downloaded
         if all_prerelease_dirs:

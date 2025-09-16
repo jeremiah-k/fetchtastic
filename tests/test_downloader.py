@@ -1011,25 +1011,27 @@ def test_prerelease_tracking_functionality(
 
     # Check that tracking file was created
     prerelease_dir = download_dir / "firmware" / "prerelease"
-    tracking_file = prerelease_dir / "prerelease_tracking.json"
+    tracking_file = prerelease_dir / "prerelease_commits.txt"
     assert tracking_file.exists()
 
     # Check tracking file contents
-    import json
-
     with open(tracking_file, "r") as f:
-        tracking_data = json.load(f)
+        lines = [line.strip() for line in f.readlines() if line.strip()]
 
-    assert tracking_data["last_major_release"] == latest_release_tag
-    assert tracking_data["base_version"] == "2.7.6.111111"
-    assert tracking_data["prerelease_count_since_major"] > 0
-    assert "prerelease_versions" in tracking_data
-    assert "last_updated" in tracking_data
+    # Check tracking file format: Release: <tag> followed by commit hashes
+    assert len(lines) >= 1
+    assert lines[0].startswith("Release: ")
+    assert lines[0] == f"Release: {latest_release_tag}"
+
+    # Should have at least one commit hash
+    commit_lines = lines[1:]
+    assert len(commit_lines) > 0
 
     # Test get_prerelease_tracking_info function
     info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
-    assert info["last_major_release"] == latest_release_tag
-    assert info["prerelease_count_since_major"] > 0
+    assert info["release"] == latest_release_tag
+    assert info["prerelease_count"] > 0
+    assert len(info["commits"]) > 0
 
 
 def test_prerelease_existing_files_tracking(tmp_path):
