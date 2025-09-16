@@ -5,6 +5,7 @@ import os
 import platform
 import shutil
 import subprocess
+import sys
 from typing import List
 
 import platformdirs
@@ -58,7 +59,6 @@ def main():
     setup_parser.add_argument(
         "sections",
         nargs="*",
-        choices=sorted(setup_config.SETUP_SECTION_CHOICES),
         help="Positional shorthand for selecting setup sections (e.g. 'setup firmware')",
     )
 
@@ -154,6 +154,17 @@ def main():
             if args.section:
                 combined_sections.extend(args.section)
             if args.sections:
+                # Validate positional section arguments
+                invalid_sections = [
+                    s
+                    for s in args.sections
+                    if s not in setup_config.SETUP_SECTION_CHOICES
+                ]
+                if invalid_sections:
+                    valid_choices = sorted(setup_config.SETUP_SECTION_CHOICES)
+                    logger.error(f"Invalid section(s): {', '.join(invalid_sections)}")
+                    logger.error(f"Valid choices are: {', '.join(valid_choices)}")
+                    sys.exit(1)
                 combined_sections.extend(args.sections)
             setup_config.run_setup(sections=combined_sections or None)
 
