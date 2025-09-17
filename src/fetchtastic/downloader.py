@@ -354,6 +354,35 @@ def compare_file_hashes(file1, file2):
     return hash1 == hash2
 
 
+def _read_legacy_tracking_file(tracking_file):
+    """
+    Read legacy text format tracking file.
+
+    Helper function to read the old prerelease_commits.txt format.
+
+    Parameters:
+        tracking_file (str): Path to the JSON tracking file (used to find legacy file)
+
+    Returns:
+        tuple: (commits, current_release) where commits is a list of commit hashes
+               and current_release is the release tag string or None
+    """
+    try:
+        legacy_file = os.path.join(
+            os.path.dirname(tracking_file), "prerelease_commits.txt"
+        )
+        with open(legacy_file, "r", encoding="utf-8") as f:
+            lines = [line.strip() for line in f.readlines() if line.strip()]
+            if lines and lines[0].startswith("Release: "):
+                current_release = lines[0][9:]  # Remove "Release: " prefix
+                commits = lines[1:]  # Rest are commit hashes
+                return commits, current_release
+    except (IOError, UnicodeDecodeError):
+        pass  # No old format file or can't read it
+
+    return [], None
+
+
 def _read_prerelease_tracking_data(tracking_file):
     """
     Read prerelease tracking data from JSON or legacy text format.
@@ -381,34 +410,10 @@ def _read_prerelease_tracking_data(tracking_file):
         except (IOError, json.JSONDecodeError, UnicodeDecodeError) as e:
             logger.warning(f"Could not read prerelease tracking file: {e}")
             # Try to read old text format for backwards compatibility
-            try:
-                with open(
-                    os.path.join(
-                        os.path.dirname(tracking_file), "prerelease_commits.txt"
-                    ),
-                    "r",
-                    encoding="utf-8",
-                ) as f:
-                    lines = [line.strip() for line in f.readlines() if line.strip()]
-                    if lines and lines[0].startswith("Release: "):
-                        current_release = lines[0][9:]  # Remove "Release: " prefix
-                        commits = lines[1:]  # Rest are commit hashes
-            except (IOError, UnicodeDecodeError):
-                pass  # No old format file or can't read it
+            commits, current_release = _read_legacy_tracking_file(tracking_file)
     else:
         # No JSON yet — try importing legacy text format if present
-        try:
-            with open(
-                os.path.join(os.path.dirname(tracking_file), "prerelease_commits.txt"),
-                "r",
-                encoding="utf-8",
-            ) as f:
-                lines = [line.strip() for line in f.readlines() if line.strip()]
-                if lines and lines[0].startswith("Release: "):
-                    current_release = lines[0][9:]
-                    commits = lines[1:]
-        except (IOError, UnicodeDecodeError):
-            pass
+        commits, current_release = _read_legacy_tracking_file(tracking_file)
 
     return commits, current_release
 
@@ -538,8 +543,8 @@ def batch_update_prerelease_tracking(
             json.dump(tracking_data, f, indent=2)
 
     except (IOError, UnicodeEncodeError) as e:
-        logger.warning(f"Could not write prerelease tracking file: {e}")
-        return len(commits) if commits else 0
+        logger.error(f"Could not write prerelease tracking file: {e}")
+        return 1  # Default to 1 if we can't track
     else:
         prerelease_number = len(commits)
         if added_count > 0:
