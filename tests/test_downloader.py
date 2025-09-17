@@ -4152,7 +4152,9 @@ def test_check_for_prereleases_cleans_up_on_new_release(tmp_path):
     with open(tracking_file, "w") as f:
         json.dump(tracking_data, f)
 
-    with patch("fetchtastic.downloader.menu_repo.fetch_repo_directories", return_value=[]):
+    with patch(
+        "fetchtastic.downloader.menu_repo.fetch_repo_directories", return_value=[]
+    ):
         downloader.check_for_prereleases(
             str(download_dir), "v2.0.0", [], exclude_patterns=[]
         )
@@ -4162,4 +4164,4 @@ def test_check_for_prereleases_cleans_up_on_new_release(tmp_path):
     assert not (prerelease_dir / "firmware-2.0.0-beta1").exists()
     # Assert that the tracking file is still there
     assert tracking_file.exists()
-        # The test is successful if we reach this point without repeated warnings
+    # The test is successful if we reach this point without repeated warnings
