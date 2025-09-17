@@ -921,7 +921,7 @@ def test_cli_download_with_various_log_levels(mocker):
     mocker.patch("sys.argv", ["fetchtastic", "download"])
     mock_downloader_main = mocker.patch("fetchtastic.downloader.main")
     mock_set_log_level = mocker.patch("fetchtastic.cli.set_log_level")
-    mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
+    mocker.patch("fetchtastic.setup_config.run_setup")
 
     mocker.patch(
         "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")

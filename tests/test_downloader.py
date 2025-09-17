@@ -2251,7 +2251,7 @@ def test_device_hardware_manager_cache_corruption_handling(caplog):
 
 def test_prerelease_cleanup_logging_messages(tmp_path, caplog):
     """Test prerelease cleanup logging and user-facing messages."""
-    from unittest.mock import MagicMock, patch
+    from unittest.mock import patch
 
     from fetchtastic import downloader
 
@@ -2300,7 +2300,7 @@ def test_prerelease_cleanup_logging_messages(tmp_path, caplog):
 
 def test_prerelease_directory_permissions_error_logging(tmp_path, caplog):
     """Test logging when prerelease directory operations fail due to permissions."""
-    from unittest.mock import MagicMock, patch
+    from unittest.mock import patch
 
     from fetchtastic import downloader
 
@@ -2775,7 +2775,7 @@ def test_backwards_compatibility_ui_scenarios():
 
 def test_end_to_end_prerelease_workflow_ui_coverage(tmp_path, caplog):
     """Test complete prerelease workflow with comprehensive UI coverage."""
-    from unittest.mock import MagicMock, patch
+    from unittest.mock import patch
 
     from fetchtastic import downloader
     from fetchtastic.device_hardware import DeviceHardwareManager
@@ -2876,7 +2876,7 @@ def test_end_to_end_prerelease_workflow_ui_coverage(tmp_path, caplog):
 
 def test_comprehensive_error_recovery_ui_workflow(tmp_path, caplog):
     """Test comprehensive error recovery scenarios with UI feedback."""
-    from unittest.mock import MagicMock, patch
+    from unittest.mock import patch
 
     from fetchtastic import downloader
     from fetchtastic.device_hardware import DeviceHardwareManager
