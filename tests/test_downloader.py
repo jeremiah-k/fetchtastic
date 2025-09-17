@@ -3977,22 +3977,22 @@ def test_read_prerelease_tracking_data_empty_json(tmp_path):
 
 
 def test_read_prerelease_tracking_data_malformed_legacy(tmp_path):
-    """Test _read_prerelease_tracking_data with malformed legacy format."""
+    """Test _read_prerelease_tracking_data with legacy format (no Release header)."""
     from fetchtastic.downloader import _read_prerelease_tracking_data
 
     tracking_file = tmp_path / "prerelease_tracking.json"
     legacy_file = tmp_path / "prerelease_commits.txt"
 
-    # Create malformed legacy file (no "Release: " prefix)
+    # Create legacy file without "Release: " prefix (all lines are commits)
     legacy_content = "v2.7.6.111111\nabc123\ndef456\n"
     legacy_file.write_text(legacy_content)
 
     # No JSON file exists
     commits, current_release = _read_prerelease_tracking_data(str(tracking_file))
 
-    # Should return empty data since legacy format is malformed
-    assert commits == []
-    assert current_release is None
+    # Should treat all lines as commits in legacy format (more robust)
+    assert commits == ["v2.7.6.111111", "abc123", "def456"]
+    assert current_release == "unknown"
 
 
 def test_get_user_agent_with_version():
