@@ -973,7 +973,11 @@ def test_cli_download_parametrized_log_levels(mocker, log_level):
 
 @pytest.mark.parametrize("invalid_log_level", ["INVALID", "TRACE", "VERBOSE", "123"])
 def test_cli_download_with_invalid_log_levels(mocker, invalid_log_level):
-    """Test the 'download' command with invalid LOG_LEVEL values."""
+    """
+    Verify that running the "download" command with an invalid LOG_LEVEL value does not raise,
+    that the CLI passes the raw value to set_log_level (letting that function handle validation),
+    and that downloader.main is invoked while setup_config.run_setup is not.
+    """
     mocker.patch("sys.argv", ["fetchtastic", "download"])
     mock_downloader_main = mocker.patch("fetchtastic.downloader.main")
     mock_set_log_level = mocker.patch("fetchtastic.cli.set_log_level")
@@ -998,7 +1002,14 @@ def test_cli_download_with_invalid_log_levels(mocker, invalid_log_level):
 
 
 def test_cli_download_with_empty_log_level(mocker):
-    """Test the 'download' command with empty LOG_LEVEL value."""
+    """
+    Verify that when a configuration contains an empty `LOG_LEVEL` value, the CLI's `download` command does not attempt to set the log level but still invokes the downloader and does not run setup.
+    
+    This patches a present configuration with `"LOG_LEVEL": ""` and asserts:
+    - set_log_level is not called for the empty (falsy) value,
+    - downloader.main is invoked exactly once,
+    - setup_config.run_setup is not invoked.
+    """
     mocker.patch("sys.argv", ["fetchtastic", "download"])
     mock_downloader_main = mocker.patch("fetchtastic.downloader.main")
     mock_set_log_level = mocker.patch("fetchtastic.cli.set_log_level")

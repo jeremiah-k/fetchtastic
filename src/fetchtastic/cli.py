@@ -23,24 +23,14 @@ def main():
 
     """
     Entry point for the Fetchtastic command-line interface.
-
-    Parses command-line arguments and dispatches commands:
-    - setup: run initial configuration or update Windows integrations (--update-integrations on Windows).
-    - download: ensure configuration (migrating if necessary) and run the firmware/APK downloader.
-    - topic: show configured NTFY topic/URL and optionally copy it to the clipboard.
-    - clean: remove Fetchtastic configuration, downloads, and scheduled tasks.
-    - version: display current and available Fetchtastic versions and upgrade instructions if applicable.
-    - repo: interact with the meshtastic.github.io repository with subcommands:
-        - browse: browse and download repository files.
-        - clean: remove files from the repository download directory.
-    - help: show contextual help for commands and repo subcommands.
-
+    
+    Parses CLI arguments and dispatches subcommands: setup (initial configuration or Windows integration update), download (ensure/migrate config and run downloader), topic (show NTFY topic and optionally copy to clipboard), clean (destructive cleanup), version (show current/available versions), repo (browse/clean repository downloads), and help (contextual help).
+    
     Side effects:
-    - May read/write configuration, modify files/directories, invoke setup and downloader routines, modify crontab/startup entries, and copy text to the clipboard.
-    - Prints information and logs status messages.
-
-    Returns:
-        None
+    - May read, create, migrate, or remove configuration files and directories.
+    - May modify system startup/cron entries and repository download directories.
+    - May invoke interactive setup/downloader/repo routines and copy text to the clipboard.
+    - Emits informational output to stdout and log messages.
     """
     parser = argparse.ArgumentParser(
         description="Fetchtastic - Meshtastic Firmware and APK Downloader"

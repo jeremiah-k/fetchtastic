@@ -25,11 +25,23 @@ _file_handler: Optional[RotatingFileHandler] = None
 
 def set_log_level(level_name: str) -> None:
     """
-    Set the logging level for the 'fetchtastic' logger and its handlers.
-    Also updates formatters based on the new level.
-
-    Args:
-        level_name (str): The desired logging level (e.g., "DEBUG", "INFO").
+    Set the log level for the fetchtastic logger and reconfigure all attached handlers.
+    
+    If `level_name` is not a valid logging level name (e.g., "DEBUG", "INFO"), the function logs a warning and leaves the current configuration unchanged.
+    
+    Behavior:
+    - Sets the logger's level and each handler's level to the resolved level.
+    - Replaces each handler's formatter according to the new level:
+      - For INFO and above:
+        - RichHandler: message-only formatter ("%(__message__)s").
+        - Non-Rich handlers: INFO_LOG_FORMAT with LOG_DATE_FORMAT.
+      - For levels below INFO:
+        - RichHandler: message plus source info ("%(__message__)s (name - module.func:line)").
+        - Non-Rich handlers: DEBUG_LOG_FORMAT with LOG_DATE_FORMAT.
+    - Emits an informational log confirming the new level when successful.
+    
+    Parameters:
+        level_name (str): Case-insensitive name of the desired logging level (e.g., "debug", "INFO").
     """
     level = getattr(logging, level_name.upper(), None)
     if not isinstance(level, int):
