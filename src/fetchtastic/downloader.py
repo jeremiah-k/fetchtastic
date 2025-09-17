@@ -373,10 +373,14 @@ def _read_text_tracking_file(tracking_file):
         )
         with open(text_file, "r", encoding="utf-8") as f:
             lines = [line.strip() for line in f.readlines() if line.strip()]
-            if lines and lines[0].startswith("Release: "):
+            if not lines:
+                return [], None
+            if lines[0].startswith("Release: "):
                 current_release = lines[0][9:]  # Remove "Release: " prefix
                 commits = lines[1:]  # Rest are commit hashes
                 return commits, current_release
+            # Legacy format: treat all lines as commits; release unknown
+            return lines, "unknown"
     except (IOError, UnicodeDecodeError):
         pass  # No text format file or can't read it
 
@@ -690,33 +694,14 @@ def get_prerelease_tracking_info(prerelease_dir):
         except (IOError, json.JSONDecodeError, UnicodeDecodeError) as e:
             logger.warning(f"Could not read JSON prerelease tracking file: {e}")
 
-    # Fall back to old text format for backwards compatibility
-    txt_tracking_file = os.path.join(prerelease_dir, "prerelease_commits.txt")
-    if os.path.exists(txt_tracking_file):
-        try:
-            with open(txt_tracking_file, "r", encoding="utf-8") as f:
-                lines = [line.strip() for line in f.readlines() if line.strip()]
-                if not lines:
-                    return {}
-
-                # Parse the tracking file
-                if lines[0].startswith("Release: "):
-                    release = lines[0][9:]  # Remove "Release: " prefix
-                    commits = lines[1:]  # Rest are commit hashes
-                    return {
-                        "release": release,
-                        "commits": commits,
-                        "prerelease_count": len(commits),
-                    }
-                else:
-                    # Old format, treat all as commits
-                    return {
-                        "release": "unknown",
-                        "commits": lines,
-                        "prerelease_count": len(lines),
-                    }
-        except (IOError, UnicodeDecodeError) as e:
-            logger.warning(f"Could not read text prerelease tracking file: {e}")
+    # Fall back to text format using helper function
+    commits, release = _read_text_tracking_file(json_tracking_file)
+    if commits or release:
+        return {
+            "release": release or "unknown",
+            "commits": commits,
+            "prerelease_count": len(commits),
+        }
 
     return {}
 
@@ -1505,8 +1490,12 @@ def _process_firmware_downloads(
                     version: str
                     for version in prerelease_versions:
                         downloaded_firmwares.append(f"pre-release {version}")
+                elif prerelease_versions:
+                    logger.info(
+                        "Found an existing pre-release, but no new files to download."
+                    )
                 else:
-                    logger.info("No new pre-release firmware found or downloaded.")
+                    logger.info("No new pre-release firmware found.")
 
                 # Display prerelease tracking information
                 prerelease_dir = os.path.join(
