@@ -455,6 +455,118 @@ def update_prerelease_tracking(prerelease_dir, latest_release_tag, current_prere
         return 1  # Default to 1 if we can't track
 
 
+def batch_update_prerelease_tracking(
+    prerelease_dir, latest_release_tag, prerelease_dirs
+):
+    """
+    Efficiently update prerelease tracking for multiple directories in a single operation.
+
+    This function processes all prerelease directories at once, reading the tracking file
+    only once and writing it only once, which is much more efficient than calling
+    update_prerelease_tracking() for each directory individually.
+
+    Args:
+        prerelease_dir (str): Path to the prerelease directory containing tracking file
+        latest_release_tag (str): Latest official release tag for comparison
+        prerelease_dirs (List[str]): List of prerelease directory names to track
+
+    Returns:
+        int: The final prerelease number after processing all directories
+    """
+    if not prerelease_dirs:
+        return 0
+
+    tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
+
+    # Extract commit hashes from all prerelease directory names
+    new_commits = []
+    for pr_dir in prerelease_dirs:
+        commit_match = re.search(r"\.([a-f0-9]{6,12})(?:[.-]|$)", pr_dir, re.IGNORECASE)
+        if commit_match:
+            commit_hash = commit_match.group(1)
+        else:
+            commit_hash = pr_dir
+        new_commits.append(commit_hash)
+
+    # Read existing tracking data (same logic as update_prerelease_tracking)
+    commits = []
+    current_release = None
+
+    if os.path.exists(tracking_file):
+        try:
+            with open(tracking_file, "r", encoding="utf-8") as f:
+                tracking_data = json.load(f)
+                current_release = tracking_data.get("release")
+                commits = tracking_data.get("commits", [])
+        except (IOError, json.JSONDecodeError, UnicodeDecodeError) as e:
+            logger.warning(f"Could not read prerelease tracking file: {e}")
+            # Try to read old text format for backwards compatibility
+            try:
+                with open(
+                    os.path.join(
+                        os.path.dirname(tracking_file), "prerelease_commits.txt"
+                    ),
+                    "r",
+                    encoding="utf-8",
+                ) as f:
+                    lines = [line.strip() for line in f.readlines() if line.strip()]
+                    if lines and lines[0].startswith("Release: "):
+                        current_release = lines[0][9:]  # Remove "Release: " prefix
+                        commits = lines[1:]  # Rest are commit hashes
+            except (IOError, UnicodeDecodeError):
+                pass  # No old format file or can't read it
+    else:
+        # No JSON yet — try importing legacy text format if present
+        try:
+            with open(
+                os.path.join(os.path.dirname(tracking_file), "prerelease_commits.txt"),
+                "r",
+                encoding="utf-8",
+            ) as f:
+                lines = [line.strip() for line in f.readlines() if line.strip()]
+                if lines and lines[0].startswith("Release: "):
+                    current_release = lines[0][9:]
+                    commits = lines[1:]
+        except (IOError, UnicodeDecodeError):
+            pass
+
+    # If release changed, reset the commit list
+    if current_release != latest_release_tag:
+        logger.info(
+            f"New release detected ({latest_release_tag}), resetting prerelease tracking"
+        )
+        commits = []
+        current_release = latest_release_tag
+
+    # Add all new commits that aren't already tracked
+    added_count = 0
+    for commit_hash in new_commits:
+        if commit_hash not in commits:
+            commits.append(commit_hash)
+            logger.info(f"Added prerelease commit {commit_hash} to tracking")
+            added_count += 1
+
+    # Write updated tracking data only once
+    try:
+        tracking_data = {
+            "release": current_release,
+            "commits": commits,
+            "last_updated": datetime.now().astimezone().isoformat(),
+        }
+        with open(tracking_file, "w", encoding="utf-8") as f:
+            json.dump(tracking_data, f, indent=2)
+
+        prerelease_number = len(commits)
+        if added_count > 0:
+            logger.info(f"Batch updated {added_count} prerelease commits")
+        logger.info(f"Prerelease #{prerelease_number} since {current_release}")
+
+        return prerelease_number
+    except (IOError, UnicodeEncodeError) as e:
+        logger.warning(f"Could not write prerelease tracking file: {e}")
+        return len(commits) if commits else 0
+
+
 def matches_extract_patterns(filename, extract_patterns, device_manager=None):
     """
     Smart pattern matching for EXTRACT_PATTERNS that supports device-based matching.
@@ -979,11 +1091,10 @@ def check_for_prereleases(
 
     # Update prerelease tracking (run once regardless of download success)
     if all_prerelease_dirs:
-        prerelease_number = 0
-        for pr in all_prerelease_dirs:
-            prerelease_number = update_prerelease_tracking(
-                prerelease_dir, latest_release_tag, pr
-            )
+        # Use batch update for efficiency - processes all directories in a single operation
+        prerelease_number = batch_update_prerelease_tracking(
+            prerelease_dir, latest_release_tag, all_prerelease_dirs
+        )
         if downloaded_files:
             logger.info(
                 f"Downloaded prereleases tracked up to #{prerelease_number}: {all_prerelease_dirs[0]}"

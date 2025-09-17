@@ -3693,3 +3693,116 @@ def test_error_handling_comprehensive_ui_paths(tmp_path, caplog):
             assert len(patterns) > 0
         finally:
             readonly_dir.chmod(0o755)  # Restore permissions for cleanup
+
+
+def test_batch_update_prerelease_tracking(tmp_path):
+    """Test the efficient batch update function for prerelease tracking."""
+    prerelease_dir = tmp_path / "prerelease"
+    prerelease_dir.mkdir()
+
+    # Test batch update with multiple prerelease directories
+    latest_release = "v2.7.6.111111"
+    prerelease_dirs = [
+        "firmware-2.7.7.abc123",
+        "firmware-2.7.8.def456",
+        "firmware-2.7.9.abcdef",  # Valid hex commit hash
+    ]
+
+    # Test initial batch update
+    num = downloader.batch_update_prerelease_tracking(
+        str(prerelease_dir), latest_release, prerelease_dirs
+    )
+    assert num == 3, "Should track 3 prereleases"
+
+    # Verify tracking file was created correctly
+    info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
+    assert info["release"] == latest_release
+    assert info["prerelease_count"] == 3
+    assert "abc123" in info["commits"]
+    assert "def456" in info["commits"]
+    assert "abcdef" in info["commits"]
+
+    # Test batch update with some existing commits (should not duplicate)
+    more_prerelease_dirs = [
+        "firmware-2.7.8.def456",  # Already exists
+        "firmware-2.7.10.fedcba",  # New one (valid hex)
+    ]
+
+    num2 = downloader.batch_update_prerelease_tracking(
+        str(prerelease_dir), latest_release, more_prerelease_dirs
+    )
+    assert num2 == 4, "Should have 4 total prereleases (3 existing + 1 new)"
+
+    # Verify no duplicates were added
+    info2 = downloader.get_prerelease_tracking_info(str(prerelease_dir))
+    assert info2["prerelease_count"] == 4
+    assert "fedcba" in info2["commits"]
+    assert info2["commits"].count("def456") == 1, "Should not duplicate existing commit"
+
+    # Test batch update with new release (should reset)
+    new_release = "v2.8.0.newrelease"
+    new_prerelease_dirs = ["firmware-2.8.1.cafe12"]  # Valid hex
+
+    num3 = downloader.batch_update_prerelease_tracking(
+        str(prerelease_dir), new_release, new_prerelease_dirs
+    )
+    assert num3 == 1, "Should reset to 1 prerelease for new release"
+
+    # Verify tracking was reset
+    info3 = downloader.get_prerelease_tracking_info(str(prerelease_dir))
+    assert info3["release"] == new_release
+    assert info3["prerelease_count"] == 1
+    assert "cafe12" in info3["commits"]
+    assert "abc123" not in info3["commits"], "Old commits should be cleared"
+
+
+def test_batch_update_vs_individual_update_consistency(tmp_path):
+    """Test that batch update produces the same results as individual updates."""
+    prerelease_dir1 = tmp_path / "batch"
+    prerelease_dir2 = tmp_path / "individual"
+    prerelease_dir1.mkdir()
+    prerelease_dir2.mkdir()
+
+    latest_release = "v2.7.6.111111"
+    prerelease_dirs = [
+        "firmware-2.7.7.abc123",
+        "firmware-2.7.8.def456",
+        "firmware-2.7.9.abcdef",  # Valid hex commit hash
+    ]
+
+    # Test batch update
+    batch_num = downloader.batch_update_prerelease_tracking(
+        str(prerelease_dir1), latest_release, prerelease_dirs
+    )
+
+    # Test individual updates
+    individual_num = 0
+    for pr_dir in prerelease_dirs:
+        individual_num = downloader.update_prerelease_tracking(
+            str(prerelease_dir2), latest_release, pr_dir
+        )
+
+    # Results should be identical
+    assert batch_num == individual_num
+
+    # Tracking info should be identical
+    batch_info = downloader.get_prerelease_tracking_info(str(prerelease_dir1))
+    individual_info = downloader.get_prerelease_tracking_info(str(prerelease_dir2))
+
+    assert batch_info["release"] == individual_info["release"]
+    assert batch_info["prerelease_count"] == individual_info["prerelease_count"]
+    assert set(batch_info["commits"]) == set(individual_info["commits"])
+
+
+def test_batch_update_empty_list(tmp_path):
+    """Test batch update with empty prerelease directory list."""
+    prerelease_dir = tmp_path / "prerelease"
+    prerelease_dir.mkdir()
+
+    # Test with empty list
+    num = downloader.batch_update_prerelease_tracking(str(prerelease_dir), "v2.7.6", [])
+    assert num == 0, "Should return 0 for empty list"
+
+    # Tracking file should not be created
+    tracking_file = prerelease_dir / "prerelease_tracking.json"
+    assert not tracking_file.exists(), "Should not create tracking file for empty list"
