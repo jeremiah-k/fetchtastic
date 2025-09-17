@@ -69,9 +69,10 @@ def get_user_agent() -> str:
 
 def calculate_sha256(file_path: str) -> Optional[str]:
     """
-    Compute and return the SHA-256 hex digest of a file, or None if the file cannot be read.
-
-    Reads the file in binary mode and streams its contents to the SHA-256 digest (no full-file buffering). On success returns the 64-character lowercase hexadecimal digest string. If the file cannot be opened or read (e.g., missing file or permission error), the function logs the error at debug level and returns None instead of raising.
+    Compute the SHA-256 hex digest of a file.
+    
+    Reads the file in binary mode and streams its contents without loading the whole file into memory.
+    Returns the 64-character lowercase hexadecimal digest on success, or None if the file cannot be opened or read (e.g., missing file or permission error).
     """
     try:
         sha256_hash = hashlib.sha256()
