@@ -761,9 +761,10 @@ def check_for_prereleases(
     # 2. Are newer than the latest release
     if os.path.exists(prerelease_dir):
         # First, clean up any non-directory files in the prerelease directory
+        # but preserve the tracking file
         for item in os.listdir(prerelease_dir):
             item_path = os.path.join(prerelease_dir, item)
-            if not os.path.isdir(item_path):
+            if not os.path.isdir(item_path) and item != "prerelease_tracking.json":
                 try:
                     logger.info(
                         f"Removing stale file from prerelease directory: {item}"
@@ -1037,7 +1038,6 @@ def check_for_prereleases(
                                 f"Error setting executable permissions for {file_name}: {e}"
                             )
 
-                    logger.info(f"Downloaded: {file_name}")
                     downloaded_files.append(file_path)
                 except requests.exceptions.RequestException as e:
                     logger.error(
@@ -1093,11 +1093,9 @@ def check_for_prereleases(
                 f"Tracked prereleases up to #{prerelease_number}: {all_prerelease_dirs[0]}"
             )
 
-    # Return results
+    # Return results - only return True if files were actually downloaded
     if downloaded_files:
         return True, downloaded_versions
-    elif all_prerelease_dirs:
-        return True, all_prerelease_dirs
     else:
         return False, []
 
