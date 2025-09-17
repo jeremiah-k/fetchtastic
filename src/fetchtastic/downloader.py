@@ -354,42 +354,41 @@ def compare_file_hashes(file1, file2):
     return hash1 == hash2
 
 
-def _read_legacy_tracking_file(tracking_file):
+def _read_text_tracking_file(tracking_file):
     """
-    Read legacy text format tracking file.
+    Read text format tracking file.
 
-    Helper function to read the old prerelease_commits.txt format.
+    Helper function to read the prerelease_commits.txt format.
 
     Parameters:
-        tracking_file (str): Path to the JSON tracking file (used to find legacy file)
+        tracking_file (str): Path to the JSON tracking file (used to find text file)
 
     Returns:
         tuple: (commits, current_release) where commits is a list of commit hashes
                and current_release is the release tag string or None
     """
     try:
-        legacy_file = os.path.join(
+        text_file = os.path.join(
             os.path.dirname(tracking_file), "prerelease_commits.txt"
         )
-        with open(legacy_file, "r", encoding="utf-8") as f:
+        with open(text_file, "r", encoding="utf-8") as f:
             lines = [line.strip() for line in f.readlines() if line.strip()]
             if lines and lines[0].startswith("Release: "):
                 current_release = lines[0][9:]  # Remove "Release: " prefix
                 commits = lines[1:]  # Rest are commit hashes
                 return commits, current_release
     except (IOError, UnicodeDecodeError):
-        pass  # No old format file or can't read it
+        pass  # No text format file or can't read it
 
     return [], None
 
 
 def _read_prerelease_tracking_data(tracking_file):
     """
-    Read prerelease tracking data from JSON or legacy text format.
+    Read prerelease tracking data from JSON or text format.
 
     This helper function centralizes the logic for reading tracking data,
-    handling both the current JSON format and legacy text format for
-    backwards compatibility.
+    handling both JSON format and text format.
 
     Parameters:
         tracking_file (str): Path to the tracking file
@@ -409,13 +408,30 @@ def _read_prerelease_tracking_data(tracking_file):
                 commits = tracking_data.get("commits", [])
         except (IOError, json.JSONDecodeError, UnicodeDecodeError) as e:
             logger.warning(f"Could not read prerelease tracking file: {e}")
-            # Try to read old text format for backwards compatibility
-            commits, current_release = _read_legacy_tracking_file(tracking_file)
+            # Try to read text format as fallback
+            commits, current_release = _read_text_tracking_file(tracking_file)
     else:
-        # No JSON yet — try importing legacy text format if present
-        commits, current_release = _read_legacy_tracking_file(tracking_file)
+        # No JSON yet — try importing text format if present
+        commits, current_release = _read_text_tracking_file(tracking_file)
 
     return commits, current_release
+
+
+def _extract_commit_from_dir_name(dir_name):
+    """
+    Extract commit hash from prerelease directory name.
+
+    Parameters:
+        dir_name (str): Directory name like "firmware-2.7.7.abcdef"
+
+    Returns:
+        str: Extracted commit hash (lowercase) or the full directory name if no hash found
+    """
+    commit_match = re.search(r"\.([a-f0-9]{6,12})(?:[.-]|$)", dir_name, re.IGNORECASE)
+    if commit_match:
+        return commit_match.group(1).lower()  # Normalize to lowercase
+    else:
+        return dir_name.lower()  # Normalize to lowercase
 
 
 def update_prerelease_tracking(prerelease_dir, latest_release_tag, current_prerelease):
@@ -435,15 +451,8 @@ def update_prerelease_tracking(prerelease_dir, latest_release_tag, current_prere
     """
     tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
 
-    # Extract commit hash from prerelease directory name using regex
-    # e.g., firmware-2.7.7.abcdef -> abcdef
-    commit_match = re.search(
-        r"\.([a-f0-9]{6,12})(?:[.-]|$)", current_prerelease, re.IGNORECASE
-    )
-    if commit_match:
-        current_commit = commit_match.group(1).lower()  # Normalize to lowercase
-    else:
-        current_commit = current_prerelease.lower()  # Normalize to lowercase
+    # Extract commit hash from prerelease directory name
+    current_commit = _extract_commit_from_dir_name(current_prerelease)
 
     # Read existing tracking data using helper function
     commits, current_release = _read_prerelease_tracking_data(tracking_file)
@@ -504,14 +513,7 @@ def batch_update_prerelease_tracking(
     tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
 
     # Extract commit hashes from all prerelease directory names
-    new_commits = []
-    for pr_dir in prerelease_dirs:
-        commit_match = re.search(r"\.([a-f0-9]{6,12})(?:[.-]|$)", pr_dir, re.IGNORECASE)
-        if commit_match:
-            commit_hash = commit_match.group(1).lower()  # Normalize to lowercase
-        else:
-            commit_hash = pr_dir.lower()  # Normalize to lowercase
-        new_commits.append(commit_hash)
+    new_commits = [_extract_commit_from_dir_name(pr_dir) for pr_dir in prerelease_dirs]
 
     # Read existing tracking data using helper function
     commits, current_release = _read_prerelease_tracking_data(tracking_file)
@@ -733,7 +735,9 @@ def check_for_prereleases(
     existing_prerelease_dirs = []
     if os.path.exists(prerelease_dir):
         for item in os.listdir(prerelease_dir):
-            if os.path.isdir(os.path.join(prerelease_dir, item)):
+            if os.path.isdir(os.path.join(prerelease_dir, item)) and item.startswith(
+                "firmware-"
+            ):
                 existing_prerelease_dirs.append(item)
 
     # Extract all firmware directory names from the repository
@@ -750,7 +754,10 @@ def check_for_prereleases(
         # but preserve the tracking file
         for item in os.listdir(prerelease_dir):
             item_path = os.path.join(prerelease_dir, item)
-            if not os.path.isdir(item_path) and item != "prerelease_tracking.json":
+            if not os.path.isdir(item_path) and item not in (
+                "prerelease_tracking.json",
+                "prerelease_commits.txt",
+            ):
                 try:
                     logger.info(
                         f"Removing stale file from prerelease directory: {item}"
@@ -808,7 +815,9 @@ def check_for_prereleases(
     existing_prerelease_dirs = []
     if os.path.exists(prerelease_dir):
         for item in os.listdir(prerelease_dir):
-            if os.path.isdir(os.path.join(prerelease_dir, item)):
+            if os.path.isdir(os.path.join(prerelease_dir, item)) and item.startswith(
+                "firmware-"
+            ):
                 existing_prerelease_dirs.append(item)
 
     # Find directories in the repository that are newer than the latest release and don't already exist locally
@@ -913,12 +922,8 @@ def check_for_prereleases(
 
     # Remove old prerelease directories - keep only the latest existing version
     if prerelease_dirs and os.path.exists(prerelease_dir):
-        # Get all existing prerelease directories and sort by version
-        existing_dirs = []
-        for item in os.listdir(prerelease_dir):
-            item_path = os.path.join(prerelease_dir, item)
-            if os.path.isdir(item_path) and item.startswith("firmware-"):
-                existing_dirs.append(item)
+        # Use existing prerelease directories list (avoid redundant I/O)
+        existing_dirs = existing_prerelease_dirs
 
         if existing_dirs:
             try:
