@@ -3853,6 +3853,109 @@ def test_commit_case_normalization(tmp_path):
         assert commit == commit.lower(), f"Commit {commit} should be lowercase"
 
 
+def test_read_prerelease_tracking_data_json_format(tmp_path):
+    """Test _read_prerelease_tracking_data with valid JSON format."""
+    from fetchtastic.downloader import _read_prerelease_tracking_data
+
+    tracking_file = tmp_path / "prerelease_tracking.json"
+    tracking_data = {
+        "release": "v2.7.8.a0c0388",
+        "commits": ["abc123", "def456", "ghi789"],
+    }
+
+    tracking_file.write_text(json.dumps(tracking_data))
+
+    commits, current_release = _read_prerelease_tracking_data(str(tracking_file))
+
+    assert commits == ["abc123", "def456", "ghi789"]
+    assert current_release == "v2.7.8.a0c0388"
+
+
+def test_read_prerelease_tracking_data_legacy_format(tmp_path):
+    """Test _read_prerelease_tracking_data with legacy text format."""
+    from fetchtastic.downloader import _read_prerelease_tracking_data
+
+    tracking_file = tmp_path / "prerelease_tracking.json"
+    legacy_file = tmp_path / "prerelease_commits.txt"
+
+    # Create legacy format file
+    legacy_content = "Release: v2.7.6.111111\nabc123\ndef456\n"
+    legacy_file.write_text(legacy_content)
+
+    # No JSON file exists
+    commits, current_release = _read_prerelease_tracking_data(str(tracking_file))
+
+    assert commits == ["abc123", "def456"]
+    assert current_release == "v2.7.6.111111"
+
+
+def test_read_prerelease_tracking_data_json_fallback_to_legacy(tmp_path):
+    """Test _read_prerelease_tracking_data JSON error fallback to legacy format."""
+    from fetchtastic.downloader import _read_prerelease_tracking_data
+
+    tracking_file = tmp_path / "prerelease_tracking.json"
+    legacy_file = tmp_path / "prerelease_commits.txt"
+
+    # Create invalid JSON file
+    tracking_file.write_text("invalid json content")
+
+    # Create valid legacy format file
+    legacy_content = "Release: v2.7.5.old123\nold456\nold789\n"
+    legacy_file.write_text(legacy_content)
+
+    commits, current_release = _read_prerelease_tracking_data(str(tracking_file))
+
+    assert commits == ["old456", "old789"]
+    assert current_release == "v2.7.5.old123"
+
+
+def test_read_prerelease_tracking_data_no_files(tmp_path):
+    """Test _read_prerelease_tracking_data when no files exist."""
+    from fetchtastic.downloader import _read_prerelease_tracking_data
+
+    tracking_file = tmp_path / "prerelease_tracking.json"
+
+    # No files exist
+    commits, current_release = _read_prerelease_tracking_data(str(tracking_file))
+
+    assert commits == []
+    assert current_release is None
+
+
+def test_read_prerelease_tracking_data_empty_json(tmp_path):
+    """Test _read_prerelease_tracking_data with empty/minimal JSON."""
+    from fetchtastic.downloader import _read_prerelease_tracking_data
+
+    tracking_file = tmp_path / "prerelease_tracking.json"
+
+    # Empty JSON object
+    tracking_file.write_text("{}")
+
+    commits, current_release = _read_prerelease_tracking_data(str(tracking_file))
+
+    assert commits == []
+    assert current_release is None
+
+
+def test_read_prerelease_tracking_data_malformed_legacy(tmp_path):
+    """Test _read_prerelease_tracking_data with malformed legacy format."""
+    from fetchtastic.downloader import _read_prerelease_tracking_data
+
+    tracking_file = tmp_path / "prerelease_tracking.json"
+    legacy_file = tmp_path / "prerelease_commits.txt"
+
+    # Create malformed legacy file (no "Release: " prefix)
+    legacy_content = "v2.7.6.111111\nabc123\ndef456\n"
+    legacy_file.write_text(legacy_content)
+
+    # No JSON file exists
+    commits, current_release = _read_prerelease_tracking_data(str(tracking_file))
+
+    # Should return empty data since legacy format is malformed
+    assert commits == []
+    assert current_release is None
+
+
 def test_get_user_agent_with_version():
     """Test get_user_agent function with successful version retrieval."""
     from unittest.mock import patch

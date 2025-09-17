@@ -354,34 +354,21 @@ def compare_file_hashes(file1, file2):
     return hash1 == hash2
 
 
-def update_prerelease_tracking(prerelease_dir, latest_release_tag, current_prerelease):
+def _read_prerelease_tracking_data(tracking_file):
     """
-    Update the prerelease tracking file with information about the current prerelease.
+    Read prerelease tracking data from JSON or legacy text format.
 
-    This tracks all prerelease commits since the last release, even when old prerelease
-    directories are removed. Returns the prerelease number.
+    This helper function centralizes the logic for reading tracking data,
+    handling both the current JSON format and legacy text format for
+    backwards compatibility.
 
     Parameters:
-        prerelease_dir (str): Path to the prerelease directory
-        latest_release_tag (str): Latest official release tag (e.g., v2.7.6.111111)
-        current_prerelease (str): Current prerelease directory name (e.g., firmware-2.7.7.abcdef)
+        tracking_file (str): Path to the tracking file
 
     Returns:
-        int: The prerelease number (1, 2, 3, etc.) since the last release
+        tuple: (commits, current_release) where commits is a list of commit hashes
+               and current_release is the release tag string or None
     """
-    tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
-
-    # Extract commit hash from prerelease directory name using regex
-    # e.g., firmware-2.7.7.abcdef -> abcdef
-    commit_match = re.search(
-        r"\.([a-f0-9]{6,12})(?:[.-]|$)", current_prerelease, re.IGNORECASE
-    )
-    if commit_match:
-        current_commit = commit_match.group(1).lower()  # Normalize to lowercase
-    else:
-        current_commit = current_prerelease.lower()  # Normalize to lowercase
-
-    # Read existing tracking data
     commits = []
     current_release = None
 
@@ -422,6 +409,39 @@ def update_prerelease_tracking(prerelease_dir, latest_release_tag, current_prere
                     commits = lines[1:]
         except (IOError, UnicodeDecodeError):
             pass
+
+    return commits, current_release
+
+
+def update_prerelease_tracking(prerelease_dir, latest_release_tag, current_prerelease):
+    """
+    Update the prerelease tracking file with information about the current prerelease.
+
+    This tracks all prerelease commits since the last release, even when old prerelease
+    directories are removed. Returns the prerelease number.
+
+    Parameters:
+        prerelease_dir (str): Path to the prerelease directory
+        latest_release_tag (str): Latest official release tag (e.g., v2.7.6.111111)
+        current_prerelease (str): Current prerelease directory name (e.g., firmware-2.7.7.abcdef)
+
+    Returns:
+        int: The prerelease number (1, 2, 3, etc.) since the last release
+    """
+    tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
+
+    # Extract commit hash from prerelease directory name using regex
+    # e.g., firmware-2.7.7.abcdef -> abcdef
+    commit_match = re.search(
+        r"\.([a-f0-9]{6,12})(?:[.-]|$)", current_prerelease, re.IGNORECASE
+    )
+    if commit_match:
+        current_commit = commit_match.group(1).lower()  # Normalize to lowercase
+    else:
+        current_commit = current_prerelease.lower()  # Normalize to lowercase
+
+    # Read existing tracking data using helper function
+    commits, current_release = _read_prerelease_tracking_data(tracking_file)
 
     # If release changed, reset the commit list
     if current_release != latest_release_tag:
@@ -488,47 +508,8 @@ def batch_update_prerelease_tracking(
             commit_hash = pr_dir.lower()  # Normalize to lowercase
         new_commits.append(commit_hash)
 
-    # Read existing tracking data (same logic as update_prerelease_tracking)
-    commits = []
-    current_release = None
-
-    if os.path.exists(tracking_file):
-        try:
-            with open(tracking_file, "r", encoding="utf-8") as f:
-                tracking_data = json.load(f)
-                current_release = tracking_data.get("release")
-                commits = tracking_data.get("commits", [])
-        except (IOError, json.JSONDecodeError, UnicodeDecodeError) as e:
-            logger.warning(f"Could not read prerelease tracking file: {e}")
-            # Try to read old text format for backwards compatibility
-            try:
-                with open(
-                    os.path.join(
-                        os.path.dirname(tracking_file), "prerelease_commits.txt"
-                    ),
-                    "r",
-                    encoding="utf-8",
-                ) as f:
-                    lines = [line.strip() for line in f.readlines() if line.strip()]
-                    if lines and lines[0].startswith("Release: "):
-                        current_release = lines[0][9:]  # Remove "Release: " prefix
-                        commits = lines[1:]  # Rest are commit hashes
-            except (IOError, UnicodeDecodeError):
-                pass  # No old format file or can't read it
-    else:
-        # No JSON yet — try importing legacy text format if present
-        try:
-            with open(
-                os.path.join(os.path.dirname(tracking_file), "prerelease_commits.txt"),
-                "r",
-                encoding="utf-8",
-            ) as f:
-                lines = [line.strip() for line in f.readlines() if line.strip()]
-                if lines and lines[0].startswith("Release: "):
-                    current_release = lines[0][9:]
-                    commits = lines[1:]
-        except (IOError, UnicodeDecodeError):
-            pass
+    # Read existing tracking data using helper function
+    commits, current_release = _read_prerelease_tracking_data(tracking_file)
 
     # If release changed, reset the commit list
     if current_release != latest_release_tag:
