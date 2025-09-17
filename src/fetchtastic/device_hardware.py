@@ -170,6 +170,8 @@ class DeviceHardwareManager:
 
         # Final fallback to hardcoded patterns
         logger.warning("Using fallback device patterns (API and cache unavailable)")
+        # Set timestamp to prevent repeated warnings in same process
+        self._last_fetch_time = time.time()
         return FALLBACK_DEVICE_PATTERNS.copy()
 
     def _fetch_from_api(self) -> Optional[Set[str]]:

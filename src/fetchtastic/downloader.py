@@ -377,9 +377,9 @@ def update_prerelease_tracking(prerelease_dir, latest_release_tag, current_prere
         r"\.([a-f0-9]{6,12})(?:[.-]|$)", current_prerelease, re.IGNORECASE
     )
     if commit_match:
-        current_commit = commit_match.group(1)
+        current_commit = commit_match.group(1).lower()  # Normalize to lowercase
     else:
-        current_commit = current_prerelease
+        current_commit = current_prerelease.lower()  # Normalize to lowercase
 
     # Read existing tracking data
     commits = []
@@ -483,9 +483,9 @@ def batch_update_prerelease_tracking(
     for pr_dir in prerelease_dirs:
         commit_match = re.search(r"\.([a-f0-9]{6,12})(?:[.-]|$)", pr_dir, re.IGNORECASE)
         if commit_match:
-            commit_hash = commit_match.group(1)
+            commit_hash = commit_match.group(1).lower()  # Normalize to lowercase
         else:
-            commit_hash = pr_dir
+            commit_hash = pr_dir.lower()  # Normalize to lowercase
         new_commits.append(commit_hash)
 
     # Read existing tracking data (same logic as update_prerelease_tracking)
@@ -908,22 +908,13 @@ def check_for_prereleases(
             reverse=True,  # Newest first
         )
 
-    # If no prerelease directories need processing, but some exist, still return success
+    # Initialize downloaded files list
+    downloaded_files = []
+
+    # If no prerelease directories need processing, skip download loop
     if not prerelease_dirs:
-        if all_prerelease_dirs:
-            # Prerelease directories exist but are complete, still track the latest one
-            latest_prerelease = all_prerelease_dirs[
-                0
-            ]  # First after version sort (newest)
-            prerelease_number = update_prerelease_tracking(
-                prerelease_dir, latest_release_tag, latest_prerelease
-            )
-            logger.info(
-                f"Existing prerelease #{prerelease_number}: {latest_prerelease}"
-            )
-            return True, all_prerelease_dirs
-        else:
-            return False, []
+        logger.info("No new pre-releases to download")
+        # Continue to unified tracking block below
 
     # Create prerelease directory if it doesn't exist
     if not os.path.exists(prerelease_dir):
@@ -980,11 +971,9 @@ def check_for_prereleases(
                     else:
                         logger.debug(f"Keeping prerelease directory: {item}")
 
-            except (IndexError, ValueError, Exception) as e:
+            except (IndexError, ValueError, TypeError) as e:
                 logger.warning(f"Error sorting prerelease directories for cleanup: {e}")
                 # Fallback: don't remove anything if sorting fails
-
-    downloaded_files = []
 
     # Process each pre-release directory
     total_pr = len(prerelease_dirs)

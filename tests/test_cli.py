@@ -944,3 +944,110 @@ def test_cli_download_with_various_log_levels(mocker):
         # Verify that set_log_level was called with the correct level
         mock_set_log_level.assert_called_once_with(log_level)
         mock_downloader_main.assert_called_once()
+
+
+@pytest.mark.parametrize("log_level", ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
+def test_cli_download_parametrized_log_levels(mocker, log_level):
+    """Test the 'download' command with parametrized LOG_LEVEL values."""
+    mocker.patch("sys.argv", ["fetchtastic", "download"])
+    mock_downloader_main = mocker.patch("fetchtastic.downloader.main")
+    mock_set_log_level = mocker.patch("fetchtastic.cli.set_log_level")
+    mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
+
+    mocker.patch(
+        "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
+    )
+    mocker.patch("fetchtastic.setup_config.prompt_for_migration")
+    mocker.patch("fetchtastic.setup_config.migrate_config")
+
+    mock_config = {"LOG_LEVEL": log_level}
+    mocker.patch("fetchtastic.setup_config.load_config", return_value=mock_config)
+
+    cli.main()
+
+    # Verify that set_log_level was called with the correct level
+    mock_set_log_level.assert_called_once_with(log_level)
+    mock_downloader_main.assert_called_once()
+    mock_setup_run.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "invalid_log_level", ["INVALID", "TRACE", "VERBOSE", "123", "debug"]
+)
+def test_cli_download_with_invalid_log_levels(mocker, invalid_log_level):
+    """Test the 'download' command with invalid LOG_LEVEL values."""
+    mocker.patch("sys.argv", ["fetchtastic", "download"])
+    mock_downloader_main = mocker.patch("fetchtastic.downloader.main")
+    mock_set_log_level = mocker.patch("fetchtastic.cli.set_log_level")
+    mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
+
+    mocker.patch(
+        "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
+    )
+    mocker.patch("fetchtastic.setup_config.prompt_for_migration")
+    mocker.patch("fetchtastic.setup_config.migrate_config")
+
+    mock_config = {"LOG_LEVEL": invalid_log_level}
+    mocker.patch("fetchtastic.setup_config.load_config", return_value=mock_config)
+
+    # Should not raise an exception, but set_log_level might handle invalid values
+    cli.main()
+
+    # Verify that set_log_level was called with the invalid level (let set_log_level handle validation)
+    mock_set_log_level.assert_called_once_with(invalid_log_level)
+    mock_downloader_main.assert_called_once()
+    mock_setup_run.assert_not_called()
+
+
+def test_cli_download_with_empty_log_level(mocker):
+    """Test the 'download' command with empty LOG_LEVEL value."""
+    mocker.patch("sys.argv", ["fetchtastic", "download"])
+    mock_downloader_main = mocker.patch("fetchtastic.downloader.main")
+    mock_set_log_level = mocker.patch("fetchtastic.cli.set_log_level")
+    mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
+
+    mocker.patch(
+        "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
+    )
+    mocker.patch("fetchtastic.setup_config.prompt_for_migration")
+    mocker.patch("fetchtastic.setup_config.migrate_config")
+
+    mock_config = {"LOG_LEVEL": ""}  # Empty string
+    mocker.patch("fetchtastic.setup_config.load_config", return_value=mock_config)
+
+    cli.main()
+
+    # Empty string should NOT call set_log_level (falsy value)
+    mock_set_log_level.assert_not_called()
+    mock_downloader_main.assert_called_once()
+    mock_setup_run.assert_not_called()
+
+
+def test_cli_download_with_case_insensitive_log_levels(mocker):
+    """Test the 'download' command with case variations of LOG_LEVEL values."""
+    mocker.patch("sys.argv", ["fetchtastic", "download"])
+    mock_downloader_main = mocker.patch("fetchtastic.downloader.main")
+    mock_set_log_level = mocker.patch("fetchtastic.cli.set_log_level")
+    mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
+
+    mocker.patch(
+        "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
+    )
+    mocker.patch("fetchtastic.setup_config.prompt_for_migration")
+    mocker.patch("fetchtastic.setup_config.migrate_config")
+
+    # Test different case variations
+    case_variations = ["debug", "Info", "warning", "Error", "critical"]
+
+    for log_level in case_variations:
+        mock_set_log_level.reset_mock()
+        mock_downloader_main.reset_mock()
+
+        mock_config = {"LOG_LEVEL": log_level}
+        mocker.patch("fetchtastic.setup_config.load_config", return_value=mock_config)
+
+        cli.main()
+
+        # Verify that set_log_level was called with the case variation
+        mock_set_log_level.assert_called_once_with(log_level)
+        mock_downloader_main.assert_called_once()

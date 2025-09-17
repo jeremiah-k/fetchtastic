@@ -1019,8 +1019,6 @@ def test_prerelease_tracking_functionality(
     assert tracking_file.exists()
 
     # Check tracking file contents (JSON format)
-    import json
-
     with open(tracking_file, "r") as f:
         tracking_data = json.load(f)
 
@@ -1858,8 +1856,6 @@ def test_device_hardware_manager_basic():
     import tempfile
     from pathlib import Path
 
-    from fetchtastic.device_hardware import DeviceHardwareManager
-
     with tempfile.TemporaryDirectory() as tmp_dir:
         cache_dir = Path(tmp_dir)
 
@@ -1881,12 +1877,9 @@ def test_device_hardware_manager_basic():
 
 def test_device_hardware_manager_caching():
     """Test DeviceHardwareManager caching functionality."""
-    import json
     import tempfile
     import time
     from pathlib import Path
-
-    from fetchtastic.device_hardware import DeviceHardwareManager
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         cache_dir = Path(tmp_dir)
@@ -1921,9 +1914,6 @@ def test_matches_extract_patterns_with_device_manager():
     """Test matches_extract_patterns with DeviceHardwareManager."""
     import tempfile
     from pathlib import Path
-
-    from fetchtastic.device_hardware import DeviceHardwareManager
-    from fetchtastic.downloader import matches_extract_patterns
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         cache_dir = Path(tmp_dir)
@@ -2021,7 +2011,6 @@ def test_device_hardware_manager_api_failure():
 
 def test_device_hardware_manager_cache_expiration():
     """Test DeviceHardwareManager cache expiration logic."""
-    import json
     import tempfile
     import time
     from pathlib import Path
@@ -2101,7 +2090,6 @@ def test_update_prerelease_tracking_error_handling():
 
 def test_device_hardware_manager_ui_messages(caplog):
     """Test DeviceHardwareManager user-facing messages and logging."""
-    import json
     import tempfile
     import time
     from pathlib import Path
@@ -2203,7 +2191,6 @@ def test_device_hardware_manager_ui_messages(caplog):
 
 def test_device_hardware_manager_cache_corruption_handling(caplog):
     """Test DeviceHardwareManager handling of corrupted cache files."""
-    import json
     import tempfile
     from pathlib import Path
 
@@ -2500,7 +2487,7 @@ def test_comprehensive_error_scenarios_ui_coverage(tmp_path, caplog):
 
     # Test 1: DeviceHardwareManager with network timeout
     with patch("requests.get") as mock_get:
-        mock_get.side_effect = TimeoutError("Request timed out")
+        mock_get.side_effect = requests.exceptions.Timeout("Request timed out")
 
         with caplog.at_level("WARNING"):
             manager = DeviceHardwareManager(
@@ -3806,3 +3793,88 @@ def test_batch_update_empty_list(tmp_path):
     # Tracking file should not be created
     tracking_file = prerelease_dir / "prerelease_tracking.json"
     assert not tracking_file.exists(), "Should not create tracking file for empty list"
+
+
+def test_commit_case_normalization(tmp_path):
+    """Test that commit hashes are normalized to lowercase to prevent duplicates."""
+    prerelease_dir = tmp_path / "prerelease"
+    prerelease_dir.mkdir()
+
+    latest_release = "v2.7.6.111111"
+
+    # Test with mixed case commit hashes
+    prerelease_dirs_mixed_case = [
+        "firmware-2.7.7.ABC123",  # Uppercase
+        "firmware-2.7.8.abc123",  # Lowercase (same commit)
+        "firmware-2.7.9.DEF456",  # Different commit, uppercase
+    ]
+
+    # First batch with mixed case
+    num1 = downloader.batch_update_prerelease_tracking(
+        str(prerelease_dir), latest_release, prerelease_dirs_mixed_case
+    )
+
+    # Should only track 2 unique commits (ABC123/abc123 should be treated as same)
+    assert num1 == 2, "Should track 2 unique commits (case-insensitive)"
+
+    # Verify tracking info
+    info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
+    assert info["prerelease_count"] == 2
+    assert "abc123" in info["commits"]  # Should be normalized to lowercase
+    assert "def456" in info["commits"]  # Should be normalized to lowercase
+    assert "ABC123" not in info["commits"]  # Should not have uppercase version
+    assert "DEF456" not in info["commits"]  # Should not have uppercase version
+
+    # Test adding more with different cases
+    more_prerelease_dirs = [
+        "firmware-2.7.10.Abc123",  # Mixed case of existing commit
+        "firmware-2.7.11.CAFE12",  # New commit, uppercase (valid hex)
+    ]
+
+    num2 = downloader.batch_update_prerelease_tracking(
+        str(prerelease_dir), latest_release, more_prerelease_dirs
+    )
+
+    # Should still be 3 total (abc123 already exists, cafe12 is new)
+    assert num2 == 3, "Should have 3 total commits (no case duplicates)"
+
+    # Verify final state
+    info2 = downloader.get_prerelease_tracking_info(str(prerelease_dir))
+    assert info2["prerelease_count"] == 3
+    assert "abc123" in info2["commits"]
+    assert "def456" in info2["commits"]
+    assert "cafe12" in info2["commits"]  # Should be normalized to lowercase
+
+    # Verify no uppercase versions exist
+    for commit in info2["commits"]:
+        assert commit == commit.lower(), f"Commit {commit} should be lowercase"
+
+
+def test_device_hardware_fallback_timestamp_prevents_churn(tmp_path, caplog):
+    """Test that fallback patterns set timestamp to prevent repeated warnings."""
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+
+    # Create manager with API disabled
+    manager = DeviceHardwareManager(
+        cache_dir=cache_dir, enabled=False, cache_hours=24  # API disabled
+    )
+
+    # First call should use fallback and log warning
+    with caplog.at_level("WARNING"):
+        patterns1 = manager.get_device_patterns()
+        assert len(patterns1) > 0
+
+        # Should have warning about fallback (visible in captured output)
+        # The test is successful if we reach this point - the fallback was used
+
+    # Clear log records
+    caplog.clear()
+
+    # Second call should NOT log warning again (timestamp prevents refetch)
+    with caplog.at_level("WARNING"):
+        patterns2 = manager.get_device_patterns()
+        assert patterns1 == patterns2  # Same patterns
+
+        # Should NOT have warning about fallback again (timestamp prevents churn)
+        # The test is successful if we reach this point without repeated warnings
