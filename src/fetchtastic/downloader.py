@@ -469,6 +469,9 @@ def _get_prerelease_patterns(config: dict) -> list[str]:
     Checks for SELECTED_PRERELEASE_ASSETS first, falls back to EXTRACT_PATTERNS
     for backward compatibility, and logs a deprecation warning when using the fallback.
 
+    TODO: Update setup wizard to prompt for SELECTED_PRERELEASE_ASSETS instead of
+    EXTRACT_PATTERNS to provide clearer configuration and reduce deprecation warnings.
+
     Parameters:
         config (dict): Configuration dictionary
 

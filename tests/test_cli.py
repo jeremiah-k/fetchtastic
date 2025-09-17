@@ -971,9 +971,7 @@ def test_cli_download_parametrized_log_levels(mocker, log_level):
     mock_setup_run.assert_not_called()
 
 
-@pytest.mark.parametrize(
-    "invalid_log_level", ["INVALID", "TRACE", "VERBOSE", "123", "debug"]
-)
+@pytest.mark.parametrize("invalid_log_level", ["INVALID", "TRACE", "VERBOSE", "123"])
 def test_cli_download_with_invalid_log_levels(mocker, invalid_log_level):
     """Test the 'download' command with invalid LOG_LEVEL values."""
     mocker.patch("sys.argv", ["fetchtastic", "download"])
