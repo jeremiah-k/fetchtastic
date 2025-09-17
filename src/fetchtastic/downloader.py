@@ -1093,9 +1093,12 @@ def check_for_prereleases(
                 f"Tracked prereleases up to #{prerelease_number}: {all_prerelease_dirs[0]}"
             )
 
-    # Return results - only return True if files were actually downloaded
+    # Return results
     if downloaded_files:
         return True, downloaded_versions
+    elif all_prerelease_dirs:
+        # Prerelease directories exist and are tracked, but no files were downloaded
+        return False, all_prerelease_dirs
     else:
         return False, []
 

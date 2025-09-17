@@ -1258,9 +1258,9 @@ def test_prerelease_existing_files_tracking(tmp_path):
                 str(download_dir), "v2.7.6.111111", ["rak4631-"], exclude_patterns=[]
             )
 
-            # Should find the existing file and track it
-            assert found is True
-            assert "firmware-2.7.7.abcdef" in versions
+            # Should track existing files but not report as "downloaded"
+            assert found is False  # No new downloads occurred
+            assert "firmware-2.7.7.abcdef" in versions  # But directory is still tracked
 
 
 def test_check_and_download_corrupted_existing_zip_records_failure(tmp_path):
@@ -2275,9 +2275,11 @@ def test_prerelease_cleanup_logging_messages(tmp_path, caplog):
                 )
 
             # Verify cleanup functionality worked
-            # Should have found and processed the new prerelease
-            assert found is True
-            assert "firmware-2.11.0.new123" in versions
+            # Download failed due to fake URL, so found should be False
+            assert found is False  # No files downloaded due to network error
+            assert (
+                "firmware-2.11.0.new123" in versions
+            )  # But directory is still tracked
 
             # Verify old directories were cleaned up (only newest should remain)
             remaining_dirs = [d for d in prerelease_dir.iterdir() if d.is_dir()]
@@ -2328,11 +2330,11 @@ def test_prerelease_directory_permissions_error_logging(tmp_path, caplog):
                 assert readonly_dir.exists()
 
                 # But the system should still work and process new prereleases
-                assert found is True
-                assert "firmware-2.11.0.new123" in versions
-
-                # Should still work despite permission errors
-                assert found is True
+                # Download failed due to fake URL, so found should be False
+                assert found is False  # No files downloaded due to network error
+                assert (
+                    "firmware-2.11.0.new123" in versions
+                )  # But directory is still tracked
 
     finally:
         # Restore permissions for cleanup
@@ -2918,7 +2920,8 @@ def test_comprehensive_error_recovery_ui_workflow(tmp_path, caplog):
                     )
 
                 # Should handle errors gracefully and still work
-                assert found is True  # Should succeed despite errors
+                # No files were downloaded (pattern didn't match or other issues)
+                assert found is False  # No files downloaded
 
                 # Verify error recovery worked - system should still function
                 # despite cache corruption and other issues
@@ -3107,7 +3110,7 @@ def test_prerelease_download_ui_messages(tmp_path, caplog):
                 )
 
                 # Should still process directories but not download files
-                assert found is True  # Directories exist
+                assert found is False  # No files match the pattern, so no downloads
                 assert len(versions) > 0  # Should track the prerelease
 
 
