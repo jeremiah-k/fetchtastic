@@ -1,6 +1,7 @@
 # src/fetchtastic/utils.py
 import gc  # For Windows file operation retries
 import hashlib
+import importlib.metadata
 import os
 import platform
 import re
@@ -34,6 +35,36 @@ LEGACY_VER_RX = re.compile(
 
 # Precompiled regex for punctuation stripping (performance optimization)
 _PUNC_RX = re.compile(r"[^a-z0-9]+")
+
+# Cache for the User-Agent string to avoid repeated metadata lookups
+_USER_AGENT_CACHE = None
+
+
+def get_user_agent() -> str:
+    """
+    Get the dynamic User-Agent string for HTTP requests.
+
+    Returns a User-Agent string in the format "fetchtastic/{version}" where version
+    is dynamically retrieved from the package metadata. Falls back to "unknown" if
+    the version cannot be determined (e.g., in development environments).
+
+    The result is cached to avoid repeated metadata lookups since the version
+    won't change during runtime.
+
+    Returns:
+        str: User-Agent string in format "fetchtastic/{version}"
+    """
+    global _USER_AGENT_CACHE
+
+    if _USER_AGENT_CACHE is None:
+        try:
+            app_version = importlib.metadata.version("fetchtastic")
+        except importlib.metadata.PackageNotFoundError:
+            app_version = "unknown"
+
+        _USER_AGENT_CACHE = f"fetchtastic/{app_version}"
+
+    return _USER_AGENT_CACHE
 
 
 def calculate_sha256(file_path: str) -> Optional[str]:

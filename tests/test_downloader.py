@@ -3850,6 +3850,115 @@ def test_commit_case_normalization(tmp_path):
         assert commit == commit.lower(), f"Commit {commit} should be lowercase"
 
 
+def test_get_user_agent_with_version():
+    """Test get_user_agent function with successful version retrieval."""
+    from unittest.mock import patch
+
+    # Clear the cache first
+    import fetchtastic.utils
+    from fetchtastic.utils import get_user_agent
+
+    fetchtastic.utils._USER_AGENT_CACHE = None
+
+    with patch("importlib.metadata.version") as mock_version:
+        mock_version.return_value = "1.2.3"
+
+        user_agent = get_user_agent()
+        assert user_agent == "fetchtastic/1.2.3"
+
+        # Verify caching - second call should not call version() again
+        mock_version.reset_mock()
+        user_agent2 = get_user_agent()
+        assert user_agent2 == "fetchtastic/1.2.3"
+        mock_version.assert_not_called()  # Should use cached value
+
+
+def test_get_user_agent_with_package_not_found():
+    """Test get_user_agent function when package metadata is not found."""
+    import importlib.metadata
+    from unittest.mock import patch
+
+    # Clear the cache first
+    import fetchtastic.utils
+    from fetchtastic.utils import get_user_agent
+
+    fetchtastic.utils._USER_AGENT_CACHE = None
+
+    with patch("importlib.metadata.version") as mock_version:
+        mock_version.side_effect = importlib.metadata.PackageNotFoundError()
+
+        user_agent = get_user_agent()
+        assert user_agent == "fetchtastic/unknown"
+
+        # Verify caching works for fallback case too
+        mock_version.reset_mock()
+        user_agent2 = get_user_agent()
+        assert user_agent2 == "fetchtastic/unknown"
+        mock_version.assert_not_called()  # Should use cached value
+
+
+def test_device_hardware_manager_uses_dynamic_user_agent(tmp_path):
+    """Test that DeviceHardwareManager uses the dynamic User-Agent header."""
+    from unittest.mock import patch
+
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+
+    with patch("requests.get") as mock_get:
+        with patch("fetchtastic.device_hardware.get_user_agent") as mock_user_agent:
+            mock_user_agent.return_value = "fetchtastic/2.0.0"
+
+            mock_response = mock_get.return_value
+            mock_response.raise_for_status.return_value = None
+            mock_response.json.return_value = [
+                {"hwModel": "Test Device", "platformioTarget": "test-device"}
+            ]
+
+            manager = DeviceHardwareManager(
+                cache_dir=cache_dir, enabled=True, cache_hours=24
+            )
+
+            patterns = manager.get_device_patterns()
+            assert len(patterns) > 0
+
+            # Verify that requests.get was called with the dynamic User-Agent
+            mock_get.assert_called_once()
+            call_args = mock_get.call_args
+            headers = call_args[1]["headers"]
+            assert headers["User-Agent"] == "fetchtastic/2.0.0"
+
+            # Verify get_user_agent was called
+            mock_user_agent.assert_called_once()
+
+
+def test_user_agent_cache_reset():
+    """Test that the User-Agent cache can be reset for testing purposes."""
+    from unittest.mock import patch
+
+    # Clear the cache
+    import fetchtastic.utils
+    from fetchtastic.utils import get_user_agent
+
+    fetchtastic.utils._USER_AGENT_CACHE = None
+
+    with patch("importlib.metadata.version") as mock_version:
+        mock_version.return_value = "1.0.0"
+
+        # First call should populate cache
+        user_agent1 = get_user_agent()
+        assert user_agent1 == "fetchtastic/1.0.0"
+        assert mock_version.call_count == 1
+
+        # Reset cache manually
+        fetchtastic.utils._USER_AGENT_CACHE = None
+        mock_version.return_value = "2.0.0"
+
+        # Next call should fetch new version
+        user_agent2 = get_user_agent()
+        assert user_agent2 == "fetchtastic/2.0.0"
+        assert mock_version.call_count == 2
+
+
 def test_device_hardware_fallback_timestamp_prevents_churn(tmp_path, caplog):
     """Test that fallback patterns set timestamp to prevent repeated warnings."""
     cache_dir = tmp_path / "cache"

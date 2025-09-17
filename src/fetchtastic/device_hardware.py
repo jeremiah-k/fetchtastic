@@ -20,6 +20,7 @@ from fetchtastic.constants import (
     DEVICE_HARDWARE_API_URL,
     DEVICE_HARDWARE_CACHE_HOURS,
 )
+from fetchtastic.utils import get_user_agent
 
 logger = logging.getLogger(__name__)
 
@@ -192,7 +193,7 @@ class DeviceHardwareManager:
                 )
                 return None
 
-            headers = {"User-Agent": "fetchtastic/1.0"}
+            headers = {"User-Agent": get_user_agent()}
             response = requests.get(
                 self.api_url, headers=headers, timeout=self.timeout_seconds
             )
