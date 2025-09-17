@@ -421,7 +421,7 @@ def _read_prerelease_tracking_data(tracking_file):
     return commits, current_release
 
 
-def _extract_commit_from_dir_name(dir_name):
+def _extract_commit_from_dir_name(dir_name: str) -> Optional[str]:
     """
     Extract commit hash from prerelease directory name.
 
@@ -429,13 +429,16 @@ def _extract_commit_from_dir_name(dir_name):
         dir_name (str): Directory name like "firmware-2.7.7.abcdef"
 
     Returns:
-        str: Extracted commit hash (lowercase) or the full directory name if no hash found
+        Optional[str]: Extracted commit hash (lowercase) or None if no hash found
     """
     commit_match = re.search(r"\.([a-f0-9]{6,12})(?:[.-]|$)", dir_name, re.IGNORECASE)
     if commit_match:
         return commit_match.group(1).lower()  # Normalize to lowercase
     else:
-        return dir_name.lower()  # Normalize to lowercase
+        logger.warning(
+            f"Could not extract commit hash from directory name: '{dir_name}'"
+        )
+        return None
 
 
 def _get_existing_prerelease_dirs(prerelease_dir: str) -> list[str]:
@@ -518,8 +521,8 @@ def update_prerelease_tracking(prerelease_dir, latest_release_tag, current_prere
         commits = []
         current_release = latest_release_tag
 
-    # Add current commit if not already tracked
-    if current_commit not in commits:
+    # Add current commit if not already tracked (only if extraction succeeded)
+    if current_commit and current_commit not in commits:
         commits.append(current_commit)
         logger.info(f"Added prerelease commit {current_commit} to tracking")
 
@@ -533,7 +536,7 @@ def update_prerelease_tracking(prerelease_dir, latest_release_tag, current_prere
         with open(tracking_file, "w", encoding="utf-8") as f:
             json.dump(tracking_data, f, indent=2)
 
-    except IOError as e:
+    except (IOError, UnicodeEncodeError) as e:
         logger.error(f"Could not write prerelease tracking file: {e}")
         return 1  # Default to 1 if we can't track
     else:
@@ -565,8 +568,14 @@ def batch_update_prerelease_tracking(
 
     tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
 
-    # Extract commit hashes from all prerelease directory names
-    new_commits = [_extract_commit_from_dir_name(pr_dir) for pr_dir in prerelease_dirs]
+    # Extract commit hashes from all prerelease directory names (filter out None values)
+    new_commits = [
+        commit
+        for commit in [
+            _extract_commit_from_dir_name(pr_dir) for pr_dir in prerelease_dirs
+        ]
+        if commit is not None
+    ]
 
     # Read existing tracking data using helper function
     commits, current_release = _read_prerelease_tracking_data(tracking_file)
@@ -1050,6 +1059,10 @@ def check_for_prereleases(
             if any(
                 fnmatch.fnmatch(file_name, exclude) for exclude in exclude_patterns_list
             ):
+                logger.debug(
+                    "Skipping pre-release file %s (matched exclude pattern)",
+                    file_name,
+                )
                 continue  # Skip this file
 
             if not os.path.exists(file_path):
