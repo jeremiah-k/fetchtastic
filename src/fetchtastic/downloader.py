@@ -466,13 +466,13 @@ def update_prerelease_tracking(prerelease_dir, latest_release_tag, current_prere
         with open(tracking_file, "w", encoding="utf-8") as f:
             json.dump(tracking_data, f, indent=2)
 
-        prerelease_number = len(commits)
-        logger.info(f"Prerelease #{prerelease_number} since {current_release}")
-        return prerelease_number
-
     except IOError as e:
         logger.error(f"Could not write prerelease tracking file: {e}")
         return 1  # Default to 1 if we can't track
+    else:
+        prerelease_number = len(commits)
+        logger.info(f"Prerelease #{prerelease_number} since {current_release}")
+        return prerelease_number
 
 
 def batch_update_prerelease_tracking(
@@ -537,15 +537,15 @@ def batch_update_prerelease_tracking(
         with open(tracking_file, "w", encoding="utf-8") as f:
             json.dump(tracking_data, f, indent=2)
 
+    except (IOError, UnicodeEncodeError) as e:
+        logger.warning(f"Could not write prerelease tracking file: {e}")
+        return len(commits) if commits else 0
+    else:
         prerelease_number = len(commits)
         if added_count > 0:
             logger.info(f"Batch updated {added_count} prerelease commits")
         logger.info(f"Prerelease #{prerelease_number} since {current_release}")
-
         return prerelease_number
-    except (IOError, UnicodeEncodeError) as e:
-        logger.warning(f"Could not write prerelease tracking file: {e}")
-        return len(commits) if commits else 0
 
 
 def matches_extract_patterns(filename, extract_patterns, device_manager=None):

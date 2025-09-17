@@ -130,10 +130,12 @@ class DeviceHardwareManager:
         for device_pattern in device_patterns:
             # Check if pattern matches exactly or is contained in device pattern (case-insensitive)
             device_pattern_lower = device_pattern.lower()
-            if (
-                clean_pattern == device_pattern_lower
-                or device_pattern_lower.startswith(f"{clean_pattern}-")
-                or device_pattern_lower.startswith(f"{clean_pattern}_")
+            if clean_pattern == device_pattern_lower or (
+                len(clean_pattern) >= 2
+                and (
+                    device_pattern_lower.startswith(f"{clean_pattern}-")
+                    or device_pattern_lower.startswith(f"{clean_pattern}_")
+                )
             ):
                 return True
 
@@ -212,9 +214,6 @@ class DeviceHardwareManager:
                 logger.error("No valid device patterns found in API response")
                 return None
 
-            self._last_fetch_time = time.time()
-            return device_patterns
-
         except requests.exceptions.RequestException as e:
             logger.warning(f"Failed to fetch device hardware data: {e}")
             return None
@@ -224,6 +223,9 @@ class DeviceHardwareManager:
         except Exception:
             logger.exception("Unexpected error fetching device hardware data")
             return None
+        else:
+            self._last_fetch_time = time.time()
+            return device_patterns
 
     def _load_from_cache(self) -> Optional[Set[str]]:
         """
@@ -264,11 +266,11 @@ class DeviceHardwareManager:
             except (ValueError, TypeError):
                 return None
 
-            return valid_patterns
-
         except (json.JSONDecodeError, IOError, KeyError, UnicodeDecodeError) as e:
             logger.warning(f"Failed to load device hardware cache: {e}")
             return None
+        else:
+            return valid_patterns
 
     def _save_to_cache(self, device_patterns: Set[str]) -> None:
         """

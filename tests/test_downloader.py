@@ -16,6 +16,21 @@ from tests.test_constants import (
 )
 
 
+@pytest.fixture
+def write_dummy_file():
+    """Fixture that provides a function to write dummy files for download mocking."""
+
+    def _write(dest, data=b"data"):
+        import os
+
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        with open(dest, "wb") as f:
+            f.write(data)
+        return True
+
+    return _write
+
+
 # Test cases for compare_versions
 @pytest.mark.parametrize(
     "version1, version2, expected",
@@ -977,7 +992,7 @@ def test_check_for_prereleases_no_directories(tmp_path):
 @patch("fetchtastic.downloader.menu_repo.fetch_directory_contents")
 @patch("fetchtastic.downloader.download_file_with_retry")
 def test_prerelease_tracking_functionality(
-    mock_dl, mock_fetch_contents, mock_fetch_dirs, tmp_path
+    mock_dl, mock_fetch_contents, mock_fetch_dirs, tmp_path, write_dummy_file
 ):
     """Test that prerelease tracking file is created and updated correctly."""
     # Setup mock data
@@ -992,15 +1007,7 @@ def test_prerelease_tracking_functionality(
         }
     ]
 
-    def _mock_dl(_url, dest):
-        import os
-
-        os.makedirs(os.path.dirname(dest), exist_ok=True)
-        with open(dest, "wb") as f:
-            f.write(b"data")
-        return True
-
-    mock_dl.side_effect = _mock_dl
+    mock_dl.side_effect = lambda _url, dest: write_dummy_file(dest)
 
     download_dir = tmp_path
     latest_release_tag = "v2.7.6.111111"
@@ -1031,6 +1038,10 @@ def test_prerelease_tracking_functionality(
     # Should have at least one commit hash
     assert len(tracking_data["commits"]) > 0
 
+    # Commits should be normalized (lowercase) and unique
+    assert all(c == c.lower() for c in tracking_data["commits"])
+    assert len(set(tracking_data["commits"])) == len(tracking_data["commits"])
+
     # Test get_prerelease_tracking_info function
     info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
     assert info["release"] == latest_release_tag
@@ -1040,7 +1051,7 @@ def test_prerelease_tracking_functionality(
 
 def test_prerelease_smart_pattern_matching():
     """Test that prerelease downloads use smart pattern matching for EXTRACT_PATTERNS."""
-    from fetchtastic.downloader import matches_extract_patterns
+    # matches_extract_patterns already imported at module level
 
     # Test files and patterns
     test_files = [
@@ -1261,6 +1272,10 @@ def test_prerelease_existing_files_tracking(tmp_path):
             # Should track existing files but not report as "downloaded"
             assert found is False  # No new downloads occurred
             assert "firmware-2.7.7.abcdef" in versions  # But directory is still tracked
+
+            # And tracking JSON should reflect that commit
+            info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
+            assert "abcdef" in info.get("commits", [])
 
 
 def test_check_and_download_corrupted_existing_zip_records_failure(tmp_path):
@@ -1964,7 +1979,7 @@ def test_matches_extract_patterns_with_device_manager():
 
 def test_matches_extract_patterns_backwards_compatibility():
     """Test that matches_extract_patterns works without device_manager (backwards compatibility)."""
-    from fetchtastic.downloader import matches_extract_patterns
+    # matches_extract_patterns already imported at module level
 
     extract_patterns = ["rak4631-", "tbeam-", "device-", "bleota"]
 
@@ -1986,27 +2001,32 @@ def test_device_hardware_manager_api_failure():
     """Test DeviceHardwareManager behavior when API fails."""
     import tempfile
     from pathlib import Path
+    from unittest.mock import patch
+
+    import requests
 
     from fetchtastic.device_hardware import DeviceHardwareManager
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         cache_dir = Path(tmp_dir)
 
-        # Test with API enabled but invalid URL (should fallback)
-        manager = DeviceHardwareManager(
-            cache_dir=cache_dir,
-            enabled=True,
-            api_url="https://invalid.example.com/nonexistent",
-            timeout_seconds=1,  # Short timeout to fail quickly
-        )
+        # Test with API enabled but mocked to fail (should fallback)
+        with patch("requests.get") as mock_get:
+            mock_get.side_effect = requests.exceptions.RequestException("Network error")
+            manager = DeviceHardwareManager(
+                cache_dir=cache_dir,
+                enabled=True,
+                api_url="https://api.example.com/device-hardware",
+                timeout_seconds=1,
+            )
 
-        patterns = manager.get_device_patterns()
-        assert isinstance(patterns, set)
-        assert len(patterns) > 0  # Should get fallback patterns
+            patterns = manager.get_device_patterns()
+            assert isinstance(patterns, set)
+            assert len(patterns) > 0  # Should get fallback patterns
 
-        # Should still be able to detect device patterns
-        assert manager.is_device_pattern("rak4631-")
-        assert manager.is_device_pattern("tbeam-")
+            # Should still be able to detect device patterns
+            assert manager.is_device_pattern("rak4631-")
+            assert manager.is_device_pattern("tbeam-")
 
 
 def test_device_hardware_manager_cache_expiration():
@@ -2066,10 +2086,16 @@ def test_get_prerelease_tracking_info_error_handling():
 
 def test_update_prerelease_tracking_error_handling():
     """Test error handling in update_prerelease_tracking."""
+    import os
     import tempfile
     from pathlib import Path
 
+    import pytest
+
     from fetchtastic.downloader import update_prerelease_tracking
+
+    if os.name == "nt":
+        pytest.skip("Permission bits unreliable on Windows")
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         # Test with read-only directory (should handle write errors)
@@ -2289,9 +2315,15 @@ def test_prerelease_cleanup_logging_messages(tmp_path, caplog):
 
 def test_prerelease_directory_permissions_error_logging(tmp_path, caplog):
     """Test logging when prerelease directory operations fail due to permissions."""
+    import os
     from unittest.mock import patch
 
+    import pytest
+
     from fetchtastic import downloader
+
+    if os.name == "nt":
+        pytest.skip("Permission bits unreliable on Windows")
 
     download_dir = tmp_path
     prerelease_dir = download_dir / "firmware" / "prerelease"
@@ -2343,10 +2375,17 @@ def test_prerelease_directory_permissions_error_logging(tmp_path, caplog):
 
 def test_tracking_file_error_handling_ui_messages(tmp_path, caplog):
     """Test user-facing error messages in tracking file operations."""
+    import os
+
+    import pytest
+
     from fetchtastic.downloader import (
         get_prerelease_tracking_info,
         update_prerelease_tracking,
     )
+
+    if os.name == "nt":
+        pytest.skip("Permission bits unreliable on Windows")
 
     prerelease_dir = tmp_path / "prerelease"
     prerelease_dir.mkdir()
@@ -2401,7 +2440,7 @@ def test_tracking_file_error_handling_ui_messages(tmp_path, caplog):
 
 def test_pattern_matching_case_insensitive_ui_coverage():
     """Test case-insensitive pattern matching with various scenarios."""
-    from fetchtastic.downloader import matches_extract_patterns
+    # matches_extract_patterns already imported at module level
 
     # Test case-insensitive matching scenarios
     test_cases = [
