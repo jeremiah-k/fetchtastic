@@ -1507,6 +1507,8 @@ def _process_firmware_downloads(
                     logger.info(
                         "Found an existing pre-release, but no new files to download."
                     )
+                    for version in prerelease_versions:
+                        downloaded_firmwares.append(f"pre-release {version}")
                 else:
                     logger.info("No new pre-release firmware found.")
 
