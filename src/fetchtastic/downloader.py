@@ -434,6 +434,55 @@ def _extract_commit_from_dir_name(dir_name):
         return dir_name.lower()  # Normalize to lowercase
 
 
+def _get_existing_prerelease_dirs(prerelease_dir: str) -> list[str]:
+    """
+    Returns a list of firmware prerelease directories found locally.
+
+    Parameters:
+        prerelease_dir (str): Path to the prerelease directory
+
+    Returns:
+        list[str]: List of firmware prerelease directory names
+    """
+    if not os.path.exists(prerelease_dir):
+        return []
+
+    return [
+        item
+        for item in os.listdir(prerelease_dir)
+        if os.path.isdir(os.path.join(prerelease_dir, item))
+        and item.startswith("firmware-")
+    ]
+
+
+def _get_prerelease_patterns(config: dict) -> list[str]:
+    """
+    Get patterns for prerelease file selection with backward compatibility.
+
+    Checks for SELECTED_PRERELEASE_ASSETS first, falls back to EXTRACT_PATTERNS
+    for backward compatibility, and logs a deprecation warning when using the fallback.
+
+    Parameters:
+        config (dict): Configuration dictionary
+
+    Returns:
+        list[str]: List of patterns for prerelease file selection
+    """
+    # Check for new dedicated configuration key first
+    if "SELECTED_PRERELEASE_ASSETS" in config:
+        return config.get("SELECTED_PRERELEASE_ASSETS", [])
+
+    # Fall back to EXTRACT_PATTERNS for backward compatibility
+    extract_patterns = config.get("EXTRACT_PATTERNS", [])
+    if extract_patterns:
+        logger.warning(
+            "Using EXTRACT_PATTERNS for prerelease file selection is deprecated. "
+            "Please use SELECTED_PRERELEASE_ASSETS instead for clearer configuration."
+        )
+
+    return extract_patterns
+
+
 def update_prerelease_tracking(prerelease_dir, latest_release_tag, current_prerelease):
     """
     Update the prerelease tracking file with information about the current prerelease.
@@ -732,13 +781,7 @@ def check_for_prereleases(
 
     # Also check existing pre-releases
     prerelease_dir = os.path.join(download_dir, "firmware", "prerelease")
-    existing_prerelease_dirs = []
-    if os.path.exists(prerelease_dir):
-        for item in os.listdir(prerelease_dir):
-            if os.path.isdir(os.path.join(prerelease_dir, item)) and item.startswith(
-                "firmware-"
-            ):
-                existing_prerelease_dirs.append(item)
+    existing_prerelease_dirs = _get_existing_prerelease_dirs(prerelease_dir)
 
     # Extract all firmware directory names from the repository
     repo_firmware_dirs = [
@@ -812,13 +855,7 @@ def check_for_prereleases(
                 )
 
     # Get existing prerelease directories once (optimize I/O)
-    existing_prerelease_dirs = []
-    if os.path.exists(prerelease_dir):
-        for item in os.listdir(prerelease_dir):
-            if os.path.isdir(os.path.join(prerelease_dir, item)) and item.startswith(
-                "firmware-"
-            ):
-                existing_prerelease_dirs.append(item)
+    existing_prerelease_dirs = _get_existing_prerelease_dirs(prerelease_dir)
 
     # Find directories in the repository that are newer than the latest release and don't already exist locally
     prerelease_dirs = []  # Directories that need processing (downloading)
@@ -921,7 +958,7 @@ def check_for_prereleases(
             return False, []  # Cannot proceed if directory creation fails
 
     # Remove old prerelease directories - keep only the latest existing version
-    if prerelease_dirs and os.path.exists(prerelease_dir):
+    if all_prerelease_dirs and os.path.exists(prerelease_dir):
         # Use existing prerelease directories list (avoid redundant I/O)
         existing_dirs = existing_prerelease_dirs
 
@@ -1436,7 +1473,7 @@ def _process_firmware_downloads(
                     check_for_prereleases(  # logger.info removed
                         paths_and_urls["download_dir"],
                         latest_release_tag,
-                        config.get("EXTRACT_PATTERNS", []),  # type: ignore - EXTRACT_PATTERNS serves dual purpose: file extraction AND prerelease file selection
+                        _get_prerelease_patterns(config),
                         exclude_patterns=config.get("EXCLUDE_PATTERNS", []),  # type: ignore
                         device_manager=device_manager,
                     )
