@@ -4131,4 +4131,35 @@ def test_device_hardware_fallback_timestamp_prevents_churn(tmp_path, caplog):
         assert patterns1 == patterns2  # Same patterns
 
         # Should NOT have warning about fallback again (timestamp prevents churn)
+
+
+def test_check_for_prereleases_cleans_up_on_new_release(tmp_path):
+    """Test that old pre-releases are cleaned up when a new official release is detected."""
+    download_dir = tmp_path
+    prerelease_dir = download_dir / "firmware" / "prerelease"
+    prerelease_dir.mkdir(parents=True)
+
+    # Create old pre-release directories
+    (prerelease_dir / "firmware-2.0.0-alpha1").mkdir()
+    (prerelease_dir / "firmware-2.0.0-beta1").mkdir()
+
+    # Create a tracking file for the old release
+    tracking_file = prerelease_dir / "prerelease_tracking.json"
+    tracking_data = {
+        "release": "v1.0.0",
+        "commits": ["alpha1", "beta1"],
+    }
+    with open(tracking_file, "w") as f:
+        json.dump(tracking_data, f)
+
+    with patch("fetchtastic.downloader.menu_repo.fetch_repo_directories", return_value=[]):
+        downloader.check_for_prereleases(
+            str(download_dir), "v2.0.0", [], exclude_patterns=[]
+        )
+
+    # Assert that the old pre-release directories are gone
+    assert not (prerelease_dir / "firmware-2.0.0-alpha1").exists()
+    assert not (prerelease_dir / "firmware-2.0.0-beta1").exists()
+    # Assert that the tracking file is still there
+    assert tracking_file.exists()
         # The test is successful if we reach this point without repeated warnings

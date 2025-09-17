@@ -750,6 +750,26 @@ def check_for_prereleases(
           - downloaded_versions: List of prerelease directory names (e.g., "firmware-2.6.9.f93d031") that had files downloaded.
     """
     # Removed local log_message_func definition
+    prerelease_dir = os.path.join(download_dir, "firmware", "prerelease")
+    tracking_info = get_prerelease_tracking_info(prerelease_dir)
+    tracked_release = tracking_info.get("release")
+
+    # If a new release is detected, clean up old pre-releases.
+    if tracked_release and tracked_release != latest_release_tag:
+        logger.info(
+            f"New release {latest_release_tag} detected (previously tracking {tracked_release}). Cleaning pre-release directory."
+        )
+        if os.path.exists(prerelease_dir):
+            for item in os.listdir(prerelease_dir):
+                item_path = os.path.join(prerelease_dir, item)
+                if os.path.isdir(item_path):
+                    try:
+                        shutil.rmtree(item_path)
+                        logger.info(f"Removed old pre-release directory: {item}")
+                    except OSError as e:
+                        logger.warning(
+                            f"Error removing old pre-release directory {item_path}: {e}"
+                        )
 
     # Helper function to extract version from directory name (defined once to avoid duplication)
     def extract_version(dir_name: str) -> str:
