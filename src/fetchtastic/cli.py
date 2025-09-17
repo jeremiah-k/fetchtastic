@@ -23,9 +23,9 @@ def main():
 
     """
     Entry point for the Fetchtastic command-line interface.
-    
+
     Parses CLI arguments and dispatches subcommands: setup (initial configuration or Windows integration update), download (ensure/migrate config and run downloader), topic (show NTFY topic and optionally copy to clipboard), clean (destructive cleanup), version (show current/available versions), repo (browse/clean repository downloads), and help (contextual help).
-    
+
     Side effects:
     - May read, create, migrate, or remove configuration files and directories.
     - May modify system startup/cron entries and repository download directories.

@@ -73,14 +73,14 @@ class DeviceHardwareManager:
     ):
         """
         Create a DeviceHardwareManager that fetches, caches, and serves device hardware patterns.
-        
+
         Parameters:
             cache_dir: Directory where cache file "device_hardware.json" will be stored. If None, a user cache directory is used.
             api_url: URL of the Meshtastic device hardware API.
             cache_hours: Number of hours to consider cached data valid before re-fetching.
             timeout_seconds: HTTP request timeout in seconds when fetching from the API.
             enabled: If False, API fetching is disabled and the manager will use cached data or built-in fallbacks only.
-        
+
         The initializer ensures the cache directory exists, sets the cache file path, and initializes in-memory cache state.
         """
         self.api_url = api_url
@@ -102,9 +102,9 @@ class DeviceHardwareManager:
     def get_device_patterns(self) -> Set[str]:
         """
         Return the current set of device patterns (platformioTarget values).
-        
+
         If an in-memory cache exists and is not expired, it is returned. Otherwise patterns are loaded (from cache, API, or the built-in fallback) and cached before being returned.
-        
+
         Returns:
             Set[str]: A set of device pattern strings (e.g., {"rak4631", "tbeam", ...}).
         """
@@ -116,15 +116,15 @@ class DeviceHardwareManager:
     def is_device_pattern(self, user_pattern: str) -> bool:
         """
         Return True if the given user-supplied pattern matches a known device pattern.
-        
+
         The input is normalized by trimming trailing dashes, underscores, and spaces and lowercased.
         Matches succeed if the normalized pattern exactly equals a known pattern (case-insensitive)
         or if a known pattern begins with the normalized pattern followed by a dash or underscore
         (e.g., "tbeam" matches "tbeam-something" or "tbeam_something").
-        
+
         Parameters:
             user_pattern (str): User-provided pattern to test (may include trailing '-' or '_').
-        
+
         Returns:
             bool: True when the pattern matches a known device pattern, otherwise False.
         """
@@ -150,17 +150,17 @@ class DeviceHardwareManager:
     def _load_device_patterns(self) -> Set[str]:
         """
         Load device pattern strings, preferring fresh cached data and falling back to the API or built-in defaults.
-        
+
         This method attempts to return a set of known device patterns by:
         1. Returning cached patterns if present and not expired.
         2. Fetching from the configured API (if enabled), caching the result, and returning it.
         3. Returning expired cached patterns if the API is unavailable.
         4. As a last resort, returning a copy of FALLBACK_DEVICE_PATTERNS.
-        
+
         Side effects:
         - May call _fetch_from_api() and _save_to_cache() when refreshing from the API.
         - May set self._last_fetch_time when falling back to built-in patterns.
-        
+
         Returns:
             Set[str]: A set of device pattern strings.
         """
@@ -196,17 +196,17 @@ class DeviceHardwareManager:
     def _fetch_from_api(self) -> Optional[Set[str]]:
         """
         Fetch device hardware data from the Meshtastic API and return discovered device pattern strings.
-        
+
         Validates that the configured API URL uses HTTP/HTTPS and has a network location, sends a GET
         request with a User-Agent header, and parses the JSON response. Extracts non-empty string
         values of the `platformioTarget` field from objects in the top-level JSON array and returns
         them as a set.
-        
+
         Returns:
             A set of device pattern strings on success, or None if the URL is invalid, the HTTP
             request fails, the response is not valid JSON, or no valid `platformioTarget` values are
             found.
-        
+
         Side effects:
             On success updates self._last_fetch_time to the current timestamp; does not modify the
             cache file (saving is handled elsewhere).
@@ -257,7 +257,7 @@ class DeviceHardwareManager:
     def _load_from_cache(self) -> Optional[Set[str]]:
         """
         Load device patterns from the on-disk cache file if it exists and is valid.
-        
+
         Reads JSON from self.cache_file and validates that it is a dict containing
         a non-empty "device_patterns" list of non-empty strings and a numeric
         "timestamp". On success, sets self._last_fetch_time to the cached timestamp
@@ -306,12 +306,12 @@ class DeviceHardwareManager:
     def _save_to_cache(self, device_patterns: Set[str]) -> None:
         """
         Write the given device patterns to the manager's cache file using an atomic replace.
-        
+
         The cache is written as JSON with keys:
         - "device_patterns": list of pattern strings (converted from the provided set),
         - "timestamp": the manager's last fetch time or the current time if unset,
         - "api_url": the API URL used.
-        
+
         The write is performed to a temporary file and then atomically replaced into place; IO errors are caught and logged.
         """
         try:
@@ -334,7 +334,7 @@ class DeviceHardwareManager:
     def _is_cache_expired(self) -> bool:
         """
         Return whether the cached device patterns are considered expired.
-        
+
         Returns:
             bool: True if no previous fetch time is recorded or the elapsed time since
             the last successful fetch (in hours) is greater than or equal to the
@@ -349,7 +349,7 @@ class DeviceHardwareManager:
     def clear_cache(self) -> None:
         """
         Clear the on-disk and in-memory device hardware cache.
-        
+
         Removes the cache file (if present) and resets the in-memory device pattern set and last-fetch timestamp.
         Does not raise on filesystem errors; failures are logged and the in-memory state may still be reset.
         """

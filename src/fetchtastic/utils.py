@@ -70,7 +70,7 @@ def get_user_agent() -> str:
 def calculate_sha256(file_path: str) -> Optional[str]:
     """
     Compute the SHA-256 hex digest of a file.
-    
+
     Reads the file in binary mode and streams its contents without loading the whole file into memory.
     Returns the 64-character lowercase hexadecimal digest on success, or None if the file cannot be opened or read (e.g., missing file or permission error).
     """

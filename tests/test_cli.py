@@ -1004,7 +1004,7 @@ def test_cli_download_with_invalid_log_levels(mocker, invalid_log_level):
 def test_cli_download_with_empty_log_level(mocker):
     """
     Verify that when a configuration contains an empty `LOG_LEVEL` value, the CLI's `download` command does not attempt to set the log level but still invokes the downloader and does not run setup.
-    
+
     This patches a present configuration with `"LOG_LEVEL": ""` and asserts:
     - set_log_level is not called for the empty (falsy) value,
     - downloader.main is invoked exactly once,

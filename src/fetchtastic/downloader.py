@@ -311,12 +311,12 @@ def check_promoted_prereleases(
 def compare_file_hashes(file1, file2):
     """
     Compare two files by computing their SHA-256 hashes.
-    
+
     Reads each file in 4KB chunks and returns True if both files can be read and their SHA-256 digests are identical. If either file does not exist or cannot be read, the function returns False.
-     
+
     Parameters:
         file1, file2 (str): Paths to the two files to compare.
-    
+
     Returns:
         bool: True when both files were successfully read and their SHA-256 hashes match; False otherwise.
     """
@@ -360,18 +360,18 @@ def compare_file_hashes(file1, file2):
 def _read_text_tracking_file(tracking_file):
     """
     Read legacy text-format prerelease tracking data.
-    
+
     Looks for a sibling file named "prerelease_commits.txt" next to the provided
     tracking_file path and parses it. Supported formats:
     - Modern text format: first non-empty line begins with "Release: <tag>", subsequent
       lines are commit hashes.
     - Legacy format: every non-empty line is treated as a commit and the release is
       reported as "unknown".
-    
+
     Parameters:
         tracking_file (str): Path to the (JSON) tracking file used to locate the
             sibling "prerelease_commits.txt" file.
-    
+
     Returns:
         tuple[list[str], str | None]: (commits, current_release)
             - commits: list of commit hashes (empty if file missing or unreadable).
@@ -401,15 +401,15 @@ def _read_text_tracking_file(tracking_file):
 def _read_prerelease_tracking_data(tracking_file):
     """
     Read prerelease tracking data from a JSON file, falling back to legacy text format.
-    
+
     Attempts to parse tracking_file as JSON and returns a tuple (commits, current_release).
     If the file does not exist or JSON parsing fails, falls back to reading the legacy
     text-based tracking format via _read_text_tracking_file. On missing or invalid data
     this returns ([], None).
-    
+
     Parameters:
         tracking_file (str): Path to the prerelease tracking file.
-    
+
     Returns:
         tuple: (commits, current_release)
             commits (list[str]): Ordered list of prerelease commit hashes (may be empty).
@@ -458,12 +458,12 @@ def _extract_commit_from_dir_name(dir_name: str) -> Optional[str]:
 def _get_existing_prerelease_dirs(prerelease_dir: str) -> list[str]:
     """
     Return the names of local prerelease directories that start with "firmware-".
-    
+
     If the given prerelease_dir does not exist, returns an empty list.
-    
+
     Parameters:
         prerelease_dir (str): Path to the parent prerelease directory.
-    
+
     Returns:
         list[str]: Directory names (not full paths) under prerelease_dir beginning with "firmware-".
     """
@@ -481,15 +481,15 @@ def _get_existing_prerelease_dirs(prerelease_dir: str) -> list[str]:
 def _get_prerelease_patterns(config: dict) -> list[str]:
     """
     Return the list of file-selection patterns to use for prerelease assets.
-    
+
     Prefers the new SELECTED_PRERELEASE_ASSETS key in the provided config; if absent,
     falls back to EXTRACT_PATTERNS for backward compatibility and emits a deprecation
     warning via logging when that fallback is used.
-    
+
     Parameters:
         config (dict): Configuration mapping that may contain SELECTED_PRERELEASE_ASSETS
             or the legacy EXTRACT_PATTERNS key.
-    
+
     Returns:
         list[str]: Patterns to use for selecting prerelease files (empty list if none found).
     """
@@ -511,14 +511,14 @@ def _get_prerelease_patterns(config: dict) -> list[str]:
 def update_prerelease_tracking(prerelease_dir, latest_release_tag, current_prerelease):
     """
     Update or create prerelease_tracking.json to record prerelease commits observed since the last official release.
-    
+
     If the supplied latest_release_tag differs from the last tracked release, the tracked commit list is reset. The function extracts the commit identifier from the current_prerelease directory name and appends it if not already present. The updated tracking file is written to <prerelease_dir>/prerelease_tracking.json.
-    
+
     Parameters:
         prerelease_dir (str): Path to the prerelease directory (parent for prerelease_tracking.json).
         latest_release_tag (str): Latest official release tag used to determine whether to reset tracking.
         current_prerelease (str): Name of the current prerelease directory (used to extract the prerelease commit).
-    
+
     Returns:
         int: Number of tracked prerelease commits for the current release (1-based count). On write failure the function logs an error and returns 1.
     """
@@ -567,23 +567,23 @@ def batch_update_prerelease_tracking(
 ):
     """
     Batch-update prerelease tracking for multiple prerelease directories.
-    
+
     Reads existing tracking once, appends any new prerelease commit hashes extracted from
     the supplied prerelease directory names, resets tracking if the official release tag
     changed, and writes the updated tracking data back to prerelease_tracking.json a
     single time.
-    
+
     Parameters:
         prerelease_dir (str): Directory that contains the prerelease_tracking.json file.
         latest_release_tag (str): The current official release tag used to detect resets.
         prerelease_dirs (List[str]): Prerelease directory names (e.g., "firmware-1.2.3.<commit>")
             from which commit hashes will be extracted and tracked. Entries that do not
             contain a valid commit are ignored.
-    
+
     Returns:
         int: Number of tracked prerelease commits after the update. If the function fails
         to write the tracking file it returns 1 (fallback) and logs an error.
-    
+
     Side effects:
         Writes/overwrites prerelease_tracking.json with fields "release", "commits",
         and "last_updated". Logs informational messages about added commits and resets.
@@ -645,17 +645,17 @@ def batch_update_prerelease_tracking(
 def matches_extract_patterns(filename, extract_patterns, device_manager=None):
     """
     Return True if the given filename matches any of the configured extract patterns.
-    
+
     Matches are case-insensitive and support several pattern styles:
     - Exact substring patterns (default).
     - File-type prefixes (from FILE_TYPE_PREFIXES): treated as file-type patterns and matched by substring.
     - Device patterns: recognized either by trailing '-'/'_' or via device_manager.is_device_pattern(); these match when the device name appears anywhere in the filename (e.g., 'tbeam-' matches 'firmware-tbeam-...' and 'littlefs-tbeam-...').
     - Special-case 'littlefs-' pattern matches filenames starting with 'littlefs-'.
-    
+
     Parameters:
         filename (str): The file name to test.
         extract_patterns (Iterable[str]): Patterns from configuration to match against.
-    
+
     Returns:
         bool: True if any pattern matches the filename, False otherwise.
     """
@@ -707,12 +707,12 @@ def matches_extract_patterns(filename, extract_patterns, device_manager=None):
 def get_prerelease_tracking_info(prerelease_dir):
     """
     Return prerelease tracking information read from prerelease_tracking.json or a legacy text file.
-    
+
     Reads prerelease_tracking.json in prerelease_dir (preferred) and returns a summary dict. If the JSON file is missing or unreadable, falls back to the legacy prerelease_commits.txt format via _read_text_tracking_file. Errors while reading are logged; this function does not raise.
-    
+
     Parameters:
         prerelease_dir (str): Path to the directory containing prerelease tracking files.
-    
+
     Returns:
         dict: Empty dict if no tracking data is available, otherwise a dictionary containing:
             - "release" (str): The tracked official release tag (or "unknown" when not recorded).
