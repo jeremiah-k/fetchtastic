@@ -510,9 +510,11 @@ def _get_prerelease_patterns(config: dict) -> list[str]:
 
 def update_prerelease_tracking(prerelease_dir, latest_release_tag, current_prerelease):
     """
-    Update or create prerelease_tracking.json to record prerelease commits observed since the last official release.
+    Update or create prerelease_tracking.json to record a single prerelease commit.
 
-    If the supplied latest_release_tag differs from the last tracked release, the tracked commit list is reset. The function extracts the commit identifier from the current_prerelease directory name and appends it if not already present. The updated tracking file is written to <prerelease_dir>/prerelease_tracking.json.
+    This is a convenience wrapper around `batch_update_prerelease_tracking` for handling
+    a single prerelease directory. It provides the same functionality with a simpler
+    interface for single-directory updates.
 
     Parameters:
         prerelease_dir (str): Path to the prerelease directory (parent for prerelease_tracking.json).
@@ -522,44 +524,9 @@ def update_prerelease_tracking(prerelease_dir, latest_release_tag, current_prere
     Returns:
         int: Number of tracked prerelease commits for the current release (1-based count). On write failure the function logs an error and returns 1.
     """
-    tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
-
-    # Extract commit hash from prerelease directory name
-    current_commit = _extract_commit_from_dir_name(current_prerelease)
-
-    # Read existing tracking data using helper function
-    commits, current_release = _read_prerelease_tracking_data(tracking_file)
-
-    # If release changed, reset the commit list
-    if current_release != latest_release_tag:
-        logger.info(
-            f"New release detected ({latest_release_tag}), resetting prerelease tracking"
-        )
-        commits = []
-        current_release = latest_release_tag
-
-    # Add current commit if not already tracked (only if extraction succeeded)
-    if current_commit and current_commit not in commits:
-        commits.append(current_commit)
-        logger.info(f"Added prerelease commit {current_commit} to tracking")
-
-    # Write updated tracking data
-    try:
-        tracking_data = {
-            "release": current_release,
-            "commits": commits,
-            "last_updated": datetime.now().astimezone().isoformat(),
-        }
-        with open(tracking_file, "w", encoding="utf-8") as f:
-            json.dump(tracking_data, f, indent=2)
-
-    except (IOError, UnicodeEncodeError) as e:
-        logger.error(f"Could not write prerelease tracking file: {e}")
-        return 1  # Default to 1 if we can't track
-    else:
-        prerelease_number = len(commits)
-        logger.info(f"Prerelease #{prerelease_number} since {current_release}")
-        return prerelease_number
+    return batch_update_prerelease_tracking(
+        prerelease_dir, latest_release_tag, [current_prerelease]
+    )
 
 
 def batch_update_prerelease_tracking(
@@ -898,8 +865,7 @@ def check_for_prereleases(
                     exc_info=True,
                 )
 
-    # Get existing prerelease directories once (optimize I/O)
-    existing_prerelease_dirs = _get_existing_prerelease_dirs(prerelease_dir)
+    # Use existing prerelease directories already loaded (avoid redundant I/O)
 
     # Find directories in the repository that are newer than the latest release and don't already exist locally
     prerelease_dirs = []  # Directories that need processing (downloading)
