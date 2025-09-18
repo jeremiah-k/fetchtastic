@@ -495,7 +495,7 @@ def _get_prerelease_patterns(config: dict) -> list[str]:
     """
     # Check for new dedicated configuration key first
     if "SELECTED_PRERELEASE_ASSETS" in config:
-        return config.get("SELECTED_PRERELEASE_ASSETS", [])
+        return config["SELECTED_PRERELEASE_ASSETS"] or []
 
     # Fall back to EXTRACT_PATTERNS for backward compatibility
     extract_patterns = config.get("EXTRACT_PATTERNS", [])
@@ -595,11 +595,9 @@ def batch_update_prerelease_tracking(
 
     # Extract commit hashes from all prerelease directory names (filter out None values)
     new_commits = [
-        commit
-        for commit in [
-            _extract_commit_from_dir_name(pr_dir) for pr_dir in prerelease_dirs
-        ]
-        if commit is not None
+        c
+        for c in (_extract_commit_from_dir_name(pr_dir) for pr_dir in prerelease_dirs)
+        if c is not None
     ]
 
     # Read existing tracking data using helper function
