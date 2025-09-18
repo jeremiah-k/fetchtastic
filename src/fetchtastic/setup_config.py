@@ -671,11 +671,8 @@ def configure_exclude_patterns(config: dict) -> None:
                 exclude_patterns = []
 
         # Normalize and de-duplicate while preserving order
-        exclude_patterns = [p.strip() for p in exclude_patterns if p and p.strip()]
-        seen = set()
-        exclude_patterns = [
-            p for p in exclude_patterns if not (p in seen or seen.add(p))
-        ]
+        stripped_patterns = [p.strip() for p in exclude_patterns if p.strip()]
+        exclude_patterns = list(dict.fromkeys(stripped_patterns))
 
         # Show final list and confirm
         if exclude_patterns:
