@@ -7,7 +7,9 @@ import re
 import shutil
 import time
 import zipfile
+from collections import defaultdict
 from datetime import datetime
+from functools import cmp_to_key
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
@@ -21,7 +23,10 @@ from fetchtastic.constants import (
     API_CALL_DELAY,
     DEFAULT_ANDROID_VERSIONS_TO_KEEP,
     DEFAULT_FIRMWARE_VERSIONS_TO_KEEP,
+    DEVICE_HARDWARE_API_URL,
+    DEVICE_HARDWARE_CACHE_HOURS,
     EXECUTABLE_PERMISSIONS,
+    FILE_TYPE_PREFIXES,
     GITHUB_API_TIMEOUT,
     LATEST_ANDROID_RELEASE_FILE,
     LATEST_FIRMWARE_RELEASE_FILE,
@@ -33,6 +38,7 @@ from fetchtastic.constants import (
     VERSION_REGEX_PATTERN,
     ZIP_EXTENSION,
 )
+from fetchtastic.device_hardware import DeviceHardwareManager
 
 # Removed log_info, setup_logging
 from fetchtastic.log_utils import logger  # Import new logger
@@ -98,7 +104,7 @@ def compare_versions(version1, version2):
     Compare two version strings and determine their ordering.
 
     Attempts to parse both inputs as PEP 440 versions (using packaging); before parsing it normalizes
-    common non-PEP-440 forms (e.g., dotted/dashed prerelease markers like "2.3.0.rc1" → "2.3.0rc1",
+    common non-PEP-440 forms (e.g., Meshtastic tags like "v2.7.8.a0c0388" → "2.7.8+a0c0388",
     or trailing hash-like segments "1.2.3.abcd" → "1.2.3+abcd"). If both versions parse, they are
     compared according to PEP 440 semantics (including pre-releases and local version segments).
     If one or both cannot be parsed, a conservative natural-sort fallback is used that splits strings
@@ -114,19 +120,23 @@ def compare_versions(version1, version2):
 
     def _try_parse(v: str):
         """
-        Attempt to parse a version string into a packaging.version object, returning None if it cannot be normalized.
+        Try to parse a version string into a packaging.version object, returning None if it cannot be normalized.
 
-        This function tries to coerce several common non-PEP 440 version formats into parseable forms before calling packaging.version.parse:
-        - Normalizes dotted or dashed prerelease markers (e.g., "2.3.0.rc1" or "2.3.0-beta2") into PEP 440 prerelease notation ("2.3.0rc1", "2.3.0b2").
-        - Converts trailing hash-like segments such as "1.2.3.abcd123" into a PEP 440 local version ("1.2.3+abcd123").
+        This normalizer handles several common non-PEP 440 forms before delegating to packaging.version.parse:
+        - Strips a leading "v" (case-insensitive), e.g. "v2.7.8" -> "2.7.8".
+        - Converts trailing hash-like segments into a PEP 440 local version, e.g. "2.7.8.a0c0388" -> "2.7.8+a0c0388".
+        - Normalizes dotted or dashed prerelease markers into PEP 440 prerelease notation, e.g. "2.3.0.rc1" -> "2.3.0rc1", "2.3.0-beta2" -> "2.3.0b2".
 
         Parameters:
             v (str): Input version string.
 
         Returns:
-            packaging.version.Version or packaging.version.LegacyVersion or None:
-                A parsed version object on success, or None if the input could not be parsed or normalized.
+            packaging.version.Version or packaging.version.LegacyVersion or None: Parsed version on success, or None if the string could not be coerced into a parseable form.
         """
+        # Strip optional leading "v" from Meshtastic tags (e.g., "v2.7.8" → "2.7.8")
+        if v.lower().startswith("v"):
+            v = v[1:]
+
         try:
             return parse_version(v)
         except InvalidVersion:
@@ -187,31 +197,25 @@ def check_promoted_prereleases(
     download_dir, latest_release_tag
 ):  # log_message_func parameter removed
     """
-    Check for prerelease firmware directories that have been promoted to an official release.
+    Check for prerelease firmware directories that have been promoted to an official release and remove them.
 
-    Scans the firmware/prerelease subdirectory under download_dir for entries named
-    "firmware-<version>". For any prerelease whose version (the "v" prefix, if present,
-    is ignored) matches latest_release_tag, the function compares file contents with the
-    corresponding regular release directory using SHA-256 via compare_file_hashes. If all
-    files match, the prerelease directory is removed. If the official release directory
-    does not exist, the prerelease directory is removed (it is expected the official
-    release will be downloaded separately). Invalidly formatted prerelease directory
-    names (not matching VERSION_REGEX_PATTERN) are skipped.
+    Scans download_dir/firmware/prerelease for directories named "firmware-<version>" (optionally including a commit/hash suffix). For any prerelease whose version (a leading "v" is ignored) equals latest_release_tag, this function will:
+    - If the corresponding official release directory does not exist: remove the prerelease directory (it is expected the official release will be downloaded separately).
+    - If the official release directory exists: compare files by SHA‑256 (via compare_file_hashes) and remove the prerelease directory only if all files match.
+
+    Invalidly formatted prerelease directory names (not matching VERSION_REGEX_PATTERN) are skipped.
 
     Parameters:
         download_dir (str): Base download directory containing firmware/{prerelease, <tag>}.
         latest_release_tag (str): Latest official release tag (may include a leading 'v').
 
     Returns:
-        bool: True if one or more prerelease directories were promoted/removed; False otherwise.
+        bool: True if one or more prerelease directories were removed (promoted); False otherwise.
     """
     # Removed local log_message_func definition
 
     # Strip the 'v' prefix if present
-    if latest_release_tag.startswith("v"):
-        latest_release_version = latest_release_tag[1:]
-    else:
-        latest_release_version = latest_release_tag
+    latest_release_version = latest_release_tag.lstrip("v")
 
     # Path to prerelease directory
     prerelease_dir = os.path.join(download_dir, "firmware", "prerelease")
@@ -307,12 +311,15 @@ def check_promoted_prereleases(
 
 def compare_file_hashes(file1, file2):
     """
-    Return True if the two files have identical SHA-256 hashes.
+    Compare two files by computing their SHA-256 hashes.
 
-    Computes SHA-256 digests by reading each file in 4KB chunks. If either file does not exist or cannot be read, a warning/error is logged and the function returns False.
+    Reads each file in 4KB chunks and returns True if both files can be read and their SHA-256 digests are identical. If either file does not exist or cannot be read, the function returns False.
+
+    Parameters:
+        file1, file2 (str): Paths to the two files to compare.
 
     Returns:
-        bool: True when both files were read successfully and their SHA-256 hashes match; False otherwise.
+        bool: True when both files were successfully read and their SHA-256 hashes match; False otherwise.
     """
     import hashlib
 
@@ -351,11 +358,361 @@ def compare_file_hashes(file1, file2):
     return hash1 == hash2
 
 
+def _read_text_tracking_file(tracking_file):
+    """
+    Read legacy text-format prerelease tracking data.
+
+    Looks for a sibling file named "prerelease_commits.txt" next to the provided
+    tracking_file path and parses it. Supported formats:
+    - Modern text format: first non-empty line begins with "Release: <tag>", subsequent
+      lines are commit hashes.
+    - Legacy format: every non-empty line is treated as a commit and the release is
+      reported as "unknown".
+
+    Parameters:
+        tracking_file (str): Path to the (JSON) tracking file used to locate the
+            sibling "prerelease_commits.txt" file.
+
+    Returns:
+        tuple[list[str], str | None]: (commits, current_release)
+            - commits: list of commit hashes (empty if file missing or unreadable).
+            - current_release: release tag if present, "unknown" for legacy format,
+              or None if the text file is missing/unreadable.
+    """
+    try:
+        text_file = os.path.join(
+            os.path.dirname(tracking_file), "prerelease_commits.txt"
+        )
+        with open(text_file, "r", encoding="utf-8") as f:
+            lines = [line.strip() for line in f.readlines() if line.strip()]
+            if not lines:
+                return [], None
+            if lines[0].startswith("Release: "):
+                current_release = lines[0][9:]  # Remove "Release: " prefix
+                commits = lines[1:]  # Rest are commit hashes
+                return commits, current_release
+            # Legacy format: treat all lines as commits; release unknown
+            return lines, "unknown"
+    except (IOError, UnicodeDecodeError) as e:
+        logger.debug(f"Could not read legacy prerelease tracking file: {e}")
+
+    return [], None
+
+
+def _read_prerelease_tracking_data(tracking_file):
+    """
+    Read prerelease tracking data from JSON, falling back to the legacy text format.
+
+    Parses prerelease_tracking.json at tracking_file and returns a tuple (commits, current_release).
+    If the JSON file is missing or cannot be parsed, falls back to the legacy text reader
+    (_read_text_tracking_file) which reads prerelease_commits.txt-style data. Returns an empty
+    commit list and None for the release when no valid tracking information is available.
+
+    Returns:
+        tuple: (commits, current_release)
+            commits (list[str]): Ordered list of prerelease commit hashes (may be empty).
+            current_release (str | None): Release tag associated with the commits, or None.
+    """
+    commits = []
+    current_release = None
+    read_from_json_success = False
+
+    if os.path.exists(tracking_file):
+        try:
+            with open(tracking_file, "r", encoding="utf-8") as f:
+                tracking_data = json.load(f)
+                current_release = tracking_data.get("release")
+                commits = tracking_data.get("commits", [])
+            read_from_json_success = True
+        except (IOError, json.JSONDecodeError, UnicodeDecodeError) as e:
+            logger.warning(f"Could not read prerelease tracking file: {e}")
+
+    if not read_from_json_success:
+        # Fallback to legacy text format if JSON read failed or file didn't exist
+        commits, current_release = _read_text_tracking_file(tracking_file)
+
+    return commits, current_release
+
+
+def _extract_commit_from_dir_name(dir_name: str) -> Optional[str]:
+    """
+    Extract a commit hash from a prerelease directory name.
+
+    Recognizes a trailing hex commit fragment of 6–12 characters in names like
+    "firmware-2.7.7.abcdef" or "firmware-2.7.7.abcdef-extra". Returns the hex
+    string normalized to lowercase, or None if no commit-like fragment is found.
+    """
+    commit_match = re.search(r"\.([a-f0-9]{6,12})(?:[.-]|$)", dir_name, re.IGNORECASE)
+    if commit_match:
+        return commit_match.group(1).lower()  # Normalize to lowercase
+    else:
+        logger.debug(f"Could not extract commit hash from directory name: '{dir_name}'")
+        return None
+
+
+def _get_existing_prerelease_dirs(prerelease_dir: str) -> list[str]:
+    """
+    Return the names of local prerelease directories that start with "firmware-".
+
+    If the given prerelease_dir does not exist, returns an empty list.
+
+    Parameters:
+        prerelease_dir (str): Path to the parent prerelease directory.
+
+    Returns:
+        list[str]: Directory names (not full paths) under prerelease_dir beginning with "firmware-".
+    """
+    if not os.path.exists(prerelease_dir):
+        return []
+
+    return [
+        item
+        for item in os.listdir(prerelease_dir)
+        if os.path.isdir(os.path.join(prerelease_dir, item))
+        and item.startswith("firmware-")
+    ]
+
+
+def _get_prerelease_patterns(config: dict) -> list[str]:
+    """
+    Return the list of file-selection patterns used for prerelease assets.
+
+    Prefers the new SELECTED_PRERELEASE_ASSETS key from config. If that key is absent,
+    falls back to the legacy EXTRACT_PATTERNS key (and logs a deprecation warning).
+    Always returns a list (empty if no patterns are configured).
+
+    Parameters:
+        config (dict): Configuration mapping that may contain SELECTED_PRERELEASE_ASSETS
+            or the legacy EXTRACT_PATTERNS key.
+    """
+    # Check for new dedicated configuration key first
+    if "SELECTED_PRERELEASE_ASSETS" in config:
+        return config["SELECTED_PRERELEASE_ASSETS"] or []
+
+    # Fall back to EXTRACT_PATTERNS for backward compatibility
+    extract_patterns = config.get("EXTRACT_PATTERNS", [])
+    if extract_patterns:
+        logger.warning(
+            "Using EXTRACT_PATTERNS for prerelease file selection is deprecated. "
+            "Please re-run 'fetchtastic setup' to update your configuration."
+        )
+
+    return extract_patterns
+
+
+def update_prerelease_tracking(prerelease_dir, latest_release_tag, current_prerelease):
+    """
+    Update or create prerelease_tracking.json to record a single prerelease commit.
+
+    This is a convenience wrapper around `batch_update_prerelease_tracking` for handling
+    a single prerelease directory. It provides the same functionality with a simpler
+    interface for single-directory updates.
+
+    Parameters:
+        prerelease_dir (str): Path to the prerelease directory (parent for prerelease_tracking.json).
+        latest_release_tag (str): Latest official release tag used to determine whether to reset tracking.
+        current_prerelease (str): Name of the current prerelease directory (used to extract the prerelease commit).
+
+    Returns:
+        int: Number of tracked prerelease commits for the current release (1-based count). On write failure the function logs an error and returns 1.
+    """
+    return batch_update_prerelease_tracking(
+        prerelease_dir, latest_release_tag, [current_prerelease]
+    )
+
+
+def batch_update_prerelease_tracking(
+    prerelease_dir, latest_release_tag, prerelease_dirs
+):
+    """
+    Update prerelease_tracking.json by adding any new commit hashes found in the provided prerelease directory names and (if the official release tag changed) reset tracked commits to start from the new release.
+
+    If prerelease_dirs is empty this is a no-op and returns 0. Reads existing tracking from prerelease_tracking.json (falling back to legacy text tracking), appends any previously-untracked commit hashes extracted from names like "firmware-1.2.3.<commit>", and writes a single updated prerelease_tracking.json containing keys "release", "commits", and "last_updated".
+
+    Parameters:
+        prerelease_dir (str): Directory containing prerelease_tracking.json.
+        latest_release_tag (str): Current official release tag; when this differs from the stored release the tracked commits are reset.
+        prerelease_dirs (list[str]): Prerelease directory names to scan for commit hashes; entries without a commit are ignored.
+
+    Returns:
+        int: Total number of tracked prerelease commits after the update.
+             Returns 0 immediately if prerelease_dirs is empty.
+             Returns 1 if writing the tracking file fails (fallback value).
+    """
+    if not prerelease_dirs:
+        return 0
+
+    tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
+
+    # Extract commit hashes from all prerelease directory names (filter out None values)
+    new_commits = [
+        commit
+        for pr_dir in prerelease_dirs
+        if (commit := _extract_commit_from_dir_name(pr_dir))
+    ]
+
+    # Read existing tracking data using helper function
+    commits, current_release = _read_prerelease_tracking_data(tracking_file)
+
+    # If release changed, reset the commit list
+    if current_release != latest_release_tag:
+        logger.info(
+            f"New release detected ({latest_release_tag}), resetting prerelease tracking"
+        )
+        commits = []
+        current_release = latest_release_tag
+
+    # Add all new commits that aren't already tracked
+    # Use set for O(1) lookup performance instead of O(n) list lookup
+    tracked_commits_set = set(commits)
+    newly_added_commits = [
+        c for c in dict.fromkeys(new_commits) if c not in tracked_commits_set
+    ]
+    for commit_hash in newly_added_commits:
+        logger.info(f"Added prerelease commit {commit_hash} to tracking")
+    commits.extend(newly_added_commits)
+    added_count = len(newly_added_commits)
+
+    # Write updated tracking data only once
+    try:
+        tracking_data = {
+            "release": current_release,
+            "commits": commits,
+            "last_updated": datetime.now().astimezone().isoformat(),
+        }
+        with open(tracking_file, "w", encoding="utf-8") as f:
+            json.dump(tracking_data, f, indent=2)
+
+    except (IOError, UnicodeEncodeError) as e:
+        logger.error(f"Could not write prerelease tracking file: {e}")
+        return 1  # Default to 1 if we can't track
+    else:
+        prerelease_number = len(commits)
+        if added_count > 0:
+            logger.info(f"Batch updated {added_count} prerelease commits")
+        logger.info(f"Prerelease #{prerelease_number} since {current_release}")
+        return prerelease_number
+
+
+def matches_extract_patterns(filename, extract_patterns, device_manager=None):
+    """
+    Return True if the given filename matches any of the configured extract patterns.
+
+    Matches are case-insensitive and support several pattern styles:
+    - Exact substring patterns (default).
+    - File-type prefixes (from FILE_TYPE_PREFIXES): treated as file-type patterns and matched by substring.
+    - Device patterns: recognized either by trailing '-'/'_' or via device_manager.is_device_pattern(); these match when the device name appears anywhere in the filename (e.g., 'tbeam-' matches 'firmware-tbeam-...' and 'littlefs-tbeam-...').
+    - Special-case 'littlefs-' pattern matches filenames starting with 'littlefs-'.
+
+    Parameters:
+        filename (str): The file name to test.
+        extract_patterns (Iterable[str]): Patterns from configuration to match against.
+
+    Returns:
+        bool: True if any pattern matches the filename, False otherwise.
+    """
+    # Known file type prefixes that indicate this is a file type pattern, not device pattern
+    file_type_prefixes = FILE_TYPE_PREFIXES
+
+    # Convert filename to lowercase for case-insensitive matching
+    filename_lower = filename.lower()
+
+    for pattern in extract_patterns:
+        # Convert pattern to lowercase for case-insensitive matching
+        pattern_lower = pattern.lower()
+
+        # Handle special case: generic 'littlefs-' pattern
+        if pattern_lower == "littlefs-":
+            if filename_lower.startswith("littlefs-"):
+                return True
+            continue
+
+        # File type patterns: exact substring matching
+        if any(pattern_lower.startswith(prefix) for prefix in file_type_prefixes):
+            if pattern_lower in filename_lower:
+                return True
+            continue
+
+        # Determine if it's a device pattern
+        is_device_pattern_match = False
+        if device_manager and device_manager.is_device_pattern(pattern):
+            is_device_pattern_match = True
+        # Fallback for patterns ending with '-' or '_' (likely device patterns)
+        elif pattern_lower.endswith(("-", "_")):
+            is_device_pattern_match = True
+
+        if is_device_pattern_match:
+            clean_pattern = pattern_lower.rstrip("-_ ")
+            # For very short patterns (1-2 chars), require exact word boundaries to avoid false positives
+            if len(clean_pattern) <= 2:
+                if re.search(rf"\b{re.escape(clean_pattern)}\b", filename_lower):
+                    return True
+            else:
+                # For longer patterns, use the original boundary logic
+                if re.search(
+                    rf"(^|[-_]){re.escape(clean_pattern)}([-_]|$)", filename_lower
+                ):
+                    return True
+            # It was identified as a device pattern but didn't match strictly.
+            # Do not fall through to generic substring match.
+            continue
+
+        # Fallback: simple substring matching for any other patterns
+        if pattern_lower in filename_lower:
+            return True
+
+    return False
+
+
+def get_prerelease_tracking_info(prerelease_dir):
+    """
+    Return prerelease tracking information from prerelease_tracking.json or a legacy text file.
+
+    Attempts to read prerelease_tracking.json in prerelease_dir (preferred). If the JSON file is missing or cannot be parsed, falls back to the legacy prerelease_commits.txt format via _read_text_tracking_file. This function logs read/parsing issues and never raises.
+
+    Parameters:
+        prerelease_dir (str): Directory containing prerelease tracking files; may not exist.
+
+    Returns:
+        dict: Empty dict if no tracking data is available; otherwise a dictionary with:
+            - release (str): Tracked official release tag or "unknown" when not recorded.
+            - commits (list[str]): List of prerelease commit identifiers (may be empty).
+            - prerelease_count (int): Number of tracked prerelease commits.
+            - last_updated (str|None): ISO timestamp from the JSON tracking file when available (present only for JSON-backed data).
+    """
+    # Try JSON format first
+    json_tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
+    if os.path.exists(json_tracking_file):
+        try:
+            with open(json_tracking_file, "r", encoding="utf-8") as f:
+                tracking_data = json.load(f)
+                return {
+                    "release": tracking_data.get("release", "unknown"),
+                    "commits": tracking_data.get("commits", []),
+                    "prerelease_count": len(tracking_data.get("commits", [])),
+                    "last_updated": tracking_data.get("last_updated"),
+                }
+        except (IOError, json.JSONDecodeError, UnicodeDecodeError) as e:
+            logger.warning(f"Could not read JSON prerelease tracking file: {e}")
+
+    # Fall back to text format using helper function
+    commits, release = _read_text_tracking_file(json_tracking_file)
+    if commits or release:
+        return {
+            "release": release or "unknown",
+            "commits": commits,
+            "prerelease_count": len(commits),
+        }
+
+    return {}
+
+
 def check_for_prereleases(
     download_dir,
     latest_release_tag,
     selected_patterns,
     exclude_patterns=None,  # log_message_func parameter removed
+    device_manager=None,
 ):
     """
     Discover firmware prerelease directories newer than the provided latest release, clean up stale local prerelease folders, and download missing prerelease assets into <download_dir>/firmware/prerelease.
@@ -374,20 +731,67 @@ def check_for_prereleases(
         exclude_patterns (Optional[Iterable[str]]): Optional fnmatch-style patterns; any filename matching an exclude pattern will be skipped.
 
     Returns:
-        tuple[bool, list[str]]: (found_and_downloaded, downloaded_versions)
-          - found_and_downloaded: True if any prerelease files were downloaded.
-          - downloaded_versions: List of prerelease directory names (e.g., "firmware-2.6.9.f93d031") that had files downloaded.
+        tuple[bool, list[str]]: (downloaded, versions)
+          - downloaded: True if any prerelease files were downloaded.
+          - versions: If downloaded is True, list of prerelease directory names that had files downloaded;
+            otherwise, list of all prerelease directory names discovered/tracked (may be empty).
     """
     # Removed local log_message_func definition
+    prerelease_dir = os.path.join(download_dir, "firmware", "prerelease")
+    tracking_info = get_prerelease_tracking_info(prerelease_dir)
+    tracked_release = tracking_info.get("release")
+
+    # If a new release is detected, clean up old pre-releases.
+    if tracked_release and tracked_release != latest_release_tag:
+        logger.info(
+            f"New release {latest_release_tag} detected (previously tracking {tracked_release}). Cleaning pre-release directory."
+        )
+        if os.path.exists(prerelease_dir):
+            for item in os.listdir(prerelease_dir):
+                item_path = os.path.join(prerelease_dir, item)
+                if os.path.isdir(item_path):
+                    try:
+                        shutil.rmtree(item_path)
+                        logger.info(f"Removed old pre-release directory: {item}")
+                    except OSError as e:
+                        logger.warning(
+                            f"Error removing old pre-release directory {item_path}: {e}"
+                        )
+
+        # Reset tracking file immediately even if no prereleases are present yet
+        try:
+            tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
+            os.makedirs(prerelease_dir, exist_ok=True)
+            with open(tracking_file, "w", encoding="utf-8") as f:
+                json.dump(
+                    {
+                        "release": latest_release_tag,
+                        "commits": [],
+                        "last_updated": datetime.now().astimezone().isoformat(),
+                    },
+                    f,
+                    indent=2,
+                )
+        except (IOError, UnicodeDecodeError) as e:
+            logger.debug(f"Could not reset prerelease tracking file: {e}")
+
+    # Helper function to extract version from directory name (defined once to avoid duplication)
+    def extract_version(dir_name: str) -> str:
+        """
+        Return the version portion of a prerelease directory name.
+
+        If dir_name starts with the literal prefix "firmware-", the prefix is removed and the remainder is returned (e.g. "firmware-2.7.9.abcdef" -> "2.7.9.abcdef"). Otherwise the original dir_name is returned unchanged.
+
+        Returns:
+            str: The extracted version string or the original input if no prefix matched.
+        """
+        return dir_name[9:] if dir_name.startswith("firmware-") else dir_name
 
     # Initialize exclude patterns list
     exclude_patterns_list = exclude_patterns or []
 
     # Strip the 'v' prefix if present
-    if latest_release_tag.startswith("v"):
-        latest_release_version = latest_release_tag[1:]
-    else:
-        latest_release_version = latest_release_tag
+    latest_release_version = latest_release_tag.lstrip("v")
 
     # Fetch directories from the meshtastic.github.io repository
     directories = menu_repo.fetch_repo_directories()
@@ -408,16 +812,13 @@ def check_for_prereleases(
 
     # Also check existing pre-releases
     prerelease_dir = os.path.join(download_dir, "firmware", "prerelease")
-    existing_prerelease_dirs = []
-    if os.path.exists(prerelease_dir):
-        for item in os.listdir(prerelease_dir):
-            if os.path.isdir(os.path.join(prerelease_dir, item)):
-                existing_prerelease_dirs.append(item)
+    existing_prerelease_dirs = _get_existing_prerelease_dirs(prerelease_dir)
+    existing_prerelease_dirs_set = set(existing_prerelease_dirs)
 
     # Extract all firmware directory names from the repository
-    repo_firmware_dirs = [
+    repo_firmware_dirs = {
         dir_name for dir_name in directories if dir_name.startswith("firmware-")
-    ]
+    }
 
     # Clean up the prerelease directory
     # Only keep directories that:
@@ -425,9 +826,13 @@ def check_for_prereleases(
     # 2. Are newer than the latest release
     if os.path.exists(prerelease_dir):
         # First, clean up any non-directory files in the prerelease directory
+        # but preserve the tracking file
         for item in os.listdir(prerelease_dir):
             item_path = os.path.join(prerelease_dir, item)
-            if not os.path.isdir(item_path):
+            if not os.path.isdir(item_path) and item not in (
+                "prerelease_tracking.json",
+                "prerelease_commits.txt",
+            ):
                 try:
                     logger.info(
                         f"Removing stale file from prerelease directory: {item}"
@@ -481,8 +886,11 @@ def check_for_prereleases(
                     exc_info=True,
                 )
 
+    # Use existing prerelease directories already loaded (avoid redundant I/O)
+
     # Find directories in the repository that are newer than the latest release and don't already exist locally
-    prerelease_dirs = []
+    prerelease_dirs = []  # Directories that need processing (downloading)
+    all_prerelease_dirs = []  # All prerelease directories (for tracking)
     for dir_name in directories:
         # Extract version from directory name (e.g., firmware-2.6.9.f93d031)
         if dir_name.startswith("firmware-"):
@@ -491,19 +899,14 @@ def check_for_prereleases(
             # Check if this version is newer than the latest release
             comparison_result = compare_versions(dir_version, latest_release_version)
             if comparison_result > 0:
-
-                # Refresh the list of existing prerelease directories after cleanup
-                existing_prerelease_dirs = []
-                if os.path.exists(prerelease_dir):
-                    for item in os.listdir(prerelease_dir):
-                        if os.path.isdir(os.path.join(prerelease_dir, item)):
-                            existing_prerelease_dirs.append(item)
+                # This is a prerelease directory (newer than latest release)
+                all_prerelease_dirs.append(dir_name)
 
                 # Check if we need to download this pre-release
                 # Either the directory doesn't exist, or it exists but is missing files
                 should_process = False
 
-                if dir_name not in existing_prerelease_dirs:
+                if dir_name not in existing_prerelease_dirs_set:
                     # Directory doesn't exist at all
                     should_process = True
                 else:
@@ -518,9 +921,9 @@ def check_for_prereleases(
                         for file in expected_files:
                             file_name = file["name"]
 
-                            # Apply same filtering logic as download (back-compat matching)
-                            if not matches_selected_patterns(
-                                file_name, selected_patterns
+                            # Apply same filtering logic as download (smart pattern matching for EXTRACT_PATTERNS)
+                            if not matches_extract_patterns(
+                                file_name, selected_patterns, device_manager
                             ):
                                 continue  # Skip this file
 
@@ -547,7 +950,7 @@ def check_for_prereleases(
                             should_process = True
                         else:
                             logger.debug(
-                                f"Pre-release {dir_name} is complete with all expected files"
+                                f"Pre-release {dir_name} is complete with all expected files ({len(expected_matching_files)} files)"
                             )
                     else:
                         # Could not fetch expected files list, assume we need to process
@@ -559,8 +962,23 @@ def check_for_prereleases(
                 if should_process:
                     prerelease_dirs.append(dir_name)
 
+    # Sort prerelease directories by version (newest first) for consistent "latest" selection
+    if all_prerelease_dirs:
+        all_prerelease_dirs = sorted(
+            all_prerelease_dirs,
+            key=cmp_to_key(
+                lambda a, b: compare_versions(extract_version(a), extract_version(b))
+            ),
+            reverse=True,  # Newest first
+        )
+
+    # Initialize downloaded files list
+    downloaded_files = []
+
+    # If no prerelease directories need processing, skip download loop
     if not prerelease_dirs:
-        return False, []
+        logger.info("No new pre-releases to download")
+        # Continue to unified tracking block below
 
     # Create prerelease directory if it doesn't exist
     if not os.path.exists(prerelease_dir):
@@ -570,11 +988,56 @@ def check_for_prereleases(
             logger.error(f"Error creating pre-release directory {prerelease_dir}: {e}")
             return False, []  # Cannot proceed if directory creation fails
 
-    downloaded_files = []
+    # Remove old prerelease directories - keep only the latest existing version
+    if all_prerelease_dirs and os.path.exists(prerelease_dir):
+        # Get fresh list of existing directories (first cleanup may have removed some)
+        existing_dirs = _get_existing_prerelease_dirs(prerelease_dir)
+
+        if existing_dirs:
+            try:
+                # Sort existing directories by version (newest first)
+                sorted_existing = sorted(
+                    existing_dirs,
+                    key=cmp_to_key(
+                        lambda a, b: compare_versions(
+                            extract_version(a), extract_version(b)
+                        )
+                    ),
+                    reverse=True,
+                )
+
+                # Determine which directories to keep
+                # INTENTIONAL: Keep only 1 existing prerelease + new ones being processed
+                # Prereleases are temporary by nature - previous versions become obsolete
+                # when newer ones are available. This follows upstream patterns.
+                dirs_to_keep = set(sorted_existing[:1])  # Keep latest existing only
+
+                # Remove directories that exceed the limit
+                for item in existing_dirs:
+                    if item not in dirs_to_keep:
+                        item_path = os.path.join(prerelease_dir, item)
+                        logger.info(
+                            f"Removing old prerelease directory: {item} (keeping latest only)"
+                        )
+                        try:
+                            shutil.rmtree(item_path)
+                        except OSError as e:
+                            logger.warning(
+                                f"Error removing old prerelease directory {item_path}: {e}"
+                            )
+                    else:
+                        logger.debug(f"Keeping prerelease directory: {item}")
+
+            except (IndexError, ValueError, TypeError) as e:
+                logger.warning(f"Error sorting prerelease directories for cleanup: {e}")
+                # Fallback: don't remove anything if sorting fails
 
     # Process each pre-release directory
     total_pr = len(prerelease_dirs)
-    logger.info(f"Scanning {total_pr} prerelease directories")
+    if total_pr > 0:
+        logger.info(f"Scanning {total_pr} prerelease directories")
+    else:
+        logger.debug("Scanning 0 prerelease directories")
     for i, dir_name in enumerate(prerelease_dirs, start=1):
         logger.info(f"Checking {dir_name} ({i}/{total_pr})…")
 
@@ -603,11 +1066,11 @@ def check_for_prereleases(
             file_path = os.path.join(dir_path, file_name)
 
             # Only download files that match the selected patterns and don't match exclude patterns
-            # Backward-compatible pattern matching (modern + legacy normalization)
-            if not matches_selected_patterns(file_name, selected_patterns):
-                logger.debug(
-                    "Skipping pre-release file %s (no pattern match)", file_name
-                )
+            # For prereleases, selected_patterns comes from SELECTED_PRERELEASE_ASSETS
+            # (or EXTRACT_PATTERNS as a fallback) and supports smart device matching
+            if not matches_extract_patterns(
+                file_name, selected_patterns, device_manager
+            ):
                 continue  # Skip this file
 
             # Skip files that match exclude patterns
@@ -639,7 +1102,6 @@ def check_for_prereleases(
                                 f"Error setting executable permissions for {file_name}: {e}"
                             )
 
-                    logger.info(f"Downloaded: {file_name}")
                     downloaded_files.append(file_path)
                 except requests.exceptions.RequestException as e:
                     logger.error(
@@ -654,22 +1116,52 @@ def check_for_prereleases(
                         f"Unexpected error downloading pre-release file {file_name}: {e}",
                         exc_info=True,
                     )
+            else:
+                # File already exists; no new download performed
+                logger.debug(f"Pre-release file already exists: {file_name}")
 
     downloaded_versions = []
     if downloaded_files:
-        logger.info(
-            f"Successfully downloaded {len(downloaded_files)} pre-release files."
+        logger.info(f"Downloaded {len(downloaded_files)} new pre-release files.")
+
+        # Extract unique directory names from downloaded files and count files per version
+        # Group files by directory for better performance
+        files_by_dir = defaultdict(list)
+        for p in downloaded_files:
+            dir_name = os.path.basename(os.path.dirname(p))
+            files_by_dir[dir_name].append(p)
+
+        version_file_counts = {
+            dir_name: len(files) for dir_name, files in files_by_dir.items()
+        }
+        downloaded_versions.extend(version_file_counts.keys())
+
+        # Log per-version file counts
+        for version, count in version_file_counts.items():
+            logger.info(f"Pre-release {version}: {count} new files downloaded")
+
+    # Update prerelease tracking (run once regardless of download success)
+    if all_prerelease_dirs:
+        # Use batch update for efficiency - processes all directories in a single operation
+        prerelease_number = batch_update_prerelease_tracking(
+            prerelease_dir, latest_release_tag, all_prerelease_dirs
         )
-        # Extract unique directory names from downloaded files
-        for dir_name in prerelease_dirs:
-            if any(
-                os.path.basename(os.path.dirname(p)) == dir_name
-                for p in downloaded_files
-            ):
-                downloaded_versions.append(dir_name)
+        if downloaded_files:
+            logger.info(
+                f"Downloaded prereleases tracked up to #{prerelease_number}: {all_prerelease_dirs[0]}"
+            )
+        else:
+            logger.info(
+                f"Tracked prereleases up to #{prerelease_number}: {all_prerelease_dirs[0]}"
+            )
+
+    # Return results
+    if downloaded_files:
         return True, downloaded_versions
+    elif all_prerelease_dirs:
+        # Prerelease directories exist and are tracked, but no files were downloaded
+        return False, all_prerelease_dirs
     else:
-        # Don't log here - we'll log once at the caller level
         return False, []
 
 
@@ -917,7 +1409,8 @@ def _process_firmware_downloads(
     discover and download newer prerelease firmware that matches the selection criteria.
 
     Configuration keys referenced: SAVE_FIRMWARE, SELECTED_FIRMWARE_ASSETS, FIRMWARE_VERSIONS_TO_KEEP,
-    EXTRACT_PATTERNS, AUTO_EXTRACT, EXCLUDE_PATTERNS, CHECK_PRERELEASES.
+    EXTRACT_PATTERNS (dual purpose: file extraction AND prerelease file selection), AUTO_EXTRACT,
+    EXCLUDE_PATTERNS, CHECK_PRERELEASES.
 
     Returns a tuple of:
     - downloaded firmware versions (List[str]) — includes strings like "pre-release X.Y.Z" for prereleases,
@@ -926,6 +1419,17 @@ def _process_firmware_downloads(
     - the latest firmware release tag string or None if no releases were found.
     """
     global downloads_skipped
+
+    # Create device hardware manager for smart pattern matching
+    device_manager = DeviceHardwareManager(
+        enabled=config.get("DEVICE_HARDWARE_API", {}).get("enabled", True),
+        cache_hours=config.get("DEVICE_HARDWARE_API", {}).get(
+            "cache_hours", DEVICE_HARDWARE_CACHE_HOURS
+        ),
+        api_url=config.get("DEVICE_HARDWARE_API", {}).get(
+            "api_url", DEVICE_HARDWARE_API_URL
+        ),
+    )
     downloaded_firmwares: List[str] = []
     new_firmware_versions: List[str] = []
     all_failed_firmware_downloads: List[Dict[str, str]] = []
@@ -1003,8 +1507,9 @@ def _process_firmware_downloads(
                     check_for_prereleases(  # logger.info removed
                         paths_and_urls["download_dir"],
                         latest_release_tag,
-                        config.get("SELECTED_FIRMWARE_ASSETS", []),  # type: ignore
+                        _get_prerelease_patterns(config),
                         exclude_patterns=config.get("EXCLUDE_PATTERNS", []),  # type: ignore
+                        device_manager=device_manager,
                     )
                 )
                 if prerelease_found:
@@ -1014,8 +1519,25 @@ def _process_firmware_downloads(
                     version: str
                     for version in prerelease_versions:
                         downloaded_firmwares.append(f"pre-release {version}")
+                elif prerelease_versions:
+                    logger.info(
+                        "Found an existing pre-release, but no new files to download."
+                    )
+                    # Don't add existing prereleases to downloaded_firmwares to avoid
+                    # misleading "Downloaded..." notifications when no new files were downloaded
                 else:
-                    logger.info("No new pre-release firmware found or downloaded.")
+                    logger.info("No new pre-release firmware found.")
+
+                # Display prerelease tracking information
+                prerelease_dir = os.path.join(
+                    paths_and_urls["download_dir"], "firmware", "prerelease"
+                )
+                tracking_info = get_prerelease_tracking_info(prerelease_dir)
+                if tracking_info:
+                    count = tracking_info.get("prerelease_count", 0)
+                    base_version = tracking_info.get("release", "unknown")
+                    if count > 0:
+                        logger.info(f"Total prereleases since {base_version}: {count}")
             else:
                 logger.info("No latest release tag found. Skipping pre-release check.")
     elif not config.get("SELECTED_FIRMWARE_ASSETS", []):

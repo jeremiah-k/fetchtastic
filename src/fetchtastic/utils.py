@@ -1,6 +1,7 @@
 # src/fetchtastic/utils.py
 import gc  # For Windows file operation retries
 import hashlib
+import importlib.metadata
 import os
 import platform
 import re
@@ -35,12 +36,43 @@ LEGACY_VER_RX = re.compile(
 # Precompiled regex for punctuation stripping (performance optimization)
 _PUNC_RX = re.compile(r"[^a-z0-9]+")
 
+# Cache for the User-Agent string to avoid repeated metadata lookups
+_USER_AGENT_CACHE = None
+
+
+def get_user_agent() -> str:
+    """
+    Get the dynamic User-Agent string for HTTP requests.
+
+    Returns a User-Agent string in the format "fetchtastic/{version}" where version
+    is dynamically retrieved from the package metadata. Falls back to "unknown" if
+    the version cannot be determined (e.g., in development environments).
+
+    The result is cached to avoid repeated metadata lookups since the version
+    won't change during runtime.
+
+    Returns:
+        str: User-Agent string in format "fetchtastic/{version}"
+    """
+    global _USER_AGENT_CACHE
+
+    if _USER_AGENT_CACHE is None:
+        try:
+            app_version = importlib.metadata.version("fetchtastic")
+        except importlib.metadata.PackageNotFoundError:
+            app_version = "unknown"
+
+        _USER_AGENT_CACHE = f"fetchtastic/{app_version}"
+
+    return _USER_AGENT_CACHE
+
 
 def calculate_sha256(file_path: str) -> Optional[str]:
     """
-    Compute and return the SHA-256 hex digest of a file, or None if the file cannot be read.
+    Compute the SHA-256 hex digest of a file.
 
-    Reads the file in binary mode and streams its contents to the SHA-256 digest (no full-file buffering). On success returns the 64-character lowercase hexadecimal digest string. If the file cannot be opened or read (e.g., missing file or permission error), the function logs the error at debug level and returns None instead of raising.
+    Reads the file in binary mode and streams its contents without loading the whole file into memory.
+    Returns the 64-character lowercase hexadecimal digest on success, or None if the file cannot be opened or read (e.g., missing file or permission error).
     """
     try:
         sha256_hash = hashlib.sha256()

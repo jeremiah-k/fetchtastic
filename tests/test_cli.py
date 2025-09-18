@@ -837,3 +837,235 @@ def test_run_clean_user_says_no_explicitly(mocker):
     cli.run_clean()
 
     mock_print.assert_any_call("Clean operation cancelled.")
+
+
+def test_cli_download_with_log_level_config(mocker):
+    """
+    Verify that running the CLI `download` command applies a configured LOG_LEVEL and dispatches to the downloader.
+
+    Sets up a fake CLI invocation and a loaded configuration containing a "LOG_LEVEL" key. Asserts that `set_log_level` is called with the configured value, `downloader.main` is invoked, and `setup_config.run_setup` is not called when a valid config exists.
+    """
+    mocker.patch("sys.argv", ["fetchtastic", "download"])
+    mock_downloader_main = mocker.patch("fetchtastic.downloader.main")
+    mock_set_log_level = mocker.patch("fetchtastic.cli.set_log_level")
+    mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
+
+    # Test when config exists with LOG_LEVEL setting
+    mocker.patch(
+        "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
+    )
+    mocker.patch("fetchtastic.setup_config.prompt_for_migration")
+    mocker.patch("fetchtastic.setup_config.migrate_config")
+
+    # Mock load_config to return config with LOG_LEVEL
+    mock_config = {"LOG_LEVEL": "DEBUG", "other_setting": "value"}
+    mocker.patch("fetchtastic.setup_config.load_config", return_value=mock_config)
+
+    cli.main()
+
+    # Verify that set_log_level was called with the correct level
+    mock_set_log_level.assert_called_once_with("DEBUG")
+    mock_downloader_main.assert_called_once()
+    mock_setup_run.assert_not_called()
+
+
+def test_cli_download_without_log_level_config(mocker):
+    """Test the 'download' command without LOG_LEVEL configuration."""
+    mocker.patch("sys.argv", ["fetchtastic", "download"])
+    mock_downloader_main = mocker.patch("fetchtastic.downloader.main")
+    mock_set_log_level = mocker.patch("fetchtastic.cli.set_log_level")
+    mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
+
+    # Test when config exists but without LOG_LEVEL setting
+    mocker.patch(
+        "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
+    )
+    mocker.patch("fetchtastic.setup_config.prompt_for_migration")
+    mocker.patch("fetchtastic.setup_config.migrate_config")
+
+    # Mock load_config to return config without LOG_LEVEL
+    mock_config = {"other_setting": "value"}
+    mocker.patch("fetchtastic.setup_config.load_config", return_value=mock_config)
+
+    cli.main()
+
+    # Verify that set_log_level was NOT called
+    mock_set_log_level.assert_not_called()
+    mock_downloader_main.assert_called_once()
+    mock_setup_run.assert_not_called()
+
+
+def test_cli_download_with_empty_config(mocker):
+    """
+    Verify that when a config path exists but load_config returns None, the CLI `download` command:
+    - does not call `set_log_level`,
+    - invokes the downloader (`downloader.main`),
+    - and does not run setup (`run_setup`).
+    """
+    mocker.patch("sys.argv", ["fetchtastic", "download"])
+    mock_downloader_main = mocker.patch("fetchtastic.downloader.main")
+    mock_set_log_level = mocker.patch("fetchtastic.cli.set_log_level")
+    mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
+
+    # Test when config exists but load_config returns None
+    mocker.patch(
+        "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
+    )
+    mocker.patch("fetchtastic.setup_config.prompt_for_migration")
+    mocker.patch("fetchtastic.setup_config.migrate_config")
+
+    # Mock load_config to return None
+    mocker.patch("fetchtastic.setup_config.load_config", return_value=None)
+
+    cli.main()
+
+    # Verify that set_log_level was NOT called
+    mock_set_log_level.assert_not_called()
+    mock_downloader_main.assert_called_once()
+    mock_setup_run.assert_not_called()
+
+
+def test_cli_download_with_various_log_levels(mocker):
+    """Test the 'download' command with various LOG_LEVEL values."""
+    mocker.patch("sys.argv", ["fetchtastic", "download"])
+    mock_downloader_main = mocker.patch("fetchtastic.downloader.main")
+    mock_set_log_level = mocker.patch("fetchtastic.cli.set_log_level")
+    mocker.patch("fetchtastic.setup_config.run_setup")
+
+    mocker.patch(
+        "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
+    )
+    mocker.patch("fetchtastic.setup_config.prompt_for_migration")
+    mocker.patch("fetchtastic.setup_config.migrate_config")
+
+    # Test different log levels
+    log_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+
+    for log_level in log_levels:
+        mock_set_log_level.reset_mock()
+        mock_downloader_main.reset_mock()
+
+        mock_config = {"LOG_LEVEL": log_level}
+        mocker.patch("fetchtastic.setup_config.load_config", return_value=mock_config)
+
+        cli.main()
+
+        # Verify that set_log_level was called with the correct level
+        mock_set_log_level.assert_called_once_with(log_level)
+        mock_downloader_main.assert_called_once()
+
+
+@pytest.mark.parametrize("log_level", ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
+def test_cli_download_parametrized_log_levels(mocker, log_level):
+    """Test the 'download' command with parametrized LOG_LEVEL values."""
+    mocker.patch("sys.argv", ["fetchtastic", "download"])
+    mock_downloader_main = mocker.patch("fetchtastic.downloader.main")
+    mock_set_log_level = mocker.patch("fetchtastic.cli.set_log_level")
+    mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
+
+    mocker.patch(
+        "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
+    )
+    mocker.patch("fetchtastic.setup_config.prompt_for_migration")
+    mocker.patch("fetchtastic.setup_config.migrate_config")
+
+    mock_config = {"LOG_LEVEL": log_level}
+    mocker.patch("fetchtastic.setup_config.load_config", return_value=mock_config)
+
+    cli.main()
+
+    # Verify that set_log_level was called with the correct level
+    mock_set_log_level.assert_called_once_with(log_level)
+    mock_downloader_main.assert_called_once()
+    mock_setup_run.assert_not_called()
+
+
+@pytest.mark.parametrize("invalid_log_level", ["INVALID", "TRACE", "VERBOSE", "123"])
+def test_cli_download_with_invalid_log_levels(mocker, invalid_log_level):
+    """
+    Verify that running the "download" command with an invalid LOG_LEVEL value does not raise,
+    that the CLI passes the raw value to set_log_level (letting that function handle validation),
+    and that downloader.main is invoked while setup_config.run_setup is not.
+    """
+    mocker.patch("sys.argv", ["fetchtastic", "download"])
+    mock_downloader_main = mocker.patch("fetchtastic.downloader.main")
+    mock_set_log_level = mocker.patch("fetchtastic.cli.set_log_level")
+    mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
+
+    mocker.patch(
+        "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
+    )
+    mocker.patch("fetchtastic.setup_config.prompt_for_migration")
+    mocker.patch("fetchtastic.setup_config.migrate_config")
+
+    mock_config = {"LOG_LEVEL": invalid_log_level}
+    mocker.patch("fetchtastic.setup_config.load_config", return_value=mock_config)
+
+    # Should not raise an exception, but set_log_level might handle invalid values
+    cli.main()
+
+    # Verify that set_log_level was called with the invalid level (let set_log_level handle validation)
+    mock_set_log_level.assert_called_once_with(invalid_log_level)
+    mock_downloader_main.assert_called_once()
+    mock_setup_run.assert_not_called()
+
+
+def test_cli_download_with_empty_log_level(mocker):
+    """
+    Verify that when a configuration contains an empty `LOG_LEVEL` value, the CLI's `download` command does not attempt to set the log level but still invokes the downloader and does not run setup.
+
+    This patches a present configuration with `"LOG_LEVEL": ""` and asserts:
+    - set_log_level is not called for the empty (falsy) value,
+    - downloader.main is invoked exactly once,
+    - setup_config.run_setup is not invoked.
+    """
+    mocker.patch("sys.argv", ["fetchtastic", "download"])
+    mock_downloader_main = mocker.patch("fetchtastic.downloader.main")
+    mock_set_log_level = mocker.patch("fetchtastic.cli.set_log_level")
+    mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
+
+    mocker.patch(
+        "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
+    )
+    mocker.patch("fetchtastic.setup_config.prompt_for_migration")
+    mocker.patch("fetchtastic.setup_config.migrate_config")
+
+    mock_config = {"LOG_LEVEL": ""}  # Empty string
+    mocker.patch("fetchtastic.setup_config.load_config", return_value=mock_config)
+
+    cli.main()
+
+    # Empty string should NOT call set_log_level (falsy value)
+    mock_set_log_level.assert_not_called()
+    mock_downloader_main.assert_called_once()
+    mock_setup_run.assert_not_called()
+
+
+def test_cli_download_with_case_insensitive_log_levels(mocker):
+    """Test the 'download' command with case variations of LOG_LEVEL values."""
+    mocker.patch("sys.argv", ["fetchtastic", "download"])
+    mock_downloader_main = mocker.patch("fetchtastic.downloader.main")
+    mock_set_log_level = mocker.patch("fetchtastic.cli.set_log_level")
+    mocker.patch("fetchtastic.setup_config.run_setup")
+
+    mocker.patch(
+        "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
+    )
+    mocker.patch("fetchtastic.setup_config.prompt_for_migration")
+    mocker.patch("fetchtastic.setup_config.migrate_config")
+
+    # Test different case variations
+    case_variations = ["debug", "Info", "warning", "Error", "critical"]
+
+    for log_level in case_variations:
+        mock_set_log_level.reset_mock()
+        mock_downloader_main.reset_mock()
+
+        mock_config = {"LOG_LEVEL": log_level}
+        mocker.patch("fetchtastic.setup_config.load_config", return_value=mock_config)
+
+        cli.main()
+
+        # Verify that set_log_level was called with the case variation
+        mock_set_log_level.assert_called_once_with(log_level)
+        mock_downloader_main.assert_called_once()

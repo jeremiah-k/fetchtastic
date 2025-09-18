@@ -10,7 +10,7 @@ from typing import List
 import platformdirs
 
 from fetchtastic import downloader, repo_downloader, setup_config
-from fetchtastic.log_utils import logger
+from fetchtastic.log_utils import logger, set_log_level
 from fetchtastic.setup_config import (
     copy_to_clipboard_func,
     display_version_info,
@@ -24,23 +24,21 @@ def main():
     """
     Entry point for the Fetchtastic command-line interface.
 
-    Parses command-line arguments and dispatches commands:
-    - setup: run initial configuration or update Windows integrations (--update-integrations on Windows).
-    - download: ensure configuration (migrating if necessary) and run the firmware/APK downloader.
-    - topic: show configured NTFY topic/URL and optionally copy it to the clipboard.
-    - clean: remove Fetchtastic configuration, downloads, and scheduled tasks.
-    - version: display current and available Fetchtastic versions and upgrade instructions if applicable.
-    - repo: interact with the meshtastic.github.io repository with subcommands:
-        - browse: browse and download repository files.
-        - clean: remove files from the repository download directory.
-    - help: show contextual help for commands and repo subcommands.
+    Parses CLI arguments and dispatches subcommands:
+    - `setup`: Run initial configuration or update Windows integrations.
+    - `download`: Ensure/migrate config and run the downloader.
+    - `topic`: Show NTFY topic and optionally copy to clipboard.
+    - `clean`: Perform a destructive cleanup.
+    - `version`: Show current/available versions.
+    - `repo`: Browse/clean repository downloads.
+    - `help`: Display contextual help.
 
     Side effects:
-    - May read/write configuration, modify files/directories, invoke setup and downloader routines, modify crontab/startup entries, and copy text to the clipboard.
-    - Prints information and logs status messages.
-
-    Returns:
-        None
+    - Reads, creates, migrates, or removes configuration files and directories.
+    - Modifies system startup/cron entries and repository download directories.
+    - Invokes interactive setup, downloader, or repository routines.
+    - Copies text to the clipboard.
+    - Emits informational output to stdout and log messages.
     """
     parser = argparse.ArgumentParser(
         description="Fetchtastic - Meshtastic Firmware and APK Downloader"
@@ -207,6 +205,11 @@ def main():
 
             # Display the config file location
             logger.info(f"Using configuration from: {config_path}")
+
+            # Load config and set log level if specified
+            config = setup_config.load_config()
+            if config and config.get("LOG_LEVEL"):
+                set_log_level(config["LOG_LEVEL"])
 
             # Run the downloader
             downloader.main()
