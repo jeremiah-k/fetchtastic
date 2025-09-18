@@ -840,7 +840,11 @@ def test_run_clean_user_says_no_explicitly(mocker):
 
 
 def test_cli_download_with_log_level_config(mocker):
-    """Test the 'download' command with LOG_LEVEL configuration."""
+    """
+    Verify that running the CLI `download` command applies a configured LOG_LEVEL and dispatches to the downloader.
+    
+    Sets up a fake CLI invocation and a loaded configuration containing a "LOG_LEVEL" key. Asserts that `set_log_level` is called with the configured value, `downloader.main` is invoked, and `setup_config.run_setup` is not called when a valid config exists.
+    """
     mocker.patch("sys.argv", ["fetchtastic", "download"])
     mock_downloader_main = mocker.patch("fetchtastic.downloader.main")
     mock_set_log_level = mocker.patch("fetchtastic.cli.set_log_level")
@@ -892,7 +896,12 @@ def test_cli_download_without_log_level_config(mocker):
 
 
 def test_cli_download_with_empty_config(mocker):
-    """Test the 'download' command with empty/None config."""
+    """
+    Verify that when a config path exists but load_config returns None, the CLI `download` command:
+    - does not call `set_log_level`,
+    - invokes the downloader (`downloader.main`),
+    - and does not run setup (`run_setup`).
+    """
     mocker.patch("sys.argv", ["fetchtastic", "download"])
     mock_downloader_main = mocker.patch("fetchtastic.downloader.main")
     mock_set_log_level = mocker.patch("fetchtastic.cli.set_log_level")

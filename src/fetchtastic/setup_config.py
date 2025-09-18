@@ -575,15 +575,18 @@ def _setup_downloads(
 
 def _setup_android(config: dict, is_first_run: bool, default_versions: int) -> dict:
     """
-    Prompt the user for how many Android app versions to keep and store the choice in the config.
-
-    If the config already contains "ANDROID_VERSIONS_TO_KEEP", that value is shown as the current default; otherwise default_versions is used. The prompt wording differs when is_first_run is True. The selected value is converted to an int and written back to config["ANDROID_VERSIONS_TO_KEEP"].
-
+    Prompt for how many Android APK versions to keep and save the choice to the config.
+    
+    Reads the current value from config["ANDROID_VERSIONS_TO_KEEP"] (falls back to default_versions if absent),
+    prompts the user (prompt wording changes when is_first_run is True), converts the response to int, and stores
+    it back into config["ANDROID_VERSIONS_TO_KEEP"]. If the user input is not a valid integer, the existing
+    value is retained.
+    
     Parameters:
-        config (dict): Configuration dictionary to read from and update.
-        is_first_run (bool): When True, prompt wording uses a first-run message.
-        default_versions (int): Fallback number of versions to propose when the config has no prior value.
-
+        config (dict): Configuration dictionary to read and update; modified in place.
+        is_first_run (bool): If True, use first-run phrasing in the prompt.
+        default_versions (int): Fallback value used when the config does not already contain a value.
+    
     Returns:
         dict: The updated configuration dictionary with "ANDROID_VERSIONS_TO_KEEP" set.
     """
@@ -603,10 +606,17 @@ def _setup_android(config: dict, is_first_run: bool, default_versions: int) -> d
 
 def configure_exclude_patterns(config: dict) -> None:
     """
-    Configure exclude patterns with improved user experience.
-
-    Offers recommended defaults, allows additional patterns, and includes
-    confirmation with retry capability.
+    Interactively configure firmware exclude patterns and save them to the provided config.
+    
+    This function runs an interactive prompt that:
+    - Offers the built-in RECOMMENDED_EXCLUDE_PATTERNS as a starting set.
+    - Lets the user accept the defaults and optionally add more patterns, or enter a fully custom space-separated list.
+    - Normalizes input by trimming whitespace, removing empty entries, and deduplicating while preserving order.
+    - Confirms the final list with the user before saving.
+    
+    Effects:
+    - Writes the finalized list of patterns to config["EXCLUDE_PATTERNS"] (a list of strings).
+    - Does not persist the config to disk; callers should save the configuration if desired.
     """
     while True:  # Loop for retry capability
         print("\n--- Exclude Pattern Configuration ---")
