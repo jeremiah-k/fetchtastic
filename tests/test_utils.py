@@ -470,8 +470,8 @@ def test_matches_selected_patterns_keyword_heuristic():
     assert matches_selected_patterns("firmware-rak4631-2.7.6.uf2", ["rak4631-"]) is True
 
 
-def test_save_file_hash_error_handling(tmp_path, mocker):
-    """Test save_file_hash error handling scenarios."""
+def test_save_file_hash_write_error(tmp_path, mocker):
+    """Test save_file_hash handles OSError during hash file write."""
     file_path = tmp_path / "test_file.txt"
     file_path.write_text("test content")
 
@@ -483,8 +483,13 @@ def test_save_file_hash_error_handling(tmp_path, mocker):
         # Should not raise exception, just log error
         utils.save_file_hash(str(file_path), "dummy_hash")
 
-    # Test OSError during temp file cleanup
-    # Test OSError during temp file cleanup
+
+def test_save_file_hash_cleanup_error(tmp_path, mocker):
+    """Test save_file_hash handles OSError during temp file cleanup."""
+    file_path = tmp_path / "test_file.txt"
+    file_path.write_text("test content")
+
+    # Test OSError during temp file cleanup after a replace failure
     mocker.patch("builtins.open", mocker.mock_open())
     mocker.patch("fetchtastic.utils.os.replace", side_effect=OSError("Replace failed"))
     mocker.patch("fetchtastic.utils.os.path.exists", return_value=True)

@@ -49,7 +49,7 @@ def test_cli_download_with_migration(mocker):
     mock_downloader_main.assert_called_once()
 
 
-def test_cli_setup_command_windows_integration_update(mocker, capfd):
+def test_cli_setup_command_windows_integration_update(mocker):
     """Test the 'setup' command with Windows integration update."""
     mocker.patch("sys.argv", ["fetchtastic", "setup", "--update-integrations"])
     mocker.patch("platform.system", return_value="Windows")
@@ -64,12 +64,12 @@ def test_cli_setup_command_windows_integration_update(mocker, capfd):
     )
     mocker.patch("fetchtastic.setup_config.CONFIG_FILE", "/fake/config.yaml")
 
+    mock_logger = mocker.patch("fetchtastic.cli.logger")
     cli.main()
     mock_load_config.assert_called_once()
     mock_create_shortcuts.assert_called_once_with("/fake/config.yaml", "/fake/dir")
 
-    captured = capfd.readouterr()
-    assert "Windows integrations updated successfully!" in captured.out
+    mock_logger.info.assert_any_call("Windows integrations updated successfully!")
 
 
 def test_cli_setup_command_windows_integration_update_no_config(mocker):
@@ -90,7 +90,7 @@ def test_cli_setup_command_windows_integration_update_no_config(mocker):
     )
 
 
-def test_cli_setup_command_windows_integration_update_failed(mocker, capfd):
+def test_cli_setup_command_windows_integration_update_failed(mocker):
     """Test the 'setup' command with Windows integration update that fails."""
     mocker.patch("sys.argv", ["fetchtastic", "setup", "--update-integrations"])
     mocker.patch("platform.system", return_value="Windows")
@@ -105,24 +105,30 @@ def test_cli_setup_command_windows_integration_update_failed(mocker, capfd):
     )
     mocker.patch("fetchtastic.setup_config.CONFIG_FILE", "/fake/config.yaml")
 
+    mock_logger = mocker.patch("fetchtastic.cli.logger")
     cli.main()
-    captured = capfd.readouterr()
-    assert "Failed to update Windows integrations." in captured.out
+    mock_logger.error.assert_any_call("Failed to update Windows integrations.")
 
 
-def test_cli_setup_command_windows_integration_update_non_windows(mocker, capfd):
+def test_cli_setup_command_windows_integration_update_non_windows(mocker):
     """Test the 'setup' command with Windows integration update on non-Windows."""
-    # Mock platform.system before importing cli to ensure the flag is not added
-    with mocker.patch("platform.system", return_value="Linux"):
-        mocker.patch("sys.argv", ["fetchtastic", "setup", "--update-integrations"])
-        mocker.patch(
-            "fetchtastic.cli.display_version_info",
-            return_value=("1.0.0", "1.0.0", False),
-        )
+    # Mock platform.system before reloading cli to ensure the flag is not added
+    mocker.patch("platform.system", return_value="Linux")
 
-        # This should raise SystemExit because --update-integrations is not available on Linux
-        with pytest.raises(SystemExit):
-            cli.main()
+    # Reload the cli module to reconstruct argument parser with mocked platform
+    import importlib
+
+    importlib.reload(cli)
+
+    mocker.patch("sys.argv", ["fetchtastic", "setup", "--update-integrations"])
+    mocker.patch(
+        "fetchtastic.cli.display_version_info",
+        return_value=("1.0.0", "1.0.0", False),
+    )
+
+    # This should raise SystemExit because --update-integrations is not available on Linux
+    with pytest.raises(SystemExit):
+        cli.main()
 
 
 @pytest.mark.parametrize("command", ["browse", "clean"])
@@ -169,7 +175,7 @@ def test_cli_repo_browse_command_no_config(mocker):
     mock_repo_main.assert_called_once_with({"key": "val"})
 
 
-def test_cli_repo_browse_command_config_load_failed(mocker, capfd):
+def test_cli_repo_browse_command_config_load_failed(mocker):
     """Test the 'repo browse' command when config loading fails."""
     mocker.patch("sys.argv", ["fetchtastic", "repo", "browse"])
     mocker.patch(
@@ -180,10 +186,10 @@ def test_cli_repo_browse_command_config_load_failed(mocker, capfd):
         "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.0.0", False)
     )
 
+    mock_logger = mocker.patch("fetchtastic.cli.logger")
     cli.main()
-    captured = capfd.readouterr()
-    assert (
-        "Configuration not found. Please run 'fetchtastic setup' first." in captured.out
+    mock_logger.error.assert_any_call(
+        "Configuration not found. Please run 'fetchtastic setup' first."
     )
 
 

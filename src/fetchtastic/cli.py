@@ -287,7 +287,9 @@ def main():
 
         config = setup_config.load_config()
         if not config:
-            print("Configuration not found. Please run 'fetchtastic setup' first.")
+            logger.error(
+                "Configuration not found. Please run 'fetchtastic setup' first."
+            )
             return
 
         if args.repo_command == "browse":

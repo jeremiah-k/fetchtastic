@@ -1378,6 +1378,7 @@ def test_get_prerelease_patterns_selected_assets_key():
 
 def test_windows_modules_import_success(mocker, reload_setup_config_module):
     """Test successful Windows modules import."""
+    _ = reload_setup_config_module  # ensure fixture exercised (lint)
     # Mock platform.system to return Windows
     mocker.patch("platform.system", return_value="Windows")
 
@@ -1403,6 +1404,7 @@ def test_windows_modules_import_success(mocker, reload_setup_config_module):
 
 def test_non_windows_platform_no_modules(mocker, reload_setup_config_module):
     """Test non-Windows platform doesn't try to import Windows modules."""
+    _ = reload_setup_config_module  # ensure fixture exercised (lint)
     # Mock platform.system to return Linux
     mocker.patch("platform.system", return_value="Linux")
 
