@@ -72,7 +72,7 @@ def test_cli_setup_command_windows_integration_update(mocker, capfd):
     assert "Windows integrations updated successfully!" in captured.out
 
 
-def test_cli_setup_command_windows_integration_update_no_config(mocker, capfd):
+def test_cli_setup_command_windows_integration_update_no_config(mocker):
     """Test the 'setup' command with Windows integration update but no config."""
     mocker.patch("sys.argv", ["fetchtastic", "setup", "--update-integrations"])
     mocker.patch("platform.system", return_value="Windows")
@@ -81,11 +81,13 @@ def test_cli_setup_command_windows_integration_update_no_config(mocker, capfd):
         "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.0.0", False)
     )
 
+    mock_logger = mocker.patch("fetchtastic.cli.logger")
     cli.main()
-    captured = capfd.readouterr()
-    # The message is logged with ERROR level, so check for the core message parts
-    assert "No configuration found" in captured.out
-    assert "fetchtastic setup" in captured.out
+
+    # Should log error message about no configuration
+    mock_logger.error.assert_called_with(
+        "No configuration found. Run 'fetchtastic setup' first."
+    )
 
 
 def test_cli_setup_command_windows_integration_update_failed(mocker, capfd):
@@ -179,14 +181,20 @@ def test_cli_repo_browse_command_config_load_failed(mocker, capfd):
     )
 
 
-def test_cli_repo_browse_command_with_update_available(mocker, capfd):
-    """Test the 'repo browse' command with update available."""
-    mocker.patch("sys.argv", ["fetchtastic", "repo", "browse"])
+@pytest.mark.parametrize("command", ["browse", "clean"])
+def test_cli_repo_command_with_update_available(mocker, command):
+    """Test the 'repo' subcommands with an update available."""
+    mocker.patch("sys.argv", ["fetchtastic", "repo", command])
     mocker.patch(
         "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
     )
     mocker.patch("fetchtastic.setup_config.load_config", return_value={"key": "val"})
-    mocker.patch("fetchtastic.repo_downloader.main")
+
+    if command == "browse":
+        mocker.patch("fetchtastic.repo_downloader.main")
+    else:  # clean
+        mocker.patch("fetchtastic.cli.run_repo_clean")
+
     mocker.patch(
         "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.1.0", True)
     )
@@ -195,12 +203,17 @@ def test_cli_repo_browse_command_with_update_available(mocker, capfd):
         return_value="pip install --upgrade fetchtastic",
     )
 
+    mock_logger = mocker.patch("fetchtastic.cli.logger")
     cli.main()
-    captured = capfd.readouterr()
-    # Messages are logged with INFO level, so check for the core content
-    assert "Update Available" in captured.out
-    assert "newer version" in captured.out and "1.1.0" in captured.out
-    assert "pip install --upgrade fetchtastic" in captured.out
+
+    # Should log update available messages
+    mock_logger.info.assert_any_call("\nUpdate Available")
+    mock_logger.info.assert_any_call(
+        "A newer version (v1.1.0) of Fetchtastic is available!"
+    )
+    mock_logger.info.assert_any_call(
+        "Run 'pip install --upgrade fetchtastic' to upgrade."
+    )
 
 
 def test_cli_repo_clean_command(mocker):
@@ -222,30 +235,6 @@ def test_cli_repo_clean_command(mocker):
     mock_run_repo_clean.assert_called_once_with({"key": "val"})
 
 
-def test_cli_repo_clean_command_with_update_available(mocker, capfd):
-    """Test the 'repo clean' command with update available."""
-    mocker.patch("sys.argv", ["fetchtastic", "repo", "clean"])
-    mocker.patch(
-        "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
-    )
-    mocker.patch("fetchtastic.setup_config.load_config", return_value={"key": "val"})
-    mocker.patch("fetchtastic.cli.run_repo_clean")
-    mocker.patch(
-        "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.1.0", True)
-    )
-    mocker.patch(
-        "fetchtastic.cli.get_upgrade_command",
-        return_value="pip install --upgrade fetchtastic",
-    )
-
-    cli.main()
-    captured = capfd.readouterr()
-    # Messages are logged with INFO level, so check for the core content
-    assert "Update Available" in captured.out
-    assert "newer version" in captured.out and "1.1.0" in captured.out
-    assert "pip install --upgrade fetchtastic" in captured.out
-
-
 def test_cli_repo_command_no_subcommand(mocker, capfd):
     """Test the 'repo' command with no subcommand."""
     mocker.patch("sys.argv", ["fetchtastic", "repo"])
@@ -256,6 +245,9 @@ def test_cli_repo_command_no_subcommand(mocker, capfd):
     mocker.patch(
         "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.0.0", False)
     )
+
+    # Mock stdin to prevent any potential hanging on input
+    mocker.patch("builtins.input", side_effect=EOFError())
 
     cli.main()
     captured = capfd.readouterr()

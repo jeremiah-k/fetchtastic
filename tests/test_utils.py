@@ -485,9 +485,13 @@ def test_save_file_hash_error_handling(tmp_path, mocker):
 
     # Test OSError during temp file cleanup
     with patch("builtins.open", mocker.mock_open()):
-        with patch("os.rename", side_effect=OSError("Rename failed")):
-            with patch("os.path.exists", return_value=True):
-                with patch("os.remove", side_effect=OSError("Remove failed")):
+        with patch(
+            "fetchtastic.utils.os.replace", side_effect=OSError("Replace failed")
+        ):
+            with patch("fetchtastic.utils.os.path.exists", return_value=True):
+                with patch(
+                    "fetchtastic.utils.os.remove", side_effect=OSError("Remove failed")
+                ):
                     # Should handle cleanup error gracefully
                     utils.save_file_hash(str(file_path), "dummy_hash")
 
@@ -518,13 +522,13 @@ def test_remove_file_and_hash_no_hash_file(tmp_path):
     assert not file_path.exists()
 
 
-def test_remove_file_and_hash_error_handling(tmp_path, mocker):
+def test_remove_file_and_hash_error_handling(tmp_path):
     """Test error handling in file removal."""
     file_path = tmp_path / "test_file.txt"
     file_path.write_text("test content")
 
     # Test OSError during file removal
-    with patch("os.remove", side_effect=OSError("Permission denied")):
+    with patch("fetchtastic.utils.os.remove", side_effect=OSError("Permission denied")):
         result = utils._remove_file_and_hash(str(file_path))
         assert result is False
 
@@ -536,7 +540,7 @@ def test_load_file_hash_file_not_found(tmp_path):
     assert result is None
 
 
-def test_load_file_hash_error_handling(tmp_path, mocker):
+def test_load_file_hash_error_handling(tmp_path):
     """Test load_file_hash error handling."""
     file_path = tmp_path / "test_file.txt"
     file_path.write_text("test content")
@@ -553,7 +557,7 @@ def test_calculate_sha256_file_not_found():
     assert result is None
 
 
-def test_calculate_sha256_error_handling(tmp_path, mocker):
+def test_calculate_sha256_error_handling(tmp_path):
     """Test calculate_sha256 error handling."""
     file_path = tmp_path / "test_file.txt"
     file_path.write_text("test content")
@@ -564,12 +568,12 @@ def test_calculate_sha256_error_handling(tmp_path, mocker):
         assert result is None
 
 
-def test_download_file_with_retry_network_error_handling(tmp_path, mocker):
+def test_download_file_with_retry_network_error_handling(tmp_path):
     """Test download_file_with_retry network error handling."""
     download_path = tmp_path / "test_file.zip"
 
     # Test requests.RequestException
-    with patch("requests.Session") as mock_session_class:
+    with patch("fetchtastic.utils.requests.Session") as mock_session_class:
         mock_session = MagicMock()
         mock_session_class.return_value = mock_session
         mock_session.get.side_effect = requests.RequestException("Network error")
@@ -584,7 +588,7 @@ def test_get_user_agent_with_version():
     """Test get_user_agent with version."""
     # Clear cache first
     utils._USER_AGENT_CACHE = None
-    with patch("importlib.metadata.version", return_value="1.2.3"):
+    with patch("fetchtastic.utils.importlib.metadata.version", return_value="1.2.3"):
         user_agent = utils.get_user_agent()
         assert user_agent == "fetchtastic/1.2.3"
 
@@ -594,7 +598,7 @@ def test_get_user_agent_without_version():
     # Clear cache first
     utils._USER_AGENT_CACHE = None
     with patch(
-        "importlib.metadata.version",
+        "fetchtastic.utils.importlib.metadata.version",
         side_effect=importlib.metadata.PackageNotFoundError("Package not found"),
     ):
         user_agent = utils.get_user_agent()
@@ -606,7 +610,9 @@ def test_get_user_agent_caching():
     # Clear cache first
     utils._USER_AGENT_CACHE = None
 
-    with patch("importlib.metadata.version", return_value="1.2.3") as mock_version:
+    with patch(
+        "fetchtastic.utils.importlib.metadata.version", return_value="1.2.3"
+    ) as mock_version:
         # First call should hit the metadata
         user_agent1 = utils.get_user_agent()
         assert user_agent1 == "fetchtastic/1.2.3"
