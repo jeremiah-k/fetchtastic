@@ -585,12 +585,15 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
     Prompts and updates the following keys in `config`:
     - FIRMWARE_VERSIONS_TO_KEEP (int): number of firmware versions to retain.
     - CHECK_PRERELEASES (bool): whether to check/download prerelease firmware.
+    - SELECTED_PRERELEASE_ASSETS (list[str]): device patterns to match for prerelease file selection (set only if CHECK_PRERELEASES is enabled).
     - AUTO_EXTRACT (bool): whether to automatically extract files from firmware zip archives.
     - EXTRACT_PATTERNS (list[str]): space-separated keywords to match files to extract (set only if AUTO_EXTRACT is enabled).
     - EXCLUDE_PATTERNS (list[str]): space-separated keywords to exclude from extraction.
 
     Behavior notes:
     - Uses current config values as defaults when present; otherwise falls back to provided defaults.
+    - If CHECK_PRERELEASES is disabled, SELECTED_PRERELEASE_ASSETS will be cleared.
+    - Offers to migrate from EXTRACT_PATTERNS to SELECTED_PRERELEASE_ASSETS for clearer configuration separation.
     - If AUTO_EXTRACT is enabled but no extract patterns are provided, AUTO_EXTRACT will be disabled and EXTRACT_PATTERNS/EXCLUDE_PATTERNS cleared.
     - Returns the updated config dict (the same object passed in, modified in place).
     """
@@ -617,6 +620,94 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
     )
     # Make sure we're setting a boolean value, not a string
     config["CHECK_PRERELEASES"] = check_prereleases == "y"
+
+    # Prompt for prerelease asset selection if prereleases are enabled
+    if config["CHECK_PRERELEASES"]:
+        print("\n--- Prerelease Asset Selection ---")
+        print(
+            "Select which prerelease firmware files to download by specifying device patterns."
+        )
+        print("Example: rak4631- tbeam t1000-e- tlora-v2-1-1_6- device-")
+        print(
+            "This controls which prerelease files are downloaded from the repository."
+        )
+
+        # Check for existing SELECTED_PRERELEASE_ASSETS or migrate from EXTRACT_PATTERNS
+        existing_prerelease_patterns = config.get("SELECTED_PRERELEASE_ASSETS")
+        migration_patterns = None
+
+        if not existing_prerelease_patterns and config.get("EXTRACT_PATTERNS"):
+            # Offer to migrate from EXTRACT_PATTERNS
+            migration_patterns = config.get("EXTRACT_PATTERNS", [])
+            print(
+                f"\nFound existing extraction patterns: {' '.join(migration_patterns)}"
+            )
+            print("These can be used as your prerelease asset selection patterns.")
+
+        if existing_prerelease_patterns:
+            current_patterns = " ".join(existing_prerelease_patterns)
+            print(f"Current prerelease asset patterns: {current_patterns}")
+
+            keep_patterns_default = "yes"
+            keep_patterns = (
+                input(
+                    f"Keep current prerelease asset patterns? [y/n] (default: {keep_patterns_default}): "
+                )
+                .strip()
+                .lower()
+                or keep_patterns_default[0]
+            )
+
+            if keep_patterns == "y":
+                print(f"Keeping current prerelease asset patterns: {current_patterns}")
+            else:
+                new_patterns = input("Enter new prerelease asset patterns: ").strip()
+                if new_patterns:
+                    config["SELECTED_PRERELEASE_ASSETS"] = new_patterns.split()
+                    print(f"Prerelease asset patterns updated to: {new_patterns}")
+                else:
+                    print("No patterns entered. Keeping current patterns.")
+        elif migration_patterns:
+            # Offer migration from EXTRACT_PATTERNS
+            migrate_default = "yes"
+            migrate_choice = (
+                input(
+                    f"Use extraction patterns as prerelease asset patterns? [y/n] (default: {migrate_default}): "
+                )
+                .strip()
+                .lower()
+                or migrate_default[0]
+            )
+
+            if migrate_choice == "y":
+                config["SELECTED_PRERELEASE_ASSETS"] = migration_patterns.copy()
+                print(
+                    f"Prerelease asset patterns set to: {' '.join(migration_patterns)}"
+                )
+            else:
+                new_patterns = input("Enter prerelease asset patterns: ").strip()
+                if new_patterns:
+                    config["SELECTED_PRERELEASE_ASSETS"] = new_patterns.split()
+                    print(f"Prerelease asset patterns set to: {new_patterns}")
+                else:
+                    config["SELECTED_PRERELEASE_ASSETS"] = []
+                    print(
+                        "No prerelease asset patterns set. All prerelease files will be considered."
+                    )
+        else:
+            # No existing patterns, get new ones
+            prerelease_patterns = input("Prerelease asset patterns: ").strip()
+            if prerelease_patterns:
+                config["SELECTED_PRERELEASE_ASSETS"] = prerelease_patterns.split()
+                print(f"Prerelease asset patterns set to: {prerelease_patterns}")
+            else:
+                config["SELECTED_PRERELEASE_ASSETS"] = []
+                print(
+                    "No prerelease asset patterns set. All prerelease files will be considered."
+                )
+    else:
+        # Prereleases disabled, clear the setting
+        config["SELECTED_PRERELEASE_ASSETS"] = []
 
     # Prompt for automatic extraction
     auto_extract_current = config.get("AUTO_EXTRACT", False)
