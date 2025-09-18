@@ -1372,9 +1372,8 @@ def test_windows_modules_import_success(mocker):
     # Mock platform.system to return Windows
     mocker.patch("platform.system", return_value="Windows")
 
-    # Mock successful imports
+    # Mock successful imports - only mock winshell since that's what's imported at module level
     mock_winshell = mocker.MagicMock()
-    mock_win32com = mocker.MagicMock()
 
     import sys
 
@@ -1382,8 +1381,6 @@ def test_windows_modules_import_success(mocker):
         sys.modules,
         {
             "winshell": mock_winshell,
-            "win32com.shell": mock_win32com,
-            "win32com.shell.shell": mock_win32com.shell,
         },
     ):
         # Reload the module to test import logic
