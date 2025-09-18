@@ -104,7 +104,7 @@ def compare_versions(version1, version2):
     Compare two version strings and determine their ordering.
 
     Attempts to parse both inputs as PEP 440 versions (using packaging); before parsing it normalizes
-    common non-PEP-440 forms (e.g., dashed prerelease markers like "2.3.0-rc1" → "2.3.0rc1",
+    common non-PEP-440 forms (e.g., Meshtastic tags like "v2.7.8.a0c0388" → "2.7.8+a0c0388",
     or trailing hash-like segments "1.2.3.abcd" → "1.2.3+abcd"). If both versions parse, they are
     compared according to PEP 440 semantics (including pre-releases and local version segments).
     If one or both cannot be parsed, a conservative natural-sort fallback is used that splits strings
@@ -123,8 +123,9 @@ def compare_versions(version1, version2):
         Attempt to parse a version string into a packaging.version object, returning None if it cannot be normalized.
 
         This function tries to coerce several common non-PEP 440 version formats into parseable forms before calling packaging.version.parse:
+        - Strips optional leading "v" from Meshtastic tags (e.g., "v2.7.8.a0c0388" → "2.7.8.a0c0388").
+        - Converts trailing hash-like segments such as "2.7.8.a0c0388" into a PEP 440 local version ("2.7.8+a0c0388").
         - Normalizes dotted or dashed prerelease markers (e.g., "2.3.0.rc1" or "2.3.0-beta2") into PEP 440 prerelease notation ("2.3.0rc1", "2.3.0b2").
-        - Converts trailing hash-like segments such as "1.2.3.abcd123" into a PEP 440 local version ("1.2.3+abcd123").
 
         Parameters:
             v (str): Input version string.
@@ -133,6 +134,10 @@ def compare_versions(version1, version2):
             packaging.version.Version or packaging.version.LegacyVersion or None:
                 A parsed version object on success, or None if the input could not be parsed or normalized.
         """
+        # Strip optional leading "v" from Meshtastic tags (e.g., "v2.7.8" → "2.7.8")
+        if v.lower().startswith("v"):
+            v = v[1:]
+
         try:
             return parse_version(v)
         except InvalidVersion:
@@ -657,10 +662,16 @@ def matches_extract_patterns(filename, extract_patterns, device_manager=None):
 
         if is_device_pattern_match:
             clean_pattern = pattern_lower.rstrip("-_ ")
-            if re.search(
-                rf"(^|[-_]){re.escape(clean_pattern)}([-_]|$)", filename_lower
-            ):
-                return True
+            # For very short patterns (1-2 chars), require exact word boundaries to avoid false positives
+            if len(clean_pattern) <= 2:
+                if re.search(rf"\b{re.escape(clean_pattern)}\b", filename_lower):
+                    return True
+            else:
+                # For longer patterns, use the original boundary logic
+                if re.search(
+                    rf"(^|[-_]){re.escape(clean_pattern)}([-_]|$)", filename_lower
+                ):
+                    return True
             # It was identified as a device pattern but didn't match strictly.
             # Do not fall through to generic substring match.
             continue

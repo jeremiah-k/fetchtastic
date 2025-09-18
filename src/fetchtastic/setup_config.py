@@ -24,7 +24,7 @@ RECOMMENDED_EXCLUDE_PATTERNS = [
     "*.hex",  # hex files (debug/raw files)
     "*tcxo*",  # TCXO related files (crystal oscillator)
     "*s3-core*",  # S3 core files (specific hardware)
-    "*request*",  # request files (debug/test files)
+    "*request*",  # request files (debug/test files) - NOTE: May be too broad, consider review
     "*rak4631_*",  # RAK4631 underscore variants (like rak4631_eink)
     "*heltec_*",  # Heltec underscore variants
     "*tbeam_*",  # T-Beam underscore variants
@@ -592,8 +592,12 @@ def _setup_android(config: dict, is_first_run: bool, default_versions: int) -> d
         prompt_text = f"How many versions of the Android app would you like to keep? (default is {current_versions}): "
     else:
         prompt_text = f"How many versions of the Android app would you like to keep? (current: {current_versions}): "
-    android_versions_to_keep = input(prompt_text).strip() or str(current_versions)
-    config["ANDROID_VERSIONS_TO_KEEP"] = int(android_versions_to_keep)
+    raw = input(prompt_text).strip() or str(current_versions)
+    try:
+        config["ANDROID_VERSIONS_TO_KEEP"] = int(raw)
+    except ValueError:
+        print("Invalid number, sha — keeping current value.")
+        config["ANDROID_VERSIONS_TO_KEEP"] = int(current_versions)
     return config
 
 
@@ -719,8 +723,12 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
         prompt_text = f"How many versions of the firmware would you like to keep? (default is {current_versions}): "
     else:
         prompt_text = f"How many versions of the firmware would you like to keep? (current: {current_versions}): "
-    firmware_versions_to_keep = input(prompt_text).strip() or str(current_versions)
-    config["FIRMWARE_VERSIONS_TO_KEEP"] = int(firmware_versions_to_keep)
+    raw = input(prompt_text).strip() or str(current_versions)
+    try:
+        config["FIRMWARE_VERSIONS_TO_KEEP"] = int(raw)
+    except ValueError:
+        print("Invalid number, sha — keeping current value.")
+        config["FIRMWARE_VERSIONS_TO_KEEP"] = int(current_versions)
 
     # Prompt for pre-release downloads
     check_prereleases_current = config.get("CHECK_PRERELEASES", False)

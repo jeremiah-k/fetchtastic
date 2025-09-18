@@ -114,7 +114,8 @@ class DeviceHardwareManager:
         if self._device_patterns is None or self._is_cache_expired():
             self._device_patterns = self._load_device_patterns()
 
-        return self._device_patterns
+        # hand back a copy to keep cache safe from outside mutation
+        return set(self._device_patterns)
 
     def is_device_pattern(self, user_pattern: str) -> bool:
         """
@@ -225,7 +226,10 @@ class DeviceHardwareManager:
                 )
                 return None
 
-            headers = {"User-Agent": get_user_agent()}
+            headers = {
+                "User-Agent": get_user_agent(),
+                "Accept": "application/json",
+            }
             response = requests.get(
                 self.api_url, headers=headers, timeout=self.timeout_seconds
             )
@@ -319,7 +323,7 @@ class DeviceHardwareManager:
         """
         try:
             cache_data = {
-                "device_patterns": list(device_patterns),
+                "device_patterns": sorted(device_patterns),
                 "timestamp": self._last_fetch_time or time.time(),
                 "api_url": self.api_url,
             }
