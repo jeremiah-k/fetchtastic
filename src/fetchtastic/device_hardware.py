@@ -251,7 +251,7 @@ class DeviceHardwareManager:
             logger.exception("Invalid JSON response from API")
             return None
         except Exception as e:
-            logger.exception("Unexpected error fetching device hardware data")
+            logger.exception(f"Unexpected error fetching device hardware data: {e}")
             return None
         else:
             self._last_fetch_time = time.time()
@@ -282,7 +282,7 @@ class DeviceHardwareManager:
             patterns = cache_data.get("device_patterns")
             timestamp = cache_data.get("timestamp")
 
-            if not patterns or not timestamp:
+            if not patterns or timestamp is None:
                 return None
 
             # Validate patterns is a list of strings

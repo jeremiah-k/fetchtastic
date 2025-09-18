@@ -19,20 +19,21 @@ from fetchtastic.constants import CONFIG_FILE_NAME, MESHTASTIC_DIR_NAME
 
 # Recommended default exclude patterns for firmware extraction
 # These patterns exclude specialized variants and debug files that most users don't need
+# Patterns use fnmatch (glob-style) matching against the base filename
 RECOMMENDED_EXCLUDE_PATTERNS = [
-    ".hex",  # hex files (debug/raw files)
-    "tcxo",  # TCXO related files (crystal oscillator)
-    "s3-core",  # S3 core files (specific hardware)
-    "request",  # request files (debug/test files)
-    "rak4631_",  # RAK4631 underscore variants (like rak4631_eink)
-    "heltec_",  # Heltec underscore variants
-    "tbeam_",  # T-Beam underscore variants
-    "tlora_",  # TLORA underscore variants
-    "_tft",  # TFT display variants
-    "_oled",  # OLED display variants
-    "_lcd",  # LCD display variants
-    "_epaper",  # e-paper display variants
-    "_eink",  # e-ink display variants
+    "*.hex",  # hex files (debug/raw files)
+    "*tcxo*",  # TCXO related files (crystal oscillator)
+    "*s3-core*",  # S3 core files (specific hardware)
+    "*request*",  # request files (debug/test files)
+    "*rak4631_*",  # RAK4631 underscore variants (like rak4631_eink)
+    "*heltec_*",  # Heltec underscore variants
+    "*tbeam_*",  # T-Beam underscore variants
+    "*tlora_*",  # TLORA underscore variants
+    "*_tft*",  # TFT display variants
+    "*_oled*",  # OLED display variants
+    "*_lcd*",  # LCD display variants
+    "*_epaper*",  # e-paper display variants
+    "*_eink*",  # e-ink display variants
 ]
 
 # Import Windows-specific modules if on Windows
@@ -655,6 +656,13 @@ def configure_exclude_patterns(config: dict) -> None:
             else:
                 exclude_patterns = []
 
+        # Normalize and de-duplicate while preserving order
+        exclude_patterns = [p.strip() for p in exclude_patterns if p and p.strip()]
+        seen = set()
+        exclude_patterns = [
+            p for p in exclude_patterns if not (p in seen or seen.add(p))
+        ]
+
         # Show final list and confirm
         if exclude_patterns:
             final_patterns_str = " ".join(exclude_patterns)
@@ -756,8 +764,13 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
             print("These can be used as your prerelease asset selection patterns.")
 
         if existing_prerelease_patterns is not None:
-            current_patterns = " ".join(existing_prerelease_patterns)
-            print(f"Current prerelease asset patterns: {current_patterns}")
+            if existing_prerelease_patterns:
+                current_patterns = " ".join(existing_prerelease_patterns)
+                print(f"Current prerelease asset patterns: {current_patterns}")
+            else:
+                print(
+                    "Current prerelease asset patterns: [none] (all prerelease files considered)"
+                )
 
             keep_patterns_default = "yes"
             keep_patterns = (
@@ -794,14 +807,12 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
 
             if migrate_choice == "y":
                 config["SELECTED_PRERELEASE_ASSETS"] = migration_patterns.copy()
-                # Remove the old EXTRACT_PATTERNS key to complete migration
-                if "EXTRACT_PATTERNS" in config:
-                    del config["EXTRACT_PATTERNS"]
+                # Note: EXTRACT_PATTERNS is preserved as it's still used for zip file extraction
                 print(
                     f"Prerelease asset patterns set to: {' '.join(migration_patterns)}"
                 )
                 print(
-                    "Migration complete: EXTRACT_PATTERNS has been converted to SELECTED_PRERELEASE_ASSETS"
+                    "Migration complete: EXTRACT_PATTERNS copied to SELECTED_PRERELEASE_ASSETS for prerelease selection"
                 )
             else:
                 new_patterns = input("Enter prerelease asset patterns: ").strip()

@@ -1179,8 +1179,8 @@ def test_setup_firmware_selected_prerelease_assets_migration_accept(mock_input):
     }
 
     # Simulate user inputs: keep 2 versions, enable prereleases, accept migration, keep auto-extract,
-    # enter new extraction patterns, use recommended exclude patterns, no additional patterns, confirm exclude patterns
-    mock_input.side_effect = ["2", "y", "y", "y", "rak4631- tbeam-", "y", "n", "y"]
+    # keep current extraction patterns, use recommended exclude patterns, no additional patterns, confirm exclude patterns
+    mock_input.side_effect = ["2", "y", "y", "y", "y", "y", "n", "y"]
 
     result = setup_config._setup_firmware(
         config, is_first_run=False, default_versions=2
@@ -1188,11 +1188,12 @@ def test_setup_firmware_selected_prerelease_assets_migration_accept(mock_input):
 
     assert result["CHECK_PRERELEASES"] is True
     assert result["SELECTED_PRERELEASE_ASSETS"] == ["station-", "heltec-", "rak4631-"]
-    # After migration, EXTRACT_PATTERNS is removed and user enters new extraction patterns
+    # After migration, EXTRACT_PATTERNS is preserved (not removed)
     assert result["EXTRACT_PATTERNS"] == [
+        "station-",
+        "heltec-",
         "rak4631-",
-        "tbeam-",
-    ]  # User input for new extraction patterns
+    ]  # Original patterns preserved
     assert result["AUTO_EXTRACT"] is True
     # New exclude pattern flow should set recommended patterns
     from fetchtastic.setup_config import RECOMMENDED_EXCLUDE_PATTERNS

@@ -738,9 +738,10 @@ def check_for_prereleases(
         exclude_patterns (Optional[Iterable[str]]): Optional fnmatch-style patterns; any filename matching an exclude pattern will be skipped.
 
     Returns:
-        tuple[bool, list[str]]: (found_and_downloaded, downloaded_versions)
-          - found_and_downloaded: True if any prerelease files were downloaded.
-          - downloaded_versions: List of prerelease directory names (e.g., "firmware-2.6.9.f93d031") that had files downloaded.
+        tuple[bool, list[str]]: (downloaded, versions)
+          - downloaded: True if any prerelease files were downloaded.
+          - versions: If downloaded is True, list of prerelease directory names that had files downloaded;
+            otherwise, list of all prerelease directory names discovered/tracked (may be empty).
     """
     # Removed local log_message_func definition
     prerelease_dir = os.path.join(download_dir, "firmware", "prerelease")
@@ -763,6 +764,23 @@ def check_for_prereleases(
                         logger.warning(
                             f"Error removing old pre-release directory {item_path}: {e}"
                         )
+
+        # Reset tracking file immediately even if no prereleases are present yet
+        try:
+            tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
+            os.makedirs(prerelease_dir, exist_ok=True)
+            with open(tracking_file, "w", encoding="utf-8") as f:
+                json.dump(
+                    {
+                        "release": latest_release_tag,
+                        "commits": [],
+                        "last_updated": datetime.now().astimezone().isoformat(),
+                    },
+                    f,
+                    indent=2,
+                )
+        except (IOError, UnicodeDecodeError) as e:
+            logger.debug(f"Could not reset prerelease tracking file: {e}")
 
     # Helper function to extract version from directory name (defined once to avoid duplication)
     def extract_version(dir_name: str) -> str:
@@ -798,9 +816,9 @@ def check_for_prereleases(
     existing_prerelease_dirs_set = set(existing_prerelease_dirs)
 
     # Extract all firmware directory names from the repository
-    repo_firmware_dirs = [
+    repo_firmware_dirs = {
         dir_name for dir_name in directories if dir_name.startswith("firmware-")
-    ]
+    }
 
     # Clean up the prerelease directory
     # Only keep directories that:
@@ -989,10 +1007,12 @@ def check_for_prereleases(
                 )
 
                 # Determine which directories to keep
-                # Keep only the newest existing directory, plus any new ones we're about to process
+                # INTENTIONAL: Keep only 1 existing prerelease + new ones being processed
+                # Prereleases are temporary by nature - previous versions become obsolete
+                # when newer ones are available. This follows upstream patterns.
                 dirs_to_keep = set(
                     sorted_existing[:1]
-                )  # Keep only 1 existing prerelease
+                )  # Keep only 1 existing prerelease (latest)
                 dirs_to_keep.update(
                     prerelease_dirs
                 )  # Also keep new ones being processed
