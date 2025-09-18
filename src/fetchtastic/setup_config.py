@@ -689,6 +689,9 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
                 print(
                     f"Prerelease asset patterns set to: {' '.join(migration_patterns)}"
                 )
+                print(
+                    "Note: Your extraction patterns will be configured separately in the next section."
+                )
             else:
                 new_patterns = input("Enter prerelease asset patterns: ").strip()
                 if new_patterns:

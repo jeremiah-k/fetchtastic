@@ -502,7 +502,7 @@ def _get_prerelease_patterns(config: dict) -> list[str]:
     if extract_patterns:
         logger.warning(
             "Using EXTRACT_PATTERNS for prerelease file selection is deprecated. "
-            "Please use SELECTED_PRERELEASE_ASSETS instead for clearer configuration."
+            "Please re-run 'fetchtastic setup' to update your configuration."
         )
 
     return extract_patterns
@@ -1504,8 +1504,8 @@ def _process_firmware_downloads(
                     logger.info(
                         "Found an existing pre-release, but no new files to download."
                     )
-                    for version in prerelease_versions:
-                        downloaded_firmwares.append(f"pre-release {version}")
+                    # Don't add existing prereleases to downloaded_firmwares to avoid
+                    # misleading "Downloaded..." notifications when no new files were downloaded
                 else:
                     logger.info("No new pre-release firmware found.")
 

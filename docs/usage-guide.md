@@ -262,12 +262,12 @@ A few real-world tokens you might use:
 - `tlora-v2-1-1_6-` for the TLORA V2.1.1_6 line
 - `t-deck-` for the T-Deck line
 - `meshtasticd_` for desktop packages like `meshtasticd_...deb`
-- `littlefs-heltec-v3-` for LittleFS images specific to Heltec v3
 
 Tips:
 
 - If your goal is to download only one device family, prefer the pattern with the exact separator you see in filenames (e.g., `rak4631-` vs `rak4631_`).
 - For closely related variants you want together (e.g., `rak4631-` base and `rak4631_eink`), add both patterns during selection.
+- Device patterns like `heltec-` automatically match both firmware files (`firmware-heltec-*`) and LittleFS files (`littlefs-heltec-*`) - no need to specify both.
 - You can adjust patterns later by re-running `fetchtastic setup` and updating your selections.
 
 ### Pre-release Downloads
