@@ -104,7 +104,7 @@ def compare_versions(version1, version2):
     Compare two version strings and determine their ordering.
 
     Attempts to parse both inputs as PEP 440 versions (using packaging); before parsing it normalizes
-    common non-PEP-440 forms (e.g., dotted/dashed prerelease markers like "2.3.0.rc1" → "2.3.0rc1",
+    common non-PEP-440 forms (e.g., dashed prerelease markers like "2.3.0-rc1" → "2.3.0rc1",
     or trailing hash-like segments "1.2.3.abcd" → "1.2.3+abcd"). If both versions parse, they are
     compared according to PEP 440 semantics (including pre-releases and local version segments).
     If one or both cannot be parsed, a conservative natural-sort fallback is used that splits strings
@@ -1013,12 +1013,7 @@ def check_for_prereleases(
                 # INTENTIONAL: Keep only 1 existing prerelease + new ones being processed
                 # Prereleases are temporary by nature - previous versions become obsolete
                 # when newer ones are available. This follows upstream patterns.
-                dirs_to_keep = set(
-                    sorted_existing[:1]
-                )  # Keep only 1 existing prerelease (latest)
-                dirs_to_keep.update(
-                    prerelease_dirs
-                )  # Also keep new ones being processed
+                dirs_to_keep = set(sorted_existing[:1])  # Keep latest existing only
 
                 # Remove directories that exceed the limit
                 for item in existing_dirs:
@@ -1042,7 +1037,10 @@ def check_for_prereleases(
 
     # Process each pre-release directory
     total_pr = len(prerelease_dirs)
-    logger.info(f"Scanning {total_pr} prerelease directories")
+    if total_pr > 0:
+        logger.info(f"Scanning {total_pr} prerelease directories")
+    else:
+        logger.debug("Scanning 0 prerelease directories")
     for i, dir_name in enumerate(prerelease_dirs, start=1):
         logger.info(f"Checking {dir_name} ({i}/{total_pr})…")
 

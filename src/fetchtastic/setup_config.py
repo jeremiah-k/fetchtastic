@@ -764,13 +764,12 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
             print("These can be used as your prerelease asset selection patterns.")
 
         if existing_prerelease_patterns is not None:
-            if existing_prerelease_patterns:
-                current_patterns = " ".join(existing_prerelease_patterns)
-                print(f"Current prerelease asset patterns: {current_patterns}")
-            else:
-                print(
-                    "Current prerelease asset patterns: [none] (all prerelease files considered)"
-                )
+            current_patterns_str = (
+                " ".join(existing_prerelease_patterns)
+                if existing_prerelease_patterns
+                else "[none] (all prerelease files considered)"
+            )
+            print(f"Current prerelease asset patterns: {current_patterns_str}")
 
             keep_patterns_default = "yes"
             keep_patterns = (
@@ -784,7 +783,9 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
             keep_patterns = keep_patterns[:1]
 
             if keep_patterns == "y":
-                print(f"Keeping current prerelease asset patterns: {current_patterns}")
+                print(
+                    f"Keeping current prerelease asset patterns: {current_patterns_str}"
+                )
             else:
                 new_patterns = input("Enter new prerelease asset patterns: ").strip()
                 if new_patterns:
