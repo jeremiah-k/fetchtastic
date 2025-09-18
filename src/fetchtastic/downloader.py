@@ -415,6 +415,7 @@ def _read_prerelease_tracking_data(tracking_file):
     """
     commits = []
     current_release = None
+    read_from_json_success = False
 
     if os.path.exists(tracking_file):
         try:
@@ -422,12 +423,12 @@ def _read_prerelease_tracking_data(tracking_file):
                 tracking_data = json.load(f)
                 current_release = tracking_data.get("release")
                 commits = tracking_data.get("commits", [])
+            read_from_json_success = True
         except (IOError, json.JSONDecodeError, UnicodeDecodeError) as e:
             logger.warning(f"Could not read prerelease tracking file: {e}")
-            # Try to read text format as fallback
-            commits, current_release = _read_text_tracking_file(tracking_file)
-    else:
-        # No JSON yet — try importing text format if present
+
+    if not read_from_json_success:
+        # Fallback to legacy text format if JSON read failed or file didn't exist
         commits, current_release = _read_text_tracking_file(tracking_file)
 
     return commits, current_release
