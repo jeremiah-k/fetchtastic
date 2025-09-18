@@ -392,8 +392,8 @@ def _read_text_tracking_file(tracking_file):
                 return commits, current_release
             # Legacy format: treat all lines as commits; release unknown
             return lines, "unknown"
-    except (IOError, UnicodeDecodeError):
-        pass  # No text format file or can't read it
+    except (IOError, UnicodeDecodeError) as e:
+        logger.debug(f"Could not read legacy prerelease tracking file: {e}")
 
     return [], None
 
@@ -1079,7 +1079,8 @@ def check_for_prereleases(
             file_path = os.path.join(dir_path, file_name)
 
             # Only download files that match the selected patterns and don't match exclude patterns
-            # For prereleases, selected_patterns contains EXTRACT_PATTERNS which support smart device matching
+            # For prereleases, selected_patterns comes from SELECTED_PRERELEASE_ASSETS
+            # (or EXTRACT_PATTERNS as a fallback) and supports smart device matching
             if not matches_extract_patterns(
                 file_name, selected_patterns, device_manager
             ):
@@ -1129,9 +1130,8 @@ def check_for_prereleases(
                         exc_info=True,
                     )
             else:
-                # File already exists, add it to the list for tracking
+                # File already exists; no new download performed
                 logger.debug(f"Pre-release file already exists: {file_name}")
-                downloaded_files.append(file_path)
 
     downloaded_versions = []
     if downloaded_files:
@@ -1145,10 +1145,10 @@ def check_for_prereleases(
             files_by_dir[dir_name].append(p)
 
         version_file_counts = {}
-        for dir_name in prerelease_dirs:
-            if dir_name in files_by_dir:
+        for dir_name in files_by_dir:
+            if dir_name not in downloaded_versions:
                 downloaded_versions.append(dir_name)
-                version_file_counts[dir_name] = len(files_by_dir[dir_name])
+            version_file_counts[dir_name] = len(files_by_dir[dir_name])
 
         # Log per-version file counts
         for version, count in version_file_counts.items():

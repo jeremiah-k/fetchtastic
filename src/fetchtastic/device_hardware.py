@@ -24,6 +24,9 @@ from fetchtastic.utils import get_user_agent
 
 logger = logging.getLogger(__name__)
 
+# Minimum length for device pattern prefix matching to prevent overly broad matches
+MIN_DEVICE_PATTERN_PREFIX_LEN = 2
+
 # Default configuration
 DEFAULT_API_URL = DEVICE_HARDWARE_API_URL
 DEFAULT_CACHE_HOURS = DEVICE_HARDWARE_CACHE_HOURS
@@ -137,7 +140,7 @@ class DeviceHardwareManager:
             # Check if pattern matches exactly or is contained in device pattern (case-insensitive)
             device_pattern_lower = device_pattern.lower()
             if clean_pattern == device_pattern_lower or (
-                len(clean_pattern) >= 2
+                len(clean_pattern) >= MIN_DEVICE_PATTERN_PREFIX_LEN
                 and (
                     device_pattern_lower.startswith(f"{clean_pattern}-")
                     or device_pattern_lower.startswith(f"{clean_pattern}_")

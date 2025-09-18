@@ -2,7 +2,7 @@ import logging
 import os  # Added for environment variable
 from logging.handlers import RotatingFileHandler  # Already here, ensure it stays
 from pathlib import Path
-from typing import Optional  # Added Optional and Any
+from typing import Optional  # Added Optional
 
 from rich.logging import RichHandler  # Keep Rich for console
 
@@ -33,12 +33,12 @@ def set_log_level(level_name: str) -> None:
     - Sets the logger's level and each handler's level to the resolved level.
     - Replaces each handler's formatter according to the new level:
       - For INFO and above:
-        - RichHandler: message-only formatter ("%(__message__)s").
+        - RichHandler: message-only formatter ("%(message)s").
         - Non-Rich handlers: INFO_LOG_FORMAT with LOG_DATE_FORMAT.
       - For levels below INFO:
-        - RichHandler: message plus source info ("%(__message__)s (name - module.func:line)").
+        - RichHandler: message plus source info ("%(message)s (%(name)s - %(module)s.%(funcName)s:%(lineno)d)").
         - Non-Rich handlers: DEBUG_LOG_FORMAT with LOG_DATE_FORMAT.
-    - Emits an informational log confirming the new level when successful.
+    - Emits a log at the configured level confirming the new level when successful.
 
     Parameters:
         level_name (str): Case-insensitive name of the desired logging level (e.g., "debug", "INFO").
@@ -70,7 +70,7 @@ def set_log_level(level_name: str) -> None:
 
         handler.setFormatter(formatter)
 
-    logger.info(f"Log level set to {level_name.upper()}")
+    logger.log(level, f"Log level set to {logging.getLevelName(level)}")
 
 
 def add_file_logging(log_dir_path: Path, level_name: str = "INFO") -> None:
@@ -94,7 +94,13 @@ def add_file_logging(log_dir_path: Path, level_name: str = "INFO") -> None:
     log_file = log_dir_path / "fetchtastic.log"
 
     # Choose formatter based on log level
-    file_log_level = getattr(logging, level_name.upper(), logging.INFO)
+    resolved = getattr(logging, level_name.upper(), None)
+    if not isinstance(resolved, int):
+        logger.warning(
+            f"Invalid file log level name: {level_name}. Defaulting to INFO."
+        )
+        resolved = logging.INFO
+    file_log_level = resolved
     if file_log_level >= logging.INFO:
         file_formatter = logging.Formatter(INFO_LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
     else:
@@ -110,7 +116,9 @@ def add_file_logging(log_dir_path: Path, level_name: str = "INFO") -> None:
     _file_handler.setLevel(file_log_level)
 
     logger.addHandler(_file_handler)
-    logger.info(f"File logging enabled at {log_file} with level {level_name.upper()}")
+    logger.info(
+        f"File logging enabled at {log_file} with level {logging.getLevelName(file_log_level)}"
+    )
 
 
 def _initialize_logger() -> None:
@@ -139,7 +147,13 @@ def _initialize_logger() -> None:
 
     # Set initial log level from environment variable or default to INFO
     default_log_level = os.environ.get(LOG_LEVEL_ENV_VAR, "INFO").upper()
-    initial_level = getattr(logging, default_log_level, logging.INFO)
+    resolved = getattr(logging, default_log_level, None)
+    if not isinstance(resolved, int):
+        logger.warning(
+            f"Invalid {LOG_LEVEL_ENV_VAR}={default_log_level}; defaulting to INFO."
+        )
+        resolved = logging.INFO
+    initial_level = resolved
 
     # Choose console formatter based on log level
     if initial_level >= logging.INFO:

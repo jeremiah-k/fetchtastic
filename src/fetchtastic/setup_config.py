@@ -633,10 +633,13 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
         )
 
         # Check for existing SELECTED_PRERELEASE_ASSETS or migrate from EXTRACT_PATTERNS
-        existing_prerelease_patterns = config.get("SELECTED_PRERELEASE_ASSETS")
+        existing_prerelease_patterns = config.get("SELECTED_PRERELEASE_ASSETS", None)
+        if isinstance(existing_prerelease_patterns, str):
+            existing_prerelease_patterns = existing_prerelease_patterns.split()
+            config["SELECTED_PRERELEASE_ASSETS"] = existing_prerelease_patterns
         migration_patterns = None
 
-        if not existing_prerelease_patterns and config.get("EXTRACT_PATTERNS"):
+        if existing_prerelease_patterns is None and config.get("EXTRACT_PATTERNS"):
             # Offer to migrate from EXTRACT_PATTERNS
             migration_patterns = config.get("EXTRACT_PATTERNS", [])
             print(
@@ -644,7 +647,7 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
             )
             print("These can be used as your prerelease asset selection patterns.")
 
-        if existing_prerelease_patterns:
+        if existing_prerelease_patterns is not None:
             current_patterns = " ".join(existing_prerelease_patterns)
             print(f"Current prerelease asset patterns: {current_patterns}")
 
@@ -657,6 +660,7 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
                 .lower()
                 or keep_patterns_default[0]
             )
+            keep_patterns = keep_patterns[:1]
 
             if keep_patterns == "y":
                 print(f"Keeping current prerelease asset patterns: {current_patterns}")
@@ -678,6 +682,7 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
                 .lower()
                 or migrate_default[0]
             )
+            migrate_choice = migrate_choice[:1]
 
             if migrate_choice == "y":
                 config["SELECTED_PRERELEASE_ASSETS"] = migration_patterns.copy()
@@ -694,8 +699,8 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
                     print(
                         "No prerelease asset patterns set. All prerelease files will be considered."
                     )
-        else:
-            # No existing patterns, get new ones
+        elif existing_prerelease_patterns is None:
+            # No existing patterns (key not set), get new ones
             prerelease_patterns = input("Prerelease asset patterns: ").strip()
             if prerelease_patterns:
                 config["SELECTED_PRERELEASE_ASSETS"] = prerelease_patterns.split()

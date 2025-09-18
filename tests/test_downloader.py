@@ -4172,3 +4172,42 @@ def test_check_for_prereleases_cleans_up_on_new_release(tmp_path):
     # Assert that the tracking file is still there
     assert tracking_file.exists()
     # The test is successful if we reach this point without repeated warnings
+
+
+@patch("fetchtastic.downloader.menu_repo.fetch_repo_directories")
+@patch("fetchtastic.downloader.menu_repo.fetch_directory_contents")
+def test_check_for_prereleases_boolean_semantics_no_new_downloads(
+    mock_fetch_contents, mock_fetch_dirs, tmp_path
+):
+    """Test that check_for_prereleases returns (False, versions) when no new files download but prereleases exist."""
+    download_dir = tmp_path
+    prerelease_dir = download_dir / "firmware" / "prerelease"
+    prerelease_dir.mkdir(parents=True)
+
+    # Create existing prerelease directory with files
+    existing_dir = prerelease_dir / "firmware-2.0.0-alpha1.abcdef"
+    existing_dir.mkdir()
+    (existing_dir / "firmware-esp32-2.0.0-alpha1.abcdef.bin").write_text("existing")
+
+    # Mock repo to return the same prerelease (no new ones)
+    mock_fetch_dirs.return_value = ["firmware-2.0.0-alpha1.abcdef"]
+    mock_fetch_contents.return_value = [
+        {
+            "name": "firmware-esp32-2.0.0-alpha1.abcdef.bin",
+            "download_url": "http://example.com/file.bin",
+        }
+    ]
+
+    # Call check_for_prereleases
+    found, versions = downloader.check_for_prereleases(
+        download_dir,
+        latest_release_tag="v1.9.0",  # Older than our alpha
+        selected_patterns=["esp32"],
+        device_manager=None,
+    )
+
+    # Should return False (no new downloads) but still return the existing versions
+    assert found is False  # No new files downloaded
+    assert versions == [
+        "firmware-2.0.0-alpha1.abcdef"
+    ]  # But existing prereleases are reported
