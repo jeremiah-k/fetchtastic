@@ -1,4 +1,5 @@
 import hashlib
+import importlib.metadata
 import os
 import zipfile
 from unittest.mock import MagicMock, patch
@@ -467,3 +468,162 @@ def test_matches_selected_patterns_keyword_heuristic():
         is False
     )
     assert matches_selected_patterns("firmware-rak4631-2.7.6.uf2", ["rak4631-"]) is True
+
+
+def test_save_file_hash_write_error(tmp_path, mocker):
+    """Test save_file_hash handles OSError during hash file write."""
+    file_path = tmp_path / "test_file.txt"
+    file_path.write_text("test content")
+
+    # Test OSError during hash file write
+    mock_open = mocker.mock_open()
+    mock_open.side_effect = OSError("Permission denied")
+
+    with patch("builtins.open", mock_open):
+        # Should not raise exception, just log error
+        utils.save_file_hash(str(file_path), "dummy_hash")
+
+
+def test_save_file_hash_cleanup_error(tmp_path, mocker):
+    """Test save_file_hash handles OSError during temp file cleanup."""
+    file_path = tmp_path / "test_file.txt"
+    file_path.write_text("test content")
+
+    # Test OSError during temp file cleanup after a replace failure
+    mocker.patch("builtins.open", mocker.mock_open())
+    mocker.patch("fetchtastic.utils.os.replace", side_effect=OSError("Replace failed"))
+    mocker.patch("fetchtastic.utils.os.path.exists", return_value=True)
+    mocker.patch("fetchtastic.utils.os.remove", side_effect=OSError("Remove failed"))
+
+    # Should handle cleanup error gracefully
+    utils.save_file_hash(str(file_path), "dummy_hash")
+
+
+def test_remove_file_and_hash_success(tmp_path):
+    """Test successful file and hash removal."""
+    file_path = tmp_path / "test_file.txt"
+    hash_path = tmp_path / "test_file.txt.sha256"
+
+    file_path.write_text("test content")
+    hash_path.write_text("dummy_hash")
+
+    result = utils._remove_file_and_hash(str(file_path))
+
+    assert result is True
+    assert not file_path.exists()
+    assert not hash_path.exists()
+
+
+def test_remove_file_and_hash_no_hash_file(tmp_path):
+    """Test file removal when hash file doesn't exist."""
+    file_path = tmp_path / "test_file.txt"
+    file_path.write_text("test content")
+
+    result = utils._remove_file_and_hash(str(file_path))
+
+    assert result is True
+    assert not file_path.exists()
+
+
+def test_remove_file_and_hash_error_handling(tmp_path, mocker):
+    """Test error handling in file removal."""
+    file_path = tmp_path / "test_file.txt"
+    file_path.write_text("test content")
+
+    # Test OSError during file removal
+    mocker.patch(
+        "fetchtastic.utils.os.remove", side_effect=OSError("Permission denied")
+    )
+    result = utils._remove_file_and_hash(str(file_path))
+    assert result is False
+
+
+def test_load_file_hash_file_not_found(tmp_path):
+    """Test load_file_hash when hash file doesn't exist."""
+    file_path = tmp_path / "nonexistent.txt"
+    result = utils.load_file_hash(str(file_path))
+    assert result is None
+
+
+def test_load_file_hash_error_handling(tmp_path, mocker):
+    """Test load_file_hash error handling."""
+    file_path = tmp_path / "test_file.txt"
+    file_path.write_text("test content")
+
+    # Test OSError during hash file read
+    mocker.patch("builtins.open", side_effect=OSError("Permission denied"))
+    result = utils.load_file_hash(str(file_path))
+    assert result is None
+
+
+def test_calculate_sha256_file_not_found():
+    """Test calculate_sha256 with non-existent file."""
+    result = utils.calculate_sha256("/nonexistent/file.txt")
+    assert result is None
+
+
+def test_calculate_sha256_error_handling(tmp_path, mocker):
+    """Test calculate_sha256 error handling."""
+    file_path = tmp_path / "test_file.txt"
+    file_path.write_text("test content")
+
+    # Test OSError during file read
+    mocker.patch("builtins.open", side_effect=OSError("Permission denied"))
+    result = utils.calculate_sha256(str(file_path))
+    assert result is None
+
+
+def test_download_file_with_retry_network_error_handling(tmp_path, mocker):
+    """Test download_file_with_retry network error handling."""
+    download_path = tmp_path / "test_file.zip"
+
+    # Test requests.RequestException
+    mock_session_class = mocker.patch("fetchtastic.utils.requests.Session")
+    mock_session = MagicMock()
+    mock_session_class.return_value = mock_session
+    mock_session.get.side_effect = requests.RequestException("Network error")
+
+    result = utils.download_file_with_retry(
+        "http://example.com/file.zip", str(download_path)
+    )
+    assert result is False
+
+
+def test_get_user_agent_with_version(mocker):
+    """Test get_user_agent with version."""
+    # Clear cache first
+    utils._USER_AGENT_CACHE = None
+    mocker.patch("fetchtastic.utils.importlib.metadata.version", return_value="1.2.3")
+    user_agent = utils.get_user_agent()
+    assert user_agent == "fetchtastic/1.2.3"
+
+
+def test_get_user_agent_without_version(mocker):
+    """Test get_user_agent when version is not available."""
+    # Clear cache first
+    utils._USER_AGENT_CACHE = None
+    mocker.patch(
+        "fetchtastic.utils.importlib.metadata.version",
+        side_effect=importlib.metadata.PackageNotFoundError("Package not found"),
+    )
+    user_agent = utils.get_user_agent()
+    assert user_agent == "fetchtastic/unknown"
+
+
+def test_get_user_agent_caching(mocker):
+    """Test that get_user_agent caches the result."""
+    # Clear cache first
+    utils._USER_AGENT_CACHE = None
+
+    mock_version = mocker.patch(
+        "fetchtastic.utils.importlib.metadata.version", return_value="1.2.3"
+    )
+    # First call should hit the metadata
+    user_agent1 = utils.get_user_agent()
+    assert user_agent1 == "fetchtastic/1.2.3"
+    assert mock_version.call_count == 1
+
+    # Second call should use cache
+    user_agent2 = utils.get_user_agent()
+    assert user_agent2 == "fetchtastic/1.2.3"
+    assert mock_version.call_count == 1  # Should not be called again

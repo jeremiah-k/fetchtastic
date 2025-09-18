@@ -9,6 +9,15 @@ import yaml
 from fetchtastic import setup_config
 from tests.test_constants import TEST_CONFIG
 
+
+@pytest.fixture
+def reload_setup_config_module():
+    """Fixture to reload the setup_config module after a test to restore original state."""
+    yield
+    # Restore the module to its original state after the test
+    importlib.reload(setup_config)
+
+
 # Utility function tests
 
 
@@ -1365,6 +1374,47 @@ def test_get_prerelease_patterns_selected_assets_key():
     result = _get_prerelease_patterns(config)
 
     assert result == ["rak4631-", "tbeam"]
+
+
+def test_windows_modules_import_success(mocker, reload_setup_config_module):
+    """Test successful Windows modules import."""
+    _ = reload_setup_config_module  # ensure fixture exercised (lint)
+    # Mock platform.system to return Windows
+    mocker.patch("platform.system", return_value="Windows")
+
+    # Mock successful imports - only mock winshell since that's what's imported at module level
+    mock_winshell = mocker.MagicMock()
+
+    import sys
+
+    with patch.dict(
+        sys.modules,
+        {
+            "winshell": mock_winshell,
+        },
+    ):
+        # Reload the module to test import logic
+        import importlib
+
+        importlib.reload(setup_config)
+
+        # Should have Windows modules available
+        assert setup_config.WINDOWS_MODULES_AVAILABLE is True
+
+
+def test_non_windows_platform_no_modules(mocker, reload_setup_config_module):
+    """Test non-Windows platform doesn't try to import Windows modules."""
+    _ = reload_setup_config_module  # ensure fixture exercised (lint)
+    # Mock platform.system to return Linux
+    mocker.patch("platform.system", return_value="Linux")
+
+    # Reload the module to test import logic
+    import importlib
+
+    importlib.reload(setup_config)
+
+    # Should not have Windows modules available
+    assert setup_config.WINDOWS_MODULES_AVAILABLE is False
 
 
 @pytest.mark.configuration

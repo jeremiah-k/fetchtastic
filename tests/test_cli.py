@@ -49,6 +49,212 @@ def test_cli_download_with_migration(mocker):
     mock_downloader_main.assert_called_once()
 
 
+def test_cli_setup_command_windows_integration_update(mocker):
+    """Test the 'setup' command with Windows integration update."""
+    mocker.patch("sys.argv", ["fetchtastic", "setup", "--update-integrations"])
+    mocker.patch("platform.system", return_value="Windows")
+    mock_load_config = mocker.patch(
+        "fetchtastic.setup_config.load_config", return_value={"BASE_DIR": "/fake/dir"}
+    )
+    mock_create_shortcuts = mocker.patch(
+        "fetchtastic.setup_config.create_windows_menu_shortcuts", return_value=True
+    )
+    mocker.patch(
+        "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.0.0", False)
+    )
+    mocker.patch("fetchtastic.setup_config.CONFIG_FILE", "/fake/config.yaml")
+
+    mock_logger = mocker.patch("fetchtastic.cli.logger")
+    cli.main()
+    mock_load_config.assert_called_once()
+    mock_create_shortcuts.assert_called_once_with("/fake/config.yaml", "/fake/dir")
+
+    mock_logger.info.assert_any_call("Windows integrations updated successfully!")
+
+
+def test_cli_setup_command_windows_integration_update_no_config(mocker):
+    """Test the 'setup' command with Windows integration update but no config."""
+    mocker.patch("sys.argv", ["fetchtastic", "setup", "--update-integrations"])
+    mocker.patch("platform.system", return_value="Windows")
+    mocker.patch("fetchtastic.setup_config.load_config", return_value=None)
+    mocker.patch(
+        "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.0.0", False)
+    )
+
+    mock_logger = mocker.patch("fetchtastic.cli.logger")
+    cli.main()
+
+    # Should log error message about no configuration
+    mock_logger.error.assert_called_with(
+        "No configuration found. Run 'fetchtastic setup' first."
+    )
+
+
+def test_cli_setup_command_windows_integration_update_failed(mocker):
+    """Test the 'setup' command with Windows integration update that fails."""
+    mocker.patch("sys.argv", ["fetchtastic", "setup", "--update-integrations"])
+    mocker.patch("platform.system", return_value="Windows")
+    mocker.patch(
+        "fetchtastic.setup_config.load_config", return_value={"BASE_DIR": "/fake/dir"}
+    )
+    mocker.patch(
+        "fetchtastic.setup_config.create_windows_menu_shortcuts", return_value=False
+    )
+    mocker.patch(
+        "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.0.0", False)
+    )
+    mocker.patch("fetchtastic.setup_config.CONFIG_FILE", "/fake/config.yaml")
+
+    mock_logger = mocker.patch("fetchtastic.cli.logger")
+    cli.main()
+    mock_logger.error.assert_any_call("Failed to update Windows integrations.")
+
+
+def test_cli_setup_command_windows_integration_update_non_windows(mocker):
+    """Test the 'setup' command with Windows integration update on non-Windows."""
+    # Mock platform.system to ensure the flag is not added on non-Windows platforms
+    mocker.patch("platform.system", return_value="Linux")
+    mocker.patch("sys.argv", ["fetchtastic", "setup", "--update-integrations"])
+    mocker.patch(
+        "fetchtastic.cli.display_version_info",
+        return_value=("1.0.0", "1.0.0", False),
+    )
+
+    # This should raise SystemExit because --update-integrations is not available on Linux
+    with pytest.raises(SystemExit):
+        cli.main()
+
+
+@pytest.mark.parametrize("command", ["browse", "clean"])
+def test_cli_repo_command_success(mocker, command):
+    """Test the 'repo' subcommands with successful execution."""
+    mocker.patch("sys.argv", ["fetchtastic", "repo", command])
+    mocker.patch(
+        "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
+    )
+    mock_load_config = mocker.patch(
+        "fetchtastic.setup_config.load_config", return_value={"key": "val"}
+    )
+
+    if command == "browse":
+        mock_action = mocker.patch("fetchtastic.repo_downloader.main")
+    else:  # clean
+        mock_action = mocker.patch("fetchtastic.cli.run_repo_clean")
+
+    mocker.patch(
+        "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.0.0", False)
+    )
+
+    cli.main()
+    mock_load_config.assert_called_once()
+    mock_action.assert_called_once_with({"key": "val"})
+
+
+def test_cli_repo_browse_command_no_config(mocker):
+    """Test the 'repo browse' command with no config."""
+    mocker.patch("sys.argv", ["fetchtastic", "repo", "browse"])
+    mocker.patch("fetchtastic.setup_config.config_exists", return_value=(False, None))
+    mock_run_setup = mocker.patch("fetchtastic.setup_config.run_setup")
+    mock_load_config = mocker.patch(
+        "fetchtastic.setup_config.load_config", return_value={"key": "val"}
+    )
+    mock_repo_main = mocker.patch("fetchtastic.repo_downloader.main")
+    mocker.patch(
+        "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.0.0", False)
+    )
+
+    cli.main()
+    mock_run_setup.assert_called_once()
+    mock_load_config.assert_called_once()
+    mock_repo_main.assert_called_once_with({"key": "val"})
+
+
+def test_cli_repo_browse_command_config_load_failed(mocker):
+    """Test the 'repo browse' command when config loading fails."""
+    mocker.patch("sys.argv", ["fetchtastic", "repo", "browse"])
+    mocker.patch(
+        "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
+    )
+    mocker.patch("fetchtastic.setup_config.load_config", return_value=None)
+    mocker.patch(
+        "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.0.0", False)
+    )
+
+    mock_logger = mocker.patch("fetchtastic.cli.logger")
+    cli.main()
+    mock_logger.error.assert_any_call(
+        "Configuration not found. Please run 'fetchtastic setup' first."
+    )
+
+
+@pytest.mark.parametrize("command", ["browse", "clean"])
+def test_cli_repo_command_with_update_available(mocker, command):
+    """Test the 'repo' subcommands with an update available."""
+    mocker.patch("sys.argv", ["fetchtastic", "repo", command])
+    mocker.patch(
+        "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
+    )
+    mocker.patch("fetchtastic.setup_config.load_config", return_value={"key": "val"})
+
+    if command == "browse":
+        mocker.patch("fetchtastic.repo_downloader.main")
+    else:  # clean
+        mocker.patch("fetchtastic.cli.run_repo_clean")
+
+    mocker.patch(
+        "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.1.0", True)
+    )
+    mocker.patch(
+        "fetchtastic.cli.get_upgrade_command",
+        return_value="pip install --upgrade fetchtastic",
+    )
+
+    mock_logger = mocker.patch("fetchtastic.cli.logger")
+    cli.main()
+
+    # Should log update available messages
+    mock_logger.info.assert_any_call("\nUpdate Available")
+    mock_logger.info.assert_any_call(
+        "A newer version (v1.1.0) of Fetchtastic is available!"
+    )
+    mock_logger.info.assert_any_call(
+        "Run 'pip install --upgrade fetchtastic' to upgrade."
+    )
+
+
+def test_cli_repo_command_no_subcommand(mocker, capfd):
+    """Test the 'repo' command with no subcommand."""
+    mocker.patch("sys.argv", ["fetchtastic", "repo"])
+    mocker.patch(
+        "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
+    )
+    mocker.patch("fetchtastic.setup_config.load_config", return_value={"key": "val"})
+    mocker.patch(
+        "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.0.0", False)
+    )
+
+    cli.main()
+    captured = capfd.readouterr()
+
+    # Should show help output when no subcommand is provided
+    # Help output goes to stdout in this case
+    assert (
+        "usage:" in captured.out
+        or "Interact with the meshtastic.github.io repository" in captured.out
+    )
+
+
+def test_cli_no_command_help(mocker, capfd):
+    """Test CLI with no command shows help."""
+    mocker.patch("sys.argv", ["fetchtastic"])
+
+    # CLI shows help and exits normally, doesn't raise SystemExit
+    cli.main()
+
+    captured = capfd.readouterr()
+    assert "usage:" in captured.out
+
+
 def test_cli_setup_command(mocker):
     """Test the 'setup' command dispatch."""
     mocker.patch("sys.argv", ["fetchtastic", "setup"])
@@ -126,38 +332,6 @@ def test_cli_setup_command_with_duplicate_sections(mocker):
 
     # Should deduplicate while preserving order: firmware, android
     mock_setup_run.assert_called_once_with(sections=["firmware", "android"])
-
-
-def test_cli_repo_browse_command(mocker):
-    """Test the 'repo browse' command dispatch."""
-    mocker.patch("sys.argv", ["fetchtastic", "repo", "browse"])
-    mock_repo_main = mocker.patch("fetchtastic.repo_downloader.main")
-    mocker.patch(
-        "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
-    )
-    mocker.patch("fetchtastic.setup_config.load_config", return_value={"key": "val"})
-    mocker.patch(
-        "fetchtastic.cli.display_version_info", return_value=("1.0", "1.0", False)
-    )
-
-    cli.main()
-    mock_repo_main.assert_called_once()
-
-
-def test_cli_repo_clean_command(mocker):
-    """Test the 'repo clean' command dispatch."""
-    mocker.patch("sys.argv", ["fetchtastic", "repo", "clean"])
-    mocker.patch(
-        "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
-    )
-    mocker.patch("fetchtastic.setup_config.load_config", return_value={"key": "val"})
-    mock_run_repo_clean = mocker.patch("fetchtastic.cli.run_repo_clean")
-    mocker.patch(
-        "fetchtastic.cli.display_version_info", return_value=("1.0", "1.0", False)
-    )
-
-    cli.main()
-    mock_run_repo_clean.assert_called_once()
 
 
 def test_cli_clean_command(mocker):
