@@ -1367,6 +1367,74 @@ def test_get_prerelease_patterns_selected_assets_key():
     assert result == ["rak4631-", "tbeam"]
 
 
+def test_windows_modules_import_success(mocker):
+    """Test successful Windows modules import."""
+    # Mock platform.system to return Windows
+    mocker.patch("platform.system", return_value="Windows")
+
+    # Mock successful imports
+    mock_winshell = mocker.MagicMock()
+    mock_win32com = mocker.MagicMock()
+
+    import sys
+
+    with patch.dict(
+        sys.modules,
+        {
+            "winshell": mock_winshell,
+            "win32com.shell": mock_win32com,
+            "win32com.shell.shell": mock_win32com.shell,
+        },
+    ):
+        # Reload the module to test import logic
+        import importlib
+
+        importlib.reload(setup_config)
+
+        # Should have Windows modules available
+        assert setup_config.WINDOWS_MODULES_AVAILABLE is True
+
+
+def test_windows_modules_import_failure(mocker, capfd):
+    """Test Windows modules import failure with helpful message."""
+    # Mock platform.system to return Windows
+    mocker.patch("platform.system", return_value="Windows")
+
+    # Mock failed imports by raising ImportError
+    def mock_import(name, *args, **kwargs):
+        if name in ["winshell", "win32com.shell"]:
+            raise ImportError(f"No module named '{name}'")
+        return __import__(name, *args, **kwargs)
+
+    with patch("builtins.__import__", side_effect=mock_import):
+        # Reload the module to test import logic
+        import importlib
+
+        importlib.reload(setup_config)
+
+        # Should not have Windows modules available
+        assert setup_config.WINDOWS_MODULES_AVAILABLE is False
+
+        # Should show helpful message
+        captured = capfd.readouterr()
+        assert "Windows detected. For full Windows integration" in captured.out
+        assert "pipx install -e .[win]" in captured.out
+
+
+def test_non_windows_platform_no_modules(mocker):
+    """Test non-Windows platform doesn't try to import Windows modules."""
+    # Mock platform.system to return Linux
+    mocker.patch("platform.system", return_value="Linux")
+
+    # Reload the module to test import logic
+    import importlib
+
+    importlib.reload(setup_config)
+
+    # Should not have Windows modules available
+    assert setup_config.WINDOWS_MODULES_AVAILABLE is False
+
+
 @pytest.mark.configuration
 @pytest.mark.unit
 def test_get_prerelease_patterns_selected_assets_none():
