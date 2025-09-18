@@ -577,12 +577,15 @@ def batch_update_prerelease_tracking(
         current_release = latest_release_tag
 
     # Add all new commits that aren't already tracked
-    added_count = 0
-    for commit_hash in new_commits:
-        if commit_hash not in commits:
-            commits.append(commit_hash)
-            logger.info(f"Added prerelease commit {commit_hash} to tracking")
-            added_count += 1
+    # Use set for O(1) lookup performance instead of O(n) list lookup
+    tracked_commits_set = set(commits)
+    newly_added_commits = [
+        c for c in dict.fromkeys(new_commits) if c not in tracked_commits_set
+    ]
+    for commit_hash in newly_added_commits:
+        logger.info(f"Added prerelease commit {commit_hash} to tracking")
+    commits.extend(newly_added_commits)
+    added_count = len(newly_added_commits)
 
     # Write updated tracking data only once
     try:
