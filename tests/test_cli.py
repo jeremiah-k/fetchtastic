@@ -112,14 +112,8 @@ def test_cli_setup_command_windows_integration_update_failed(mocker):
 
 def test_cli_setup_command_windows_integration_update_non_windows(mocker):
     """Test the 'setup' command with Windows integration update on non-Windows."""
-    # Mock platform.system before reloading cli to ensure the flag is not added
+    # Mock platform.system to ensure the flag is not added on non-Windows platforms
     mocker.patch("platform.system", return_value="Linux")
-
-    # Reload the cli module to reconstruct argument parser with mocked platform
-    import importlib
-
-    importlib.reload(cli)
-
     mocker.patch("sys.argv", ["fetchtastic", "setup", "--update-integrations"])
     mocker.patch(
         "fetchtastic.cli.display_version_info",
