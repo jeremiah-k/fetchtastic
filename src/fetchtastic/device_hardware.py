@@ -75,16 +75,16 @@ class DeviceHardwareManager:
         enabled: bool = True,
     ):
         """
-        Create a DeviceHardwareManager that fetches, caches, and serves device hardware patterns.
-
+        Initialize a DeviceHardwareManager that fetches, caches, and serves device hardware patterns.
+        
+        Creates (if necessary) the on-disk cache directory and file (device_hardware.json), and initializes in-memory cache state.
+        
         Parameters:
-            cache_dir: Directory where cache file "device_hardware.json" will be stored. If None, a user cache directory is used.
-            api_url: URL of the Meshtastic device hardware API.
-            cache_hours: Number of hours to consider cached data valid before re-fetching.
-            timeout_seconds: HTTP request timeout in seconds when fetching from the API.
-            enabled: If False, API fetching is disabled and the manager will use cached data or built-in fallbacks only.
-
-        The initializer ensures the cache directory exists, sets the cache file path, and initializes in-memory cache state.
+            cache_dir: Directory where the cache file "device_hardware.json" will be stored. If None, a per-user cache directory is used.
+            api_url: Meshtastic device hardware API URL to query for platform targets.
+            cache_hours: Hours that cached data remains valid before a refresh is attempted.
+            timeout_seconds: HTTP request timeout (seconds) when fetching data from the API.
+            enabled: When False, API fetching is disabled and the manager will rely on cached data or built-in fallbacks only.
         """
         self.api_url = api_url
         self.cache_hours = cache_hours
@@ -104,12 +104,12 @@ class DeviceHardwareManager:
 
     def get_device_patterns(self) -> Set[str]:
         """
-        Return the current set of device patterns (platformioTarget values).
-
-        If an in-memory cache exists and is not expired, it is returned. Otherwise patterns are loaded (from cache, API, or the built-in fallback) and cached before being returned.
-
+        Get the current set of device patterns (platformioTarget values).
+        
+        If an in-memory cache is missing or expired this loads patterns (from disk cache, the API, or the built-in fallback), updates the in-memory cache, and returns the result. The returned set is a copy to prevent external mutation of the internal cache.
+        
         Returns:
-            Set[str]: A set of device pattern strings (e.g., {"rak4631", "tbeam", ...}).
+            Set[str]: A set of normalized device pattern strings (e.g., {"rak4631", "tbeam"}).
         """
         if self._device_patterns is None or self._is_cache_expired():
             self._device_patterns = self._load_device_patterns()
@@ -153,18 +153,18 @@ class DeviceHardwareManager:
 
     def _load_device_patterns(self) -> Set[str]:
         """
-        Load device pattern strings, preferring fresh cached data and falling back to the API or built-in defaults.
-
-        This method attempts to return a set of known device patterns by:
-        1. Returning cached patterns if present and not expired.
-        2. Fetching from the configured API (if enabled), caching the result, and returning it.
-        3. Returning expired cached patterns if the API is unavailable.
-        4. As a last resort, returning a copy of FALLBACK_DEVICE_PATTERNS.
-
+        Load and return known device hardware pattern strings, preferring fresh cache and falling back to the API or built-in defaults.
+        
+        Attempts the following in order:
+        1. Return on-disk cached patterns if present and not expired.
+        2. If enabled, fetch patterns from the configured API, save them to cache, and return them.
+        3. If the API is unavailable but a cache exists (even if expired), return the cached patterns.
+        4. As a last resort, return a copy of FALLBACK_DEVICE_PATTERNS.
+        
         Side effects:
         - May call _fetch_from_api() and _save_to_cache() when refreshing from the API.
-        - May set self._last_fetch_time when falling back to built-in patterns.
-
+        - May update self._last_fetch_time (e.g., when falling back to built-in defaults).
+        
         Returns:
             Set[str]: A set of device pattern strings.
         """
