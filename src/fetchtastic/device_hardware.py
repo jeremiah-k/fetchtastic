@@ -142,11 +142,8 @@ class DeviceHardwareManager:
             if clean_pattern == device_pattern_lower or (
                 len(clean_pattern) >= MIN_DEVICE_PATTERN_PREFIX_LEN
                 and (
-                    (
-                        device_pattern_lower.startswith(f"{clean_pattern}-")
-                        or device_pattern_lower.startswith(f"{clean_pattern}_")
-                        or device_pattern_lower == clean_pattern
-                    )
+                    device_pattern_lower.startswith(f"{clean_pattern}-")
+                    or device_pattern_lower.startswith(f"{clean_pattern}_")
                 )
             ):
                 return True
