@@ -562,9 +562,9 @@ def batch_update_prerelease_tracking(
 
     # Extract commit hashes from all prerelease directory names (filter out None values)
     new_commits = [
-        c
-        for c in (_extract_commit_from_dir_name(pr_dir) for pr_dir in prerelease_dirs)
-        if c is not None
+        commit
+        for pr_dir in prerelease_dirs
+        if (commit := _extract_commit_from_dir_name(pr_dir))
     ]
 
     # Read existing tracking data using helper function
@@ -793,6 +793,7 @@ def check_for_prereleases(
     # Also check existing pre-releases
     prerelease_dir = os.path.join(download_dir, "firmware", "prerelease")
     existing_prerelease_dirs = _get_existing_prerelease_dirs(prerelease_dir)
+    existing_prerelease_dirs_set = set(existing_prerelease_dirs)
 
     # Extract all firmware directory names from the repository
     repo_firmware_dirs = [
@@ -885,7 +886,7 @@ def check_for_prereleases(
                 # Either the directory doesn't exist, or it exists but is missing files
                 should_process = False
 
-                if dir_name not in existing_prerelease_dirs:
+                if dir_name not in existing_prerelease_dirs_set:
                     # Directory doesn't exist at all
                     should_process = True
                 else:

@@ -24,12 +24,20 @@ def main():
     """
     Entry point for the Fetchtastic command-line interface.
 
-    Parses CLI arguments and dispatches subcommands: setup (initial configuration or Windows integration update), download (ensure/migrate config and run downloader), topic (show NTFY topic and optionally copy to clipboard), clean (destructive cleanup), version (show current/available versions), repo (browse/clean repository downloads), and help (contextual help).
+    Parses CLI arguments and dispatches subcommands:
+    - `setup`: Run initial configuration or update Windows integrations.
+    - `download`: Ensure/migrate config and run the downloader.
+    - `topic`: Show NTFY topic and optionally copy to clipboard.
+    - `clean`: Perform a destructive cleanup.
+    - `version`: Show current/available versions.
+    - `repo`: Browse/clean repository downloads.
+    - `help`: Display contextual help.
 
     Side effects:
-    - May read, create, migrate, or remove configuration files and directories.
-    - May modify system startup/cron entries and repository download directories.
-    - May invoke interactive setup/downloader/repo routines and copy text to the clipboard.
+    - Reads, creates, migrates, or removes configuration files and directories.
+    - Modifies system startup/cron entries and repository download directories.
+    - Invokes interactive setup, downloader, or repository routines.
+    - Copies text to the clipboard.
     - Emits informational output to stdout and log messages.
     """
     parser = argparse.ArgumentParser(

@@ -250,8 +250,8 @@ class DeviceHardwareManager:
         except json.JSONDecodeError:
             logger.exception("Invalid JSON response from API")
             return None
-        except Exception:
-            logger.exception("Unexpected error fetching device hardware data")
+        except Exception as e:
+            logger.exception(f"Unexpected error fetching device hardware data: {e}")
             return None
         else:
             self._last_fetch_time = time.time()
