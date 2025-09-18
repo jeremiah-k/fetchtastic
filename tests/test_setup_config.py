@@ -9,6 +9,15 @@ import yaml
 from fetchtastic import setup_config
 from tests.test_constants import TEST_CONFIG
 
+
+@pytest.fixture
+def reload_setup_config_module():
+    """Fixture to reload the setup_config module after a test to restore original state."""
+    yield
+    # Restore the module to its original state after the test
+    importlib.reload(setup_config)
+
+
 # Utility function tests
 
 
@@ -1367,7 +1376,7 @@ def test_get_prerelease_patterns_selected_assets_key():
     assert result == ["rak4631-", "tbeam"]
 
 
-def test_windows_modules_import_success(mocker):
+def test_windows_modules_import_success(mocker, reload_setup_config_module):
     """Test successful Windows modules import."""
     # Mock platform.system to return Windows
     mocker.patch("platform.system", return_value="Windows")
@@ -1392,7 +1401,7 @@ def test_windows_modules_import_success(mocker):
         assert setup_config.WINDOWS_MODULES_AVAILABLE is True
 
 
-def test_non_windows_platform_no_modules(mocker):
+def test_non_windows_platform_no_modules(mocker, reload_setup_config_module):
     """Test non-Windows platform doesn't try to import Windows modules."""
     # Mock platform.system to return Linux
     mocker.patch("platform.system", return_value="Linux")
