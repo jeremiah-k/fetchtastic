@@ -17,6 +17,24 @@ import yaml
 from fetchtastic import menu_apk, menu_firmware
 from fetchtastic.constants import CONFIG_FILE_NAME, MESHTASTIC_DIR_NAME
 
+# Recommended default exclude patterns for firmware extraction
+# These patterns exclude specialized variants and debug files that most users don't need
+RECOMMENDED_EXCLUDE_PATTERNS = [
+    ".hex",  # hex files (debug/raw files)
+    "tcxo",  # TCXO related files (crystal oscillator)
+    "s3-core",  # S3 core files (specific hardware)
+    "request",  # request files (debug/test files)
+    "rak4631_",  # RAK4631 underscore variants (like rak4631_eink)
+    "heltec_",  # Heltec underscore variants
+    "tbeam_",  # T-Beam underscore variants
+    "tlora_",  # TLORA underscore variants
+    "_tft",  # TFT display variants
+    "_oled",  # OLED display variants
+    "_lcd",  # LCD display variants
+    "_epaper",  # e-paper display variants
+    "_eink",  # e-ink display variants
+]
+
 # Import Windows-specific modules if on Windows
 if platform.system() == "Windows":
     try:
@@ -578,6 +596,95 @@ def _setup_android(config: dict, is_first_run: bool, default_versions: int) -> d
     return config
 
 
+def configure_exclude_patterns(config: dict) -> None:
+    """
+    Configure exclude patterns with improved user experience.
+
+    Offers recommended defaults, allows additional patterns, and includes
+    confirmation with retry capability.
+    """
+    while True:  # Loop for retry capability
+        print("\n--- Exclude Pattern Configuration ---")
+        print(
+            "Some firmware files are specialized variants (like display-specific versions)"
+        )
+        print("that most users don't need. We can exclude these automatically.")
+
+        # Offer recommended defaults
+        recommended_str = " ".join(RECOMMENDED_EXCLUDE_PATTERNS)
+        use_defaults_default = "yes"
+        use_defaults = (
+            input(
+                f"Would you like to use our recommended exclude patterns?\n"
+                f"These skip common specialized variants and debug files: [y/n] (default: {use_defaults_default}): "
+            )
+            .strip()
+            .lower()
+            or use_defaults_default[0]
+        )
+
+        if use_defaults == "y":
+            # Start with recommended patterns
+            exclude_patterns = RECOMMENDED_EXCLUDE_PATTERNS.copy()
+            print(f"Using recommended exclude patterns: {recommended_str}")
+
+            # Ask for additional patterns
+            add_more_default = "no"
+            add_more = (
+                input(
+                    f"Would you like to add any additional exclude patterns? [y/n] (default: {add_more_default}): "
+                )
+                .strip()
+                .lower()
+                or add_more_default[0]
+            )
+
+            if add_more == "y":
+                additional_patterns = input(
+                    "Enter additional patterns (space-separated): "
+                ).strip()
+                if additional_patterns:
+                    exclude_patterns.extend(additional_patterns.split())
+        else:
+            # User doesn't want defaults, get custom patterns
+            custom_patterns = input(
+                "Enter your exclude patterns (space-separated, or press Enter for none): "
+            ).strip()
+            if custom_patterns:
+                exclude_patterns = custom_patterns.split()
+            else:
+                exclude_patterns = []
+
+        # Show final list and confirm
+        if exclude_patterns:
+            final_patterns_str = " ".join(exclude_patterns)
+            print(f"\nFinal exclude patterns: {final_patterns_str}")
+        else:
+            print(
+                "\nNo exclude patterns will be used. All matching files will be extracted."
+            )
+
+        confirm_default = "yes"
+        confirm = (
+            input(f"Is this correct? [y/n] (default: {confirm_default}): ")
+            .strip()
+            .lower()
+            or confirm_default[0]
+        )
+
+        if confirm == "y":
+            # Save the configuration and break the loop
+            config["EXCLUDE_PATTERNS"] = exclude_patterns
+            if exclude_patterns:
+                print(f"Exclude patterns configured: {' '.join(exclude_patterns)}")
+            else:
+                print("No exclude patterns configured.")
+            break
+        else:
+            # User wants to reconfigure, loop will continue
+            print("Let's reconfigure the exclude patterns...")
+
+
 def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> dict:
     """
     Configure firmware-related settings in the provided config dictionary by interactively prompting the user.
@@ -687,11 +794,14 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
 
             if migrate_choice == "y":
                 config["SELECTED_PRERELEASE_ASSETS"] = migration_patterns.copy()
+                # Remove the old EXTRACT_PATTERNS key to complete migration
+                if "EXTRACT_PATTERNS" in config:
+                    del config["EXTRACT_PATTERNS"]
                 print(
                     f"Prerelease asset patterns set to: {' '.join(migration_patterns)}"
                 )
                 print(
-                    "Note: Your extraction patterns will be configured separately in the next section."
+                    "Migration complete: EXTRACT_PATTERNS has been converted to SELECTED_PRERELEASE_ASSETS"
                 )
             else:
                 new_patterns = input("Enter prerelease asset patterns: ").strip()
@@ -717,6 +827,10 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
     else:
         # Prereleases disabled, clear the setting
         config["SELECTED_PRERELEASE_ASSETS"] = []
+
+    # File extraction configuration section
+    print("\n--- File Extraction Configuration ---")
+    print("Configure which files to extract from downloaded firmware archives.")
 
     # Prompt for automatic extraction
     auto_extract_current = config.get("AUTO_EXTRACT", False)
@@ -781,64 +895,9 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
                 # Skip exclude patterns prompt
                 config["EXCLUDE_PATTERNS"] = []
 
-        # Prompt for exclude patterns if extraction is enabled
+        # Configure exclude patterns if extraction is enabled
         if config.get("AUTO_EXTRACT", False) and config.get("EXTRACT_PATTERNS"):
-            exclude_default = "yes" if config.get("EXCLUDE_PATTERNS") else "no"
-            exclude_prompt = f"Would you like to exclude any patterns from extraction? [y/n] (default: {exclude_default}): "
-            exclude_choice = input(exclude_prompt).strip().lower() or exclude_default[0]
-            if exclude_choice == "y":
-                print(
-                    "Enter the keywords to exclude from extraction, separated by spaces."
-                )
-                print("Example: .hex tcxo request s3-core")
-
-                # Check if there are existing exclude patterns
-                if config.get("EXCLUDE_PATTERNS"):
-                    current_excludes = " ".join(config.get("EXCLUDE_PATTERNS", []))
-                    print(f"Current exclude patterns: {current_excludes}")
-
-                    # Ask if user wants to keep or change exclude patterns
-                    keep_excludes_default = "yes"
-                    keep_excludes = (
-                        input(
-                            f"Do you want to keep the current exclude patterns? [y/n] (default: {keep_excludes_default}): "
-                        )
-                        .strip()
-                        .lower()
-                        or keep_excludes_default[0]
-                    )
-
-                    if keep_excludes == "y":
-                        # Keep existing exclude patterns
-                        print(f"Keeping current exclude patterns: {current_excludes}")
-                    else:
-                        # Get new exclude patterns
-                        exclude_patterns = input("Enter new exclude patterns: ").strip()
-                        if exclude_patterns:
-                            config["EXCLUDE_PATTERNS"] = exclude_patterns.split()
-                            print(f"Exclude patterns updated to: {exclude_patterns}")
-                        else:
-                            config["EXCLUDE_PATTERNS"] = []
-                            print(
-                                "No exclude patterns entered. All matching files will be extracted."
-                            )
-                else:
-                    # No existing exclude patterns, get new ones
-                    exclude_patterns = input("Exclude patterns: ").strip()
-                    if exclude_patterns:
-                        config["EXCLUDE_PATTERNS"] = exclude_patterns.split()
-                        print(f"Exclude patterns set to: {exclude_patterns}")
-                    else:
-                        config["EXCLUDE_PATTERNS"] = []
-                        print(
-                            "No exclude patterns entered. All matching files will be extracted."
-                        )
-            else:
-                # User chose not to exclude patterns
-                config["EXCLUDE_PATTERNS"] = []
-                print(
-                    "No exclude patterns will be used. All matching files will be extracted."
-                )
+            configure_exclude_patterns(config)
         else:
             config["EXCLUDE_PATTERNS"] = []
     else:

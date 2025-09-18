@@ -1113,11 +1113,10 @@ def check_for_prereleases(
             dir_name = os.path.basename(os.path.dirname(p))
             files_by_dir[dir_name].append(p)
 
-        version_file_counts = {}
-        for dir_name in files_by_dir:
-            if dir_name not in downloaded_versions:
-                downloaded_versions.append(dir_name)
-            version_file_counts[dir_name] = len(files_by_dir[dir_name])
+        version_file_counts = {
+            dir_name: len(files) for dir_name, files in files_by_dir.items()
+        }
+        downloaded_versions.extend(version_file_counts.keys())
 
         # Log per-version file counts
         for version, count in version_file_counts.items():
