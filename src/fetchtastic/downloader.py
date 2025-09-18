@@ -121,15 +121,15 @@ def compare_versions(version1, version2):
     def _try_parse(v: str):
         """
         Try to parse a version string into a packaging.version object, returning None if it cannot be normalized.
-        
+
         This normalizer handles several common non-PEP 440 forms before delegating to packaging.version.parse:
         - Strips a leading "v" (case-insensitive), e.g. "v2.7.8" -> "2.7.8".
         - Converts trailing hash-like segments into a PEP 440 local version, e.g. "2.7.8.a0c0388" -> "2.7.8+a0c0388".
         - Normalizes dotted or dashed prerelease markers into PEP 440 prerelease notation, e.g. "2.3.0.rc1" -> "2.3.0rc1", "2.3.0-beta2" -> "2.3.0b2".
-        
+
         Parameters:
             v (str): Input version string.
-        
+
         Returns:
             packaging.version.Version or packaging.version.LegacyVersion or None: Parsed version on success, or None if the string could not be coerced into a parseable form.
         """
@@ -198,17 +198,17 @@ def check_promoted_prereleases(
 ):  # log_message_func parameter removed
     """
     Check for prerelease firmware directories that have been promoted to an official release and remove them.
-    
+
     Scans download_dir/firmware/prerelease for directories named "firmware-<version>" (optionally including a commit/hash suffix). For any prerelease whose version (a leading "v" is ignored) equals latest_release_tag, this function will:
     - If the corresponding official release directory does not exist: remove the prerelease directory (it is expected the official release will be downloaded separately).
     - If the official release directory exists: compare files by SHA‑256 (via compare_file_hashes) and remove the prerelease directory only if all files match.
-    
+
     Invalidly formatted prerelease directory names (not matching VERSION_REGEX_PATTERN) are skipped.
-    
+
     Parameters:
         download_dir (str): Base download directory containing firmware/{prerelease, <tag>}.
         latest_release_tag (str): Latest official release tag (may include a leading 'v').
-    
+
     Returns:
         bool: True if one or more prerelease directories were removed (promoted); False otherwise.
     """
@@ -402,12 +402,12 @@ def _read_text_tracking_file(tracking_file):
 def _read_prerelease_tracking_data(tracking_file):
     """
     Read prerelease tracking data from JSON, falling back to the legacy text format.
-    
+
     Parses prerelease_tracking.json at tracking_file and returns a tuple (commits, current_release).
     If the JSON file is missing or cannot be parsed, falls back to the legacy text reader
     (_read_text_tracking_file) which reads prerelease_commits.txt-style data. Returns an empty
     commit list and None for the release when no valid tracking information is available.
-    
+
     Returns:
         tuple: (commits, current_release)
             commits (list[str]): Ordered list of prerelease commit hashes (may be empty).
@@ -437,7 +437,7 @@ def _read_prerelease_tracking_data(tracking_file):
 def _extract_commit_from_dir_name(dir_name: str) -> Optional[str]:
     """
     Extract a commit hash from a prerelease directory name.
-    
+
     Recognizes a trailing hex commit fragment of 6–12 characters in names like
     "firmware-2.7.7.abcdef" or "firmware-2.7.7.abcdef-extra". Returns the hex
     string normalized to lowercase, or None if no commit-like fragment is found.
@@ -476,11 +476,11 @@ def _get_existing_prerelease_dirs(prerelease_dir: str) -> list[str]:
 def _get_prerelease_patterns(config: dict) -> list[str]:
     """
     Return the list of file-selection patterns used for prerelease assets.
-    
+
     Prefers the new SELECTED_PRERELEASE_ASSETS key from config. If that key is absent,
     falls back to the legacy EXTRACT_PATTERNS key (and logs a deprecation warning).
     Always returns a list (empty if no patterns are configured).
-    
+
     Parameters:
         config (dict): Configuration mapping that may contain SELECTED_PRERELEASE_ASSETS
             or the legacy EXTRACT_PATTERNS key.
@@ -526,14 +526,14 @@ def batch_update_prerelease_tracking(
 ):
     """
     Update prerelease_tracking.json by adding any new commit hashes found in the provided prerelease directory names and (if the official release tag changed) reset tracked commits to start from the new release.
-    
+
     If prerelease_dirs is empty this is a no-op and returns 0. Reads existing tracking from prerelease_tracking.json (falling back to legacy text tracking), appends any previously-untracked commit hashes extracted from names like "firmware-1.2.3.<commit>", and writes a single updated prerelease_tracking.json containing keys "release", "commits", and "last_updated".
-    
+
     Parameters:
         prerelease_dir (str): Directory containing prerelease_tracking.json.
         latest_release_tag (str): Current official release tag; when this differs from the stored release the tracked commits are reset.
         prerelease_dirs (list[str]): Prerelease directory names to scan for commit hashes; entries without a commit are ignored.
-    
+
     Returns:
         int: Total number of tracked prerelease commits after the update.
              Returns 0 immediately if prerelease_dirs is empty.
@@ -667,12 +667,12 @@ def matches_extract_patterns(filename, extract_patterns, device_manager=None):
 def get_prerelease_tracking_info(prerelease_dir):
     """
     Return prerelease tracking information from prerelease_tracking.json or a legacy text file.
-    
+
     Attempts to read prerelease_tracking.json in prerelease_dir (preferred). If the JSON file is missing or cannot be parsed, falls back to the legacy prerelease_commits.txt format via _read_text_tracking_file. This function logs read/parsing issues and never raises.
-    
+
     Parameters:
         prerelease_dir (str): Directory containing prerelease tracking files; may not exist.
-    
+
     Returns:
         dict: Empty dict if no tracking data is available; otherwise a dictionary with:
             - release (str): Tracked official release tag or "unknown" when not recorded.
@@ -779,9 +779,9 @@ def check_for_prereleases(
     def extract_version(dir_name: str) -> str:
         """
         Return the version portion of a prerelease directory name.
-        
+
         If dir_name starts with the literal prefix "firmware-", the prefix is removed and the remainder is returned (e.g. "firmware-2.7.9.abcdef" -> "2.7.9.abcdef"). Otherwise the original dir_name is returned unchanged.
-        
+
         Returns:
             str: The extracted version string or the original input if no prefix matched.
         """

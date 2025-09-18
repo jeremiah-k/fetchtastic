@@ -76,9 +76,9 @@ class DeviceHardwareManager:
     ):
         """
         Initialize a DeviceHardwareManager that fetches, caches, and serves device hardware patterns.
-        
+
         Creates (if necessary) the on-disk cache directory and file (device_hardware.json), and initializes in-memory cache state.
-        
+
         Parameters:
             cache_dir: Directory where the cache file "device_hardware.json" will be stored. If None, a per-user cache directory is used.
             api_url: Meshtastic device hardware API URL to query for platform targets.
@@ -105,9 +105,9 @@ class DeviceHardwareManager:
     def get_device_patterns(self) -> Set[str]:
         """
         Get the current set of device patterns (platformioTarget values).
-        
+
         If an in-memory cache is missing or expired this loads patterns (from disk cache, the API, or the built-in fallback), updates the in-memory cache, and returns the result. The returned set is a copy to prevent external mutation of the internal cache.
-        
+
         Returns:
             Set[str]: A set of normalized device pattern strings (e.g., {"rak4631", "tbeam"}).
         """
@@ -154,17 +154,17 @@ class DeviceHardwareManager:
     def _load_device_patterns(self) -> Set[str]:
         """
         Load and return known device hardware pattern strings, preferring fresh cache and falling back to the API or built-in defaults.
-        
+
         Attempts the following in order:
         1. Return on-disk cached patterns if present and not expired.
         2. If enabled, fetch patterns from the configured API, save them to cache, and return them.
         3. If the API is unavailable but a cache exists (even if expired), return the cached patterns.
         4. As a last resort, return a copy of FALLBACK_DEVICE_PATTERNS.
-        
+
         Side effects:
         - May call _fetch_from_api() and _save_to_cache() when refreshing from the API.
         - May update self._last_fetch_time (e.g., when falling back to built-in defaults).
-        
+
         Returns:
             Set[str]: A set of device pattern strings.
         """
@@ -253,6 +253,9 @@ class DeviceHardwareManager:
             return None
         except json.JSONDecodeError:
             logger.exception("Invalid JSON response from API")
+            return None
+        except (TypeError, KeyError) as e:
+            logger.exception(f"Error processing device hardware data: {e}")
             return None
         except Exception:
             logger.exception("Unexpected error fetching device hardware data")

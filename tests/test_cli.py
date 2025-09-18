@@ -842,7 +842,7 @@ def test_run_clean_user_says_no_explicitly(mocker):
 def test_cli_download_with_log_level_config(mocker):
     """
     Verify that running the CLI `download` command applies a configured LOG_LEVEL and dispatches to the downloader.
-    
+
     Sets up a fake CLI invocation and a loaded configuration containing a "LOG_LEVEL" key. Asserts that `set_log_level` is called with the configured value, `downloader.main` is invoked, and `setup_config.run_setup` is not called when a valid config exists.
     """
     mocker.patch("sys.argv", ["fetchtastic", "download"])
