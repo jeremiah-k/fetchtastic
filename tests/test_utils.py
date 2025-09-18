@@ -484,16 +484,14 @@ def test_save_file_hash_error_handling(tmp_path, mocker):
         utils.save_file_hash(str(file_path), "dummy_hash")
 
     # Test OSError during temp file cleanup
-    with patch("builtins.open", mocker.mock_open()):
-        with patch(
-            "fetchtastic.utils.os.replace", side_effect=OSError("Replace failed")
-        ):
-            with patch("fetchtastic.utils.os.path.exists", return_value=True):
-                with patch(
-                    "fetchtastic.utils.os.remove", side_effect=OSError("Remove failed")
-                ):
-                    # Should handle cleanup error gracefully
-                    utils.save_file_hash(str(file_path), "dummy_hash")
+    # Test OSError during temp file cleanup
+    mocker.patch("builtins.open", mocker.mock_open())
+    mocker.patch("fetchtastic.utils.os.replace", side_effect=OSError("Replace failed"))
+    mocker.patch("fetchtastic.utils.os.path.exists", return_value=True)
+    mocker.patch("fetchtastic.utils.os.remove", side_effect=OSError("Remove failed"))
+
+    # Should handle cleanup error gracefully
+    utils.save_file_hash(str(file_path), "dummy_hash")
 
 
 def test_remove_file_and_hash_success(tmp_path):

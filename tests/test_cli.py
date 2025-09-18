@@ -125,23 +125,29 @@ def test_cli_setup_command_windows_integration_update_non_windows(mocker, capfd)
             cli.main()
 
 
-def test_cli_repo_browse_command(mocker):
-    """Test the 'repo browse' command."""
-    mocker.patch("sys.argv", ["fetchtastic", "repo", "browse"])
+@pytest.mark.parametrize("command", ["browse", "clean"])
+def test_cli_repo_command_success(mocker, command):
+    """Test the 'repo' subcommands with successful execution."""
+    mocker.patch("sys.argv", ["fetchtastic", "repo", command])
     mocker.patch(
         "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
     )
     mock_load_config = mocker.patch(
         "fetchtastic.setup_config.load_config", return_value={"key": "val"}
     )
-    mock_repo_main = mocker.patch("fetchtastic.repo_downloader.main")
+
+    if command == "browse":
+        mock_action = mocker.patch("fetchtastic.repo_downloader.main")
+    else:  # clean
+        mock_action = mocker.patch("fetchtastic.cli.run_repo_clean")
+
     mocker.patch(
         "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.0.0", False)
     )
 
     cli.main()
     mock_load_config.assert_called_once()
-    mock_repo_main.assert_called_once_with({"key": "val"})
+    mock_action.assert_called_once_with({"key": "val"})
 
 
 def test_cli_repo_browse_command_no_config(mocker):
@@ -214,25 +220,6 @@ def test_cli_repo_command_with_update_available(mocker, command):
     mock_logger.info.assert_any_call(
         "Run 'pip install --upgrade fetchtastic' to upgrade."
     )
-
-
-def test_cli_repo_clean_command(mocker):
-    """Test the 'repo clean' command."""
-    mocker.patch("sys.argv", ["fetchtastic", "repo", "clean"])
-    mocker.patch(
-        "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
-    )
-    mock_load_config = mocker.patch(
-        "fetchtastic.setup_config.load_config", return_value={"key": "val"}
-    )
-    mock_run_repo_clean = mocker.patch("fetchtastic.cli.run_repo_clean")
-    mocker.patch(
-        "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.0.0", False)
-    )
-
-    cli.main()
-    mock_load_config.assert_called_once()
-    mock_run_repo_clean.assert_called_once_with({"key": "val"})
 
 
 def test_cli_repo_command_no_subcommand(mocker, capfd):
