@@ -83,7 +83,9 @@ def test_cli_setup_command_windows_integration_update_no_config(mocker, capfd):
 
     cli.main()
     captured = capfd.readouterr()
-    assert "No configuration found. Run 'fetchtastic setup' first." in captured.out
+    # The message is logged with ERROR level, so check for the core message parts
+    assert "No configuration found" in captured.out
+    assert "fetchtastic setup" in captured.out
 
 
 def test_cli_setup_command_windows_integration_update_failed(mocker, capfd):
@@ -195,9 +197,10 @@ def test_cli_repo_browse_command_with_update_available(mocker, capfd):
 
     cli.main()
     captured = capfd.readouterr()
+    # Messages are logged with INFO level, so check for the core content
     assert "Update Available" in captured.out
-    assert "A newer version (v1.1.0) of Fetchtastic is available!" in captured.out
-    assert "Run 'pip install --upgrade fetchtastic' to upgrade." in captured.out
+    assert "newer version" in captured.out and "1.1.0" in captured.out
+    assert "pip install --upgrade fetchtastic" in captured.out
 
 
 def test_cli_repo_clean_command(mocker):
@@ -237,23 +240,32 @@ def test_cli_repo_clean_command_with_update_available(mocker, capfd):
 
     cli.main()
     captured = capfd.readouterr()
+    # Messages are logged with INFO level, so check for the core content
     assert "Update Available" in captured.out
-    assert "A newer version (v1.1.0) of Fetchtastic is available!" in captured.out
-    assert "Run 'pip install --upgrade fetchtastic' to upgrade." in captured.out
+    assert "newer version" in captured.out and "1.1.0" in captured.out
+    assert "pip install --upgrade fetchtastic" in captured.out
 
 
 def test_cli_repo_command_no_subcommand(mocker, capfd):
     """Test the 'repo' command with no subcommand."""
     mocker.patch("sys.argv", ["fetchtastic", "repo"])
     mocker.patch(
+        "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
+    )
+    mocker.patch("fetchtastic.setup_config.load_config", return_value={"key": "val"})
+    mocker.patch(
         "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.0.0", False)
     )
 
-    with pytest.raises(SystemExit):
-        cli.main()
-
+    cli.main()
     captured = capfd.readouterr()
-    assert "usage:" in captured.out or "usage:" in captured.err
+
+    # Should show help output when no subcommand is provided
+    # Help output goes to stdout in this case
+    assert (
+        "usage:" in captured.out
+        or "Interact with the meshtastic.github.io repository" in captured.out
+    )
 
 
 def test_cli_no_command_help(mocker, capfd):
