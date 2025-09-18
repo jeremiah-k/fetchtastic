@@ -233,9 +233,6 @@ def test_cli_repo_command_no_subcommand(mocker, capfd):
         "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.0.0", False)
     )
 
-    # Mock stdin to prevent any potential hanging on input
-    mocker.patch("builtins.input", side_effect=EOFError())
-
     cli.main()
     captured = capfd.readouterr()
 
