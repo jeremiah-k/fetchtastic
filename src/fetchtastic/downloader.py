@@ -1102,7 +1102,7 @@ def check_for_prereleases(
 
     downloaded_versions = []
     if downloaded_files:
-        logger.info(f"Pre-release files processed: {len(downloaded_files)} total files")
+        logger.info(f"Downloaded {len(downloaded_files)} new pre-release files.")
 
         # Extract unique directory names from downloaded files and count files per version
         # Group files by directory for better performance
@@ -1119,7 +1119,7 @@ def check_for_prereleases(
 
         # Log per-version file counts
         for version, count in version_file_counts.items():
-            logger.info(f"Pre-release {version}: {count} files")
+            logger.info(f"Pre-release {version}: {count} new files downloaded")
 
     # Update prerelease tracking (run once regardless of download success)
     if all_prerelease_dirs:
