@@ -1143,3 +1143,316 @@ def test_run_setup_skips_prompt_when_sections_provided(mock_prompt, mock_config_
                             pass  # We expect exceptions due to incomplete mocking
 
     mock_prompt.assert_not_called()
+
+
+# SELECTED_PRERELEASE_ASSETS setup wizard tests
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("builtins.input")
+def test_setup_firmware_selected_prerelease_assets_new_config(mock_input):
+    """Test setup wizard prompts for SELECTED_PRERELEASE_ASSETS with new configuration."""
+    config = {}
+
+    # Simulate user inputs: 3 versions, yes to prereleases, device patterns, no to auto-extract
+    mock_input.side_effect = ["3", "y", "rak4631- tbeam", "n"]
+
+    result = setup_config._setup_firmware(config, is_first_run=True, default_versions=2)
+
+    assert result["FIRMWARE_VERSIONS_TO_KEEP"] == 3
+    assert result["CHECK_PRERELEASES"] is True
+    assert result["SELECTED_PRERELEASE_ASSETS"] == ["rak4631-", "tbeam"]
+    assert result["AUTO_EXTRACT"] is False
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("builtins.input")
+def test_setup_firmware_selected_prerelease_assets_migration_accept(mock_input):
+    """Test migration from EXTRACT_PATTERNS to SELECTED_PRERELEASE_ASSETS when user accepts."""
+    config = {
+        "FIRMWARE_VERSIONS_TO_KEEP": 2,
+        "CHECK_PRERELEASES": False,
+        "EXTRACT_PATTERNS": ["station-", "heltec-", "rak4631-"],
+        "AUTO_EXTRACT": True,
+    }
+
+    # Simulate user inputs: keep 2 versions, enable prereleases, accept migration, keep auto-extract, keep current patterns, no exclude patterns
+    mock_input.side_effect = ["2", "y", "y", "y", "y", "n"]
+
+    result = setup_config._setup_firmware(
+        config, is_first_run=False, default_versions=2
+    )
+
+    assert result["CHECK_PRERELEASES"] is True
+    assert result["SELECTED_PRERELEASE_ASSETS"] == ["station-", "heltec-", "rak4631-"]
+    assert result["EXTRACT_PATTERNS"] == [
+        "station-",
+        "heltec-",
+        "rak4631-",
+    ]  # Should be preserved
+    assert result["AUTO_EXTRACT"] is True
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("builtins.input")
+def test_setup_firmware_selected_prerelease_assets_migration_decline(mock_input):
+    """Test migration from EXTRACT_PATTERNS to SELECTED_PRERELEASE_ASSETS when user declines."""
+    config = {
+        "FIRMWARE_VERSIONS_TO_KEEP": 2,
+        "CHECK_PRERELEASES": False,
+        "EXTRACT_PATTERNS": ["station-", "heltec-"],
+        "AUTO_EXTRACT": True,
+    }
+
+    # Simulate user inputs: keep 2 versions, enable prereleases, decline migration, provide new patterns, keep auto-extract, keep current patterns, no exclude patterns
+    mock_input.side_effect = ["2", "y", "n", "esp32- rak4631-", "y", "y", "n"]
+
+    result = setup_config._setup_firmware(
+        config, is_first_run=False, default_versions=2
+    )
+
+    assert result["CHECK_PRERELEASES"] is True
+    assert result["SELECTED_PRERELEASE_ASSETS"] == ["esp32-", "rak4631-"]
+    assert result["EXTRACT_PATTERNS"] == ["station-", "heltec-"]  # Should be preserved
+    assert result["AUTO_EXTRACT"] is True
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("builtins.input")
+def test_setup_firmware_selected_prerelease_assets_existing_keep(mock_input):
+    """Test keeping existing SELECTED_PRERELEASE_ASSETS configuration."""
+    config = {
+        "FIRMWARE_VERSIONS_TO_KEEP": 3,
+        "CHECK_PRERELEASES": True,
+        "SELECTED_PRERELEASE_ASSETS": ["tbeam", "t1000-e-"],
+        "AUTO_EXTRACT": False,
+    }
+
+    # Simulate user inputs: keep 3 versions, keep prereleases, keep existing patterns, no auto-extract
+    mock_input.side_effect = ["3", "y", "y", "n"]
+
+    result = setup_config._setup_firmware(
+        config, is_first_run=False, default_versions=2
+    )
+
+    assert result["CHECK_PRERELEASES"] is True
+    assert result["SELECTED_PRERELEASE_ASSETS"] == ["tbeam", "t1000-e-"]
+    assert result["AUTO_EXTRACT"] is False
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("builtins.input")
+def test_setup_firmware_selected_prerelease_assets_existing_change(mock_input):
+    """Test changing existing SELECTED_PRERELEASE_ASSETS configuration."""
+    config = {
+        "FIRMWARE_VERSIONS_TO_KEEP": 3,
+        "CHECK_PRERELEASES": True,
+        "SELECTED_PRERELEASE_ASSETS": ["old-pattern"],
+        "AUTO_EXTRACT": False,
+    }
+
+    # Simulate user inputs: keep 3 versions, keep prereleases, change patterns, new patterns, no auto-extract
+    mock_input.side_effect = ["3", "y", "n", "new-pattern device-", "n"]
+
+    result = setup_config._setup_firmware(
+        config, is_first_run=False, default_versions=2
+    )
+
+    assert result["CHECK_PRERELEASES"] is True
+    assert result["SELECTED_PRERELEASE_ASSETS"] == ["new-pattern", "device-"]
+    assert result["AUTO_EXTRACT"] is False
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("builtins.input")
+def test_setup_firmware_selected_prerelease_assets_disabled_prereleases(mock_input):
+    """Test that SELECTED_PRERELEASE_ASSETS is cleared when prereleases are disabled."""
+    config = {
+        "FIRMWARE_VERSIONS_TO_KEEP": 2,
+        "CHECK_PRERELEASES": True,
+        "SELECTED_PRERELEASE_ASSETS": ["rak4631-", "tbeam"],
+        "AUTO_EXTRACT": False,
+    }
+
+    # Simulate user inputs: keep 2 versions, disable prereleases, no auto-extract
+    mock_input.side_effect = ["2", "n", "n"]
+
+    result = setup_config._setup_firmware(
+        config, is_first_run=False, default_versions=2
+    )
+
+    assert result["CHECK_PRERELEASES"] is False
+    assert result["SELECTED_PRERELEASE_ASSETS"] == []  # Should be cleared
+    assert result["AUTO_EXTRACT"] is False
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("builtins.input")
+def test_setup_firmware_selected_prerelease_assets_empty_patterns(mock_input):
+    """Test handling of empty prerelease asset patterns."""
+    config = {}
+
+    # Simulate user inputs: 2 versions, yes to prereleases, empty patterns, no auto-extract
+    mock_input.side_effect = ["2", "y", "", "n"]
+
+    result = setup_config._setup_firmware(config, is_first_run=True, default_versions=2)
+
+    assert result["CHECK_PRERELEASES"] is True
+    assert result["SELECTED_PRERELEASE_ASSETS"] == []  # Empty patterns
+    assert result["AUTO_EXTRACT"] is False
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("builtins.input")
+def test_setup_firmware_selected_prerelease_assets_migration_empty_input(mock_input):
+    """Test migration scenario when user provides empty input after declining migration."""
+    config = {
+        "FIRMWARE_VERSIONS_TO_KEEP": 2,
+        "CHECK_PRERELEASES": False,
+        "EXTRACT_PATTERNS": ["station-", "heltec-"],
+        "AUTO_EXTRACT": False,
+    }
+
+    # Simulate user inputs: keep 2 versions, enable prereleases, decline migration, empty input, no auto-extract
+    mock_input.side_effect = ["2", "y", "n", "", "n"]
+
+    result = setup_config._setup_firmware(
+        config, is_first_run=False, default_versions=2
+    )
+
+    assert result["CHECK_PRERELEASES"] is True
+    assert result["SELECTED_PRERELEASE_ASSETS"] == []  # Empty when no input provided
+    assert result["EXTRACT_PATTERNS"] == []  # Cleared when AUTO_EXTRACT is False
+
+
+# Test helper functions for configuration handling
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_get_prerelease_patterns_selected_assets_key():
+    """Test _get_prerelease_patterns with SELECTED_PRERELEASE_ASSETS key."""
+    from fetchtastic.downloader import _get_prerelease_patterns
+
+    config = {"SELECTED_PRERELEASE_ASSETS": ["rak4631-", "tbeam"]}
+    result = _get_prerelease_patterns(config)
+
+    assert result == ["rak4631-", "tbeam"]
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_get_prerelease_patterns_selected_assets_none():
+    """Test _get_prerelease_patterns with SELECTED_PRERELEASE_ASSETS set to None."""
+    from fetchtastic.downloader import _get_prerelease_patterns
+
+    config = {"SELECTED_PRERELEASE_ASSETS": None}
+    result = _get_prerelease_patterns(config)
+
+    assert result == []  # Should return empty list, not None
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_get_prerelease_patterns_selected_assets_empty():
+    """Test _get_prerelease_patterns with empty SELECTED_PRERELEASE_ASSETS."""
+    from fetchtastic.downloader import _get_prerelease_patterns
+
+    config = {"SELECTED_PRERELEASE_ASSETS": []}
+    result = _get_prerelease_patterns(config)
+
+    assert result == []
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_get_prerelease_patterns_fallback_to_extract_patterns():
+    """Test _get_prerelease_patterns fallback to EXTRACT_PATTERNS."""
+    from fetchtastic.downloader import _get_prerelease_patterns
+
+    config = {"EXTRACT_PATTERNS": ["station-", "heltec-"]}
+
+    with patch("fetchtastic.downloader.logger") as mock_logger:
+        result = _get_prerelease_patterns(config)
+
+        assert result == ["station-", "heltec-"]
+        mock_logger.warning.assert_called_once()
+        assert "deprecated" in mock_logger.warning.call_args[0][0].lower()
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_get_prerelease_patterns_no_keys():
+    """Test _get_prerelease_patterns with no configuration keys."""
+    from fetchtastic.downloader import _get_prerelease_patterns
+
+    config = {}
+    result = _get_prerelease_patterns(config)
+
+    assert result == []
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_get_prerelease_patterns_precedence():
+    """Test that SELECTED_PRERELEASE_ASSETS takes precedence over EXTRACT_PATTERNS."""
+    from fetchtastic.downloader import _get_prerelease_patterns
+
+    config = {
+        "SELECTED_PRERELEASE_ASSETS": ["new-pattern"],
+        "EXTRACT_PATTERNS": ["old-pattern"],
+    }
+
+    with patch("fetchtastic.downloader.logger") as mock_logger:
+        result = _get_prerelease_patterns(config)
+
+        assert result == ["new-pattern"]
+        mock_logger.warning.assert_not_called()  # No deprecation warning when using new key
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_extract_commit_from_dir_name_valid():
+    """Test _extract_commit_from_dir_name with valid directory names."""
+    from fetchtastic.downloader import _extract_commit_from_dir_name
+
+    test_cases = [
+        ("firmware-2.7.7.abcdef", "abcdef"),
+        ("firmware-2.8.0.123456", "123456"),
+        ("firmware-2.9.0-rc1.fedcba", "fedcba"),
+        ("FIRMWARE-2.7.8.ABCDEF", "abcdef"),  # Case normalization
+    ]
+
+    for dir_name, expected in test_cases:
+        result = _extract_commit_from_dir_name(dir_name)
+        assert result == expected, f"Failed for {dir_name}"
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_extract_commit_from_dir_name_invalid():
+    """Test _extract_commit_from_dir_name with invalid directory names."""
+    from fetchtastic.downloader import _extract_commit_from_dir_name
+
+    invalid_cases = [
+        "firmware-unknown",
+        "not-a-firmware-dir",
+        "firmware-2.7.8",  # No commit hash
+        "random-directory",
+    ]
+
+    with patch("fetchtastic.downloader.logger") as mock_logger:
+        for dir_name in invalid_cases:
+            result = _extract_commit_from_dir_name(dir_name)
+            assert result is None, f"Should return None for {dir_name}"
+
+        # Should have logged warnings for each invalid case
+        assert mock_logger.warning.call_count == len(invalid_cases)
