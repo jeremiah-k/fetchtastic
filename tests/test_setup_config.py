@@ -809,6 +809,7 @@ def test_run_setup_existing_config(
         "f",  # Only firmware
         "5",  # Keep 5 versions of firmware
         "y",  # Check for pre-releases
+        "rak4631- tbeam",  # Prerelease asset patterns (new prompt)
         "n",  # No auto-extract
         "y",  # reconfigure cron
         "n",  # no daily cron
@@ -912,7 +913,7 @@ def test_run_setup_partial_firmware_section(
     mock_menu_firmware.reset_mock()
     mock_menu_apk.reset_mock()
 
-    mock_input.side_effect = ["", "", "4", "y", "n"]
+    mock_input.side_effect = ["", "", "4", "y", "esp32- rak4631-", "n"]
 
     with patch("builtins.open", mock_open()):
         setup_config.run_setup(sections=["firmware"])
