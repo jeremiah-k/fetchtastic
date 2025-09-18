@@ -647,24 +647,22 @@ def matches_extract_patterns(filename, extract_patterns, device_manager=None):
                 return True
             continue
 
-        # Device patterns: use dynamic detection if available
+        # Determine if it's a device pattern
+        is_device_pattern_match = False
         if device_manager and device_manager.is_device_pattern(pattern):
-            # For device patterns, match if the device name appears anywhere in the filename
-            # This allows 'tbeam-' to match both 'firmware-tbeam-*' and 'littlefs-tbeam-*'
-            clean_pattern = pattern_lower.rstrip("-_ ")
-            if re.search(
-                rf"(^|[-_]){re.escape(clean_pattern)}([-_]|$)", filename_lower
-            ):
-                return True
-            continue
-
+            is_device_pattern_match = True
         # Fallback for patterns ending with '-' or '_' (likely device patterns)
-        if pattern_lower.endswith(("-", "_")):
+        elif pattern_lower.endswith(("-", "_")):
+            is_device_pattern_match = True
+
+        if is_device_pattern_match:
             clean_pattern = pattern_lower.rstrip("-_ ")
             if re.search(
                 rf"(^|[-_]){re.escape(clean_pattern)}([-_]|$)", filename_lower
             ):
                 return True
+            # It was identified as a device pattern but didn't match strictly.
+            # Do not fall through to generic substring match.
             continue
 
         # Fallback: simple substring matching for any other patterns
