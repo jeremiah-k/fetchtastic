@@ -641,7 +641,8 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
 
         if existing_prerelease_patterns is None and config.get("EXTRACT_PATTERNS"):
             # Offer to migrate from EXTRACT_PATTERNS
-            migration_patterns = config.get("EXTRACT_PATTERNS", [])
+            _mp = config.get("EXTRACT_PATTERNS", [])
+            migration_patterns = _mp.split() if isinstance(_mp, str) else _mp
             print(
                 f"\nFound existing extraction patterns: {' '.join(migration_patterns)}"
             )

@@ -449,9 +449,7 @@ def _extract_commit_from_dir_name(dir_name: str) -> Optional[str]:
     if commit_match:
         return commit_match.group(1).lower()  # Normalize to lowercase
     else:
-        logger.warning(
-            f"Could not extract commit hash from directory name: '{dir_name}'"
-        )
+        logger.debug(f"Could not extract commit hash from directory name: '{dir_name}'")
         return None
 
 
@@ -651,14 +649,18 @@ def matches_extract_patterns(filename, extract_patterns, device_manager=None):
             # For device patterns, match if the device name appears anywhere in the filename
             # This allows 'tbeam-' to match both 'firmware-tbeam-*' and 'littlefs-tbeam-*'
             clean_pattern = pattern_lower.rstrip("-_ ")
-            if clean_pattern in filename_lower:
+            if re.search(
+                rf"(^|[-_]){re.escape(clean_pattern)}([-_]|$)", filename_lower
+            ):
                 return True
             continue
 
         # Fallback for patterns ending with '-' or '_' (likely device patterns)
         if pattern_lower.endswith(("-", "_")):
             clean_pattern = pattern_lower.rstrip("-_ ")
-            if clean_pattern in filename_lower:
+            if re.search(
+                rf"(^|[-_]){re.escape(clean_pattern)}([-_]|$)", filename_lower
+            ):
                 return True
             continue
 

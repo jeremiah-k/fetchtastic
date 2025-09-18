@@ -142,8 +142,11 @@ class DeviceHardwareManager:
             if clean_pattern == device_pattern_lower or (
                 len(clean_pattern) >= MIN_DEVICE_PATTERN_PREFIX_LEN
                 and (
-                    device_pattern_lower.startswith(f"{clean_pattern}-")
-                    or device_pattern_lower.startswith(f"{clean_pattern}_")
+                    (
+                        device_pattern_lower.startswith(f"{clean_pattern}-")
+                        or device_pattern_lower.startswith(f"{clean_pattern}_")
+                        or device_pattern_lower == clean_pattern
+                    )
                 )
             ):
                 return True
@@ -251,7 +254,7 @@ class DeviceHardwareManager:
             logger.exception("Invalid JSON response from API")
             return None
         except Exception as e:
-            logger.exception(f"Unexpected error fetching device hardware data: {e}")
+            logger.exception("Unexpected error fetching device hardware data")
             return None
         else:
             self._last_fetch_time = time.time()

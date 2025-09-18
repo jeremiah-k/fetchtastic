@@ -1454,5 +1454,5 @@ def test_extract_commit_from_dir_name_invalid():
             result = _extract_commit_from_dir_name(dir_name)
             assert result is None, f"Should return None for {dir_name}"
 
-        # Should have logged warnings for each invalid case
-        assert mock_logger.warning.call_count == len(invalid_cases)
+        # Should have logged debug messages for each invalid case
+        assert mock_logger.debug.call_count == len(invalid_cases)
