@@ -991,8 +991,8 @@ def check_for_prereleases(
 
     # Remove old prerelease directories - keep only the latest existing version
     if all_prerelease_dirs and os.path.exists(prerelease_dir):
-        # Use existing prerelease directories list (avoid redundant I/O)
-        existing_dirs = existing_prerelease_dirs
+        # Get fresh list of existing directories (first cleanup may have removed some)
+        existing_dirs = _get_existing_prerelease_dirs(prerelease_dir)
 
         if existing_dirs:
             try:
