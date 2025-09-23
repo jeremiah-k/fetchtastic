@@ -910,7 +910,8 @@ def check_for_prereleases(
         try:
             os.remove(file_path)
         except OSError as e:
-            logger.warning(f"Error removing corrupted prerelease file {file_path}: {e}")
+            logger.error(f"Error removing corrupted prerelease file {file_path}: {e}. Skipping re-download.")
+            return False
         hash_path = get_hash_file_path(file_path)
         if os.path.exists(hash_path):
             try:
@@ -2191,13 +2192,13 @@ def check_and_download(
                             )
                             try:
                                 os.remove(asset_download_path)
-                            except OSError as e_rm:
-                                logger.warning(
-                                    f"Error removing {asset_download_path} before re-download: {e_rm}"
+                                assets_to_download.append(
+                                    (browser_download_url, asset_download_path)
                                 )
-                            assets_to_download.append(
-                                (browser_download_url, asset_download_path)
-                            )
+                            except OSError as e_rm:
+                                logger.error(
+                                    f"Failed to remove mismatched asset {asset_download_path} for re-download: {e_rm}. Skipping."
+                                )
         except (KeyError, TypeError) as e_data:
             logger.error(
                 f"Error processing release data structure for a release (possibly malformed API response or unexpected structure): {e_data}. Skipping this release."
