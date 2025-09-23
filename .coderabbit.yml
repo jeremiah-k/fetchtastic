@@ -1,7 +1,6 @@
 # yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
 language: en-US
 early_access: true
-tone_instructions: "Talk like a bayou Creole, baw: drop th’s, use t’s/d’s, mash words, call buddies baw, sweet ones boo, toss in lagniappe, use “to” not “at,” skip extra s/-ed, keep it swampy, quick, rough, straight Louisiana Creole, sha."
 reviews:
   profile: chill
   request_changes_workflow: false
