@@ -817,6 +817,7 @@ def check_for_prereleases(
     target_prereleases = repo_prerelease_dirs[:1]
 
     os.makedirs(prerelease_dir, exist_ok=True)
+    real_prerelease_dir = os.path.realpath(prerelease_dir)
 
     # Remove stray files while preserving tracking files
     for item in os.listdir(prerelease_dir):
@@ -843,6 +844,22 @@ def check_for_prereleases(
 
         dir_path = os.path.join(prerelease_dir, dir_name)
         try:
+            if os.path.islink(dir_path):
+                logger.info(f"Removing stale prerelease symlink: {dir_name}")
+                os.unlink(dir_path)
+                continue
+
+            # Guard against directory traversal: ensure we only delete under prerelease_dir
+            real_target = os.path.realpath(dir_path)
+            if real_target == real_prerelease_dir or not real_target.startswith(
+                real_prerelease_dir + os.sep
+            ):
+                logger.warning(
+                    "Skipping removal of %s because it resolves outside prerelease directory",
+                    dir_path,
+                )
+                continue
+
             if dir_name in repo_prerelease_set:
                 logger.info(
                     f"Removing old prerelease directory: {dir_name} (keeping newest only)"
