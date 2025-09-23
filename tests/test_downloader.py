@@ -1378,6 +1378,62 @@ def test_check_and_download_corrupted_existing_zip_records_failure(tmp_path):
     )
 
 
+def test_check_and_download_redownloads_mismatched_non_zip(tmp_path):
+    """Non-zip assets with wrong size should be re-downloaded."""
+
+    release_tag = "v6.1.0"
+    asset_name = "firmware-rak4631-6.1.0.uf2"
+    release_dir = tmp_path / release_tag
+    release_dir.mkdir()
+
+    asset_path = release_dir / asset_name
+    asset_path.write_bytes(b"old")  # Deliberately incorrect size
+
+    releases = [
+        {
+            "tag_name": release_tag,
+            "published_at": "2024-06-01T00:00:00Z",
+            "assets": [
+                {
+                    "name": asset_name,
+                    "browser_download_url": "https://example.invalid/rak4631.uf2",
+                    "size": 1024,
+                }
+            ],
+            "body": "",
+        }
+    ]
+
+    def _mock_download(_url: str, dest: str) -> bool:
+        path = Path(dest)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"new-data")
+        return True
+
+    latest_release_file = str(tmp_path / "latest_firmware_release.txt")
+
+    with patch(
+        "fetchtastic.downloader.download_file_with_retry",
+        side_effect=_mock_download,
+    ) as mock_dl:
+        downloaded, new_versions, failures = downloader.check_and_download(
+            releases,
+            latest_release_file,
+            "Firmware",
+            str(tmp_path),
+            versions_to_keep=1,
+            extract_patterns=[],
+            selected_patterns=["rak4631-"],
+            auto_extract=False,
+            exclude_patterns=[],
+        )
+
+    assert downloaded == [release_tag]
+    assert failures == []
+    assert asset_path.read_bytes() == b"new-data"
+    assert mock_dl.call_count == 1
+
+
 def test_check_and_download_missing_download_url(tmp_path):
     """Assets with no browser_download_url should be recorded as failures and skipped."""
     release_tag = "v6.0.0"

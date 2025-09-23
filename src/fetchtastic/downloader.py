@@ -1011,7 +1011,7 @@ def check_for_prereleases(
             )
 
     if downloaded_files:
-        return True, downloaded_versions or target_prereleases
+        return True, downloaded_versions
     if target_prereleases:
         return False, target_prereleases
     return False, []
@@ -2178,6 +2178,26 @@ def check_and_download(
                     assets_to_download.append(
                         (browser_download_url, asset_download_path)
                     )
+                else:
+                    expected_size = asset.get("size")
+                    if expected_size is not None:
+                        try:
+                            actual_size = os.path.getsize(asset_download_path)
+                        except OSError:
+                            actual_size = -1
+                        if actual_size != expected_size:
+                            logger.warning(
+                                f"Existing {release_type} asset {asset_download_path} has size {actual_size}, expected {expected_size}; scheduling re-download"
+                            )
+                            try:
+                                os.remove(asset_download_path)
+                            except OSError as e_rm:
+                                logger.warning(
+                                    f"Error removing {asset_download_path} before re-download: {e_rm}"
+                                )
+                            assets_to_download.append(
+                                (browser_download_url, asset_download_path)
+                            )
         except (KeyError, TypeError) as e_data:
             logger.error(
                 f"Error processing release data structure for a release (possibly malformed API response or unexpected structure): {e_data}. Skipping this release."
