@@ -1049,7 +1049,7 @@ def test_prerelease_tracking_functionality(
     # Setup mock data
     mock_fetch_dirs.return_value = [
         "firmware-2.7.7.abcdef",
-        "firmware-2.7.8.ghijkl",
+        "firmware-2.7.8.fedcba",
     ]
     mock_fetch_contents.return_value = [
         {

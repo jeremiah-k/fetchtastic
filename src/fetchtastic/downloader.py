@@ -591,8 +591,14 @@ def batch_update_prerelease_tracking(
     else:
         prerelease_number = len(commits)
         if added_count > 0:
-            logger.info(f"Batch updated {added_count} prerelease commits")
-        logger.info(f"Prerelease #{prerelease_number} since {current_release}")
+            logger.info(f"Batch updated {added_count} prerelease commit(s)")
+            logger.info(f"Prerelease #{prerelease_number} since {current_release}")
+        else:
+            logger.debug(
+                "Prerelease tracking unchanged (#%s since %s)",
+                prerelease_number,
+                current_release,
+            )
         return prerelease_number
 
 
@@ -768,6 +774,7 @@ def check_for_prereleases(
             logger.debug(f"Could not reset prerelease tracking file: {e}")
 
     def extract_version(dir_name: str) -> str:
+        """Return the portion after the 'firmware-' prefix in prerelease directory names."""
         return dir_name[9:] if dir_name.startswith("firmware-") else dir_name
 
     exclude_patterns_list = exclude_patterns or []
@@ -785,8 +792,9 @@ def check_for_prereleases(
 
         dir_version = extract_version(dir_name)
         if not re.match(VERSION_REGEX_PATTERN, dir_version):
-            logger.warning(
-                f"Repository prerelease directory {dir_name} uses a non-standard version format"
+            logger.debug(
+                "Repository prerelease directory %s uses a non-standard version format",
+                dir_name,
             )
 
         try:
@@ -848,9 +856,9 @@ def check_for_prereleases(
     def _iter_matching_remote_files(dir_name: str) -> List[Dict[str, str]]:
         files = menu_repo.fetch_directory_contents(dir_name) or []
         matching: List[Dict[str, str]] = []
-        for file in files:
-            file_name = file.get("name")
-            download_url = file.get("download_url")
+        for entry in files:
+            file_name = entry.get("name")
+            download_url = entry.get("download_url")
             if not file_name or not download_url:
                 continue
 
@@ -979,8 +987,10 @@ def check_for_prereleases(
                 f"Downloaded prereleases tracked up to #{prerelease_number}: {tracked_label}"
             )
         else:
-            logger.info(
-                f"Tracked prereleases up to #{prerelease_number}: {tracked_label}"
+            logger.debug(
+                "Prerelease tracking unchanged (#%s, latest %s)",
+                prerelease_number,
+                tracked_label,
             )
 
     if downloaded_files:
