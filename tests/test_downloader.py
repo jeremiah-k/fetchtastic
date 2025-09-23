@@ -1,6 +1,7 @@
 import json
 import time
-from unittest.mock import mock_open, patch
+from pathlib import Path
+from unittest.mock import call, mock_open, patch
 
 import pytest
 import requests
@@ -736,6 +737,56 @@ def test_check_for_prereleases_download_and_cleanup(
     # Stale directory and stray file should be removed
     assert not stale_dir.exists()
     assert not stray.exists()
+
+
+@patch("fetchtastic.downloader.menu_repo.fetch_repo_directories")
+@patch("fetchtastic.downloader.menu_repo.fetch_directory_contents")
+@patch("fetchtastic.downloader.download_file_with_retry")
+def test_check_for_prereleases_only_downloads_latest(
+    mock_dl, mock_fetch_contents, mock_fetch_dirs, tmp_path
+):
+    """Ensure only the newest prerelease is downloaded and older ones are removed."""
+
+    mock_fetch_dirs.return_value = [
+        "firmware-2.7.4.123456",
+        "firmware-2.7.5.abcdef",
+    ]
+
+    def _fetch_contents(dir_name: str):
+        return [
+            {
+                "name": f"firmware-rak4631-{dir_name[9:]}.uf2",
+                "download_url": f"https://example.invalid/{dir_name}.uf2",
+            }
+        ]
+
+    mock_fetch_contents.side_effect = _fetch_contents
+
+    def _mock_download(_url: str, dest: str) -> bool:
+        path = Path(dest)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"data")
+        return True
+
+    mock_dl.side_effect = _mock_download
+
+    download_dir = tmp_path
+    prerelease_dir = download_dir / "firmware" / "prerelease"
+    prerelease_dir.mkdir(parents=True)
+    (prerelease_dir / "firmware-2.7.4.123456").mkdir()
+
+    found, versions = downloader.check_for_prereleases(
+        str(download_dir),
+        latest_release_tag="v2.7.3.000000",
+        selected_patterns=["rak4631-"],
+        exclude_patterns=[],
+    )
+
+    assert found is True
+    assert versions == ["firmware-2.7.5.abcdef"]
+    assert mock_dl.call_count == 1
+    assert mock_fetch_contents.call_args_list == [call("firmware-2.7.5.abcdef")]
+    assert not (prerelease_dir / "firmware-2.7.4.123456").exists()
 
 
 def test_no_up_to_date_log_when_new_versions_but_no_matches(tmp_path, caplog):

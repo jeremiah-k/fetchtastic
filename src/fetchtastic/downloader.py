@@ -45,7 +45,9 @@ from fetchtastic.log_utils import logger  # Import new logger
 from fetchtastic.setup_config import display_version_info, get_upgrade_command
 from fetchtastic.utils import (
     download_file_with_retry,
+    get_hash_file_path,
     matches_selected_patterns,
+    verify_file_integrity,
 )
 
 # Compiled regex for performance
@@ -715,36 +717,27 @@ def check_for_prereleases(
     device_manager=None,
 ):
     """
-    Discover firmware prerelease directories newer than the provided latest release, clean up stale local prerelease folders, and download missing prerelease assets into <download_dir>/firmware/prerelease.
+    Discover the newest prerelease newer than the latest official release, keep local copies in
+    sync, and download any missing assets that match the configured patterns.
 
-    The function:
-    - Treats a leading "v" in latest_release_tag as optional and strips it for comparisons.
-    - Scans the remote repository for directories named "firmware-<version>" and keeps only those newer than latest_release_tag.
-    - Removes stale local prerelease directories that are not present in the repository or not newer than the official release.
-    - For each relevant prerelease, downloads assets that match selected_patterns (using the repository's back-compat matching helper) and do not match any exclude_patterns; sets executable permissions for shell scripts when possible.
-    - Returns whether any prerelease assets were downloaded and a list of prerelease directory names that had files downloaded.
-
-    Parameters:
-        download_dir (str): Base path where firmware/prerelease directories live.
-        latest_release_tag (str): Latest official release tag (e.g., "v2.6.8" or "2.6.8.ef9d0d7"); a leading "v" is tolerated and stripped for comparison.
-        selected_patterns (Iterable[str]): Patterns/substrings used to select which asset basenames should be downloaded (applied with the module's back-compat matcher).
-        exclude_patterns (Optional[Iterable[str]]): Optional fnmatch-style patterns; any filename matching an exclude pattern will be skipped.
+    The function keeps only the newest prerelease directory locally (older ones are removed),
+    ensuring we do not redownload the same assets on subsequent runs when the on-disk files are
+    complete and verified.
 
     Returns:
         tuple[bool, list[str]]: (downloaded, versions)
-          - downloaded: True if any prerelease files were downloaded.
-          - versions: If downloaded is True, list of prerelease directory names that had files downloaded;
-            otherwise, list of all prerelease directory names discovered/tracked (may be empty).
+          - downloaded: True when at least one prerelease asset was fetched this run.
+          - versions: The prerelease directory names that were processed/tracked (empty when none).
     """
-    # Removed local log_message_func definition
+
     prerelease_dir = os.path.join(download_dir, "firmware", "prerelease")
     tracking_info = get_prerelease_tracking_info(prerelease_dir)
     tracked_release = tracking_info.get("release")
 
-    # If a new release is detected, clean up old pre-releases.
     if tracked_release and tracked_release != latest_release_tag:
         logger.info(
-            f"New release {latest_release_tag} detected (previously tracking {tracked_release}). Cleaning pre-release directory."
+            f"New release {latest_release_tag} detected (previously tracking {tracked_release})."
+            " Cleaning pre-release directory."
         )
         if os.path.exists(prerelease_dir):
             for item in os.listdir(prerelease_dir):
@@ -758,7 +751,6 @@ def check_for_prereleases(
                             f"Error removing old pre-release directory {item_path}: {e}"
                         )
 
-        # Reset tracking file immediately even if no prereleases are present yet
         try:
             tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
             os.makedirs(prerelease_dir, exist_ok=True)
@@ -775,394 +767,227 @@ def check_for_prereleases(
         except (IOError, UnicodeDecodeError) as e:
             logger.debug(f"Could not reset prerelease tracking file: {e}")
 
-    # Helper function to extract version from directory name (defined once to avoid duplication)
     def extract_version(dir_name: str) -> str:
-        """
-        Return the version portion of a prerelease directory name.
-
-        If dir_name starts with the literal prefix "firmware-", the prefix is removed and the remainder is returned (e.g. "firmware-2.7.9.abcdef" -> "2.7.9.abcdef"). Otherwise the original dir_name is returned unchanged.
-
-        Returns:
-            str: The extracted version string or the original input if no prefix matched.
-        """
         return dir_name[9:] if dir_name.startswith("firmware-") else dir_name
 
-    # Initialize exclude patterns list
     exclude_patterns_list = exclude_patterns or []
-
-    # Strip the 'v' prefix if present
     latest_release_version = latest_release_tag.lstrip("v")
 
-    # Fetch directories from the meshtastic.github.io repository
     directories = menu_repo.fetch_repo_directories()
-
     if not directories:
         logger.info("No firmware directories found in the repository.")
         return False, []
 
-    # Get list of existing firmware directories (both regular and pre-releases)
-    firmware_dir = os.path.join(download_dir, "firmware")
-    existing_firmware_dirs = []
-    if os.path.exists(firmware_dir):
-        for item in os.listdir(firmware_dir):
-            item_path = os.path.join(firmware_dir, item)
-            if os.path.isdir(item_path) and item != "prerelease" and item != "repo-dls":
-                # This is a regular firmware directory (e.g., v2.6.8.ef9d0d7)
-                existing_firmware_dirs.append(item)
-
-    # Also check existing pre-releases
-    prerelease_dir = os.path.join(download_dir, "firmware", "prerelease")
-    existing_prerelease_dirs = _get_existing_prerelease_dirs(prerelease_dir)
-    existing_prerelease_dirs_set = set(existing_prerelease_dirs)
-
-    # Extract all firmware directory names from the repository
-    repo_firmware_dirs = {
-        dir_name for dir_name in directories if dir_name.startswith("firmware-")
-    }
-
-    # Clean up the prerelease directory
-    # Only keep directories that:
-    # 1. Exist in the repository
-    # 2. Are newer than the latest release
-    if os.path.exists(prerelease_dir):
-        # First, clean up any non-directory files in the prerelease directory
-        # but preserve the tracking file
-        for item in os.listdir(prerelease_dir):
-            item_path = os.path.join(prerelease_dir, item)
-            if not os.path.isdir(item_path) and item not in (
-                "prerelease_tracking.json",
-                "prerelease_commits.txt",
-            ):
-                try:
-                    logger.info(
-                        f"Removing stale file from prerelease directory: {item}"
-                    )
-                    os.remove(item_path)
-                except OSError as e:
-                    logger.warning(
-                        f"Error removing stale file {item_path} from prerelease directory: {e}"
-                    )
-
-        # Now clean up directories
-        for dir_name in existing_prerelease_dirs:
-            should_keep = False
-            dir_path = os.path.join(
-                prerelease_dir, dir_name
-            )  # Define dir_path here for use in except block
-
-            try:
-                # Check if it's a firmware directory
-                if dir_name.startswith("firmware-"):
-                    dir_version = dir_name[9:]  # Remove 'firmware-' prefix
-
-                    # Validate version format (should be X.Y.Z or X.Y.Z.hash)
-                    if not re.match(VERSION_REGEX_PATTERN, dir_version):
-                        logger.warning(
-                            f"Invalid version format in directory {dir_name}, removing"
-                        )
-                        should_keep = False
-                    elif dir_name in repo_firmware_dirs:
-                        # Check if it's newer than the latest release
-                        comparison_result = compare_versions(
-                            dir_version, latest_release_version
-                        )
-                        if comparison_result > 0:
-                            should_keep = True
-
-                if not should_keep:
-                    logger.info(f"Removing stale pre-release directory: {dir_name}")
-                    shutil.rmtree(dir_path)
-            except OSError as e:
-                logger.warning(
-                    f"Error processing or removing directory {dir_path} during prerelease cleanup: {e}"
-                )
-            except (
-                ValueError,
-                KeyError,
-                TypeError,
-            ) as e_general:  # Catch other potential errors like from compare_versions
-                logger.error(
-                    f"Unexpected error processing directory {dir_path} for prerelease cleanup: {e_general}",
-                    exc_info=True,
-                )
-
-    # Use existing prerelease directories already loaded (avoid redundant I/O)
-
-    # Find directories in the repository that are newer than the latest release and don't already exist locally
-    prerelease_dirs = []  # Directories that need processing (downloading)
-    all_prerelease_dirs = []  # All prerelease directories (for tracking)
+    repo_prerelease_dirs: List[str] = []
     for dir_name in directories:
-        # Extract version from directory name (e.g., firmware-2.6.9.f93d031)
-        if dir_name.startswith("firmware-"):
-            dir_version = dir_name[9:]  # Remove 'firmware-' prefix
+        if not dir_name.startswith("firmware-"):
+            continue
 
-            # Check if this version is newer than the latest release
-            comparison_result = compare_versions(dir_version, latest_release_version)
-            if comparison_result > 0:
-                # This is a prerelease directory (newer than latest release)
-                all_prerelease_dirs.append(dir_name)
+        dir_version = extract_version(dir_name)
+        if not re.match(VERSION_REGEX_PATTERN, dir_version):
+            logger.warning(
+                f"Repository prerelease directory {dir_name} uses a non-standard version format"
+            )
 
-                # Check if we need to download this pre-release
-                # Either the directory doesn't exist, or it exists but is missing files
-                should_process = False
+        try:
+            if compare_versions(dir_version, latest_release_version) > 0:
+                repo_prerelease_dirs.append(dir_name)
+        except (InvalidVersion, ValueError, TypeError) as exc:
+            logger.warning(
+                f"Could not compare prerelease version {dir_version} against {latest_release_version}: {exc}"
+            )
 
-                if dir_name not in existing_prerelease_dirs_set:
-                    # Directory doesn't exist at all
-                    should_process = True
-                else:
-                    # Directory exists, but check if all expected files are present
-                    dir_path = os.path.join(prerelease_dir, dir_name)
-
-                    # Fetch the list of files that should be in this directory
-                    expected_files = menu_repo.fetch_directory_contents(dir_name)
-                    if expected_files:
-                        # Filter expected files based on patterns (same logic as download)
-                        expected_matching_files = []
-                        for file in expected_files:
-                            file_name = file["name"]
-
-                            # Apply same filtering logic as download (smart pattern matching for EXTRACT_PATTERNS)
-                            if not matches_extract_patterns(
-                                file_name, selected_patterns, device_manager
-                            ):
-                                continue  # Skip this file
-
-                            # Skip files that match exclude patterns
-                            if any(
-                                fnmatch.fnmatch(file_name, exclude)
-                                for exclude in exclude_patterns_list
-                            ):
-                                continue  # Skip this file
-
-                            expected_matching_files.append(file_name)
-
-                        # Check if all expected files are present locally
-                        missing_files = []
-                        for expected_file in expected_matching_files:
-                            local_file_path = os.path.join(dir_path, expected_file)
-                            if not os.path.exists(local_file_path):
-                                missing_files.append(expected_file)
-
-                        if missing_files:
-                            logger.debug(
-                                f"Pre-release {dir_name} is missing {len(missing_files)} files, will re-download"
-                            )
-                            should_process = True
-                        else:
-                            logger.debug(
-                                f"Pre-release {dir_name} is complete with all expected files ({len(expected_matching_files)} files)"
-                            )
-                    else:
-                        # Could not fetch expected files list, assume we need to process
-                        logger.debug(
-                            f"Could not fetch file list for {dir_name}, will attempt download"
-                        )
-                        should_process = True
-
-                if should_process:
-                    prerelease_dirs.append(dir_name)
-
-    # Sort prerelease directories by version (newest first) for consistent "latest" selection
-    if all_prerelease_dirs:
-        all_prerelease_dirs = sorted(
-            all_prerelease_dirs,
+    if repo_prerelease_dirs:
+        repo_prerelease_dirs = sorted(
+            repo_prerelease_dirs,
             key=cmp_to_key(
                 lambda a, b: compare_versions(extract_version(a), extract_version(b))
             ),
-            reverse=True,  # Newest first
+            reverse=True,
         )
 
-    # Initialize downloaded files list
-    downloaded_files = []
+    target_prereleases = repo_prerelease_dirs[:1]
 
-    # If no prerelease directories need processing, skip download loop
-    if not prerelease_dirs:
-        logger.info("No new pre-releases to download")
-        # Continue to unified tracking block below
+    os.makedirs(prerelease_dir, exist_ok=True)
 
-    # Create prerelease directory if it doesn't exist
-    if not os.path.exists(prerelease_dir):
-        try:
-            os.makedirs(prerelease_dir)
-        except OSError as e:
-            logger.error(f"Error creating pre-release directory {prerelease_dir}: {e}")
-            return False, []  # Cannot proceed if directory creation fails
-
-    # Remove old prerelease directories - keep only the latest existing version
-    if all_prerelease_dirs and os.path.exists(prerelease_dir):
-        # Get fresh list of existing directories (first cleanup may have removed some)
-        existing_dirs = _get_existing_prerelease_dirs(prerelease_dir)
-
-        if existing_dirs:
+    # Remove stray files while preserving tracking files
+    for item in os.listdir(prerelease_dir):
+        item_path = os.path.join(prerelease_dir, item)
+        if not os.path.isdir(item_path) and item not in (
+            "prerelease_tracking.json",
+            "prerelease_commits.txt",
+        ):
             try:
-                # Sort existing directories by version (newest first)
-                sorted_existing = sorted(
-                    existing_dirs,
-                    key=cmp_to_key(
-                        lambda a, b: compare_versions(
-                            extract_version(a), extract_version(b)
-                        )
-                    ),
-                    reverse=True,
-                )
-
-                # Determine which directories to keep
-                # INTENTIONAL: Keep only 1 existing prerelease + new ones being processed
-                # Prereleases are temporary by nature - previous versions become obsolete
-                # when newer ones are available. This follows upstream patterns.
-                dirs_to_keep = set(sorted_existing[:1])  # Keep latest existing only
-
-                # Remove directories that exceed the limit
-                for item in existing_dirs:
-                    if item not in dirs_to_keep:
-                        item_path = os.path.join(prerelease_dir, item)
-                        logger.info(
-                            f"Removing old prerelease directory: {item} (keeping latest only)"
-                        )
-                        try:
-                            shutil.rmtree(item_path)
-                        except OSError as e:
-                            logger.warning(
-                                f"Error removing old prerelease directory {item_path}: {e}"
-                            )
-                    else:
-                        logger.debug(f"Keeping prerelease directory: {item}")
-
-            except (IndexError, ValueError, TypeError) as e:
-                logger.warning(f"Error sorting prerelease directories for cleanup: {e}")
-                # Fallback: don't remove anything if sorting fails
-
-    # Process each pre-release directory
-    total_pr = len(prerelease_dirs)
-    if total_pr > 0:
-        logger.info(f"Scanning {total_pr} prerelease directories")
-    else:
-        logger.debug("Scanning 0 prerelease directories")
-    for i, dir_name in enumerate(prerelease_dirs, start=1):
-        logger.info(f"Checking {dir_name} ({i}/{total_pr})…")
-
-        # Fetch files from the directory
-        files = menu_repo.fetch_directory_contents(dir_name)
-
-        if not files:
-            logger.info(f"No files found in {dir_name}.")
-            continue
-
-        # Create directory for this pre-release
-        dir_path = os.path.join(prerelease_dir, dir_name)
-        if not os.path.exists(dir_path):
-            try:
-                os.makedirs(dir_path)
+                os.remove(item_path)
+                logger.info(f"Removed stale file from prerelease directory: {item}")
             except OSError as e:
-                logger.error(
-                    f"Error creating directory for pre-release {dir_name} at {dir_path}: {e}"
+                logger.warning(
+                    f"Error removing stale file {item_path} from prerelease directory: {e}"
                 )
-                continue  # Skip this pre-release if its directory cannot be created
 
-        # Filter files based on selected patterns
+    existing_prerelease_dirs = _get_existing_prerelease_dirs(prerelease_dir)
+    repo_prerelease_set = set(repo_prerelease_dirs)
+    target_prerelease_set = set(target_prereleases)
+
+    for dir_name in existing_prerelease_dirs:
+        if dir_name in target_prerelease_set:
+            continue  # keep the newest prerelease we plan to use
+
+        dir_path = os.path.join(prerelease_dir, dir_name)
+        try:
+            if dir_name in repo_prerelease_set:
+                logger.info(
+                    f"Removing old prerelease directory: {dir_name} (keeping newest only)"
+                )
+            else:
+                logger.info(f"Removing stale pre-release directory: {dir_name}")
+            shutil.rmtree(dir_path)
+        except OSError as e:
+            logger.warning(f"Error removing prerelease directory {dir_path}: {e}")
+
+    def _iter_matching_remote_files(dir_name: str) -> List[Dict[str, str]]:
+        files = menu_repo.fetch_directory_contents(dir_name) or []
+        matching: List[Dict[str, str]] = []
         for file in files:
-            file_name = file["name"]
-            download_url = file["download_url"]
-            file_path = os.path.join(dir_path, file_name)
+            file_name = file.get("name")
+            download_url = file.get("download_url")
+            if not file_name or not download_url:
+                continue
 
-            # Only download files that match the selected patterns and don't match exclude patterns
-            # For prereleases, selected_patterns comes from SELECTED_PRERELEASE_ASSETS
-            # (or EXTRACT_PATTERNS as a fallback) and supports smart device matching
             if not matches_extract_patterns(
                 file_name, selected_patterns, device_manager
             ):
-                continue  # Skip this file
+                continue
 
-            # Skip files that match exclude patterns
             if any(
-                fnmatch.fnmatch(file_name, exclude) for exclude in exclude_patterns_list
+                fnmatch.fnmatch(file_name, pattern) for pattern in exclude_patterns_list
             ):
                 logger.debug(
                     "Skipping pre-release file %s (matched exclude pattern)",
                     file_name,
                 )
-                continue  # Skip this file
+                continue
 
-            if not os.path.exists(file_path):
-                try:
-                    logger.debug(
-                        f"Downloading pre-release file: {file_name} from {download_url}"
-                    )
-                    if not download_file_with_retry(download_url, file_path):
-                        # Download_file_with_retry logs the specific error, so we just continue.
-                        continue
+            matching.append({"name": file_name, "download_url": download_url})
 
-                    # Set executable permissions for .sh files
-                    if file_name.lower().endswith(SHELL_SCRIPT_EXTENSION.lower()):
-                        try:
-                            os.chmod(file_path, EXECUTABLE_PERMISSIONS)
-                            logger.debug(f"Set executable permissions for {file_name}")
-                        except OSError as e:
-                            logger.warning(
-                                f"Error setting executable permissions for {file_name}: {e}"
-                            )
+        return matching
 
-                    downloaded_files.append(file_path)
-                except requests.exceptions.RequestException as e:
-                    logger.error(
-                        f"Network error downloading pre-release file {file_name} from {download_url}: {e}"
-                    )
-                except IOError as e:
-                    logger.error(
-                        f"File I/O error while downloading pre-release file {file_name} to {file_path}: {e}"
-                    )
-                except Exception as e:  # Catch any other unexpected errors
-                    logger.error(
-                        f"Unexpected error downloading pre-release file {file_name}: {e}",
-                        exc_info=True,
-                    )
-            else:
-                # File already exists; no new download performed
-                logger.debug(f"Pre-release file already exists: {file_name}")
+    def _needs_download(file_path: str) -> bool:
+        if not os.path.exists(file_path):
+            return True
 
-    downloaded_versions = []
+        if verify_file_integrity(file_path):
+            return False
+
+        logger.warning(
+            f"Existing prerelease file {os.path.basename(file_path)} failed integrity check; re-downloading"
+        )
+        try:
+            os.remove(file_path)
+        except OSError as e:
+            logger.warning(f"Error removing corrupted prerelease file {file_path}: {e}")
+        hash_path = get_hash_file_path(file_path)
+        if os.path.exists(hash_path):
+            try:
+                os.remove(hash_path)
+            except OSError as e:
+                logger.debug(f"Error removing hash file {hash_path}: {e}")
+        return True
+
+    downloaded_files: List[str] = []
+
+    for dir_name in target_prereleases:
+        dir_path = os.path.join(prerelease_dir, dir_name)
+        try:
+            os.makedirs(dir_path, exist_ok=True)
+        except OSError as e:
+            logger.error(
+                f"Error creating directory for pre-release {dir_name} at {dir_path}: {e}"
+            )
+            continue
+
+        matching_files = _iter_matching_remote_files(dir_name)
+        if not matching_files:
+            logger.debug(
+                f"No prerelease files matched selection for {dir_name}; skipping downloads"
+            )
+            continue
+
+        for file_info in matching_files:
+            file_name = file_info["name"]
+            download_url = file_info["download_url"]
+            file_path = os.path.join(dir_path, file_name)
+
+            if not _needs_download(file_path):
+                logger.debug(
+                    f"Pre-release file already present and verified: {file_name}"
+                )
+                continue
+
+            try:
+                logger.debug(
+                    f"Downloading pre-release file: {file_name} from {download_url}"
+                )
+                if not download_file_with_retry(download_url, file_path):
+                    continue
+
+                if file_name.lower().endswith(SHELL_SCRIPT_EXTENSION.lower()):
+                    try:
+                        os.chmod(file_path, EXECUTABLE_PERMISSIONS)
+                        logger.debug(
+                            f"Set executable permissions for prerelease file {file_name}"
+                        )
+                    except OSError as e:
+                        logger.warning(
+                            f"Error setting executable permissions for {file_name}: {e}"
+                        )
+
+                downloaded_files.append(file_path)
+            except requests.exceptions.RequestException as e:
+                logger.error(
+                    f"Network error downloading pre-release file {file_name} from {download_url}: {e}"
+                )
+            except IOError as e:
+                logger.error(
+                    f"File I/O error while downloading pre-release file {file_name} to {file_path}: {e}"
+                )
+            except Exception as e:  # noqa: BLE001 - unexpected errors
+                logger.error(
+                    f"Unexpected error downloading pre-release file {file_name}: {e}",
+                    exc_info=True,
+                )
+
+    downloaded_versions: List[str] = []
     if downloaded_files:
         logger.info(f"Downloaded {len(downloaded_files)} new pre-release files.")
+        files_by_dir: Dict[str, List[str]] = defaultdict(list)
+        for path in downloaded_files:
+            dir_name = os.path.basename(os.path.dirname(path))
+            files_by_dir[dir_name].append(path)
 
-        # Extract unique directory names from downloaded files and count files per version
-        # Group files by directory for better performance
-        files_by_dir = defaultdict(list)
-        for p in downloaded_files:
-            dir_name = os.path.basename(os.path.dirname(p))
-            files_by_dir[dir_name].append(p)
+        for version, files in files_by_dir.items():
+            logger.info(f"Pre-release {version}: {len(files)} new file(s) downloaded")
+            downloaded_versions.append(version)
 
-        version_file_counts = {
-            dir_name: len(files) for dir_name, files in files_by_dir.items()
-        }
-        downloaded_versions.extend(version_file_counts.keys())
-
-        # Log per-version file counts
-        for version, count in version_file_counts.items():
-            logger.info(f"Pre-release {version}: {count} new files downloaded")
-
-    # Update prerelease tracking (run once regardless of download success)
-    if all_prerelease_dirs:
-        # Use batch update for efficiency - processes all directories in a single operation
+    if target_prereleases:
         prerelease_number = batch_update_prerelease_tracking(
-            prerelease_dir, latest_release_tag, all_prerelease_dirs
+            prerelease_dir, latest_release_tag, target_prereleases
         )
+        tracked_label = target_prereleases[0]
         if downloaded_files:
             logger.info(
-                f"Downloaded prereleases tracked up to #{prerelease_number}: {all_prerelease_dirs[0]}"
+                f"Downloaded prereleases tracked up to #{prerelease_number}: {tracked_label}"
             )
         else:
             logger.info(
-                f"Tracked prereleases up to #{prerelease_number}: {all_prerelease_dirs[0]}"
+                f"Tracked prereleases up to #{prerelease_number}: {tracked_label}"
             )
 
-    # Return results
     if downloaded_files:
-        return True, downloaded_versions
-    elif all_prerelease_dirs:
-        # Prerelease directories exist and are tracked, but no files were downloaded
-        return False, all_prerelease_dirs
-    else:
-        return False, []
+        return True, downloaded_versions or target_prereleases
+    if target_prereleases:
+        return False, target_prereleases
+    return False, []
 
 
 # Use the version check function from setup_config
