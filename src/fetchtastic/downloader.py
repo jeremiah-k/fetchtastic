@@ -2246,6 +2246,12 @@ def check_and_download(
                             )
                             try:
                                 os.remove(asset_download_path)
+                                hash_path = get_hash_file_path(asset_download_path)
+                                if os.path.exists(hash_path):
+                                    try:
+                                        os.remove(hash_path)
+                                    except OSError as e_hash:
+                                        logger.debug(f"Could not remove stale hash file {hash_path}: {e_hash}")
                                 assets_to_download.append(
                                     (browser_download_url, asset_download_path)
                                 )
