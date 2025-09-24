@@ -585,9 +585,14 @@ def batch_update_prerelease_tracking(
             "last_updated": datetime.now().astimezone().isoformat(),
         }
         temp_fd, temp_path = tempfile.mkstemp(dir=os.path.dirname(tracking_file), prefix="tr-", suffix=".json")
-        with os.fdopen(temp_fd, 'w', encoding='utf-8') as temp_f:
-            json.dump(tracking_data, temp_f, indent=2)
-        os.rename(temp_path, tracking_file)
+        try:
+            with os.fdopen(temp_fd, 'w', encoding='utf-8') as temp_f:
+                json.dump(tracking_data, temp_f, indent=2)
+            os.rename(temp_path, tracking_file)
+        finally:
+            # Ensure the temporary file is removed if it still exists (e.g., on rename failure)
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
 
     except (IOError, UnicodeDecodeError, OSError) as e:
         logger.error(f"Could not write prerelease tracking file: {e}")
@@ -766,17 +771,21 @@ def check_for_prereleases(
             os.makedirs(prerelease_dir, exist_ok=True)
 
             temp_fd, temp_path = tempfile.mkstemp(dir=os.path.dirname(tracking_file), prefix="tr-", suffix=".json")
-            with os.fdopen(temp_fd, "w", encoding="utf-8") as temp_f:
-                json.dump(
-                    {
-                        "release": latest_release_tag,
-                        "commits": [],
-                        "last_updated": datetime.now().astimezone().isoformat(),
-                    },
-                    temp_f,
-                    indent=2,
-                )
-            os.rename(temp_path, tracking_file)
+            try:
+                with os.fdopen(temp_fd, "w", encoding="utf-8") as temp_f:
+                    json.dump(
+                        {
+                            "release": latest_release_tag,
+                            "commits": [],
+                            "last_updated": datetime.now().astimezone().isoformat(),
+                        },
+                        temp_f,
+                        indent=2,
+                    )
+                os.rename(temp_path, tracking_file)
+            finally:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
         except (IOError, UnicodeDecodeError, OSError) as e:
             logger.debug(f"Could not reset prerelease tracking file: {e}")
 
@@ -1020,6 +1029,8 @@ def check_for_prereleases(
             logger.info(
                 f"Downloaded prereleases tracked up to #{prerelease_number}: {tracked_label}"
             )
+        else:
+            logger.info(f"Tracked prereleases up to #{prerelease_number}: {tracked_label}")
 
     if downloaded_files:
         return True, downloaded_versions
