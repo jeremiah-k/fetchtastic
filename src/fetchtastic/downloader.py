@@ -1047,27 +1047,33 @@ def check_for_prereleases(
     real_prerelease_base = os.path.realpath(prerelease_dir)
 
     # Remove stray files and symlinks while preserving tracking files
-    for item in os.listdir(prerelease_dir):
-        if item.startswith("."):
-            continue
-        item_path = os.path.join(prerelease_dir, item)
-        if os.path.islink(item_path):
-            logger.warning(
-                "Removing symlink in prerelease dir to prevent traversal: %s", item
-            )
-            _safe_rmtree(item_path, prerelease_dir, item)
-            continue
-        if not os.path.isdir(item_path) and item not in (
-            "prerelease_tracking.json",
-            "prerelease_commits.txt",
-        ):
-            try:
-                os.remove(item_path)
-                logger.info(f"Removed stale file from prerelease directory: {item}")
-            except OSError as e:
-                logger.warning(
-                    f"Error removing stale file {item_path} from prerelease directory: {e}"
-                )
+    try:
+        with os.scandir(prerelease_dir) as iterator:
+            for entry in iterator:
+                if entry.name.startswith("."):
+                    continue
+                if entry.is_symlink():
+                    logger.warning(
+                        "Removing symlink in prerelease dir to prevent traversal: %s",
+                        entry.name,
+                    )
+                    _safe_rmtree(entry.path, prerelease_dir, entry.name)
+                    continue
+                if not entry.is_dir() and entry.name not in (
+                    "prerelease_tracking.json",
+                    "prerelease_commits.txt",
+                ):
+                    try:
+                        os.remove(entry.path)
+                        logger.info(
+                            f"Removed stale file from prerelease directory: {entry.name}"
+                        )
+                    except OSError as e:
+                        logger.warning(
+                            f"Error removing stale file {entry.path} from prerelease directory: {e}"
+                        )
+    except OSError as e:
+        logger.debug(f"Error scanning prerelease dir {prerelease_dir} for cleanup: {e}")
 
     existing_prerelease_dirs = _get_existing_prerelease_dirs(prerelease_dir)
     target_prerelease_set = set(target_prereleases)
