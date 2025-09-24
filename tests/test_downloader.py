@@ -3383,7 +3383,7 @@ def test_prerelease_tracking_ui_messages(tmp_path, caplog):
         ("firmware-2.7.7.abc123", "v2.7.6", True),  # Normal case
         ("firmware-2.7.8.def456", "v2.7.6", True),  # Second prerelease
         (
-            "firmware-2.8.0.fed789",
+            "firmware-2.8.0.abc789",
             "v2.8.0",
             True,
         ),  # New release (should reset) - valid hex
@@ -3812,7 +3812,7 @@ def test_prerelease_tracking_comprehensive_ui_messages(tmp_path, caplog):
 
             try:
                 num3 = downloader.update_prerelease_tracking(
-                    str(prerelease_dir), "v2.8.0", "firmware-2.8.2.fed789"
+                    str(prerelease_dir), "v2.8.0", "firmware-2.8.2.abc789"
                 )
                 # Should handle permission error gracefully
                 assert num3 >= 1

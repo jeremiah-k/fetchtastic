@@ -974,10 +974,19 @@ def check_for_prereleases(
             " Cleaning pre-release directory."
         )
         if os.path.exists(prerelease_dir):
-            for item in os.listdir(prerelease_dir):
-                item_path = os.path.join(prerelease_dir, item)
-                if os.path.isdir(item_path):
-                    _safe_rmtree(item_path, prerelease_dir, item)
+            try:
+                with os.scandir(prerelease_dir) as iterator:
+                    for entry in iterator:
+                        if entry.name in (
+                            "prerelease_tracking.json",
+                            "prerelease_commits.txt",
+                        ) and entry.is_file(follow_symlinks=False):
+                            continue
+                        _safe_rmtree(entry.path, prerelease_dir, entry.name)
+            except OSError as e:
+                logger.warning(
+                    f"Error cleaning prerelease directory {prerelease_dir}: {e}"
+                )
 
         tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
         os.makedirs(prerelease_dir, exist_ok=True)
@@ -2187,6 +2196,8 @@ def check_and_download(
     if not os.path.exists(download_dir_path):
         os.makedirs(download_dir_path)
 
+    real_download_base = os.path.realpath(download_dir_path)
+
     saved_release_tag: Optional[str] = None
     if os.path.exists(latest_release_file):
         try:
@@ -2241,6 +2252,19 @@ def check_and_download(
                 release_dir, f"release_notes-{release_tag}.md"
             )
 
+            if os.path.islink(release_dir) or (
+                os.path.exists(release_dir) and not os.path.isdir(release_dir)
+            ):
+                logger.warning(
+                    "Release entry is not a real directory (%s); removing to avoid escaping base",
+                    raw_release_tag,
+                )
+                if not _safe_rmtree(release_dir, download_dir_path, release_tag):
+                    logger.error(
+                        "Could not safely remove %s; skipping", raw_release_tag
+                    )
+                    continue
+
             # Check if this release has already been downloaded and is complete
             if _is_release_complete(
                 release_data, release_dir, selected_patterns, exclude_patterns_list
@@ -2281,9 +2305,24 @@ def check_and_download(
                 )
                 release_notes_content: str = strip_unwanted_chars(release_data["body"])
                 try:
-                    with open(release_notes_file, "w", encoding="utf-8") as notes_file:
-                        notes_file.write(release_notes_content)
-                    logger.debug(f"Saved release notes to {release_notes_file}")
+                    try:
+                        notes_common = os.path.commonpath(
+                            [real_download_base, os.path.realpath(release_notes_file)]
+                        )
+                    except ValueError:
+                        notes_common = None
+
+                    if notes_common != real_download_base:
+                        logger.warning(
+                            "Skipping write of release notes for %s: path escapes download base",
+                            raw_release_tag,
+                        )
+                    else:
+                        with open(
+                            release_notes_file, "w", encoding="utf-8"
+                        ) as notes_file:
+                            notes_file.write(release_notes_content)
+                        logger.debug(f"Saved release notes to {release_notes_file}")
                 except IOError as e:
                     logger.warning(
                         f"Error writing release notes to {release_notes_file}: {e}"
@@ -2410,6 +2449,22 @@ def check_and_download(
                             logger.warning(
                                 f"Existing {release_type} asset {asset_download_path} has size {actual_size}, expected {expected_size}; scheduling re-download"
                             )
+                            try:
+                                asset_common = os.path.commonpath(
+                                    [
+                                        real_download_base,
+                                        os.path.realpath(asset_download_path),
+                                    ]
+                                )
+                            except ValueError:
+                                asset_common = None
+                            if asset_common != real_download_base:
+                                logger.warning(
+                                    "Skipping re-download of %s asset with path %s due to escaping base",
+                                    release_type,
+                                    asset_download_path,
+                                )
+                                continue
                             if _prepare_for_redownload(asset_download_path):
                                 assets_to_download.append(
                                     (browser_download_url, asset_download_path)
@@ -2471,7 +2526,15 @@ def check_and_download(
                         continue
 
                     if file_name.lower().endswith(ZIP_EXTENSION.lower()):
-                        zip_path: str = os.path.join(release_dir, file_name)
+                        safe_zip_name = _sanitize_path_component(file_name)
+                        if safe_zip_name is None:
+                            logger.warning(
+                                "Skipping extraction check for unsafe filename %s in release %s",
+                                file_name,
+                                raw_release_tag,
+                            )
+                            continue
+                        zip_path: str = os.path.join(release_dir, safe_zip_name)
                         if os.path.exists(zip_path):
                             extraction_needed: bool = check_extraction_needed(
                                 zip_path,
