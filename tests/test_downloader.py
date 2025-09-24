@@ -3890,7 +3890,7 @@ def test_prerelease_functions_symlink_safety(tmp_path):
         ]
 
         # Mock successful download
-        def mock_download_func(url, dest):
+        def mock_download_func(_url, dest):
             Path(dest).parent.mkdir(parents=True, exist_ok=True)
             Path(dest).write_bytes(b"fake_firmware_data")
             return True
@@ -3898,7 +3898,7 @@ def test_prerelease_functions_symlink_safety(tmp_path):
         mock_download.side_effect = mock_download_func
 
         # Call check_for_prereleases
-        result = check_for_prereleases(
+        check_for_prereleases(
             download_dir=str(download_dir),
             latest_release_tag='1.0.0',
             selected_patterns=['*.bin']
