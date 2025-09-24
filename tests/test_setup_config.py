@@ -625,6 +625,7 @@ def test_run_setup_first_run_linux_simple(
     return_value="/tmp/config",  # nosec B108
 )
 @patch("fetchtastic.setup_config.WINDOWS_MODULES_AVAILABLE", True)
+@patch("fetchtastic.setup_config.winshell", MagicMock(), create=True)
 def test_run_setup_first_run_windows(
     mock_user_config_dir,
     mock_shutil_which,
@@ -649,8 +650,8 @@ def test_run_setup_first_run_windows(
         "b",  # Both APKs and firmware
         "2",  # Keep 2 versions of Android app
         "2",  # Keep 2 versions of firmware
-        "n",  # No pre-releases
         "n",  # No auto-extract
+        "n",  # No pre-releases
         "y",  # create startup shortcut
         "n",  # No NTFY notifications
         "",  # press enter to close
@@ -817,9 +818,9 @@ def test_run_setup_existing_config(
         "/new/base/dir",  # New base directory
         "f",  # Only firmware
         "5",  # Keep 5 versions of firmware
+        "y",  # Auto-extract
+        "rak4631- tbeam",  # Extraction patterns
         "y",  # Check for pre-releases
-        "rak4631- tbeam",  # Prerelease asset patterns (new prompt)
-        "n",  # No auto-extract
         "y",  # reconfigure cron
         "n",  # no daily cron
         "n",  # no reboot cron
@@ -844,8 +845,11 @@ def test_run_setup_existing_config(
         assert saved_config["SAVE_APKS"] is False
         assert saved_config["SAVE_FIRMWARE"] is True
         assert saved_config["FIRMWARE_VERSIONS_TO_KEEP"] == 5
+        assert saved_config["AUTO_EXTRACT"] is True
+        assert saved_config["EXTRACT_PATTERNS"] == ["rak4631-", "tbeam"]
         assert saved_config["CHECK_PRERELEASES"] is True
         assert saved_config["SELECTED_FIRMWARE_ASSETS"] == ["new-firmware"]
+        assert saved_config["SELECTED_PRERELEASE_ASSETS"] == ["rak4631-", "tbeam"]
         assert "SELECTED_APK_ASSETS" not in saved_config
         assert saved_config["NTFY_SERVER"] == "https://ntfy.sh/new"
         assert saved_config["NTFY_TOPIC"] == "new-topic"
@@ -922,7 +926,17 @@ def test_run_setup_partial_firmware_section(
     mock_menu_firmware.reset_mock()
     mock_menu_apk.reset_mock()
 
-    mock_input.side_effect = ["", "", "4", "y", "esp32- rak4631-", "n"]
+    mock_input.side_effect = [
+        "y",
+        "y",
+        "4",
+        "y",
+        "esp32- rak4631-",
+        "y",
+        "y",
+        "",
+        "y",
+    ]
 
     with patch("builtins.open", mock_open()):
         setup_config.run_setup(sections=["firmware"])
@@ -1164,15 +1178,16 @@ def test_setup_firmware_selected_prerelease_assets_new_config(mock_input):
     """Test setup wizard prompts for SELECTED_PRERELEASE_ASSETS with new configuration."""
     config = {}
 
-    # Simulate user inputs: 3 versions, yes to prereleases, device patterns, no to auto-extract
-    mock_input.side_effect = ["3", "y", "rak4631- tbeam", "n"]
+    # Simulate user inputs: 3 versions, yes to auto-extract, device patterns, yes to prereleases
+    mock_input.side_effect = ["3", "y", "rak4631- tbeam", "y", "y"]
 
     result = setup_config._setup_firmware(config, is_first_run=True, default_versions=2)
 
     assert result["FIRMWARE_VERSIONS_TO_KEEP"] == 3
+    assert result["AUTO_EXTRACT"] is True
+    assert result["EXTRACT_PATTERNS"] == ["rak4631-", "tbeam"]
     assert result["CHECK_PRERELEASES"] is True
     assert result["SELECTED_PRERELEASE_ASSETS"] == ["rak4631-", "tbeam"]
-    assert result["AUTO_EXTRACT"] is False
 
 
 @pytest.mark.configuration
@@ -1187,27 +1202,21 @@ def test_setup_firmware_selected_prerelease_assets_migration_accept(mock_input):
         "AUTO_EXTRACT": True,
     }
 
-    # Simulate user inputs: keep 2 versions, enable prereleases, accept migration, keep auto-extract,
-    # keep current extraction patterns, use recommended exclude patterns, no additional patterns, confirm exclude patterns
-    mock_input.side_effect = ["2", "y", "y", "y", "y", "y", "n", "y"]
+    # Simulate user inputs: keep 2 versions, keep auto-extract, keep current extraction patterns, enable prereleases
+    mock_input.side_effect = ["2", "y", "y", "y"]
 
     result = setup_config._setup_firmware(
         config, is_first_run=False, default_versions=2
     )
 
     assert result["CHECK_PRERELEASES"] is True
-    assert result["SELECTED_PRERELEASE_ASSETS"] == ["station-", "heltec-", "rak4631-"]
-    # After migration, EXTRACT_PATTERNS is preserved (not removed)
-    assert result["EXTRACT_PATTERNS"] == [
+    assert result["SELECTED_PRERELEASE_ASSETS"] == [
         "station-",
         "heltec-",
         "rak4631-",
-    ]  # Original patterns preserved
+    ]
+    assert result["EXTRACT_PATTERNS"] == ["station-", "heltec-", "rak4631-"]
     assert result["AUTO_EXTRACT"] is True
-    # New exclude pattern flow should set recommended patterns
-    from fetchtastic.setup_config import RECOMMENDED_EXCLUDE_PATTERNS
-
-    assert result["EXCLUDE_PATTERNS"] == RECOMMENDED_EXCLUDE_PATTERNS
 
 
 @pytest.mark.configuration
@@ -1222,19 +1231,8 @@ def test_setup_firmware_selected_prerelease_assets_migration_decline(mock_input)
         "AUTO_EXTRACT": True,
     }
 
-    # Simulate user inputs: keep 2 versions, enable prereleases, decline migration, provide new patterns, keep auto-extract, keep current patterns,
-    # don't use recommended exclude patterns, enter custom exclude patterns, confirm exclude patterns
-    mock_input.side_effect = [
-        "2",
-        "y",
-        "n",
-        "esp32- rak4631-",
-        "y",
-        "y",
-        "n",
-        ".hex tcxo",
-        "y",
-    ]
+    # Simulate user inputs: keep 2 versions, keep auto-extract, change extraction patterns, new patterns, enable prereleases
+    mock_input.side_effect = ["2", "y", "n", "esp32- rak4631-", "y"]
 
     result = setup_config._setup_firmware(
         config, is_first_run=False, default_versions=2
@@ -1242,10 +1240,8 @@ def test_setup_firmware_selected_prerelease_assets_migration_decline(mock_input)
 
     assert result["CHECK_PRERELEASES"] is True
     assert result["SELECTED_PRERELEASE_ASSETS"] == ["esp32-", "rak4631-"]
-    assert result["EXTRACT_PATTERNS"] == ["station-", "heltec-"]  # Should be preserved
+    assert result["EXTRACT_PATTERNS"] == ["esp32-", "rak4631-"]
     assert result["AUTO_EXTRACT"] is True
-    # User entered custom exclude patterns
-    assert result["EXCLUDE_PATTERNS"] == [".hex", "tcxo"]
 
 
 @pytest.mark.configuration
@@ -1260,15 +1256,15 @@ def test_setup_firmware_selected_prerelease_assets_existing_keep(mock_input):
         "AUTO_EXTRACT": False,
     }
 
-    # Simulate user inputs: keep 3 versions, keep prereleases, keep existing patterns, no auto-extract
-    mock_input.side_effect = ["3", "y", "y", "n"]
+    # Simulate user inputs: keep 3 versions, no auto-extract, keep prereleases
+    mock_input.side_effect = ["3", "n", "y"]
 
     result = setup_config._setup_firmware(
         config, is_first_run=False, default_versions=2
     )
 
     assert result["CHECK_PRERELEASES"] is True
-    assert result["SELECTED_PRERELEASE_ASSETS"] == ["tbeam", "t1000-e-"]
+    assert result["SELECTED_PRERELEASE_ASSETS"] == []
     assert result["AUTO_EXTRACT"] is False
 
 
@@ -1280,20 +1276,21 @@ def test_setup_firmware_selected_prerelease_assets_existing_change(mock_input):
     config = {
         "FIRMWARE_VERSIONS_TO_KEEP": 3,
         "CHECK_PRERELEASES": True,
-        "SELECTED_PRERELEASE_ASSETS": ["old-pattern"],
-        "AUTO_EXTRACT": False,
+        "AUTO_EXTRACT": True,
+        "EXTRACT_PATTERNS": ["old-pattern"],
     }
 
-    # Simulate user inputs: keep 3 versions, keep prereleases, change patterns, new patterns, no auto-extract
-    mock_input.side_effect = ["3", "y", "n", "new-pattern device-", "n"]
+    # Simulate user inputs: keep 3 versions, keep auto-extract, don't keep patterns, new patterns, keep prereleases
+    mock_input.side_effect = ["3", "y", "n", "new-pattern device-", "y"]
 
     result = setup_config._setup_firmware(
         config, is_first_run=False, default_versions=2
     )
 
     assert result["CHECK_PRERELEASES"] is True
+    assert result["EXTRACT_PATTERNS"] == ["new-pattern", "device-"]
     assert result["SELECTED_PRERELEASE_ASSETS"] == ["new-pattern", "device-"]
-    assert result["AUTO_EXTRACT"] is False
+    assert result["AUTO_EXTRACT"] is True
 
 
 @pytest.mark.configuration
@@ -1327,14 +1324,14 @@ def test_setup_firmware_selected_prerelease_assets_empty_patterns(mock_input):
     """Test handling of empty prerelease asset patterns."""
     config = {}
 
-    # Simulate user inputs: 2 versions, yes to prereleases, empty patterns, no auto-extract
-    mock_input.side_effect = ["2", "y", "", "n"]
+    # Simulate user inputs: 2 versions, yes to auto-extract, empty patterns, yes to prereleases
+    mock_input.side_effect = ["2", "y", "", "y"]
 
     result = setup_config._setup_firmware(config, is_first_run=True, default_versions=2)
 
     assert result["CHECK_PRERELEASES"] is True
-    assert result["SELECTED_PRERELEASE_ASSETS"] == []  # Empty patterns
-    assert result["AUTO_EXTRACT"] is False
+    assert result["SELECTED_PRERELEASE_ASSETS"] == []
+    assert result["AUTO_EXTRACT"] is False  # Should be disabled with empty patterns
 
 
 @pytest.mark.configuration
@@ -1349,8 +1346,8 @@ def test_setup_firmware_selected_prerelease_assets_migration_empty_input(mock_in
         "AUTO_EXTRACT": False,
     }
 
-    # Simulate user inputs: keep 2 versions, enable prereleases, decline migration, empty input, no auto-extract
-    mock_input.side_effect = ["2", "y", "n", "", "n"]
+    # Simulate user inputs: keep 2 versions, yes to auto-extract, decline to keep patterns, empty input, yes to prereleases
+    mock_input.side_effect = ["2", "y", "n", "", "y"]
 
     result = setup_config._setup_firmware(
         config, is_first_run=False, default_versions=2
@@ -1358,7 +1355,7 @@ def test_setup_firmware_selected_prerelease_assets_migration_empty_input(mock_in
 
     assert result["CHECK_PRERELEASES"] is True
     assert result["SELECTED_PRERELEASE_ASSETS"] == []  # Empty when no input provided
-    assert result["EXTRACT_PATTERNS"] == []  # Cleared when AUTO_EXTRACT is False
+    assert result["AUTO_EXTRACT"] is False  # Should be disabled with empty patterns
 
 
 # Test helper functions for configuration handling

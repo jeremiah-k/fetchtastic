@@ -710,17 +710,16 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
 
     Prompts and updates the following keys in `config`:
     - FIRMWARE_VERSIONS_TO_KEEP (int): number of firmware versions to retain.
-    - CHECK_PRERELEASES (bool): whether to check/download prerelease firmware.
-    - SELECTED_PRERELEASE_ASSETS (list[str]): device patterns to match for prerelease file selection (set only if CHECK_PRERELEASES is enabled).
     - AUTO_EXTRACT (bool): whether to automatically extract files from firmware zip archives.
     - EXTRACT_PATTERNS (list[str]): space-separated keywords to match files to extract (set only if AUTO_EXTRACT is enabled).
     - EXCLUDE_PATTERNS (list[str]): space-separated keywords to exclude from extraction.
+    - CHECK_PRERELEASES (bool): whether to check/download prerelease firmware.
+    - SELECTED_PRERELEASE_ASSETS (list[str]): device patterns for prereleases, copied from EXTRACT_PATTERNS.
 
     Behavior notes:
     - Uses current config values as defaults when present; otherwise falls back to provided defaults.
-    - If CHECK_PRERELEASES is disabled, SELECTED_PRERELEASE_ASSETS will be cleared.
-    - Offers to migrate from EXTRACT_PATTERNS to SELECTED_PRERELEASE_ASSETS for clearer configuration separation.
-    - If AUTO_EXTRACT is enabled but no extract patterns are provided, AUTO_EXTRACT will be disabled and EXTRACT_PATTERNS/EXCLUDE_PATTERNS cleared.
+    - If CHECK_PRERELEASES is enabled, SELECTED_PRERELEASE_ASSETS will be set to match EXTRACT_PATTERNS.
+    - If AUTO_EXTRACT is enabled but no extract patterns are provided, AUTO_EXTRACT will be disabled.
     - Returns the updated config dict (the same object passed in, modified in place).
     """
 
@@ -737,125 +736,7 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
         print("Invalid number — keeping current value.")
         config["FIRMWARE_VERSIONS_TO_KEEP"] = int(current_versions)
 
-    # Prompt for pre-release downloads
-    check_prereleases_current = config.get("CHECK_PRERELEASES", False)
-    check_prereleases_default = "yes" if check_prereleases_current else "no"
-    check_prereleases = (
-        input(
-            f"Would you like to check for and download pre-release firmware from meshtastic.github.io? [y/n] (default: {check_prereleases_default}): "
-        )
-        .strip()
-        .lower()
-        or check_prereleases_default[0]
-    )
-    # Make sure we're setting a boolean value, not a string
-    config["CHECK_PRERELEASES"] = check_prereleases == "y"
-
-    # Prompt for prerelease asset selection if prereleases are enabled
-    if config["CHECK_PRERELEASES"]:
-        print("\n--- Prerelease Asset Selection ---")
-        print(
-            "Select which prerelease firmware files to download by specifying device patterns."
-        )
-        print("Example: rak4631- tbeam t1000-e- tlora-v2-1-1_6- device-")
-        print(
-            "This controls which prerelease files are downloaded from the repository."
-        )
-
-        # Check for existing SELECTED_PRERELEASE_ASSETS or migrate from EXTRACT_PATTERNS
-        existing_prerelease_patterns = config.get("SELECTED_PRERELEASE_ASSETS", None)
-        if isinstance(existing_prerelease_patterns, str):
-            existing_prerelease_patterns = existing_prerelease_patterns.split()
-            config["SELECTED_PRERELEASE_ASSETS"] = existing_prerelease_patterns
-        migration_patterns = None
-
-        if existing_prerelease_patterns is None and config.get("EXTRACT_PATTERNS"):
-            # Offer to migrate from EXTRACT_PATTERNS
-            _mp = config.get("EXTRACT_PATTERNS", [])
-            migration_patterns = _mp.split() if isinstance(_mp, str) else _mp
-            print(
-                f"\nFound existing extraction patterns: {' '.join(migration_patterns)}"
-            )
-            print("These can be used as your prerelease asset selection patterns.")
-
-        if existing_prerelease_patterns is not None:
-            current_patterns_str = (
-                " ".join(existing_prerelease_patterns)
-                if existing_prerelease_patterns
-                else "[none] (all prerelease files considered)"
-            )
-            print(f"Current prerelease asset patterns: {current_patterns_str}")
-
-            keep_patterns_default = "yes"
-            keep_patterns = (
-                input(
-                    f"Keep current prerelease asset patterns? [y/n] (default: {keep_patterns_default}): "
-                )
-                .strip()
-                .lower()
-                or keep_patterns_default[0]
-            )
-            keep_patterns = keep_patterns[:1]
-
-            if keep_patterns == "y":
-                print(
-                    f"Keeping current prerelease asset patterns: {current_patterns_str}"
-                )
-            else:
-                new_patterns = input("Enter new prerelease asset patterns: ").strip()
-                if new_patterns:
-                    config["SELECTED_PRERELEASE_ASSETS"] = new_patterns.split()
-                    print(f"Prerelease asset patterns updated to: {new_patterns}")
-                else:
-                    print("No patterns entered. Keeping current patterns.")
-        elif migration_patterns:
-            # Offer migration from EXTRACT_PATTERNS
-            migrate_default = "yes"
-            migrate_choice = (
-                input(
-                    f"Use extraction patterns as prerelease asset patterns? [y/n] (default: {migrate_default}): "
-                )
-                .strip()
-                .lower()
-                or migrate_default[0]
-            )
-            migrate_choice = migrate_choice[:1]
-
-            if migrate_choice == "y":
-                config["SELECTED_PRERELEASE_ASSETS"] = migration_patterns.copy()
-                # Note: EXTRACT_PATTERNS is preserved as it's still used for zip file extraction
-                print(
-                    f"Prerelease asset patterns set to: {' '.join(migration_patterns)}"
-                )
-                print(
-                    "Migration complete: EXTRACT_PATTERNS copied to SELECTED_PRERELEASE_ASSETS for prerelease selection"
-                )
-            else:
-                new_patterns = input("Enter prerelease asset patterns: ").strip()
-                if new_patterns:
-                    config["SELECTED_PRERELEASE_ASSETS"] = new_patterns.split()
-                    print(f"Prerelease asset patterns set to: {new_patterns}")
-                else:
-                    config["SELECTED_PRERELEASE_ASSETS"] = []
-                    print(
-                        "No prerelease asset patterns set. All prerelease files will be considered."
-                    )
-        elif existing_prerelease_patterns is None:
-            # No existing patterns (key not set), get new ones
-            prerelease_patterns = input("Prerelease asset patterns: ").strip()
-            if prerelease_patterns:
-                config["SELECTED_PRERELEASE_ASSETS"] = prerelease_patterns.split()
-                print(f"Prerelease asset patterns set to: {prerelease_patterns}")
-            else:
-                config["SELECTED_PRERELEASE_ASSETS"] = []
-                print(
-                    "No prerelease asset patterns set. All prerelease files will be considered."
-                )
-    else:
-        # Prereleases disabled, clear the setting
-        config["SELECTED_PRERELEASE_ASSETS"] = []
-
-    # File extraction configuration section
+    # --- File Extraction Configuration ---
     print("\n--- File Extraction Configuration ---")
     print("Configure which files to extract from downloaded firmware archives.")
 
@@ -870,67 +751,90 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
         .lower()
         or auto_extract_default[0]
     )
-
-    # Save the AUTO_EXTRACT setting
     config["AUTO_EXTRACT"] = auto_extract == "y"
 
-    if auto_extract == "y":
+    if config["AUTO_EXTRACT"]:
         print(
             "Enter the keywords to match for extraction from the firmware zip files, separated by spaces."
         )
         print("Example: rak4631- tbeam t1000-e- tlora-v2-1-1_6- device-")
 
-        # Check if there are existing patterns
-        if config.get("EXTRACT_PATTERNS"):
-            current_patterns = " ".join(config.get("EXTRACT_PATTERNS", []))
-            print(f"Current patterns: {current_patterns}")
-
-            # Ask if user wants to keep or change patterns
+        current_patterns = config.get("EXTRACT_PATTERNS", [])
+        if isinstance(current_patterns, str):
+            current_patterns = current_patterns.split()
+            config["EXTRACT_PATTERNS"] = current_patterns
+        if current_patterns:
+            print(f"Current patterns: {' '.join(current_patterns)}")
             keep_patterns_default = "yes"
-            keep_patterns = (
+            keep_patterns_input = (
                 input(
                     f"Do you want to keep the current extraction patterns? [y/n] (default: {keep_patterns_default}): "
                 )
                 .strip()
                 .lower()
-                or keep_patterns_default[0]
+                or keep_patterns_default
             )
+            if keep_patterns_input[0] != "y":
+                current_patterns = []  # Clear to prompt for new ones
 
-            if keep_patterns == "y":
-                # Keep existing patterns
-                print(f"Keeping current extraction patterns: {current_patterns}")
+        if not current_patterns:
+            extract_patterns_input = input("Extraction patterns: ").strip()
+            if extract_patterns_input:
+                config["EXTRACT_PATTERNS"] = extract_patterns_input.split()
+                print(f"Extraction patterns set to: {extract_patterns_input}")
             else:
-                # Get new patterns
-                extract_patterns = input("Enter new extraction patterns: ").strip()
-                if extract_patterns:
-                    config["EXTRACT_PATTERNS"] = extract_patterns.split()
-                    print(f"Extraction patterns updated to: {extract_patterns}")
-                else:
-                    print("No patterns entered. Keeping current patterns.")
-        else:
-            # No existing patterns, get new ones
-            extract_patterns = input("Extraction patterns: ").strip()
-            if extract_patterns:
-                config["EXTRACT_PATTERNS"] = extract_patterns.split()
-                print(f"Extraction patterns set to: {extract_patterns}")
-            else:
+                # User entered no patterns, so disable auto-extract
                 config["AUTO_EXTRACT"] = False
                 config["EXTRACT_PATTERNS"] = []
-                print(
-                    "No patterns selected, no files will be extracted. Run setup again if you wish to change this."
-                )
-                # Skip exclude patterns prompt
-                config["EXCLUDE_PATTERNS"] = []
+                print("No extraction patterns provided; disabling auto-extraction.")
 
-        # Configure exclude patterns if extraction is enabled
-        if config.get("AUTO_EXTRACT", False) and config.get("EXTRACT_PATTERNS"):
-            configure_exclude_patterns(config)
+        # Configure exclude patterns only if extraction is enabled and patterns are set
+        if config.get("AUTO_EXTRACT") and config.get("EXTRACT_PATTERNS"):
+            # In non-interactive environments (like CI), skip interactive prompts
+            if not sys.stdin.isatty() or os.environ.get("CI"):
+                config["EXCLUDE_PATTERNS"] = RECOMMENDED_EXCLUDE_PATTERNS.copy()
+                print("Using recommended exclude patterns (non-interactive mode).")
+            else:
+                configure_exclude_patterns(config)
         else:
             config["EXCLUDE_PATTERNS"] = []
     else:
+        # If auto-extract is off, clear all related settings
         config["AUTO_EXTRACT"] = False
         config["EXTRACT_PATTERNS"] = []
         config["EXCLUDE_PATTERNS"] = []
+
+    # --- Pre-release Configuration ---
+    check_prereleases_current = config.get("CHECK_PRERELEASES", False)
+    check_prereleases_default = "yes" if check_prereleases_current else "no"
+    check_prereleases_input = (
+        input(
+            f"\nWould you like to check for and download pre-release firmware from meshtastic.github.io? [y/n] (default: {check_prereleases_default}): "
+        )
+        .strip()
+        .lower()
+        or check_prereleases_default
+    )
+    config["CHECK_PRERELEASES"] = check_prereleases_input[0] == "y"
+
+    if config["CHECK_PRERELEASES"]:
+        # Use a copy to avoid aliasing EXTRACT_PATTERNS
+        prerelease_patterns = list(config.get("EXTRACT_PATTERNS", []))
+        config["SELECTED_PRERELEASE_ASSETS"] = prerelease_patterns
+
+        if prerelease_patterns:
+            print(
+                f"Using your extraction patterns for pre-release selection: {' '.join(prerelease_patterns)}"
+            )
+        else:
+            # Correct the message to be accurate
+            print("No extraction patterns set. No pre-release files will be downloaded.")
+            print(
+                "To select specific pre-release files, first set up extraction patterns."
+            )
+    else:
+        # Prereleases disabled, clear the setting
+        config["SELECTED_PRERELEASE_ASSETS"] = []
 
     return config
 
