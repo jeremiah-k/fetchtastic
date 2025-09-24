@@ -29,7 +29,6 @@ def write_dummy_file():
     """Fixture that provides a function to write dummy files for download mocking."""
 
     def _write(dest, data=b"data"):
-        import os
 
         os.makedirs(os.path.dirname(dest), exist_ok=True)
         with open(dest, "wb") as f:
@@ -428,7 +427,6 @@ def test_set_permissions_on_sh_files(tmp_path):
     other_file_path.write_text("hello")
 
     # Set initial permissions to non-executable
-    import os
 
     os.chmod(script_path, 0o644)
     os.chmod(other_file_path, 0o644)
@@ -491,14 +489,12 @@ def test_extract_files(dummy_zip_file, tmp_path):
     assert not (extract_dir / "notes.txt").exists()
 
     # Check that the shell script was made executable
-    import os
 
     assert os.access(extract_dir / "device-update.sh", os.X_OK)
 
 
 def test_extract_files_preserves_subdirectories(tmp_path):
     """Extraction should preserve archive subdirectories when writing to disk."""
-    import os
     import zipfile
 
     zip_path = tmp_path / "nested.zip"
@@ -527,7 +523,6 @@ def test_extract_files_preserves_subdirectories(tmp_path):
 
 def test_check_extraction_needed_with_nested_paths(tmp_path):
     """check_extraction_needed should consider nested archive paths and base-name filters."""
-    import os
     import zipfile
 
     zip_path = tmp_path / "nested2.zip"
@@ -619,7 +614,6 @@ def test_check_extraction_needed_with_dash_patterns(tmp_path):
 
 def test_extract_files_matching_and_exclude(tmp_path):
     """Test extraction honors legacy-style matching and exclude patterns."""
-    import os
     import zipfile
 
     zip_path = tmp_path / "mix.zip"
@@ -699,7 +693,6 @@ def test_check_for_prereleases_download_and_cleanup(
 
         Creates parent directories for `dest` if needed, writes a small binary payload (b"data") to `dest`, and returns True to indicate a successful download. Overwrites any existing file at `dest`.
         """
-        import os
 
         os.makedirs(os.path.dirname(dest), exist_ok=True)
         with open(dest, "wb") as f:
@@ -760,9 +753,11 @@ def test_check_for_prereleases_only_downloads_latest(
     ]
 
     def _fetch_contents(dir_name: str):
+        prefix = "firmware-"
+        suffix = dir_name[len(prefix) :] if dir_name.startswith(prefix) else dir_name
         return [
             {
-                "name": f"firmware-rak4631-{dir_name[9:]}.uf2",
+                "name": f"firmware-rak4631-{suffix}.uf2",
                 "download_url": f"https://example.invalid/{dir_name}.uf2",
             }
         ]
@@ -905,7 +900,6 @@ def test_check_and_download_happy_path_with_extraction(tmp_path, caplog):
     # auto-extracted file exists and is executable
     extracted = tmp_path / release_tag / "device-install.sh"
     assert extracted.exists()
-    import os
 
     assert os.access(extracted, os.X_OK)
 
@@ -950,7 +944,6 @@ def test_auto_extract_with_empty_patterns_does_not_extract(tmp_path, caplog):
         Returns:
             bool: Always True to indicate the mock download succeeded.
         """
-        import os
         import zipfile
 
         os.makedirs(os.path.dirname(dest), exist_ok=True)
@@ -991,7 +984,6 @@ def test_check_and_download_release_already_complete_logs_up_to_date(tmp_path, c
     (tmp_path / "latest_firmware_release.txt").write_text(release_tag)
 
     # Prepare a valid zip already present in the release directory
-    import os
     import zipfile
 
     release_dir = tmp_path / release_tag
@@ -2277,7 +2269,6 @@ def test_get_prerelease_tracking_info_error_handling():
 
 def test_update_prerelease_tracking_error_handling():
     """Test error handling in update_prerelease_tracking."""
-    import os
     import tempfile
     from pathlib import Path
 
@@ -2506,7 +2497,6 @@ def test_prerelease_cleanup_logging_messages(tmp_path, caplog):
 
 def test_prerelease_directory_permissions_error_logging(tmp_path, caplog):
     """Test logging when prerelease directory operations fail due to permissions."""
-    import os
     from unittest.mock import patch
 
     import pytest
@@ -2566,7 +2556,6 @@ def test_prerelease_directory_permissions_error_logging(tmp_path, caplog):
 
 def test_tracking_file_error_handling_ui_messages(tmp_path, caplog):
     """Test user-facing error messages in tracking file operations."""
-    import os
 
     import pytest
 
@@ -3986,7 +3975,7 @@ def test_prerelease_functions_symlink_safety(tmp_path):
         check_for_prereleases(
             download_dir=str(download_dir),
             latest_release_tag="1.0.0",
-            selected_patterns=["*.bin"],
+            selected_patterns=None,
         )
 
         # Assert the external target directory and its contents still exist
@@ -4008,13 +3997,17 @@ def test_prerelease_functions_symlink_safety(tmp_path):
 
     # Test 2: check_promoted_prereleases symlink safety
     # First, recreate the malicious symlink for this test
-    if os.path.exists(prerelease_dir / "firmware-1.1.0.fedcba"):
-        shutil.rmtree(prerelease_dir / "firmware-1.1.0.fedcba")
+    leftover = prerelease_dir / "firmware-1.1.0.fedcba"
+    if leftover.exists():
+        if leftover.is_symlink() or leftover.is_file():
+            leftover.unlink()
+        else:
+            shutil.rmtree(leftover)
     malicious_symlink2 = prerelease_dir / "firmware-1.2.0"
     malicious_symlink2.symlink_to(external_target, target_is_directory=True)
 
     # Also create a valid prerelease directory that should be promoted
-    valid_prerelease = prerelease_dir / "firmware-1.2.0.ba1idha5"
+    valid_prerelease = prerelease_dir / "firmware-1.2.0.ba11da5"
     valid_prerelease.mkdir()
     (valid_prerelease / "firmware.bin").write_bytes(b"valid_firmware_content")
 
@@ -4111,7 +4104,7 @@ def test_prerelease_symlink_traversal_attack_prevention(tmp_path):
             check_for_prereleases(
                 download_dir=str(download_dir),
                 latest_release_tag="1.5.0",
-                selected_patterns=["*.bin"],
+                selected_patterns=None,
             )
 
             # Verify the target directory still exists and was not deleted
@@ -4170,7 +4163,7 @@ def test_prerelease_symlink_mixed_with_valid_directories(tmp_path):
         check_for_prereleases(
             download_dir=str(download_dir),
             latest_release_tag="1.0.0",
-            selected_patterns=["*.bin"],
+            selected_patterns=None,
         )
 
         # Valid directory should be handled normally, symlink should be removed safely
