@@ -29,14 +29,13 @@ def write_dummy_file():
     """Fixture that provides a function to write dummy files for download mocking."""
 
     def _write(dest, data=b"data"):
-
         """
         Create parent directories for `dest`, write binary `data` to `dest`, and return True.
-        
+
         Parameters:
             dest (str or Path): Destination file path to write.
             data (bytes): Binary content to write; defaults to b"data".
-        
+
         Returns:
             bool: Always returns True on successful write.
         """
@@ -765,15 +764,15 @@ def test_check_for_prereleases_only_downloads_latest(
     def _fetch_contents(dir_name: str):
         """
         Return a single simulated firmware asset descriptor for a given directory name.
-        
+
         If dir_name starts with "firmware-", that prefix is removed when constructing the firmware file base name;
         otherwise the full dir_name is used. The function returns a list containing one dict with keys:
         - "name": constructed filename like "firmware-rak4631-<suffix>.uf2"
         - "download_url": a sample URL pointing to "<dir_name>.uf2"
-        
+
         Parameters:
             dir_name (str): Directory or tag name used to construct the firmware asset entry.
-        
+
         Returns:
             list[dict]: A single-element list with an asset descriptor suitable for tests.
         """
@@ -791,7 +790,7 @@ def test_check_for_prereleases_only_downloads_latest(
     def _mock_download(_url: str, dest: str) -> bool:
         """
         Test helper that simulates downloading a file.
-        
+
         Creates parent directories for `dest`, writes the bytes b"data" to `dest`, and returns True.
         The `_url` parameter is accepted for API compatibility but ignored.
         """
@@ -1436,11 +1435,11 @@ def test_check_and_download_redownloads_mismatched_non_zip(tmp_path):
     def _mock_download(_url: str, dest: str) -> bool:
         """
         Create parent directories and write a fixed binary payload to `dest`, emulating a successful download.
-        
+
         Parameters:
             _url (str): Ignored; present to match downloader signature.
             dest (str): Filesystem path where the mock download will write the file.
-        
+
         Returns:
             bool: Always True to indicate success.
         """
@@ -4007,14 +4006,14 @@ def test_prerelease_functions_symlink_safety(tmp_path):
         def mock_download_func(_url, dest):
             """
             Test helper that simulates downloading a file by writing fake firmware bytes to the destination path.
-            
+
             Parameters:
                 _url (str): Ignored; present to match the real download function signature.
                 dest (str | os.PathLike): Path where the fake file will be written. Parent directories will be created if needed.
-            
+
             Returns:
                 bool: Always True to indicate a successful (mocked) download.
-            
+
             Side effects:
                 Creates parent directories for `dest` (if missing) and writes the bytes b"fake_firmware_data" to the file.
             """

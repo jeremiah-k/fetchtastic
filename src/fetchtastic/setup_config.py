@@ -828,7 +828,9 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
             )
         else:
             # Correct the message to be accurate
-            print("No extraction patterns set. No pre-release files will be downloaded.")
+            print(
+                "No extraction patterns set. No pre-release files will be downloaded."
+            )
             print(
                 "To select specific pre-release files, first set up extraction patterns."
             )
