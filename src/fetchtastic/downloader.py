@@ -225,6 +225,7 @@ def check_promoted_prereleases(
     prerelease_dir = os.path.join(download_dir, "firmware", "prerelease")
     if not os.path.exists(prerelease_dir):
         return False
+    real_prerelease_dir = os.path.realpath(prerelease_dir)
 
     # Path to regular release directory
     release_dir = os.path.join(download_dir, "firmware", latest_release_tag)
@@ -257,9 +258,20 @@ def check_promoted_prereleases(
                         f"but the release directory doesn't exist yet. Removing pre-release."
                     )
                     try:
-                        shutil.rmtree(prerelease_path)
-                        logger.info(f"Removed pre-release directory: {prerelease_path}")
-                        promoted = True
+                        if os.path.islink(prerelease_path):
+                            logger.info(f"Removing promoted prerelease symlink: {dir_name}")
+                            os.unlink(prerelease_path)
+                            promoted = True
+                        else:
+                            real_target = os.path.realpath(prerelease_path)
+                            if real_target == real_prerelease_dir or not real_target.startswith(real_prerelease_dir + os.sep):
+                                logger.warning(
+                                    f"Skipping removal of {prerelease_path} because it resolves outside prerelease directory"
+                                )
+                            else:
+                                shutil.rmtree(prerelease_path)
+                                logger.info(f"Removed pre-release directory: {prerelease_path}")
+                                promoted = True
                     except OSError as e:
                         logger.error(
                             f"Error removing pre-release directory {prerelease_path}: {e}"
@@ -302,9 +314,20 @@ def check_promoted_prereleases(
                     )
                     # Remove the pre-release directory since it's now a regular release
                     try:
-                        shutil.rmtree(prerelease_path)
-                        logger.info(f"Removed pre-release directory: {prerelease_path}")
-                        promoted = True
+                        if os.path.islink(prerelease_path):
+                            logger.info(f"Removing promoted prerelease symlink: {dir_name}")
+                            os.unlink(prerelease_path)
+                            promoted = True
+                        else:
+                            real_target = os.path.realpath(prerelease_path)
+                            if real_target == real_prerelease_dir or not real_target.startswith(real_prerelease_dir + os.sep):
+                                logger.warning(
+                                    f"Skipping removal of {prerelease_path} because it resolves outside prerelease directory"
+                                )
+                            else:
+                                shutil.rmtree(prerelease_path)
+                                logger.info(f"Removed pre-release directory: {prerelease_path}")
+                                promoted = True
                     except OSError as e:
                         logger.error(
                             f"Error removing promoted pre-release directory {prerelease_path}: {e}"
@@ -588,7 +611,7 @@ def batch_update_prerelease_tracking(
         try:
             with os.fdopen(temp_fd, 'w', encoding='utf-8') as temp_f:
                 json.dump(tracking_data, temp_f, indent=2)
-            os.rename(temp_path, tracking_file)
+            os.replace(temp_path, tracking_file)
         finally:
             # Ensure the temporary file is removed if it still exists (e.g., on rename failure)
             if os.path.exists(temp_path):
@@ -755,10 +778,21 @@ def check_for_prereleases(
             " Cleaning pre-release directory."
         )
         if os.path.exists(prerelease_dir):
+            real_prerelease_dir = os.path.realpath(prerelease_dir)
             for item in os.listdir(prerelease_dir):
                 item_path = os.path.join(prerelease_dir, item)
                 if os.path.isdir(item_path):
                     try:
+                        if os.path.islink(item_path):
+                            os.unlink(item_path)
+                            logger.info(f"Removed old pre-release symlink: {item}")
+                            continue
+                        real_target = os.path.realpath(item_path)
+                        if real_target == real_prerelease_dir or not real_target.startswith(real_prerelease_dir + os.sep):
+                            logger.warning(
+                                f"Skipping removal of {item_path} because it resolves outside prerelease directory"
+                            )
+                            continue
                         shutil.rmtree(item_path)
                         logger.info(f"Removed old pre-release directory: {item}")
                     except OSError as e:
@@ -782,7 +816,7 @@ def check_for_prereleases(
                         temp_f,
                         indent=2,
                     )
-                os.rename(temp_path, tracking_file)
+                os.replace(temp_path, tracking_file)
             finally:
                 if os.path.exists(temp_path):
                     os.remove(temp_path)
