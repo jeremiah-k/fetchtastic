@@ -763,31 +763,36 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
         if current_patterns:
             print(f"Current patterns: {' '.join(current_patterns)}")
             keep_patterns_default = "yes"
-            keep_patterns = (
+            keep_patterns_input = (
                 input(
                     f"Do you want to keep the current extraction patterns? [y/n] (default: {keep_patterns_default}): "
                 )
                 .strip()
                 .lower()
-                or keep_patterns_default[0]
+                or keep_patterns_default
             )
-            if keep_patterns != "y":
+            if keep_patterns_input[0] != "y":
                 current_patterns = []  # Clear to prompt for new ones
 
         if not current_patterns:
-            extract_patterns = input("Extraction patterns: ").strip()
-            if extract_patterns:
-                config["EXTRACT_PATTERNS"] = extract_patterns.split()
-                print(f"Extraction patterns set to: {extract_patterns}")
+            extract_patterns_input = input("Extraction patterns: ").strip()
+            if extract_patterns_input:
+                config["EXTRACT_PATTERNS"] = extract_patterns_input.split()
+                print(f"Extraction patterns set to: {extract_patterns_input}")
             else:
+                # User entered no patterns, so disable auto-extract
                 config["AUTO_EXTRACT"] = False
                 config["EXTRACT_PATTERNS"] = []
-                config["EXCLUDE_PATTERNS"] = []
-                print("No patterns selected, no files will be extracted.")
+                print("No extraction patterns provided; disabling auto-extraction.")
 
-        # Configure exclude patterns if extraction is enabled and patterns are set
+        # Configure exclude patterns only if extraction is enabled and patterns are set
         if config.get("AUTO_EXTRACT") and config.get("EXTRACT_PATTERNS"):
-            configure_exclude_patterns(config)
+            # In non-interactive environments (like CI), skip interactive prompts
+            if not sys.stdin.isatty() or os.environ.get("CI"):
+                config["EXCLUDE_PATTERNS"] = RECOMMENDED_EXCLUDE_PATTERNS.copy()
+                print("Using recommended exclude patterns (non-interactive mode).")
+            else:
+                configure_exclude_patterns(config)
         else:
             config["EXCLUDE_PATTERNS"] = []
     else:
@@ -805,13 +810,13 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
         )
         .strip()
         .lower()
-        or check_prereleases_default[0]
+        or check_prereleases_default
     )
-    config["CHECK_PRERELEASES"] = check_prereleases_input == "y"
+    config["CHECK_PRERELEASES"] = check_prereleases_input[0] == "y"
 
     if config["CHECK_PRERELEASES"]:
-        # Automatically use extraction patterns for pre-releases
-        prerelease_patterns = config.get("EXTRACT_PATTERNS", [])
+        # Use a copy to avoid aliasing EXTRACT_PATTERNS
+        prerelease_patterns = list(config.get("EXTRACT_PATTERNS", []))
         config["SELECTED_PRERELEASE_ASSETS"] = prerelease_patterns
 
         if prerelease_patterns:
@@ -819,10 +824,11 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
                 f"Using your extraction patterns for pre-release selection: {' '.join(prerelease_patterns)}"
             )
         else:
+            # Correct the message to be accurate
+            print("No extraction patterns set. No pre-release files will be downloaded.")
             print(
-                "No extraction patterns set. All pre-release files will be considered for download."
+                "To select specific pre-release files, first set up extraction patterns."
             )
-            print("To select specific pre-release files, first set up extraction patterns.")
     else:
         # Prereleases disabled, clear the setting
         config["SELECTED_PRERELEASE_ASSETS"] = []
