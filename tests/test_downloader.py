@@ -3975,7 +3975,7 @@ def test_prerelease_functions_symlink_safety(tmp_path):
         check_for_prereleases(
             download_dir=str(download_dir),
             latest_release_tag="1.0.0",
-            selected_patterns=None,
+            selected_patterns=[],
         )
 
         # Assert the external target directory and its contents still exist
@@ -4104,7 +4104,7 @@ def test_prerelease_symlink_traversal_attack_prevention(tmp_path):
             check_for_prereleases(
                 download_dir=str(download_dir),
                 latest_release_tag="1.5.0",
-                selected_patterns=None,
+                selected_patterns=[],
             )
 
             # Verify the target directory still exists and was not deleted
@@ -4163,7 +4163,7 @@ def test_prerelease_symlink_mixed_with_valid_directories(tmp_path):
         check_for_prereleases(
             download_dir=str(download_dir),
             latest_release_tag="1.0.0",
-            selected_patterns=None,
+            selected_patterns=[],
         )
 
         # Valid directory should be handled normally, symlink should be removed safely
