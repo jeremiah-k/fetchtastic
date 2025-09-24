@@ -1,16 +1,18 @@
 # src/fetchtastic/downloader.py
 
 import fnmatch
+import glob
 import json
 import os
 import re
 import shutil
+import tempfile
 import time
 import zipfile
 from collections import defaultdict
 from datetime import datetime
 from functools import cmp_to_key
-from typing import Any, Dict, List, Optional, Tuple
+from typing import IO, Any, Callable, Dict, List, Optional, Tuple
 
 import requests
 from packaging.version import InvalidVersion
@@ -45,7 +47,9 @@ from fetchtastic.log_utils import logger  # Import new logger
 from fetchtastic.setup_config import display_version_info, get_upgrade_command
 from fetchtastic.utils import (
     download_file_with_retry,
+    get_hash_file_path,
     matches_selected_patterns,
+    verify_file_integrity,
 )
 
 # Compiled regex for performance
@@ -215,7 +219,15 @@ def check_promoted_prereleases(
     # Removed local log_message_func definition
 
     # Strip the 'v' prefix if present
-    latest_release_version = latest_release_tag.lstrip("v")
+    safe_latest_release_tag = _sanitize_path_component(latest_release_tag)
+    if safe_latest_release_tag is None:
+        logger.warning(
+            "Unsafe latest release tag provided (%s); skipping promoted prerelease check",
+            latest_release_tag,
+        )
+        return False
+
+    latest_release_version = safe_latest_release_tag.lstrip("v")
 
     # Path to prerelease directory
     prerelease_dir = os.path.join(download_dir, "firmware", "prerelease")
@@ -223,12 +235,20 @@ def check_promoted_prereleases(
         return False
 
     # Path to regular release directory
-    release_dir = os.path.join(download_dir, "firmware", latest_release_tag)
+    release_dir = os.path.join(download_dir, "firmware", safe_latest_release_tag)
 
     # Check for matching pre-release directories
     promoted = False
-    for dir_name in os.listdir(prerelease_dir):
-        if dir_name.startswith("firmware-"):
+    for raw_dir_name in os.listdir(prerelease_dir):
+        if raw_dir_name.startswith("firmware-"):
+            dir_name = _sanitize_path_component(raw_dir_name)
+            if dir_name is None:
+                logger.warning(
+                    "Skipping unsafe prerelease directory encountered during promotion check: %s",
+                    raw_dir_name,
+                )
+                continue
+
             dir_version = dir_name[9:]  # Remove 'firmware-' prefix
 
             # Validate version format before processing (hash part is optional)
@@ -241,25 +261,29 @@ def check_promoted_prereleases(
             # If this pre-release matches the latest release version
             if dir_version == latest_release_version:
                 logger.info(
-                    f"Found pre-release {dir_name} that matches latest release {latest_release_tag}"
+                    f"Found pre-release {dir_name} that matches latest release {safe_latest_release_tag}"
                 )
                 prerelease_path = os.path.join(prerelease_dir, dir_name)
 
+                # If this prerelease entry is a symlink, remove the link rather than traversing it
+                if os.path.islink(prerelease_path):
+                    logger.info(
+                        "Removing symbolic link prerelease: %s (matches release %s)",
+                        dir_name,
+                        safe_latest_release_tag,
+                    )
+                    if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
+                        promoted = True
+                    continue
                 # If the release directory doesn't exist yet, we can't compare files
                 # We'll just remove the pre-release directory since it will be downloaded as a regular release
                 if not os.path.exists(release_dir):
                     logger.info(
-                        f"Pre-release {dir_name} has been promoted to release {latest_release_tag}, "
+                        f"Pre-release {dir_name} has been promoted to release {safe_latest_release_tag}, "
                         f"but the release directory doesn't exist yet. Removing pre-release."
                     )
-                    try:
-                        shutil.rmtree(prerelease_path)
-                        logger.info(f"Removed pre-release directory: {prerelease_path}")
+                    if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
                         promoted = True
-                    except OSError as e:
-                        logger.error(
-                            f"Error removing pre-release directory {prerelease_path}: {e}"
-                        )
                     continue
 
                 # Verify files match by comparing hashes
@@ -294,19 +318,153 @@ def check_promoted_prereleases(
 
                 if files_match:
                     logger.info(
-                        f"Pre-release {dir_name} has been promoted to release {latest_release_tag}"
+                        f"Pre-release {dir_name} has been promoted to release {safe_latest_release_tag}"
                     )
                     # Remove the pre-release directory since it's now a regular release
-                    try:
-                        shutil.rmtree(prerelease_path)
-                        logger.info(f"Removed pre-release directory: {prerelease_path}")
+                    if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
                         promoted = True
-                    except OSError as e:
-                        logger.error(
-                            f"Error removing promoted pre-release directory {prerelease_path}: {e}"
-                        )
 
     return promoted
+
+
+def _atomic_write(
+    file_path: str, writer_func: Callable[[IO[str]], None], suffix: str
+) -> bool:
+    """
+    Atomically write text to a target file using a temporary file and a caller-supplied writer.
+    
+    Creates a temporary file in the same directory as file_path, calls writer_func(temp_file)
+    to write UTF-8 text content, then atomically replaces the target with the temp file
+    (using os.replace). Ensures the temp file is removed on failure.
+    
+    Parameters:
+        file_path (str): Final destination path.
+        writer_func (Callable[[IO[str]], None]): Function that writes text to the provided
+            file-like object (opened for writing, UTF-8).
+        suffix (str): Suffix to use for the temporary file (e.g., ".json", ".txt").
+    
+    Returns:
+        bool: True if the write and atomic replace succeeded; False on any failure (no exceptions propagated).
+    """
+    try:
+        temp_fd, temp_path = tempfile.mkstemp(
+            dir=os.path.dirname(file_path), prefix="tmp-", suffix=suffix
+        )
+    except OSError as e:
+        logger.error(f"Could not create temporary file for {file_path}: {e}")
+        return False
+    try:
+        with os.fdopen(temp_fd, "w", encoding="utf-8") as temp_f:
+            writer_func(temp_f)
+        os.replace(temp_path, file_path)
+    except (IOError, UnicodeEncodeError, OSError) as e:
+        logger.error(f"Could not write to {file_path}: {e}")
+        return False
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+    return True
+
+
+def _atomic_write_text(file_path: str, content: str) -> bool:
+    """
+    Atomically write text content to a file with a ".txt" temporary suffix.
+    
+    Writes `content` to `file_path` by delegating to the atomic writer helper; the write is performed to a temporary file and renamed into place to avoid partial writes. Returns True on success and False on error.
+    """
+    return _atomic_write(file_path, lambda f: f.write(content), suffix=".txt")
+
+
+def _atomic_write_json(file_path: str, data: dict) -> bool:
+    """
+    Atomically write a Python mapping to a JSON file.
+    
+    Writes `data` (must be JSON-serializable) to `file_path` using a temporary file and an atomic rename, ensuring the target file is never left in a partially-written state. The JSON is written with an indentation of 2 spaces and the helper enforces a ".json" suffix for the temporary file.
+    
+    Parameters:
+        file_path (str): Destination path for the JSON file.
+        data (dict): Mapping to serialize to JSON.
+    
+    Returns:
+        bool: True on successful write, False on error.
+    """
+    return _atomic_write(
+        file_path, lambda f: json.dump(data, f, indent=2), suffix=".json"
+    )
+
+
+def _sanitize_path_component(component: Optional[str]) -> Optional[str]:
+    """
+    Return a filesystem-safe single path component or None if the input is unsafe.
+    
+    The function accepts a string (or None) and returns a trimmed component that is safe
+    to use as a single path segment. It returns None for unsafe inputs, including:
+    - None or empty strings after trimming
+    - "." or ".."
+    - absolute paths
+    - strings containing a null byte
+    - strings containing path separators (os.sep or os.altsep)
+    
+    Returns:
+        The sanitized component string, or None when the input is unsafe.
+    """
+
+    if component is None:
+        return None
+
+    sanitized = component.strip()
+    if not sanitized or sanitized in {".", ".."}:
+        return None
+
+    if os.path.isabs(sanitized):
+        return None
+
+    if "\x00" in sanitized:
+        return None
+
+    for separator in (os.sep, os.altsep):
+        if separator and separator in sanitized:
+            return None
+
+    return sanitized
+
+
+def _safe_rmtree(path_to_remove: str, base_dir: str, item_name: str) -> bool:
+    """
+    Safely remove a filesystem path (file or directory), preventing symlink traversal outside a permitted base directory.
+    
+    If the target is a symlink it is unlinked immediately. Otherwise the function resolves the real path and ensures it lies under base_dir before removing; directories are removed with shutil.rmtree and files with os.remove. item_name is used only for log messages. Returns True when removal succeeded, False on any error or when the resolved path is outside base_dir.
+    """
+    try:
+        if os.path.islink(path_to_remove):
+            logger.info(f"Removing symlink: {item_name}")
+            os.unlink(path_to_remove)
+            return True
+
+        real_target = os.path.realpath(path_to_remove)
+        real_base_dir = os.path.realpath(base_dir)
+
+        try:
+            common_base = os.path.commonpath([real_base_dir, real_target])
+        except ValueError:
+            common_base = None
+
+        if common_base != real_base_dir:
+            logger.warning(
+                f"Skipping removal of {path_to_remove} because it resolves outside the base directory"
+            )
+            return False
+
+        if os.path.isdir(path_to_remove):
+            shutil.rmtree(path_to_remove)
+        else:
+            os.remove(path_to_remove)
+    except OSError as e:
+        logger.error(f"Error removing {path_to_remove}: {e}")
+        return False
+    else:
+        logger.info(f"Removed path: {path_to_remove}")
+        return True
 
 
 def compare_file_hashes(file1, file2):
@@ -452,25 +610,33 @@ def _extract_commit_from_dir_name(dir_name: str) -> Optional[str]:
 
 def _get_existing_prerelease_dirs(prerelease_dir: str) -> list[str]:
     """
-    Return the names of local prerelease directories that start with "firmware-".
+    Return safe prerelease directory names directly under ``prerelease_dir``.
 
-    If the given prerelease_dir does not exist, returns an empty list.
-
-    Parameters:
-        prerelease_dir (str): Path to the parent prerelease directory.
-
-    Returns:
-        list[str]: Directory names (not full paths) under prerelease_dir beginning with "firmware-".
+    Symlinks are ignored to avoid traversing outside the managed prerelease tree.
     """
+
     if not os.path.exists(prerelease_dir):
         return []
 
-    return [
-        item
-        for item in os.listdir(prerelease_dir)
-        if os.path.isdir(os.path.join(prerelease_dir, item))
-        and item.startswith("firmware-")
-    ]
+    entries: list[str] = []
+    try:
+        with os.scandir(prerelease_dir) as iterator:
+            for entry in iterator:
+                if not entry.is_dir(follow_symlinks=False):
+                    continue
+                if not entry.name.startswith("firmware-"):
+                    continue
+                safe_name = _sanitize_path_component(entry.name)
+                if safe_name is None:
+                    logger.warning(
+                        "Ignoring unsafe prerelease directory name: %s", entry.name
+                    )
+                    continue
+                entries.append(safe_name)
+    except OSError as e:
+        logger.debug(f"Error scanning prerelease dir {prerelease_dir}: {e}")
+
+    return entries
 
 
 def _get_prerelease_patterns(config: dict) -> list[str]:
@@ -574,24 +740,25 @@ def batch_update_prerelease_tracking(
     added_count = len(newly_added_commits)
 
     # Write updated tracking data only once
-    try:
-        tracking_data = {
-            "release": current_release,
-            "commits": commits,
-            "last_updated": datetime.now().astimezone().isoformat(),
-        }
-        with open(tracking_file, "w", encoding="utf-8") as f:
-            json.dump(tracking_data, f, indent=2)
-
-    except (IOError, UnicodeEncodeError) as e:
-        logger.error(f"Could not write prerelease tracking file: {e}")
+    tracking_data = {
+        "release": current_release,
+        "commits": commits,
+        "last_updated": datetime.now().astimezone().isoformat(),
+    }
+    if not _atomic_write_json(tracking_file, tracking_data):
         return 1  # Default to 1 if we can't track
-    else:
-        prerelease_number = len(commits)
-        if added_count > 0:
-            logger.info(f"Batch updated {added_count} prerelease commits")
+
+    prerelease_number = len(commits)
+    if added_count > 0:
+        logger.info(f"Batch updated {added_count} prerelease commit(s)")
         logger.info(f"Prerelease #{prerelease_number} since {current_release}")
-        return prerelease_number
+    else:
+        logger.debug(
+            "Prerelease tracking unchanged (#%s since %s)",
+            prerelease_number,
+            current_release,
+        )
+    return prerelease_number
 
 
 def matches_extract_patterns(filename, extract_patterns, device_manager=None):
@@ -666,19 +833,19 @@ def matches_extract_patterns(filename, extract_patterns, device_manager=None):
 
 def get_prerelease_tracking_info(prerelease_dir):
     """
-    Return prerelease tracking information from prerelease_tracking.json or a legacy text file.
-
-    Attempts to read prerelease_tracking.json in prerelease_dir (preferred). If the JSON file is missing or cannot be parsed, falls back to the legacy prerelease_commits.txt format via _read_text_tracking_file. This function logs read/parsing issues and never raises.
-
+    Return prerelease tracking information gathered from prerelease_tracking.json or a legacy text file.
+    
+    Attempts to read prerelease_tracking.json inside prerelease_dir first; if the JSON file is missing or unreadable, falls back to the legacy prerelease_commits.txt parser via _read_text_tracking_file. This function always returns a dict and does not raise.
+    
     Parameters:
-        prerelease_dir (str): Directory containing prerelease tracking files; may not exist.
-
+        prerelease_dir (str): Directory that may contain prerelease tracking files; may not exist.
+    
     Returns:
-        dict: Empty dict if no tracking data is available; otherwise a dictionary with:
+        dict: Empty dict if no tracking data is available; otherwise contains:
             - release (str): Tracked official release tag or "unknown" when not recorded.
-            - commits (list[str]): List of prerelease commit identifiers (may be empty).
+            - commits (list[str]): Tracked prerelease commit identifiers (may be empty).
             - prerelease_count (int): Number of tracked prerelease commits.
-            - last_updated (str|None): ISO timestamp from the JSON tracking file when available (present only for JSON-backed data).
+            - last_updated (str|None): ISO timestamp present only when loaded from JSON tracking file.
     """
     # Try JSON format first
     json_tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
@@ -707,6 +874,125 @@ def get_prerelease_tracking_info(prerelease_dir):
     return {}
 
 
+def _iter_matching_prerelease_files(
+    dir_name: str,
+    selected_patterns: list,
+    exclude_patterns_list: list,
+    device_manager,
+) -> List[Dict[str, str]]:
+    """
+    Return a list of prerelease assets in a directory that match selection rules.
+    
+    Scans the remote directory named by dir_name (via menu_repo), filters entries by
+    selected_patterns (using matches_extract_patterns, which applies device-aware
+    matching when a DeviceHardwareManager is provided), and excludes any filenames
+    matching patterns in exclude_patterns_list. Filenames that are unsafe for use
+    as a single path component are skipped.
+    
+    Parameters:
+        dir_name (str): Remote prerelease directory to inspect.
+        selected_patterns (list): Patterns used to select matching assets.
+        exclude_patterns_list (list): fnmatch-style patterns; any match causes an asset to be skipped.
+        device_manager: Optional device manager used by matches_extract_patterns for device-specific pattern handling.
+    
+    Returns:
+        List[Dict[str, str]]: A list of dicts with keys:
+            - "name": sanitized filename (safe single path component)
+            - "download_url": URL string for downloading the asset
+    """
+
+    files = menu_repo.fetch_directory_contents(dir_name) or []
+    matching: List[Dict[str, str]] = []
+    for entry in files:
+        file_name = entry.get("name")
+        download_url = entry.get("download_url")
+        if not file_name or not download_url:
+            continue
+
+        safe_file_name = _sanitize_path_component(file_name)
+        if safe_file_name is None:
+            logger.warning(
+                "Skipping prerelease asset with unsafe name %s in %s",
+                file_name,
+                dir_name,
+            )
+            continue
+
+        # matches_extract_patterns keeps prerelease filtering aligned with extraction rules,
+        # including device-aware patterns resolved via DeviceHardwareManager.
+        if not matches_extract_patterns(file_name, selected_patterns, device_manager):
+            continue
+
+        if any(
+            fnmatch.fnmatch(file_name, pattern) for pattern in exclude_patterns_list
+        ):
+            logger.debug(
+                "Skipping pre-release file %s (matched exclude pattern)",
+                file_name,
+            )
+            continue
+
+        matching.append({"name": safe_file_name, "download_url": download_url})
+
+    return matching
+
+
+def _prepare_for_redownload(file_path: str) -> bool:
+    """
+    Prepare a file for re-download by removing the existing file, its associated hash file (via `get_hash_file_path`), and any orphaned temporary files matching `<file_path>.tmp.*`.
+    
+    Returns:
+        bool: True if all removals succeeded (or nothing needed removal), False if an OS error occurred while attempting removals.
+    """
+    try:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            logger.debug(f"Removed existing file: {file_path}")
+
+        hash_path = get_hash_file_path(file_path)
+        if os.path.exists(hash_path):
+            os.remove(hash_path)
+            logger.debug(f"Removed stale hash file: {hash_path}")
+
+        # Also remove any orphaned temp files from previous runs
+        for tmp_path in glob.glob(f"{glob.escape(file_path)}.tmp.*"):
+            os.remove(tmp_path)
+            logger.debug(f"Removed orphaned temp file: {tmp_path}")
+    except OSError as e:
+        logger.error(f"Error preparing for re-download of {file_path}: {e}")
+        return False
+    else:
+        return True
+
+
+def _prerelease_needs_download(file_path: str) -> bool:
+    """
+    Determine whether a prerelease file at `file_path` needs to be (re)downloaded.
+    
+    Checks for existence and verifies integrity. Returns True when the file is missing
+    or fails integrity validation and has been prepared for re-download. If integrity
+    fails but preparation for re-download does not succeed, returns False.
+    
+    Parameters:
+        file_path (str): Path to the local prerelease asset file.
+    
+    Returns:
+        bool: True if the caller should download the file; False otherwise.
+    """
+    if not os.path.exists(file_path):
+        return True
+
+    if verify_file_integrity(file_path):
+        return False
+
+    logger.warning(
+        f"Existing prerelease file {os.path.basename(file_path)} failed integrity check; re-downloading"
+    )
+    if not _prepare_for_redownload(file_path):
+        return False
+    return True
+
+
 def check_for_prereleases(
     download_dir,
     latest_release_tag,
@@ -715,454 +1001,282 @@ def check_for_prereleases(
     device_manager=None,
 ):
     """
-    Discover firmware prerelease directories newer than the provided latest release, clean up stale local prerelease folders, and download missing prerelease assets into <download_dir>/firmware/prerelease.
-
-    The function:
-    - Treats a leading "v" in latest_release_tag as optional and strips it for comparisons.
-    - Scans the remote repository for directories named "firmware-<version>" and keeps only those newer than latest_release_tag.
-    - Removes stale local prerelease directories that are not present in the repository or not newer than the official release.
-    - For each relevant prerelease, downloads assets that match selected_patterns (using the repository's back-compat matching helper) and do not match any exclude_patterns; sets executable permissions for shell scripts when possible.
-    - Returns whether any prerelease assets were downloaded and a list of prerelease directory names that had files downloaded.
-
+    Discover and mirror the newest prerelease firmware (newer than the provided official release tag) and download any matching assets.
+    
+    Keeps only the newest prerelease directory locally (older prerelease directories and stray files are removed or cleaned). Files are downloaded into download_dir/firmware/prerelease/<prerelease-dir>. The function sanitizes the provided latest_release_tag; if the tag is unsafe the call is a no-op and returns (False, []).
+    
     Parameters:
-        download_dir (str): Base path where firmware/prerelease directories live.
-        latest_release_tag (str): Latest official release tag (e.g., "v2.6.8" or "2.6.8.ef9d0d7"); a leading "v" is tolerated and stripped for comparison.
-        selected_patterns (Iterable[str]): Patterns/substrings used to select which asset basenames should be downloaded (applied with the module's back-compat matcher).
-        exclude_patterns (Optional[Iterable[str]]): Optional fnmatch-style patterns; any filename matching an exclude pattern will be skipped.
-
+        download_dir (str): Base download directory where prerelease subdirectory is located.
+        latest_release_tag (str): Official release tag used as the cutoff; prereleases must be newer than this.
+        selected_patterns (Iterable[str]): Asset selection patterns; matching is performed with the same pattern rules used elsewhere in the module.
+        exclude_patterns (Iterable[str] | None): Optional list of fnmatch-style patterns to exclude.
+        device_manager: Optional device manager used to evaluate device-specific patterns (omitted from detailed docs as it is a common service).
+    
     Returns:
         tuple[bool, list[str]]: (downloaded, versions)
-          - downloaded: True if any prerelease files were downloaded.
-          - versions: If downloaded is True, list of prerelease directory names that had files downloaded;
-            otherwise, list of all prerelease directory names discovered/tracked (may be empty).
+            - downloaded: True if at least one prerelease asset was downloaded during this run.
+            - versions: List of prerelease directory names that were processed or tracked (empty if none).
     """
-    # Removed local log_message_func definition
+
+    raw_latest_release_tag = latest_release_tag
+    latest_release_tag = _sanitize_path_component(latest_release_tag)
+    if latest_release_tag is None:
+        logger.warning(
+            "Unsafe latest release tag provided to check_for_prereleases: %s",
+            raw_latest_release_tag,
+        )
+        return False, []
+
     prerelease_dir = os.path.join(download_dir, "firmware", "prerelease")
     tracking_info = get_prerelease_tracking_info(prerelease_dir)
     tracked_release = tracking_info.get("release")
 
-    # If a new release is detected, clean up old pre-releases.
     if tracked_release and tracked_release != latest_release_tag:
         logger.info(
-            f"New release {latest_release_tag} detected (previously tracking {tracked_release}). Cleaning pre-release directory."
+            f"New release {latest_release_tag} detected (previously tracking {tracked_release})."
+            " Cleaning pre-release directory."
         )
         if os.path.exists(prerelease_dir):
-            for item in os.listdir(prerelease_dir):
-                item_path = os.path.join(prerelease_dir, item)
-                if os.path.isdir(item_path):
-                    try:
-                        shutil.rmtree(item_path)
-                        logger.info(f"Removed old pre-release directory: {item}")
-                    except OSError as e:
-                        logger.warning(
-                            f"Error removing old pre-release directory {item_path}: {e}"
-                        )
-
-        # Reset tracking file immediately even if no prereleases are present yet
-        try:
-            tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
-            os.makedirs(prerelease_dir, exist_ok=True)
-            with open(tracking_file, "w", encoding="utf-8") as f:
-                json.dump(
-                    {
-                        "release": latest_release_tag,
-                        "commits": [],
-                        "last_updated": datetime.now().astimezone().isoformat(),
-                    },
-                    f,
-                    indent=2,
+            try:
+                with os.scandir(prerelease_dir) as iterator:
+                    for entry in iterator:
+                        if entry.name in (
+                            "prerelease_tracking.json",
+                            "prerelease_commits.txt",
+                        ) and entry.is_file(follow_symlinks=False):
+                            continue
+                        _safe_rmtree(entry.path, prerelease_dir, entry.name)
+            except OSError as e:
+                logger.warning(
+                    f"Error cleaning prerelease directory {prerelease_dir}: {e}"
                 )
-        except (IOError, UnicodeDecodeError) as e:
-            logger.debug(f"Could not reset prerelease tracking file: {e}")
 
-    # Helper function to extract version from directory name (defined once to avoid duplication)
+        tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
+        os.makedirs(prerelease_dir, exist_ok=True)
+        if not _atomic_write_json(
+            tracking_file,
+            {
+                "release": latest_release_tag,
+                "commits": [],
+                "last_updated": datetime.now().astimezone().isoformat(),
+            },
+        ):
+            logger.debug(f"Could not reset prerelease tracking file: {tracking_file}")
+
     def extract_version(dir_name: str) -> str:
-        """
-        Return the version portion of a prerelease directory name.
-
-        If dir_name starts with the literal prefix "firmware-", the prefix is removed and the remainder is returned (e.g. "firmware-2.7.9.abcdef" -> "2.7.9.abcdef"). Otherwise the original dir_name is returned unchanged.
-
-        Returns:
-            str: The extracted version string or the original input if no prefix matched.
-        """
+        """Return the portion after the 'firmware-' prefix in prerelease directory names."""
         return dir_name[9:] if dir_name.startswith("firmware-") else dir_name
 
-    # Initialize exclude patterns list
     exclude_patterns_list = exclude_patterns or []
-
-    # Strip the 'v' prefix if present
     latest_release_version = latest_release_tag.lstrip("v")
 
-    # Fetch directories from the meshtastic.github.io repository
     directories = menu_repo.fetch_repo_directories()
-
     if not directories:
         logger.info("No firmware directories found in the repository.")
         return False, []
 
-    # Get list of existing firmware directories (both regular and pre-releases)
-    firmware_dir = os.path.join(download_dir, "firmware")
-    existing_firmware_dirs = []
-    if os.path.exists(firmware_dir):
-        for item in os.listdir(firmware_dir):
-            item_path = os.path.join(firmware_dir, item)
-            if os.path.isdir(item_path) and item != "prerelease" and item != "repo-dls":
-                # This is a regular firmware directory (e.g., v2.6.8.ef9d0d7)
-                existing_firmware_dirs.append(item)
+    repo_prerelease_dirs: List[str] = []
+    for raw_dir_name in directories:
+        if not raw_dir_name.startswith("firmware-"):
+            continue
 
-    # Also check existing pre-releases
-    prerelease_dir = os.path.join(download_dir, "firmware", "prerelease")
-    existing_prerelease_dirs = _get_existing_prerelease_dirs(prerelease_dir)
-    existing_prerelease_dirs_set = set(existing_prerelease_dirs)
+        dir_name = _sanitize_path_component(raw_dir_name)
+        if dir_name is None:
+            logger.warning(
+                "Skipping unsafe prerelease directory name from repository: %s",
+                raw_dir_name,
+            )
+            continue
 
-    # Extract all firmware directory names from the repository
-    repo_firmware_dirs = {
-        dir_name for dir_name in directories if dir_name.startswith("firmware-")
-    }
+        dir_version = extract_version(dir_name)
+        if not re.match(VERSION_REGEX_PATTERN, dir_version):
+            logger.debug(
+                "Repository prerelease directory %s uses a non-standard version format; attempting best-effort comparison",
+                dir_name,
+            )
 
-    # Clean up the prerelease directory
-    # Only keep directories that:
-    # 1. Exist in the repository
-    # 2. Are newer than the latest release
-    if os.path.exists(prerelease_dir):
-        # First, clean up any non-directory files in the prerelease directory
-        # but preserve the tracking file
-        for item in os.listdir(prerelease_dir):
-            item_path = os.path.join(prerelease_dir, item)
-            if not os.path.isdir(item_path) and item not in (
-                "prerelease_tracking.json",
-                "prerelease_commits.txt",
-            ):
-                try:
-                    logger.info(
-                        f"Removing stale file from prerelease directory: {item}"
-                    )
-                    os.remove(item_path)
-                except OSError as e:
-                    logger.warning(
-                        f"Error removing stale file {item_path} from prerelease directory: {e}"
-                    )
+        try:
+            if compare_versions(dir_version, latest_release_version) > 0:
+                repo_prerelease_dirs.append(dir_name)
+        except (InvalidVersion, ValueError, TypeError) as exc:
+            logger.warning(
+                f"Could not compare prerelease version {dir_version} against {latest_release_version}: {exc}"
+            )
 
-        # Now clean up directories
-        for dir_name in existing_prerelease_dirs:
-            should_keep = False
-            dir_path = os.path.join(
-                prerelease_dir, dir_name
-            )  # Define dir_path here for use in except block
-
-            try:
-                # Check if it's a firmware directory
-                if dir_name.startswith("firmware-"):
-                    dir_version = dir_name[9:]  # Remove 'firmware-' prefix
-
-                    # Validate version format (should be X.Y.Z or X.Y.Z.hash)
-                    if not re.match(VERSION_REGEX_PATTERN, dir_version):
-                        logger.warning(
-                            f"Invalid version format in directory {dir_name}, removing"
-                        )
-                        should_keep = False
-                    elif dir_name in repo_firmware_dirs:
-                        # Check if it's newer than the latest release
-                        comparison_result = compare_versions(
-                            dir_version, latest_release_version
-                        )
-                        if comparison_result > 0:
-                            should_keep = True
-
-                if not should_keep:
-                    logger.info(f"Removing stale pre-release directory: {dir_name}")
-                    shutil.rmtree(dir_path)
-            except OSError as e:
-                logger.warning(
-                    f"Error processing or removing directory {dir_path} during prerelease cleanup: {e}"
-                )
-            except (
-                ValueError,
-                KeyError,
-                TypeError,
-            ) as e_general:  # Catch other potential errors like from compare_versions
-                logger.error(
-                    f"Unexpected error processing directory {dir_path} for prerelease cleanup: {e_general}",
-                    exc_info=True,
-                )
-
-    # Use existing prerelease directories already loaded (avoid redundant I/O)
-
-    # Find directories in the repository that are newer than the latest release and don't already exist locally
-    prerelease_dirs = []  # Directories that need processing (downloading)
-    all_prerelease_dirs = []  # All prerelease directories (for tracking)
-    for dir_name in directories:
-        # Extract version from directory name (e.g., firmware-2.6.9.f93d031)
-        if dir_name.startswith("firmware-"):
-            dir_version = dir_name[9:]  # Remove 'firmware-' prefix
-
-            # Check if this version is newer than the latest release
-            comparison_result = compare_versions(dir_version, latest_release_version)
-            if comparison_result > 0:
-                # This is a prerelease directory (newer than latest release)
-                all_prerelease_dirs.append(dir_name)
-
-                # Check if we need to download this pre-release
-                # Either the directory doesn't exist, or it exists but is missing files
-                should_process = False
-
-                if dir_name not in existing_prerelease_dirs_set:
-                    # Directory doesn't exist at all
-                    should_process = True
-                else:
-                    # Directory exists, but check if all expected files are present
-                    dir_path = os.path.join(prerelease_dir, dir_name)
-
-                    # Fetch the list of files that should be in this directory
-                    expected_files = menu_repo.fetch_directory_contents(dir_name)
-                    if expected_files:
-                        # Filter expected files based on patterns (same logic as download)
-                        expected_matching_files = []
-                        for file in expected_files:
-                            file_name = file["name"]
-
-                            # Apply same filtering logic as download (smart pattern matching for EXTRACT_PATTERNS)
-                            if not matches_extract_patterns(
-                                file_name, selected_patterns, device_manager
-                            ):
-                                continue  # Skip this file
-
-                            # Skip files that match exclude patterns
-                            if any(
-                                fnmatch.fnmatch(file_name, exclude)
-                                for exclude in exclude_patterns_list
-                            ):
-                                continue  # Skip this file
-
-                            expected_matching_files.append(file_name)
-
-                        # Check if all expected files are present locally
-                        missing_files = []
-                        for expected_file in expected_matching_files:
-                            local_file_path = os.path.join(dir_path, expected_file)
-                            if not os.path.exists(local_file_path):
-                                missing_files.append(expected_file)
-
-                        if missing_files:
-                            logger.debug(
-                                f"Pre-release {dir_name} is missing {len(missing_files)} files, will re-download"
-                            )
-                            should_process = True
-                        else:
-                            logger.debug(
-                                f"Pre-release {dir_name} is complete with all expected files ({len(expected_matching_files)} files)"
-                            )
-                    else:
-                        # Could not fetch expected files list, assume we need to process
-                        logger.debug(
-                            f"Could not fetch file list for {dir_name}, will attempt download"
-                        )
-                        should_process = True
-
-                if should_process:
-                    prerelease_dirs.append(dir_name)
-
-    # Sort prerelease directories by version (newest first) for consistent "latest" selection
-    if all_prerelease_dirs:
-        all_prerelease_dirs = sorted(
-            all_prerelease_dirs,
+    if repo_prerelease_dirs:
+        repo_prerelease_dirs = sorted(
+            repo_prerelease_dirs,
             key=cmp_to_key(
                 lambda a, b: compare_versions(extract_version(a), extract_version(b))
             ),
-            reverse=True,  # Newest first
+            reverse=True,
         )
 
-    # Initialize downloaded files list
-    downloaded_files = []
+    target_prereleases = repo_prerelease_dirs[:1]
 
-    # If no prerelease directories need processing, skip download loop
-    if not prerelease_dirs:
-        logger.info("No new pre-releases to download")
-        # Continue to unified tracking block below
+    os.makedirs(prerelease_dir, exist_ok=True)
+    # Resolve once for containment checks
+    real_prerelease_base = os.path.realpath(prerelease_dir)
 
-    # Create prerelease directory if it doesn't exist
-    if not os.path.exists(prerelease_dir):
-        try:
-            os.makedirs(prerelease_dir)
-        except OSError as e:
-            logger.error(f"Error creating pre-release directory {prerelease_dir}: {e}")
-            return False, []  # Cannot proceed if directory creation fails
-
-    # Remove old prerelease directories - keep only the latest existing version
-    if all_prerelease_dirs and os.path.exists(prerelease_dir):
-        # Get fresh list of existing directories (first cleanup may have removed some)
-        existing_dirs = _get_existing_prerelease_dirs(prerelease_dir)
-
-        if existing_dirs:
-            try:
-                # Sort existing directories by version (newest first)
-                sorted_existing = sorted(
-                    existing_dirs,
-                    key=cmp_to_key(
-                        lambda a, b: compare_versions(
-                            extract_version(a), extract_version(b)
-                        )
-                    ),
-                    reverse=True,
-                )
-
-                # Determine which directories to keep
-                # INTENTIONAL: Keep only 1 existing prerelease + new ones being processed
-                # Prereleases are temporary by nature - previous versions become obsolete
-                # when newer ones are available. This follows upstream patterns.
-                dirs_to_keep = set(sorted_existing[:1])  # Keep latest existing only
-
-                # Remove directories that exceed the limit
-                for item in existing_dirs:
-                    if item not in dirs_to_keep:
-                        item_path = os.path.join(prerelease_dir, item)
+    # Remove stray files and symlinks while preserving tracking files
+    try:
+        with os.scandir(prerelease_dir) as iterator:
+            for entry in iterator:
+                if entry.name.startswith("."):
+                    continue
+                if entry.is_symlink():
+                    logger.warning(
+                        "Removing symlink in prerelease dir to prevent traversal: %s",
+                        entry.name,
+                    )
+                    _safe_rmtree(entry.path, prerelease_dir, entry.name)
+                    continue
+                if not entry.is_dir() and entry.name not in (
+                    "prerelease_tracking.json",
+                    "prerelease_commits.txt",
+                ):
+                    try:
+                        os.remove(entry.path)
                         logger.info(
-                            f"Removing old prerelease directory: {item} (keeping latest only)"
+                            f"Removed stale file from prerelease directory: {entry.name}"
                         )
-                        try:
-                            shutil.rmtree(item_path)
-                        except OSError as e:
-                            logger.warning(
-                                f"Error removing old prerelease directory {item_path}: {e}"
-                            )
-                    else:
-                        logger.debug(f"Keeping prerelease directory: {item}")
+                    except OSError as e:
+                        logger.warning(
+                            f"Error removing stale file {entry.path} from prerelease directory: {e}"
+                        )
+    except OSError as e:
+        logger.debug(f"Error scanning prerelease dir {prerelease_dir} for cleanup: {e}")
 
-            except (IndexError, ValueError, TypeError) as e:
-                logger.warning(f"Error sorting prerelease directories for cleanup: {e}")
-                # Fallback: don't remove anything if sorting fails
+    existing_prerelease_dirs = _get_existing_prerelease_dirs(prerelease_dir)
+    target_prerelease_set = set(target_prereleases)
 
-    # Process each pre-release directory
-    total_pr = len(prerelease_dirs)
-    if total_pr > 0:
-        logger.info(f"Scanning {total_pr} prerelease directories")
-    else:
-        logger.debug("Scanning 0 prerelease directories")
-    for i, dir_name in enumerate(prerelease_dirs, start=1):
-        logger.info(f"Checking {dir_name} ({i}/{total_pr})…")
+    for dir_name in existing_prerelease_dirs:
+        if dir_name in target_prerelease_set:
+            continue  # keep the newest prerelease we plan to use
 
-        # Fetch files from the directory
-        files = menu_repo.fetch_directory_contents(dir_name)
+        dir_path = os.path.join(prerelease_dir, dir_name)
+        _safe_rmtree(dir_path, prerelease_dir, dir_name)
 
-        if not files:
-            logger.info(f"No files found in {dir_name}.")
+    downloaded_files: List[str] = []
+
+    for dir_name in target_prereleases:
+        dir_path = os.path.join(prerelease_dir, dir_name)
+        # Do not allow the target prerelease directory itself to be a symlink or a non-directory
+        if os.path.islink(dir_path) or (
+            os.path.exists(dir_path) and not os.path.isdir(dir_path)
+        ):
+            logger.warning(
+                "Prerelease entry is not a real directory (%s); removing to avoid escaping base",
+                dir_name,
+            )
+            if not _safe_rmtree(dir_path, prerelease_dir, dir_name):
+                logger.error("Could not safely remove %s; skipping", dir_name)
+                continue
+        try:
+            os.makedirs(dir_path, exist_ok=True)
+        except OSError as e:
+            logger.error(
+                f"Error creating directory for pre-release {dir_name} at {dir_path}: {e}"
+            )
             continue
 
-        # Create directory for this pre-release
-        dir_path = os.path.join(prerelease_dir, dir_name)
-        if not os.path.exists(dir_path):
-            try:
-                os.makedirs(dir_path)
-            except OSError as e:
-                logger.error(
-                    f"Error creating directory for pre-release {dir_name} at {dir_path}: {e}"
-                )
-                continue  # Skip this pre-release if its directory cannot be created
+        matching_files = _iter_matching_prerelease_files(
+            dir_name, selected_patterns, exclude_patterns_list, device_manager
+        )
+        if not matching_files:
+            logger.debug(
+                f"No prerelease files matched selection for {dir_name}; skipping downloads"
+            )
+            continue
 
-        # Filter files based on selected patterns
-        for file in files:
-            file_name = file["name"]
-            download_url = file["download_url"]
+        for file_info in matching_files:
+            file_name = file_info["name"]
+            download_url = file_info["download_url"]
             file_path = os.path.join(dir_path, file_name)
-
-            # Only download files that match the selected patterns and don't match exclude patterns
-            # For prereleases, selected_patterns comes from SELECTED_PRERELEASE_ASSETS
-            # (or EXTRACT_PATTERNS as a fallback) and supports smart device matching
-            if not matches_extract_patterns(
-                file_name, selected_patterns, device_manager
-            ):
-                continue  # Skip this file
-
-            # Skip files that match exclude patterns
-            if any(
-                fnmatch.fnmatch(file_name, exclude) for exclude in exclude_patterns_list
-            ):
-                logger.debug(
-                    "Skipping pre-release file %s (matched exclude pattern)",
+            # Containment check: ensure resolved path stays within prerelease base
+            try:
+                common_base = os.path.commonpath(
+                    [real_prerelease_base, os.path.realpath(file_path)]
+                )
+            except ValueError:
+                common_base = None
+            if common_base != real_prerelease_base:
+                logger.warning(
+                    "Skipping pre-release file %s: resolved path escapes prerelease base",
                     file_name,
                 )
-                continue  # Skip this file
+                continue
 
-            if not os.path.exists(file_path):
-                try:
-                    logger.debug(
-                        f"Downloading pre-release file: {file_name} from {download_url}"
-                    )
-                    if not download_file_with_retry(download_url, file_path):
-                        # Download_file_with_retry logs the specific error, so we just continue.
-                        continue
+            if not _prerelease_needs_download(file_path):
+                logger.debug(
+                    f"Pre-release file already present and verified: {file_name}"
+                )
+                continue
 
-                    # Set executable permissions for .sh files
-                    if file_name.lower().endswith(SHELL_SCRIPT_EXTENSION.lower()):
-                        try:
-                            os.chmod(file_path, EXECUTABLE_PERMISSIONS)
-                            logger.debug(f"Set executable permissions for {file_name}")
-                        except OSError as e:
-                            logger.warning(
-                                f"Error setting executable permissions for {file_name}: {e}"
-                            )
+            try:
+                logger.debug(
+                    f"Downloading pre-release file: {file_name} from {download_url}"
+                )
+                if not download_file_with_retry(download_url, file_path):
+                    continue
 
-                    downloaded_files.append(file_path)
-                except requests.exceptions.RequestException as e:
-                    logger.error(
-                        f"Network error downloading pre-release file {file_name} from {download_url}: {e}"
-                    )
-                except IOError as e:
-                    logger.error(
-                        f"File I/O error while downloading pre-release file {file_name} to {file_path}: {e}"
-                    )
-                except Exception as e:  # Catch any other unexpected errors
-                    logger.error(
-                        f"Unexpected error downloading pre-release file {file_name}: {e}",
-                        exc_info=True,
-                    )
-            else:
-                # File already exists; no new download performed
-                logger.debug(f"Pre-release file already exists: {file_name}")
+                if file_name.lower().endswith(SHELL_SCRIPT_EXTENSION.lower()):
+                    try:
+                        os.chmod(file_path, EXECUTABLE_PERMISSIONS)
+                        logger.debug(
+                            f"Set executable permissions for prerelease file {file_name}"
+                        )
+                    except OSError as e:
+                        logger.warning(
+                            f"Error setting executable permissions for {file_name}: {e}"
+                        )
 
-    downloaded_versions = []
+                downloaded_files.append(file_path)
+            except requests.exceptions.RequestException as e:
+                logger.error(
+                    f"Network error downloading pre-release file {file_name} from {download_url}: {e}"
+                )
+            except IOError as e:
+                logger.error(
+                    f"File I/O error while downloading pre-release file {file_name} to {file_path}: {e}"
+                )
+            except Exception as e:  # noqa: BLE001 - unexpected errors
+                logger.error(
+                    f"Unexpected error downloading pre-release file {file_name}: {e}",
+                    exc_info=True,
+                )
+
+    downloaded_versions: List[str] = []
     if downloaded_files:
         logger.info(f"Downloaded {len(downloaded_files)} new pre-release files.")
+        files_by_dir: Dict[str, List[str]] = defaultdict(list)
+        for path in downloaded_files:
+            dir_name = os.path.basename(os.path.dirname(path))
+            files_by_dir[dir_name].append(path)
 
-        # Extract unique directory names from downloaded files and count files per version
-        # Group files by directory for better performance
-        files_by_dir = defaultdict(list)
-        for p in downloaded_files:
-            dir_name = os.path.basename(os.path.dirname(p))
-            files_by_dir[dir_name].append(p)
+        for version, files in files_by_dir.items():
+            logger.info(f"Pre-release {version}: {len(files)} new file(s) downloaded")
+            downloaded_versions.append(version)
 
-        version_file_counts = {
-            dir_name: len(files) for dir_name, files in files_by_dir.items()
-        }
-        downloaded_versions.extend(version_file_counts.keys())
-
-        # Log per-version file counts
-        for version, count in version_file_counts.items():
-            logger.info(f"Pre-release {version}: {count} new files downloaded")
-
-    # Update prerelease tracking (run once regardless of download success)
-    if all_prerelease_dirs:
-        # Use batch update for efficiency - processes all directories in a single operation
+    if target_prereleases:
         prerelease_number = batch_update_prerelease_tracking(
-            prerelease_dir, latest_release_tag, all_prerelease_dirs
+            prerelease_dir, latest_release_tag, target_prereleases
         )
+        tracked_label = target_prereleases[0]
         if downloaded_files:
             logger.info(
-                f"Downloaded prereleases tracked up to #{prerelease_number}: {all_prerelease_dirs[0]}"
+                f"Downloaded prereleases tracked up to #{prerelease_number}: {tracked_label}"
             )
         else:
             logger.info(
-                f"Tracked prereleases up to #{prerelease_number}: {all_prerelease_dirs[0]}"
+                f"Tracked prereleases up to #{prerelease_number}: {tracked_label}"
             )
 
-    # Return results
     if downloaded_files:
         return True, downloaded_versions
-    elif all_prerelease_dirs:
-        # Prerelease directories exist and are tracked, but no files were downloaded
-        return False, all_prerelease_dirs
-    else:
-        return False, []
+    if target_prereleases:
+        return False, target_prereleases
+    return False, []
 
 
 # Use the version check function from setup_config
@@ -1934,16 +2048,13 @@ def extract_files(
 
 def cleanup_old_versions(directory: str, releases_to_keep: List[str]) -> None:
     """
-    Remove versioned subdirectories under `directory` except for the ones specified in `releases_to_keep`.
-
-    This scans `directory` for immediate subdirectories and deletes any that are not listed in `releases_to_keep` and are not in the internal exclusion list ("repo-dls", "prerelease"). Deletion is performed with shutil.rmtree; failures are caught and logged but not re-raised.
-
+    Prune versioned subdirectories under `directory`, keeping only the specified releases.
+    
+    Scans immediate child directories of `directory` and removes any subdirectory whose basename is not in `releases_to_keep` and not one of the internal exclusions ("repo-dls", "prerelease"). Deletion is performed with a safe removal helper that protects against symlink/traversal attacks; failures are logged but not propagated.
+    
     Parameters:
-        directory (str): Path containing versioned subdirectories to prune.
-        releases_to_keep (List[str]): Release names (subdirectory basenames) that must be preserved.
-
-    Side effects:
-        Permanently removes directories on disk (and their contents) for versions not kept; logs actions and warnings on errors.
+        directory (str): Path whose immediate subdirectories represent versioned releases.
+        releases_to_keep (List[str]): Basenames of subdirectories that must be preserved.
     """
     excluded_dirs: List[str] = ["repo-dls", "prerelease"]
     versions: List[str] = [
@@ -1955,16 +2066,8 @@ def cleanup_old_versions(directory: str, releases_to_keep: List[str]) -> None:
             continue
         if version not in releases_to_keep:
             version_path: str = os.path.join(directory, version)
-            try:
-                # Using shutil.rmtree for robustness, but logging individual files first for more detail if preferred.
-                # For simplicity here, just rmtree. If detailed logging of each file/dir removal is needed,
-                # the original os.walk approach with individual os.remove/os.rmdir is fine, wrapped in try-except.
-                shutil.rmtree(version_path)
+            if _safe_rmtree(version_path, directory, version):
                 logger.info(f"Removed directory and its contents: {version_path}")
-            except OSError as e:
-                logger.warning(
-                    f"Error removing old version directory {version_path}: {e}"
-                )
 
 
 def strip_unwanted_chars(text: str) -> str:
@@ -2112,36 +2215,36 @@ def check_and_download(
     exclude_patterns: Optional[List[str]] = None,
 ) -> Tuple[List[str], List[str], List[Dict[str, str]]]:
     """
-    Check a list of releases, download any missing or corrupted assets, optionally extract ZIPs, and prune old release directories.
-
+    Check releases for missing or corrupted assets, download matching assets, optionally extract ZIPs, and prune old release directories.
+    
     Processes up to `versions_to_keep` newest entries from `releases`. For each release it:
     - Skips releases that are already complete.
-    - Downloads assets that match `selected_patterns` (if provided) and do not match `exclude_patterns`.
-    - Optionally extracts files from ZIP assets when `auto_extract` is True and `release_type` == "Firmware"; extraction uses `extract_patterns` to select files.
-    - Saves release notes, ensures `.sh` files are executable, and removes older release subdirectories not in the retention window.
-    - Updates `latest_release_file` when a newer release has been successfully processed.
-
+    - Schedules and downloads assets that match `selected_patterns` (if provided) and do not match `exclude_patterns`.
+    - Optionally extracts files from ZIP assets when `auto_extract` is True and `release_type == "Firmware"`, using `extract_patterns` to select files.
+    - Writes release notes, sets executable bits on shell scripts, and prunes old release subdirectories outside the retention window.
+    - Atomically updates `latest_release_file` when a newer release has been successfully processed.
+    
     Side effects:
-    - Creates release directories and may write `latest_release_file`.
-    - May remove corrupted ZIP files and delete old release directories during cleanup.
-    - Honors a global Wi-Fi gating flag: if downloads were skipped, the function will not download and instead returns newer release tags.
-
+    - Creates per-release subdirectories and may write `latest_release_file` and release notes.
+    - May remove corrupted ZIP files and delete older release directories.
+    - Honors a global Wi‑Fi gating flag: if downloads are skipped globally, the function will not perform downloads and instead returns newer release tags.
+    
     Parameters:
-    - releases: Iterable of release dicts from the API (newest-first order expected).
-    - latest_release_file: Path to a file storing the most recently recorded release tag.
+    - releases: List of release dictionaries (expected newest-first order) as returned by the API.
+    - latest_release_file: Path to a file that stores the most recently recorded release tag.
     - release_type: Human-readable type used in logs and failure records (e.g., "Firmware" or "APK").
     - download_dir_path: Root directory where per-release subdirectories are created.
     - versions_to_keep: Number of newest releases to consider for download/retention.
     - extract_patterns: Patterns used to select files to extract from ZIP archives.
-    - selected_patterns: If provided, only assets whose names match any of these patterns are considered for download.
-    - auto_extract: When True and `release_type` == "Firmware`, ZIP assets will be extracted when needed.
-    - exclude_patterns: Optional patterns; matching filenames are excluded from download and extraction.
-
+    - selected_patterns: Optional list of asset name patterns to include; if omitted all assets are considered.
+    - auto_extract: When True and `release_type == "Firmware"`, perform extraction of matching ZIP contents.
+    - exclude_patterns: Optional list of patterns; matching filenames are excluded from download and extraction.
+    
     Returns:
-    - Tuple(downloaded_versions, new_versions_available, failed_downloads_details)
-      - downloaded_versions: list of release tags for which at least one asset was successfully downloaded.
-      - new_versions_available: list of release tags newer than the saved/latest tag that remain pending or were not downloaded.
-      - failed_downloads_details: list of dicts describing individual failed downloads (keys include url, path_to_download, release_tag, file_name, reason, and type).
+    Tuple(downloaded_versions, new_versions_available, failed_downloads_details)
+    - downloaded_versions: list of release tags for which at least one asset was successfully downloaded.
+    - new_versions_available: list of release tags newer than the saved/latest tag that remain pending or were not downloaded.
+    - failed_downloads_details: list of dicts describing individual failed downloads (keys include url, path_to_download, release_tag, file_name, reason, and type).
     """
     global downloads_skipped
     downloaded_versions: List[str] = []
@@ -2153,11 +2256,18 @@ def check_and_download(
     if not os.path.exists(download_dir_path):
         os.makedirs(download_dir_path)
 
+    real_download_base = os.path.realpath(download_dir_path)
+
     saved_release_tag: Optional[str] = None
     if os.path.exists(latest_release_file):
         try:
             with open(latest_release_file, "r") as f:
-                saved_release_tag = f.read().strip()
+                saved_release_tag = _sanitize_path_component(f.read())
+                if saved_release_tag is None:
+                    logger.warning(
+                        "Ignoring unsafe contents in latest release file %s",
+                        latest_release_file,
+                    )
         except IOError as e:
             logger.warning(
                 f"Error reading latest release file {latest_release_file}: {e}"
@@ -2172,7 +2282,9 @@ def check_and_download(
     if downloads_skipped:
         # Mirror the “newer than saved” computation used later (newest-first list).
         tags_order: List[str] = [
-            rd.get("tag_name") for rd in releases_to_download if rd.get("tag_name")
+            tag
+            for rd in releases_to_download
+            if (tag := _sanitize_path_component(rd.get("tag_name"))) is not None
         ]
         newer_tags: List[str] = _newer_tags_since_saved(tags_order, saved_release_tag)
         new_versions_available = list(dict.fromkeys(newer_tags))
@@ -2181,37 +2293,58 @@ def check_and_download(
     release_data: Dict[str, Any]
     for idx, release_data in enumerate(releases_to_download, start=1):
         try:
-            release_tag: str = release_data[
+            raw_release_tag: str = release_data[
                 "tag_name"
             ]  # Potential KeyError if API response changes
+            release_tag = _sanitize_path_component(raw_release_tag)
+            if release_tag is None:
+                logger.warning(
+                    "Skipping release with unsafe tag name: %s", raw_release_tag
+                )
+                continue
             if total_to_scan > 1:
-                logger.debug("Checking %s (%d of %d)", release_tag, idx, total_to_scan)
-            logger.info("Checking %s…", release_tag)
+                logger.debug(
+                    "Checking %s (%d of %d)", raw_release_tag, idx, total_to_scan
+                )
+            logger.info("Checking %s…", raw_release_tag)
             release_dir: str = os.path.join(download_dir_path, release_tag)
             release_notes_file: str = os.path.join(
                 release_dir, f"release_notes-{release_tag}.md"
             )
+
+            if os.path.islink(release_dir) or (
+                os.path.exists(release_dir) and not os.path.isdir(release_dir)
+            ):
+                logger.warning(
+                    "Release entry is not a real directory (%s); removing to avoid escaping base",
+                    raw_release_tag,
+                )
+                if not _safe_rmtree(release_dir, download_dir_path, release_tag):
+                    logger.error(
+                        "Could not safely remove %s; skipping", raw_release_tag
+                    )
+                    continue
 
             # Check if this release has already been downloaded and is complete
             if _is_release_complete(
                 release_data, release_dir, selected_patterns, exclude_patterns_list
             ):
                 logger.debug(
-                    f"Release {release_tag} already exists and is complete, skipping download"
+                    f"Release {raw_release_tag} already exists and is complete, skipping download"
                 )
                 # Update latest_release_file if this is the most recent release
                 if (
                     release_tag != saved_release_tag
                     and release_data == releases_to_download[0]
                 ):
-                    try:
-                        with open(latest_release_file, "w") as f:
-                            f.write(release_tag)
+                    if not _atomic_write_text(latest_release_file, release_tag):
+                        logger.warning(
+                            f"Error updating latest release file: {latest_release_file}"
+                        )
+                    else:
                         logger.debug(
                             f"Updated latest release tag to {release_tag} (complete release)"
                         )
-                    except IOError as e:
-                        logger.warning(f"Error updating latest release file: {e}")
                 # Still add to new_versions_available if it's different from saved tag
                 elif release_tag != saved_release_tag:
                     new_versions_available.append(release_tag)
@@ -2222,17 +2355,34 @@ def check_and_download(
                     os.makedirs(release_dir, exist_ok=True)
                 except OSError as e:
                     logger.error(
-                        f"Error creating release directory {release_dir}: {e}. Skipping version {release_tag}."
+                        f"Error creating release directory {release_dir}: {e}. Skipping version {raw_release_tag}."
                     )
                     continue  # Skip this release if its directory cannot be created
 
             if not os.path.exists(release_notes_file) and release_data.get("body"):
-                logger.debug(f"Downloading release notes for version {release_tag}.")
+                logger.debug(
+                    f"Downloading release notes for version {raw_release_tag}."
+                )
                 release_notes_content: str = strip_unwanted_chars(release_data["body"])
                 try:
-                    with open(release_notes_file, "w", encoding="utf-8") as notes_file:
-                        notes_file.write(release_notes_content)
-                    logger.debug(f"Saved release notes to {release_notes_file}")
+                    try:
+                        notes_common = os.path.commonpath(
+                            [real_download_base, os.path.realpath(release_notes_file)]
+                        )
+                    except ValueError:
+                        notes_common = None
+
+                    if notes_common != real_download_base:
+                        logger.warning(
+                            "Skipping write of release notes for %s: path escapes download base",
+                            raw_release_tag,
+                        )
+                    else:
+                        with open(
+                            release_notes_file, "w", encoding="utf-8"
+                        ) as notes_file:
+                            notes_file.write(release_notes_content)
+                        logger.debug(f"Saved release notes to {release_notes_file}")
                 except IOError as e:
                     logger.warning(
                         f"Error writing release notes to {release_notes_file}: {e}"
@@ -2245,12 +2395,22 @@ def check_and_download(
                 file_name: str = asset.get("name", "")  # Use .get for name
                 if not file_name:
                     logger.warning(
-                        f"Asset found with no name for release {release_tag}. Skipping."
+                        f"Asset found with no name for release {raw_release_tag}. Skipping."
+                    )
+                    continue
+
+                safe_file_name = _sanitize_path_component(file_name)
+                if safe_file_name is None:
+                    logger.warning(
+                        "Skipping %s asset with unsafe filename %s for release %s",
+                        release_type,
+                        file_name,
+                        raw_release_tag,
                     )
                     continue
 
                 if file_name.lower().endswith(ZIP_EXTENSION.lower()):
-                    asset_download_path: str = os.path.join(release_dir, file_name)
+                    asset_download_path: str = os.path.join(release_dir, safe_file_name)
                     if os.path.exists(asset_download_path):
                         try:
                             with zipfile.ZipFile(asset_download_path, "r") as zf:
@@ -2287,15 +2447,27 @@ def check_and_download(
                 file_name = asset.get("name", "")
                 if not file_name:
                     continue  # Already logged
+                safe_file_name = _sanitize_path_component(file_name)
+                if safe_file_name is None:
+                    logger.warning(
+                        "Skipping %s asset with unsafe filename %s for release %s",
+                        release_type,
+                        file_name,
+                        raw_release_tag,
+                    )
+                    continue
+
                 browser_download_url = asset.get("browser_download_url")
                 if not browser_download_url:
                     logger.warning(
-                        f"Asset '{file_name}' in release '{release_tag}' has no download URL. Skipping."
+                        f"Asset '{file_name}' in release '{raw_release_tag}' has no download URL. Skipping."
                     )
                     failed_downloads_details.append(
                         {
                             "url": "Unknown - No download URL",
-                            "path_to_download": os.path.join(release_dir, file_name),
+                            "path_to_download": os.path.join(
+                                release_dir, safe_file_name
+                            ),
                             "release_tag": release_tag,
                             "file_name": file_name,
                             "reason": "Missing browser_download_url",
@@ -2321,11 +2493,42 @@ def check_and_download(
                         file_name,
                     )
                     continue
-                asset_download_path = os.path.join(release_dir, file_name)
+                asset_download_path = os.path.join(release_dir, safe_file_name)
                 if not os.path.exists(asset_download_path):
                     assets_to_download.append(
                         (browser_download_url, asset_download_path)
                     )
+                else:
+                    expected_size = asset.get("size")
+                    if expected_size is not None:
+                        try:
+                            actual_size = os.path.getsize(asset_download_path)
+                        except OSError:
+                            actual_size = -1
+                        if actual_size != expected_size:
+                            logger.warning(
+                                f"Existing {release_type} asset {asset_download_path} has size {actual_size}, expected {expected_size}; scheduling re-download"
+                            )
+                            try:
+                                asset_common = os.path.commonpath(
+                                    [
+                                        real_download_base,
+                                        os.path.realpath(asset_download_path),
+                                    ]
+                                )
+                            except ValueError:
+                                asset_common = None
+                            if asset_common != real_download_base:
+                                logger.warning(
+                                    "Skipping re-download of %s asset with path %s due to escaping base",
+                                    release_type,
+                                    asset_download_path,
+                                )
+                                continue
+                            if _prepare_for_redownload(asset_download_path):
+                                assets_to_download.append(
+                                    (browser_download_url, asset_download_path)
+                                )
         except (KeyError, TypeError) as e_data:
             logger.error(
                 f"Error processing release data structure for a release (possibly malformed API response or unexpected structure): {e_data}. Skipping this release."
@@ -2334,7 +2537,7 @@ def check_and_download(
 
         if assets_to_download:  # This check is correct based on the first loop.
             actions_taken = True
-            logger.info("Processing release: %s", release_tag)
+            logger.info("Processing release: %s", raw_release_tag)
             any_downloaded: bool = False
             url: str
             # The assets_to_download list contains (url, path_to_download) tuples.
@@ -2383,7 +2586,15 @@ def check_and_download(
                         continue
 
                     if file_name.lower().endswith(ZIP_EXTENSION.lower()):
-                        zip_path: str = os.path.join(release_dir, file_name)
+                        safe_zip_name = _sanitize_path_component(file_name)
+                        if safe_zip_name is None:
+                            logger.warning(
+                                "Skipping extraction check for unsafe filename %s in release %s",
+                                file_name,
+                                raw_release_tag,
+                            )
+                            continue
+                        zip_path: str = os.path.join(release_dir, safe_zip_name)
                         if os.path.exists(zip_path):
                             extraction_needed: bool = check_extraction_needed(
                                 zip_path,
@@ -2406,17 +2617,20 @@ def check_and_download(
             try:
                 if saved_release_tag is None or release_tag != saved_release_tag:
                     logger.info(
-                        f"Release {release_tag} found, but no assets matched the current selection/exclude filters."
+                        f"Release {raw_release_tag} found, but no assets matched the current selection/exclude filters."
                     )
                     # Consider the latest release processed even without downloads to avoid re-scanning
                     try:
                         if idx == 1:
-                            with open(latest_release_file, "w") as f:
-                                f.write(release_tag)
-                            saved_release_tag = release_tag
-                            logger.debug(
-                                f"Updated latest release tag to {release_tag} (no matching assets)"
-                            )
+                            if _atomic_write_text(latest_release_file, release_tag):
+                                saved_release_tag = release_tag
+                                logger.debug(
+                                    f"Updated latest release tag to {release_tag} (no matching assets)"
+                                )
+                            else:
+                                logger.warning(
+                                    f"Could not record latest release tag {release_tag}: atomic write failed"
+                                )
                     except IOError as e:
                         logger.debug(
                             f"Could not record latest release tag {release_tag}: {e}"
@@ -2432,17 +2646,27 @@ def check_and_download(
     # Only update the latest release file if we actually downloaded something
     if releases_to_download and downloaded_versions:
         try:
-            latest_release_tag_val: str = releases_to_download[0]["tag_name"]
-            if latest_release_tag_val != saved_release_tag:
-                try:
-                    with open(latest_release_file, "w") as f:
-                        f.write(latest_release_tag_val)
+            raw_latest_release_tag_val: str = releases_to_download[0]["tag_name"]
+            latest_release_tag_val = _sanitize_path_component(
+                raw_latest_release_tag_val
+            )
+            if latest_release_tag_val is None:
+                logger.warning(
+                    "Skipping write of unsafe latest release tag: %s",
+                    raw_latest_release_tag_val,
+                )
+                latest_release_tag_val = saved_release_tag or None
+            if (
+                latest_release_tag_val is not None
+                and latest_release_tag_val != saved_release_tag
+            ):
+                if not _atomic_write_text(latest_release_file, latest_release_tag_val):
+                    logger.warning(
+                        f"Error writing latest release tag to {latest_release_file}"
+                    )
+                else:
                     logger.debug(
                         f"Updated latest release tag to {latest_release_tag_val}"
-                    )
-                except IOError as e:
-                    logger.warning(
-                        f"Error writing latest release tag to {latest_release_file}: {e}"
                     )
         except (
             IndexError,
@@ -2457,7 +2681,9 @@ def check_and_download(
     if actions_taken:
         try:
             release_tags_to_keep: List[str] = [
-                r["tag_name"] for r in releases_to_download
+                tag
+                for r in releases_to_download
+                if (tag := _sanitize_path_component(r.get("tag_name"))) is not None
             ]
             cleanup_old_versions(download_dir_path, release_tags_to_keep)
         except (KeyError, TypeError) as e:
@@ -2468,7 +2694,9 @@ def check_and_download(
     if not actions_taken:
         # Determine tags newer than the saved tag by position (list is newest-first)
         tags_order: List[str] = [
-            rd.get("tag_name") for rd in releases_to_download if rd.get("tag_name")
+            tag
+            for rd in releases_to_download
+            if (tag := _sanitize_path_component(rd.get("tag_name"))) is not None
         ]
         newer_tags: List[str] = _newer_tags_since_saved(tags_order, saved_release_tag)
         new_candidates: List[str] = [
@@ -2557,7 +2785,16 @@ def check_extraction_needed(
                     files_to_extract.append(file_name)
         base_name_to_check: str
         for base_name_to_check in files_to_extract:
-            extracted_file_path: str = os.path.join(extract_dir, base_name_to_check)
+            try:
+                extracted_file_path: str = safe_extract_path(
+                    extract_dir, base_name_to_check
+                )
+            except ValueError:
+                logger.warning(
+                    "Skipping unsafe archive member %s during extraction check",
+                    base_name_to_check,
+                )
+                continue
             if not os.path.exists(extracted_file_path):
                 return True
         return False

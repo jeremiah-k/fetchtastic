@@ -1,13 +1,21 @@
 import json
+import os
+import platform
+import shutil
 import time
-from unittest.mock import mock_open, patch
+from pathlib import Path
+from unittest.mock import call, mock_open, patch
 
 import pytest
 import requests
 
 from fetchtastic import downloader
 from fetchtastic.device_hardware import DeviceHardwareManager
-from fetchtastic.downloader import matches_extract_patterns
+from fetchtastic.downloader import (
+    check_for_prereleases,
+    check_promoted_prereleases,
+    matches_extract_patterns,
+)
 from fetchtastic.utils import extract_base_name
 from tests.test_constants import (
     TEST_VERSION_NEW,
@@ -21,8 +29,17 @@ def write_dummy_file():
     """Fixture that provides a function to write dummy files for download mocking."""
 
     def _write(dest, data=b"data"):
-        import os
 
+        """
+        Create parent directories for `dest`, write binary `data` to `dest`, and return True.
+        
+        Parameters:
+            dest (str or Path): Destination file path to write.
+            data (bytes): Binary content to write; defaults to b"data".
+        
+        Returns:
+            bool: Always returns True on successful write.
+        """
         os.makedirs(os.path.dirname(dest), exist_ok=True)
         with open(dest, "wb") as f:
             f.write(data)
@@ -247,7 +264,7 @@ def test_check_and_download_logs_when_no_assets_match(tmp_path, caplog):
     old_propagate = ft_logger.propagate
     ft_logger.propagate = True
     try:
-        downloaded, new_versions, failures = downloader.check_and_download(
+        downloaded, _new_versions, failures = downloader.check_and_download(
             releases,
             latest_release_file,
             "Firmware",
@@ -264,7 +281,7 @@ def test_check_and_download_logs_when_no_assets_match(tmp_path, caplog):
     # No downloads and no failures expected; should note new version available
     assert downloaded == []
     assert failures == []
-    assert new_versions == []
+    assert _new_versions == []
     expected = "Release v1.0.0 found, but no assets matched the current selection/exclude filters."
     assert expected in caplog.text
 
@@ -420,7 +437,6 @@ def test_set_permissions_on_sh_files(tmp_path):
     other_file_path.write_text("hello")
 
     # Set initial permissions to non-executable
-    import os
 
     os.chmod(script_path, 0o644)
     os.chmod(other_file_path, 0o644)
@@ -483,14 +499,12 @@ def test_extract_files(dummy_zip_file, tmp_path):
     assert not (extract_dir / "notes.txt").exists()
 
     # Check that the shell script was made executable
-    import os
 
     assert os.access(extract_dir / "device-update.sh", os.X_OK)
 
 
 def test_extract_files_preserves_subdirectories(tmp_path):
     """Extraction should preserve archive subdirectories when writing to disk."""
-    import os
     import zipfile
 
     zip_path = tmp_path / "nested.zip"
@@ -519,7 +533,6 @@ def test_extract_files_preserves_subdirectories(tmp_path):
 
 def test_check_extraction_needed_with_nested_paths(tmp_path):
     """check_extraction_needed should consider nested archive paths and base-name filters."""
-    import os
     import zipfile
 
     zip_path = tmp_path / "nested2.zip"
@@ -611,7 +624,6 @@ def test_check_extraction_needed_with_dash_patterns(tmp_path):
 
 def test_extract_files_matching_and_exclude(tmp_path):
     """Test extraction honors legacy-style matching and exclude patterns."""
-    import os
     import zipfile
 
     zip_path = tmp_path / "mix.zip"
@@ -691,7 +703,6 @@ def test_check_for_prereleases_download_and_cleanup(
 
         Creates parent directories for `dest` if needed, writes a small binary payload (b"data") to `dest`, and returns True to indicate a successful download. Overwrites any existing file at `dest`.
         """
-        import os
 
         os.makedirs(os.path.dirname(dest), exist_ok=True)
         with open(dest, "wb") as f:
@@ -736,6 +747,78 @@ def test_check_for_prereleases_download_and_cleanup(
     # Stale directory and stray file should be removed
     assert not stale_dir.exists()
     assert not stray.exists()
+
+
+@patch("fetchtastic.downloader.menu_repo.fetch_repo_directories")
+@patch("fetchtastic.downloader.menu_repo.fetch_directory_contents")
+@patch("fetchtastic.downloader.download_file_with_retry")
+def test_check_for_prereleases_only_downloads_latest(
+    mock_dl, mock_fetch_contents, mock_fetch_dirs, tmp_path
+):
+    """Ensure only the newest prerelease is downloaded and older ones are removed."""
+
+    mock_fetch_dirs.return_value = [
+        "firmware-2.7.4.123456",
+        "firmware-2.7.5.abcdef",
+    ]
+
+    def _fetch_contents(dir_name: str):
+        """
+        Return a single simulated firmware asset descriptor for a given directory name.
+        
+        If dir_name starts with "firmware-", that prefix is removed when constructing the firmware file base name;
+        otherwise the full dir_name is used. The function returns a list containing one dict with keys:
+        - "name": constructed filename like "firmware-rak4631-<suffix>.uf2"
+        - "download_url": a sample URL pointing to "<dir_name>.uf2"
+        
+        Parameters:
+            dir_name (str): Directory or tag name used to construct the firmware asset entry.
+        
+        Returns:
+            list[dict]: A single-element list with an asset descriptor suitable for tests.
+        """
+        prefix = "firmware-"
+        suffix = dir_name[len(prefix) :] if dir_name.startswith(prefix) else dir_name
+        return [
+            {
+                "name": f"firmware-rak4631-{suffix}.uf2",
+                "download_url": f"https://example.invalid/{dir_name}.uf2",
+            }
+        ]
+
+    mock_fetch_contents.side_effect = _fetch_contents
+
+    def _mock_download(_url: str, dest: str) -> bool:
+        """
+        Test helper that simulates downloading a file.
+        
+        Creates parent directories for `dest`, writes the bytes b"data" to `dest`, and returns True.
+        The `_url` parameter is accepted for API compatibility but ignored.
+        """
+        path = Path(dest)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"data")
+        return True
+
+    mock_dl.side_effect = _mock_download
+
+    download_dir = tmp_path
+    prerelease_dir = download_dir / "firmware" / "prerelease"
+    prerelease_dir.mkdir(parents=True)
+    (prerelease_dir / "firmware-2.7.4.123456").mkdir()
+
+    found, versions = downloader.check_for_prereleases(
+        str(download_dir),
+        latest_release_tag="v2.7.3.000000",
+        selected_patterns=["rak4631-"],
+        exclude_patterns=[],
+    )
+
+    assert found is True
+    assert versions == ["firmware-2.7.5.abcdef"]
+    assert mock_dl.call_count == 1
+    assert mock_fetch_contents.call_args_list == [call("firmware-2.7.5.abcdef")]
+    assert not (prerelease_dir / "firmware-2.7.4.123456").exists()
 
 
 def test_no_up_to_date_log_when_new_versions_but_no_matches(tmp_path, caplog):
@@ -847,7 +930,6 @@ def test_check_and_download_happy_path_with_extraction(tmp_path, caplog):
     # auto-extracted file exists and is executable
     extracted = tmp_path / release_tag / "device-install.sh"
     assert extracted.exists()
-    import os
 
     assert os.access(extracted, os.X_OK)
 
@@ -892,7 +974,6 @@ def test_auto_extract_with_empty_patterns_does_not_extract(tmp_path, caplog):
         Returns:
             bool: Always True to indicate the mock download succeeded.
         """
-        import os
         import zipfile
 
         os.makedirs(os.path.dirname(dest), exist_ok=True)
@@ -933,7 +1014,6 @@ def test_check_and_download_release_already_complete_logs_up_to_date(tmp_path, c
     (tmp_path / "latest_firmware_release.txt").write_text(release_tag)
 
     # Prepare a valid zip already present in the release directory
-    import os
     import zipfile
 
     release_dir = tmp_path / release_tag
@@ -998,7 +1078,7 @@ def test_prerelease_tracking_functionality(
     # Setup mock data
     mock_fetch_dirs.return_value = [
         "firmware-2.7.7.abcdef",
-        "firmware-2.7.8.ghijkl",
+        "firmware-2.7.8.fedcba",
     ]
     mock_fetch_contents.return_value = [
         {
@@ -1327,6 +1407,72 @@ def test_check_and_download_corrupted_existing_zip_records_failure(tmp_path):
     )
 
 
+def test_check_and_download_redownloads_mismatched_non_zip(tmp_path):
+    """Non-zip assets with wrong size should be re-downloaded."""
+
+    release_tag = "v6.1.0"
+    asset_name = "firmware-rak4631-6.1.0.uf2"
+    release_dir = tmp_path / release_tag
+    release_dir.mkdir()
+
+    asset_path = release_dir / asset_name
+    asset_path.write_bytes(b"old")  # Deliberately incorrect size
+
+    releases = [
+        {
+            "tag_name": release_tag,
+            "published_at": "2024-06-01T00:00:00Z",
+            "assets": [
+                {
+                    "name": asset_name,
+                    "browser_download_url": "https://example.invalid/rak4631.uf2",
+                    "size": 1024,
+                }
+            ],
+            "body": "",
+        }
+    ]
+
+    def _mock_download(_url: str, dest: str) -> bool:
+        """
+        Create parent directories and write a fixed binary payload to `dest`, emulating a successful download.
+        
+        Parameters:
+            _url (str): Ignored; present to match downloader signature.
+            dest (str): Filesystem path where the mock download will write the file.
+        
+        Returns:
+            bool: Always True to indicate success.
+        """
+        path = Path(dest)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"new-data")
+        return True
+
+    latest_release_file = str(tmp_path / "latest_firmware_release.txt")
+
+    with patch(
+        "fetchtastic.downloader.download_file_with_retry",
+        side_effect=_mock_download,
+    ) as mock_dl:
+        downloaded, _new_versions, failures = downloader.check_and_download(
+            releases,
+            latest_release_file,
+            "Firmware",
+            str(tmp_path),
+            versions_to_keep=1,
+            extract_patterns=[],
+            selected_patterns=["rak4631-"],
+            auto_extract=False,
+            exclude_patterns=[],
+        )
+
+    assert downloaded == [release_tag]
+    assert failures == []
+    assert asset_path.read_bytes() == b"new-data"
+    assert mock_dl.call_count == 1
+
+
 def test_check_and_download_missing_download_url(tmp_path):
     """Assets with no browser_download_url should be recorded as failures and skipped."""
     release_tag = "v6.0.0"
@@ -1358,7 +1504,82 @@ def test_check_and_download_missing_download_url(tmp_path):
     )
 
     assert downloaded == []
+    assert new_versions == []
     assert failures and failures[0]["reason"] == "Missing browser_download_url"
+
+
+def test_check_and_download_skips_unsafe_release_tag(tmp_path):
+    """Releases with unsafe tag names are ignored to prevent path traversal."""
+
+    releases = [
+        {
+            "tag_name": "../bad",
+            "published_at": "2024-01-01T00:00:00Z",
+            "assets": [],
+            "body": "",
+        }
+    ]
+
+    latest_release_file = str(tmp_path / "latest.txt")
+    download_dir = tmp_path / "downloads"
+
+    downloaded, new_versions, failures = downloader.check_and_download(
+        releases,
+        latest_release_file,
+        "Firmware",
+        str(download_dir),
+        versions_to_keep=1,
+        extract_patterns=[],
+        selected_patterns=["rak4631-"],
+        auto_extract=False,
+        exclude_patterns=[],
+    )
+
+    assert downloaded == []
+    assert new_versions == []
+    assert failures == []
+    assert download_dir.exists()
+    assert list(download_dir.iterdir()) == []
+
+
+def test_check_and_download_skips_unsafe_asset_name(tmp_path):
+    """Assets with unsafe filenames are skipped before download attempts."""
+
+    release_tag = "v7.0.0"
+    releases = [
+        {
+            "tag_name": release_tag,
+            "published_at": "2024-01-01T00:00:00Z",
+            "assets": [
+                {
+                    "name": "../evil.uf2",
+                    "browser_download_url": "https://example.invalid/evil.uf2",
+                    "size": 10,
+                }
+            ],
+            "body": "",
+        }
+    ]
+
+    latest_release_file = str(tmp_path / "latest.txt")
+
+    with patch("fetchtastic.downloader.download_file_with_retry") as mock_dl:
+        downloaded, new_versions, failures = downloader.check_and_download(
+            releases,
+            latest_release_file,
+            "Firmware",
+            str(tmp_path / "downloads"),
+            versions_to_keep=1,
+            extract_patterns=[],
+            selected_patterns=None,
+            auto_extract=False,
+            exclude_patterns=[],
+        )
+
+    assert downloaded == []
+    assert new_versions == []
+    assert failures == []
+    assert mock_dl.call_count == 0
 
 
 def test_send_ntfy_notification(mocker):
@@ -2088,7 +2309,6 @@ def test_get_prerelease_tracking_info_error_handling():
 
 def test_update_prerelease_tracking_error_handling():
     """Test error handling in update_prerelease_tracking."""
-    import os
     import tempfile
     from pathlib import Path
 
@@ -2317,7 +2537,6 @@ def test_prerelease_cleanup_logging_messages(tmp_path, caplog):
 
 def test_prerelease_directory_permissions_error_logging(tmp_path, caplog):
     """Test logging when prerelease directory operations fail due to permissions."""
-    import os
     from unittest.mock import patch
 
     import pytest
@@ -2377,7 +2596,6 @@ def test_prerelease_directory_permissions_error_logging(tmp_path, caplog):
 
 def test_tracking_file_error_handling_ui_messages(tmp_path, caplog):
     """Test user-facing error messages in tracking file operations."""
-    import os
 
     import pytest
 
@@ -3194,7 +3412,7 @@ def test_prerelease_tracking_ui_messages(tmp_path, caplog):
         ("firmware-2.7.7.abc123", "v2.7.6", True),  # Normal case
         ("firmware-2.7.8.def456", "v2.7.6", True),  # Second prerelease
         (
-            "firmware-2.8.0.fed789",
+            "firmware-2.8.0.abc789",
             "v2.8.0",
             True,
         ),  # New release (should reset) - valid hex
@@ -3623,7 +3841,7 @@ def test_prerelease_tracking_comprehensive_ui_messages(tmp_path, caplog):
 
             try:
                 num3 = downloader.update_prerelease_tracking(
-                    str(prerelease_dir), "v2.8.0", "firmware-2.8.2.ghi789"
+                    str(prerelease_dir), "v2.8.0", "firmware-2.8.2.abc789"
                 )
                 # Should handle permission error gracefully
                 assert num3 >= 1
@@ -3729,6 +3947,285 @@ def test_error_handling_comprehensive_ui_paths(tmp_path, caplog):
             assert len(patterns) > 0
         finally:
             readonly_dir.chmod(0o755)  # Restore permissions for cleanup
+
+
+@pytest.mark.skipif(
+    platform.system() == "Windows",
+    reason="Symlink creation requires administrator privileges on Windows",
+)
+def test_prerelease_functions_symlink_safety(tmp_path):
+    """Test that prerelease functions safely handle symlinks without deleting external targets."""
+    # Create the main download directory structure
+    download_dir = tmp_path / "download"
+    download_dir.mkdir()
+    prerelease_dir = download_dir / "firmware" / "prerelease"
+    prerelease_dir.mkdir(parents=True)
+
+    # Create an external target directory (outside the download area)
+    external_target = tmp_path / "external_important_data"
+    external_target.mkdir()
+    important_file = external_target / "critical_data.txt"
+    important_file.write_text("This should never be deleted")
+
+    # Create a subdirectory in external target to test recursive safety
+    external_subdir = external_target / "subdir"
+    external_subdir.mkdir()
+    sub_file = external_subdir / "sub_critical.txt"
+    sub_file.write_text("Subdirectory data that must remain")
+
+    # Create a malicious symlink inside the prerelease directory pointing to the external target
+    malicious_symlink = prerelease_dir / "firmware-1.0.0.abcdef"
+    malicious_symlink.symlink_to(external_target, target_is_directory=True)
+
+    # Verify the symlink was created correctly
+    assert malicious_symlink.is_symlink()
+    assert malicious_symlink.exists()
+    assert external_target.exists()
+    assert important_file.exists()
+    assert sub_file.exists()
+
+    # Test 1: check_for_prereleases symlink safety
+    with patch(
+        "fetchtastic.downloader.menu_repo.fetch_repo_directories"
+    ) as mock_fetch_dirs, patch(
+        "fetchtastic.downloader.menu_repo.fetch_directory_contents"
+    ) as mock_fetch_contents, patch(
+        "fetchtastic.downloader.download_file_with_retry"
+    ) as mock_download:
+
+        # Mock repository to return a newer prerelease
+        mock_fetch_dirs.return_value = ["firmware-1.1.0.fedcba"]
+        mock_fetch_contents.return_value = [
+            {
+                "name": "firmware.bin",
+                "download_url": "https://example.com/firmware.bin",
+                "size": 1024,
+            }
+        ]
+
+        # Mock successful download
+        def mock_download_func(_url, dest):
+            """
+            Test helper that simulates downloading a file by writing fake firmware bytes to the destination path.
+            
+            Parameters:
+                _url (str): Ignored; present to match the real download function signature.
+                dest (str | os.PathLike): Path where the fake file will be written. Parent directories will be created if needed.
+            
+            Returns:
+                bool: Always True to indicate a successful (mocked) download.
+            
+            Side effects:
+                Creates parent directories for `dest` (if missing) and writes the bytes b"fake_firmware_data" to the file.
+            """
+            Path(dest).parent.mkdir(parents=True, exist_ok=True)
+            Path(dest).write_bytes(b"fake_firmware_data")
+            return True
+
+        mock_download.side_effect = mock_download_func
+
+        # Call check_for_prereleases
+        check_for_prereleases(
+            download_dir=str(download_dir),
+            latest_release_tag="1.0.0",
+            selected_patterns=[],
+        )
+
+        # Assert the external target directory and its contents still exist
+        assert (
+            external_target.exists()
+        ), "External target directory was incorrectly deleted"
+        assert (
+            important_file.exists()
+        ), "Critical file in external directory was deleted"
+        assert external_subdir.exists(), "External subdirectory was deleted"
+        assert sub_file.exists(), "Critical file in external subdirectory was deleted"
+        assert important_file.read_text() == "This should never be deleted"
+        assert sub_file.read_text() == "Subdirectory data that must remain"
+
+        # Assert the malicious symlink was removed during cleanup
+        assert (
+            not malicious_symlink.exists()
+        ), "Malicious symlink should have been removed"
+
+    # Test 2: check_promoted_prereleases symlink safety
+    # First, recreate the malicious symlink for this test
+    leftover = prerelease_dir / "firmware-1.1.0.fedcba"
+    if leftover.exists():
+        if leftover.is_symlink() or leftover.is_file():
+            leftover.unlink()
+        else:
+            shutil.rmtree(leftover)
+    malicious_symlink2 = prerelease_dir / "firmware-1.2.0"
+    malicious_symlink2.symlink_to(external_target, target_is_directory=True)
+
+    # Also create a valid prerelease directory that should be promoted
+    valid_prerelease = prerelease_dir / "firmware-1.2.0.ba11da5"
+    valid_prerelease.mkdir()
+    (valid_prerelease / "firmware.bin").write_bytes(b"valid_firmware_content")
+
+    # Create the official release directory to compare against
+    release_dir = download_dir / "firmware" / "v1.2.0"
+    release_dir.mkdir(parents=True)
+    (release_dir / "firmware.bin").write_bytes(
+        b"valid_firmware_content"
+    )  # Same content
+
+    # Verify setup
+    assert malicious_symlink2.is_symlink()
+    assert malicious_symlink2.exists()
+
+    # Call check_promoted_prereleases
+    check_promoted_prereleases(
+        download_dir=str(download_dir), latest_release_tag="1.2.0"
+    )
+
+    # Assert the external target directory and its contents still exist
+    assert (
+        external_target.exists()
+    ), "External target directory was incorrectly deleted by check_promoted_prereleases"
+    assert (
+        important_file.exists()
+    ), "Critical file was deleted by check_promoted_prereleases"
+    assert (
+        external_subdir.exists()
+    ), "External subdirectory was deleted by check_promoted_prereleases"
+    assert (
+        sub_file.exists()
+    ), "Critical file in external subdirectory was deleted by check_promoted_prereleases"
+    assert important_file.read_text() == "This should never be deleted"
+    assert sub_file.read_text() == "Subdirectory data that must remain"
+
+    # The malicious symlink should be cleaned up, but the valid prerelease should be processed normally
+    assert (
+        not malicious_symlink2.exists()
+    ), "Malicious symlink should have been removed by cleanup"
+
+
+@pytest.mark.skipif(
+    platform.system() == "Windows",
+    reason="Symlink creation requires administrator privileges on Windows",
+)
+def test_prerelease_symlink_traversal_attack_prevention(tmp_path):
+    """Test that prerelease functions prevent directory traversal attacks via symlinks."""
+    download_dir = tmp_path / "download"
+    download_dir.mkdir()
+    prerelease_dir = download_dir / "firmware" / "prerelease"
+    prerelease_dir.mkdir(parents=True)
+
+    # Create a critical system-like directory outside the download area
+    system_dir = tmp_path / "system"
+    system_dir.mkdir()
+    critical_system_file = system_dir / "important_system_file"
+    critical_system_file.write_text("CRITICAL SYSTEM DATA - DO NOT DELETE")
+
+    # Test various symlink attack scenarios
+    attack_scenarios = [
+        # Direct symlink to parent directory
+        ("firmware-1.0.0.attack1", tmp_path),
+        # Symlink to system directory
+        ("firmware-1.0.0.attack2", system_dir),
+        # Nested symlink attack (symlink to directory containing other important dirs)
+        (
+            "firmware-1.0.0.attack3",
+            tmp_path.parent if tmp_path.parent != tmp_path else tmp_path,
+        ),
+    ]
+
+    for symlink_name, target_path in attack_scenarios:
+        # Create malicious symlink
+        malicious_symlink = prerelease_dir / symlink_name
+        if malicious_symlink.exists():
+            malicious_symlink.unlink()
+        malicious_symlink.symlink_to(target_path, target_is_directory=True)
+
+        # Verify symlink exists
+        assert malicious_symlink.is_symlink()
+        assert malicious_symlink.exists()
+
+        # Mock and call check_for_prereleases
+        with patch(
+            "fetchtastic.downloader.menu_repo.fetch_repo_directories"
+        ) as mock_fetch_dirs, patch(
+            "fetchtastic.downloader.menu_repo.fetch_directory_contents"
+        ) as mock_fetch_contents:
+
+            mock_fetch_dirs.return_value = ["firmware-2.0.0.newversion"]
+            mock_fetch_contents.return_value = []  # No files to download
+
+            # Call the function
+            check_for_prereleases(
+                download_dir=str(download_dir),
+                latest_release_tag="1.5.0",
+                selected_patterns=[],
+            )
+
+            # Verify the target directory still exists and was not deleted
+            assert (
+                target_path.exists()
+            ), f"Target directory was incorrectly deleted for scenario {symlink_name}"
+            if target_path == system_dir:
+                assert (
+                    critical_system_file.exists()
+                ), "Critical system file was deleted!"
+                assert (
+                    critical_system_file.read_text()
+                    == "CRITICAL SYSTEM DATA - DO NOT DELETE"
+                )
+
+            # Verify the malicious symlink was removed
+            assert (
+                not malicious_symlink.exists()
+            ), f"Malicious symlink {symlink_name} should have been removed"
+
+
+@pytest.mark.skipif(
+    platform.system() == "Windows",
+    reason="Symlink creation requires administrator privileges on Windows",
+)
+def test_prerelease_symlink_mixed_with_valid_directories(tmp_path):
+    """Test symlink safety when mixed with valid prerelease directories."""
+    download_dir = tmp_path / "download"
+    download_dir.mkdir()
+    prerelease_dir = download_dir / "firmware" / "prerelease"
+    prerelease_dir.mkdir(parents=True)
+
+    # Create external target
+    external_target = tmp_path / "external_data"
+    external_target.mkdir()
+    (external_target / "data.txt").write_text("External data")
+
+    # Create a mix of valid directories and malicious symlinks
+    valid_dir = prerelease_dir / "firmware-1.1.0.validhash"
+    valid_dir.mkdir()
+    (valid_dir / "firmware.bin").write_bytes(b"valid_data")
+
+    malicious_symlink = prerelease_dir / "firmware-1.0.0.evillink"
+    malicious_symlink.symlink_to(external_target, target_is_directory=True)
+
+    # Mock and test
+    with patch(
+        "fetchtastic.downloader.menu_repo.fetch_repo_directories"
+    ) as mock_fetch_dirs, patch(
+        "fetchtastic.downloader.menu_repo.fetch_directory_contents"
+    ) as mock_fetch_contents:
+
+        mock_fetch_dirs.return_value = ["firmware-1.2.0.newversion"]
+        mock_fetch_contents.return_value = []
+
+        check_for_prereleases(
+            download_dir=str(download_dir),
+            latest_release_tag="1.0.0",
+            selected_patterns=[],
+        )
+
+        # Valid directory should be handled normally, symlink should be removed safely
+        assert external_target.exists(), "External target was incorrectly deleted"
+        assert (external_target / "data.txt").exists(), "External data was deleted"
+        assert not malicious_symlink.exists(), "Malicious symlink should be removed"
+
+        # Valid directory handling depends on the version comparison logic
+        # but the important thing is that external data remains intact
 
 
 def test_batch_update_prerelease_tracking(tmp_path):
