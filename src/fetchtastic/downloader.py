@@ -957,6 +957,8 @@ def check_for_prereleases(
     target_prereleases = repo_prerelease_dirs[:1]
 
     os.makedirs(prerelease_dir, exist_ok=True)
+    # Resolve once for containment checks
+    real_prerelease_base = os.path.realpath(prerelease_dir)
 
     # Remove stray files and symlinks while preserving tracking files
     for item in os.listdir(prerelease_dir):
@@ -964,8 +966,10 @@ def check_for_prereleases(
             continue
         item_path = os.path.join(prerelease_dir, item)
         if os.path.islink(item_path):
-            if item not in ("prerelease_tracking.json", "prerelease_commits.txt") and not item.startswith("firmware-"):
-                _safe_rmtree(item_path, prerelease_dir, item)
+            logger.warning(
+                "Removing symlink in prerelease dir to prevent traversal: %s", item
+            )
+            _safe_rmtree(item_path, prerelease_dir, item)
             continue
         if not os.path.isdir(item_path) and item not in ("prerelease_tracking.json", "prerelease_commits.txt"):
             try:
@@ -990,6 +994,15 @@ def check_for_prereleases(
 
     for dir_name in target_prereleases:
         dir_path = os.path.join(prerelease_dir, dir_name)
+        # Do not allow the target prerelease directory itself to be a symlink or a non-directory
+        if os.path.islink(dir_path) or (os.path.exists(dir_path) and not os.path.isdir(dir_path)):
+            logger.warning(
+                "Prerelease entry is not a real directory (%s); removing to avoid escaping base",
+                dir_name,
+            )
+            if not _safe_rmtree(dir_path, prerelease_dir, dir_name):
+                logger.error("Could not safely remove %s; skipping", dir_name)
+                continue
         try:
             os.makedirs(dir_path, exist_ok=True)
         except OSError as e:
@@ -1009,6 +1022,19 @@ def check_for_prereleases(
             file_name = file_info["name"]
             download_url = file_info["download_url"]
             file_path = os.path.join(dir_path, file_name)
+            # Containment check: ensure resolved path stays within prerelease base
+            try:
+                common_base = os.path.commonpath(
+                    [real_prerelease_base, os.path.realpath(file_path)]
+                )
+            except ValueError:
+                common_base = None
+            if common_base != real_prerelease_base:
+                logger.warning(
+                    "Skipping pre-release file %s: resolved path escapes prerelease base",
+                    file_name,
+                )
+                continue
 
             if not _prerelease_needs_download(file_path):
                 logger.debug(
