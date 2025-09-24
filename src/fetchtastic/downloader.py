@@ -1,10 +1,12 @@
 # src/fetchtastic/downloader.py
 
 import fnmatch
+import glob
 import json
 import os
 import re
 import shutil
+import tempfile
 import time
 import zipfile
 from collections import defaultdict
@@ -582,10 +584,12 @@ def batch_update_prerelease_tracking(
             "commits": commits,
             "last_updated": datetime.now().astimezone().isoformat(),
         }
-        with open(tracking_file, "w", encoding="utf-8") as f:
-            json.dump(tracking_data, f, indent=2)
+        temp_fd, temp_path = tempfile.mkstemp(dir=os.path.dirname(tracking_file), prefix="tr-", suffix=".json")
+        with os.fdopen(temp_fd, 'w', encoding='utf-8') as temp_f:
+            json.dump(tracking_data, temp_f, indent=2)
+        os.rename(temp_path, tracking_file)
 
-    except (IOError, UnicodeEncodeError) as e:
+    except (IOError, UnicodeDecodeError, OSError) as e:
         logger.error(f"Could not write prerelease tracking file: {e}")
         return 1  # Default to 1 if we can't track
     else:
@@ -760,17 +764,20 @@ def check_for_prereleases(
         try:
             tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
             os.makedirs(prerelease_dir, exist_ok=True)
-            with open(tracking_file, "w", encoding="utf-8") as f:
+
+            temp_fd, temp_path = tempfile.mkstemp(dir=os.path.dirname(tracking_file), prefix="tr-", suffix=".json")
+            with os.fdopen(temp_fd, "w", encoding="utf-8") as temp_f:
                 json.dump(
                     {
                         "release": latest_release_tag,
                         "commits": [],
                         "last_updated": datetime.now().astimezone().isoformat(),
                     },
-                    f,
+                    temp_f,
                     indent=2,
                 )
-        except (IOError, UnicodeDecodeError) as e:
+            os.rename(temp_path, tracking_file)
+        except (IOError, UnicodeDecodeError, OSError) as e:
             logger.debug(f"Could not reset prerelease tracking file: {e}")
 
     def extract_version(dir_name: str) -> str:
@@ -821,6 +828,8 @@ def check_for_prereleases(
 
     # Remove stray files while preserving tracking files
     for item in os.listdir(prerelease_dir):
+        if item.startswith("."):
+            continue
         item_path = os.path.join(prerelease_dir, item)
         if not os.path.isdir(item_path) and item not in (
             "prerelease_tracking.json",
@@ -909,6 +918,13 @@ def check_for_prereleases(
         )
         try:
             os.remove(file_path)
+            # Also remove any orphaned temp files from previous runs
+            for f in glob.glob(f"{file_path}.tmp.*"):
+                try:
+                    os.remove(f)
+                    logger.debug(f"Removed orphaned temp file: {f}")
+                except OSError as e_rm:
+                    logger.warning(f"Error removing orphaned temp file {f}: {e_rm}")
         except OSError as e:
             logger.error(f"Error removing corrupted prerelease file {file_path}: {e}. Skipping re-download.")
             return False
@@ -1003,12 +1019,6 @@ def check_for_prereleases(
         if downloaded_files:
             logger.info(
                 f"Downloaded prereleases tracked up to #{prerelease_number}: {tracked_label}"
-            )
-        else:
-            logger.debug(
-                "Prerelease tracking unchanged (#%s, latest %s)",
-                prerelease_number,
-                tracked_label,
             )
 
     if downloaded_files:

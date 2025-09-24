@@ -248,7 +248,7 @@ def test_check_and_download_logs_when_no_assets_match(tmp_path, caplog):
     old_propagate = ft_logger.propagate
     ft_logger.propagate = True
     try:
-        downloaded, new_versions, failures = downloader.check_and_download(
+        downloaded, _new_versions, failures = downloader.check_and_download(
             releases,
             latest_release_file,
             "Firmware",
@@ -265,7 +265,7 @@ def test_check_and_download_logs_when_no_assets_match(tmp_path, caplog):
     # No downloads and no failures expected; should note new version available
     assert downloaded == []
     assert failures == []
-    assert new_versions == []
+    assert _new_versions == []
     expected = "Release v1.0.0 found, but no assets matched the current selection/exclude filters."
     assert expected in caplog.text
 
@@ -3730,7 +3730,7 @@ def test_prerelease_tracking_comprehensive_ui_messages(tmp_path, caplog):
 
             try:
                 num3 = downloader.update_prerelease_tracking(
-                    str(prerelease_dir), "v2.8.0", "firmware-2.8.2.ghi789"
+                        str(prerelease_dir), "v2.8.0", "firmware-2.8.2.fed789"
                 )
                 # Should handle permission error gracefully
                 assert num3 >= 1
