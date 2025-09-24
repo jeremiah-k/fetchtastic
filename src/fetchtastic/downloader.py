@@ -249,6 +249,16 @@ def check_promoted_prereleases(
                 )
                 prerelease_path = os.path.join(prerelease_dir, dir_name)
 
+                # If this prerelease entry is a symlink, remove the link rather than traversing it
+                if os.path.islink(prerelease_path):
+                    logger.info(
+                        "Removing symbolic link prerelease: %s (matches release %s)",
+                        dir_name,
+                        latest_release_tag,
+                    )
+                    if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
+                        promoted = True
+                    continue
                 # If the release directory doesn't exist yet, we can't compare files
                 # We'll just remove the pre-release directory since it will be downloaded as a regular release
                 if not os.path.exists(release_dir):
@@ -301,6 +311,34 @@ def check_promoted_prereleases(
     return promoted
 
 
+def _atomic_write_json(file_path: str, data: dict) -> bool:
+    """
+    Atomically write a dictionary to a JSON file.
+
+    - Writes to a temporary file first.
+    - Renames the temporary file to the final destination for atomicity.
+    - Ensures the temporary file is cleaned up on failure.
+
+    Returns True on success, False on failure.
+    """
+    try:
+        temp_fd, temp_path = tempfile.mkstemp(dir=os.path.dirname(file_path), prefix="tmp-", suffix=".json")
+    except OSError as e:
+        logger.error(f"Could not create temporary file for {file_path}: {e}")
+        return False
+    try:
+        with os.fdopen(temp_fd, 'w', encoding='utf-8') as temp_f:
+            json.dump(data, temp_f, indent=2)
+        os.replace(temp_path, file_path)
+    except (IOError, UnicodeEncodeError, OSError) as e:
+        logger.error(f"Could not write to {file_path}: {e}")
+        return False
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+    return True
+
+
 def _safe_rmtree(path_to_remove: str, base_dir: str, item_name: str) -> bool:
     """
     Safely remove a directory, protecting against symlink traversal attacks.
@@ -327,8 +365,7 @@ def _safe_rmtree(path_to_remove: str, base_dir: str, item_name: str) -> bool:
 
         if common_base != real_base_dir:
             logger.warning(
-                "Skipping removal of %s because it resolves outside the base directory",
-                path_to_remove,
+                f"Skipping removal of {path_to_remove} because it resolves outside the base directory"
             )
             return False
 
@@ -337,7 +374,7 @@ def _safe_rmtree(path_to_remove: str, base_dir: str, item_name: str) -> bool:
         logger.error(f"Error removing {path_to_remove}: {e}")
         return False
     else:
-        logger.info("Removed directory: %s", path_to_remove)
+        logger.info(f"Removed directory: {path_to_remove}")
         return True
 
 
@@ -606,37 +643,25 @@ def batch_update_prerelease_tracking(
     added_count = len(newly_added_commits)
 
     # Write updated tracking data only once
-    try:
-        tracking_data = {
-            "release": current_release,
-            "commits": commits,
-            "last_updated": datetime.now().astimezone().isoformat(),
-        }
-        temp_fd, temp_path = tempfile.mkstemp(dir=os.path.dirname(tracking_file), prefix="tr-", suffix=".json")
-        try:
-            with os.fdopen(temp_fd, 'w', encoding='utf-8') as temp_f:
-                json.dump(tracking_data, temp_f, indent=2)
-            os.replace(temp_path, tracking_file)
-        finally:
-            # Ensure the temporary file is removed if it still exists (e.g., on rename failure)
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-
-    except (IOError, UnicodeEncodeError, OSError) as e:
-        logger.error(f"Could not write prerelease tracking file: {e}")
+    tracking_data = {
+        "release": current_release,
+        "commits": commits,
+        "last_updated": datetime.now().astimezone().isoformat(),
+    }
+    if not _atomic_write_json(tracking_file, tracking_data):
         return 1  # Default to 1 if we can't track
+
+    prerelease_number = len(commits)
+    if added_count > 0:
+        logger.info(f"Batch updated {added_count} prerelease commit(s)")
+        logger.info(f"Prerelease #{prerelease_number} since {current_release}")
     else:
-        prerelease_number = len(commits)
-        if added_count > 0:
-            logger.info(f"Batch updated {added_count} prerelease commit(s)")
-            logger.info(f"Prerelease #{prerelease_number} since {current_release}")
-        else:
-            logger.debug(
-                "Prerelease tracking unchanged (#%s since %s)",
-                prerelease_number,
-                current_release,
-            )
-        return prerelease_number
+        logger.debug(
+            "Prerelease tracking unchanged (#%s since %s)",
+            prerelease_number,
+            current_release,
+        )
+    return prerelease_number
 
 
 def matches_extract_patterns(filename, extract_patterns, device_manager=None):
@@ -788,28 +813,17 @@ def check_for_prereleases(
                 if os.path.isdir(item_path):
                     _safe_rmtree(item_path, prerelease_dir, item)
 
-        try:
-            tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
-            os.makedirs(prerelease_dir, exist_ok=True)
-
-            temp_fd, temp_path = tempfile.mkstemp(dir=os.path.dirname(tracking_file), prefix="tr-", suffix=".json")
-            try:
-                with os.fdopen(temp_fd, "w", encoding="utf-8") as temp_f:
-                    json.dump(
-                        {
-                            "release": latest_release_tag,
-                            "commits": [],
-                            "last_updated": datetime.now().astimezone().isoformat(),
-                        },
-                        temp_f,
-                        indent=2,
-                    )
-                os.replace(temp_path, tracking_file)
-            finally:
-                if os.path.exists(temp_path):
-                    os.remove(temp_path)
-        except (IOError, UnicodeEncodeError, OSError) as e:
-            logger.debug(f"Could not reset prerelease tracking file: {e}")
+        tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
+        os.makedirs(prerelease_dir, exist_ok=True)
+        if not _atomic_write_json(
+            tracking_file,
+            {
+                "release": latest_release_tag,
+                "commits": [],
+                "last_updated": datetime.now().astimezone().isoformat(),
+            },
+        ):
+            logger.debug(f"Could not reset prerelease tracking file: {tracking_file}")
 
     def extract_version(dir_name: str) -> str:
         """Return the portion after the 'firmware-' prefix in prerelease directory names."""
@@ -1824,16 +1838,8 @@ def cleanup_old_versions(directory: str, releases_to_keep: List[str]) -> None:
             continue
         if version not in releases_to_keep:
             version_path: str = os.path.join(directory, version)
-            try:
-                # Using shutil.rmtree for robustness, but logging individual files first for more detail if preferred.
-                # For simplicity here, just rmtree. If detailed logging of each file/dir removal is needed,
-                # the original os.walk approach with individual os.remove/os.rmdir is fine, wrapped in try-except.
-                shutil.rmtree(version_path)
+            if _safe_rmtree(version_path, directory, version):
                 logger.info(f"Removed directory and its contents: {version_path}")
-            except OSError as e:
-                logger.warning(
-                    f"Error removing old version directory {version_path}: {e}"
-                )
 
 
 def strip_unwanted_chars(text: str) -> str:
