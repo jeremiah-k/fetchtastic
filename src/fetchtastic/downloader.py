@@ -12,7 +12,7 @@ import zipfile
 from collections import defaultdict
 from datetime import datetime
 from functools import cmp_to_key
-from typing import Any, Callable, Dict, IO, List, Optional, Tuple
+from typing import IO, Any, Callable, Dict, List, Optional, Tuple
 
 import requests
 from packaging.version import InvalidVersion
@@ -219,7 +219,15 @@ def check_promoted_prereleases(
     # Removed local log_message_func definition
 
     # Strip the 'v' prefix if present
-    latest_release_version = latest_release_tag.lstrip("v")
+    safe_latest_release_tag = _sanitize_path_component(latest_release_tag)
+    if safe_latest_release_tag is None:
+        logger.warning(
+            "Unsafe latest release tag provided (%s); skipping promoted prerelease check",
+            latest_release_tag,
+        )
+        return False
+
+    latest_release_version = safe_latest_release_tag.lstrip("v")
 
     # Path to prerelease directory
     prerelease_dir = os.path.join(download_dir, "firmware", "prerelease")
@@ -227,12 +235,20 @@ def check_promoted_prereleases(
         return False
 
     # Path to regular release directory
-    release_dir = os.path.join(download_dir, "firmware", latest_release_tag)
+    release_dir = os.path.join(download_dir, "firmware", safe_latest_release_tag)
 
     # Check for matching pre-release directories
     promoted = False
-    for dir_name in os.listdir(prerelease_dir):
-        if dir_name.startswith("firmware-"):
+    for raw_dir_name in os.listdir(prerelease_dir):
+        if raw_dir_name.startswith("firmware-"):
+            dir_name = _sanitize_path_component(raw_dir_name)
+            if dir_name is None:
+                logger.warning(
+                    "Skipping unsafe prerelease directory encountered during promotion check: %s",
+                    raw_dir_name,
+                )
+                continue
+
             dir_version = dir_name[9:]  # Remove 'firmware-' prefix
 
             # Validate version format before processing (hash part is optional)
@@ -245,7 +261,7 @@ def check_promoted_prereleases(
             # If this pre-release matches the latest release version
             if dir_version == latest_release_version:
                 logger.info(
-                    f"Found pre-release {dir_name} that matches latest release {latest_release_tag}"
+                    f"Found pre-release {dir_name} that matches latest release {safe_latest_release_tag}"
                 )
                 prerelease_path = os.path.join(prerelease_dir, dir_name)
 
@@ -254,7 +270,7 @@ def check_promoted_prereleases(
                     logger.info(
                         "Removing symbolic link prerelease: %s (matches release %s)",
                         dir_name,
-                        latest_release_tag,
+                        safe_latest_release_tag,
                     )
                     if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
                         promoted = True
@@ -263,7 +279,7 @@ def check_promoted_prereleases(
                 # We'll just remove the pre-release directory since it will be downloaded as a regular release
                 if not os.path.exists(release_dir):
                     logger.info(
-                        f"Pre-release {dir_name} has been promoted to release {latest_release_tag}, "
+                        f"Pre-release {dir_name} has been promoted to release {safe_latest_release_tag}, "
                         f"but the release directory doesn't exist yet. Removing pre-release."
                     )
                     if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
@@ -302,7 +318,7 @@ def check_promoted_prereleases(
 
                 if files_match:
                     logger.info(
-                        f"Pre-release {dir_name} has been promoted to release {latest_release_tag}"
+                        f"Pre-release {dir_name} has been promoted to release {safe_latest_release_tag}"
                     )
                     # Remove the pre-release directory since it's now a regular release
                     if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
@@ -311,7 +327,9 @@ def check_promoted_prereleases(
     return promoted
 
 
-def _atomic_write(file_path: str, writer_func: Callable[[IO[str]], None], suffix: str) -> bool:
+def _atomic_write(
+    file_path: str, writer_func: Callable[[IO[str]], None], suffix: str
+) -> bool:
     """
     Atomically write to a file using a writer function.
 
@@ -323,12 +341,14 @@ def _atomic_write(file_path: str, writer_func: Callable[[IO[str]], None], suffix
     Returns True on success, False on failure.
     """
     try:
-        temp_fd, temp_path = tempfile.mkstemp(dir=os.path.dirname(file_path), prefix="tmp-", suffix=suffix)
+        temp_fd, temp_path = tempfile.mkstemp(
+            dir=os.path.dirname(file_path), prefix="tmp-", suffix=suffix
+        )
     except OSError as e:
         logger.error(f"Could not create temporary file for {file_path}: {e}")
         return False
     try:
-        with os.fdopen(temp_fd, 'w', encoding='utf-8') as temp_f:
+        with os.fdopen(temp_fd, "w", encoding="utf-8") as temp_f:
             writer_func(temp_f)
         os.replace(temp_path, file_path)
     except (IOError, UnicodeEncodeError, OSError) as e:
@@ -351,7 +371,32 @@ def _atomic_write_json(file_path: str, data: dict) -> bool:
     """
     Atomically write a dictionary to a JSON file.
     """
-    return _atomic_write(file_path, lambda f: json.dump(data, f, indent=2), suffix=".json")
+    return _atomic_write(
+        file_path, lambda f: json.dump(data, f, indent=2), suffix=".json"
+    )
+
+
+def _sanitize_path_component(component: Optional[str]) -> Optional[str]:
+    """Return a filesystem-safe single path component or None when unsafe."""
+
+    if component is None:
+        return None
+
+    sanitized = component.strip()
+    if not sanitized or sanitized in {".", ".."}:
+        return None
+
+    if os.path.isabs(sanitized):
+        return None
+
+    if "\x00" in sanitized:
+        return None
+
+    for separator in (os.sep, os.altsep):
+        if separator and separator in sanitized:
+            return None
+
+    return sanitized
 
 
 def _safe_rmtree(path_to_remove: str, base_dir: str, item_name: str) -> bool:
@@ -539,25 +584,33 @@ def _extract_commit_from_dir_name(dir_name: str) -> Optional[str]:
 
 def _get_existing_prerelease_dirs(prerelease_dir: str) -> list[str]:
     """
-    Return the names of local prerelease directories that start with "firmware-".
+    Return safe prerelease directory names directly under ``prerelease_dir``.
 
-    If the given prerelease_dir does not exist, returns an empty list.
-
-    Parameters:
-        prerelease_dir (str): Path to the parent prerelease directory.
-
-    Returns:
-        list[str]: Directory names (not full paths) under prerelease_dir beginning with "firmware-".
+    Symlinks are ignored to avoid traversing outside the managed prerelease tree.
     """
+
     if not os.path.exists(prerelease_dir):
         return []
 
-    return [
-        item
-        for item in os.listdir(prerelease_dir)
-        if os.path.isdir(os.path.join(prerelease_dir, item))
-        and item.startswith("firmware-")
-    ]
+    entries: list[str] = []
+    try:
+        with os.scandir(prerelease_dir) as iterator:
+            for entry in iterator:
+                if not entry.is_dir(follow_symlinks=False):
+                    continue
+                if not entry.name.startswith("firmware-"):
+                    continue
+                safe_name = _sanitize_path_component(entry.name)
+                if safe_name is None:
+                    logger.warning(
+                        "Ignoring unsafe prerelease directory name: %s", entry.name
+                    )
+                    continue
+                entries.append(safe_name)
+    except OSError as e:
+        logger.debug(f"Error scanning prerelease dir {prerelease_dir}: {e}")
+
+    return entries
 
 
 def _get_prerelease_patterns(config: dict) -> list[str]:
@@ -795,7 +848,14 @@ def get_prerelease_tracking_info(prerelease_dir):
     return {}
 
 
-def _iter_matching_prerelease_files(dir_name: str, selected_patterns: list, exclude_patterns_list: list, device_manager) -> List[Dict[str, str]]:
+def _iter_matching_prerelease_files(
+    dir_name: str,
+    selected_patterns: list,
+    exclude_patterns_list: list,
+    device_manager,
+) -> List[Dict[str, str]]:
+    """Return prerelease file metadata filtered by the configured pattern rules."""
+
     files = menu_repo.fetch_directory_contents(dir_name) or []
     matching: List[Dict[str, str]] = []
     for entry in files:
@@ -804,9 +864,18 @@ def _iter_matching_prerelease_files(dir_name: str, selected_patterns: list, excl
         if not file_name or not download_url:
             continue
 
-        if not matches_extract_patterns(
-            file_name, selected_patterns, device_manager
-        ):
+        safe_file_name = _sanitize_path_component(file_name)
+        if safe_file_name is None:
+            logger.warning(
+                "Skipping prerelease asset with unsafe name %s in %s",
+                file_name,
+                dir_name,
+            )
+            continue
+
+        # matches_extract_patterns keeps prerelease filtering aligned with extraction rules,
+        # including device-aware patterns resolved via DeviceHardwareManager.
+        if not matches_extract_patterns(file_name, selected_patterns, device_manager):
             continue
 
         if any(
@@ -818,7 +887,7 @@ def _iter_matching_prerelease_files(dir_name: str, selected_patterns: list, excl
             )
             continue
 
-        matching.append({"name": file_name, "download_url": download_url})
+        matching.append({"name": safe_file_name, "download_url": download_url})
 
     return matching
 
@@ -840,14 +909,14 @@ def _prepare_for_redownload(file_path: str) -> bool:
             logger.debug(f"Removed stale hash file: {hash_path}")
 
         # Also remove any orphaned temp files from previous runs
-        for f in glob.glob(f"{file_path}.tmp.*"):
-            os.remove(f)
-            logger.debug(f"Removed orphaned temp file: {f}")
-
-        return True
+        for tmp_path in glob.glob(f"{file_path}.tmp.*"):
+            os.remove(tmp_path)
+            logger.debug(f"Removed orphaned temp file: {tmp_path}")
     except OSError as e:
         logger.error(f"Error preparing for re-download of {file_path}: {e}")
         return False
+    else:
+        return True
 
 
 def _prerelease_needs_download(file_path: str) -> bool:
@@ -885,6 +954,15 @@ def check_for_prereleases(
           - downloaded: True when at least one prerelease asset was fetched this run.
           - versions: The prerelease directory names that were processed/tracked (empty when none).
     """
+
+    raw_latest_release_tag = latest_release_tag
+    latest_release_tag = _sanitize_path_component(latest_release_tag)
+    if latest_release_tag is None:
+        logger.warning(
+            "Unsafe latest release tag provided to check_for_prereleases: %s",
+            raw_latest_release_tag,
+        )
+        return False, []
 
     prerelease_dir = os.path.join(download_dir, "firmware", "prerelease")
     tracking_info = get_prerelease_tracking_info(prerelease_dir)
@@ -926,16 +1004,25 @@ def check_for_prereleases(
         return False, []
 
     repo_prerelease_dirs: List[str] = []
-    for dir_name in directories:
-        if not dir_name.startswith("firmware-"):
+    for raw_dir_name in directories:
+        if not raw_dir_name.startswith("firmware-"):
+            continue
+
+        dir_name = _sanitize_path_component(raw_dir_name)
+        if dir_name is None:
+            logger.warning(
+                "Skipping unsafe prerelease directory name from repository: %s",
+                raw_dir_name,
+            )
             continue
 
         dir_version = extract_version(dir_name)
         if not re.match(VERSION_REGEX_PATTERN, dir_version):
             logger.debug(
-                "Repository prerelease directory %s uses a non-standard version format",
+                "Repository prerelease directory %s uses a non-standard version format; skipping",
                 dir_name,
             )
+            continue
 
         try:
             if compare_versions(dir_version, latest_release_version) > 0:
@@ -971,7 +1058,10 @@ def check_for_prereleases(
             )
             _safe_rmtree(item_path, prerelease_dir, item)
             continue
-        if not os.path.isdir(item_path) and item not in ("prerelease_tracking.json", "prerelease_commits.txt"):
+        if not os.path.isdir(item_path) and item not in (
+            "prerelease_tracking.json",
+            "prerelease_commits.txt",
+        ):
             try:
                 os.remove(item_path)
                 logger.info(f"Removed stale file from prerelease directory: {item}")
@@ -995,7 +1085,9 @@ def check_for_prereleases(
     for dir_name in target_prereleases:
         dir_path = os.path.join(prerelease_dir, dir_name)
         # Do not allow the target prerelease directory itself to be a symlink or a non-directory
-        if os.path.islink(dir_path) or (os.path.exists(dir_path) and not os.path.isdir(dir_path)):
+        if os.path.islink(dir_path) or (
+            os.path.exists(dir_path) and not os.path.isdir(dir_path)
+        ):
             logger.warning(
                 "Prerelease entry is not a real directory (%s); removing to avoid escaping base",
                 dir_name,
@@ -1011,7 +1103,9 @@ def check_for_prereleases(
             )
             continue
 
-        matching_files = _iter_matching_prerelease_files(dir_name, selected_patterns, exclude_patterns_list, device_manager)
+        matching_files = _iter_matching_prerelease_files(
+            dir_name, selected_patterns, exclude_patterns_list, device_manager
+        )
         if not matching_files:
             logger.debug(
                 f"No prerelease files matched selection for {dir_name}; skipping downloads"
@@ -1097,7 +1191,9 @@ def check_for_prereleases(
                 f"Downloaded prereleases tracked up to #{prerelease_number}: {tracked_label}"
             )
         else:
-            logger.info(f"Tracked prereleases up to #{prerelease_number}: {tracked_label}")
+            logger.info(
+                f"Tracked prereleases up to #{prerelease_number}: {tracked_label}"
+            )
 
     if downloaded_files:
         return True, downloaded_versions
@@ -2090,7 +2186,12 @@ def check_and_download(
     if os.path.exists(latest_release_file):
         try:
             with open(latest_release_file, "r") as f:
-                saved_release_tag = f.read().strip()
+                saved_release_tag = _sanitize_path_component(f.read())
+                if saved_release_tag is None:
+                    logger.warning(
+                        "Ignoring unsafe contents in latest release file %s",
+                        latest_release_file,
+                    )
         except IOError as e:
             logger.warning(
                 f"Error reading latest release file {latest_release_file}: {e}"
@@ -2105,7 +2206,9 @@ def check_and_download(
     if downloads_skipped:
         # Mirror the “newer than saved” computation used later (newest-first list).
         tags_order: List[str] = [
-            rd.get("tag_name") for rd in releases_to_download if rd.get("tag_name")
+            tag
+            for rd in releases_to_download
+            if (tag := _sanitize_path_component(rd.get("tag_name"))) is not None
         ]
         newer_tags: List[str] = _newer_tags_since_saved(tags_order, saved_release_tag)
         new_versions_available = list(dict.fromkeys(newer_tags))
@@ -2114,12 +2217,20 @@ def check_and_download(
     release_data: Dict[str, Any]
     for idx, release_data in enumerate(releases_to_download, start=1):
         try:
-            release_tag: str = release_data[
+            raw_release_tag: str = release_data[
                 "tag_name"
             ]  # Potential KeyError if API response changes
+            release_tag = _sanitize_path_component(raw_release_tag)
+            if release_tag is None:
+                logger.warning(
+                    "Skipping release with unsafe tag name: %s", raw_release_tag
+                )
+                continue
             if total_to_scan > 1:
-                logger.debug("Checking %s (%d of %d)", release_tag, idx, total_to_scan)
-            logger.info("Checking %s…", release_tag)
+                logger.debug(
+                    "Checking %s (%d of %d)", raw_release_tag, idx, total_to_scan
+                )
+            logger.info("Checking %s…", raw_release_tag)
             release_dir: str = os.path.join(download_dir_path, release_tag)
             release_notes_file: str = os.path.join(
                 release_dir, f"release_notes-{release_tag}.md"
@@ -2130,7 +2241,7 @@ def check_and_download(
                 release_data, release_dir, selected_patterns, exclude_patterns_list
             ):
                 logger.debug(
-                    f"Release {release_tag} already exists and is complete, skipping download"
+                    f"Release {raw_release_tag} already exists and is complete, skipping download"
                 )
                 # Update latest_release_file if this is the most recent release
                 if (
@@ -2138,7 +2249,9 @@ def check_and_download(
                     and release_data == releases_to_download[0]
                 ):
                     if not _atomic_write_text(latest_release_file, release_tag):
-                        logger.warning(f"Error updating latest release file: {latest_release_file}")
+                        logger.warning(
+                            f"Error updating latest release file: {latest_release_file}"
+                        )
                     else:
                         logger.debug(
                             f"Updated latest release tag to {release_tag} (complete release)"
@@ -2153,12 +2266,14 @@ def check_and_download(
                     os.makedirs(release_dir, exist_ok=True)
                 except OSError as e:
                     logger.error(
-                        f"Error creating release directory {release_dir}: {e}. Skipping version {release_tag}."
+                        f"Error creating release directory {release_dir}: {e}. Skipping version {raw_release_tag}."
                     )
                     continue  # Skip this release if its directory cannot be created
 
             if not os.path.exists(release_notes_file) and release_data.get("body"):
-                logger.debug(f"Downloading release notes for version {release_tag}.")
+                logger.debug(
+                    f"Downloading release notes for version {raw_release_tag}."
+                )
                 release_notes_content: str = strip_unwanted_chars(release_data["body"])
                 try:
                     with open(release_notes_file, "w", encoding="utf-8") as notes_file:
@@ -2176,12 +2291,22 @@ def check_and_download(
                 file_name: str = asset.get("name", "")  # Use .get for name
                 if not file_name:
                     logger.warning(
-                        f"Asset found with no name for release {release_tag}. Skipping."
+                        f"Asset found with no name for release {raw_release_tag}. Skipping."
+                    )
+                    continue
+
+                safe_file_name = _sanitize_path_component(file_name)
+                if safe_file_name is None:
+                    logger.warning(
+                        "Skipping %s asset with unsafe filename %s for release %s",
+                        release_type,
+                        file_name,
+                        raw_release_tag,
                     )
                     continue
 
                 if file_name.lower().endswith(ZIP_EXTENSION.lower()):
-                    asset_download_path: str = os.path.join(release_dir, file_name)
+                    asset_download_path: str = os.path.join(release_dir, safe_file_name)
                     if os.path.exists(asset_download_path):
                         try:
                             with zipfile.ZipFile(asset_download_path, "r") as zf:
@@ -2218,15 +2343,27 @@ def check_and_download(
                 file_name = asset.get("name", "")
                 if not file_name:
                     continue  # Already logged
+                safe_file_name = _sanitize_path_component(file_name)
+                if safe_file_name is None:
+                    logger.warning(
+                        "Skipping %s asset with unsafe filename %s for release %s",
+                        release_type,
+                        file_name,
+                        raw_release_tag,
+                    )
+                    continue
+
                 browser_download_url = asset.get("browser_download_url")
                 if not browser_download_url:
                     logger.warning(
-                        f"Asset '{file_name}' in release '{release_tag}' has no download URL. Skipping."
+                        f"Asset '{file_name}' in release '{raw_release_tag}' has no download URL. Skipping."
                     )
                     failed_downloads_details.append(
                         {
                             "url": "Unknown - No download URL",
-                            "path_to_download": os.path.join(release_dir, file_name),
+                            "path_to_download": os.path.join(
+                                release_dir, safe_file_name
+                            ),
                             "release_tag": release_tag,
                             "file_name": file_name,
                             "reason": "Missing browser_download_url",
@@ -2252,7 +2389,7 @@ def check_and_download(
                         file_name,
                     )
                     continue
-                asset_download_path = os.path.join(release_dir, file_name)
+                asset_download_path = os.path.join(release_dir, safe_file_name)
                 if not os.path.exists(asset_download_path):
                     assets_to_download.append(
                         (browser_download_url, asset_download_path)
@@ -2280,7 +2417,7 @@ def check_and_download(
 
         if assets_to_download:  # This check is correct based on the first loop.
             actions_taken = True
-            logger.info("Processing release: %s", release_tag)
+            logger.info("Processing release: %s", raw_release_tag)
             any_downloaded: bool = False
             url: str
             # The assets_to_download list contains (url, path_to_download) tuples.
@@ -2352,17 +2489,20 @@ def check_and_download(
             try:
                 if saved_release_tag is None or release_tag != saved_release_tag:
                     logger.info(
-                        f"Release {release_tag} found, but no assets matched the current selection/exclude filters."
+                        f"Release {raw_release_tag} found, but no assets matched the current selection/exclude filters."
                     )
                     # Consider the latest release processed even without downloads to avoid re-scanning
                     try:
                         if idx == 1:
-                            with open(latest_release_file, "w") as f:
-                                f.write(release_tag)
-                            saved_release_tag = release_tag
-                            logger.debug(
-                                f"Updated latest release tag to {release_tag} (no matching assets)"
-                            )
+                            if _atomic_write_text(latest_release_file, release_tag):
+                                saved_release_tag = release_tag
+                                logger.debug(
+                                    f"Updated latest release tag to {release_tag} (no matching assets)"
+                                )
+                            else:
+                                logger.warning(
+                                    f"Could not record latest release tag {release_tag}: atomic write failed"
+                                )
                     except IOError as e:
                         logger.debug(
                             f"Could not record latest release tag {release_tag}: {e}"
@@ -2378,7 +2518,18 @@ def check_and_download(
     # Only update the latest release file if we actually downloaded something
     if releases_to_download and downloaded_versions:
         try:
-            latest_release_tag_val: str = releases_to_download[0]["tag_name"]
+            raw_latest_release_tag_val: str = releases_to_download[0]["tag_name"]
+            latest_release_tag_val = _sanitize_path_component(
+                raw_latest_release_tag_val
+            )
+            if latest_release_tag_val is None:
+                logger.warning(
+                    "Skipping write of unsafe latest release tag: %s",
+                    raw_latest_release_tag_val,
+                )
+                latest_release_tag_val = saved_release_tag or None
+            if latest_release_tag_val is None:
+                raise ValueError("latest release tag could not be determined safely")
             if latest_release_tag_val != saved_release_tag:
                 if not _atomic_write_text(latest_release_file, latest_release_tag_val):
                     logger.warning(
@@ -2392,7 +2543,8 @@ def check_and_download(
             IndexError,
             KeyError,
             TypeError,
-        ) as e:  # If releases_to_download is empty or structure is wrong
+            ValueError,
+        ) as e:  # If releases_to_download is empty or structure is wrong or tag unsafe
             logger.warning(
                 f"Could not determine latest release tag to save due to data issue: {e}"
             )
@@ -2401,7 +2553,9 @@ def check_and_download(
     if actions_taken:
         try:
             release_tags_to_keep: List[str] = [
-                r["tag_name"] for r in releases_to_download
+                tag
+                for r in releases_to_download
+                if (tag := _sanitize_path_component(r.get("tag_name"))) is not None
             ]
             cleanup_old_versions(download_dir_path, release_tags_to_keep)
         except (KeyError, TypeError) as e:
@@ -2412,7 +2566,9 @@ def check_and_download(
     if not actions_taken:
         # Determine tags newer than the saved tag by position (list is newest-first)
         tags_order: List[str] = [
-            rd.get("tag_name") for rd in releases_to_download if rd.get("tag_name")
+            tag
+            for rd in releases_to_download
+            if (tag := _sanitize_path_component(rd.get("tag_name"))) is not None
         ]
         newer_tags: List[str] = _newer_tags_since_saved(tags_order, saved_release_tag)
         new_candidates: List[str] = [
@@ -2501,7 +2657,16 @@ def check_extraction_needed(
                     files_to_extract.append(file_name)
         base_name_to_check: str
         for base_name_to_check in files_to_extract:
-            extracted_file_path: str = os.path.join(extract_dir, base_name_to_check)
+            try:
+                extracted_file_path: str = safe_extract_path(
+                    extract_dir, base_name_to_check
+                )
+            except ValueError:
+                logger.warning(
+                    "Skipping unsafe archive member %s during extraction check",
+                    base_name_to_check,
+                )
+                continue
             if not os.path.exists(extracted_file_path):
                 return True
         return False

@@ -1471,7 +1471,82 @@ def test_check_and_download_missing_download_url(tmp_path):
     )
 
     assert downloaded == []
+    assert new_versions == []
     assert failures and failures[0]["reason"] == "Missing browser_download_url"
+
+
+def test_check_and_download_skips_unsafe_release_tag(tmp_path):
+    """Releases with unsafe tag names are ignored to prevent path traversal."""
+
+    releases = [
+        {
+            "tag_name": "../bad",
+            "published_at": "2024-01-01T00:00:00Z",
+            "assets": [],
+            "body": "",
+        }
+    ]
+
+    latest_release_file = str(tmp_path / "latest.txt")
+    download_dir = tmp_path / "downloads"
+
+    downloaded, new_versions, failures = downloader.check_and_download(
+        releases,
+        latest_release_file,
+        "Firmware",
+        str(download_dir),
+        versions_to_keep=1,
+        extract_patterns=[],
+        selected_patterns=["rak4631-"],
+        auto_extract=False,
+        exclude_patterns=[],
+    )
+
+    assert downloaded == []
+    assert new_versions == []
+    assert failures == []
+    assert download_dir.exists()
+    assert list(download_dir.iterdir()) == []
+
+
+def test_check_and_download_skips_unsafe_asset_name(tmp_path):
+    """Assets with unsafe filenames are skipped before download attempts."""
+
+    release_tag = "v7.0.0"
+    releases = [
+        {
+            "tag_name": release_tag,
+            "published_at": "2024-01-01T00:00:00Z",
+            "assets": [
+                {
+                    "name": "../evil.uf2",
+                    "browser_download_url": "https://example.invalid/evil.uf2",
+                    "size": 10,
+                }
+            ],
+            "body": "",
+        }
+    ]
+
+    latest_release_file = str(tmp_path / "latest.txt")
+
+    with patch("fetchtastic.downloader.download_file_with_retry") as mock_dl:
+        downloaded, new_versions, failures = downloader.check_and_download(
+            releases,
+            latest_release_file,
+            "Firmware",
+            str(tmp_path / "downloads"),
+            versions_to_keep=1,
+            extract_patterns=[],
+            selected_patterns=None,
+            auto_extract=False,
+            exclude_patterns=[],
+        )
+
+    assert downloaded == []
+    assert new_versions == []
+    assert failures == []
+    assert mock_dl.call_count == 0
 
 
 def test_send_ntfy_notification(mocker):
@@ -3596,6 +3671,7 @@ def test_device_hardware_manager_logging_paths(tmp_path, caplog):
         assert "test-device-" in patterns
         assert "another-device-" in patterns
 
+
 def test_prerelease_download_comprehensive_ui_scenarios(tmp_path, caplog):
     """Test comprehensive prerelease download UI scenarios."""
     download_dir = tmp_path
@@ -3735,7 +3811,7 @@ def test_prerelease_tracking_comprehensive_ui_messages(tmp_path, caplog):
 
             try:
                 num3 = downloader.update_prerelease_tracking(
-                        str(prerelease_dir), "v2.8.0", "firmware-2.8.2.fed789"
+                    str(prerelease_dir), "v2.8.0", "firmware-2.8.2.fed789"
                 )
                 # Should handle permission error gracefully
                 assert num3 >= 1
@@ -3875,17 +3951,21 @@ def test_prerelease_functions_symlink_safety(tmp_path):
     assert sub_file.exists()
 
     # Test 1: check_for_prereleases symlink safety
-    with patch('fetchtastic.downloader.menu_repo.fetch_repo_directories') as mock_fetch_dirs, \
-         patch('fetchtastic.downloader.menu_repo.fetch_directory_contents') as mock_fetch_contents, \
-         patch('fetchtastic.downloader.download_file_with_retry') as mock_download:
+    with patch(
+        "fetchtastic.downloader.menu_repo.fetch_repo_directories"
+    ) as mock_fetch_dirs, patch(
+        "fetchtastic.downloader.menu_repo.fetch_directory_contents"
+    ) as mock_fetch_contents, patch(
+        "fetchtastic.downloader.download_file_with_retry"
+    ) as mock_download:
 
         # Mock repository to return a newer prerelease
         mock_fetch_dirs.return_value = ["firmware-1.1.0.fedcba"]
         mock_fetch_contents.return_value = [
             {
-                'name': 'firmware.bin',
-                'download_url': 'https://example.com/firmware.bin',
-                'size': 1024
+                "name": "firmware.bin",
+                "download_url": "https://example.com/firmware.bin",
+                "size": 1024,
             }
         ]
 
@@ -3900,20 +3980,26 @@ def test_prerelease_functions_symlink_safety(tmp_path):
         # Call check_for_prereleases
         check_for_prereleases(
             download_dir=str(download_dir),
-            latest_release_tag='1.0.0',
-            selected_patterns=['*.bin']
+            latest_release_tag="1.0.0",
+            selected_patterns=["*.bin"],
         )
 
         # Assert the external target directory and its contents still exist
-        assert external_target.exists(), "External target directory was incorrectly deleted"
-        assert important_file.exists(), "Critical file in external directory was deleted"
+        assert (
+            external_target.exists()
+        ), "External target directory was incorrectly deleted"
+        assert (
+            important_file.exists()
+        ), "Critical file in external directory was deleted"
         assert external_subdir.exists(), "External subdirectory was deleted"
         assert sub_file.exists(), "Critical file in external subdirectory was deleted"
         assert important_file.read_text() == "This should never be deleted"
         assert sub_file.read_text() == "Subdirectory data that must remain"
 
         # Assert the malicious symlink was removed during cleanup
-        assert not malicious_symlink.exists(), "Malicious symlink should have been removed"
+        assert (
+            not malicious_symlink.exists()
+        ), "Malicious symlink should have been removed"
 
     # Test 2: check_promoted_prereleases symlink safety
     # First, recreate the malicious symlink for this test
@@ -3930,7 +4016,9 @@ def test_prerelease_functions_symlink_safety(tmp_path):
     # Create the official release directory to compare against
     release_dir = download_dir / "firmware" / "v1.2.0"
     release_dir.mkdir(parents=True)
-    (release_dir / "firmware.bin").write_bytes(b"valid_firmware_content")  # Same content
+    (release_dir / "firmware.bin").write_bytes(
+        b"valid_firmware_content"
+    )  # Same content
 
     # Verify setup
     assert malicious_symlink2.is_symlink()
@@ -3938,20 +4026,29 @@ def test_prerelease_functions_symlink_safety(tmp_path):
 
     # Call check_promoted_prereleases
     check_promoted_prereleases(
-        download_dir=str(download_dir),
-        latest_release_tag='1.2.0'
+        download_dir=str(download_dir), latest_release_tag="1.2.0"
     )
 
     # Assert the external target directory and its contents still exist
-    assert external_target.exists(), "External target directory was incorrectly deleted by check_promoted_prereleases"
-    assert important_file.exists(), "Critical file was deleted by check_promoted_prereleases"
-    assert external_subdir.exists(), "External subdirectory was deleted by check_promoted_prereleases"
-    assert sub_file.exists(), "Critical file in external subdirectory was deleted by check_promoted_prereleases"
+    assert (
+        external_target.exists()
+    ), "External target directory was incorrectly deleted by check_promoted_prereleases"
+    assert (
+        important_file.exists()
+    ), "Critical file was deleted by check_promoted_prereleases"
+    assert (
+        external_subdir.exists()
+    ), "External subdirectory was deleted by check_promoted_prereleases"
+    assert (
+        sub_file.exists()
+    ), "Critical file in external subdirectory was deleted by check_promoted_prereleases"
     assert important_file.read_text() == "This should never be deleted"
     assert sub_file.read_text() == "Subdirectory data that must remain"
 
     # The malicious symlink should be cleaned up, but the valid prerelease should be processed normally
-    assert not malicious_symlink2.exists(), "Malicious symlink should have been removed by cleanup"
+    assert (
+        not malicious_symlink2.exists()
+    ), "Malicious symlink should have been removed by cleanup"
 
 
 def test_prerelease_symlink_traversal_attack_prevention(tmp_path):
@@ -3974,7 +4071,10 @@ def test_prerelease_symlink_traversal_attack_prevention(tmp_path):
         # Symlink to system directory
         ("firmware-1.0.0.attack2", system_dir),
         # Nested symlink attack (symlink to directory containing other important dirs)
-        ("firmware-1.0.0.attack3", tmp_path.parent if tmp_path.parent != tmp_path else tmp_path),
+        (
+            "firmware-1.0.0.attack3",
+            tmp_path.parent if tmp_path.parent != tmp_path else tmp_path,
+        ),
     ]
 
     for symlink_name, target_path in attack_scenarios:
@@ -3989,8 +4089,11 @@ def test_prerelease_symlink_traversal_attack_prevention(tmp_path):
         assert malicious_symlink.exists()
 
         # Mock and call check_for_prereleases
-        with patch('fetchtastic.downloader.menu_repo.fetch_repo_directories') as mock_fetch_dirs, \
-             patch('fetchtastic.downloader.menu_repo.fetch_directory_contents') as mock_fetch_contents:
+        with patch(
+            "fetchtastic.downloader.menu_repo.fetch_repo_directories"
+        ) as mock_fetch_dirs, patch(
+            "fetchtastic.downloader.menu_repo.fetch_directory_contents"
+        ) as mock_fetch_contents:
 
             mock_fetch_dirs.return_value = ["firmware-2.0.0.newversion"]
             mock_fetch_contents.return_value = []  # No files to download
@@ -3998,18 +4101,27 @@ def test_prerelease_symlink_traversal_attack_prevention(tmp_path):
             # Call the function
             check_for_prereleases(
                 download_dir=str(download_dir),
-                latest_release_tag='1.5.0',
-                selected_patterns=['*.bin']
+                latest_release_tag="1.5.0",
+                selected_patterns=["*.bin"],
             )
 
             # Verify the target directory still exists and was not deleted
-            assert target_path.exists(), f"Target directory was incorrectly deleted for scenario {symlink_name}"
+            assert (
+                target_path.exists()
+            ), f"Target directory was incorrectly deleted for scenario {symlink_name}"
             if target_path == system_dir:
-                assert critical_system_file.exists(), "Critical system file was deleted!"
-                assert critical_system_file.read_text() == "CRITICAL SYSTEM DATA - DO NOT DELETE"
+                assert (
+                    critical_system_file.exists()
+                ), "Critical system file was deleted!"
+                assert (
+                    critical_system_file.read_text()
+                    == "CRITICAL SYSTEM DATA - DO NOT DELETE"
+                )
 
             # Verify the malicious symlink was removed
-            assert not malicious_symlink.exists(), f"Malicious symlink {symlink_name} should have been removed"
+            assert (
+                not malicious_symlink.exists()
+            ), f"Malicious symlink {symlink_name} should have been removed"
 
 
 def test_prerelease_symlink_mixed_with_valid_directories(tmp_path):
@@ -4033,16 +4145,19 @@ def test_prerelease_symlink_mixed_with_valid_directories(tmp_path):
     malicious_symlink.symlink_to(external_target, target_is_directory=True)
 
     # Mock and test
-    with patch('fetchtastic.downloader.menu_repo.fetch_repo_directories') as mock_fetch_dirs, \
-         patch('fetchtastic.downloader.menu_repo.fetch_directory_contents') as mock_fetch_contents:
+    with patch(
+        "fetchtastic.downloader.menu_repo.fetch_repo_directories"
+    ) as mock_fetch_dirs, patch(
+        "fetchtastic.downloader.menu_repo.fetch_directory_contents"
+    ) as mock_fetch_contents:
 
         mock_fetch_dirs.return_value = ["firmware-1.2.0.newversion"]
         mock_fetch_contents.return_value = []
 
         check_for_prereleases(
             download_dir=str(download_dir),
-            latest_release_tag='1.0.0',
-            selected_patterns=['*.bin']
+            latest_release_tag="1.0.0",
+            selected_patterns=["*.bin"],
         )
 
         # Valid directory should be handled normally, symlink should be removed safely
