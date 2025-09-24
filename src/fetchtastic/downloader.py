@@ -622,7 +622,7 @@ def batch_update_prerelease_tracking(
             if os.path.exists(temp_path):
                 os.remove(temp_path)
 
-    except (IOError, UnicodeDecodeError, OSError) as e:
+    except (IOError, UnicodeEncodeError, OSError) as e:
         logger.error(f"Could not write prerelease tracking file: {e}")
         return 1  # Default to 1 if we can't track
     else:
@@ -808,7 +808,7 @@ def check_for_prereleases(
             finally:
                 if os.path.exists(temp_path):
                     os.remove(temp_path)
-        except (IOError, UnicodeDecodeError, OSError) as e:
+        except (IOError, UnicodeEncodeError, OSError) as e:
             logger.debug(f"Could not reset prerelease tracking file: {e}")
 
     def extract_version(dir_name: str) -> str:
