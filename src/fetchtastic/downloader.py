@@ -12,7 +12,7 @@ import zipfile
 from collections import defaultdict
 from datetime import datetime
 from functools import cmp_to_key
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, IO, List, Optional, Tuple
 
 import requests
 from packaging.version import InvalidVersion
@@ -311,52 +311,25 @@ def check_promoted_prereleases(
     return promoted
 
 
-def _atomic_write_text(file_path: str, content: str) -> bool:
+def _atomic_write(file_path: str, writer_func: Callable[[IO[str]], None], suffix: str) -> bool:
     """
-    Atomically write text to a file.
+    Atomically write to a file using a writer function.
 
-    - Writes to a temporary file first.
+    - Creates a temporary file.
+    - Calls the writer_func to write to the temporary file.
     - Renames the temporary file to the final destination for atomicity.
     - Ensures the temporary file is cleaned up on failure.
 
     Returns True on success, False on failure.
     """
     try:
-        temp_fd, temp_path = tempfile.mkstemp(dir=os.path.dirname(file_path), prefix="tmp-", suffix=".txt")
+        temp_fd, temp_path = tempfile.mkstemp(dir=os.path.dirname(file_path), prefix="tmp-", suffix=suffix)
     except OSError as e:
         logger.error(f"Could not create temporary file for {file_path}: {e}")
         return False
     try:
         with os.fdopen(temp_fd, 'w', encoding='utf-8') as temp_f:
-            temp_f.write(content)
-        os.replace(temp_path, file_path)
-    except (IOError, OSError) as e:
-        logger.error(f"Could not write to {file_path}: {e}")
-        return False
-    finally:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-    return True
-
-
-def _atomic_write_json(file_path: str, data: dict) -> bool:
-    """
-    Atomically write a dictionary to a JSON file.
-
-    - Writes to a temporary file first.
-    - Renames the temporary file to the final destination for atomicity.
-    - Ensures the temporary file is cleaned up on failure.
-
-    Returns True on success, False on failure.
-    """
-    try:
-        temp_fd, temp_path = tempfile.mkstemp(dir=os.path.dirname(file_path), prefix="tmp-", suffix=".json")
-    except OSError as e:
-        logger.error(f"Could not create temporary file for {file_path}: {e}")
-        return False
-    try:
-        with os.fdopen(temp_fd, 'w', encoding='utf-8') as temp_f:
-            json.dump(data, temp_f, indent=2)
+            writer_func(temp_f)
         os.replace(temp_path, file_path)
     except (IOError, UnicodeEncodeError, OSError) as e:
         logger.error(f"Could not write to {file_path}: {e}")
@@ -365,6 +338,20 @@ def _atomic_write_json(file_path: str, data: dict) -> bool:
         if os.path.exists(temp_path):
             os.remove(temp_path)
     return True
+
+
+def _atomic_write_text(file_path: str, content: str) -> bool:
+    """
+    Atomically write text to a file.
+    """
+    return _atomic_write(file_path, lambda f: f.write(content), suffix=".txt")
+
+
+def _atomic_write_json(file_path: str, data: dict) -> bool:
+    """
+    Atomically write a dictionary to a JSON file.
+    """
+    return _atomic_write(file_path, lambda f: json.dump(data, f, indent=2), suffix=".json")
 
 
 def _safe_rmtree(path_to_remove: str, base_dir: str, item_name: str) -> bool:
@@ -836,6 +823,33 @@ def _iter_matching_prerelease_files(dir_name: str, selected_patterns: list, excl
     return matching
 
 
+def _prepare_for_redownload(file_path: str) -> bool:
+    """
+    Prepare for re-downloading a file by removing the existing file, its hash, and any temp files.
+
+    Returns True on success, False on failure.
+    """
+    try:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            logger.debug(f"Removed existing file: {file_path}")
+
+        hash_path = get_hash_file_path(file_path)
+        if os.path.exists(hash_path):
+            os.remove(hash_path)
+            logger.debug(f"Removed stale hash file: {hash_path}")
+
+        # Also remove any orphaned temp files from previous runs
+        for f in glob.glob(f"{file_path}.tmp.*"):
+            os.remove(f)
+            logger.debug(f"Removed orphaned temp file: {f}")
+
+        return True
+    except OSError as e:
+        logger.error(f"Error preparing for re-download of {file_path}: {e}")
+        return False
+
+
 def _prerelease_needs_download(file_path: str) -> bool:
     if not os.path.exists(file_path):
         return True
@@ -846,24 +860,8 @@ def _prerelease_needs_download(file_path: str) -> bool:
     logger.warning(
         f"Existing prerelease file {os.path.basename(file_path)} failed integrity check; re-downloading"
     )
-    try:
-        os.remove(file_path)
-        # Also remove any orphaned temp files from previous runs
-        for f in glob.glob(f"{file_path}.tmp.*"):
-            try:
-                os.remove(f)
-                logger.debug(f"Removed orphaned temp file: {f}")
-            except OSError as e_rm:
-                logger.warning(f"Error removing orphaned temp file {f}: {e_rm}")
-    except OSError as e:
-        logger.error(f"Error removing corrupted prerelease file {file_path}: {e}. Skipping re-download.")
+    if not _prepare_for_redownload(file_path):
         return False
-    hash_path = get_hash_file_path(file_path)
-    if os.path.exists(hash_path):
-        try:
-            os.remove(hash_path)
-        except OSError as e:
-            logger.debug(f"Error removing hash file {hash_path}: {e}")
     return True
 
 
@@ -2244,20 +2242,9 @@ def check_and_download(
                             logger.warning(
                                 f"Existing {release_type} asset {asset_download_path} has size {actual_size}, expected {expected_size}; scheduling re-download"
                             )
-                            try:
-                                os.remove(asset_download_path)
-                                hash_path = get_hash_file_path(asset_download_path)
-                                if os.path.exists(hash_path):
-                                    try:
-                                        os.remove(hash_path)
-                                    except OSError as e_hash:
-                                        logger.debug(f"Could not remove stale hash file {hash_path}: {e_hash}")
+                            if _prepare_for_redownload(asset_download_path):
                                 assets_to_download.append(
                                     (browser_download_url, asset_download_path)
-                                )
-                            except OSError as e_rm:
-                                logger.error(
-                                    f"Failed to remove mismatched asset {asset_download_path} for re-download: {e_rm}. Skipping."
                                 )
         except (KeyError, TypeError) as e_data:
             logger.error(
