@@ -331,14 +331,20 @@ def _atomic_write(
     file_path: str, writer_func: Callable[[IO[str]], None], suffix: str
 ) -> bool:
     """
-    Atomically write to a file using a writer function.
-
-    - Creates a temporary file.
-    - Calls the writer_func to write to the temporary file.
-    - Renames the temporary file to the final destination for atomicity.
-    - Ensures the temporary file is cleaned up on failure.
-
-    Returns True on success, False on failure.
+    Atomically write text to a target file using a temporary file and a caller-supplied writer.
+    
+    Creates a temporary file in the same directory as file_path, calls writer_func(temp_file)
+    to write UTF-8 text content, then atomically replaces the target with the temp file
+    (using os.replace). Ensures the temp file is removed on failure.
+    
+    Parameters:
+        file_path (str): Final destination path.
+        writer_func (Callable[[IO[str]], None]): Function that writes text to the provided
+            file-like object (opened for writing, UTF-8).
+        suffix (str): Suffix to use for the temporary file (e.g., ".json", ".txt").
+    
+    Returns:
+        bool: True if the write and atomic replace succeeded; False on any failure (no exceptions propagated).
     """
     try:
         temp_fd, temp_path = tempfile.mkstemp(
@@ -362,14 +368,25 @@ def _atomic_write(
 
 def _atomic_write_text(file_path: str, content: str) -> bool:
     """
-    Atomically write text to a file.
+    Atomically write text content to a file with a ".txt" temporary suffix.
+    
+    Writes `content` to `file_path` by delegating to the atomic writer helper; the write is performed to a temporary file and renamed into place to avoid partial writes. Returns True on success and False on error.
     """
     return _atomic_write(file_path, lambda f: f.write(content), suffix=".txt")
 
 
 def _atomic_write_json(file_path: str, data: dict) -> bool:
     """
-    Atomically write a dictionary to a JSON file.
+    Atomically write a Python mapping to a JSON file.
+    
+    Writes `data` (must be JSON-serializable) to `file_path` using a temporary file and an atomic rename, ensuring the target file is never left in a partially-written state. The JSON is written with an indentation of 2 spaces and the helper enforces a ".json" suffix for the temporary file.
+    
+    Parameters:
+        file_path (str): Destination path for the JSON file.
+        data (dict): Mapping to serialize to JSON.
+    
+    Returns:
+        bool: True on successful write, False on error.
     """
     return _atomic_write(
         file_path, lambda f: json.dump(data, f, indent=2), suffix=".json"
@@ -377,7 +394,20 @@ def _atomic_write_json(file_path: str, data: dict) -> bool:
 
 
 def _sanitize_path_component(component: Optional[str]) -> Optional[str]:
-    """Return a filesystem-safe single path component or None when unsafe."""
+    """
+    Return a filesystem-safe single path component or None if the input is unsafe.
+    
+    The function accepts a string (or None) and returns a trimmed component that is safe
+    to use as a single path segment. It returns None for unsafe inputs, including:
+    - None or empty strings after trimming
+    - "." or ".."
+    - absolute paths
+    - strings containing a null byte
+    - strings containing path separators (os.sep or os.altsep)
+    
+    Returns:
+        The sanitized component string, or None when the input is unsafe.
+    """
 
     if component is None:
         return None
@@ -401,13 +431,9 @@ def _sanitize_path_component(component: Optional[str]) -> Optional[str]:
 
 def _safe_rmtree(path_to_remove: str, base_dir: str, item_name: str) -> bool:
     """
-    Safely remove a directory, protecting against symlink traversal attacks.
-
-    - Checks if the path is a symlink and removes it if so.
-    - Verifies that the real path of the directory is within the base_dir.
-    - Logs actions and warnings.
-
-    Returns True if the item was removed, False otherwise.
+    Safely remove a filesystem path (file or directory), preventing symlink traversal outside a permitted base directory.
+    
+    If the target is a symlink it is unlinked immediately. Otherwise the function resolves the real path and ensures it lies under base_dir before removing; directories are removed with shutil.rmtree and files with os.remove. item_name is used only for log messages. Returns True when removal succeeded, False on any error or when the resolved path is outside base_dir.
     """
     try:
         if os.path.islink(path_to_remove):
@@ -807,19 +833,19 @@ def matches_extract_patterns(filename, extract_patterns, device_manager=None):
 
 def get_prerelease_tracking_info(prerelease_dir):
     """
-    Return prerelease tracking information from prerelease_tracking.json or a legacy text file.
-
-    Attempts to read prerelease_tracking.json in prerelease_dir (preferred). If the JSON file is missing or cannot be parsed, falls back to the legacy prerelease_commits.txt format via _read_text_tracking_file. This function logs read/parsing issues and never raises.
-
+    Return prerelease tracking information gathered from prerelease_tracking.json or a legacy text file.
+    
+    Attempts to read prerelease_tracking.json inside prerelease_dir first; if the JSON file is missing or unreadable, falls back to the legacy prerelease_commits.txt parser via _read_text_tracking_file. This function always returns a dict and does not raise.
+    
     Parameters:
-        prerelease_dir (str): Directory containing prerelease tracking files; may not exist.
-
+        prerelease_dir (str): Directory that may contain prerelease tracking files; may not exist.
+    
     Returns:
-        dict: Empty dict if no tracking data is available; otherwise a dictionary with:
+        dict: Empty dict if no tracking data is available; otherwise contains:
             - release (str): Tracked official release tag or "unknown" when not recorded.
-            - commits (list[str]): List of prerelease commit identifiers (may be empty).
+            - commits (list[str]): Tracked prerelease commit identifiers (may be empty).
             - prerelease_count (int): Number of tracked prerelease commits.
-            - last_updated (str|None): ISO timestamp from the JSON tracking file when available (present only for JSON-backed data).
+            - last_updated (str|None): ISO timestamp present only when loaded from JSON tracking file.
     """
     # Try JSON format first
     json_tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
@@ -854,7 +880,26 @@ def _iter_matching_prerelease_files(
     exclude_patterns_list: list,
     device_manager,
 ) -> List[Dict[str, str]]:
-    """Return prerelease file metadata filtered by the configured pattern rules."""
+    """
+    Return a list of prerelease assets in a directory that match selection rules.
+    
+    Scans the remote directory named by dir_name (via menu_repo), filters entries by
+    selected_patterns (using matches_extract_patterns, which applies device-aware
+    matching when a DeviceHardwareManager is provided), and excludes any filenames
+    matching patterns in exclude_patterns_list. Filenames that are unsafe for use
+    as a single path component are skipped.
+    
+    Parameters:
+        dir_name (str): Remote prerelease directory to inspect.
+        selected_patterns (list): Patterns used to select matching assets.
+        exclude_patterns_list (list): fnmatch-style patterns; any match causes an asset to be skipped.
+        device_manager: Optional device manager used by matches_extract_patterns for device-specific pattern handling.
+    
+    Returns:
+        List[Dict[str, str]]: A list of dicts with keys:
+            - "name": sanitized filename (safe single path component)
+            - "download_url": URL string for downloading the asset
+    """
 
     files = menu_repo.fetch_directory_contents(dir_name) or []
     matching: List[Dict[str, str]] = []
@@ -894,9 +939,10 @@ def _iter_matching_prerelease_files(
 
 def _prepare_for_redownload(file_path: str) -> bool:
     """
-    Prepare for re-downloading a file by removing the existing file, its hash, and any temp files.
-
-    Returns True on success, False on failure.
+    Prepare a file for re-download by removing the existing file, its associated hash file (via `get_hash_file_path`), and any orphaned temporary files matching `<file_path>.tmp.*`.
+    
+    Returns:
+        bool: True if all removals succeeded (or nothing needed removal), False if an OS error occurred while attempting removals.
     """
     try:
         if os.path.exists(file_path):
@@ -920,6 +966,19 @@ def _prepare_for_redownload(file_path: str) -> bool:
 
 
 def _prerelease_needs_download(file_path: str) -> bool:
+    """
+    Determine whether a prerelease file at `file_path` needs to be (re)downloaded.
+    
+    Checks for existence and verifies integrity. Returns True when the file is missing
+    or fails integrity validation and has been prepared for re-download. If integrity
+    fails but preparation for re-download does not succeed, returns False.
+    
+    Parameters:
+        file_path (str): Path to the local prerelease asset file.
+    
+    Returns:
+        bool: True if the caller should download the file; False otherwise.
+    """
     if not os.path.exists(file_path):
         return True
 
@@ -942,17 +1001,21 @@ def check_for_prereleases(
     device_manager=None,
 ):
     """
-    Discover the newest prerelease newer than the latest official release, keep local copies in
-    sync, and download any missing assets that match the configured patterns.
-
-    The function keeps only the newest prerelease directory locally (older ones are removed),
-    ensuring we do not redownload the same assets on subsequent runs when the on-disk files are
-    complete and verified.
-
+    Discover and mirror the newest prerelease firmware (newer than the provided official release tag) and download any matching assets.
+    
+    Keeps only the newest prerelease directory locally (older prerelease directories and stray files are removed or cleaned). Files are downloaded into download_dir/firmware/prerelease/<prerelease-dir>. The function sanitizes the provided latest_release_tag; if the tag is unsafe the call is a no-op and returns (False, []).
+    
+    Parameters:
+        download_dir (str): Base download directory where prerelease subdirectory is located.
+        latest_release_tag (str): Official release tag used as the cutoff; prereleases must be newer than this.
+        selected_patterns (Iterable[str]): Asset selection patterns; matching is performed with the same pattern rules used elsewhere in the module.
+        exclude_patterns (Iterable[str] | None): Optional list of fnmatch-style patterns to exclude.
+        device_manager: Optional device manager used to evaluate device-specific patterns (omitted from detailed docs as it is a common service).
+    
     Returns:
         tuple[bool, list[str]]: (downloaded, versions)
-          - downloaded: True when at least one prerelease asset was fetched this run.
-          - versions: The prerelease directory names that were processed/tracked (empty when none).
+            - downloaded: True if at least one prerelease asset was downloaded during this run.
+            - versions: List of prerelease directory names that were processed or tracked (empty if none).
     """
 
     raw_latest_release_tag = latest_release_tag
@@ -1985,16 +2048,13 @@ def extract_files(
 
 def cleanup_old_versions(directory: str, releases_to_keep: List[str]) -> None:
     """
-    Remove versioned subdirectories under `directory` except for the ones specified in `releases_to_keep`.
-
-    This scans `directory` for immediate subdirectories and deletes any that are not listed in `releases_to_keep` and are not in the internal exclusion list ("repo-dls", "prerelease"). Deletion is performed with shutil.rmtree; failures are caught and logged but not re-raised.
-
+    Prune versioned subdirectories under `directory`, keeping only the specified releases.
+    
+    Scans immediate child directories of `directory` and removes any subdirectory whose basename is not in `releases_to_keep` and not one of the internal exclusions ("repo-dls", "prerelease"). Deletion is performed with a safe removal helper that protects against symlink/traversal attacks; failures are logged but not propagated.
+    
     Parameters:
-        directory (str): Path containing versioned subdirectories to prune.
-        releases_to_keep (List[str]): Release names (subdirectory basenames) that must be preserved.
-
-    Side effects:
-        Permanently removes directories on disk (and their contents) for versions not kept; logs actions and warnings on errors.
+        directory (str): Path whose immediate subdirectories represent versioned releases.
+        releases_to_keep (List[str]): Basenames of subdirectories that must be preserved.
     """
     excluded_dirs: List[str] = ["repo-dls", "prerelease"]
     versions: List[str] = [
@@ -2155,36 +2215,36 @@ def check_and_download(
     exclude_patterns: Optional[List[str]] = None,
 ) -> Tuple[List[str], List[str], List[Dict[str, str]]]:
     """
-    Check a list of releases, download any missing or corrupted assets, optionally extract ZIPs, and prune old release directories.
-
+    Check releases for missing or corrupted assets, download matching assets, optionally extract ZIPs, and prune old release directories.
+    
     Processes up to `versions_to_keep` newest entries from `releases`. For each release it:
     - Skips releases that are already complete.
-    - Downloads assets that match `selected_patterns` (if provided) and do not match `exclude_patterns`.
-    - Optionally extracts files from ZIP assets when `auto_extract` is True and `release_type` == "Firmware"; extraction uses `extract_patterns` to select files.
-    - Saves release notes, ensures `.sh` files are executable, and removes older release subdirectories not in the retention window.
-    - Updates `latest_release_file` when a newer release has been successfully processed.
-
+    - Schedules and downloads assets that match `selected_patterns` (if provided) and do not match `exclude_patterns`.
+    - Optionally extracts files from ZIP assets when `auto_extract` is True and `release_type == "Firmware"`, using `extract_patterns` to select files.
+    - Writes release notes, sets executable bits on shell scripts, and prunes old release subdirectories outside the retention window.
+    - Atomically updates `latest_release_file` when a newer release has been successfully processed.
+    
     Side effects:
-    - Creates release directories and may write `latest_release_file`.
-    - May remove corrupted ZIP files and delete old release directories during cleanup.
-    - Honors a global Wi-Fi gating flag: if downloads were skipped, the function will not download and instead returns newer release tags.
-
+    - Creates per-release subdirectories and may write `latest_release_file` and release notes.
+    - May remove corrupted ZIP files and delete older release directories.
+    - Honors a global Wi‑Fi gating flag: if downloads are skipped globally, the function will not perform downloads and instead returns newer release tags.
+    
     Parameters:
-    - releases: Iterable of release dicts from the API (newest-first order expected).
-    - latest_release_file: Path to a file storing the most recently recorded release tag.
+    - releases: List of release dictionaries (expected newest-first order) as returned by the API.
+    - latest_release_file: Path to a file that stores the most recently recorded release tag.
     - release_type: Human-readable type used in logs and failure records (e.g., "Firmware" or "APK").
     - download_dir_path: Root directory where per-release subdirectories are created.
     - versions_to_keep: Number of newest releases to consider for download/retention.
     - extract_patterns: Patterns used to select files to extract from ZIP archives.
-    - selected_patterns: If provided, only assets whose names match any of these patterns are considered for download.
-    - auto_extract: When True and `release_type` == "Firmware`, ZIP assets will be extracted when needed.
-    - exclude_patterns: Optional patterns; matching filenames are excluded from download and extraction.
-
+    - selected_patterns: Optional list of asset name patterns to include; if omitted all assets are considered.
+    - auto_extract: When True and `release_type == "Firmware"`, perform extraction of matching ZIP contents.
+    - exclude_patterns: Optional list of patterns; matching filenames are excluded from download and extraction.
+    
     Returns:
-    - Tuple(downloaded_versions, new_versions_available, failed_downloads_details)
-      - downloaded_versions: list of release tags for which at least one asset was successfully downloaded.
-      - new_versions_available: list of release tags newer than the saved/latest tag that remain pending or were not downloaded.
-      - failed_downloads_details: list of dicts describing individual failed downloads (keys include url, path_to_download, release_tag, file_name, reason, and type).
+    Tuple(downloaded_versions, new_versions_available, failed_downloads_details)
+    - downloaded_versions: list of release tags for which at least one asset was successfully downloaded.
+    - new_versions_available: list of release tags newer than the saved/latest tag that remain pending or were not downloaded.
+    - failed_downloads_details: list of dicts describing individual failed downloads (keys include url, path_to_download, release_tag, file_name, reason, and type).
     """
     global downloads_skipped
     downloaded_versions: List[str] = []
