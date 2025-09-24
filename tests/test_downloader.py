@@ -1,5 +1,6 @@
 import json
 import os
+import platform
 import shutil
 import time
 from pathlib import Path
@@ -3919,6 +3920,10 @@ def test_error_handling_comprehensive_ui_paths(tmp_path, caplog):
             readonly_dir.chmod(0o755)  # Restore permissions for cleanup
 
 
+@pytest.mark.skipif(
+    platform.system() == "Windows",
+    reason="Symlink creation requires administrator privileges on Windows",
+)
 def test_prerelease_functions_symlink_safety(tmp_path):
     """Test that prerelease functions safely handle symlinks without deleting external targets."""
     # Create the main download directory structure
@@ -4051,6 +4056,10 @@ def test_prerelease_functions_symlink_safety(tmp_path):
     ), "Malicious symlink should have been removed by cleanup"
 
 
+@pytest.mark.skipif(
+    platform.system() == "Windows",
+    reason="Symlink creation requires administrator privileges on Windows",
+)
 def test_prerelease_symlink_traversal_attack_prevention(tmp_path):
     """Test that prerelease functions prevent directory traversal attacks via symlinks."""
     download_dir = tmp_path / "download"
@@ -4124,6 +4133,10 @@ def test_prerelease_symlink_traversal_attack_prevention(tmp_path):
             ), f"Malicious symlink {symlink_name} should have been removed"
 
 
+@pytest.mark.skipif(
+    platform.system() == "Windows",
+    reason="Symlink creation requires administrator privileges on Windows",
+)
 def test_prerelease_symlink_mixed_with_valid_directories(tmp_path):
     """Test symlink safety when mixed with valid prerelease directories."""
     download_dir = tmp_path / "download"

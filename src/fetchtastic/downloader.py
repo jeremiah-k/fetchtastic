@@ -2533,9 +2533,10 @@ def check_and_download(
                     raw_latest_release_tag_val,
                 )
                 latest_release_tag_val = saved_release_tag or None
-            if latest_release_tag_val is None:
-                raise ValueError("latest release tag could not be determined safely")
-            if latest_release_tag_val != saved_release_tag:
+            if (
+                latest_release_tag_val is not None
+                and latest_release_tag_val != saved_release_tag
+            ):
                 if not _atomic_write_text(latest_release_file, latest_release_tag_val):
                     logger.warning(
                         f"Error writing latest release tag to {latest_release_file}"
@@ -2548,8 +2549,7 @@ def check_and_download(
             IndexError,
             KeyError,
             TypeError,
-            ValueError,
-        ) as e:  # If releases_to_download is empty or structure is wrong or tag unsafe
+        ) as e:  # If releases_to_download is empty or structure is wrong
             logger.warning(
                 f"Could not determine latest release tag to save due to data issue: {e}"
             )
