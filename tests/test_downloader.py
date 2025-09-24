@@ -1422,7 +1422,7 @@ def test_check_and_download_redownloads_mismatched_non_zip(tmp_path):
         "fetchtastic.downloader.download_file_with_retry",
         side_effect=_mock_download,
     ) as mock_dl:
-        downloaded, new_versions, failures = downloader.check_and_download(
+        downloaded, _new_versions, failures = downloader.check_and_download(
             releases,
             latest_release_file,
             "Firmware",

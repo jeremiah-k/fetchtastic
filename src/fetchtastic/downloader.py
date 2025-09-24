@@ -909,7 +909,7 @@ def _prepare_for_redownload(file_path: str) -> bool:
             logger.debug(f"Removed stale hash file: {hash_path}")
 
         # Also remove any orphaned temp files from previous runs
-        for tmp_path in glob.glob(f"{file_path}.tmp.*"):
+        for tmp_path in glob.glob(f"{glob.escape(file_path)}.tmp.*"):
             os.remove(tmp_path)
             logger.debug(f"Removed orphaned temp file: {tmp_path}")
     except OSError as e:
@@ -1019,10 +1019,9 @@ def check_for_prereleases(
         dir_version = extract_version(dir_name)
         if not re.match(VERSION_REGEX_PATTERN, dir_version):
             logger.debug(
-                "Repository prerelease directory %s uses a non-standard version format; skipping",
+                "Repository prerelease directory %s uses a non-standard version format; attempting best-effort comparison",
                 dir_name,
             )
-            continue
 
         try:
             if compare_versions(dir_version, latest_release_version) > 0:
