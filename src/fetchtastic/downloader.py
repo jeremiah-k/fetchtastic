@@ -311,6 +311,34 @@ def check_promoted_prereleases(
     return promoted
 
 
+def _atomic_write_text(file_path: str, content: str) -> bool:
+    """
+    Atomically write text to a file.
+
+    - Writes to a temporary file first.
+    - Renames the temporary file to the final destination for atomicity.
+    - Ensures the temporary file is cleaned up on failure.
+
+    Returns True on success, False on failure.
+    """
+    try:
+        temp_fd, temp_path = tempfile.mkstemp(dir=os.path.dirname(file_path), prefix="tmp-", suffix=".txt")
+    except OSError as e:
+        logger.error(f"Could not create temporary file for {file_path}: {e}")
+        return False
+    try:
+        with os.fdopen(temp_fd, 'w', encoding='utf-8') as temp_f:
+            temp_f.write(content)
+        os.replace(temp_path, file_path)
+    except (IOError, OSError) as e:
+        logger.error(f"Could not write to {file_path}: {e}")
+        return False
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+    return True
+
+
 def _atomic_write_json(file_path: str, data: dict) -> bool:
     """
     Atomically write a dictionary to a JSON file.
@@ -369,12 +397,15 @@ def _safe_rmtree(path_to_remove: str, base_dir: str, item_name: str) -> bool:
             )
             return False
 
-        shutil.rmtree(path_to_remove)
+        if os.path.isdir(path_to_remove):
+            shutil.rmtree(path_to_remove)
+        else:
+            os.remove(path_to_remove)
     except OSError as e:
         logger.error(f"Error removing {path_to_remove}: {e}")
         return False
     else:
-        logger.info(f"Removed directory: {path_to_remove}")
+        logger.info(f"Removed path: {path_to_remove}")
         return True
 
 
@@ -777,6 +808,65 @@ def get_prerelease_tracking_info(prerelease_dir):
     return {}
 
 
+def _iter_matching_prerelease_files(dir_name: str, selected_patterns: list, exclude_patterns_list: list, device_manager) -> List[Dict[str, str]]:
+    files = menu_repo.fetch_directory_contents(dir_name) or []
+    matching: List[Dict[str, str]] = []
+    for entry in files:
+        file_name = entry.get("name")
+        download_url = entry.get("download_url")
+        if not file_name or not download_url:
+            continue
+
+        if not matches_extract_patterns(
+            file_name, selected_patterns, device_manager
+        ):
+            continue
+
+        if any(
+            fnmatch.fnmatch(file_name, pattern) for pattern in exclude_patterns_list
+        ):
+            logger.debug(
+                "Skipping pre-release file %s (matched exclude pattern)",
+                file_name,
+            )
+            continue
+
+        matching.append({"name": file_name, "download_url": download_url})
+
+    return matching
+
+
+def _prerelease_needs_download(file_path: str) -> bool:
+    if not os.path.exists(file_path):
+        return True
+
+    if verify_file_integrity(file_path):
+        return False
+
+    logger.warning(
+        f"Existing prerelease file {os.path.basename(file_path)} failed integrity check; re-downloading"
+    )
+    try:
+        os.remove(file_path)
+        # Also remove any orphaned temp files from previous runs
+        for f in glob.glob(f"{file_path}.tmp.*"):
+            try:
+                os.remove(f)
+                logger.debug(f"Removed orphaned temp file: {f}")
+            except OSError as e_rm:
+                logger.warning(f"Error removing orphaned temp file {f}: {e_rm}")
+    except OSError as e:
+        logger.error(f"Error removing corrupted prerelease file {file_path}: {e}. Skipping re-download.")
+        return False
+    hash_path = get_hash_file_path(file_path)
+    if os.path.exists(hash_path):
+        try:
+            os.remove(hash_path)
+        except OSError as e:
+            logger.debug(f"Error removing hash file {hash_path}: {e}")
+    return True
+
+
 def check_for_prereleases(
     download_dir,
     latest_release_tag,
@@ -870,15 +960,16 @@ def check_for_prereleases(
 
     os.makedirs(prerelease_dir, exist_ok=True)
 
-    # Remove stray files while preserving tracking files
+    # Remove stray files and symlinks while preserving tracking files
     for item in os.listdir(prerelease_dir):
         if item.startswith("."):
             continue
         item_path = os.path.join(prerelease_dir, item)
-        if not os.path.isdir(item_path) and item not in (
-            "prerelease_tracking.json",
-            "prerelease_commits.txt",
-        ):
+        if os.path.islink(item_path):
+            if item not in ("prerelease_tracking.json", "prerelease_commits.txt") and not item.startswith("firmware-"):
+                _safe_rmtree(item_path, prerelease_dir, item)
+            continue
+        if not os.path.isdir(item_path) and item not in ("prerelease_tracking.json", "prerelease_commits.txt"):
             try:
                 os.remove(item_path)
                 logger.info(f"Removed stale file from prerelease directory: {item}")
@@ -897,63 +988,6 @@ def check_for_prereleases(
         dir_path = os.path.join(prerelease_dir, dir_name)
         _safe_rmtree(dir_path, prerelease_dir, dir_name)
 
-    def _iter_matching_remote_files(dir_name: str) -> List[Dict[str, str]]:
-        files = menu_repo.fetch_directory_contents(dir_name) or []
-        matching: List[Dict[str, str]] = []
-        for entry in files:
-            file_name = entry.get("name")
-            download_url = entry.get("download_url")
-            if not file_name or not download_url:
-                continue
-
-            if not matches_extract_patterns(
-                file_name, selected_patterns, device_manager
-            ):
-                continue
-
-            if any(
-                fnmatch.fnmatch(file_name, pattern) for pattern in exclude_patterns_list
-            ):
-                logger.debug(
-                    "Skipping pre-release file %s (matched exclude pattern)",
-                    file_name,
-                )
-                continue
-
-            matching.append({"name": file_name, "download_url": download_url})
-
-        return matching
-
-    def _needs_download(file_path: str) -> bool:
-        if not os.path.exists(file_path):
-            return True
-
-        if verify_file_integrity(file_path):
-            return False
-
-        logger.warning(
-            f"Existing prerelease file {os.path.basename(file_path)} failed integrity check; re-downloading"
-        )
-        try:
-            os.remove(file_path)
-            # Also remove any orphaned temp files from previous runs
-            for f in glob.glob(f"{file_path}.tmp.*"):
-                try:
-                    os.remove(f)
-                    logger.debug(f"Removed orphaned temp file: {f}")
-                except OSError as e_rm:
-                    logger.warning(f"Error removing orphaned temp file {f}: {e_rm}")
-        except OSError as e:
-            logger.error(f"Error removing corrupted prerelease file {file_path}: {e}. Skipping re-download.")
-            return False
-        hash_path = get_hash_file_path(file_path)
-        if os.path.exists(hash_path):
-            try:
-                os.remove(hash_path)
-            except OSError as e:
-                logger.debug(f"Error removing hash file {hash_path}: {e}")
-        return True
-
     downloaded_files: List[str] = []
 
     for dir_name in target_prereleases:
@@ -966,7 +1000,7 @@ def check_for_prereleases(
             )
             continue
 
-        matching_files = _iter_matching_remote_files(dir_name)
+        matching_files = _iter_matching_prerelease_files(dir_name, selected_patterns, exclude_patterns_list, device_manager)
         if not matching_files:
             logger.debug(
                 f"No prerelease files matched selection for {dir_name}; skipping downloads"
@@ -978,7 +1012,7 @@ def check_for_prereleases(
             download_url = file_info["download_url"]
             file_path = os.path.join(dir_path, file_name)
 
-            if not _needs_download(file_path):
+            if not _prerelease_needs_download(file_path):
                 logger.debug(
                     f"Pre-release file already present and verified: {file_name}"
                 )
@@ -2079,14 +2113,12 @@ def check_and_download(
                     release_tag != saved_release_tag
                     and release_data == releases_to_download[0]
                 ):
-                    try:
-                        with open(latest_release_file, "w") as f:
-                            f.write(release_tag)
+                    if not _atomic_write_text(latest_release_file, release_tag):
+                        logger.warning(f"Error updating latest release file: {latest_release_file}")
+                    else:
                         logger.debug(
                             f"Updated latest release tag to {release_tag} (complete release)"
                         )
-                    except IOError as e:
-                        logger.warning(f"Error updating latest release file: {e}")
                 # Still add to new_versions_available if it's different from saved tag
                 elif release_tag != saved_release_tag:
                     new_versions_available.append(release_tag)
@@ -2329,15 +2361,13 @@ def check_and_download(
         try:
             latest_release_tag_val: str = releases_to_download[0]["tag_name"]
             if latest_release_tag_val != saved_release_tag:
-                try:
-                    with open(latest_release_file, "w") as f:
-                        f.write(latest_release_tag_val)
+                if not _atomic_write_text(latest_release_file, latest_release_tag_val):
+                    logger.warning(
+                        f"Error writing latest release tag to {latest_release_file}"
+                    )
+                else:
                     logger.debug(
                         f"Updated latest release tag to {latest_release_tag_val}"
-                    )
-                except IOError as e:
-                    logger.warning(
-                        f"Error writing latest release tag to {latest_release_file}: {e}"
                     )
         except (
             IndexError,
