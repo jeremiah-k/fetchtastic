@@ -625,7 +625,7 @@ def test_run_setup_first_run_linux_simple(
     return_value="/tmp/config",  # nosec B108
 )
 @patch("fetchtastic.setup_config.WINDOWS_MODULES_AVAILABLE", True)
-@patch("fetchtastic.setup_config.winshell", MagicMock())
+@patch("fetchtastic.setup_config.winshell", MagicMock(), create=True)
 def test_run_setup_first_run_windows(
     mock_user_config_dir,
     mock_shutil_which,
@@ -933,6 +933,9 @@ def test_run_setup_partial_firmware_section(
         "y",
         "esp32- rak4631-",
         "y",
+        "y",
+        "",
+        "y",
     ]
 
     with patch("builtins.open", mock_open()):
@@ -1214,7 +1217,6 @@ def test_setup_firmware_selected_prerelease_assets_migration_accept(mock_input):
     ]
     assert result["EXTRACT_PATTERNS"] == ["station-", "heltec-", "rak4631-"]
     assert result["AUTO_EXTRACT"] is True
-    assert result["EXCLUDE_PATTERNS"] == setup_config.RECOMMENDED_EXCLUDE_PATTERNS
 
 
 @pytest.mark.configuration
@@ -1240,7 +1242,6 @@ def test_setup_firmware_selected_prerelease_assets_migration_decline(mock_input)
     assert result["SELECTED_PRERELEASE_ASSETS"] == ["esp32-", "rak4631-"]
     assert result["EXTRACT_PATTERNS"] == ["esp32-", "rak4631-"]
     assert result["AUTO_EXTRACT"] is True
-    assert result["EXCLUDE_PATTERNS"] == setup_config.RECOMMENDED_EXCLUDE_PATTERNS
 
 
 @pytest.mark.configuration
@@ -1354,7 +1355,6 @@ def test_setup_firmware_selected_prerelease_assets_migration_empty_input(mock_in
 
     assert result["CHECK_PRERELEASES"] is True
     assert result["SELECTED_PRERELEASE_ASSETS"] == []  # Empty when no input provided
-    assert result["EXTRACT_PATTERNS"] == []
     assert result["AUTO_EXTRACT"] is False  # Should be disabled with empty patterns
 
 

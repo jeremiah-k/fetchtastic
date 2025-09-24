@@ -760,6 +760,9 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
         print("Example: rak4631- tbeam t1000-e- tlora-v2-1-1_6- device-")
 
         current_patterns = config.get("EXTRACT_PATTERNS", [])
+        if isinstance(current_patterns, str):
+            current_patterns = current_patterns.split()
+            config["EXTRACT_PATTERNS"] = current_patterns
         if current_patterns:
             print(f"Current patterns: {' '.join(current_patterns)}")
             keep_patterns_default = "yes"
