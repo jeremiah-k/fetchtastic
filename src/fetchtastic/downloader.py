@@ -225,7 +225,6 @@ def check_promoted_prereleases(
     prerelease_dir = os.path.join(download_dir, "firmware", "prerelease")
     if not os.path.exists(prerelease_dir):
         return False
-    real_prerelease_dir = os.path.realpath(prerelease_dir)
 
     # Path to regular release directory
     release_dir = os.path.join(download_dir, "firmware", latest_release_tag)
@@ -334,11 +333,12 @@ def _safe_rmtree(path_to_remove: str, base_dir: str, item_name: str) -> bool:
             return False
 
         shutil.rmtree(path_to_remove)
-        logger.info("Removed directory: %s", path_to_remove)
-        return True
     except OSError as e:
         logger.error(f"Error removing {path_to_remove}: {e}")
         return False
+    else:
+        logger.info("Removed directory: %s", path_to_remove)
+        return True
 
 
 def compare_file_hashes(file1, file2):
@@ -855,7 +855,6 @@ def check_for_prereleases(
     target_prereleases = repo_prerelease_dirs[:1]
 
     os.makedirs(prerelease_dir, exist_ok=True)
-    real_prerelease_dir = os.path.realpath(prerelease_dir)
 
     # Remove stray files while preserving tracking files
     for item in os.listdir(prerelease_dir):
@@ -875,7 +874,6 @@ def check_for_prereleases(
                 )
 
     existing_prerelease_dirs = _get_existing_prerelease_dirs(prerelease_dir)
-    repo_prerelease_set = set(repo_prerelease_dirs)
     target_prerelease_set = set(target_prereleases)
 
     for dir_name in existing_prerelease_dirs:

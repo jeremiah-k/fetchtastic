@@ -3937,7 +3937,7 @@ def test_prerelease_functions_symlink_safety(tmp_path):
     assert malicious_symlink2.exists()
 
     # Call check_promoted_prereleases
-    promoted = check_promoted_prereleases(
+    check_promoted_prereleases(
         download_dir=str(download_dir),
         latest_release_tag='1.2.0'
     )
