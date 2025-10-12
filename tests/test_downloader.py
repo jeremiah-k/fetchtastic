@@ -4787,3 +4787,204 @@ def test_check_for_prereleases_skips_same_base_version(
     assert found is True
     assert versions == ["firmware-2.7.13.abcd123"]
     assert not (prerelease_dir / "firmware-2.7.12.fcb1d64").exists()
+
+
+class TestNormalizeVersion:
+    """Test cases for _normalize_version function."""
+
+    def test_normalize_version_none_input(self):
+        """Test that None input returns None."""
+        result = downloader._normalize_version(None)
+        assert result is None
+
+    def test_normalize_version_empty_string(self):
+        """Test that empty string returns None."""
+        result = downloader._normalize_version("")
+        assert result is None
+
+    def test_normalize_version_whitespace_only(self):
+        """Test that whitespace-only string returns None."""
+        result = downloader._normalize_version("   \t\n   ")
+        assert result is None
+
+    def test_normalize_version_valid_version(self):
+        """Test that valid version strings are parsed correctly."""
+        result = downloader._normalize_version("1.2.3")
+        assert result is not None
+        assert str(result) == "1.2.3"
+
+    def test_normalize_version_with_v_prefix(self):
+        """Test that 'v' prefix is stripped correctly."""
+        result = downloader._normalize_version("v1.2.3")
+        assert result is not None
+        assert str(result) == "1.2.3"
+
+    def test_normalize_version_with_capital_v_prefix(self):
+        """Test that 'V' prefix is stripped correctly."""
+        result = downloader._normalize_version("V1.2.3")
+        assert result is not None
+        assert str(result) == "1.2.3"
+
+    def test_normalize_version_prerelease_rc_with_dot(self):
+        """Test prerelease versions with rc and dot."""
+        result = downloader._normalize_version("1.2.3.rc1")
+        assert result is not None
+        assert str(result) == "1.2.3rc1"
+
+    def test_normalize_version_prerelease_rc_with_dash(self):
+        """Test prerelease versions with rc and dash."""
+        result = downloader._normalize_version("1.2.3-rc1")
+        assert result is not None
+        assert str(result) == "1.2.3rc1"
+
+    def test_normalize_version_prerelease_alpha(self):
+        """Test prerelease versions with alpha."""
+        result = downloader._normalize_version("1.2.3.alpha")
+        assert result is not None
+        assert str(result) == "1.2.3a0"
+
+    def test_normalize_version_prerelease_alpha_with_number(self):
+        """Test prerelease versions with alpha and number."""
+        result = downloader._normalize_version("1.2.3.alpha2")
+        assert result is not None
+        assert str(result) == "1.2.3a2"
+
+    def test_normalize_version_prerelease_beta(self):
+        """Test prerelease versions with beta."""
+        result = downloader._normalize_version("1.2.3.beta")
+        assert result is not None
+        assert str(result) == "1.2.3b0"
+
+    def test_normalize_version_prerelease_beta_with_number(self):
+        """Test prerelease versions with beta and number."""
+        result = downloader._normalize_version("1.2.3.beta3")
+        assert result is not None
+        assert str(result) == "1.2.3b3"
+
+    def test_normalize_version_prerelease_dev(self):
+        """Test prerelease versions with dev."""
+        result = downloader._normalize_version("1.2.3.dev")
+        assert result is not None
+        assert str(result) == "1.2.3.dev0"
+
+    def test_normalize_version_prerelease_b_short(self):
+        """Test prerelease versions with short 'b' notation."""
+        result = downloader._normalize_version("1.2.3.b1")
+        assert result is not None
+        assert str(result) == "1.2.3b1"
+
+    def test_normalize_version_hash_suffix(self):
+        """Test versions with hash suffix."""
+        result = downloader._normalize_version("1.2.3.abc123")
+        assert result is not None
+        assert str(result) == "1.2.3+abc123"
+
+    def test_normalize_version_hash_suffix_complex(self):
+        """Test versions with complex hash suffix."""
+        result = downloader._normalize_version("1.2.3.fcb1d64")
+        assert result is not None
+        assert str(result) == "1.2.3+fcb1d64"
+
+    def test_normalize_version_hash_suffix_with_dots(self):
+        """Test versions with hash suffix containing dots."""
+        result = downloader._normalize_version("1.2.3.45f15b8")
+        assert result is not None
+        assert str(result) == "1.2.3+45f15b8"
+
+    def test_normalize_version_invalid_prerelease_format(self):
+        """Test that invalid prerelease formats are handled as hash suffix."""
+        # "invalid" doesn't match prerelease regex, so it gets treated as hash suffix
+        result = downloader._normalize_version("1.2.3.invalid")
+        assert result is not None
+        assert str(result) == "1.2.3+invalid"
+
+    def test_normalize_version_invalid_hash_format(self):
+        """Test that invalid hash formats return None."""
+        # This should match hash regex but fail to parse
+        result = downloader._normalize_version("1.2.3..invalid")
+        assert result is None
+
+    def test_normalize_version_completely_invalid(self):
+        """Test that completely invalid versions return None."""
+        result = downloader._normalize_version("not-a-version")
+        assert result is None
+
+    def test_normalize_version_whitespace_handling(self):
+        """Test that whitespace is handled correctly."""
+        result = downloader._normalize_version("  v1.2.3  ")
+        assert result is not None
+        assert str(result) == "1.2.3"
+
+
+class TestGetReleaseTuple:
+    """Test cases for _get_release_tuple function."""
+
+    def test_get_release_tuple_none_input(self):
+        """Test that None input returns None."""
+        result = downloader._get_release_tuple(None)
+        assert result is None
+
+    def test_get_release_tuple_empty_string(self):
+        """Test that empty string returns None."""
+        result = downloader._get_release_tuple("")
+        assert result is None
+
+    def test_get_release_tuple_valid_version(self):
+        """Test that valid version returns release tuple."""
+        result = downloader._get_release_tuple("1.2.3")
+        assert result == (1, 2, 3)
+
+    def test_get_release_tuple_with_v_prefix(self):
+        """Test that version with v prefix returns release tuple."""
+        result = downloader._get_release_tuple("v1.2.3")
+        assert result == (1, 2, 3)
+
+    def test_get_release_tuple_major_only(self):
+        """Test that major-only version returns single-element tuple."""
+        result = downloader._get_release_tuple("1")
+        assert result == (1,)
+
+    def test_get_release_tuple_major_minor(self):
+        """Test that major.minor version returns two-element tuple."""
+        result = downloader._get_release_tuple("1.2")
+        assert result == (1, 2)
+
+    def test_get_release_tuple_prerelease_version(self):
+        """Test that prerelease version returns base release tuple."""
+        result = downloader._get_release_tuple("1.2.3rc1")
+        assert result == (1, 2, 3)
+
+    def test_get_release_tuple_hash_suffix_version(self):
+        """Test that hash suffix version returns base release tuple."""
+        result = downloader._get_release_tuple("1.2.3.abc123")
+        assert result == (1, 2, 3)
+
+    def test_get_release_tuple_complex_version(self):
+        """Test that complex version returns base release tuple."""
+        result = downloader._get_release_tuple("v1.2.3.45f15b8")
+        assert result == (1, 2, 3)
+
+    def test_get_release_tuple_normalized_version_with_more_parts(self):
+        """Test version with more than 3 parts."""
+        result = downloader._get_release_tuple("1.2.3.4.5")
+        assert result == (1, 2, 3, 4, 5)
+
+    def test_get_release_tuple_invalid_version_fallback(self):
+        """Test fallback parsing for invalid versions."""
+        result = downloader._get_release_tuple("v1.2.3.invalid")
+        assert result == (1, 2, 3)
+
+    def test_get_release_tuple_completely_invalid(self):
+        """Test that completely invalid versions return None."""
+        result = downloader._get_release_tuple("not-a-version")
+        assert result is None
+
+    def test_get_release_tuple_version_with_leading_v_only(self):
+        """Test version with only 'v' prefix."""
+        result = downloader._get_release_tuple("v1.2.3")
+        assert result == (1, 2, 3)
+
+    def test_get_release_tuple_whitespace_handling(self):
+        """Test that whitespace is handled correctly."""
+        result = downloader._get_release_tuple("  v1.2.3  ")
+        assert result == (1, 2, 3)
