@@ -84,6 +84,13 @@ from fetchtastic.utils import (
 # Compiled regex for performance
 NON_ASCII_RX = re.compile(r"[^\x00-\x7F]+")
 
+# Compiled regular expressions for version parsing performance
+PRERELEASE_VERSION_RX = re.compile(
+    r"^(\d+(?:\.\d+)+)[.-](rc|dev|alpha|beta|b)\.?(\d*)$", re.IGNORECASE
+)
+HASH_SUFFIX_VERSION_RX = re.compile(r"^(\d+(?:\.\d+)*)\.([A-Za-z0-9][A-Za-z0-9.-]*)$")
+VERSION_BASE_RX = re.compile(r"^(\d+(?:\.\d+)*)")
+
 
 def _normalize_version(version: str) -> Optional[Union[Version, LegacyVersion]]:
     """
@@ -105,11 +112,7 @@ def _normalize_version(version: str) -> Optional[Union[Version, LegacyVersion]]:
     try:
         return parse_version(trimmed)
     except InvalidVersion:
-        m_pr = re.match(
-            r"^(\d+(?:\.\d+)+)[.-](rc|dev|alpha|beta|b)\.?(\d*)$",
-            trimmed,
-            re.IGNORECASE,
-        )
+        m_pr = PRERELEASE_VERSION_RX.match(trimmed)
         if m_pr:
             kind = m_pr.group(2).lower().replace("alpha", "a").replace("beta", "b")
             num = m_pr.group(3) or "0"
@@ -120,7 +123,7 @@ def _normalize_version(version: str) -> Optional[Union[Version, LegacyVersion]]:
                     "Could not parse '%s' as a standard prerelease version.", trimmed
                 )
 
-        m_hash = re.match(r"^(\d+(?:\.\d+)*)\.([A-Za-z0-9][A-Za-z0-9.-]*)$", trimmed)
+        m_hash = HASH_SUFFIX_VERSION_RX.match(trimmed)
         if m_hash:
             try:
                 return parse_version(f"{m_hash.group(1)}+{m_hash.group(2)}")
@@ -148,7 +151,7 @@ def _get_release_tuple(version: Optional[str]) -> Optional[tuple[int, ...]]:
         return normalized.release
 
     base = version.lstrip("v")
-    match = re.match(r"^(\d+(?:\.\d+)*)", base)
+    match = VERSION_BASE_RX.match(base)
     if match:
         return tuple(int(part) for part in match.group(1).split("."))
 
