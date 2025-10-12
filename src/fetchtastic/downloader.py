@@ -26,6 +26,29 @@ except ImportError:
 
 from fetchtastic import menu_repo, setup_config
 
+"""
+Version Handling for Meshtastic Releases
+
+This module provides utilities for handling version strings and comparisons for Meshtastic
+firmware and Android APK releases. The versioning approach accounts for:
+
+Expected Version Formats:
+- Stable releases: "v2.7.8", "2.7.8" 
+- Prereleases: "v2.7.8-rc1", "2.7.8.a0c0388", "1.2-rc1"
+- Development versions: "2.7.8-dev", "2.7.8-alpha1"
+
+Key Design Principles:
+1. Prereleases and stable releases come from separate repositories
+2. Prerelease versions are newer than their base stable version but older than the next stable version
+3. Version normalization handles various formats consistently for comparisons
+4. Tuple-based optimizations provide performance while maintaining correctness
+
+Helper Functions:
+- _normalize_version(): Converts version strings to packaging.Version objects with format coercion
+- _get_release_tuple(): Extracts numeric tuples for efficient comparisons
+- compare_versions(): Performs full version comparisons when tuple optimization isn't sufficient
+"""
+
 # Import constants from constants module
 from fetchtastic.constants import (
     API_CALL_DELAY,
@@ -83,7 +106,7 @@ def _normalize_version(version: str) -> Optional[Union[Version, LegacyVersion]]:
         return parse_version(trimmed)
     except InvalidVersion:
         m_pr = re.match(
-            r"^(\d+(?:\.\d+){2})[.-](rc|dev|alpha|beta|b)\.?(\d*)$",
+            r"^(\d+(?:\.\d+)+)[.-](rc|dev|alpha|beta|b)\.?(\d*)$",
             trimmed,
             re.IGNORECASE,
         )
@@ -110,7 +133,7 @@ def _normalize_version(version: str) -> Optional[Union[Version, LegacyVersion]]:
     return None
 
 
-def _get_release_tuple(version: str) -> Optional[tuple[int, ...]]:
+def _get_release_tuple(version: Optional[str]) -> Optional[tuple[int, ...]]:
     """
     Return the numeric release tuple (major, minor, patch, ...) for a version string.
 
@@ -318,9 +341,8 @@ def check_promoted_prereleases(
                     if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
                         promoted = True
                     continue
-            else:
-                if dir_version != latest_release_version:
-                    continue
+            elif dir_version != latest_release_version:
+                continue
 
             logger.info(
                 "Found pre-release %s that shares the base version with latest release %s",
