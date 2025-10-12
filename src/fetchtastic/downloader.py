@@ -306,9 +306,6 @@ def check_promoted_prereleases(
     if not os.path.exists(prerelease_dir):
         return False
 
-    # Path to regular release directory
-    os.path.join(download_dir, "firmware", safe_latest_release_tag)
-
     # Check for matching pre-release directories
     promoted = False
     for raw_dir_name in os.listdir(prerelease_dir):
