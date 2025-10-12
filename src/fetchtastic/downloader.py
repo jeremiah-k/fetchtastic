@@ -56,7 +56,7 @@ from fetchtastic.utils import (
 NON_ASCII_RX = re.compile(r"[^\x00-\x7F]+")
 
 
-def _normalize_version(version: str):
+def _normalize_version(version: str) -> Optional[Any]:
     """
     Normalize a version string to a packaging Version object when possible.
 
@@ -87,14 +87,19 @@ def _normalize_version(version: str):
             try:
                 return parse_version(f"{m_pr.group(1)}{kind}{num}")
             except InvalidVersion:
-                pass
+                logger.debug(
+                    "Could not parse '%s' as a standard prerelease version.", trimmed
+                )
 
         m_hash = re.match(r"^(\d+(?:\.\d+)*)\.([A-Za-z0-9][A-Za-z0-9.-]*)$", trimmed)
         if m_hash:
             try:
                 return parse_version(f"{m_hash.group(1)}+{m_hash.group(2)}")
             except InvalidVersion:
-                pass
+                logger.debug(
+                    "Could not parse '%s' as a version with a local version identifier.",
+                    trimmed,
+                )
 
     return None
 
@@ -106,12 +111,12 @@ def _get_release_tuple(version: str) -> Optional[tuple[int, ...]]:
     Falls back to a simple numeric extraction when the version cannot be coerced
     into a packaging Version.
     """
+    if version is None:
+        return None
+
     normalized = _normalize_version(version)
     if normalized is not None and normalized.release:
         return normalized.release
-
-    if version is None:
-        return None
 
     base = version.lstrip("v")
     match = re.match(r"^(\d+)(?:\.(\d+))?(?:\.(\d+))?", base)
