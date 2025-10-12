@@ -4900,8 +4900,8 @@ class TestNormalizeVersion:
 
     def test_normalize_version_invalid_hash_format(self):
         """Test that invalid hash formats return None."""
-        # This should match hash regex but fail to parse
-        result = downloader._normalize_version("1.2.3..invalid")
+        # This should match the hash regex but fail to parse as a valid local version.
+        result = downloader._normalize_version("1.2.3.a..b")
         assert result is None
 
     def test_normalize_version_completely_invalid(self):
