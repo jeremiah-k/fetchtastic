@@ -25,31 +25,6 @@ except ImportError:
     LegacyVersion = None  # type: ignore
 
 from fetchtastic import menu_repo, setup_config
-
-"""
-Version Handling for Meshtastic Releases
-
-This module provides utilities for handling version strings and comparisons for Meshtastic
-firmware and Android APK releases. The versioning approach accounts for:
-
-Expected Version Formats:
-- Stable releases: "v2.7.8", "2.7.8" 
-- Prereleases: "v2.7.8-rc1", "2.7.8.a0c0388", "1.2-rc1"
-- Development versions: "2.7.8-dev", "2.7.8-alpha1"
-
-Key Design Principles:
-1. Prereleases and stable releases come from separate repositories
-2. Prerelease versions are newer than their base stable version but older than the next stable version
-3. Version normalization handles various formats consistently for comparisons
-4. Tuple-based optimizations provide performance while maintaining correctness
-
-Helper Functions:
-- _normalize_version(): Converts version strings to packaging.Version objects with format coercion
-- _get_release_tuple(): Extracts numeric tuples for efficient comparisons
-- compare_versions(): Performs full version comparisons when tuple optimization isn't sufficient
-"""
-
-# Import constants from constants module
 from fetchtastic.constants import (
     API_CALL_DELAY,
     DEFAULT_ANDROID_VERSIONS_TO_KEEP,
@@ -70,9 +45,7 @@ from fetchtastic.constants import (
     ZIP_EXTENSION,
 )
 from fetchtastic.device_hardware import DeviceHardwareManager
-
-# Removed log_info, setup_logging
-from fetchtastic.log_utils import logger  # Import new logger
+from fetchtastic.log_utils import logger
 from fetchtastic.setup_config import display_version_info, get_upgrade_command
 from fetchtastic.utils import (
     download_file_with_retry,
@@ -80,6 +53,29 @@ from fetchtastic.utils import (
     matches_selected_patterns,
     verify_file_integrity,
 )
+
+"""
+Version Handling for Meshtastic Releases
+
+This module provides utilities for handling version strings and comparisons for Meshtastic
+firmware and Android APK releases. The versioning approach accounts for:
+
+Expected Version Formats:
+- Stable releases: "v2.7.8", "2.7.8"
+- Prereleases: "v2.7.8-rc1", "2.7.8.a0c0388", "1.2-rc1"
+- Development versions: "2.7.8-dev", "2.7.8-alpha1"
+
+Key Design Principles:
+1. Prereleases and stable releases come from separate repositories
+2. Prerelease versions are newer than their base stable version but older than the next stable version
+3. Version normalization handles various formats consistently for comparisons
+4. Tuple-based optimizations provide performance while maintaining correctness
+
+Helper Functions:
+- _normalize_version(): Converts version strings to packaging.Version objects with format coercion
+- _get_release_tuple(): Extracts numeric tuples for efficient comparisons
+- compare_versions(): Performs full version comparisons when tuple optimization isn't sufficient
+"""
 
 # Compiled regex for performance
 NON_ASCII_RX = re.compile(r"[^\x00-\x7F]+")
@@ -274,11 +270,12 @@ def check_promoted_prereleases(
     download_dir, latest_release_tag
 ):  # log_message_func parameter removed
     """
-    Check for prerelease firmware directories that have been promoted to an official release and remove them.
+    Check for prerelease firmware directories that have been superseded by an official release and remove them.
 
-    Scans download_dir/firmware/prerelease for directories named "firmware-<version>" (optionally including a commit/hash suffix). For any prerelease whose version (a leading "v" is ignored) equals latest_release_tag, this function will:
-    - If the corresponding official release directory does not exist: remove the prerelease directory (it is expected the official release will be downloaded separately).
-    - If the official release directory exists: compare files by SHA‑256 (via compare_file_hashes) and remove the prerelease directory only if all files match.
+    Scans download_dir/firmware/prerelease for directories named "firmware-<version>" (optionally including a commit/hash suffix). For any prerelease whose version (a leading "v" is ignored) equals latest_release_tag, this function will remove the prerelease directory since the official release is preferred.
+
+    Note: Prereleases and official releases are created independently from the same commit but packaged differently,
+    so we always prefer the official release when available.
 
     Invalidly formatted prerelease directory names (not matching VERSION_REGEX_PATTERN) are skipped.
 
@@ -310,7 +307,7 @@ def check_promoted_prereleases(
         return False
 
     # Path to regular release directory
-    release_dir = os.path.join(download_dir, "firmware", safe_latest_release_tag)
+    os.path.join(download_dir, "firmware", safe_latest_release_tag)
 
     # Check for matching pre-release directories
     promoted = False
@@ -378,60 +375,16 @@ def check_promoted_prereleases(
                 if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
                     promoted = True
                 continue
-            # If the release directory doesn't exist yet, we can't compare files
-            # We'll just remove the pre-release directory since it will be downloaded as a regular release
-            if not os.path.exists(release_dir):
-                logger.info(
-                    "Pre-release %s has been superseded by release %s, "
-                    "but the release directory doesn't exist yet. Removing pre-release.",
-                    dir_name,
-                    safe_latest_release_tag,
-                )
-                if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
-                    promoted = True
-                continue
-
-            # Verify files match by comparing hashes
-            files_match = True
-            try:
-                for file_name in os.listdir(prerelease_path):
-                    prerelease_file = os.path.join(prerelease_path, file_name)
-                    release_file = os.path.join(release_dir, file_name)
-
-                    if os.path.exists(release_file):
-                        # Compare file hashes
-                        if not compare_file_hashes(prerelease_file, release_file):
-                            files_match = False
-                            logger.warning(
-                                "File %s in pre-release doesn't match the release version",
-                                file_name,
-                            )
-                            break
-                    else:
-                        # File exists in prerelease but not in release - they don't match
-                        files_match = False
-                        logger.warning(
-                            "File %s exists in pre-release but not in release directory",
-                            file_name,
-                        )
-                        break
-            except OSError as e:
-                logger.error(
-                    "Error listing files in %s for hash comparison: %s",
-                    prerelease_path,
-                    e,
-                )
-                files_match = False  # Assume files don't match if we can't check them
-
-            if files_match:
-                logger.info(
-                    "Pre-release %s has been promoted to release %s",
-                    dir_name,
-                    safe_latest_release_tag,
-                )
-                # Remove the pre-release directory since it's now a regular release
-                if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
-                    promoted = True
+            # Remove prerelease since official release with same base version exists
+            # Prereleases and official releases are created independently from the same commit
+            # but packaged differently, so we prefer the official release
+            logger.info(
+                "Removing pre-release %s since official release %s is available",
+                dir_name,
+                safe_latest_release_tag,
+            )
+            if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
+                promoted = True
 
     return promoted
 
