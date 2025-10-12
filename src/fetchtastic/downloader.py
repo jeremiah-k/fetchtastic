@@ -12,10 +12,10 @@ import zipfile
 from collections import defaultdict
 from datetime import datetime
 from functools import cmp_to_key
-from typing import IO, Any, Callable, Dict, List, Optional, Tuple
+from typing import IO, Any, Callable, Dict, List, Optional, Tuple, Union
 
 import requests
-from packaging.version import InvalidVersion
+from packaging.version import InvalidVersion, Version
 from packaging.version import parse as parse_version
 
 from fetchtastic import menu_repo, setup_config
@@ -56,7 +56,7 @@ from fetchtastic.utils import (
 NON_ASCII_RX = re.compile(r"[^\x00-\x7F]+")
 
 
-def _normalize_version(version: str) -> Optional[Any]:
+def _normalize_version(version: str) -> Optional[Version]:
     """
     Normalize a version string to a packaging Version object when possible.
 
@@ -119,9 +119,9 @@ def _get_release_tuple(version: str) -> Optional[tuple[int, ...]]:
         return normalized.release
 
     base = version.lstrip("v")
-    match = re.match(r"^(\d+)(?:\.(\d+))?(?:\.(\d+))?", base)
+    match = re.match(r"^(\d+(?:\.\d+)*)", base)
     if match:
-        return tuple(int(part) for part in match.groups() if part is not None)
+        return tuple(int(part) for part in match.group(1).split("."))
 
     return None
 
