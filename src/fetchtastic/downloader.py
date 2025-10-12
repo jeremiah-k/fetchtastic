@@ -92,7 +92,9 @@ HASH_SUFFIX_VERSION_RX = re.compile(r"^(\d+(?:\.\d+)*)\.([A-Za-z0-9][A-Za-z0-9.-
 VERSION_BASE_RX = re.compile(r"^(\d+(?:\.\d+)*)")
 
 
-def _normalize_version(version: str) -> Optional[Union[Version, LegacyVersion]]:
+def _normalize_version(
+    version: Optional[str],
+) -> Optional[Union[Version, LegacyVersion]]:
     """
     Normalize a version string to a packaging Version object when possible.
 
