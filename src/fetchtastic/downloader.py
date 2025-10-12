@@ -112,9 +112,8 @@ def _normalize_version(
     except InvalidVersion:
         m_pr = PRERELEASE_VERSION_RX.match(trimmed)
         if m_pr:
-            kind = {"alpha": "a", "beta": "b"}.get(
-                m_pr.group(2).lower(), m_pr.group(2).lower()
-            )
+            pr_kind_lower = m_pr.group(2).lower()
+            kind = {"alpha": "a", "beta": "b"}.get(pr_kind_lower, pr_kind_lower)
             num = m_pr.group(3) or "0"
             try:
                 return parse_version(f"{m_pr.group(1)}{kind}{num}")
@@ -352,8 +351,8 @@ def cleanup_superseded_prereleases(
                         dir_name,
                         safe_latest_release_tag,
                     )
-                if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
-                    cleaned_up = True
+                    if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
+                        cleaned_up = True
                     continue
             elif dir_version != latest_release_version:
                 continue
