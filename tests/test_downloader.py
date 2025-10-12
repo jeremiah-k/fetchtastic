@@ -670,6 +670,33 @@ def test_check_promoted_prereleases(tmp_path):
     assert (prerelease_dir / "firmware-2.2.0").exists()
 
 
+def test_check_promoted_prereleases_handles_commit_suffix(tmp_path):
+    """Ensure prereleases sharing the release base version are cleaned up."""
+    download_dir = tmp_path
+    firmware_dir = download_dir / "firmware"
+    prerelease_dir = firmware_dir / "prerelease"
+    prerelease_dir.mkdir(parents=True)
+
+    promoted_dir = prerelease_dir / "firmware-2.7.12.fcb1d64"
+    promoted_dir.mkdir()
+    (promoted_dir / "firmware.bin").write_bytes(b"release-data")
+
+    future_dir = prerelease_dir / "firmware-2.7.13.abcd123"
+    future_dir.mkdir()
+
+    release_dir = firmware_dir / "v2.7.12.45f15b8"
+    release_dir.mkdir(parents=True)
+    (release_dir / "firmware.bin").write_bytes(b"release-data")
+
+    removed = downloader.check_promoted_prereleases(
+        str(download_dir), "v2.7.12.45f15b8"
+    )
+
+    assert removed is True
+    assert not promoted_dir.exists()
+    assert future_dir.exists()
+
+
 @patch("fetchtastic.downloader.menu_repo.fetch_repo_directories")
 @patch("fetchtastic.downloader.menu_repo.fetch_directory_contents")
 @patch("fetchtastic.downloader.download_file_with_retry")
@@ -4707,3 +4734,56 @@ def test_check_for_prereleases_boolean_semantics_no_new_downloads(
     assert versions == [
         "firmware-2.0.0-alpha1.abcdef"
     ]  # But existing prereleases are reported
+
+
+@patch("fetchtastic.downloader.download_file_with_retry")
+@patch("fetchtastic.downloader.menu_repo.fetch_directory_contents")
+@patch("fetchtastic.downloader.menu_repo.fetch_repo_directories")
+def test_check_for_prereleases_skips_same_base_version(
+    mock_fetch_dirs, mock_fetch_contents, mock_download, tmp_path
+):
+    """Ensure prereleases that share the release base version are ignored."""
+    download_dir = tmp_path
+    prerelease_dir = download_dir / "firmware" / "prerelease"
+    prerelease_dir.mkdir(parents=True)
+
+    mock_fetch_dirs.return_value = [
+        "firmware-2.7.12.fcb1d64",
+        "firmware-2.7.13.abcd123",
+    ]
+
+    def _fetch_contents(name):
+        if name == "firmware-2.7.13.abcd123":
+            return [
+                {
+                    "name": "firmware-rak4631-2.7.13.abcd123.uf2",
+                    "download_url": "https://example.invalid/rak4631.uf2",
+                }
+            ]
+        if name == "firmware-2.7.12.fcb1d64":
+            pytest.fail(
+                "Should not fetch contents for prerelease matching release base"
+            )
+        return []
+
+    mock_fetch_contents.side_effect = _fetch_contents
+
+    def _mock_download(_url, dest):
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        with open(dest, "wb") as f:
+            f.write(b"data")
+        return True
+
+    mock_download.side_effect = _mock_download
+
+    found, versions = downloader.check_for_prereleases(
+        download_dir,
+        latest_release_tag="v2.7.12.45f15b8",
+        selected_patterns=["rak4631-"],
+        exclude_patterns=[],
+        device_manager=None,
+    )
+
+    assert found is True
+    assert versions == ["firmware-2.7.13.abcd123"]
+    assert not (prerelease_dir / "firmware-2.7.12.fcb1d64").exists()

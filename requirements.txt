@@ -3,3 +3,7 @@ pick==2.4.0
 PyYAML==6.0.3
 urllib3==2.5.0
 rich==14.1.0
+platformdirs==4.3.6
+pytest==8.4.2
+pytest-cov==7.0.0
+pytest-mock==3.14.0

@@ -56,6 +56,71 @@ from fetchtastic.utils import (
 NON_ASCII_RX = re.compile(r"[^\x00-\x7F]+")
 
 
+def _normalize_version(version: str):
+    """
+    Normalize a version string to a packaging Version object when possible.
+
+    Applies the same coercions used by compare_versions so that callers can
+    make consistent decisions about ordering and base releases.
+    """
+    if version is None:
+        return None
+
+    trimmed = version.strip()
+    if not trimmed:
+        return None
+
+    if trimmed.lower().startswith("v"):
+        trimmed = trimmed[1:]
+
+    try:
+        return parse_version(trimmed)
+    except InvalidVersion:
+        m_pr = re.match(
+            r"^(\d+(?:\.\d+){2})[.-](rc|dev|alpha|beta|b)\.?(\d*)$",
+            trimmed,
+            re.IGNORECASE,
+        )
+        if m_pr:
+            kind = m_pr.group(2).lower().replace("alpha", "a").replace("beta", "b")
+            num = m_pr.group(3) or "0"
+            try:
+                return parse_version(f"{m_pr.group(1)}{kind}{num}")
+            except InvalidVersion:
+                pass
+
+        m_hash = re.match(r"^(\d+(?:\.\d+)*)\.([A-Za-z0-9][A-Za-z0-9.-]*)$", trimmed)
+        if m_hash:
+            try:
+                return parse_version(f"{m_hash.group(1)}+{m_hash.group(2)}")
+            except InvalidVersion:
+                pass
+
+    return None
+
+
+def _get_release_tuple(version: str) -> Optional[tuple[int, ...]]:
+    """
+    Return the numeric release tuple (major, minor, patch, ...) for a version string.
+
+    Falls back to a simple numeric extraction when the version cannot be coerced
+    into a packaging Version.
+    """
+    normalized = _normalize_version(version)
+    if normalized is not None and normalized.release:
+        return normalized.release
+
+    if version is None:
+        return None
+
+    base = version.lstrip("v")
+    match = re.match(r"^(\d+)(?:\.(\d+))?(?:\.(\d+))?", base)
+    if match:
+        return tuple(int(part) for part in match.groups() if part is not None)
+
+    return None
+
+
 def _summarise_release_scan(kind: str, total_found: int, keep_limit: int) -> str:
     """Return a concise log message describing how many releases will be scanned."""
 
@@ -122,52 +187,8 @@ def compare_versions(version1, version2):
         int: 1 if version1 > version2, 0 if equal, -1 if version1 < version2.
     """
 
-    def _try_parse(v: str):
-        """
-        Try to parse a version string into a packaging.version object, returning None if it cannot be normalized.
-
-        This normalizer handles several common non-PEP 440 forms before delegating to packaging.version.parse:
-        - Strips a leading "v" (case-insensitive), e.g. "v2.7.8" -> "2.7.8".
-        - Converts trailing hash-like segments into a PEP 440 local version, e.g. "2.7.8.a0c0388" -> "2.7.8+a0c0388".
-        - Normalizes dotted or dashed prerelease markers into PEP 440 prerelease notation, e.g. "2.3.0.rc1" -> "2.3.0rc1", "2.3.0-beta2" -> "2.3.0b2".
-
-        Parameters:
-            v (str): Input version string.
-
-        Returns:
-            packaging.version.Version or packaging.version.LegacyVersion or None: Parsed version on success, or None if the string could not be coerced into a parseable form.
-        """
-        # Strip optional leading "v" from Meshtastic tags (e.g., "v2.7.8" → "2.7.8")
-        if v.lower().startswith("v"):
-            v = v[1:]
-
-        try:
-            return parse_version(v)
-        except InvalidVersion:
-            # 1) Coerce dot/dash prerelease: e.g., 2.3.0.rc1 -> 2.3.0rc1, 2.3.0-beta2 -> 2.3.0b2
-            m_pr = re.match(
-                r"^(\d+(?:\.\d+){2})[.-](rc|dev|alpha|beta|b)\.?(\d*)$",
-                v,
-                re.IGNORECASE,
-            )
-            if m_pr:
-                kind = m_pr.group(2).lower().replace("alpha", "a").replace("beta", "b")
-                num = m_pr.group(3) or "0"
-                try:
-                    return parse_version(f"{m_pr.group(1)}{kind}{num}")
-                except InvalidVersion:
-                    pass
-            # 2) Coerce common pattern "X.Y.Z.<hash>" to PEP 440 local version "X.Y.Z+<hash>"
-            m = re.match(r"^(\d+(?:\.\d+)*)\.([A-Za-z0-9][A-Za-z0-9.-]*)$", v)
-            if m:
-                try:
-                    return parse_version(f"{m.group(1)}+{m.group(2)}")
-                except InvalidVersion:
-                    pass
-            return None
-
-    v1 = _try_parse(version1)
-    v2 = _try_parse(version2)
+    v1 = _normalize_version(version1)
+    v2 = _normalize_version(version2)
     if v1 is not None and v2 is not None:
         if v1 > v2:
             return 1
@@ -228,6 +249,7 @@ def check_promoted_prereleases(
         return False
 
     latest_release_version = safe_latest_release_tag.lstrip("v")
+    latest_release_tuple = _get_release_tuple(latest_release_version)
 
     # Path to prerelease directory
     prerelease_dir = os.path.join(download_dir, "firmware", "prerelease")
@@ -259,70 +281,100 @@ def check_promoted_prereleases(
                 continue
 
             # If this pre-release matches the latest release version
-            if dir_version == latest_release_version:
-                logger.info(
-                    f"Found pre-release {dir_name} that matches latest release {safe_latest_release_tag}"
-                )
-                prerelease_path = os.path.join(prerelease_dir, dir_name)
+            prerelease_path = os.path.join(prerelease_dir, dir_name)
+            dir_release_tuple = _get_release_tuple(dir_version)
 
-                # If this prerelease entry is a symlink, remove the link rather than traversing it
-                if os.path.islink(prerelease_path):
+            if latest_release_tuple and dir_release_tuple:
+                if dir_release_tuple > latest_release_tuple:
+                    logger.debug(
+                        "Skipping prerelease %s; version is newer than latest release %s",
+                        dir_name,
+                        safe_latest_release_tag,
+                    )
+                    continue
+                if dir_release_tuple < latest_release_tuple:
                     logger.info(
-                        "Removing symbolic link prerelease: %s (matches release %s)",
+                        "Removing prerelease %s because latest release %s is newer",
                         dir_name,
                         safe_latest_release_tag,
                     )
                     if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
                         promoted = True
                     continue
-                # If the release directory doesn't exist yet, we can't compare files
-                # We'll just remove the pre-release directory since it will be downloaded as a regular release
-                if not os.path.exists(release_dir):
-                    logger.info(
-                        f"Pre-release {dir_name} has been promoted to release {safe_latest_release_tag}, "
-                        f"but the release directory doesn't exist yet. Removing pre-release."
-                    )
-                    if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
-                        promoted = True
+            else:
+                if dir_version != latest_release_version:
                     continue
 
-                # Verify files match by comparing hashes
-                files_match = True
-                try:
-                    for file_name in os.listdir(prerelease_path):
-                        prerelease_file = os.path.join(prerelease_path, file_name)
-                        release_file = os.path.join(release_dir, file_name)
+            logger.info(
+                "Found pre-release %s that shares the base version with latest release %s",
+                dir_name,
+                safe_latest_release_tag,
+            )
 
-                        if os.path.exists(release_file):
-                            # Compare file hashes
-                            if not compare_file_hashes(prerelease_file, release_file):
-                                files_match = False
-                                logger.warning(
-                                    f"File {file_name} in pre-release doesn't match the release version"
-                                )
-                                break
-                        else:
-                            # File exists in prerelease but not in release - they don't match
+            # If this prerelease entry is a symlink, remove the link rather than traversing it
+            if os.path.islink(prerelease_path):
+                logger.info(
+                    "Removing symbolic link prerelease: %s (matches release %s)",
+                    dir_name,
+                    safe_latest_release_tag,
+                )
+                if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
+                    promoted = True
+                continue
+            # If the release directory doesn't exist yet, we can't compare files
+            # We'll just remove the pre-release directory since it will be downloaded as a regular release
+            if not os.path.exists(release_dir):
+                logger.info(
+                    "Pre-release %s has been superseded by release %s, "
+                    "but the release directory doesn't exist yet. Removing pre-release.",
+                    dir_name,
+                    safe_latest_release_tag,
+                )
+                if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
+                    promoted = True
+                continue
+
+            # Verify files match by comparing hashes
+            files_match = True
+            try:
+                for file_name in os.listdir(prerelease_path):
+                    prerelease_file = os.path.join(prerelease_path, file_name)
+                    release_file = os.path.join(release_dir, file_name)
+
+                    if os.path.exists(release_file):
+                        # Compare file hashes
+                        if not compare_file_hashes(prerelease_file, release_file):
                             files_match = False
                             logger.warning(
-                                f"File {file_name} exists in pre-release but not in release directory"
+                                "File %s in pre-release doesn't match the release version",
+                                file_name,
                             )
                             break
-                except OSError as e:
-                    logger.error(
-                        f"Error listing files in {prerelease_path} for hash comparison: {e}"
-                    )
-                    files_match = (
-                        False  # Assume files don't match if we can't check them
-                    )
+                    else:
+                        # File exists in prerelease but not in release - they don't match
+                        files_match = False
+                        logger.warning(
+                            "File %s exists in pre-release but not in release directory",
+                            file_name,
+                        )
+                        break
+            except OSError as e:
+                logger.error(
+                    "Error listing files in %s for hash comparison: %s",
+                    prerelease_path,
+                    e,
+                )
+                files_match = False  # Assume files don't match if we can't check them
 
-                if files_match:
-                    logger.info(
-                        f"Pre-release {dir_name} has been promoted to release {safe_latest_release_tag}"
-                    )
-                    # Remove the pre-release directory since it's now a regular release
-                    if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
-                        promoted = True
+            if files_match:
+                logger.info(
+                    "Pre-release %s has been promoted to release %s",
+                    dir_name,
+                    safe_latest_release_tag,
+                )
+                # Remove the pre-release directory since it's now a regular release
+                if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
+                    promoted = True
 
     return promoted
 
@@ -1069,6 +1121,7 @@ def check_for_prereleases(
 
     exclude_patterns_list = exclude_patterns or []
     latest_release_version = latest_release_tag.lstrip("v")
+    latest_release_tuple = _get_release_tuple(latest_release_version)
 
     directories = menu_repo.fetch_repo_directories()
     if not directories:
@@ -1094,6 +1147,20 @@ def check_for_prereleases(
                 "Repository prerelease directory %s uses a non-standard version format; attempting best-effort comparison",
                 dir_name,
             )
+
+        dir_release_tuple = _get_release_tuple(dir_version)
+        if (
+            latest_release_tuple
+            and dir_release_tuple
+            and dir_release_tuple <= latest_release_tuple
+        ):
+            logger.debug(
+                "Skipping prerelease %s; version %s is not newer than latest release %s",
+                dir_name,
+                dir_version,
+                latest_release_tag,
+            )
+            continue
 
         try:
             if compare_versions(dir_version, latest_release_version) > 0:
