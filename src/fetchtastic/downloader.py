@@ -21,8 +21,16 @@ from packaging.version import parse as parse_version
 # Try to import LegacyVersion for type annotations (available in older packaging versions)
 try:
     from packaging.version import LegacyVersion
+
+    HAS_LEGACY_VERSION = True
 except ImportError:
-    LegacyVersion = None  # type: ignore
+
+    class LegacyVersion:  # type: ignore
+        """Placeholder for when LegacyVersion is not available."""
+
+        pass
+
+    HAS_LEGACY_VERSION = False
 
 from fetchtastic import menu_repo, setup_config
 from fetchtastic.constants import (

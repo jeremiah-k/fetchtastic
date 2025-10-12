@@ -664,7 +664,10 @@ def test_cleanup_superseded_prereleases(tmp_path):
     # The latest official release
     latest_release_tag = "v2.1.0"
 
-    downloader.cleanup_superseded_prereleases(str(download_dir), latest_release_tag)
+    removed = downloader.cleanup_superseded_prereleases(
+        str(download_dir), latest_release_tag
+    )
+    assert removed is True
 
     assert not (prerelease_dir / "firmware-2.1.0").exists()
     assert (prerelease_dir / "firmware-2.2.0").exists()
@@ -1953,7 +1956,7 @@ def test_check_wifi_connection(mock_popen, mocker):
 def test_process_firmware_downloads(
     mock_exists,
     mock_check_for_prereleases,
-    mock_check_promoted,
+    mock_cleanup_superseded,
     mock_check_and_download,
     mock_get_releases,
 ):
@@ -1976,7 +1979,7 @@ def test_process_firmware_downloads(
     with patch("builtins.open", mock_open(read_data="v1.0")):
         mock_get_releases.return_value = [{"tag_name": "v1.0"}]
         mock_check_and_download.return_value = (["v1.0"], ["v1.0"], [])
-        mock_check_promoted.return_value = False
+        mock_cleanup_superseded.return_value = False
         mock_check_for_prereleases.return_value = (True, ["v1.1-pre"])
 
         downloaded, new, failed, latest = downloader._process_firmware_downloads(
@@ -4085,8 +4088,8 @@ def test_prerelease_functions_symlink_safety(tmp_path):
     malicious_symlink2 = prerelease_dir / "firmware-1.2.0"
     malicious_symlink2.symlink_to(external_target, target_is_directory=True)
 
-    # Also create a valid prerelease directory that should be promoted
-    valid_prerelease = prerelease_dir / "firmware-1.2.0.ba11da5"
+    # Also create a valid prerelease directory that should NOT be removed (different base version)
+    valid_prerelease = prerelease_dir / "firmware-1.3.0.ba11da5"
     valid_prerelease.mkdir()
     (valid_prerelease / "firmware.bin").write_bytes(b"valid_firmware_content")
 
@@ -4126,6 +4129,8 @@ def test_prerelease_functions_symlink_safety(tmp_path):
     assert (
         not malicious_symlink2.exists()
     ), "Malicious symlink should have been removed by cleanup"
+    # Valid prerelease directory should still exist
+    assert valid_prerelease.exists()
 
 
 @pytest.mark.skipif(
@@ -4787,6 +4792,7 @@ def test_check_for_prereleases_skips_same_base_version(
     assert found is True
     assert versions == ["firmware-2.7.13.abcd123"]
     assert not (prerelease_dir / "firmware-2.7.12.fcb1d64").exists()
+    assert mock_download.call_count == 1
 
 
 class TestNormalizeVersion:
