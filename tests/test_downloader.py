@@ -687,10 +687,6 @@ def test_cleanup_superseded_prereleases_handles_commit_suffix(tmp_path):
     future_dir = prerelease_dir / "firmware-2.7.13.abcd123"
     future_dir.mkdir()
 
-    release_dir = firmware_dir / "v2.7.12.45f15b8"
-    release_dir.mkdir(parents=True)
-    (release_dir / "firmware.bin").write_bytes(b"release-data")
-
     removed = downloader.cleanup_superseded_prereleases(
         str(download_dir), "v2.7.12.45f15b8"
     )
@@ -1985,6 +1981,9 @@ def test_process_firmware_downloads(
         downloaded, new, failed, latest = downloader._process_firmware_downloads(
             config, paths
         )
+
+        # Verify that os.path.exists was called for the latest firmware release file
+        mock_exists.assert_any_call(paths["latest_firmware_release_file"])
 
         assert "v1.0" in downloaded
         assert "pre-release v1.1-pre" in downloaded

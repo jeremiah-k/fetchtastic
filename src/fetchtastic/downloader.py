@@ -310,6 +310,15 @@ def cleanup_superseded_prereleases(
     latest_release_tuple = _get_release_tuple(latest_release_version)
     v_latest_norm = _normalize_version(latest_release_version)
 
+    # This function cleans up prereleases superseded by an official release.
+    # If the latest release is itself a prerelease, no superseding has occurred.
+    if v_latest_norm and v_latest_norm.is_prerelease:
+        logger.debug(
+            "Skipping prerelease cleanup; latest release '%s' is a prerelease.",
+            safe_latest_release_tag,
+        )
+        return False
+
     # Path to prerelease directory
     prerelease_dir = os.path.join(download_dir, "firmware", "prerelease")
     if not os.path.exists(prerelease_dir):
@@ -340,6 +349,10 @@ def cleanup_superseded_prereleases(
             prerelease_path = os.path.join(prerelease_dir, dir_name)
             dir_release_tuple = _get_release_tuple(dir_version)
 
+            # Determine if this prerelease should be cleaned up
+            should_cleanup = False
+            cleanup_reason = None
+
             # Only use tuple comparison if latest release is not a prerelease
             if (
                 latest_release_tuple
@@ -353,16 +366,23 @@ def cleanup_superseded_prereleases(
                         safe_latest_release_tag,
                     )
                     continue
-                if dir_release_tuple < latest_release_tuple:
-                    logger.info(
-                        "Removing prerelease %s because latest release %s is newer",
-                        dir_name,
-                        safe_latest_release_tag,
+                elif dir_release_tuple <= latest_release_tuple:
+                    should_cleanup = True
+                    cleanup_reason = (
+                        "latest release %s is newer" % safe_latest_release_tag
                     )
-                    if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
-                        cleaned_up = True
-                    continue
             elif dir_version != latest_release_version:
+                continue
+
+            # Perform cleanup if determined necessary
+            if should_cleanup:
+                logger.info(
+                    "Removing prerelease %s because %s",
+                    dir_name,
+                    cleanup_reason,
+                )
+                if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
+                    cleaned_up = True
                 continue
 
             logger.info(
