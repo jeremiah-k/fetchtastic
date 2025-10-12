@@ -18,6 +18,12 @@ import requests
 from packaging.version import InvalidVersion, Version
 from packaging.version import parse as parse_version
 
+# Try to import LegacyVersion for type annotations (available in older packaging versions)
+try:
+    from packaging.version import LegacyVersion
+except ImportError:
+    LegacyVersion = None  # type: ignore
+
 from fetchtastic import menu_repo, setup_config
 
 # Import constants from constants module
@@ -56,7 +62,7 @@ from fetchtastic.utils import (
 NON_ASCII_RX = re.compile(r"[^\x00-\x7F]+")
 
 
-def _normalize_version(version: str) -> Optional[Version]:
+def _normalize_version(version: str) -> Optional[Union[Version, LegacyVersion]]:
     """
     Normalize a version string to a packaging Version object when possible.
 
@@ -255,6 +261,7 @@ def check_promoted_prereleases(
 
     latest_release_version = safe_latest_release_tag.lstrip("v")
     latest_release_tuple = _get_release_tuple(latest_release_version)
+    v_latest_norm = _normalize_version(latest_release_version)
 
     # Path to prerelease directory
     prerelease_dir = os.path.join(download_dir, "firmware", "prerelease")
@@ -289,7 +296,12 @@ def check_promoted_prereleases(
             prerelease_path = os.path.join(prerelease_dir, dir_name)
             dir_release_tuple = _get_release_tuple(dir_version)
 
-            if latest_release_tuple and dir_release_tuple:
+            # Only use tuple comparison if latest release is not a prerelease
+            if (
+                latest_release_tuple
+                and dir_release_tuple
+                and not (v_latest_norm and v_latest_norm.is_prerelease)
+            ):
                 if dir_release_tuple > latest_release_tuple:
                     logger.debug(
                         "Skipping prerelease %s; version is newer than latest release %s",
@@ -1127,6 +1139,7 @@ def check_for_prereleases(
     exclude_patterns_list = exclude_patterns or []
     latest_release_version = latest_release_tag.lstrip("v")
     latest_release_tuple = _get_release_tuple(latest_release_version)
+    v_latest_norm = _normalize_version(latest_release_version)
 
     directories = menu_repo.fetch_repo_directories()
     if not directories:
@@ -1154,10 +1167,12 @@ def check_for_prereleases(
             )
 
         dir_release_tuple = _get_release_tuple(dir_version)
+        # Only use tuple comparison if latest release is not a prerelease
         if (
             latest_release_tuple
             and dir_release_tuple
             and dir_release_tuple <= latest_release_tuple
+            and not (v_latest_norm and v_latest_norm.is_prerelease)
         ):
             logger.debug(
                 "Skipping prerelease %s; version %s is not newer than latest release %s",
