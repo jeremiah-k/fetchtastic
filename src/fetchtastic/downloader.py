@@ -122,7 +122,9 @@ def _normalize_version(
                 return parse_version(f"{m_pr.group(1)}{kind}{num}")
             except InvalidVersion:
                 logger.debug(
-                    "Could not parse '%s' as a standard prerelease version.", trimmed
+                    "Could not parse '%s' as a standard prerelease version.",
+                    trimmed,
+                    exc_info=True,
                 )
 
         m_hash = HASH_SUFFIX_VERSION_RX.match(trimmed)
@@ -133,6 +135,7 @@ def _normalize_version(
                 logger.debug(
                     "Could not parse '%s' as a version with a local version identifier.",
                     trimmed,
+                    exc_info=True,
                 )
 
     return None
@@ -152,7 +155,7 @@ def _get_release_tuple(version: Optional[str]) -> Optional[tuple[int, ...]]:
     if isinstance(normalized, Version) and normalized.release:
         return normalized.release
 
-    base = version.lstrip("v")
+    base = version[1:] if version.lower().startswith("v") else version
     match = VERSION_BASE_RX.match(base)
     if match:
         return tuple(int(part) for part in match.group(1).split("."))
