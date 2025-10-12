@@ -266,16 +266,18 @@ def compare_versions(version1, version2):
     return 0
 
 
-def check_promoted_prereleases(
+def cleanup_superseded_prereleases(
     download_dir, latest_release_tag
 ):  # log_message_func parameter removed
     """
-    Check for prerelease firmware directories that have been superseded by an official release and remove them.
+    Remove prerelease firmware directories when official releases are available to avoid confusion and save space.
 
-    Scans download_dir/firmware/prerelease for directories named "firmware-<version>" (optionally including a commit/hash suffix). For any prerelease whose version (a leading "v" is ignored) equals latest_release_tag, this function will remove the prerelease directory since the official release is preferred.
+    Scans download_dir/firmware/prerelease for directories named "firmware-<version>" (optionally including a commit/hash suffix).
+    For any prerelease that matches the base version of an official release, this function will remove the prerelease directory
+    since the official release is generally preferred for production use.
 
-    Note: Prereleases and official releases are created independently from the same commit but packaged differently,
-    so we always prefer the official release when available.
+    Note: Prereleases and official releases are created independently from the same commit but packaged differently.
+    This cleanup is performed for user convenience and storage management, not because prereleases are "promoted" to releases.
 
     Invalidly formatted prerelease directory names (not matching VERSION_REGEX_PATTERN) are skipped.
 
@@ -284,7 +286,7 @@ def check_promoted_prereleases(
         latest_release_tag (str): Latest official release tag (may include a leading 'v').
 
     Returns:
-        bool: True if one or more prerelease directories were removed (promoted); False otherwise.
+        bool: True if one or more prerelease directories were removed; False otherwise.
     """
     # Removed local log_message_func definition
 
@@ -307,13 +309,13 @@ def check_promoted_prereleases(
         return False
 
     # Check for matching pre-release directories
-    promoted = False
+    cleaned_up = False
     for raw_dir_name in os.listdir(prerelease_dir):
         if raw_dir_name.startswith("firmware-"):
             dir_name = _sanitize_path_component(raw_dir_name)
             if dir_name is None:
                 logger.warning(
-                    "Skipping unsafe prerelease directory encountered during promotion check: %s",
+                    "Skipping unsafe prerelease directory encountered during cleanup: %s",
                     raw_dir_name,
                 )
                 continue
@@ -350,8 +352,8 @@ def check_promoted_prereleases(
                         dir_name,
                         safe_latest_release_tag,
                     )
-                    if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
-                        promoted = True
+                if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
+                    cleaned_up = True
                     continue
             elif dir_version != latest_release_version:
                 continue
@@ -370,7 +372,7 @@ def check_promoted_prereleases(
                     safe_latest_release_tag,
                 )
                 if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
-                    promoted = True
+                    cleaned_up = True
                 continue
             # Remove prerelease since official release with same base version exists
             # Prereleases and official releases are created independently from the same commit
@@ -381,9 +383,9 @@ def check_promoted_prereleases(
                 safe_latest_release_tag,
             )
             if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
-                promoted = True
+                cleaned_up = True
 
-    return promoted
+    return cleaned_up
 
 
 def _atomic_write(
@@ -1680,13 +1682,13 @@ def _process_firmware_downloads(
                 latest_release_tag = f.read().strip()
 
         if latest_release_tag:
-            promoted: bool = check_promoted_prereleases(
+            cleaned_up: bool = cleanup_superseded_prereleases(
                 paths_and_urls["download_dir"],
                 latest_release_tag,  # logger.info removed
             )
-            if promoted:
+            if cleaned_up:
                 logger.info(
-                    "Detected pre-release(s) that have been promoted to regular release."
+                    "Cleaned up pre-release(s) since official release(s) are available."
                 )
 
         if config.get("CHECK_PRERELEASES", False) and not downloads_skipped:

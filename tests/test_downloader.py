@@ -13,7 +13,7 @@ from fetchtastic import downloader
 from fetchtastic.device_hardware import DeviceHardwareManager
 from fetchtastic.downloader import (
     check_for_prereleases,
-    check_promoted_prereleases,
+    cleanup_superseded_prereleases,
     matches_extract_patterns,
 )
 from fetchtastic.utils import extract_base_name
@@ -649,7 +649,7 @@ def test_extract_files_matching_and_exclude(tmp_path):
     # No further changes; validates include/exclude and executable bit behavior
 
 
-def test_check_promoted_prereleases(tmp_path):
+def test_cleanup_superseded_prereleases(tmp_path):
     """Test the cleanup of pre-releases that have been promoted."""
     download_dir = tmp_path
     firmware_dir = download_dir / "firmware"
@@ -664,13 +664,13 @@ def test_check_promoted_prereleases(tmp_path):
     # The latest official release
     latest_release_tag = "v2.1.0"
 
-    downloader.check_promoted_prereleases(str(download_dir), latest_release_tag)
+    downloader.cleanup_superseded_prereleases(str(download_dir), latest_release_tag)
 
     assert not (prerelease_dir / "firmware-2.1.0").exists()
     assert (prerelease_dir / "firmware-2.2.0").exists()
 
 
-def test_check_promoted_prereleases_handles_commit_suffix(tmp_path):
+def test_cleanup_superseded_prereleases_handles_commit_suffix(tmp_path):
     """Ensure prereleases sharing the release base version are cleaned up."""
     download_dir = tmp_path
     firmware_dir = download_dir / "firmware"
@@ -688,7 +688,7 @@ def test_check_promoted_prereleases_handles_commit_suffix(tmp_path):
     release_dir.mkdir(parents=True)
     (release_dir / "firmware.bin").write_bytes(b"release-data")
 
-    removed = downloader.check_promoted_prereleases(
+    removed = downloader.cleanup_superseded_prereleases(
         str(download_dir), "v2.7.12.45f15b8"
     )
 
@@ -1947,7 +1947,7 @@ def test_check_wifi_connection(mock_popen, mocker):
 
 @patch("fetchtastic.downloader._get_latest_releases_data")
 @patch("fetchtastic.downloader.check_and_download")
-@patch("fetchtastic.downloader.check_promoted_prereleases")
+@patch("fetchtastic.downloader.cleanup_superseded_prereleases")
 @patch("fetchtastic.downloader.check_for_prereleases")
 @patch("os.path.exists", return_value=True)
 def test_process_firmware_downloads(
@@ -4074,7 +4074,7 @@ def test_prerelease_functions_symlink_safety(tmp_path):
             not malicious_symlink.exists()
         ), "Malicious symlink should have been removed"
 
-    # Test 2: check_promoted_prereleases symlink safety
+    # Test 2: cleanup_superseded_prereleases symlink safety
     # First, recreate the malicious symlink for this test
     leftover = prerelease_dir / "firmware-1.1.0.fedcba"
     if leftover.exists():
@@ -4101,24 +4101,24 @@ def test_prerelease_functions_symlink_safety(tmp_path):
     assert malicious_symlink2.is_symlink()
     assert malicious_symlink2.exists()
 
-    # Call check_promoted_prereleases
-    check_promoted_prereleases(
+    # Call cleanup_superseded_prereleases
+    cleanup_superseded_prereleases(
         download_dir=str(download_dir), latest_release_tag="1.2.0"
     )
 
     # Assert the external target directory and its contents still exist
     assert (
         external_target.exists()
-    ), "External target directory was incorrectly deleted by check_promoted_prereleases"
+    ), "External target directory was incorrectly deleted by cleanup_superseded_prereleases"
     assert (
         important_file.exists()
-    ), "Critical file was deleted by check_promoted_prereleases"
+    ), "Critical file was deleted by cleanup_superseded_prereleases"
     assert (
         external_subdir.exists()
-    ), "External subdirectory was deleted by check_promoted_prereleases"
+    ), "External subdirectory was deleted by cleanup_superseded_prereleases"
     assert (
         sub_file.exists()
-    ), "Critical file in external subdirectory was deleted by check_promoted_prereleases"
+    ), "Critical file in external subdirectory was deleted by cleanup_superseded_prereleases"
     assert important_file.read_text() == "This should never be deleted"
     assert sub_file.read_text() == "Subdirectory data that must remain"
 
