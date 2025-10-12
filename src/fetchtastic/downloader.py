@@ -149,7 +149,7 @@ def _get_release_tuple(version: Optional[str]) -> Optional[tuple[int, ...]]:
         return None
 
     normalized = _normalize_version(version)
-    if normalized is not None and normalized.release:
+    if isinstance(normalized, Version) and normalized.release:
         return normalized.release
 
     base = version.lstrip("v")
