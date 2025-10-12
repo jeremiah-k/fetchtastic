@@ -1758,11 +1758,15 @@ def _process_firmware_downloads(
                     # Only show count if there are actually prerelease directories present
                     if count > 0 and os.path.exists(prerelease_dir):
                         # Check if there are actual prerelease directories (not just tracking files)
-                        has_prerelease_dirs = any(
-                            os.path.isdir(os.path.join(prerelease_dir, item))
-                            for item in os.listdir(prerelease_dir)
-                            if item.startswith("firmware-")
-                        )
+                        try:
+                            has_prerelease_dirs = any(
+                                os.path.isdir(os.path.join(prerelease_dir, item))
+                                for item in os.listdir(prerelease_dir)
+                                if item.startswith("firmware-")
+                            )
+                        except FileNotFoundError:
+                            # Directory was removed between exists check and listdir call
+                            has_prerelease_dirs = False
                         if has_prerelease_dirs:
                             logger.info(
                                 f"Total prereleases since {base_version}: {count}"
