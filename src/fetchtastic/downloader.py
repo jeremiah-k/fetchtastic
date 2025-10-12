@@ -116,7 +116,9 @@ def _normalize_version(
     except InvalidVersion:
         m_pr = PRERELEASE_VERSION_RX.match(trimmed)
         if m_pr:
-            kind = m_pr.group(2).lower().replace("alpha", "a").replace("beta", "b")
+            kind = {"alpha": "a", "beta": "b"}.get(
+                m_pr.group(2).lower(), m_pr.group(2).lower()
+            )
             num = m_pr.group(3) or "0"
             try:
                 return parse_version(f"{m_pr.group(1)}{kind}{num}")
@@ -151,11 +153,19 @@ def _get_release_tuple(version: Optional[str]) -> Optional[tuple[int, ...]]:
     if version is None:
         return None
 
-    normalized = _normalize_version(version)
+    version_stripped = version.strip()
+    if not version_stripped:
+        return None
+
+    normalized = _normalize_version(version_stripped)
     if isinstance(normalized, Version) and normalized.release:
         return normalized.release
 
-    base = version[1:] if version.lower().startswith("v") else version
+    base = (
+        version_stripped[1:]
+        if version_stripped.lower().startswith("v")
+        else version_stripped
+    )
     match = VERSION_BASE_RX.match(base)
     if match:
         return tuple(int(part) for part in match.group(1).split("."))
