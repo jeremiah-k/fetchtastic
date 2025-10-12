@@ -385,6 +385,33 @@ def cleanup_superseded_prereleases(
             if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
                 cleaned_up = True
 
+    # Reset tracking info if no prerelease directories exist
+    if os.path.exists(prerelease_dir):
+        # Check if any prerelease directories remain
+        remaining_prereleases = any(
+            os.path.isdir(os.path.join(prerelease_dir, item))
+            for item in os.listdir(prerelease_dir)
+            if item.startswith("firmware-")
+        )
+        if not remaining_prereleases:
+            # Remove tracking files since no prereleases remain
+            json_tracking_file = os.path.join(
+                prerelease_dir, "prerelease_tracking.json"
+            )
+            text_tracking_file = os.path.join(prerelease_dir, "prerelease_commits.txt")
+
+            for tracking_file in [json_tracking_file, text_tracking_file]:
+                if os.path.exists(tracking_file):
+                    try:
+                        os.remove(tracking_file)
+                        logger.debug(
+                            "Removed prerelease tracking file: %s", tracking_file
+                        )
+                    except OSError as e:
+                        logger.warning(
+                            "Could not remove tracking file %s: %s", tracking_file, e
+                        )
+
     return cleaned_up
 
 
@@ -1729,8 +1756,18 @@ def _process_firmware_downloads(
                 if tracking_info:
                     count = tracking_info.get("prerelease_count", 0)
                     base_version = tracking_info.get("release", "unknown")
-                    if count > 0:
-                        logger.info(f"Total prereleases since {base_version}: {count}")
+                    # Only show count if there are actually prerelease directories present
+                    if count > 0 and os.path.exists(prerelease_dir):
+                        # Check if there are actual prerelease directories (not just tracking files)
+                        has_prerelease_dirs = any(
+                            os.path.isdir(os.path.join(prerelease_dir, item))
+                            for item in os.listdir(prerelease_dir)
+                            if item.startswith("firmware-")
+                        )
+                        if has_prerelease_dirs:
+                            logger.info(
+                                f"Total prereleases since {base_version}: {count}"
+                            )
             else:
                 logger.info("No latest release tag found. Skipping pre-release check.")
     elif not config.get("SELECTED_FIRMWARE_ASSETS", []):
