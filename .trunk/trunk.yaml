@@ -22,12 +22,12 @@ lint:
     - shfmt@3.6.0
     - gitleaks@8.28.0
     - codespell@2.4.1
-    - actionlint@1.7.7
+    - actionlint@1.7.8
     - bandit@1.8.6
     - black@25.9.0
-    - checkov@3.2.477
+    - checkov@3.2.483
     - git-diff-check
-    - isort@6.1.0
+    - isort@7.0.0
     - markdownlint@0.45.0
     - osv-scanner@2.2.3
     - prettier@3.6.2

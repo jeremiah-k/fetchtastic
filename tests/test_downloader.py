@@ -13,7 +13,7 @@ from fetchtastic import downloader
 from fetchtastic.device_hardware import DeviceHardwareManager
 from fetchtastic.downloader import (
     check_for_prereleases,
-    check_promoted_prereleases,
+    cleanup_superseded_prereleases,
     matches_extract_patterns,
 )
 from fetchtastic.utils import extract_base_name
@@ -649,8 +649,8 @@ def test_extract_files_matching_and_exclude(tmp_path):
     # No further changes; validates include/exclude and executable bit behavior
 
 
-def test_check_promoted_prereleases(tmp_path):
-    """Test the cleanup of pre-releases that have been promoted."""
+def test_cleanup_superseded_prereleases(tmp_path):
+    """Test the cleanup of superseded pre-releases."""
     download_dir = tmp_path
     firmware_dir = download_dir / "firmware"
     prerelease_dir = firmware_dir / "prerelease"
@@ -664,10 +664,35 @@ def test_check_promoted_prereleases(tmp_path):
     # The latest official release
     latest_release_tag = "v2.1.0"
 
-    downloader.check_promoted_prereleases(str(download_dir), latest_release_tag)
+    removed = downloader.cleanup_superseded_prereleases(
+        str(download_dir), latest_release_tag
+    )
+    assert removed is True
 
     assert not (prerelease_dir / "firmware-2.1.0").exists()
     assert (prerelease_dir / "firmware-2.2.0").exists()
+
+
+def test_cleanup_superseded_prereleases_handles_commit_suffix(tmp_path):
+    """Ensure prereleases sharing the release base version are cleaned up."""
+    download_dir = tmp_path
+    firmware_dir = download_dir / "firmware"
+    prerelease_dir = firmware_dir / "prerelease"
+    prerelease_dir.mkdir(parents=True)
+
+    promoted_dir = prerelease_dir / "firmware-2.7.12.fcb1d64"
+    promoted_dir.mkdir()
+
+    future_dir = prerelease_dir / "firmware-2.7.13.abcd123"
+    future_dir.mkdir()
+
+    removed = downloader.cleanup_superseded_prereleases(
+        str(download_dir), "v2.7.12.45f15b8"
+    )
+
+    assert removed is True
+    assert not promoted_dir.exists()
+    assert future_dir.exists()
 
 
 @patch("fetchtastic.downloader.menu_repo.fetch_repo_directories")
@@ -1920,13 +1945,11 @@ def test_check_wifi_connection(mock_popen, mocker):
 
 @patch("fetchtastic.downloader._get_latest_releases_data")
 @patch("fetchtastic.downloader.check_and_download")
-@patch("fetchtastic.downloader.check_promoted_prereleases")
+@patch("fetchtastic.downloader.cleanup_superseded_prereleases")
 @patch("fetchtastic.downloader.check_for_prereleases")
-@patch("os.path.exists", return_value=True)
 def test_process_firmware_downloads(
-    mock_exists,
     mock_check_for_prereleases,
-    mock_check_promoted,
+    mock_cleanup_superseded,
     mock_check_and_download,
     mock_get_releases,
 ):
@@ -1946,13 +1969,15 @@ def test_process_firmware_downloads(
         "firmware_dir": "/tmp/firmware",  # nosec B108
         "download_dir": "/tmp",  # nosec B108
     }
-    with patch("builtins.open", mock_open(read_data="v1.0")):
+    with patch("builtins.open", mock_open(read_data="v1.0")), patch(
+        "os.path.exists", return_value=True
+    ):
         mock_get_releases.return_value = [{"tag_name": "v1.0"}]
         mock_check_and_download.return_value = (["v1.0"], ["v1.0"], [])
-        mock_check_promoted.return_value = False
+        mock_cleanup_superseded.return_value = False
         mock_check_for_prereleases.return_value = (True, ["v1.1-pre"])
 
-        downloaded, new, failed, latest = downloader._process_firmware_downloads(
+        downloaded, _new, _failed, latest = downloader._process_firmware_downloads(
             config, paths
         )
 
@@ -4047,7 +4072,7 @@ def test_prerelease_functions_symlink_safety(tmp_path):
             not malicious_symlink.exists()
         ), "Malicious symlink should have been removed"
 
-    # Test 2: check_promoted_prereleases symlink safety
+    # Test 2: cleanup_superseded_prereleases symlink safety
     # First, recreate the malicious symlink for this test
     leftover = prerelease_dir / "firmware-1.1.0.fedcba"
     if leftover.exists():
@@ -4058,8 +4083,8 @@ def test_prerelease_functions_symlink_safety(tmp_path):
     malicious_symlink2 = prerelease_dir / "firmware-1.2.0"
     malicious_symlink2.symlink_to(external_target, target_is_directory=True)
 
-    # Also create a valid prerelease directory that should be promoted
-    valid_prerelease = prerelease_dir / "firmware-1.2.0.ba11da5"
+    # Also create a valid prerelease directory that should NOT be removed (different base version)
+    valid_prerelease = prerelease_dir / "firmware-1.3.0.ba11da5"
     valid_prerelease.mkdir()
     (valid_prerelease / "firmware.bin").write_bytes(b"valid_firmware_content")
 
@@ -4074,24 +4099,24 @@ def test_prerelease_functions_symlink_safety(tmp_path):
     assert malicious_symlink2.is_symlink()
     assert malicious_symlink2.exists()
 
-    # Call check_promoted_prereleases
-    check_promoted_prereleases(
+    # Call cleanup_superseded_prereleases
+    cleanup_superseded_prereleases(
         download_dir=str(download_dir), latest_release_tag="1.2.0"
     )
 
     # Assert the external target directory and its contents still exist
     assert (
         external_target.exists()
-    ), "External target directory was incorrectly deleted by check_promoted_prereleases"
+    ), "External target directory was incorrectly deleted by cleanup_superseded_prereleases"
     assert (
         important_file.exists()
-    ), "Critical file was deleted by check_promoted_prereleases"
+    ), "Critical file was deleted by cleanup_superseded_prereleases"
     assert (
         external_subdir.exists()
-    ), "External subdirectory was deleted by check_promoted_prereleases"
+    ), "External subdirectory was deleted by cleanup_superseded_prereleases"
     assert (
         sub_file.exists()
-    ), "Critical file in external subdirectory was deleted by check_promoted_prereleases"
+    ), "Critical file in external subdirectory was deleted by cleanup_superseded_prereleases"
     assert important_file.read_text() == "This should never be deleted"
     assert sub_file.read_text() == "Subdirectory data that must remain"
 
@@ -4099,6 +4124,8 @@ def test_prerelease_functions_symlink_safety(tmp_path):
     assert (
         not malicious_symlink2.exists()
     ), "Malicious symlink should have been removed by cleanup"
+    # Valid prerelease directory should still exist
+    assert valid_prerelease.exists()
 
 
 @pytest.mark.skipif(
@@ -4707,3 +4734,281 @@ def test_check_for_prereleases_boolean_semantics_no_new_downloads(
     assert versions == [
         "firmware-2.0.0-alpha1.abcdef"
     ]  # But existing prereleases are reported
+
+
+@patch("fetchtastic.downloader.download_file_with_retry")
+@patch("fetchtastic.downloader.menu_repo.fetch_directory_contents")
+@patch("fetchtastic.downloader.menu_repo.fetch_repo_directories")
+def test_check_for_prereleases_skips_same_base_version(
+    mock_fetch_dirs, mock_fetch_contents, mock_download, tmp_path
+):
+    """Ensure prereleases with same base version as release are skipped (only newer base versions included)."""
+    download_dir = tmp_path
+    prerelease_dir = download_dir / "firmware" / "prerelease"
+    prerelease_dir.mkdir(parents=True)
+
+    mock_fetch_dirs.return_value = [
+        "firmware-2.7.12.fcb1d64",
+        "firmware-2.7.13.abcd123",
+    ]
+
+    def _fetch_contents(name):
+        """
+        Return a mocked list of release asset dictionaries for the provided release name (used by tests).
+
+        Parameters:
+            name (str): Release tag or prerelease identifier to fetch assets for.
+
+        Returns:
+            list[dict]: List of asset dictionaries for the given release.
+        """
+        if name == "firmware-2.7.13.abcd123":
+            return [
+                {
+                    "name": "firmware-rak4631-2.7.13.abcd123.uf2",
+                    "download_url": "https://example.invalid/rak4631.uf2",
+                }
+            ]
+        if name == "firmware-2.7.12.fcb1d64":
+            pytest.fail(
+                "Should not fetch contents for prerelease matching release base version"
+            )
+        return []
+
+    mock_fetch_contents.side_effect = _fetch_contents
+
+    def _mock_download(_url, dest):
+        """
+        Create a dummy file containing fixed binary data at the given destination path.
+
+        Parameters:
+            _url (str): Ignored; kept for signature compatibility.
+            dest (str): Filesystem path where the dummy file will be created. Parent directories will be created if needed.
+
+        Returns:
+            bool: `True` if the file was written successfully, `False` otherwise.
+        """
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        with open(dest, "wb") as f:
+            f.write(b"data")
+        return True
+
+    mock_download.side_effect = _mock_download
+
+    found, versions = downloader.check_for_prereleases(
+        download_dir,
+        latest_release_tag="v2.7.12.45f15b8",
+        selected_patterns=["rak4631-"],
+        exclude_patterns=[],
+        device_manager=None,
+    )
+
+    assert found is True
+    # Only prereleases with newer base versions should be included
+    # firmware-2.7.12.fcb1d64 should be skipped (same base as released version 2.7.12)
+    # firmware-2.7.13.abcd123 should be included (newer base version)
+    assert versions == ["firmware-2.7.13.abcd123"]
+    assert not (prerelease_dir / "firmware-2.7.12.fcb1d64").exists()
+    assert (prerelease_dir / "firmware-2.7.13.abcd123").exists()
+    assert mock_download.call_count == 1
+
+
+class TestNormalizeVersion:
+    """Test cases for _normalize_version function."""
+
+    def test_normalize_version_none_input(self):
+        """Test that None input returns None."""
+        result = downloader._normalize_version(None)
+        assert result is None
+
+    def test_normalize_version_empty_string(self):
+        """Test that empty string returns None."""
+        result = downloader._normalize_version("")
+        assert result is None
+
+    def test_normalize_version_whitespace_only(self):
+        """Test that whitespace-only string returns None."""
+        result = downloader._normalize_version("   \t\n   ")
+        assert result is None
+
+    def test_normalize_version_valid_version(self):
+        """Test that valid version strings are parsed correctly."""
+        result = downloader._normalize_version("1.2.3")
+        assert result is not None
+        assert str(result) == "1.2.3"
+
+    def test_normalize_version_with_v_prefix(self):
+        """Test that 'v' prefix is stripped correctly."""
+        result = downloader._normalize_version("v1.2.3")
+        assert result is not None
+        assert str(result) == "1.2.3"
+
+    def test_normalize_version_with_capital_v_prefix(self):
+        """Test that 'V' prefix is stripped correctly."""
+        result = downloader._normalize_version("V1.2.3")
+        assert result is not None
+        assert str(result) == "1.2.3"
+
+    def test_normalize_version_prerelease_rc_with_dot(self):
+        """Test prerelease versions with rc and dot."""
+        result = downloader._normalize_version("1.2.3.rc1")
+        assert result is not None
+        assert str(result) == "1.2.3rc1"
+
+    def test_normalize_version_prerelease_rc_with_dash(self):
+        """Test prerelease versions with rc and dash."""
+        result = downloader._normalize_version("1.2.3-rc1")
+        assert result is not None
+        assert str(result) == "1.2.3rc1"
+
+    def test_normalize_version_prerelease_alpha(self):
+        """Test prerelease versions with alpha."""
+        result = downloader._normalize_version("1.2.3.alpha")
+        assert result is not None
+        assert str(result) == "1.2.3a0"
+
+    def test_normalize_version_prerelease_alpha_with_number(self):
+        """Test prerelease versions with alpha and number."""
+        result = downloader._normalize_version("1.2.3.alpha2")
+        assert result is not None
+        assert str(result) == "1.2.3a2"
+
+    def test_normalize_version_prerelease_beta(self):
+        """Test prerelease versions with beta."""
+        result = downloader._normalize_version("1.2.3.beta")
+        assert result is not None
+        assert str(result) == "1.2.3b0"
+
+    def test_normalize_version_prerelease_beta_with_number(self):
+        """Test prerelease versions with beta and number."""
+        result = downloader._normalize_version("1.2.3.beta3")
+        assert result is not None
+        assert str(result) == "1.2.3b3"
+
+    def test_normalize_version_prerelease_dev(self):
+        """Test prerelease versions with dev."""
+        result = downloader._normalize_version("1.2.3.dev")
+        assert result is not None
+        assert str(result) == "1.2.3.dev0"
+
+    def test_normalize_version_prerelease_b_short(self):
+        """Test prerelease versions with short 'b' notation."""
+        result = downloader._normalize_version("1.2.3.b1")
+        assert result is not None
+        assert str(result) == "1.2.3b1"
+
+    def test_normalize_version_hash_suffix(self):
+        """Test versions with hash suffix."""
+        result = downloader._normalize_version("1.2.3.abc123")
+        assert result is not None
+        assert str(result) == "1.2.3+abc123"
+
+    def test_normalize_version_hash_suffix_complex(self):
+        """Test versions with complex hash suffix."""
+        result = downloader._normalize_version("1.2.3.fcb1d64")
+        assert result is not None
+        assert str(result) == "1.2.3+fcb1d64"
+
+    def test_normalize_version_hash_suffix_with_dots(self):
+        """Test versions with hash suffix containing dots."""
+        result = downloader._normalize_version("1.2.3.45f15b8")
+        assert result is not None
+        assert str(result) == "1.2.3+45f15b8"
+
+    def test_normalize_version_invalid_prerelease_format(self):
+        """Test that invalid prerelease formats are handled as hash suffix."""
+        # "invalid" doesn't match prerelease regex, so it gets treated as hash suffix
+        result = downloader._normalize_version("1.2.3.invalid")
+        assert result is not None
+        assert str(result) == "1.2.3+invalid"
+
+    def test_normalize_version_invalid_hash_format(self):
+        """Test that invalid hash formats return None."""
+        # This should match the hash regex but fail to parse as a valid local version.
+        result = downloader._normalize_version("1.2.3.a..b")
+        assert result is None
+
+    def test_normalize_version_completely_invalid(self):
+        """Test that completely invalid versions return None."""
+        result = downloader._normalize_version("not-a-version")
+        assert result is None
+
+    def test_normalize_version_whitespace_handling(self):
+        """Test that whitespace is handled correctly."""
+        result = downloader._normalize_version("  v1.2.3  ")
+        assert result is not None
+        assert str(result) == "1.2.3"
+
+
+class TestGetReleaseTuple:
+    """Test cases for _get_release_tuple function."""
+
+    def test_get_release_tuple_none_input(self):
+        """Test that None input returns None."""
+        result = downloader._get_release_tuple(None)
+        assert result is None
+
+    def test_get_release_tuple_empty_string(self):
+        """Test that empty string returns None."""
+        result = downloader._get_release_tuple("")
+        assert result is None
+
+    def test_get_release_tuple_valid_version(self):
+        """Test that valid version returns release tuple."""
+        result = downloader._get_release_tuple("1.2.3")
+        assert result == (1, 2, 3)
+
+    def test_get_release_tuple_with_v_prefix(self):
+        """Test that version with v prefix returns release tuple."""
+        result = downloader._get_release_tuple("v1.2.3")
+        assert result == (1, 2, 3)
+
+    def test_get_release_tuple_major_only(self):
+        """Test that major-only version returns single-element tuple."""
+        result = downloader._get_release_tuple("1")
+        assert result == (1,)
+
+    def test_get_release_tuple_major_minor(self):
+        """Test that major.minor version returns two-element tuple."""
+        result = downloader._get_release_tuple("1.2")
+        assert result == (1, 2)
+
+    def test_get_release_tuple_prerelease_version(self):
+        """Test that prerelease version returns base release tuple."""
+        result = downloader._get_release_tuple("1.2.3rc1")
+        assert result == (1, 2, 3)
+
+    def test_get_release_tuple_hash_suffix_version(self):
+        """Test that hash suffix version returns base release tuple."""
+        result = downloader._get_release_tuple("1.2.3.abc123")
+        assert result == (1, 2, 3)
+
+    def test_get_release_tuple_complex_version(self):
+        """Test that complex version returns base release tuple."""
+        result = downloader._get_release_tuple("v1.2.3.45f15b8")
+        assert result == (1, 2, 3)
+
+    def test_get_release_tuple_normalized_version_with_more_parts(self):
+        """Test version with more than 3 parts."""
+        result = downloader._get_release_tuple("1.2.3.4.5")
+        assert result == (1, 2, 3, 4, 5)
+
+    def test_get_release_tuple_invalid_version_fallback(self):
+        """Test fallback parsing for invalid versions."""
+        result = downloader._get_release_tuple("v1.2.3.invalid")
+        assert result == (1, 2, 3)
+
+    def test_get_release_tuple_completely_invalid(self):
+        """Test that completely invalid versions return None."""
+        result = downloader._get_release_tuple("not-a-version")
+        assert result is None
+
+    def test_get_release_tuple_version_with_leading_v_only(self):
+        """Test version with only 'v' prefix."""
+        result = downloader._get_release_tuple("v1.2.3")
+        assert result == (1, 2, 3)
+
+    def test_get_release_tuple_whitespace_handling(self):
+        """Test that whitespace is handled correctly."""
+        result = downloader._get_release_tuple("  v1.2.3  ")
+        assert result == (1, 2, 3)
