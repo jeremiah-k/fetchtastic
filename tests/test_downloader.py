@@ -4754,6 +4754,18 @@ def test_check_for_prereleases_skips_same_base_version(
     ]
 
     def _fetch_contents(name):
+        """
+        Return a mocked list of release asset dictionaries for the provided release name (used by tests).
+        
+        Parameters:
+            name (str): Release tag or prerelease identifier to fetch assets for.
+        
+        Returns:
+            list[dict]: A list of asset dictionaries with keys like "name" and "download_url". Returns an empty list when no assets are mocked for the given name.
+        
+        Raises:
+            PytestFailure: Causes the test to fail via pytest.fail when called with the prerelease name "firmware-2.7.12.fcb1d64".
+        """
         if name == "firmware-2.7.13.abcd123":
             return [
                 {
@@ -4770,6 +4782,16 @@ def test_check_for_prereleases_skips_same_base_version(
     mock_fetch_contents.side_effect = _fetch_contents
 
     def _mock_download(_url, dest):
+        """
+        Create a dummy file containing fixed binary data at the given destination path.
+        
+        Parameters:
+            _url (str): Ignored; kept for signature compatibility.
+            dest (str): Filesystem path where the dummy file will be created. Parent directories will be created if needed.
+        
+        Returns:
+            bool: `True` if the file was written successfully, `False` otherwise.
+        """
         os.makedirs(os.path.dirname(dest), exist_ok=True)
         with open(dest, "wb") as f:
             f.write(b"data")
