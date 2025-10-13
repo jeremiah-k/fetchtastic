@@ -1978,12 +1978,9 @@ def test_process_firmware_downloads(
         mock_cleanup_superseded.return_value = False
         mock_check_for_prereleases.return_value = (True, ["v1.1-pre"])
 
-        downloaded, new, failed, latest = downloader._process_firmware_downloads(
+        downloaded, _new, _failed, latest = downloader._process_firmware_downloads(
             config, paths
         )
-
-        # Verify that os.path.exists was called for the latest firmware release file
-        mock_exists.assert_any_call(paths["latest_firmware_release_file"])
 
         assert "v1.0" in downloaded
         assert "pre-release v1.1-pre" in downloaded

@@ -21,8 +21,6 @@ from packaging.version import parse as parse_version
 # Try to import LegacyVersion for type annotations (available in older packaging versions)
 try:
     from packaging.version import LegacyVersion
-
-    HAS_LEGACY_VERSION = True
 except ImportError:
 
     class LegacyVersion:  # type: ignore
@@ -30,7 +28,6 @@ except ImportError:
 
         pass
 
-    HAS_LEGACY_VERSION = False
 
 from fetchtastic import menu_repo, setup_config
 from fetchtastic.constants import (
@@ -90,7 +87,7 @@ NON_ASCII_RX = re.compile(r"[^\x00-\x7F]+")
 
 # Compiled regular expressions for version parsing performance
 PRERELEASE_VERSION_RX = re.compile(
-    r"^(\d+(?:\.\d+)+)[.-](rc|dev|alpha|beta|b)\.?(\d*)$", re.IGNORECASE
+    r"^(\d+(?:\.\d+)*)[.-](rc|dev|alpha|beta|b)\.?(\d*)$", re.IGNORECASE
 )
 HASH_SUFFIX_VERSION_RX = re.compile(r"^(\d+(?:\.\d+)*)\.([A-Za-z0-9][A-Za-z0-9.-]*)$")
 VERSION_BASE_RX = re.compile(r"^(\d+(?:\.\d+)*)")
@@ -312,7 +309,7 @@ def cleanup_superseded_prereleases(
 
     # This function cleans up prereleases superseded by an official release.
     # If the latest release is itself a prerelease, no superseding has occurred.
-    if v_latest_norm and v_latest_norm.is_prerelease:
+    if getattr(v_latest_norm, "is_prerelease", False):
         logger.debug(
             "Skipping prerelease cleanup; latest release '%s' is a prerelease.",
             safe_latest_release_tag,
@@ -351,14 +348,15 @@ def cleanup_superseded_prereleases(
 
             # Determine if this prerelease should be cleaned up
             should_cleanup = False
-            cleanup_reason = None
+            cleanup_reason = ""
 
-            # Only use tuple comparison if latest release is not a prerelease
-            if (
+            can_compare_tuples = (
                 latest_release_tuple
                 and dir_release_tuple
-                and not (v_latest_norm and v_latest_norm.is_prerelease)
-            ):
+                and not getattr(v_latest_norm, "is_prerelease", False)
+            )
+
+            if can_compare_tuples:
                 if dir_release_tuple > latest_release_tuple:
                     logger.debug(
                         "Skipping prerelease %s; version is newer than latest release %s",
@@ -366,51 +364,28 @@ def cleanup_superseded_prereleases(
                         safe_latest_release_tag,
                     )
                     continue
-                elif dir_release_tuple <= latest_release_tuple:
-                    should_cleanup = True
-                    cleanup_reason = (
-                        "latest release %s is newer" % safe_latest_release_tag
-                    )
-            elif dir_version != latest_release_version:
+                # Prerelease is older or same version, so it's superseded.
+                should_cleanup = True
+                cleanup_reason = (
+                    "it is superseded by release %s" % safe_latest_release_tag
+                )
+            elif dir_version == latest_release_version:
+                # Fallback to exact string match if we can't compare tuples.
+                should_cleanup = True
+                cleanup_reason = (
+                    "it has the same version as release %s" % safe_latest_release_tag
+                )
+            else:
+                # Can't compare and versions are not identical, so we keep it to be safe.
                 continue
 
-            # Perform cleanup if determined necessary
             if should_cleanup:
                 logger.info(
-                    "Removing prerelease %s because %s",
-                    dir_name,
-                    cleanup_reason,
+                    "Removing prerelease %s because %s.", dir_name, cleanup_reason
                 )
                 if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
                     cleaned_up = True
                 continue
-
-            logger.info(
-                "Found pre-release %s that shares the base version with latest release %s",
-                dir_name,
-                safe_latest_release_tag,
-            )
-
-            # If this prerelease entry is a symlink, remove the link rather than traversing it
-            if os.path.islink(prerelease_path):
-                logger.info(
-                    "Removing symbolic link prerelease: %s (matches release %s)",
-                    dir_name,
-                    safe_latest_release_tag,
-                )
-                if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
-                    cleaned_up = True
-                continue
-            # Remove prerelease since official release with same base version exists
-            # Prereleases and official releases are created independently from the same commit
-            # but packaged differently, so we prefer the official release
-            logger.info(
-                "Removing pre-release %s since official release %s is available",
-                dir_name,
-                safe_latest_release_tag,
-            )
-            if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
-                cleaned_up = True
 
     # Reset tracking info if no prerelease directories exist
     if os.path.exists(prerelease_dir):
@@ -1218,7 +1193,7 @@ def check_for_prereleases(
             latest_release_tuple
             and dir_release_tuple
             and dir_release_tuple <= latest_release_tuple
-            and not (v_latest_norm and v_latest_norm.is_prerelease)
+            and not getattr(v_latest_norm, "is_prerelease", False)
         ):
             logger.debug(
                 "Skipping prerelease %s; version %s is not newer than latest release %s",
