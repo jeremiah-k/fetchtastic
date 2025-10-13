@@ -4742,7 +4742,7 @@ def test_check_for_prereleases_boolean_semantics_no_new_downloads(
 def test_check_for_prereleases_skips_same_base_version(
     mock_fetch_dirs, mock_fetch_contents, mock_download, tmp_path
 ):
-    """Ensure prereleases that share the release base version are ignored."""
+    """Ensure prereleases with same base version as release are skipped (only newer base versions included)."""
     download_dir = tmp_path
     prerelease_dir = download_dir / "firmware" / "prerelease"
     prerelease_dir.mkdir(parents=True)
@@ -4760,10 +4760,7 @@ def test_check_for_prereleases_skips_same_base_version(
             name (str): Release tag or prerelease identifier to fetch assets for.
 
         Returns:
-            list[dict]: A list of asset dictionaries with keys like "name" and "download_url". Returns an empty list when no assets are mocked for the given name.
-
-        Raises:
-            PytestFailure: Causes the test to fail via pytest.fail when called with the prerelease name "firmware-2.7.12.fcb1d64".
+            list[dict]: List of asset dictionaries for the given release.
         """
         if name == "firmware-2.7.13.abcd123":
             return [
@@ -4774,7 +4771,7 @@ def test_check_for_prereleases_skips_same_base_version(
             ]
         if name == "firmware-2.7.12.fcb1d64":
             pytest.fail(
-                "Should not fetch contents for prerelease matching release base"
+                "Should not fetch contents for prerelease matching release base version"
             )
         return []
 
@@ -4807,8 +4804,12 @@ def test_check_for_prereleases_skips_same_base_version(
     )
 
     assert found is True
+    # Only prereleases with newer base versions should be included
+    # firmware-2.7.12.fcb1d64 should be skipped (same base as released version 2.7.12)
+    # firmware-2.7.13.abcd123 should be included (newer base version)
     assert versions == ["firmware-2.7.13.abcd123"]
     assert not (prerelease_dir / "firmware-2.7.12.fcb1d64").exists()
+    assert (prerelease_dir / "firmware-2.7.13.abcd123").exists()
     assert mock_download.call_count == 1
 
 
