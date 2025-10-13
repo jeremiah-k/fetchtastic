@@ -22,11 +22,7 @@ from packaging.version import parse as parse_version
 try:
     from packaging.version import LegacyVersion
 except ImportError:
-
-    class LegacyVersion:  # type: ignore
-        """Placeholder for when LegacyVersion is not available."""
-
-        pass
+    LegacyVersion = type(None)  # type: ignore
 
 
 from fetchtastic import menu_repo, setup_config

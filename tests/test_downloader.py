@@ -682,7 +682,6 @@ def test_cleanup_superseded_prereleases_handles_commit_suffix(tmp_path):
 
     promoted_dir = prerelease_dir / "firmware-2.7.12.fcb1d64"
     promoted_dir.mkdir()
-    (promoted_dir / "firmware.bin").write_bytes(b"release-data")
 
     future_dir = prerelease_dir / "firmware-2.7.13.abcd123"
     future_dir.mkdir()
@@ -1948,9 +1947,7 @@ def test_check_wifi_connection(mock_popen, mocker):
 @patch("fetchtastic.downloader.check_and_download")
 @patch("fetchtastic.downloader.cleanup_superseded_prereleases")
 @patch("fetchtastic.downloader.check_for_prereleases")
-@patch("os.path.exists", return_value=True)
 def test_process_firmware_downloads(
-    mock_exists,
     mock_check_for_prereleases,
     mock_cleanup_superseded,
     mock_check_and_download,
@@ -1972,7 +1969,9 @@ def test_process_firmware_downloads(
         "firmware_dir": "/tmp/firmware",  # nosec B108
         "download_dir": "/tmp",  # nosec B108
     }
-    with patch("builtins.open", mock_open(read_data="v1.0")):
+    with patch("builtins.open", mock_open(read_data="v1.0")), patch(
+        "os.path.exists", return_value=True
+    ):
         mock_get_releases.return_value = [{"tag_name": "v1.0"}]
         mock_check_and_download.return_value = (["v1.0"], ["v1.0"], [])
         mock_cleanup_superseded.return_value = False
