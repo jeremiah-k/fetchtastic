@@ -367,13 +367,13 @@ def cleanup_superseded_prereleases(
                 # Prerelease is older or same version, so it's superseded.
                 should_cleanup = True
                 cleanup_reason = (
-                    "it is superseded by release %s" % safe_latest_release_tag
+                    f"it is superseded by release {safe_latest_release_tag}"
                 )
             elif dir_version == latest_release_version:
                 # Fallback to exact string match if we can't compare tuples.
                 should_cleanup = True
                 cleanup_reason = (
-                    "it has the same version as release %s" % safe_latest_release_tag
+                    f"it has the same version as release {safe_latest_release_tag}"
                 )
             else:
                 # Can't compare and versions are not identical, so we keep it to be safe.
@@ -390,11 +390,14 @@ def cleanup_superseded_prereleases(
     # Reset tracking info if no prerelease directories exist
     if os.path.exists(prerelease_dir):
         # Check if any prerelease directories remain
-        remaining_prereleases = any(
-            os.path.isdir(os.path.join(prerelease_dir, item))
-            for item in os.listdir(prerelease_dir)
-            if item.startswith("firmware-")
-        )
+        try:
+            remaining_prereleases = any(
+                os.path.isdir(os.path.join(prerelease_dir, item))
+                for item in os.listdir(prerelease_dir)
+                if item.startswith("firmware-")
+            )
+        except FileNotFoundError:
+            remaining_prereleases = False
         if not remaining_prereleases:
             # Remove tracking files since no prereleases remain
             json_tracking_file = os.path.join(

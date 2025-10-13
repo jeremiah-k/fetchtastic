@@ -650,7 +650,7 @@ def test_extract_files_matching_and_exclude(tmp_path):
 
 
 def test_cleanup_superseded_prereleases(tmp_path):
-    """Test the cleanup of pre-releases that have been promoted."""
+    """Test the cleanup of superseded pre-releases."""
     download_dir = tmp_path
     firmware_dir = download_dir / "firmware"
     prerelease_dir = firmware_dir / "prerelease"
