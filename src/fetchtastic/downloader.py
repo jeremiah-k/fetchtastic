@@ -98,15 +98,15 @@ def _normalize_version(
 ) -> Optional[Union[Version, LegacyVersion]]:
     """
     Normalize a version string into a packaging `Version` object when possible.
-    
+
     Attempts to coerce common repository-style forms into PEP 440-compatible versions:
     strips a leading "v", recognizes common prerelease markers (e.g. "alpha"/"beta" and numeric fragments),
     and converts trailing commit/hash-like suffixes into local version identifiers. Returns None when the
     input is empty, None, or cannot be parsed into a Version.
-    
+
     Parameters:
         version (Optional[str]): A raw version string (may include leading "v", prerelease words, or hash suffixes).
-    
+
     Returns:
         Optional[Union[Version, LegacyVersion]]: A parsed `Version` / `LegacyVersion` if parsing succeeds, otherwise `None`.
     """
@@ -154,10 +154,10 @@ def _normalize_version(
 def _get_release_tuple(version: Optional[str]) -> Optional[tuple[int, ...]]:
     """
     Get the numeric release tuple (major, minor, patch, ...) from a version string.
-    
+
     Parameters:
         version (Optional[str]): Version string to parse (may include a leading "v").
-    
+
     Returns:
         Optional[tuple[int, ...]]: A tuple of integer release components (e.g., (1, 2, 3)) when the version can be interpreted as a numeric release, or `None` if the input is empty or cannot be parsed.
     """
@@ -187,12 +187,12 @@ def _get_release_tuple(version: Optional[str]) -> Optional[tuple[int, ...]]:
 def _summarise_release_scan(kind: str, total_found: int, keep_limit: int) -> str:
     """
     Create a concise log message describing how many releases will be scanned.
-    
+
     Parameters:
         kind (str): Type of releases (e.g., "firmware" or "apk").
         total_found (int): Total number of releases discovered.
         keep_limit (int): Maximum number of newest releases to scan/keep.
-    
+
     Returns:
         str: A human-readable message like "Found <total_found> <kind> releases; scanning newest <scan_count>"
              with an appended " (keep limit <keep_limit>)" when the keep limit exceeds the scan count.
@@ -440,12 +440,12 @@ def _atomic_write(
 ) -> bool:
     """
     Write text to a file atomically by writing to a temporary file in the same directory and replacing the target on success.
-    
+
     Parameters:
         file_path (str): Destination path to write.
         writer_func (Callable[[IO[str]], None]): Callable that receives an open text file-like object (UTF-8) and writes the desired content to it.
         suffix (str): Suffix to use for the temporary file (for example, ".json" or ".txt").
-    
+
     Returns:
         bool: `True` if the content was written and the temporary file atomically replaced the target; `False` otherwise.
     """
@@ -1105,16 +1105,16 @@ def check_for_prereleases(
 ):
     """
     Discover prerelease firmware that are newer than the provided official release tag and download assets matching the given selection patterns into download_dir/firmware/prerelease.
-    
+
     If latest_release_tag is unsafe (fails sanitization) the call is a no-op and returns (False, []). The function also updates local prerelease tracking and prunes older prerelease directories as part of maintaining the prerelease download area.
-    
+
     Parameters:
         download_dir (str): Base directory under which prerelease assets are stored.
         latest_release_tag (str): Official release tag used as the cutoff; prereleases considered must be newer than this tag.
         selected_patterns (Iterable[str]): Patterns used to select which prerelease assets to download.
         exclude_patterns (Iterable[str] | None): Optional patterns to exclude assets from selection.
         device_manager: Optional device manager used for device-specific pattern matching (omitted from detailed docs as a common service).
-    
+
     Returns:
         tuple[bool, list[str]]: (downloaded, versions)
             - downloaded: `True` if at least one prerelease asset was downloaded during this run, `False` otherwise.
@@ -1772,15 +1772,8 @@ def _process_firmware_downloads(
                     count = tracking_info.get("prerelease_count", 0)
                     base_version = tracking_info.get("release", "unknown")
                     # Only show count if there are actually prerelease directories present
-                    if count > 0 and os.path.exists(prerelease_dir):
-                        # Check if there are actual prerelease directories (not just tracking files)
-                        has_prerelease_dirs = bool(
-                            _get_existing_prerelease_dirs(prerelease_dir)
-                        )
-                        if has_prerelease_dirs:
-                            logger.info(
-                                f"Total prereleases since {base_version}: {count}"
-                            )
+                    if count > 0 and _get_existing_prerelease_dirs(prerelease_dir):
+                        logger.info(f"Total prereleases since {base_version}: {count}")
             else:
                 logger.info("No latest release tag found. Skipping pre-release check.")
     elif not config.get("SELECTED_FIRMWARE_ASSETS", []):
