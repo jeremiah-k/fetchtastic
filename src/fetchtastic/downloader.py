@@ -97,10 +97,18 @@ def _normalize_version(
     version: Optional[str],
 ) -> Optional[Union[Version, LegacyVersion]]:
     """
-    Normalize a version string to a packaging Version object when possible.
-
-    Applies the same coercions used by compare_versions so that callers can
-    make consistent decisions about ordering and base releases.
+    Normalize a version string into a packaging `Version` object when possible.
+    
+    Attempts to coerce common repository-style forms into PEP 440-compatible versions:
+    strips a leading "v", recognizes common prerelease markers (e.g. "alpha"/"beta" and numeric fragments),
+    and converts trailing commit/hash-like suffixes into local version identifiers. Returns None when the
+    input is empty, None, or cannot be parsed into a Version.
+    
+    Parameters:
+        version (Optional[str]): A raw version string (may include leading "v", prerelease words, or hash suffixes).
+    
+    Returns:
+        Optional[Union[Version, LegacyVersion]]: A parsed `Version` / `LegacyVersion` if parsing succeeds, otherwise `None`.
     """
     if version is None:
         return None
@@ -145,10 +153,13 @@ def _normalize_version(
 
 def _get_release_tuple(version: Optional[str]) -> Optional[tuple[int, ...]]:
     """
-    Return the numeric release tuple (major, minor, patch, ...) for a version string.
-
-    Falls back to a simple numeric extraction when the version cannot be coerced
-    into a packaging Version.
+    Get the numeric release tuple (major, minor, patch, ...) from a version string.
+    
+    Parameters:
+        version (Optional[str]): Version string to parse (may include a leading "v").
+    
+    Returns:
+        Optional[tuple[int, ...]]: A tuple of integer release components (e.g., (1, 2, 3)) when the version can be interpreted as a numeric release, or `None` if the input is empty or cannot be parsed.
     """
     if version is None:
         return None
@@ -174,7 +185,18 @@ def _get_release_tuple(version: Optional[str]) -> Optional[tuple[int, ...]]:
 
 
 def _summarise_release_scan(kind: str, total_found: int, keep_limit: int) -> str:
-    """Return a concise log message describing how many releases will be scanned."""
+    """
+    Create a concise log message describing how many releases will be scanned.
+    
+    Parameters:
+        kind (str): Type of releases (e.g., "firmware" or "apk").
+        total_found (int): Total number of releases discovered.
+        keep_limit (int): Maximum number of newest releases to scan/keep.
+    
+    Returns:
+        str: A human-readable message like "Found <total_found> <kind> releases; scanning newest <scan_count>"
+             with an appended " (keep limit <keep_limit>)" when the keep limit exceeds the scan count.
+    """
 
     scan_count = min(total_found, keep_limit)
     message = f"Found {total_found} {kind} releases; scanning newest {scan_count}"
@@ -417,20 +439,15 @@ def _atomic_write(
     file_path: str, writer_func: Callable[[IO[str]], None], suffix: str
 ) -> bool:
     """
-    Atomically write text to a target file using a temporary file and a caller-supplied writer.
-
-    Creates a temporary file in the same directory as file_path, calls writer_func(temp_file)
-    to write UTF-8 text content, then atomically replaces the target with the temp file
-    (using os.replace). Ensures the temp file is removed on failure.
-
+    Write text to a file atomically by writing to a temporary file in the same directory and replacing the target on success.
+    
     Parameters:
-        file_path (str): Final destination path.
-        writer_func (Callable[[IO[str]], None]): Function that writes text to the provided
-            file-like object (opened for writing, UTF-8).
-        suffix (str): Suffix to use for the temporary file (e.g., ".json", ".txt").
-
+        file_path (str): Destination path to write.
+        writer_func (Callable[[IO[str]], None]): Callable that receives an open text file-like object (UTF-8) and writes the desired content to it.
+        suffix (str): Suffix to use for the temporary file (for example, ".json" or ".txt").
+    
     Returns:
-        bool: True if the write and atomic replace succeeded; False on any failure (no exceptions propagated).
+        bool: `True` if the content was written and the temporary file atomically replaced the target; `False` otherwise.
     """
     try:
         temp_fd, temp_path = tempfile.mkstemp(
@@ -1087,21 +1104,21 @@ def check_for_prereleases(
     device_manager=None,
 ):
     """
-    Discover and mirror the newest prerelease firmware (newer than the provided official release tag) and download any matching assets.
-
-    Keeps only the newest prerelease directory locally (older prerelease directories and stray files are removed or cleaned). Files are downloaded into download_dir/firmware/prerelease/<prerelease-dir>. The function sanitizes the provided latest_release_tag; if the tag is unsafe the call is a no-op and returns (False, []).
-
+    Discover prerelease firmware that are newer than the provided official release tag and download assets matching the given selection patterns into download_dir/firmware/prerelease.
+    
+    If latest_release_tag is unsafe (fails sanitization) the call is a no-op and returns (False, []). The function also updates local prerelease tracking and prunes older prerelease directories as part of maintaining the prerelease download area.
+    
     Parameters:
-        download_dir (str): Base download directory where prerelease subdirectory is located.
-        latest_release_tag (str): Official release tag used as the cutoff; prereleases must be newer than this.
-        selected_patterns (Iterable[str]): Asset selection patterns; matching is performed with the same pattern rules used elsewhere in the module.
-        exclude_patterns (Iterable[str] | None): Optional list of fnmatch-style patterns to exclude.
-        device_manager: Optional device manager used to evaluate device-specific patterns (omitted from detailed docs as it is a common service).
-
+        download_dir (str): Base directory under which prerelease assets are stored.
+        latest_release_tag (str): Official release tag used as the cutoff; prereleases considered must be newer than this tag.
+        selected_patterns (Iterable[str]): Patterns used to select which prerelease assets to download.
+        exclude_patterns (Iterable[str] | None): Optional patterns to exclude assets from selection.
+        device_manager: Optional device manager used for device-specific pattern matching (omitted from detailed docs as a common service).
+    
     Returns:
         tuple[bool, list[str]]: (downloaded, versions)
-            - downloaded: True if at least one prerelease asset was downloaded during this run.
-            - versions: List of prerelease directory names that were processed or tracked (empty if none).
+            - downloaded: `True` if at least one prerelease asset was downloaded during this run, `False` otherwise.
+            - versions: List of prerelease directory names that were downloaded or tracked; empty if none.
     """
 
     raw_latest_release_tag = latest_release_tag
