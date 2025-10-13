@@ -390,14 +390,7 @@ def cleanup_superseded_prereleases(
     # Reset tracking info if no prerelease directories exist
     if os.path.exists(prerelease_dir):
         # Check if any prerelease directories remain
-        try:
-            remaining_prereleases = any(
-                os.path.isdir(os.path.join(prerelease_dir, item))
-                for item in os.listdir(prerelease_dir)
-                if item.startswith("firmware-")
-            )
-        except FileNotFoundError:
-            remaining_prereleases = False
+        remaining_prereleases = bool(_get_existing_prerelease_dirs(prerelease_dir))
         if not remaining_prereleases:
             # Remove tracking files since no prereleases remain
             json_tracking_file = os.path.join(
@@ -1764,15 +1757,9 @@ def _process_firmware_downloads(
                     # Only show count if there are actually prerelease directories present
                     if count > 0 and os.path.exists(prerelease_dir):
                         # Check if there are actual prerelease directories (not just tracking files)
-                        try:
-                            has_prerelease_dirs = any(
-                                os.path.isdir(os.path.join(prerelease_dir, item))
-                                for item in os.listdir(prerelease_dir)
-                                if item.startswith("firmware-")
-                            )
-                        except FileNotFoundError:
-                            # Directory was removed between exists check and listdir call
-                            has_prerelease_dirs = False
+                        has_prerelease_dirs = bool(
+                            _get_existing_prerelease_dirs(prerelease_dir)
+                        )
                         if has_prerelease_dirs:
                             logger.info(
                                 f"Total prereleases since {base_version}: {count}"
