@@ -738,6 +738,15 @@ def _get_existing_prerelease_dirs(prerelease_dir: str) -> list[str]:
     return entries
 
 
+def _prune_old_prereleases(prerelease_dir: str, newest_repo_prerelease: str) -> None:
+    """Remove old prerelease directories, keeping only the newest one."""
+    for dir_name in _get_existing_prerelease_dirs(prerelease_dir):
+        if dir_name != newest_repo_prerelease:
+            dir_path = os.path.join(prerelease_dir, dir_name)
+            _safe_rmtree(dir_path, prerelease_dir, dir_name)
+            logger.info(f"Removed superseded prerelease directory: {dir_name}")
+
+
 def _get_prerelease_patterns(config: dict) -> list[str]:
     """
     Return the list of file-selection patterns used for prerelease assets.
@@ -1309,11 +1318,7 @@ def check_for_prereleases(
             prerelease_dir, latest_release_tag, tracking_targets
         )
         # Prune superseded prerelease directories, keep only newest
-        for dir_name in existing_prerelease_dirs:
-            if dir_name != newest_repo_prerelease:
-                dir_path = os.path.join(prerelease_dir, dir_name)
-                _safe_rmtree(dir_path, prerelease_dir, dir_name)
-                logger.info(f"Removed superseded prerelease directory: {dir_name}")
+        _prune_old_prereleases(prerelease_dir, newest_repo_prerelease)
         return False, [newest_repo_prerelease]
 
     # Track all repo prereleases, but only download the newest
@@ -1413,12 +1418,7 @@ def check_for_prereleases(
         logger.info(f"Downloaded {len(downloaded_files)} new pre-release files.")
 
         # Clean up old prerelease directories AFTER successful download
-        # Remove any existing prerelease directories that are not the one we just downloaded
-        for dir_name in _get_existing_prerelease_dirs(prerelease_dir):
-            if dir_name != newest_repo_prerelease:
-                dir_path = os.path.join(prerelease_dir, dir_name)
-                _safe_rmtree(dir_path, prerelease_dir, dir_name)
-                logger.info(f"Removed superseded prerelease directory: {dir_name}")
+        _prune_old_prereleases(prerelease_dir, newest_repo_prerelease)
 
         files_by_dir: Dict[str, List[str]] = defaultdict(list)
         for path in downloaded_files:
@@ -1429,25 +1429,20 @@ def check_for_prereleases(
             logger.info(f"Pre-release {version}: {len(files)} new file(s) downloaded")
             downloaded_versions.append(version)
 
-    if tracking_targets:
-        prerelease_number = batch_update_prerelease_tracking(
-            prerelease_dir, latest_release_tag, tracking_targets
+    prerelease_number = batch_update_prerelease_tracking(
+        prerelease_dir, latest_release_tag, tracking_targets
+    )
+    tracked_label = tracking_targets[0]
+    if downloaded_files:
+        logger.info(
+            f"Downloaded prereleases tracked up to #{prerelease_number}: {tracked_label}"
         )
-        tracked_label = tracking_targets[0]
-        if downloaded_files:
-            logger.info(
-                f"Downloaded prereleases tracked up to #{prerelease_number}: {tracked_label}"
-            )
-        else:
-            logger.info(
-                f"Tracked prereleases up to #{prerelease_number}: {tracked_label}"
-            )
+    else:
+        logger.info(f"Tracked prereleases up to #{prerelease_number}: {tracked_label}")
 
     if downloaded_files:
         return True, downloaded_versions
-    if tracking_targets:
-        return False, tracking_targets
-    return False, []
+    return False, tracking_targets
 
 
 # Use the version check function from setup_config
