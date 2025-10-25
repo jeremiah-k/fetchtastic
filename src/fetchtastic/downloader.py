@@ -1309,47 +1309,44 @@ def check_for_prereleases(
                         logger.debug(
                             f"Pre-release file already present and unchanged: {file_name}"
                         )
-                        os.remove(temp_path)  # Clean up temp file
-                        continue  # No change, so skip to next file
+                        continue  # No change, so skip to next file. Finally will clean up.
 
                     # If we are here, either the file is new or it has changed
                     # Move the new file into place, overwriting the old one
                     shutil.move(temp_path, file_path)
-                    logger.debug(f"Downloaded new/updated pre-release file: {file_name}")
+                    temp_path = (
+                        None  # Prevent finally block from deleting the moved file
+                    )
+                    logger.debug(
+                        f"Downloaded new/updated pre-release file: {file_name}"
+                    )
 
                     if file_name.lower().endswith(SHELL_SCRIPT_EXTENSION.lower()):
                         try:
                             os.chmod(file_path, EXECUTABLE_PERMISSIONS)
-                            logger.debug(
-                                f"Set executable permissions for {file_name}"
-                            )
+                            logger.debug(f"Set executable permissions for {file_name}")
                         except OSError as e:
                             logger.warning(
                                 f"Error setting permissions for {file_name}: {e}"
                             )
 
                     downloaded_files.append(file_path)
-                else:
-                    os.remove(temp_path)  # Clean up temp file on download failure
 
             except requests.exceptions.RequestException as e:
                 logger.error(
                     f"Network error downloading pre-release file {file_name} from {download_url}: {e}"
                 )
-                if os.path.exists(temp_path):
-                    os.remove(temp_path)
             except IOError as e:
                 logger.error(
                     f"File I/O error with pre-release file {file_name} at {file_path}: {e}"
                 )
-                if os.path.exists(temp_path):
-                    os.remove(temp_path)
             except Exception as e:
                 logger.error(
                     f"Unexpected error with pre-release file {file_name}: {e}",
                     exc_info=True,
                 )
-                if os.path.exists(temp_path):
+            finally:
+                if temp_path and os.path.exists(temp_path):
                     os.remove(temp_path)
 
     downloaded_versions: List[str] = []
