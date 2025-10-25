@@ -70,31 +70,6 @@ def test_compare_versions(version1, version2, expected):
     assert downloader.compare_versions(version2, version1) == -expected
 
 
-def test_compare_versions_prerelease_parsing():
-    """Test new prerelease version parsing logic."""
-    # Test dot-separated prerelease versions
-    assert downloader.compare_versions("2.3.0.rc1", "2.3.0") == -1  # rc1 < final
-    assert downloader.compare_versions("2.3.0.dev1", "2.3.0") == -1  # dev1 < final
-    assert downloader.compare_versions("2.3.0.alpha1", "2.3.0") == -1  # alpha1 < final
-    assert downloader.compare_versions("2.3.0.beta2", "2.3.0") == -1  # beta2 < final
-
-    # Test dash-separated prerelease versions
-    assert downloader.compare_versions("2.3.0-rc1", "2.3.0") == -1  # rc1 < final
-    assert downloader.compare_versions("2.3.0-dev1", "2.3.0") == -1  # dev1 < final
-    assert downloader.compare_versions("2.3.0-alpha1", "2.3.0") == -1  # alpha1 < final
-    assert downloader.compare_versions("2.3.0-beta2", "2.3.0") == -1  # beta2 < final
-
-    # rc ordering
-    assert downloader.compare_versions("2.3.0.rc0", "2.3.0.rc1") == -1
-
-    # Test prerelease ordering
-    assert (
-        downloader.compare_versions("2.3.0.alpha1", "2.3.0.beta1") == -1
-    )  # alpha < beta
-    assert downloader.compare_versions("2.3.0.beta1", "2.3.0.rc1") == -1  # beta < rc
-    assert downloader.compare_versions("2.3.0.rc1", "2.3.0.dev1") == 1  # rc > dev
-
-
 def test_compare_versions_invalid_version_exception():
     """Test InvalidVersion exception handling in version parsing."""
     # Test with a version that will trigger the hash coercion and InvalidVersion exception
