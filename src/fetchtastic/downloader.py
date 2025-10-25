@@ -1064,34 +1064,6 @@ def _prepare_for_redownload(file_path: str) -> bool:
         return True
 
 
-def _prerelease_needs_download(file_path: str) -> bool:
-    """
-    Determine whether a prerelease file at `file_path` needs to be (re)downloaded.
-
-    Checks for existence and verifies integrity. Returns True when the file is missing
-    or fails integrity validation and has been prepared for re-download. If integrity
-    fails but preparation for re-download does not succeed, returns False.
-
-    Parameters:
-        file_path (str): Path to the local prerelease asset file.
-
-    Returns:
-        bool: True if the caller should download the file; False otherwise.
-    """
-    if not os.path.exists(file_path):
-        return True
-
-    if verify_file_integrity(file_path):
-        return False
-
-    logger.warning(
-        f"Existing prerelease file {os.path.basename(file_path)} failed integrity check; re-downloading"
-    )
-    if not _prepare_for_redownload(file_path):
-        return False
-    return True
-
-
 def check_for_prereleases(
     download_dir,
     latest_release_tag,
@@ -1324,44 +1296,61 @@ def check_for_prereleases(
                 )
                 continue
 
-            if not _prerelease_needs_download(file_path):
-                logger.debug(
-                    f"Pre-release file already present and verified: {file_name}"
-                )
-                continue
+            # Download to a temporary file and compare hashes
+            with tempfile.NamedTemporaryFile(delete=False) as temp_f:
+                temp_path = temp_f.name
 
             try:
-                logger.debug(
-                    f"Downloading pre-release file: {file_name} from {download_url}"
-                )
-                if not download_file_with_retry(download_url, file_path):
-                    continue
-
-                if file_name.lower().endswith(SHELL_SCRIPT_EXTENSION.lower()):
-                    try:
-                        os.chmod(file_path, EXECUTABLE_PERMISSIONS)
+                if download_file_with_retry(download_url, temp_path):
+                    # Compare hash with existing file, if it exists
+                    if os.path.exists(file_path) and compare_file_hashes(
+                        file_path, temp_path
+                    ):
                         logger.debug(
-                            f"Set executable permissions for prerelease file {file_name}"
+                            f"Pre-release file already present and unchanged: {file_name}"
                         )
-                    except OSError as e:
-                        logger.warning(
-                            f"Error setting executable permissions for {file_name}: {e}"
-                        )
+                        os.remove(temp_path)  # Clean up temp file
+                        continue  # No change, so skip to next file
 
-                downloaded_files.append(file_path)
+                    # If we are here, either the file is new or it has changed
+                    # Move the new file into place, overwriting the old one
+                    shutil.move(temp_path, file_path)
+                    logger.debug(f"Downloaded new/updated pre-release file: {file_name}")
+
+                    if file_name.lower().endswith(SHELL_SCRIPT_EXTENSION.lower()):
+                        try:
+                            os.chmod(file_path, EXECUTABLE_PERMISSIONS)
+                            logger.debug(
+                                f"Set executable permissions for {file_name}"
+                            )
+                        except OSError as e:
+                            logger.warning(
+                                f"Error setting permissions for {file_name}: {e}"
+                            )
+
+                    downloaded_files.append(file_path)
+                else:
+                    os.remove(temp_path)  # Clean up temp file on download failure
+
             except requests.exceptions.RequestException as e:
                 logger.error(
                     f"Network error downloading pre-release file {file_name} from {download_url}: {e}"
                 )
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
             except IOError as e:
                 logger.error(
-                    f"File I/O error while downloading pre-release file {file_name} to {file_path}: {e}"
+                    f"File I/O error with pre-release file {file_name} at {file_path}: {e}"
                 )
-            except Exception as e:  # noqa: BLE001 - unexpected errors
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+            except Exception as e:
                 logger.error(
-                    f"Unexpected error downloading pre-release file {file_name}: {e}",
+                    f"Unexpected error with pre-release file {file_name}: {e}",
                     exc_info=True,
                 )
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
 
     downloaded_versions: List[str] = []
     if downloaded_files:
