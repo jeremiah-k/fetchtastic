@@ -1340,7 +1340,7 @@ def check_for_prereleases(
                 logger.error(
                     f"File I/O error with pre-release file {file_name} at {file_path}: {e}"
                 )
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - unexpected errors
                 logger.error(
                     f"Unexpected error with pre-release file {file_name}: {e}",
                     exc_info=True,
