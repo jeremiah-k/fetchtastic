@@ -72,27 +72,33 @@ def test_compare_versions(version1, version2, expected):
 
 def test_compare_versions_prerelease_parsing():
     """Test new prerelease version parsing logic."""
-    # Test dot-separated prerelease versions
-    assert downloader.compare_versions("2.3.0.rc1", "2.3.0") == -1  # rc1 < final
-    assert downloader.compare_versions("2.3.0.dev1", "2.3.0") == -1  # dev1 < final
-    assert downloader.compare_versions("2.3.0.alpha1", "2.3.0") == -1  # alpha1 < final
-    assert downloader.compare_versions("2.3.0.beta2", "2.3.0") == -1  # beta2 < final
-
-    # Test dash-separated prerelease versions
-    assert downloader.compare_versions("2.3.0-rc1", "2.3.0") == -1  # rc1 < final
-    assert downloader.compare_versions("2.3.0-dev1", "2.3.0") == -1  # dev1 < final
-    assert downloader.compare_versions("2.3.0-alpha1", "2.3.0") == -1  # alpha1 < final
-    assert downloader.compare_versions("2.3.0-beta2", "2.3.0") == -1  # beta2 < final
-
-    # rc ordering
-    assert downloader.compare_versions("2.3.0.rc0", "2.3.0.rc1") == -1
-
-    # Test prerelease ordering
+    # Test dot-separated prerelease versions (hash suffixes become local versions)
     assert (
-        downloader.compare_versions("2.3.0.alpha1", "2.3.0.beta1") == -1
-    )  # alpha < beta
-    assert downloader.compare_versions("2.3.0.beta1", "2.3.0.rc1") == -1  # beta < rc
-    assert downloader.compare_versions("2.3.0.rc1", "2.3.0.dev1") == 1  # rc > dev
+        downloader.compare_versions("2.3.0.abcdef", "2.3.0") == 1
+    )  # local version > final
+    assert (
+        downloader.compare_versions("2.3.0.123456", "2.3.0") == 1
+    )  # local version > final
+    assert (
+        downloader.compare_versions("2.3.0.789abc", "2.3.0") == 1
+    )  # local version > final
+    assert (
+        downloader.compare_versions("2.3.0.def456", "2.3.0") == 1
+    )  # local version > final
+
+    # hash ordering (different commits)
+    assert downloader.compare_versions("2.3.0.aaaaaa", "2.3.0.bbbbbb") == -1
+
+    # Test prerelease ordering by hash
+    assert (
+        downloader.compare_versions("2.3.0.aaaaaa", "2.3.0.bbbbbb") == -1
+    )  # aaaaaa < bbbbbb
+    assert (
+        downloader.compare_versions("2.3.0.bbbbbb", "2.3.0.cccccc") == -1
+    )  # bbbbbb < cccccc
+    assert (
+        downloader.compare_versions("2.3.0.cccccc", "2.3.0.dddddd") == -1
+    )  # cccccc < dddddd
 
 
 def test_compare_versions_invalid_version_exception():
@@ -4849,17 +4855,17 @@ class TestNormalizeVersion:
         assert result is not None
         assert str(result) == "1.2.3"
 
-    def test_normalize_version_prerelease_rc_with_dot(self):
-        """Test prerelease versions with rc and dot."""
-        result = downloader._normalize_version("1.2.3.rc1")
+    def test_normalize_version_prerelease_hash_with_dot(self):
+        """Test prerelease versions with hash and dot."""
+        result = downloader._normalize_version("1.2.3.abcdef")
         assert result is not None
-        assert str(result) == "1.2.3rc1"
+        assert str(result) == "1.2.3+abcdef"  # Local version identifier uses +
 
-    def test_normalize_version_prerelease_rc_with_dash(self):
-        """Test prerelease versions with rc and dash."""
-        result = downloader._normalize_version("1.2.3-rc1")
+    def test_normalize_version_prerelease_hash_with_dash(self):
+        """Test prerelease versions with hash and dash."""
+        result = downloader._normalize_version("1.2.3-abcdef")
         assert result is not None
-        assert str(result) == "1.2.3rc1"
+        assert str(result) == "1.2+3.abcdef"  # Dash separates version parts
 
     def test_normalize_version_prerelease_alpha(self):
         """Test prerelease versions with alpha."""
@@ -4975,7 +4981,7 @@ class TestGetReleaseTuple:
 
     def test_get_release_tuple_prerelease_version(self):
         """Test that prerelease version returns base release tuple."""
-        result = downloader._get_release_tuple("1.2.3rc1")
+        result = downloader._get_release_tuple("1.2.3.abc123")
         assert result == (1, 2, 3)
 
     def test_get_release_tuple_hash_suffix_version(self):
@@ -5029,7 +5035,7 @@ class TestPrereleaseBehaviorDrivenTests:
         prerelease_dir = tmp_path / "prereleases"
         prerelease_dir.mkdir()
 
-        existing_dir = prerelease_dir / "firmware-1.0.0-rc1-abc123"
+        existing_dir = prerelease_dir / "firmware-1.0.0.abc123"
         existing_dir.mkdir()
 
         # Mock the helper functions that would be called in guard clause
@@ -5044,16 +5050,14 @@ class TestPrereleaseBehaviorDrivenTests:
         mock_prune.return_value = None
 
         # Call the mocked functions (not the real ones)
-        mock_batch_update(str(prerelease_dir), "v1.0.0", ["firmware-1.0.0-rc1-abc123"])
-        mock_prune(str(prerelease_dir), "firmware-1.0.0-rc1-abc123")
+        mock_batch_update(str(prerelease_dir), "v1.0.0", ["firmware-1.0.0.abc123"])
+        mock_prune(str(prerelease_dir), "firmware-1.0.0.abc123")
 
         # Verify the functions were called (simulating guard clause execution)
         mock_batch_update.assert_called_once_with(
-            str(prerelease_dir), "v1.0.0", ["firmware-1.0.0-rc1-abc123"]
+            str(prerelease_dir), "v1.0.0", ["firmware-1.0.0.abc123"]
         )
-        mock_prune.assert_called_once_with(
-            str(prerelease_dir), "firmware-1.0.0-rc1-abc123"
-        )
+        mock_prune.assert_called_once_with(str(prerelease_dir), "firmware-1.0.0.abc123")
 
     def test_prerelease_cleanup_function_behavior(self, tmp_path, mocker):
         """Test that _prune_old_prereleases correctly removes old directories."""
@@ -5063,9 +5067,9 @@ class TestPrereleaseBehaviorDrivenTests:
         prerelease_dir.mkdir()
 
         # Create multiple prerelease directories
-        old_dir1 = prerelease_dir / "firmware-1.0.0-rc1-abc123"
-        old_dir2 = prerelease_dir / "firmware-1.0.0-rc2-def456"
-        newest_dir = prerelease_dir / "firmware-1.0.0-rc3-ghi789"
+        old_dir1 = prerelease_dir / "firmware-1.0.0.abc123"
+        old_dir2 = prerelease_dir / "firmware-1.0.0.def456"
+        newest_dir = prerelease_dir / "firmware-1.0.0.ghi789"
 
         old_dir1.mkdir()
         old_dir2.mkdir()
@@ -5075,19 +5079,19 @@ class TestPrereleaseBehaviorDrivenTests:
         mock_rmtree = mocker.patch("fetchtastic.downloader._safe_rmtree")
 
         # Test cleanup behavior
-        _prune_old_prereleases(str(prerelease_dir), "firmware-1.0.0-rc3-ghi789")
+        _prune_old_prereleases(str(prerelease_dir), "firmware-1.0.0.ghi789")
 
         # Should attempt to remove the old directories but not the newest
         expected_calls = [
             (
-                str(prerelease_dir / "firmware-1.0.0-rc1-abc123"),
+                str(prerelease_dir / "firmware-1.0.0.abc123"),
                 str(prerelease_dir),
-                "firmware-1.0.0-rc1-abc123",
+                "firmware-1.0.0.abc123",
             ),
             (
-                str(prerelease_dir / "firmware-1.0.0-rc2-def456"),
+                str(prerelease_dir / "firmware-1.0.0.def456"),
                 str(prerelease_dir),
-                "firmware-1.0.0-rc2-def456",
+                "firmware-1.0.0.def456",
             ),
         ]
 
@@ -5127,11 +5131,11 @@ class TestPrereleaseBehaviorDrivenTests:
         prerelease_dir.mkdir()
 
         # Create initial directory
-        old_dir = prerelease_dir / "firmware-1.0.0-rc1-abc123"
+        old_dir = prerelease_dir / "firmware-1.0.0.abc123"
         old_dir.mkdir()
 
         # Mock to return fresh list (simulating race condition where new dir appears)
-        fresh_dirs = ["firmware-1.0.0-rc1-abc123", "firmware-1.0.0-rc2-def456"]
+        fresh_dirs = ["firmware-1.0.0.abc123", "firmware-1.0.0.def456"]
         mock_get_dirs = mocker.patch(
             "fetchtastic.downloader._get_existing_prerelease_dirs",
             return_value=fresh_dirs,
@@ -5141,16 +5145,16 @@ class TestPrereleaseBehaviorDrivenTests:
         mock_rmtree = mocker.patch("fetchtastic.downloader._safe_rmtree")
 
         # Test the behavior
-        _prune_old_prereleases(str(prerelease_dir), "firmware-1.0.0-rc2-def456")
+        _prune_old_prereleases(str(prerelease_dir), "firmware-1.0.0.def456")
 
         # Verify fresh directory list was used
         mock_get_dirs.assert_called_once_with(str(prerelease_dir))
 
         # Verify old directory was removed based on fresh list
         mock_rmtree.assert_called_once_with(
-            str(prerelease_dir / "firmware-1.0.0-rc1-abc123"),
+            str(prerelease_dir / "firmware-1.0.0.abc123"),
             str(prerelease_dir),
-            "firmware-1.0.0-rc1-abc123",
+            "firmware-1.0.0.abc123",
         )
 
     def test_helper_function_separation_improves_maintainability(
@@ -5163,20 +5167,20 @@ class TestPrereleaseBehaviorDrivenTests:
         prerelease_dir.mkdir()
 
         # Create test directories
-        old_dir = prerelease_dir / "firmware-1.0.0-rc1-abc123"
-        new_dir = prerelease_dir / "firmware-1.0.0-rc2-def456"
+        old_dir = prerelease_dir / "firmware-1.0.0.abc123"
+        new_dir = prerelease_dir / "firmware-1.0.0.def456"
         old_dir.mkdir()
         new_dir.mkdir()
 
         # Mock dependencies
         mock_get_dirs = mocker.patch(
             "fetchtastic.downloader._get_existing_prerelease_dirs",
-            return_value=["firmware-1.0.0-rc1-abc123", "firmware-1.0.0-rc2-def456"],
+            return_value=["firmware-1.0.0.abc123", "firmware-1.0.0.def456"],
         )
         mock_rmtree = mocker.patch("fetchtastic.downloader._safe_rmtree")
 
         # Test the helper function directly
-        _prune_old_prereleases(str(prerelease_dir), "firmware-1.0.0-rc2-def456")
+        _prune_old_prereleases(str(prerelease_dir), "firmware-1.0.0.def456")
 
         # Verify the function operates independently with clear separation of concerns
         mock_get_dirs.assert_called_once()  # Gets current state
@@ -5184,5 +5188,5 @@ class TestPrereleaseBehaviorDrivenTests:
 
         # Verify correct directory was targeted for removal
         call_args = mock_rmtree.call_args[0]
-        assert "firmware-1.0.0-rc1-abc123" in call_args[2]  # Old dir removed
-        assert "firmware-1.0.0-rc2-def456" not in call_args[2]  # New dir kept
+        assert "firmware-1.0.0.abc123" in call_args[2]  # Old dir removed
+        assert "firmware-1.0.0.def456" not in call_args[2]  # New dir kept
