@@ -362,6 +362,16 @@ def cleanup_superseded_prereleases(
 
             # If this pre-release matches the latest release version
             prerelease_path = os.path.join(prerelease_dir, dir_name)
+
+            # Check if this is a symlink and remove it for security
+            if os.path.islink(prerelease_path):
+                logger.warning(
+                    "Removing symlink in prerelease dir to prevent traversal: %s",
+                    dir_name,
+                )
+                _safe_rmtree(prerelease_path, prerelease_dir, dir_name)
+                cleaned_up = True
+                continue
             dir_release_tuple = _get_release_tuple(dir_version)
 
             # Determine if this prerelease should be cleaned up

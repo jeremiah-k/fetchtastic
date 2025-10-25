@@ -782,8 +782,8 @@ def test_check_for_prereleases_only_downloads_latest(
     """Ensure only the newest prerelease is downloaded and older ones are removed."""
 
     mock_fetch_dirs.return_value = [
-        "firmware-2.7.4.123456",
-        "firmware-2.7.5.abcdef",
+        "firmware-2.7.4.abc123",
+        "firmware-2.7.4.def456",
     ]
 
     def _fetch_contents(dir_name: str):
@@ -829,7 +829,7 @@ def test_check_for_prereleases_only_downloads_latest(
     download_dir = tmp_path
     prerelease_dir = download_dir / "firmware" / "prerelease"
     prerelease_dir.mkdir(parents=True)
-    (prerelease_dir / "firmware-2.7.4.123456").mkdir()
+    (prerelease_dir / "firmware-2.7.4.def456").mkdir()
 
     found, versions = downloader.check_for_prereleases(
         str(download_dir),
@@ -839,10 +839,10 @@ def test_check_for_prereleases_only_downloads_latest(
     )
 
     assert found is True
-    assert versions == ["firmware-2.7.5.abcdef"]
+    assert versions == ["firmware-2.7.4.abc123"]
     assert mock_dl.call_count == 1
-    assert mock_fetch_contents.call_args_list == [call("firmware-2.7.5.abcdef")]
-    assert not (prerelease_dir / "firmware-2.7.4.123456").exists()
+    assert mock_fetch_contents.call_args_list == [call("firmware-2.7.4.abc123")]
+    assert not (prerelease_dir / "firmware-2.7.4.def456").exists()
 
 
 def test_no_up_to_date_log_when_new_versions_but_no_matches(tmp_path, caplog):
@@ -1194,9 +1194,9 @@ def test_prerelease_directory_cleanup(tmp_path):
     prerelease_dir = download_dir / "firmware" / "prerelease"
     prerelease_dir.mkdir(parents=True)
 
-    # Create some old prerelease directories
-    old_dir1 = prerelease_dir / "firmware-2.7.6.oldcommit"
-    old_dir2 = prerelease_dir / "firmware-2.7.7.anotherold"
+    # Create some old prerelease directories with same version but different hashes
+    old_dir1 = prerelease_dir / "firmware-2.7.6.abc123"
+    old_dir2 = prerelease_dir / "firmware-2.7.6.def456"
     old_dir1.mkdir()
     old_dir2.mkdir()
 
@@ -1208,15 +1208,15 @@ def test_prerelease_directory_cleanup(tmp_path):
     assert old_dir1.exists()
     assert old_dir2.exists()
 
-    # Mock the repo to return a newer prerelease
+    # Mock the repo to return a newer prerelease with same version but new hash
     with patch("fetchtastic.downloader.menu_repo.fetch_repo_directories") as mock_dirs:
         with patch(
             "fetchtastic.downloader.menu_repo.fetch_directory_contents"
         ) as mock_contents:
-            mock_dirs.return_value = ["firmware-2.7.8.newcommit"]
+            mock_dirs.return_value = ["firmware-2.7.6.789abc"]
             mock_contents.return_value = [
                 {
-                    "name": "firmware-rak4631-2.7.8.newcommit.uf2",
+                    "name": "firmware-rak4631-2.7.6.789abc.uf2",
                     "download_url": "https://example.invalid/rak4631.uf2",
                 }
             ]
@@ -1243,7 +1243,7 @@ def test_prerelease_directory_cleanup(tmp_path):
 
                 # Verify the function succeeded
                 assert found is True
-                assert "firmware-2.7.8.newcommit" in versions
+                assert "firmware-2.7.6.789abc" in versions
 
                 # Verify old directories were removed
                 assert (
@@ -1254,7 +1254,7 @@ def test_prerelease_directory_cleanup(tmp_path):
                 ), "Old prerelease directory should be removed"
 
                 # Verify new directory was created
-                new_dir = prerelease_dir / "firmware-2.7.8.newcommit"
+                new_dir = prerelease_dir / "firmware-2.7.6.789abc"
                 assert new_dir.exists(), "New prerelease directory should be created"
 
 
@@ -2518,11 +2518,11 @@ def test_prerelease_cleanup_logging_messages(tmp_path, caplog):
     prerelease_dir = download_dir / "firmware" / "prerelease"
     prerelease_dir.mkdir(parents=True)
 
-    # Create multiple prerelease directories with different versions
+    # Create multiple prerelease directories with same version but different hashes
     old_dirs = [
-        "firmware-2.8.0.abc123",
-        "firmware-2.9.0.def456",
-        "firmware-2.10.0.ghi789",  # This should be kept (newest)
+        "firmware-2.7.1.abc123",
+        "firmware-2.7.1.def456",
+        "firmware-2.7.1.ghi789",  # This should be replaced by newest
     ]
 
     for dir_name in old_dirs:
@@ -2532,11 +2532,11 @@ def test_prerelease_cleanup_logging_messages(tmp_path, caplog):
         with patch(
             "fetchtastic.downloader.menu_repo.fetch_directory_contents"
         ) as mock_contents:
-            # Mock that we found a new prerelease
-            mock_dirs.return_value = ["firmware-2.11.0.new123"]
+            # Mock that we found a new prerelease with same version but new hash
+            mock_dirs.return_value = ["firmware-2.7.1.fff888"]
             mock_contents.return_value = [
                 {
-                    "name": "firmware-rak4631-2.11.0.new123.uf2",
+                    "name": "firmware-rak4631-2.7.1.fff888.uf2",
                     "download_url": "https://example.invalid/test.uf2",
                 }
             ]
@@ -2549,14 +2549,12 @@ def test_prerelease_cleanup_logging_messages(tmp_path, caplog):
             # Verify cleanup functionality worked
             # Download failed due to fake URL, so found should be False
             assert found is False  # No files downloaded due to network error
-            assert (
-                "firmware-2.11.0.new123" in versions
-            )  # But directory is still tracked
+            assert "firmware-2.7.1.fff888" in versions  # But directory is still tracked
 
             # Verify old directories were cleaned up (only newest should remain)
             remaining_dirs = [d for d in prerelease_dir.iterdir() if d.is_dir()]
             # Should have the new directory we're downloading
-            assert any("firmware-2.11.0.new123" in d.name for d in remaining_dirs)
+            assert any("firmware-2.7.1.fff888" in d.name for d in remaining_dirs)
 
 
 def test_prerelease_directory_permissions_error_logging(tmp_path, caplog):
@@ -2575,7 +2573,7 @@ def test_prerelease_directory_permissions_error_logging(tmp_path, caplog):
     prerelease_dir.mkdir(parents=True)
 
     # Create a directory that we'll make read-only
-    readonly_dir = prerelease_dir / "firmware-2.8.0.readonly"
+    readonly_dir = prerelease_dir / "firmware-2.7.1.abc123"
     readonly_dir.mkdir()
 
     # Create a file inside to make removal fail
@@ -2589,10 +2587,10 @@ def test_prerelease_directory_permissions_error_logging(tmp_path, caplog):
             with patch(
                 "fetchtastic.downloader.menu_repo.fetch_directory_contents"
             ) as mock_contents:
-                mock_dirs.return_value = ["firmware-2.11.0.new123"]
+                mock_dirs.return_value = ["firmware-2.7.1.def456"]
                 mock_contents.return_value = [
                     {
-                        "name": "firmware-rak4631-2.11.0.new123.uf2",
+                        "name": "firmware-rak4631-2.7.1.def456.uf2",
                         "download_url": "https://example.invalid/test.uf2",
                     }
                 ]
@@ -2610,7 +2608,7 @@ def test_prerelease_directory_permissions_error_logging(tmp_path, caplog):
                 # Download failed due to fake URL, so found should be False
                 assert found is False  # No files downloaded due to network error
                 assert (
-                    "firmware-2.11.0.new123" in versions
+                    "firmware-2.7.1.def456" in versions
                 )  # But directory is still tracked
 
     finally:
@@ -3061,10 +3059,10 @@ def test_end_to_end_prerelease_workflow_ui_coverage(tmp_path, caplog):
     cache_dir.mkdir()
     device_manager = DeviceHardwareManager(cache_dir=cache_dir, enabled=False)
 
-    # Create existing prerelease directories
+    # Create existing prerelease directories with same version but different hashes
     existing_dirs = [
-        "firmware-2.8.0.old123",
-        "firmware-2.9.0.old456",
+        "firmware-2.7.1.abc123",
+        "firmware-2.7.1.def456",
     ]
 
     for dir_name in existing_dirs:
@@ -3081,14 +3079,14 @@ def test_end_to_end_prerelease_workflow_ui_coverage(tmp_path, caplog):
             ) as mock_download:
 
                 # Mock repository responses
-                mock_dirs.return_value = ["firmware-2.10.0.new789"]
+                mock_dirs.return_value = ["firmware-2.7.1.789abc"]
                 mock_contents.return_value = [
                     {
-                        "name": "firmware-rak4631-2.10.0.new789.uf2",
+                        "name": "firmware-rak4631-2.7.1.789abc.uf2",
                         "download_url": "https://example.invalid/rak4631.uf2",
                     },
                     {
-                        "name": "littlefs-tbeam-2.10.0.new789.bin",
+                        "name": "littlefs-tbeam-2.7.1.789abc.bin",
                         "download_url": "https://example.invalid/tbeam.bin",
                     },
                     {
@@ -3100,7 +3098,7 @@ def test_end_to_end_prerelease_workflow_ui_coverage(tmp_path, caplog):
                         "download_url": "https://example.invalid/bleota.bin",
                     },
                     {
-                        "name": "firmware-canaryone-2.10.0.new789.uf2",  # Should be excluded
+                        "name": "firmware-canaryone-2.7.1.789abc.uf2",  # Should be excluded
                         "download_url": "https://example.invalid/canaryone.uf2",
                     },
                 ]
@@ -3124,7 +3122,7 @@ def test_end_to_end_prerelease_workflow_ui_coverage(tmp_path, caplog):
 
                 # Verify workflow completed successfully
                 assert found is True
-                assert "firmware-2.10.0.new789" in versions
+                assert "firmware-2.7.1.789abc" in versions
 
                 # Check comprehensive logging coverage (state verified below)
 
@@ -3132,7 +3130,7 @@ def test_end_to_end_prerelease_workflow_ui_coverage(tmp_path, caplog):
                 # Old directories should be cleaned up, new directory should exist
                 remaining_dirs = [d for d in prerelease_dir.iterdir() if d.is_dir()]
                 # Should have the new directory we're downloading
-                assert any("firmware-2.10.0.new789" in d.name for d in remaining_dirs)
+                assert any("firmware-2.7.1.789abc" in d.name for d in remaining_dirs)
 
                 # Verify files were downloaded (can see "Downloaded:" messages in output)
                 # The workflow completed successfully as verified above
@@ -3363,20 +3361,20 @@ def test_prerelease_download_ui_messages(tmp_path, caplog):
     prerelease_dir = download_dir / "firmware" / "prerelease"
     prerelease_dir.mkdir(parents=True)
 
-    # Create some existing prerelease directories
-    (prerelease_dir / "firmware-2.7.5.old123").mkdir()
-    (prerelease_dir / "firmware-2.7.6.old456").mkdir()
+    # Create some existing prerelease directories with same version but different hashes
+    (prerelease_dir / "firmware-2.7.7.abc123").mkdir()
+    (prerelease_dir / "firmware-2.7.7.def456").mkdir()
 
     # Test with no matching patterns (should log appropriate messages)
     with patch("fetchtastic.downloader.menu_repo.fetch_repo_directories") as mock_dirs:
-        mock_dirs.return_value = ["firmware-2.7.7.new123"]
+        mock_dirs.return_value = ["firmware-2.7.7.789abc"]
 
         with patch(
             "fetchtastic.downloader.menu_repo.fetch_directory_contents"
         ) as mock_contents:
             mock_contents.return_value = [
                 {
-                    "name": "firmware-unknown-device-2.7.7.new123.bin",
+                    "name": "firmware-unknown-device-2.7.7.789abc.bin",
                     "download_url": "https://example.invalid/unknown.bin",
                 }
             ]
@@ -3998,7 +3996,7 @@ def test_prerelease_functions_symlink_safety(tmp_path):
     sub_file.write_text("Subdirectory data that must remain")
 
     # Create a malicious symlink inside the prerelease directory pointing to the external target
-    malicious_symlink = prerelease_dir / "firmware-1.0.0.abcdef"
+    malicious_symlink = prerelease_dir / "firmware-1.0.1.abcdef"
     malicious_symlink.symlink_to(external_target, target_is_directory=True)
 
     # Verify the symlink was created correctly
@@ -4017,8 +4015,8 @@ def test_prerelease_functions_symlink_safety(tmp_path):
         "fetchtastic.downloader.download_file_with_retry"
     ) as mock_download:
 
-        # Mock repository to return a newer prerelease
-        mock_fetch_dirs.return_value = ["firmware-1.1.0.fedcba"]
+        # Mock repository to return a newer prerelease with same version but new hash
+        mock_fetch_dirs.return_value = ["firmware-1.0.1.fedcba"]
         mock_fetch_contents.return_value = [
             {
                 "name": "firmware.bin",
@@ -4072,21 +4070,22 @@ def test_prerelease_functions_symlink_safety(tmp_path):
             not malicious_symlink.exists()
         ), "Malicious symlink should have been removed"
 
-    # Test 2: cleanup_superseded_prereleases symlink safety
-    # First, recreate the malicious symlink for this test
-    leftover = prerelease_dir / "firmware-1.1.0.fedcba"
-    if leftover.exists():
-        if leftover.is_symlink() or leftover.is_file():
-            leftover.unlink()
-        else:
-            shutil.rmtree(leftover)
-    malicious_symlink2 = prerelease_dir / "firmware-1.2.0"
-    malicious_symlink2.symlink_to(external_target, target_is_directory=True)
+        # Test 2: cleanup_superseded_prereleases symlink safety
+        # First, recreate the malicious symlink for this test
+        leftover = prerelease_dir / "firmware-1.1.0.fedcba"
+        if leftover.exists():
+            if leftover.is_symlink() or leftover.is_file():
+                leftover.unlink()
+            else:
+                shutil.rmtree(leftover)
 
-    # Also create a valid prerelease directory that should NOT be removed (different base version)
-    valid_prerelease = prerelease_dir / "firmware-1.3.0.ba11da5"
-    valid_prerelease.mkdir()
-    (valid_prerelease / "firmware.bin").write_bytes(b"valid_firmware_content")
+        malicious_symlink2 = prerelease_dir / "firmware-1.2.1.abc123"
+        malicious_symlink2.symlink_to(external_target, target_is_directory=True)
+
+        # Also create a valid prerelease directory that should NOT be removed (different base version)
+        valid_prerelease = prerelease_dir / "firmware-1.2.1.def456"
+        valid_prerelease.mkdir()
+        (valid_prerelease / "firmware.bin").write_bytes(b"valid_firmware_content")
 
     # Create the official release directory to compare against
     release_dir = download_dir / "firmware" / "v1.2.0"
@@ -4148,12 +4147,12 @@ def test_prerelease_symlink_traversal_attack_prevention(tmp_path):
     # Test various symlink attack scenarios
     attack_scenarios = [
         # Direct symlink to parent directory
-        ("firmware-1.0.0.attack1", tmp_path),
+        ("firmware-1.5.1.abc123", tmp_path),
         # Symlink to system directory
-        ("firmware-1.0.0.attack2", system_dir),
+        ("firmware-1.5.1.def456", system_dir),
         # Nested symlink attack (symlink to directory containing other important dirs)
         (
-            "firmware-1.0.0.attack3",
+            "firmware-1.5.1.789abc",
             tmp_path.parent if tmp_path.parent != tmp_path else tmp_path,
         ),
     ]
@@ -4162,7 +4161,10 @@ def test_prerelease_symlink_traversal_attack_prevention(tmp_path):
         # Create malicious symlink
         malicious_symlink = prerelease_dir / symlink_name
         if malicious_symlink.exists():
-            malicious_symlink.unlink()
+            if malicious_symlink.is_symlink() or malicious_symlink.is_file():
+                malicious_symlink.unlink()
+            else:
+                shutil.rmtree(malicious_symlink)
         malicious_symlink.symlink_to(target_path, target_is_directory=True)
 
         # Verify symlink exists
@@ -4176,7 +4178,7 @@ def test_prerelease_symlink_traversal_attack_prevention(tmp_path):
             "fetchtastic.downloader.menu_repo.fetch_directory_contents"
         ) as mock_fetch_contents:
 
-            mock_fetch_dirs.return_value = ["firmware-2.0.0.newversion"]
+            mock_fetch_dirs.return_value = ["firmware-1.5.1.abc123def"]
             mock_fetch_contents.return_value = []  # No files to download
 
             # Call the function
@@ -4226,7 +4228,7 @@ def test_prerelease_symlink_mixed_with_valid_directories(tmp_path):
     valid_dir.mkdir()
     (valid_dir / "firmware.bin").write_bytes(b"valid_data")
 
-    malicious_symlink = prerelease_dir / "firmware-1.0.0.evillink"
+    malicious_symlink = prerelease_dir / "firmware-1.0.1.evillink"
     malicious_symlink.symlink_to(external_target, target_is_directory=True)
 
     # Mock and test
@@ -4236,7 +4238,7 @@ def test_prerelease_symlink_mixed_with_valid_directories(tmp_path):
         "fetchtastic.downloader.menu_repo.fetch_directory_contents"
     ) as mock_fetch_contents:
 
-        mock_fetch_dirs.return_value = ["firmware-1.2.0.newversion"]
+        mock_fetch_dirs.return_value = ["firmware-1.0.1.def456"]
         mock_fetch_contents.return_value = []
 
         check_for_prereleases(
@@ -4702,15 +4704,15 @@ def test_check_for_prereleases_boolean_semantics_no_new_downloads(
     prerelease_dir.mkdir(parents=True)
 
     # Create existing prerelease directory with files
-    existing_dir = prerelease_dir / "firmware-2.0.0-alpha1.abcdef"
+    existing_dir = prerelease_dir / "firmware-1.9.1.abcdef"
     existing_dir.mkdir()
-    (existing_dir / "firmware-esp32-2.0.0-alpha1.abcdef.bin").write_text("existing")
+    (existing_dir / "firmware-esp32-1.9.1.abcdef.bin").write_text("existing")
 
     # Mock repo to return the same prerelease (no new ones)
-    mock_fetch_dirs.return_value = ["firmware-2.0.0-alpha1.abcdef"]
+    mock_fetch_dirs.return_value = ["firmware-1.9.1.abcdef"]
     mock_fetch_contents.return_value = [
         {
-            "name": "firmware-esp32-2.0.0-alpha1.abcdef.bin",
+            "name": "firmware-esp32-1.9.1.abcdef.bin",
             "download_url": "http://example.com/file.bin",
         }
     ]
@@ -4718,7 +4720,7 @@ def test_check_for_prereleases_boolean_semantics_no_new_downloads(
     # Call check_for_prereleases
     found, versions = downloader.check_for_prereleases(
         download_dir,
-        latest_release_tag="v1.9.0",  # Older than our alpha
+        latest_release_tag="v1.9.0",  # Expected prerelease is 1.9.1
         selected_patterns=["esp32"],
         device_manager=None,
     )
@@ -4726,7 +4728,7 @@ def test_check_for_prereleases_boolean_semantics_no_new_downloads(
     # Should return False (no new downloads) but still return the existing versions
     assert found is False  # No new files downloaded
     assert versions == [
-        "firmware-2.0.0-alpha1.abcdef"
+        "firmware-1.9.1.abcdef"
     ]  # But existing prereleases are reported
 
 
