@@ -1229,7 +1229,7 @@ def check_for_prereleases(
             reverse=True,
         )
 
-    # Process all available prereleases to detect hash changes and for tracking
+    # Process the newest available prerelease to detect hash changes and track all prereleases
     tracking_targets = repo_prerelease_dirs
 
     os.makedirs(prerelease_dir, exist_ok=True)
@@ -1299,16 +1299,11 @@ def check_for_prereleases(
         else None
     )
 
-    # Determine if we need to download (new version or same version with different hash)
-    should_download = True
+    # Guard clause: return early if prerelease already exists with same hash
     if existing_same_version and existing_hash == newest_hash:
-        should_download = False
         logger.info(
             f"Prerelease {newest_version} with hash {newest_hash} already exists, no update needed"
         )
-
-    # Only proceed with download if we have a new prerelease or hash change
-    if not should_download:
         # Update tracking for all known prereleases
         batch_update_prerelease_tracking(
             prerelease_dir, latest_release_tag, tracking_targets

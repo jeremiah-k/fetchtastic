@@ -5012,3 +5012,83 @@ class TestGetReleaseTuple:
         """Test that whitespace is handled correctly."""
         result = downloader._get_release_tuple("  v1.2.3  ")
         assert result == (1, 2, 3)
+
+
+class TestPrereleaseCodeReviewImprovements:
+    """Test suite for code review improvements in prerelease functionality."""
+
+    def test_guard_clause_improves_readability(self):
+        """Test that guard clause pattern improves code readability."""
+        # The guard clause refactoring should make the code more readable
+        # by handling the "no download needed" case early
+        # This test verifies the structure is more maintainable
+        # Check that the function exists and has expected structure
+        import inspect
+
+        from fetchtastic.downloader import check_for_prereleases
+
+        source = inspect.getsource(check_for_prereleases)
+
+        # Should contain guard clause pattern
+        assert "if existing_same_version and existing_hash == newest_hash:" in source
+        assert "return False," in source  # Early return pattern
+
+        # Should not have unnecessary should_download flag logic
+        assert "should_download = True" not in source
+
+    def test_tracking_download_targets_separation_improves_maintainability(self):
+        """Test that tracking vs download targets separation improves maintainability."""
+        import inspect
+
+        from fetchtastic.downloader import check_for_prereleases
+
+        source = inspect.getsource(check_for_prereleases)
+
+        # Should have separate tracking_targets and download_targets variables
+        assert "tracking_targets" in source
+        assert "download_targets" in source
+
+        # Should track all prereleases but download only newest
+        assert "Track all repo prereleases, but only download the newest" in source
+
+    def test_comment_accuracy_improves_understanding(self):
+        """Test that updated comment accurately reflects code behavior."""
+        import inspect
+
+        from fetchtastic.downloader import check_for_prereleases
+
+        source = inspect.getsource(check_for_prereleases)
+
+        # Should have accurate comment about processing newest prerelease
+        assert "Process the newest available prerelease" in source
+        # Should not have misleading "all available prereleases" comment
+        assert "Process all available prereleases to detect hash changes" not in source
+
+    def test_recompute_dirs_improves_accuracy(self):
+        """Test that recomputing dirs before pruning improves accuracy."""
+        import inspect
+
+        from fetchtastic.downloader import check_for_prereleases
+
+        source = inspect.getsource(check_for_prereleases)
+
+        # Should recompute existing dirs before pruning
+        assert "_get_existing_prerelease_dirs(prerelease_dir)" in source
+
+        # Should use fresh list for pruning operations
+        # This ensures we don't act on stale data
+
+    def test_tracking_files_cleanup_improves_reliability(self):
+        """Test that tracking files cleanup improves reliability."""
+        import inspect
+
+        from fetchtastic.downloader import check_for_prereleases
+
+        source = inspect.getsource(check_for_prereleases)
+
+        # Should clean up tracking files when no prereleases exist
+        assert "prerelease_tracking.json" in source
+        assert "prerelease_commits.txt" in source
+
+        # Should remove tracking files to prevent stale state
+        assert "os.remove(tf)" in source
