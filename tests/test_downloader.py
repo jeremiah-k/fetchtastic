@@ -1284,8 +1284,8 @@ def test_prerelease_tracking_json_format(tmp_path):
     info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
     assert info["release"] == latest_release
     assert info["prerelease_count"] == 2
-    assert "abcdef" in info["commits"]
-    assert "fedcba" in info["commits"]
+    assert "2.7.7.abcdef" in info["commits"]
+    assert "2.7.8.fedcba" in info["commits"]
 
     # Test that new release resets the tracking
     new_release = "v2.7.9.newrelease"
@@ -1298,8 +1298,8 @@ def test_prerelease_tracking_json_format(tmp_path):
     info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
     assert info["release"] == new_release
     assert info["prerelease_count"] == 1
-    assert "abc123" in info["commits"]
-    assert "abcdef" not in info["commits"], "Old commits should be cleared"
+    assert "2.7.10.abc123" in info["commits"]
+    assert "2.7.7.abcdef" not in info["commits"], "Old commits should be cleared"
 
 
 def test_prerelease_tracking_edge_cases(tmp_path):
@@ -1381,7 +1381,7 @@ def test_prerelease_existing_files_tracking(tmp_path):
 
             # And tracking JSON should reflect that commit
             info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
-            assert "abcdef" in info.get("commits", [])
+            assert "2.7.7.abcdef" in info.get("commits", [])
 
 
 def test_check_and_download_corrupted_existing_zip_records_failure(tmp_path):
@@ -4277,9 +4277,9 @@ def test_batch_update_prerelease_tracking(tmp_path):
     info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
     assert info["release"] == latest_release
     assert info["prerelease_count"] == 3
-    assert "abc123" in info["commits"]
-    assert "def456" in info["commits"]
-    assert "abcdef" in info["commits"]
+    assert "2.7.7.abc123" in info["commits"]
+    assert "2.7.8.def456" in info["commits"]
+    assert "2.7.9.abcdef" in info["commits"]
 
     # Test batch update with some existing commits (should not duplicate)
     more_prerelease_dirs = [
@@ -4295,8 +4295,10 @@ def test_batch_update_prerelease_tracking(tmp_path):
     # Verify no duplicates were added
     info2 = downloader.get_prerelease_tracking_info(str(prerelease_dir))
     assert info2["prerelease_count"] == 4
-    assert "fedcba" in info2["commits"]
-    assert info2["commits"].count("def456") == 1, "Should not duplicate existing commit"
+    assert "2.7.10.fedcba" in info2["commits"]
+    assert (
+        info2["commits"].count("2.7.8.def456") == 1
+    ), "Should not duplicate existing commit"
 
     # Test batch update with new release (should reset)
     new_release = "v2.8.0.newrelease"
@@ -4311,7 +4313,7 @@ def test_batch_update_prerelease_tracking(tmp_path):
     info3 = downloader.get_prerelease_tracking_info(str(prerelease_dir))
     assert info3["release"] == new_release
     assert info3["prerelease_count"] == 1
-    assert "cafe12" in info3["commits"]
+    assert "2.8.1.cafe12" in info3["commits"]
     assert "abc123" not in info3["commits"], "Old commits should be cleared"
 
 
