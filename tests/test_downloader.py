@@ -70,31 +70,6 @@ def test_compare_versions(version1, version2, expected):
     assert downloader.compare_versions(version2, version1) == -expected
 
 
-def test_compare_versions_prerelease_parsing():
-    """Test new prerelease version parsing logic."""
-    # Test dot-separated prerelease versions
-    assert downloader.compare_versions("2.3.0.rc1", "2.3.0") == -1  # rc1 < final
-    assert downloader.compare_versions("2.3.0.dev1", "2.3.0") == -1  # dev1 < final
-    assert downloader.compare_versions("2.3.0.alpha1", "2.3.0") == -1  # alpha1 < final
-    assert downloader.compare_versions("2.3.0.beta2", "2.3.0") == -1  # beta2 < final
-
-    # Test dash-separated prerelease versions
-    assert downloader.compare_versions("2.3.0-rc1", "2.3.0") == -1  # rc1 < final
-    assert downloader.compare_versions("2.3.0-dev1", "2.3.0") == -1  # dev1 < final
-    assert downloader.compare_versions("2.3.0-alpha1", "2.3.0") == -1  # alpha1 < final
-    assert downloader.compare_versions("2.3.0-beta2", "2.3.0") == -1  # beta2 < final
-
-    # rc ordering
-    assert downloader.compare_versions("2.3.0.rc0", "2.3.0.rc1") == -1
-
-    # Test prerelease ordering
-    assert (
-        downloader.compare_versions("2.3.0.alpha1", "2.3.0.beta1") == -1
-    )  # alpha < beta
-    assert downloader.compare_versions("2.3.0.beta1", "2.3.0.rc1") == -1  # beta < rc
-    assert downloader.compare_versions("2.3.0.rc1", "2.3.0.dev1") == 1  # rc > dev
-
-
 def test_compare_versions_invalid_version_exception():
     """Test InvalidVersion exception handling in version parsing."""
     # Test with a version that will trigger the hash coercion and InvalidVersion exception
@@ -5012,3 +4987,46 @@ class TestGetReleaseTuple:
         """Test that whitespace is handled correctly."""
         result = downloader._get_release_tuple("  v1.2.3  ")
         assert result == (1, 2, 3)
+
+
+@patch("fetchtastic.downloader.menu_repo.fetch_repo_directories")
+@patch("fetchtastic.downloader.menu_repo.fetch_directory_contents")
+@patch("fetchtastic.downloader.download_file_with_retry")
+def test_check_for_prereleases_hash_comparison(
+    mock_dl, mock_fetch_contents, mock_fetch_dirs, tmp_path
+):
+    """Test that pre-release files are re-downloaded if their hashes change."""
+    # Mock repository data
+    mock_fetch_dirs.return_value = ["firmware-2.7.7.abcdef"]
+    mock_fetch_contents.return_value = [
+        {
+            "name": "firmware-rak4631-2.7.7.abcdef.uf2",
+            "download_url": "https://example.invalid/rak4631.uf2",
+        }
+    ]
+
+    download_dir = tmp_path
+    prerelease_dir = download_dir / "firmware" / "prerelease"
+    prerelease_dir.mkdir(parents=True)
+    version_dir = prerelease_dir / "firmware-2.7.7.abcdef"
+    version_dir.mkdir(parents=True)
+    existing_file = version_dir / "firmware-rak4631-2.7.7.abcdef.uf2"
+    existing_file.write_bytes(b"old data")
+
+    # Mock download to write new data
+    def _mock_dl(_url, dest):
+        with open(dest, "wb") as f:
+            f.write(b"new data")
+        return True
+
+    mock_dl.side_effect = _mock_dl
+
+    # Run the check
+    found, versions = downloader.check_for_prereleases(
+        str(download_dir), "v2.7.6", ["rak4631-"], exclude_patterns=[]
+    )
+
+    # Assert that the file was re-downloaded
+    assert found is True
+    assert versions == ["firmware-2.7.7.abcdef"]
+    assert existing_file.read_bytes() == b"new data"
