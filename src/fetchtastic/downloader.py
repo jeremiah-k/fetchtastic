@@ -1229,7 +1229,8 @@ def check_for_prereleases(
             reverse=True,
         )
 
-    target_prereleases = repo_prerelease_dirs[:1]
+    # Process all available prereleases to detect hash changes
+    target_prereleases = repo_prerelease_dirs
 
     os.makedirs(prerelease_dir, exist_ok=True)
     # Resolve once for containment checks
@@ -1265,14 +1266,59 @@ def check_for_prereleases(
         logger.debug(f"Error scanning prerelease dir {prerelease_dir} for cleanup: {e}")
 
     existing_prerelease_dirs = _get_existing_prerelease_dirs(prerelease_dir)
-    target_prerelease_set = set(target_prereleases)
+
+    # If no prereleases found in repo, clean up existing ones and exit
+    if not target_prereleases:
+        for dir_name in existing_prerelease_dirs:
+            dir_path = os.path.join(prerelease_dir, dir_name)
+            _safe_rmtree(dir_path, prerelease_dir, dir_name)
+        return False, []
+
+    # Get the newest prerelease from repo (first in sorted list)
+    newest_repo_prerelease = target_prereleases[0]
+    newest_version = extract_version(newest_repo_prerelease)
+    newest_hash = _extract_commit_from_dir_name(newest_repo_prerelease)
+
+    # Find existing prerelease with same version (if any)
+    existing_same_version = None
+    existing_hash = None
 
     for dir_name in existing_prerelease_dirs:
-        if dir_name in target_prerelease_set:
-            continue  # keep the newest prerelease we plan to use
+        existing_version = extract_version(dir_name)
+        if existing_version == newest_version:
+            existing_same_version = dir_name
+            existing_hash = _extract_commit_from_dir_name(dir_name)
+            break
 
-        dir_path = os.path.join(prerelease_dir, dir_name)
-        _safe_rmtree(dir_path, prerelease_dir, dir_name)
+    # Determine if we need to download (new version or same version with different hash)
+    should_download = True
+    if existing_same_version and existing_hash == newest_hash:
+        should_download = False
+        logger.info(
+            f"Prerelease {newest_version} with hash {newest_hash} already exists, no update needed"
+        )
+
+    # Clean up old prereleases that don't match the newest version
+    for dir_name in existing_prerelease_dirs:
+        existing_version = extract_version(dir_name)
+        if existing_version != newest_version:
+            dir_path = os.path.join(prerelease_dir, dir_name)
+            _safe_rmtree(dir_path, prerelease_dir, dir_name)
+            logger.info(
+                f"Removed old prerelease {dir_name} (version {existing_version})"
+            )
+
+    # Only proceed with download if we have a new prerelease or hash change
+    if not should_download:
+        # Still need to update tracking for existing prereleases
+        if target_prereleases:
+            batch_update_prerelease_tracking(
+                prerelease_dir, latest_release_tag, target_prereleases
+            )
+        return False, [newest_repo_prerelease]
+
+    # Set target to only the newest prerelease for downloading
+    target_prereleases = [newest_repo_prerelease]
 
     downloaded_files: List[str] = []
 
