@@ -1297,10 +1297,11 @@ def check_for_prereleases(
                 continue
 
             # Download to a temporary file and compare hashes
-            with tempfile.NamedTemporaryFile(delete=False) as temp_f:
-                temp_path = temp_f.name
-
+            temp_path = None
             try:
+                with tempfile.NamedTemporaryFile(delete=False) as temp_f:
+                    temp_path = temp_f.name
+
                 if download_file_with_retry(download_url, temp_path):
                     # Compare hash with existing file, if it exists
                     if os.path.exists(file_path) and compare_file_hashes(
