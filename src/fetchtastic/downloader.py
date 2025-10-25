@@ -1280,15 +1280,15 @@ def check_for_prereleases(
     newest_hash = _extract_commit_from_dir_name(newest_repo_prerelease)
 
     # Find existing prerelease with same version (if any)
-    existing_same_version = None
-    existing_hash = None
-
-    for dir_name in existing_prerelease_dirs:
-        existing_version = extract_version(dir_name)
-        if existing_version == newest_version:
-            existing_same_version = dir_name
-            existing_hash = _extract_commit_from_dir_name(dir_name)
-            break
+    existing_same_version = next(
+        (d for d in existing_prerelease_dirs if extract_version(d) == newest_version),
+        None,
+    )
+    existing_hash = (
+        _extract_commit_from_dir_name(existing_same_version)
+        if existing_same_version
+        else None
+    )
 
     # Determine if we need to download (new version or same version with different hash)
     should_download = True
@@ -1301,10 +1301,9 @@ def check_for_prereleases(
     # Only proceed with download if we have a new prerelease or hash change
     if not should_download:
         # Still need to update tracking for existing prereleases
-        if target_prereleases:
-            batch_update_prerelease_tracking(
-                prerelease_dir, latest_release_tag, target_prereleases
-            )
+        batch_update_prerelease_tracking(
+            prerelease_dir, latest_release_tag, target_prereleases
+        )
         return False, [newest_repo_prerelease]
 
     # Set target to only the newest prerelease for downloading
