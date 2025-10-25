@@ -1298,16 +1298,6 @@ def check_for_prereleases(
             f"Prerelease {newest_version} with hash {newest_hash} already exists, no update needed"
         )
 
-    # Clean up old prereleases that don't match the newest version
-    for dir_name in existing_prerelease_dirs:
-        existing_version = extract_version(dir_name)
-        if existing_version != newest_version:
-            dir_path = os.path.join(prerelease_dir, dir_name)
-            _safe_rmtree(dir_path, prerelease_dir, dir_name)
-            logger.info(
-                f"Removed old prerelease {dir_name} (version {existing_version})"
-            )
-
     # Only proceed with download if we have a new prerelease or hash change
     if not should_download:
         # Still need to update tracking for existing prereleases
@@ -1412,6 +1402,15 @@ def check_for_prereleases(
     downloaded_versions: List[str] = []
     if downloaded_files:
         logger.info(f"Downloaded {len(downloaded_files)} new pre-release files.")
+
+        # Clean up old prerelease directories AFTER successful download
+        # Remove any existing prerelease directories that are not the one we just downloaded
+        for dir_name in existing_prerelease_dirs:
+            if dir_name != newest_repo_prerelease:
+                dir_path = os.path.join(prerelease_dir, dir_name)
+                _safe_rmtree(dir_path, prerelease_dir, dir_name)
+                logger.info(f"Removed superseded prerelease directory: {dir_name}")
+
         files_by_dir: Dict[str, List[str]] = defaultdict(list)
         for path in downloaded_files:
             dir_name = os.path.basename(os.path.dirname(path))
