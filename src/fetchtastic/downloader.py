@@ -1229,8 +1229,8 @@ def check_for_prereleases(
             reverse=True,
         )
 
-    # Process all available prereleases to detect hash changes
-    target_prereleases = repo_prerelease_dirs
+    # Process all available prereleases to detect hash changes and for tracking
+    tracking_targets = repo_prerelease_dirs
 
     os.makedirs(prerelease_dir, exist_ok=True)
     # Resolve once for containment checks
@@ -1268,14 +1268,23 @@ def check_for_prereleases(
     existing_prerelease_dirs = _get_existing_prerelease_dirs(prerelease_dir)
 
     # If no prereleases found in repo, clean up existing ones and exit
-    if not target_prereleases:
+    if not tracking_targets:
         for dir_name in existing_prerelease_dirs:
             dir_path = os.path.join(prerelease_dir, dir_name)
             _safe_rmtree(dir_path, prerelease_dir, dir_name)
+        # Clear tracking files as no prereleases remain
+        for tracking in ("prerelease_tracking.json", "prerelease_commits.txt"):
+            tf = os.path.join(prerelease_dir, tracking)
+            if os.path.exists(tf):
+                try:
+                    os.remove(tf)
+                    logger.debug(f"Removed prerelease tracking file: {tf}")
+                except OSError as e:
+                    logger.warning(f"Could not remove tracking file {tf}: {e}")
         return False, []
 
     # Get the newest prerelease from repo (first in sorted list)
-    newest_repo_prerelease = target_prereleases[0]
+    newest_repo_prerelease = tracking_targets[0]
     newest_version = extract_version(newest_repo_prerelease)
     newest_hash = _extract_commit_from_dir_name(newest_repo_prerelease)
 
@@ -1300,18 +1309,24 @@ def check_for_prereleases(
 
     # Only proceed with download if we have a new prerelease or hash change
     if not should_download:
-        # Still need to update tracking for existing prereleases
+        # Update tracking for all known prereleases
         batch_update_prerelease_tracking(
-            prerelease_dir, latest_release_tag, target_prereleases
+            prerelease_dir, latest_release_tag, tracking_targets
         )
+        # Prune superseded prerelease directories, keep only newest
+        for dir_name in existing_prerelease_dirs:
+            if dir_name != newest_repo_prerelease:
+                dir_path = os.path.join(prerelease_dir, dir_name)
+                _safe_rmtree(dir_path, prerelease_dir, dir_name)
+                logger.info(f"Removed superseded prerelease directory: {dir_name}")
         return False, [newest_repo_prerelease]
 
-    # Set target to only the newest prerelease for downloading
-    target_prereleases = [newest_repo_prerelease]
+    # Track all repo prereleases, but only download the newest
+    download_targets = [newest_repo_prerelease]
 
     downloaded_files: List[str] = []
 
-    for dir_name in target_prereleases:
+    for dir_name in download_targets:
         dir_path = os.path.join(prerelease_dir, dir_name)
         # Do not allow the target prerelease directory itself to be a symlink or a non-directory
         if os.path.islink(dir_path) or (
@@ -1404,7 +1419,7 @@ def check_for_prereleases(
 
         # Clean up old prerelease directories AFTER successful download
         # Remove any existing prerelease directories that are not the one we just downloaded
-        for dir_name in existing_prerelease_dirs:
+        for dir_name in _get_existing_prerelease_dirs(prerelease_dir):
             if dir_name != newest_repo_prerelease:
                 dir_path = os.path.join(prerelease_dir, dir_name)
                 _safe_rmtree(dir_path, prerelease_dir, dir_name)
@@ -1419,11 +1434,11 @@ def check_for_prereleases(
             logger.info(f"Pre-release {version}: {len(files)} new file(s) downloaded")
             downloaded_versions.append(version)
 
-    if target_prereleases:
+    if tracking_targets:
         prerelease_number = batch_update_prerelease_tracking(
-            prerelease_dir, latest_release_tag, target_prereleases
+            prerelease_dir, latest_release_tag, tracking_targets
         )
-        tracked_label = target_prereleases[0]
+        tracked_label = tracking_targets[0]
         if downloaded_files:
             logger.info(
                 f"Downloaded prereleases tracked up to #{prerelease_number}: {tracked_label}"
@@ -1435,8 +1450,8 @@ def check_for_prereleases(
 
     if downloaded_files:
         return True, downloaded_versions
-    if target_prereleases:
-        return False, target_prereleases
+    if tracking_targets:
+        return False, tracking_targets
     return False, []
 
 
