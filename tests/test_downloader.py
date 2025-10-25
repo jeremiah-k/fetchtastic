@@ -4376,10 +4376,10 @@ def test_commit_case_normalization(tmp_path):
 
     latest_release = "v2.7.6.111111"
 
-    # Test with mixed case commit hashes
+    # Test with mixed case commit hashes (same version, different hashes)
     prerelease_dirs_mixed_case = [
-        "firmware-2.7.7.ABC123",  # Uppercase
-        "firmware-2.7.8.abc123",  # Lowercase (same commit)
+        "firmware-2.7.9.ABC123",  # Uppercase
+        "firmware-2.7.9.abc123",  # Lowercase (same commit, same version)
         "firmware-2.7.9.DEF456",  # Different commit, uppercase
     ]
 
@@ -4394,30 +4394,30 @@ def test_commit_case_normalization(tmp_path):
     # Verify tracking info
     info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
     assert info["prerelease_count"] == 2
-    assert "abc123" in info["commits"]  # Should be normalized to lowercase
-    assert "def456" in info["commits"]  # Should be normalized to lowercase
-    assert "ABC123" not in info["commits"]  # Should not have uppercase version
-    assert "DEF456" not in info["commits"]  # Should not have uppercase version
+    assert "2.7.9.abc123" in info["commits"]  # Should be normalized to lowercase
+    assert "2.7.9.def456" in info["commits"]  # Should be normalized to lowercase
+    assert "2.7.9.ABC123" not in info["commits"]  # Should not have uppercase version
+    assert "2.7.9.DEF456" not in info["commits"]  # Should not have uppercase version
 
-    # Test adding more with different cases
+    # Test adding more with different cases (same version, different hash)
     more_prerelease_dirs = [
-        "firmware-2.7.10.Abc123",  # Mixed case of existing commit
-        "firmware-2.7.11.CAFE12",  # New commit, uppercase (valid hex)
+        "firmware-2.7.9.Abc123",  # Mixed case of existing commit
+        "firmware-2.7.9.CAFE12",  # New commit, uppercase (valid hex)
     ]
 
     num2 = downloader.batch_update_prerelease_tracking(
         str(prerelease_dir), latest_release, more_prerelease_dirs
     )
 
-    # Should still be 3 total (abc123 already exists, cafe12 is new)
+    # Should be 3 total (abc123 already exists, cafe12 is new)
     assert num2 == 3, "Should have 3 total commits (no case duplicates)"
 
     # Verify final state
     info2 = downloader.get_prerelease_tracking_info(str(prerelease_dir))
     assert info2["prerelease_count"] == 3
-    assert "abc123" in info2["commits"]
-    assert "def456" in info2["commits"]
-    assert "cafe12" in info2["commits"]  # Should be normalized to lowercase
+    assert "2.7.9.abc123" in info2["commits"]
+    assert "2.7.9.def456" in info2["commits"]
+    assert "2.7.9.cafe12" in info2["commits"]  # Should be normalized to lowercase
 
     # Verify no uppercase versions exist
     for commit in info2["commits"]:

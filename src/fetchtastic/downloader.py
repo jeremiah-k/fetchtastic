@@ -647,9 +647,13 @@ def _read_text_tracking_file(tracking_file):
             if lines[0].startswith("Release: "):
                 current_release = lines[0][9:]  # Remove "Release: " prefix
                 commits = lines[1:]  # Rest are commit hashes
+                commits = [
+                    commit.lower() for commit in commits
+                ]  # Normalize to lowercase
                 return commits, current_release
             # Legacy format: treat all lines as commits; release unknown
-            return lines, "unknown"
+            commits = [commit.lower() for commit in lines]  # Normalize to lowercase
+            return commits, "unknown"
     except (IOError, UnicodeDecodeError) as e:
         logger.debug(f"Could not read legacy prerelease tracking file: {e}")
 
@@ -688,7 +692,7 @@ def _read_prerelease_tracking_data(tracking_file):
                     tracking_data.get("count", 1)
 
                     # For new format, we only track the current hash
-                    commits = [hash_val] if hash_val else []
+                    commits = [hash_val.lower()] if hash_val else []
                     current_release = (
                         f"v{version}" if not version.startswith("v") else version
                     )
@@ -696,6 +700,8 @@ def _read_prerelease_tracking_data(tracking_file):
                     # Legacy format
                     current_release = tracking_data.get("release")
                     commits = tracking_data.get("commits", [])
+                    # Normalize commits to lowercase for consistency
+                    commits = [commit.lower() for commit in commits]
             read_from_json_success = True
         except (IOError, json.JSONDecodeError, UnicodeDecodeError) as e:
             logger.warning(f"Could not read prerelease tracking file: {e}")
@@ -901,13 +907,21 @@ def batch_update_prerelease_tracking(
 
     tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
 
-    # Extract commits from directory names
+    # Extract commits from directory names (normalize to lowercase)
     new_commits = []
     for dir_name in prerelease_dirs:
         if dir_name.startswith("firmware-"):
             commit = dir_name[9:]  # Remove "firmware-" prefix
-            if commit and commit not in new_commits:
-                new_commits.append(commit)
+            commit_lower = commit.lower()  # Normalize to lowercase
+
+            # Check for duplicate by hash part only (case-insensitive)
+            existing_hash_parts = [
+                existing_commit.split(".")[-1] for existing_commit in new_commits
+            ]
+            new_hash_part = commit_lower.split(".")[-1]
+
+            if commit_lower and new_hash_part not in existing_hash_parts:
+                new_commits.append(commit_lower)
 
     if not new_commits:
         return 0
@@ -923,10 +937,16 @@ def batch_update_prerelease_tracking(
         )
         existing_commits = []
 
-    # Merge commits, preserving order and avoiding duplicates
+    # Merge commits, preserving order and avoiding duplicates (by hash part only)
     all_commits = existing_commits.copy()
     for commit in new_commits:
-        if commit not in all_commits:
+        # Check for duplicate by hash part only (case-insensitive)
+        existing_hash_parts = [
+            existing_commit.split(".")[-1] for existing_commit in all_commits
+        ]
+        new_hash_part = commit.split(".")[-1]
+
+        if commit and new_hash_part not in existing_hash_parts:
             all_commits.append(commit)
 
     # Sort commits by version to find the latest
