@@ -85,7 +85,7 @@ NON_ASCII_RX = re.compile(r"[^\x00-\x7F]+")
 PRERELEASE_VERSION_RX = re.compile(
     r"^(\d+(?:\.\d+)*)[.-](rc|dev|alpha|beta|b)\.?(\d*)$", re.IGNORECASE
 )
-HASH_SUFFIX_VERSION_RX = re.compile(r"^(\d+(?:\.\d+)*)\.([A-Za-z0-9][A-Za-z0-9.-]*)$")
+HASH_SUFFIX_VERSION_RX = re.compile(r"^(\d+(?:\.\d+){2,})\.([0-9]{6,}|[a-f0-9]{6,})$")
 VERSION_BASE_RX = re.compile(r"^(\d+(?:\.\d+)*)")
 
 
@@ -115,6 +115,18 @@ def _normalize_version(
 
     if trimmed.lower().startswith("v"):
         trimmed = trimmed[1:]
+
+    # Try hash suffix regex first for patterns like "2.3.0.abcdef"
+    m_hash = HASH_SUFFIX_VERSION_RX.match(trimmed)
+    if m_hash:
+        try:
+            return parse_version(f"{m_hash.group(1)}+{m_hash.group(2)}")
+        except InvalidVersion:
+            logger.debug(
+                "Could not parse '%s' as a version with a local version identifier.",
+                trimmed,
+                exc_info=True,
+            )
 
     try:
         return parse_version(trimmed)
@@ -260,6 +272,15 @@ def compare_versions(version1, version2):
     v1 = _normalize_version(version1)
     v2 = _normalize_version(version2)
     if v1 is not None and v2 is not None:
+        # Extract base versions (without local identifiers) for comparison
+        base_v1 = str(v1).split("+")[0] if "+" in str(v1) else str(v1)
+        base_v2 = str(v2).split("+")[0] if "+" in str(v2) else str(v2)
+
+        # If base versions are the same, treat as equal for version comparison purposes
+        # Hash comparison is handled separately by the calling code
+        if base_v1 == base_v2:
+            return 0
+
         if v1 > v2:
             return 1
         elif v1 < v2:
