@@ -11,7 +11,6 @@ import time
 import zipfile
 from collections import defaultdict
 from datetime import datetime
-from functools import cmp_to_key
 from typing import IO, Any, Callable, Dict, List, Optional, Tuple, Union
 
 import requests
@@ -34,6 +33,7 @@ from fetchtastic.constants import (
     DEVICE_HARDWARE_CACHE_HOURS,
     EXECUTABLE_PERMISSIONS,
     FILE_TYPE_PREFIXES,
+    GITHUB_API_BASE,
     GITHUB_API_TIMEOUT,
     LATEST_ANDROID_RELEASE_FILE,
     LATEST_FIRMWARE_RELEASE_FILE,
@@ -1312,6 +1312,34 @@ def check_for_prereleases(
             )
             return ""
 
+    def get_commit_timestamp(commit_hash: str) -> Optional[datetime]:
+        """Get commit timestamp from GitHub API for meshtastic/firmware repo."""
+        try:
+            api_url = f"{GITHUB_API_BASE}/meshtastic/firmware/commits/{commit_hash}"
+            response = requests.get(api_url, timeout=GITHUB_API_TIMEOUT)
+            response.raise_for_status()
+
+            # Small delay to be respectful to GitHub API
+            time.sleep(API_CALL_DELAY)
+
+            commit_data = response.json()
+            commit_date_str = (
+                commit_data.get("commit", {}).get("committer", {}).get("date")
+            )
+            if commit_date_str:
+                # Parse ISO 8601 date string
+                return datetime.fromisoformat(commit_date_str.replace("Z", "+00:00"))
+
+            logger.warning(f"No commit date found for hash {commit_hash}")
+            return None
+
+        except requests.RequestException as e:
+            logger.warning(f"Failed to fetch commit timestamp for {commit_hash}: {e}")
+            return None
+        except (ValueError, KeyError) as e:
+            logger.warning(f"Failed to parse commit timestamp for {commit_hash}: {e}")
+            return None
+
     exclude_patterns_list = exclude_patterns or []
     latest_release_version = latest_release_tag.lstrip("v")
     expected_prerelease_version = calculate_expected_prerelease_version(
@@ -1370,9 +1398,42 @@ def check_for_prereleases(
         )
         return False, []
 
-    # Sort by hash to get the newest (take the first after sorting)
-    matching_prerelease_dirs = sorted(matching_prerelease_dirs)
-    target_prereleases = matching_prerelease_dirs[:1]
+    # Sort by commit timestamp to get the newest
+    def get_commit_hash_from_dir(dir_name: str) -> str:
+        """Extract commit hash from directory name."""
+        version_part = extract_version(dir_name)  # Removes "firmware-" prefix
+        version_parts = version_part.split(".")
+        if len(version_parts) >= 4:
+            return version_parts[3]  # Hash is after version.x.y.z.hash
+        return ""
+
+    # Get timestamps for each directory
+    dirs_with_timestamps = []
+    for dir_name in matching_prerelease_dirs:
+        commit_hash = get_commit_hash_from_dir(dir_name)
+        if commit_hash:
+            timestamp = get_commit_timestamp(commit_hash)
+            if timestamp:
+                dirs_with_timestamps.append((dir_name, timestamp))
+            else:
+                # If we can't get timestamp, use None to sort by name only
+                dirs_with_timestamps.append((dir_name, None))
+        else:
+            # If we can't extract hash, use None to sort by name only
+            dirs_with_timestamps.append((dir_name, None))
+
+    # Sort by timestamp (newest first), directories without timestamps preserve original order
+    with_timestamp = [(d, t) for d, t in dirs_with_timestamps if t is not None]
+    without_timestamp = [(d, t) for d, t in dirs_with_timestamps if t is None]
+
+    # Sort with timestamp items by commit time (newest first)
+    with_timestamp.sort(key=lambda x: x[1], reverse=True)
+
+    # Combine: with timestamp items (newest first) + without timestamp items (original order)
+    dirs_with_timestamps = with_timestamp + without_timestamp
+
+    # Take newest one
+    target_prereleases = [dir_name for dir_name, _ in dirs_with_timestamps[:1]]
 
     os.makedirs(prerelease_dir, exist_ok=True)
     # Resolve once for containment checks

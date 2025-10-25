@@ -47,6 +47,35 @@ def write_dummy_file():
     return _write
 
 
+def mock_github_commit_timestamp(commit_timestamps):
+    """
+    Create a mock function for GitHub API commit timestamp responses.
+
+    Parameters:
+        commit_timestamps (dict): Mapping of commit hash to ISO 8601 timestamp string
+
+    Returns:
+        function: Mock function that can be used with mock_get.side_effect
+    """
+
+    def mock_get_response(url, **kwargs):
+        """Mock GitHub API response for commit timestamps."""
+        from unittest.mock import Mock
+
+        # Extract commit hash from URL
+        for commit_hash, timestamp in commit_timestamps.items():
+            if f"commits/{commit_hash}" in url:
+                return Mock(
+                    json=lambda: {"commit": {"committer": {"date": timestamp}}},
+                    raise_for_status=lambda: None,
+                )
+
+        # Default response for other URLs
+        return Mock(json=lambda: {}, raise_for_status=lambda: None)
+
+    return mock_get_response
+
+
 # Test cases for compare_versions
 @pytest.mark.parametrize(
     "version1, version2, expected",
@@ -698,8 +727,9 @@ def test_cleanup_superseded_prereleases_handles_commit_suffix(tmp_path):
 @patch("fetchtastic.downloader.menu_repo.fetch_repo_directories")
 @patch("fetchtastic.downloader.menu_repo.fetch_directory_contents")
 @patch("fetchtastic.downloader.download_file_with_retry")
+@patch("requests.get")
 def test_check_for_prereleases_download_and_cleanup(
-    mock_dl, mock_fetch_contents, mock_fetch_dirs, tmp_path
+    mock_get, mock_dl, mock_fetch_contents, mock_fetch_dirs, tmp_path
 ):
     """Check that prerelease discovery downloads matching assets and cleans stale entries."""
     # Repo has a newer prerelease and some other dirs
@@ -747,6 +777,23 @@ def test_check_for_prereleases_download_and_cleanup(
     stray = prerelease_dir / "stray.txt"
     stray.write_text("stale")
 
+    # Mock GitHub API response for commit timestamp
+    def mock_get_response(url, **kwargs):
+        """Mock GitHub API response for commit timestamps."""
+        from unittest.mock import Mock
+
+        if "commits/abcdef" in url:
+            return Mock(
+                json=lambda: {
+                    "commit": {"committer": {"date": "2025-01-20T12:00:00Z"}}
+                },
+                raise_for_status=lambda: None,
+            )
+        else:
+            return Mock(json=lambda: {}, raise_for_status=lambda: None)
+
+    mock_get.side_effect = mock_get_response
+
     latest_release_tag = "v2.7.6.111111"
     found, versions = downloader.check_for_prereleases(
         str(download_dir), latest_release_tag, ["rak4631-"], exclude_patterns=[]
@@ -776,8 +823,9 @@ def test_check_for_prereleases_download_and_cleanup(
 @patch("fetchtastic.downloader.menu_repo.fetch_repo_directories")
 @patch("fetchtastic.downloader.menu_repo.fetch_directory_contents")
 @patch("fetchtastic.downloader.download_file_with_retry")
+@patch("requests.get")
 def test_check_for_prereleases_only_downloads_latest(
-    mock_dl, mock_fetch_contents, mock_fetch_dirs, tmp_path
+    mock_get, mock_dl, mock_fetch_contents, mock_fetch_dirs, tmp_path
 ):
     """Ensure only the newest prerelease is downloaded and older ones are removed."""
 
@@ -825,6 +873,11 @@ def test_check_for_prereleases_only_downloads_latest(
         return True
 
     mock_dl.side_effect = _mock_download
+
+    # Mock GitHub API responses for commit timestamps
+    mock_get.side_effect = mock_github_commit_timestamp(
+        {"abc123": "2025-01-15T10:30:00Z", "def456": "2025-01-10T08:45:00Z"}
+    )
 
     download_dir = tmp_path
     prerelease_dir = download_dir / "firmware" / "prerelease"
@@ -1095,8 +1148,9 @@ def test_check_for_prereleases_no_directories(tmp_path):
 @patch("fetchtastic.downloader.menu_repo.fetch_repo_directories")
 @patch("fetchtastic.downloader.menu_repo.fetch_directory_contents")
 @patch("fetchtastic.downloader.download_file_with_retry")
+@patch("requests.get")
 def test_prerelease_tracking_functionality(
-    mock_dl, mock_fetch_contents, mock_fetch_dirs, tmp_path, write_dummy_file
+    mock_get, mock_dl, mock_fetch_contents, mock_fetch_dirs, tmp_path, write_dummy_file
 ):
     """Test that prerelease tracking file is created and updated correctly."""
     # Setup mock data
@@ -1115,6 +1169,11 @@ def test_prerelease_tracking_functionality(
 
     download_dir = tmp_path
     latest_release_tag = "v2.7.6.111111"
+
+    # Mock GitHub API responses for commit timestamps
+    mock_get.side_effect = mock_github_commit_timestamp(
+        {"abcdef": "2025-01-20T12:00:00Z"}
+    )
 
     # Run prerelease check
     found, versions = downloader.check_for_prereleases(
