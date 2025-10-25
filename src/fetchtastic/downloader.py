@@ -886,11 +886,11 @@ def batch_update_prerelease_tracking(
     prerelease_dir, latest_release_tag, prerelease_dirs
 ):
     """
-    Update prerelease_tracking.json to track all prereleases while keeping only the latest directory.
+    Update prerelease_tracking.json to track a single prerelease version with hash changes.
 
-    This function tracks ALL prereleases in a list (like the original behavior), but ensures
-    only the latest prerelease directory exists on disk. When a new prerelease appears,
-    it's added to the tracking list and downloaded, while older directories are cleaned up.
+    This function tracks only ONE prerelease version (latest official + 1). When a new
+    prerelease appears with the same version but different hash, it replaces the old one.
+    This matches the actual behavior where there's only one prerelease version at a time.
 
     Parameters:
         prerelease_dir (str): Directory containing prerelease_tracking.json.
@@ -898,7 +898,7 @@ def batch_update_prerelease_tracking(
         prerelease_dirs (list[str]): Prerelease directory names to scan for commit hashes; entries without a commit are ignored.
 
     Returns:
-        int: Total number of tracked prerelease commits.
+        int: Total number of tracked prerelease commits for the current version.
              Returns 0 immediately if prerelease_dirs is empty.
              Returns 1 if writing the tracking file fails (fallback value).
     """
@@ -907,27 +907,20 @@ def batch_update_prerelease_tracking(
 
     tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
 
-    # Extract commits from directory names (normalize to lowercase)
-    new_commits = []
+    # Extract the single prerelease version and hash from directory names
+    new_commit = None
     for dir_name in prerelease_dirs:
         if dir_name.startswith("firmware-"):
             commit = dir_name[9:]  # Remove "firmware-" prefix
             commit_lower = commit.lower()  # Normalize to lowercase
+            if commit_lower:
+                new_commit = commit_lower
+                break  # Only process the first (and should be only) prerelease
 
-            # Check for duplicate by hash part only (case-insensitive)
-            existing_hash_parts = [
-                existing_commit.split(".")[-1] for existing_commit in new_commits
-            ]
-            new_hash_part = commit_lower.split(".")[-1]
-
-            if commit_lower and new_hash_part not in existing_hash_parts:
-                new_commits.append(commit_lower)
-
-    if not new_commits:
+    if not new_commit:
         return 0
 
     # Read current tracking data
-    tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
     existing_commits, existing_release = _read_prerelease_tracking_data(tracking_file)
 
     # Check if we need to reset due to new official release
@@ -937,46 +930,44 @@ def batch_update_prerelease_tracking(
         )
         existing_commits = []
 
-    # Merge commits, preserving order and avoiding duplicates (by hash part only)
-    all_commits = existing_commits.copy()
-    for commit in new_commits:
-        # Check for duplicate by hash part only (case-insensitive)
-        existing_hash_parts = [
-            existing_commit.split(".")[-1] for existing_commit in all_commits
-        ]
-        new_hash_part = commit.split(".")[-1]
+    # Check if this is a new hash for the same version
+    is_new_hash = True
+    if existing_commits:
+        # Extract hash parts for comparison
+        existing_hash = existing_commits[-1].split(".")[-1] if existing_commits else ""
+        new_hash = new_commit.split(".")[-1]
 
-        if commit and new_hash_part not in existing_hash_parts:
-            all_commits.append(commit)
+        if existing_hash == new_hash:
+            is_new_hash = False
 
-    # Sort commits by version to find the latest
-    def commit_version_key(commit):
-        try:
-            version_part = commit.split(".")[0:3]  # Take first 3 parts as version
-            return tuple(int(x) for x in version_part)
-        except (ValueError, IndexError):
-            return (0, 0, 0)
+    # Only update if it's a new hash
+    if not is_new_hash:
+        logger.debug(f"Prerelease {new_commit} already tracked, no update needed")
+        return len(existing_commits)
 
-    sorted_commits = sorted(all_commits, key=commit_version_key, reverse=True)
-    latest_commit = sorted_commits[0] if sorted_commits else ""
-
-    # Clean up old prerelease directories (keep only the latest)
-    if latest_commit:
-        for commit in sorted_commits[1:]:  # Skip the latest one
-            old_dir_path = os.path.join(prerelease_dir, f"firmware-{commit}")
+    # Clean up old prerelease directory if it exists and has different hash
+    if existing_commits:
+        old_commit = existing_commits[-1]
+        if old_commit != new_commit:
+            old_dir_path = os.path.join(prerelease_dir, f"firmware-{old_commit}")
             if os.path.exists(old_dir_path):
                 try:
-                    _safe_rmtree(old_dir_path, prerelease_dir, f"firmware-{commit}")
-                    logger.info(f"Removed old prerelease directory: firmware-{commit}")
+                    _safe_rmtree(old_dir_path, prerelease_dir, f"firmware-{old_commit}")
+                    logger.info(
+                        f"Removed old prerelease directory: firmware-{old_commit}"
+                    )
                 except Exception as e:
                     logger.warning(
                         f"Failed to remove old prerelease directory {old_dir_path}: {e}"
                     )
 
+    # Update tracking with the new commit
+    updated_commits = existing_commits + [new_commit]
+
     # Write updated tracking data
     new_tracking_data = {
         "release": latest_release_tag,
-        "commits": sorted_commits,
+        "commits": updated_commits,
         "last_updated": datetime.now().astimezone().isoformat(),
     }
 
@@ -986,9 +977,9 @@ def batch_update_prerelease_tracking(
         return 1  # Default to 1 if we can't track
 
     logger.info(
-        f"Prerelease tracking updated: {len(sorted_commits)} commits tracked, latest: {latest_commit}"
+        f"Prerelease tracking updated: {len(updated_commits)} commits tracked, latest: {new_commit}"
     )
-    return len(sorted_commits)
+    return len(updated_commits)
 
 
 def matches_extract_patterns(filename, extract_patterns, device_manager=None):
@@ -1290,17 +1281,46 @@ def check_for_prereleases(
         """Return the portion after the 'firmware-' prefix in prerelease directory names."""
         return dir_name[9:] if dir_name.startswith("firmware-") else dir_name
 
+    def calculate_expected_prerelease_version(latest_version: str) -> str:
+        """Calculate the expected prerelease version (latest + 1)."""
+        try:
+            latest_tuple = _get_release_tuple(latest_version)
+            if not latest_tuple or len(latest_tuple) < 2:
+                return ""
+
+            # Increment the patch version (third position) by 1
+            major, minor, patch = (
+                latest_tuple[0],
+                latest_tuple[1],
+                latest_tuple[2] if len(latest_tuple) > 2 else 0,
+            )
+            expected_patch = patch + 1
+            return f"{major}.{minor}.{expected_patch}"
+        except (ValueError, TypeError, IndexError):
+            logger.warning(
+                f"Could not calculate expected prerelease version from: {latest_version}"
+            )
+            return ""
+
     exclude_patterns_list = exclude_patterns or []
     latest_release_version = latest_release_tag.lstrip("v")
-    latest_release_tuple = _get_release_tuple(latest_release_version)
-    v_latest_norm = _normalize_version(latest_release_version)
+    expected_prerelease_version = calculate_expected_prerelease_version(
+        latest_release_version
+    )
+
+    if not expected_prerelease_version:
+        logger.warning(
+            "Could not determine expected prerelease version; skipping prerelease check"
+        )
+        return False, []
 
     directories = menu_repo.fetch_repo_directories()
     if not directories:
         logger.info("No firmware directories found in the repository.")
         return False, []
 
-    repo_prerelease_dirs: List[str] = []
+    # Only look for prerelease directories matching the expected version
+    matching_prerelease_dirs: List[str] = []
     for raw_dir_name in directories:
         if not raw_dir_name.startswith("firmware-"):
             continue
@@ -1316,44 +1336,33 @@ def check_for_prereleases(
         dir_version = extract_version(dir_name)
         if not re.match(VERSION_REGEX_PATTERN, dir_version):
             logger.debug(
-                "Repository prerelease directory %s uses a non-standard version format; attempting best-effort comparison",
+                "Repository prerelease directory %s uses a non-standard version format; skipping",
                 dir_name,
-            )
-
-        dir_release_tuple = _get_release_tuple(dir_version)
-        # Only use tuple comparison if latest release is not a prerelease
-        if (
-            latest_release_tuple
-            and dir_release_tuple
-            and dir_release_tuple <= latest_release_tuple
-            and not getattr(v_latest_norm, "is_prerelease", False)
-        ):
-            logger.debug(
-                "Skipping prerelease %s; version %s is not newer than latest release %s",
-                dir_name,
-                dir_version,
-                latest_release_tag,
             )
             continue
 
-        try:
-            if compare_versions(dir_version, latest_release_version) > 0:
-                repo_prerelease_dirs.append(dir_name)
-        except (InvalidVersion, ValueError, TypeError) as exc:
-            logger.warning(
-                f"Could not compare prerelease version {dir_version} against {latest_release_version}: {exc}"
-            )
+        # Extract base version (without hash) to check if it matches expected
+        dir_version_parts = dir_version.split(".")
+        if len(dir_version_parts) < 3:
+            continue
 
-    if repo_prerelease_dirs:
-        repo_prerelease_dirs = sorted(
-            repo_prerelease_dirs,
-            key=cmp_to_key(
-                lambda a, b: compare_versions(extract_version(a), extract_version(b))
-            ),
-            reverse=True,
+        dir_base_version = (
+            f"{dir_version_parts[0]}.{dir_version_parts[1]}.{dir_version_parts[2]}"
         )
 
-    target_prereleases = repo_prerelease_dirs[:1]
+        # Only include directories that match the expected prerelease version
+        if dir_base_version == expected_prerelease_version:
+            matching_prerelease_dirs.append(dir_name)
+
+    if not matching_prerelease_dirs:
+        logger.info(
+            f"No prerelease directories found for expected version {expected_prerelease_version}"
+        )
+        return False, []
+
+    # Sort by hash to get the newest (take the first after sorting)
+    matching_prerelease_dirs = sorted(matching_prerelease_dirs)
+    target_prereleases = matching_prerelease_dirs[:1]
 
     os.makedirs(prerelease_dir, exist_ok=True)
     # Resolve once for containment checks

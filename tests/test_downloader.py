@@ -4259,45 +4259,37 @@ def test_batch_update_prerelease_tracking(tmp_path):
     prerelease_dir = tmp_path / "prerelease"
     prerelease_dir.mkdir()
 
-    # Test batch update with multiple prerelease directories
+    # Test batch update with single prerelease version (expected behavior)
     latest_release = "v2.7.6.111111"
-    prerelease_dirs = [
-        "firmware-2.7.7.abc123",
-        "firmware-2.7.8.def456",
-        "firmware-2.7.9.abcdef",  # Valid hex commit hash
-    ]
+    prerelease_dir_first = "firmware-2.7.7.abc123"  # Expected prerelease version (+1)
 
     # Test initial batch update
     num = downloader.batch_update_prerelease_tracking(
-        str(prerelease_dir), latest_release, prerelease_dirs
+        str(prerelease_dir), latest_release, [prerelease_dir_first]
     )
-    assert num == 3, "Should track 3 prereleases"
+    assert num == 1, "Should track 1 prerelease"
 
     # Verify tracking file was created correctly
     info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
     assert info["release"] == latest_release
-    assert info["prerelease_count"] == 3
+    assert info["prerelease_count"] == 1
     assert "2.7.7.abc123" in info["commits"]
-    assert "2.7.8.def456" in info["commits"]
-    assert "2.7.9.abcdef" in info["commits"]
 
-    # Test batch update with some existing commits (should not duplicate)
-    more_prerelease_dirs = [
-        "firmware-2.7.8.def456",  # Already exists
-        "firmware-2.7.10.fedcba",  # New one (valid hex)
-    ]
+    # Test batch update with same version but different hash (should replace)
+    prerelease_dir_second = "firmware-2.7.7.def456"  # Same version, different hash
 
     num2 = downloader.batch_update_prerelease_tracking(
-        str(prerelease_dir), latest_release, more_prerelease_dirs
+        str(prerelease_dir), latest_release, [prerelease_dir_second]
     )
-    assert num2 == 4, "Should have 4 total prereleases (3 existing + 1 new)"
+    assert num2 == 2, "Should have 2 total commits (hash replacement)"
 
-    # Verify no duplicates were added
+    # Verify new hash was added
     info2 = downloader.get_prerelease_tracking_info(str(prerelease_dir))
-    assert info2["prerelease_count"] == 4
-    assert "2.7.10.fedcba" in info2["commits"]
+    assert info2["prerelease_count"] == 2
+    assert "2.7.7.abc123" in info2["commits"]
+    assert "2.7.7.def456" in info2["commits"]
     assert (
-        info2["commits"].count("2.7.8.def456") == 1
+        info2["commits"].count("2.7.7.abc123") == 1
     ), "Should not duplicate existing commit"
 
     # Test batch update with new release (should reset)
@@ -4370,54 +4362,54 @@ def test_batch_update_empty_list(tmp_path):
 
 
 def test_commit_case_normalization(tmp_path):
-    """Test that commit hashes are normalized to lowercase to prevent duplicates."""
+    """Test that commit hashes are normalized to lowercase and only single version is tracked."""
     prerelease_dir = tmp_path / "prerelease"
     prerelease_dir.mkdir()
 
     latest_release = "v2.7.6.111111"
 
-    # Test with mixed case commit hashes (same version, different hashes)
-    prerelease_dirs_mixed_case = [
-        "firmware-2.7.9.ABC123",  # Uppercase
-        "firmware-2.7.9.abc123",  # Lowercase (same commit, same version)
-        "firmware-2.7.9.DEF456",  # Different commit, uppercase
-    ]
+    # Test with mixed case commit hash (same version, different hash over time)
+    prerelease_dir_first = "firmware-2.7.7.ABC123"  # Uppercase hash
 
-    # First batch with mixed case
+    # First prerelease
     num1 = downloader.batch_update_prerelease_tracking(
-        str(prerelease_dir), latest_release, prerelease_dirs_mixed_case
+        str(prerelease_dir), latest_release, [prerelease_dir_first]
     )
 
-    # Should only track 2 unique commits (ABC123/abc123 should be treated as same)
-    assert num1 == 2, "Should track 2 unique commits (case-insensitive)"
+    # Should track 1 commit (normalized to lowercase)
+    assert num1 == 1, "Should track 1 commit (case-normalized)"
 
     # Verify tracking info
     info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
-    assert info["prerelease_count"] == 2
-    assert "2.7.9.abc123" in info["commits"]  # Should be normalized to lowercase
-    assert "2.7.9.def456" in info["commits"]  # Should be normalized to lowercase
-    assert "2.7.9.ABC123" not in info["commits"]  # Should not have uppercase version
-    assert "2.7.9.DEF456" not in info["commits"]  # Should not have uppercase version
+    assert info["prerelease_count"] == 1
+    assert "2.7.7.abc123" in info["commits"]  # Should be normalized to lowercase
+    assert "2.7.7.ABC123" not in info["commits"]  # Should not have uppercase version
 
-    # Test adding more with different cases (same version, different hash)
-    more_prerelease_dirs = [
-        "firmware-2.7.9.Abc123",  # Mixed case of existing commit
-        "firmware-2.7.9.CAFE12",  # New commit, uppercase (valid hex)
-    ]
+    # Test updating with same version but different hash (uppercase)
+    prerelease_dir_second = "firmware-2.7.7.DEF456"  # Different hash, same version
 
     num2 = downloader.batch_update_prerelease_tracking(
-        str(prerelease_dir), latest_release, more_prerelease_dirs
+        str(prerelease_dir), latest_release, [prerelease_dir_second]
     )
 
-    # Should be 3 total (abc123 already exists, cafe12 is new)
-    assert num2 == 3, "Should have 3 total commits (no case duplicates)"
+    # Should be 2 total (new hash added)
+    assert num2 == 2, "Should have 2 total commits (hash replacement)"
 
     # Verify final state
     info2 = downloader.get_prerelease_tracking_info(str(prerelease_dir))
-    assert info2["prerelease_count"] == 3
-    assert "2.7.9.abc123" in info2["commits"]
-    assert "2.7.9.def456" in info2["commits"]
-    assert "2.7.9.cafe12" in info2["commits"]  # Should be normalized to lowercase
+    assert info2["prerelease_count"] == 2
+    assert "2.7.7.abc123" in info2["commits"]
+    assert "2.7.7.def456" in info2["commits"]  # Should be normalized to lowercase
+
+    # Test updating with same hash (should not add duplicate)
+    prerelease_dir_same = "firmware-2.7.7.def456"  # Same hash as last
+
+    num3 = downloader.batch_update_prerelease_tracking(
+        str(prerelease_dir), latest_release, [prerelease_dir_same]
+    )
+
+    # Should still be 2 (no duplicate added)
+    assert num3 == 2, "Should not add duplicate hash"
 
     # Verify no uppercase versions exist
     for commit in info2["commits"]:
