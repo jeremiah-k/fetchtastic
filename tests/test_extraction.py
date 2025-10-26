@@ -109,7 +109,7 @@ def test_check_extraction_needed_with_nested_paths(tmp_path):
     )
 
     # Create one of the expected files, still needed for the other
-    os.makedirs(out_dir / "dir/inner", exist_ok=True)
+    (out_dir / "dir" / "inner").mkdir(parents=True, exist_ok=True)
     (out_dir / "dir/inner/firmware-rak11200-2.7.4.c1f4f79.bin").write_text(
         "rak11200_data"
     )
@@ -308,6 +308,7 @@ def test_device_hardware_manager_cache_expiration():
         manager = DeviceHardwareManager(cache_dir=cache_dir, cache_hours=1)
 
         # Create valid cache with timestamp
+        import json
         import time
 
         current_time = time.time()
@@ -316,7 +317,7 @@ def test_device_hardware_manager_cache_expiration():
             "timestamp": current_time,
             "api_url": manager.api_url,
         }
-        cache_file.write_text(str(cache_data))
+        cache_file.write_text(json.dumps(cache_data))
 
         # Set the last fetch time to match cache timestamp
         manager._last_fetch_time = current_time

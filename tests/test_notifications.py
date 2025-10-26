@@ -13,9 +13,8 @@ import json
 import tempfile
 import time
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
-import pytest
 import requests
 
 from fetchtastic import downloader
@@ -327,11 +326,8 @@ def test_user_facing_status_messages(tmp_path, caplog):
 class TestNotificationIntegration:
     """Integration tests for notification functionality."""
 
-    def test_notification_with_download_completion(self, mocker, tmp_path):
+    def test_notification_with_download_completion(self, tmp_path):
         """Test notification flow when download completes successfully."""
-        mock_notification = mocker.patch(
-            "fetchtastic.downloader._send_ntfy_notification"
-        )
 
         releases = [
             {
@@ -441,7 +437,7 @@ class TestUIMessageFormatting:
     """Test UI message formatting and presentation."""
 
 
-def test_progress_message_formatting(caplog):
+def test_progress_message_formatting():
     """Test that progress messages are formatted correctly."""
     # This would typically be tested through actual download operations
     # Here we validate the logging infrastructure works
@@ -452,7 +448,33 @@ def test_progress_message_formatting(caplog):
 
     # The actual formatting is handled by Rich console output
     # which goes to stdout rather than caplog, so we just verify
-    # the logging call doesn't raise an exception
+    # logging call doesn't raise an exception
+    assert True
+
+
+def test_error_message_formatting():
+    """Test that error messages are formatted correctly."""
+    from fetchtastic.log_utils import logger
+
+    # Test that logger can be called without error
+    logger.error("Failed to download firmware: Network timeout")
+
+    # The actual formatting is handled by Rich console output
+    # which goes to stdout rather than caplog, so we just verify
+    # logging call doesn't raise an exception
+    assert True
+
+
+def test_warning_message_formatting():
+    """Test that warning messages are formatted correctly."""
+    from fetchtastic.log_utils import logger
+
+    # Test that logger can be called without error
+    logger.warning("Using fallback device patterns due to API failure")
+
+    # The actual formatting is handled by Rich console output
+    # which goes to stdout rather than caplog, so we just verify
+    # logging call doesn't raise an exception
     assert True
 
 

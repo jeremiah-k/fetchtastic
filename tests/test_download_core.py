@@ -10,10 +10,9 @@ This module contains tests for:
 """
 
 import os
-import tempfile
 import zipfile
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -800,7 +799,6 @@ class TestDownloadCoreIntegration:
 
             # Should not download again, but if it does, new versions should still be empty
             # since this is not a new version compared to saved tag
-            assert new == []
             assert new == []
             assert failed == []
 

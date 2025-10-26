@@ -52,6 +52,7 @@ from fetchtastic.setup_config import display_version_info, get_upgrade_command
 from fetchtastic.utils import (
     download_file_with_retry,
     get_hash_file_path,
+    get_user_agent,
     matches_selected_patterns,
     verify_file_integrity,
 )
@@ -874,7 +875,8 @@ def batch_update_prerelease_tracking(
         (
             version_id.lower()
             for dir_name in prerelease_dirs
-            if dir_name.startswith("firmware-") and (version_id := dir_name[9:])
+            if dir_name.startswith("firmware-")
+            and (version_id := dir_name[len("firmware-") :])
         ),
         None,
     )
@@ -1195,7 +1197,7 @@ def get_commit_timestamp(
             headers={
                 "Accept": "application/vnd.github+json",
                 "X-GitHub-Api-Version": "2022-11-28",
-                "User-Agent": "Fetchtastic",
+                "User-Agent": get_user_agent(),
             },
         )
         response.raise_for_status()

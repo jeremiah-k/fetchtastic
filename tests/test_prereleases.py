@@ -7,18 +7,13 @@ and related functionality.
 
 import json
 import os
-import time
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-import requests
 
 from fetchtastic import downloader
-from fetchtastic.device_hardware import DeviceHardwareManager
 from fetchtastic.downloader import (
-    check_for_prereleases,
-    cleanup_superseded_prereleases,
     matches_extract_patterns,
 )
 
