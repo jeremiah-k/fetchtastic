@@ -10,6 +10,7 @@ import tempfile
 import time
 import zipfile
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import IO, Any, Callable, Dict, List, Optional, Tuple, Union
 
@@ -1325,11 +1326,20 @@ def check_for_prereleases(
 
     # Sort by commit timestamp to get the newest
     # Get timestamps for each directory
-    dirs_with_timestamps = []
+    commit_hashes = []
     for dir_name in matching_prerelease_dirs:
         commit_hash = _get_commit_hash_from_dir(dir_name)
-        timestamp = get_commit_timestamp(commit_hash) if commit_hash else None
-        dirs_with_timestamps.append((dir_name, timestamp))
+        commit_hashes.append(commit_hash if commit_hash else None)
+
+    # Fetch timestamps concurrently to improve performance
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        timestamps = list(
+            executor.map(
+                lambda h: get_commit_timestamp(h) if h else None, commit_hashes
+            )
+        )
+
+    dirs_with_timestamps = list(zip(matching_prerelease_dirs, timestamps))
 
     # Sort by timestamp (newest first), placing items without a timestamp at end.
     dirs_with_timestamps.sort(

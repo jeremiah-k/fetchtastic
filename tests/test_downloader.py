@@ -58,7 +58,7 @@ def mock_github_commit_timestamp(commit_timestamps):
         function: Mock function that can be used with mock_get.side_effect
     """
 
-    def mock_get_response(url, **kwargs):
+    def mock_get_response(url, **_kwargs):
         """Mock GitHub API response for commit timestamps."""
         from unittest.mock import Mock
 
