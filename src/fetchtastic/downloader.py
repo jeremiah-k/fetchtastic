@@ -3032,25 +3032,40 @@ def check_and_download(
                 f"Error preparing list of tags to keep for cleanup: {e}. Cleanup might be skipped or incomplete."
             )
 
-    if not actions_taken:
-        # Determine tags newer than the saved tag by position (list is newest-first)
-        tags_order: List[str] = [
-            tag
-            for rd in releases_to_download
-            if (tag := _sanitize_path_component(rd.get("tag_name"))) is not None
-        ]
-        newer_tags: List[str] = _newer_tags_since_saved(tags_order, saved_release_tag)
+    # Determine tags newer than saved tag by position (list is newest-first)
+    tags_order: List[str] = [
+        tag
+        for rd in releases_to_download
+        if (tag := _sanitize_path_component(rd.get("tag_name"))) is not None
+    ]
+    newer_tags: List[str] = _newer_tags_since_saved(tags_order, saved_release_tag)
+
+    # Only look for undownloaded newer releases if we haven't already added them during download loop
+    if actions_taken:
+        # When actions were taken, only add newer releases if we actually downloaded something
+        # If all downloads failed, don't report any new available versions
+        if downloaded_versions:
+            new_candidates: List[str] = [
+                t
+                for t in newer_tags
+                if t not in downloaded_versions and t not in new_versions_available
+            ]
+        else:
+            # All downloads failed, don't report any new versions
+            new_candidates: List[str] = []
+    else:
+        # When no actions were taken, add all newer releases that weren't downloaded
         new_candidates: List[str] = [
             t for t in newer_tags if t not in downloaded_versions
         ]
 
-        if not new_candidates:
-            logger.info(f"All {release_type} assets are up to date.")
+    if not actions_taken and not new_candidates:
+        logger.info(f"All {release_type} assets are up to date.")
 
-        # Merge uniquely with any earlier additions
-        new_versions_available = list(
-            dict.fromkeys(new_versions_available + new_candidates)
-        )
+    # Merge uniquely with any earlier additions
+    new_versions_available = list(
+        dict.fromkeys(new_versions_available + new_candidates)
+    )
 
     return downloaded_versions, new_versions_available, failed_downloads_details
 
