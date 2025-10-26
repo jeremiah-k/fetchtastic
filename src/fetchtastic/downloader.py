@@ -686,25 +686,26 @@ def _read_prerelease_tracking_data(tracking_file):
                 tracking_data = json.load(f)
 
                 # Check for new format (version, hash, count)
+                commits_raw = []
                 if "version" in tracking_data and (
                     "hash" in tracking_data or "commits" in tracking_data
                 ):
                     # New format: convert to legacy format for compatibility
                     version = tracking_data.get("version")
                     hash_val = tracking_data.get("hash")
+                    current_release = _ensure_v_prefix_if_missing(version)
 
-                    # Check if commits list exists (for accumulated tracking), otherwise use single hash
+                    # Check if commits list exists, otherwise use single hash
                     commits_raw = tracking_data.get("commits")
                     if commits_raw is None and hash_val:
                         commits_raw = [hash_val]
-                    commits = [c.lower() for c in (commits_raw or [])]
-                    current_release = _ensure_v_prefix_if_missing(version)
                 else:
                     # Legacy format
                     current_release = tracking_data.get("release")
-                    commits = tracking_data.get("commits", [])
-                    # Normalize commits to lowercase for consistency
-                    commits = [commit.lower() for commit in commits]
+                    commits_raw = tracking_data.get("commits", [])
+
+                # Normalize commits to lowercase for consistency, done once
+                commits = [commit.lower() for commit in (commits_raw or [])]
                 last_updated = tracking_data.get("last_updated") or tracking_data.get(
                     "timestamp"
                 )
@@ -782,7 +783,7 @@ def update_prerelease_tracking(prerelease_dir, latest_release_tag, current_prere
     """
     Update or create prerelease_tracking.json to record a single prerelease commit.
 
-    This is a convenience wrapper around `batch_update_prerelease_tracking` for handling
+    This is a convenience wrapper around `_update_tracking_with_newest_prerelease` for handling
     a single prerelease directory. It provides the same functionality with a simpler
     interface for single-directory updates.
 
@@ -794,12 +795,12 @@ def update_prerelease_tracking(prerelease_dir, latest_release_tag, current_prere
      Returns:
          int: Number of tracked prerelease commits actually persisted to disk (may be 0 on write failure).
     """
-    return batch_update_prerelease_tracking(
+    return _update_tracking_with_newest_prerelease(
         prerelease_dir, latest_release_tag, [current_prerelease]
     )
 
 
-def batch_update_prerelease_tracking(
+def _update_tracking_with_newest_prerelease(
     prerelease_dir, latest_release_tag, prerelease_dirs
 ):
     """
@@ -1573,7 +1574,7 @@ def check_for_prereleases(
             downloaded_versions.append(version)
 
     if target_prereleases:
-        prerelease_number = batch_update_prerelease_tracking(
+        prerelease_number = _update_tracking_with_newest_prerelease(
             prerelease_dir, latest_release_tag, target_prereleases
         )
         tracked_label = target_prereleases[0]
