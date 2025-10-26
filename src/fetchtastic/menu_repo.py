@@ -44,6 +44,11 @@ def fetch_repo_contents(path=""):
         response = requests.get(api_url, timeout=GITHUB_API_TIMEOUT)
         response.raise_for_status()
 
+        # Log API response info for debugging
+        logger.debug(
+            f"GitHub API response: {response.status_code} for {api_url} ({len(response.content)} bytes)"
+        )
+
         # Small delay to be respectful to GitHub API
         time.sleep(API_CALL_DELAY)
 

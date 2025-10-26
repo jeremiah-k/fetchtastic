@@ -1246,8 +1246,7 @@ def _setup_github(config: dict) -> dict:
     print("  • Without token: 60 requests per hour")
     print("  • With personal token: 5,000 requests per hour")
     print()
-    print("A token is optional but recommended for better performance,")
-    print("especially if you frequently check for prereleases.")
+    print("A token is optional. You can use one if you want to avoid rate limits.")
     print()
 
     # Check if token already exists

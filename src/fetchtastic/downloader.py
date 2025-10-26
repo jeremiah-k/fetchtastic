@@ -1149,6 +1149,7 @@ def get_commit_timestamp(
     repo_name: str,
     commit_hash: str,
     github_token: Optional[str] = None,
+    force_refresh: bool = False,
 ) -> Optional[datetime]:
     """
     Retrieve the committer timestamp for a commit in a GitHub repository.
@@ -1164,9 +1165,9 @@ def get_commit_timestamp(
     # Create cache key
     cache_key = f"{repo_owner}/{repo_name}/{commit_hash}"
 
-    # Check cache first (thread-safe)
+    # Check cache first (thread-safe) unless force_refresh is True
     with _cache_lock:
-        if cache_key in _commit_timestamp_cache:
+        if cache_key in _commit_timestamp_cache and not force_refresh:
             timestamp, cached_at = _commit_timestamp_cache[cache_key]
             age = datetime.now(timezone.utc) - cached_at
             if age.total_seconds() < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 3600:
@@ -1206,6 +1207,11 @@ def get_commit_timestamp(
             headers=headers,
         )
         response.raise_for_status()
+
+        # Log API response info for debugging
+        logger.debug(
+            f"GitHub API response: {response.status_code} for {api_url} ({len(response.content)} bytes)"
+        )
 
         # Small delay to be respectful to GitHub API
         time.sleep(API_CALL_DELAY)
@@ -1273,6 +1279,7 @@ def check_for_prereleases(
     exclude_patterns=None,  # log_message_func parameter removed
     device_manager=None,
     github_token=None,
+    force_refresh=False,
 ):
     """
     Discover prerelease firmware that are newer than the provided official release tag and download assets matching the given selection patterns into download_dir/firmware/prerelease.
@@ -1405,7 +1412,9 @@ def check_for_prereleases(
 
     def _safe_get_timestamp(commit_hash):
         return (
-            get_commit_timestamp("meshtastic", "firmware", commit_hash, github_token)
+            get_commit_timestamp(
+                "meshtastic", "firmware", commit_hash, github_token, force_refresh
+            )
             if commit_hash
             else None
         )
@@ -1686,6 +1695,11 @@ def _get_latest_releases_data(url: str, scan_count: int = 10) -> List[Dict[str, 
         )
         response.raise_for_status()
 
+        # Log API response info for debugging
+        logger.debug(
+            f"GitHub API response: {response.status_code} for {url} ({len(response.content)} bytes)"
+        )
+
         # Small delay to be respectful to GitHub API
         time.sleep(API_CALL_DELAY)
         try:
@@ -1829,7 +1843,7 @@ def _check_wifi_connection(config: Dict[str, Any]) -> None:
 
 
 def _process_firmware_downloads(
-    config: Dict[str, Any], paths_and_urls: Dict[str, str]
+    config: Dict[str, Any], paths_and_urls: Dict[str, str], force_refresh: bool = False
 ) -> Tuple[List[str], List[str], List[Dict[str, str]], Optional[str]]:
     """
     Process firmware release downloads and optional prerelease handling.
@@ -1944,6 +1958,7 @@ def _process_firmware_downloads(
                         exclude_patterns=config.get("EXCLUDE_PATTERNS", []),  # type: ignore
                         device_manager=device_manager,
                         github_token=config.get("GITHUB_TOKEN"),
+                        force_refresh=force_refresh,
                     )
                 )
                 if prerelease_found:
@@ -3143,9 +3158,12 @@ def check_extraction_needed(
         return True  # Default to needing extraction on unknown error
 
 
-def main() -> None:
+def main(force_refresh: bool = False) -> None:
     """
     Main function to orchestrate the Fetchtastic downloader process.
+
+    Args:
+        force_refresh: If True, bypasses cache and forces refresh of all downloads.
     """
     start_time: float = time.time()
     logger.info("Starting Fetchtastic...")  # Changed to logger.info
@@ -3164,6 +3182,14 @@ def main() -> None:
         logger.error("Initial setup failed. Exiting.")  # Changed to logger.error
         return
 
+    # Clear caches if force refresh is requested
+    if force_refresh:
+        logger.info("Force refresh requested - clearing caches...")
+        clear_commit_timestamp_cache()
+        # Clear device hardware cache
+        device_manager = DeviceHardwareManager()
+        device_manager.clear_cache()
+
     _check_wifi_connection(config)
 
     downloaded_firmwares: List[str]
@@ -3180,7 +3206,7 @@ def main() -> None:
         new_firmware_versions,
         failed_firmware_list,
         latest_firmware_version,
-    ) = _process_firmware_downloads(config, paths_and_urls)
+    ) = _process_firmware_downloads(config, paths_and_urls, force_refresh)
     downloaded_apks, new_apk_versions, failed_apk_list, latest_apk_version = (
         _process_apk_downloads(config, paths_and_urls)
     )

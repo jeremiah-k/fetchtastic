@@ -32,6 +32,11 @@ def fetch_firmware_assets():
     )
     response.raise_for_status()
 
+    # Log API response info for debugging
+    logger.debug(
+        f"GitHub API response: {response.status_code} for {MESHTASTIC_FIRMWARE_RELEASES_URL} ({len(response.content)} bytes)"
+    )
+
     # Small delay to be respectful to GitHub API
     time.sleep(API_CALL_DELAY)
 
