@@ -689,7 +689,7 @@ def _read_text_tracking_file(tracking_file):
     return [], None
 
 
-def _ensure_v_prefix(version: Optional[str]) -> Optional[str]:
+def _ensure_v_prefix_if_missing(version: Optional[str]) -> Optional[str]:
     """Add 'v' prefix to version if missing."""
     if version and not version.startswith("v"):
         return f"v{version}"
@@ -723,7 +723,9 @@ def _read_prerelease_tracking_data(tracking_file):
                 tracking_data = json.load(f)
 
                 # Check for new format (version, hash, count)
-                if "version" in tracking_data and "hash" in tracking_data:
+                if "version" in tracking_data and (
+                    "hash" in tracking_data or "commits" in tracking_data
+                ):
                     # New format: convert to legacy format for compatibility
                     version = tracking_data.get("version")
                     hash_val = tracking_data.get("hash")
@@ -733,14 +735,16 @@ def _read_prerelease_tracking_data(tracking_file):
                     if not commits_raw and hash_val:
                         commits_raw = [hash_val]
                     commits = [c.lower() for c in (commits_raw or [])]
-                    current_release = _ensure_v_prefix(version)
+                    current_release = _ensure_v_prefix_if_missing(version)
                 else:
                     # Legacy format
                     current_release = tracking_data.get("release")
                     commits = tracking_data.get("commits", [])
                     # Normalize commits to lowercase for consistency
                     commits = [commit.lower() for commit in commits]
-                last_updated = tracking_data.get("last_updated")
+                last_updated = tracking_data.get("last_updated") or tracking_data.get(
+                    "timestamp"
+                )
             read_from_json_success = True
         except (IOError, json.JSONDecodeError, UnicodeDecodeError) as e:
             logger.warning(f"Could not read prerelease tracking file: {e}")
@@ -856,13 +860,13 @@ def batch_update_prerelease_tracking(
 
     This function maintains two levels of state:
     - **On disk**: Keeps only the newest prerelease directory; older directories are automatically removed.
-    - **In tracking file**: Preserves a cumulative list of all prerelease commits for the current release version.
+    - **In tracking file**: Preserves a cumulative list of all prerelease IDs for the current release version.
 
-    If the official release tag changes, tracked commits are reset to start fresh for the new release.
+    If the official release tag changes, tracked prerelease IDs are reset to start fresh for the new release.
 
     Parameters:
         prerelease_dir (str): Directory containing prerelease_tracking.json.
-        latest_release_tag (str): Current official release tag; when this differs from the stored release tracked commits are reset.
+        latest_release_tag (str): Current official release tag; when this differs from the stored release tracked prerelease IDs are reset.
         prerelease_dirs (list[str]): Prerelease directory names to scan; only the first valid directory is processed, entries without a commit are ignored.
 
     Returns:
@@ -1171,7 +1175,15 @@ def get_commit_timestamp(
     """Get commit timestamp from GitHub API for a given repository."""
     try:
         api_url = f"{GITHUB_API_BASE}/{repo_owner}/{repo_name}/commits/{commit_hash}"
-        response = requests.get(api_url, timeout=GITHUB_API_TIMEOUT)
+        response = requests.get(
+            api_url,
+            timeout=GITHUB_API_TIMEOUT,
+            headers={
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+                "User-Agent": "Fetchtastic",
+            },
+        )
         response.raise_for_status()
 
         # Small delay to be respectful to GitHub API
@@ -1182,7 +1194,8 @@ def get_commit_timestamp(
         if commit_date_str:
             # Parse ISO 8601 date string
             return datetime.fromisoformat(commit_date_str.replace("Z", "+00:00"))
-        return None
+        else:
+            return None
     except (requests.RequestException, ValueError, KeyError) as e:
         logger.warning(f"Failed to get timestamp for commit {commit_hash}: {e}")
         return None
@@ -1194,7 +1207,7 @@ def _get_commit_hash_from_dir(dir_name: str) -> str:
     # Use regex to find a hex string of 6-40 characters, which is more robust
     commit_match = re.search(r"\.([a-f0-9]{6,40})", version_part, re.IGNORECASE)
     if commit_match:
-        return commit_match.group(1)
+        return commit_match.group(1).lower()
     return ""
 
 
@@ -1334,7 +1347,7 @@ def check_for_prereleases(
         commit_hashes.append(commit_hash if commit_hash else None)
 
     # Fetch timestamps concurrently to improve performance
-    with ThreadPoolExecutor(max_workers=5) as executor:
+    with ThreadPoolExecutor(max_workers=min(5, len(commit_hashes))) as executor:
         timestamps = list(
             executor.map(
                 lambda h: (

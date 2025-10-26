@@ -882,7 +882,7 @@ def test_check_for_prereleases_only_downloads_latest(
     assert found is True
     assert versions == ["firmware-2.7.4.abc123"]
     assert mock_dl.call_count == 1
-    assert mock_fetch_contents.call_args_list == [call("firmware-2.7.4.abc123")]
+    mock_fetch_contents.assert_called_once_with("firmware-2.7.4.abc123")
     assert not (prerelease_dir / "firmware-2.7.4.def456").exists()
 
 
@@ -1185,6 +1185,12 @@ def test_prerelease_tracking_functionality(
     assert "commits" in tracking_data
     assert "last_updated" in tracking_data
     assert tracking_data["release"] == latest_release_tag
+
+    # Optional: if commits are objects in new format, validate expected keys.
+    if tracking_data["commits"] and isinstance(tracking_data["commits"][0], dict):
+        entry = tracking_data["commits"][0]
+        for k in ("version", "hash", "count", "timestamp"):
+            assert k in entry, f"commit entry missing '{k}'"
 
     # Should have at least one commit hash
     assert len(tracking_data["commits"]) > 0
@@ -5959,7 +5965,7 @@ class TestNetworkFailureScenarios:
                 # Simulate interruption after some chunks
                 def mock_iter_content(_chunk_size):
                     yield b"data" * 10
-                    raise requests.exceptions.ConnectionError("Connection interrupted")
+                    raise requests.exceptions.ConnectionError  # noqa: TRY003
 
                 mock_response.iter_content = mock_iter_content
                 mock_session.get.return_value = mock_response
