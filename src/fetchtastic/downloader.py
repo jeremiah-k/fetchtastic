@@ -720,7 +720,7 @@ def _read_prerelease_tracking_data(tracking_file):
 
                     # Check if commits list exists (for accumulated tracking), otherwise use single hash
                     commits_raw = tracking_data.get("commits")
-                    if not commits_raw and hash_val:
+                    if commits_raw is None and hash_val:
                         commits_raw = [hash_val]
                     commits = [c.lower() for c in (commits_raw or [])]
                     current_release = _ensure_v_prefix_if_missing(version)
@@ -1372,17 +1372,11 @@ def check_for_prereleases(
         commit_hashes.append(commit_hash if commit_hash else None)
 
     def _safe_get_timestamp(commit_hash):
-        try:
-            return (
-                get_commit_timestamp("meshtastic", "firmware", commit_hash)
-                if commit_hash
-                else None
-            )
-        except (requests.RequestException, ValueError, KeyError) as e:
-            logger.warning(
-                f"Unexpected error fetching timestamp for {commit_hash}: {e}"
-            )
-            return None
+        return (
+            get_commit_timestamp("meshtastic", "firmware", commit_hash)
+            if commit_hash
+            else None
+        )
 
     # Fetch timestamps concurrently to improve performance
     with ThreadPoolExecutor(max_workers=min(5, len(commit_hashes))) as executor:
