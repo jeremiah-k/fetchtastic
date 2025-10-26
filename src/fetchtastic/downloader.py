@@ -36,6 +36,7 @@ from fetchtastic.constants import (
     DEVICE_HARDWARE_CACHE_HOURS,
     EXECUTABLE_PERMISSIONS,
     FILE_TYPE_PREFIXES,
+    FIRMWARE_DIR_PREFIX,
     GITHUB_API_BASE,
     GITHUB_API_TIMEOUT,
     LATEST_ANDROID_RELEASE_FILE,
@@ -332,7 +333,7 @@ def cleanup_superseded_prereleases(
     # Check for matching pre-release directories
     cleaned_up = False
     for raw_dir_name in os.listdir(prerelease_dir):
-        if raw_dir_name.startswith("firmware-"):
+        if raw_dir_name.startswith(FIRMWARE_DIR_PREFIX):
             dir_name = _sanitize_path_component(raw_dir_name)
             if dir_name is None:
                 logger.warning(
@@ -341,7 +342,9 @@ def cleanup_superseded_prereleases(
                 )
                 continue
 
-            dir_version = dir_name[9:]  # Remove 'firmware-' prefix
+            dir_version = dir_name[
+                len(FIRMWARE_DIR_PREFIX) :
+            ]  # Remove 'firmware-' prefix
 
             # Validate version format before processing (hash part is optional)
             if not re.match(VERSION_REGEX_PATTERN, dir_version):
@@ -737,7 +740,7 @@ def _get_existing_prerelease_dirs(prerelease_dir: str) -> list[str]:
             for entry in iterator:
                 if not entry.is_dir(follow_symlinks=False):
                     continue
-                if not entry.name.startswith("firmware-"):
+                if not entry.name.startswith(FIRMWARE_DIR_PREFIX):
                     continue
                 safe_name = _sanitize_path_component(entry.name)
                 if safe_name is None:
@@ -793,16 +796,17 @@ def update_prerelease_tracking(prerelease_dir, latest_release_tag, current_prere
         current_prerelease (str): Name of the current prerelease directory (used to extract the prerelease commit).
 
      Returns:
-         int: Number of tracked prerelease commits actually persisted to disk (may be 0 on write failure).
+         int: Number of tracked prerelease commits actually persisted to disk (0 on write failure).
     """
-    return _update_tracking_with_newest_prerelease(
+    result = _update_tracking_with_newest_prerelease(
         prerelease_dir, latest_release_tag, [current_prerelease]
     )
+    return result if result is not None else 0
 
 
 def _update_tracking_with_newest_prerelease(
     prerelease_dir, latest_release_tag, prerelease_dirs
-):
+) -> Optional[int]:
     """
     Update prerelease_tracking.json by recording the newest prerelease identifier (from the first valid directory).
 
@@ -817,10 +821,11 @@ def _update_tracking_with_newest_prerelease(
         latest_release_tag (str): Current official release tag; when this differs from the stored release tracked prerelease IDs are reset.
         prerelease_dirs (list[str]): Prerelease directory names to scan; only the first valid directory is processed, entries without a commit are ignored.
 
-     Returns:
-         int: Total number of tracked prerelease commits after the update.
-              Returns 0 immediately if prerelease_dirs is empty.
-              Returns the number of commits actually persisted to disk (may be less than intended on write failure).
+      Returns:
+          Optional[int]: Total number of tracked prerelease commits after the update.
+               Returns 0 immediately if prerelease_dirs is empty.
+               Returns None if the tracking file could not be written to disk.
+               Returns the number of commits actually persisted to disk on success.
     """
     if not prerelease_dirs:
         return 0
@@ -831,8 +836,8 @@ def _update_tracking_with_newest_prerelease(
     # Validate that directory name follows expected pattern: firmware-<version>
     new_prerelease_id = None
     for dir_name in prerelease_dirs:
-        if dir_name.startswith("firmware-"):
-            version_id = dir_name.removeprefix("firmware-")
+        if dir_name.startswith(FIRMWARE_DIR_PREFIX):
+            version_id = dir_name.removeprefix(FIRMWARE_DIR_PREFIX)
             if version_id:  # Ensure version ID is not empty
                 new_prerelease_id = version_id.lower()
                 break
@@ -874,7 +879,7 @@ def _update_tracking_with_newest_prerelease(
     }
 
     if not _atomic_write_json(tracking_file, new_tracking_data):
-        return len(existing_commits)  # Return actual persisted count on write failure
+        return None  # Return None on write failure
 
     logger.info(
         f"Prerelease tracking updated: {len(updated_commits)} prerelease IDs tracked, latest: {new_prerelease_id}"
@@ -1097,7 +1102,11 @@ def extract_version(dir_name: str) -> str:
     """
     Extract version substring from a prerelease directory name prefixed with "firmware-".
     """
-    return dir_name[9:] if dir_name.startswith("firmware-") else dir_name
+    return (
+        dir_name[len(FIRMWARE_DIR_PREFIX) :]
+        if dir_name.startswith(FIRMWARE_DIR_PREFIX)
+        else dir_name
+    )
 
 
 def calculate_expected_prerelease_version(latest_version: str) -> str:
@@ -1357,7 +1366,7 @@ def check_for_prereleases(
     # Only look for prerelease directories matching the expected version
     matching_prerelease_dirs: List[str] = []
     for raw_dir_name in directories:
-        if not raw_dir_name.startswith("firmware-"):
+        if not raw_dir_name.startswith(FIRMWARE_DIR_PREFIX):
             continue
 
         dir_name = _sanitize_path_component(raw_dir_name)
@@ -1578,14 +1587,17 @@ def check_for_prereleases(
             prerelease_dir, latest_release_tag, target_prereleases
         )
         tracked_label = target_prereleases[0]
-        if downloaded_files:
-            logger.info(
-                f"Downloaded prereleases tracked up to #{prerelease_number}: {tracked_label}"
-            )
+        if prerelease_number is not None:
+            if downloaded_files:
+                logger.info(
+                    f"Downloaded prereleases tracked up to #{prerelease_number}: {tracked_label}"
+                )
+            else:
+                logger.info(
+                    f"Tracked prereleases up to #{prerelease_number}: {tracked_label}"
+                )
         else:
-            logger.info(
-                f"Tracked prereleases up to #{prerelease_number}: {tracked_label}"
-            )
+            logger.warning(f"Failed to update prerelease tracking for {tracked_label}")
 
     if downloaded_files:
         return True, downloaded_versions

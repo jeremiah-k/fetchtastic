@@ -35,6 +35,7 @@ WINDOWS_INITIAL_RETRY_DELAY = 1.0  # seconds
 # File and directory names
 REPO_DOWNLOADS_DIR = "repo-dls"
 PRERELEASE_DIR = "prerelease"
+FIRMWARE_DIR_PREFIX = "firmware-"
 LATEST_ANDROID_RELEASE_FILE = "latest_android_release.txt"
 LATEST_FIRMWARE_RELEASE_FILE = "latest_firmware_release.txt"
 
