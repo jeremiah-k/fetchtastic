@@ -2368,7 +2368,7 @@ def test_update_prerelease_tracking_error_handling():
             result = update_prerelease_tracking(
                 str(prerelease_dir), "v2.7.8", "firmware-2.7.9.abc123"
             )
-            assert result == 1  # Should return default value
+            assert result == 0  # Should return actual persisted count (0 on failure)
         finally:
             # Restore permissions for cleanup
             prerelease_dir.chmod(0o755)
@@ -2685,8 +2685,8 @@ def test_tracking_file_error_handling_ui_messages(tmp_path, caplog):
                 str(prerelease_dir), "v2.7.0", "firmware-2.7.1.test123"
             )
 
-        # Should return default value even with write errors
-        assert result == 1
+        # Should return actual persisted count (0 on failure)
+        assert result == 0
 
     finally:
         prerelease_dir.chmod(0o755)  # Restore permissions

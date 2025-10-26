@@ -843,8 +843,8 @@ def update_prerelease_tracking(prerelease_dir, latest_release_tag, current_prere
         latest_release_tag (str): Latest official release tag used to determine whether to reset tracking.
         current_prerelease (str): Name of the current prerelease directory (used to extract the prerelease commit).
 
-    Returns:
-        int: Number of tracked prerelease commits for the current release (1-based count). On write failure the function logs an error and returns 1.
+     Returns:
+         int: Number of tracked prerelease commits actually persisted to disk (may be 0 on write failure).
     """
     return batch_update_prerelease_tracking(
         prerelease_dir, latest_release_tag, [current_prerelease]
@@ -868,10 +868,10 @@ def batch_update_prerelease_tracking(
         latest_release_tag (str): Current official release tag; when this differs from the stored release tracked prerelease IDs are reset.
         prerelease_dirs (list[str]): Prerelease directory names to scan; only the first valid directory is processed, entries without a commit are ignored.
 
-    Returns:
-        int: Total number of tracked prerelease commits after the update.
-             Returns 0 immediately if prerelease_dirs is empty.
-             Returns 1 if writing the tracking file fails (fallback value).
+     Returns:
+         int: Total number of tracked prerelease commits after the update.
+              Returns 0 immediately if prerelease_dirs is empty.
+              Returns the number of commits actually persisted to disk (may be less than intended on write failure).
     """
     if not prerelease_dirs:
         return 0
@@ -925,7 +925,7 @@ def batch_update_prerelease_tracking(
     }
 
     if not _atomic_write_json(tracking_file, new_tracking_data):
-        return len(updated_commits)  # Return intended count on write failure
+        return len(existing_commits)  # Return actual persisted count on write failure
 
     logger.info(
         f"Prerelease tracking updated: {len(updated_commits)} prerelease IDs tracked, latest: {new_prerelease_id}"
