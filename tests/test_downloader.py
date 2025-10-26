@@ -4375,8 +4375,8 @@ def test_batch_update_prerelease_tracking(tmp_path):
     assert "abc123" not in info3["commits"], "Old commits should be cleared"
 
 
-def test_batch_update_vs_individual_update_consistency(tmp_path):
-    """Test that batch update produces consistent results with individual updates."""
+def test_batch_and_individual_updates_process_single_prerelease(tmp_path):
+    """Test that batch and individual updates process only a single prerelease."""
     prerelease_dir1 = tmp_path / "batch"
     prerelease_dir2 = tmp_path / "individual"
     prerelease_dir1.mkdir()
