@@ -4,7 +4,8 @@ Main test module for fetchtastic downloader functionality.
 This module imports tests from focused submodules to maintain test discovery
 while keeping the codebase organized and maintainable.
 
-The original large test file has been split into focused modules:
+The original large test file (test_downloader_original.py) has been eliminated after
+splitting tests into focused modules:
 - test_versions.py: Version comparison and parsing tests
 - test_prereleases.py: Prerelease functionality tests
 - test_security_paths.py: Path validation and symlink security tests
