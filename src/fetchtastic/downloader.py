@@ -272,7 +272,8 @@ def compare_versions(version1, version2):
             list: Components of the key where digit runs are `int` and alphabetic runs are `str`.
         """
         parts = re.findall(r"\d+|[A-Za-z]+", s.lower())
-        return [int(p) if p.isdigit() else p for p in parts]
+        # Tag parts to ensure comparable types: (1, int) > (0, str)
+        return [(1, int(p)) if p.isdigit() else (0, p) for p in parts]
 
     k1, k2 = _nat_key(version1), _nat_key(version2)
 
@@ -1102,11 +1103,7 @@ def extract_version(dir_name: str) -> str:
     """
     Extract version substring from a prerelease directory name prefixed with "firmware-".
     """
-    return (
-        dir_name[len(FIRMWARE_DIR_PREFIX) :]
-        if dir_name.startswith(FIRMWARE_DIR_PREFIX)
-        else dir_name
-    )
+    return dir_name.removeprefix(FIRMWARE_DIR_PREFIX)
 
 
 def calculate_expected_prerelease_version(latest_version: str) -> str:
@@ -2899,7 +2896,10 @@ def check_and_download(
                 # Add to downloaded_versions only if at least one asset from this release was successfully downloaded
                 downloaded_versions.append(release_tag)
                 # Also add to new_versions_available if this is a newer release than what was saved
-                if saved_release_tag is None or release_tag != saved_release_tag:
+                if (
+                    saved_release_tag is None
+                    or compare_versions(release_tag, saved_release_tag) > 0
+                ):
                     new_versions_available.append(release_tag)
 
             if auto_extract and release_type == "Firmware":

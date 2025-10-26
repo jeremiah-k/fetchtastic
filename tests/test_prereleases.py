@@ -20,7 +20,7 @@ from fetchtastic.downloader import (
 
 @pytest.fixture(autouse=True)
 def _deny_network():
-    def _no_net(*args, **kwargs):
+    def _no_net(*_args, **_kwargs):
         raise AssertionError("Network access is blocked in tests")
 
     with patch("fetchtastic.downloader.requests.get", _no_net):
@@ -634,8 +634,6 @@ def test_update_prerelease_tracking_error_handling():
     import tempfile
 
     # uses top-level imports: Path
-    import pytest
-
     from fetchtastic.downloader import update_prerelease_tracking
 
     if os.name == "nt":
