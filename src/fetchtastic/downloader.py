@@ -130,22 +130,14 @@ def _normalize_version(
             try:
                 return parse_version(f"{m_pr.group(1)}{kind}{num}")
             except InvalidVersion:
-                logger.debug(
-                    "Could not parse '%s' as a standard prerelease version.",
-                    trimmed,
-                    exc_info=True,
-                )
+                pass
 
         m_hash = HASH_SUFFIX_VERSION_RX.match(trimmed)
         if m_hash:
             try:
                 return parse_version(f"{m_hash.group(1)}+{m_hash.group(2)}")
             except InvalidVersion:
-                logger.debug(
-                    "Could not parse '%s' as a version with a local version identifier.",
-                    trimmed,
-                    exc_info=True,
-                )
+                pass
 
     return None
 
@@ -344,10 +336,6 @@ def cleanup_superseded_prereleases(
     # This function cleans up prereleases superseded by an official release.
     # If the latest release is itself a prerelease, no superseding has occurred.
     if getattr(v_latest_norm, "is_prerelease", False):
-        logger.debug(
-            "Skipping prerelease cleanup; latest release '%s' is a prerelease.",
-            safe_latest_release_tag,
-        )
         return False
 
     # Path to prerelease directory
@@ -407,11 +395,6 @@ def cleanup_superseded_prereleases(
 
             if can_compare_tuples:
                 if dir_release_tuple > latest_release_tuple:
-                    logger.debug(
-                        "Skipping prerelease %s; version is newer than latest release %s",
-                        dir_name,
-                        safe_latest_release_tag,
-                    )
                     continue
                 # Prerelease is older or same version, so it's superseded.
                 should_cleanup = True
