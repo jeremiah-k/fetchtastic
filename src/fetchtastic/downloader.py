@@ -1205,7 +1205,9 @@ def _get_commit_hash_from_dir(dir_name: str) -> str:
     """Extract commit hash from directory name."""
     version_part = extract_version(dir_name)  # Removes "firmware-" prefix
     # Use regex to find a hex string of 6-40 characters, which is more robust
-    commit_match = re.search(r"\.([a-f0-9]{6,40})", version_part, re.IGNORECASE)
+    commit_match = re.search(
+        r"\.([a-f0-9]{6,40})(?:[.-]|$)", version_part, re.IGNORECASE
+    )
     if commit_match:
         return commit_match.group(1).lower()
     return ""
