@@ -5,12 +5,12 @@ import shutil
 import time
 from pathlib import Path
 from unittest.mock import mock_open, patch
-
 import pytest
 import requests
-
 from fetchtastic import downloader
 from fetchtastic.device_hardware import DeviceHardwareManager
+import os
+import requests
 from fetchtastic.downloader import (
     check_for_prereleases,
     cleanup_superseded_prereleases,
@@ -1199,12 +1199,20 @@ def test_prerelease_tracking_functionality(
     assert "last_updated" in tracking_data
     assert tracking_data["release"] == latest_release_tag
 
-    # Should have at least one commit hash
-    assert len(tracking_data["commits"]) > 0
-
-    # Commits should be normalized (lowercase) and unique
-    assert all(c == c.lower() for c in tracking_data["commits"])
-    assert len(set(tracking_data["commits"])) == len(tracking_data["commits"])
+    # Optional: if commits are objects in new format, validate and check normalization/uniqueness by hash.
+    if tracking_data.get("commits") and isinstance(tracking_data["commits"][0], dict):
+        entry = tracking_data["commits"][0]
+        for k in ("version", "hash", "count", "timestamp"):
+            assert k in entry, f"commit entry missing '{k}'"
+        hashes = [e["hash"] for e in tracking_data["commits"] if "hash" in e]
+        assert hashes, "commits should contain at least one hash"
+        assert all(h == h.lower() for h in hashes)
+        assert len(set(hashes)) == len(hashes)
+    else:
+        # Legacy/flattened string list
+        assert tracking_data.get("commits"), "commits should not be empty"
+        assert all(c == c.lower() for c in tracking_data["commits"])
+        assert len(set(tracking_data["commits"])) == len(tracking_data["commits"])
 
     # Test get_prerelease_tracking_info function
     info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
@@ -5402,7 +5410,9 @@ class TestSecurityPathTraversal:
                 try:
                     result = safe_extract_path(extract_dir, windows_path)
                     # If no exception, result should be within extract_dir
-                    assert result.startswith(extract_dir)
+                    assert os.path.commonpath(
+                        [os.path.abspath(result), os.path.abspath(extract_dir)]
+                    ) == os.path.abspath(extract_dir)
                 except ValueError:
                     # Or it should raise ValueError
                     pass
@@ -5411,7 +5421,9 @@ class TestSecurityPathTraversal:
                 # So these might not trigger traversal detection
                 result = safe_extract_path(extract_dir, windows_path)
                 # But result should still be within extract_dir due to normpath
-                assert result.startswith(extract_dir)
+                assert os.path.commonpath(
+                    [os.path.abspath(result), os.path.abspath(extract_dir)]
+                ) == os.path.abspath(extract_dir)
 
     def test_safe_extract_path_allows_safe_paths(self, tmp_path):
         """Test that safe_extract_path allows legitimate paths."""
@@ -5998,7 +6010,7 @@ class TestNetworkFailureScenarios:
                         requests.exceptions.ConnectionError: Always raised after yielding the single chunk.
                     """
                     yield b"data" * 10
-                    raise requests.exceptions.ConnectionError  # noqa: TRY003
+                    raise requests.exceptions.ConnectionError
 
                 mock_response.iter_content = mock_iter_content
                 mock_session.get.return_value = mock_response

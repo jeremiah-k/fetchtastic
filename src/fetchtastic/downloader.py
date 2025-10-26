@@ -846,11 +846,11 @@ def batch_update_prerelease_tracking(
     prerelease_dir, latest_release_tag, prerelease_dirs
 ):
     """
-    Update prerelease_tracking.json by recording the newest prerelease version (from the first valid directory).
+    Update prerelease_tracking.json by recording the newest prerelease identifier (from the first valid directory).
 
     This function maintains two levels of state:
     - **On disk**: Keeps only the newest prerelease directory; older directories are automatically removed.
-    - **In tracking file**: Preserves a cumulative list of all prerelease IDs for the current release version (full IDs like '2.7.7.abcd', not just commit hashes).
+    - **In tracking file**: Preserves a cumulative list of all prerelease identifiers for the current release version (full identifiers like '2.7.7.abcd123' including version and commit hash).
 
     If the official release tag changes, tracked prerelease IDs are reset to start fresh for the new release.
 
@@ -1369,16 +1369,22 @@ def check_for_prereleases(
         commit_hash = _get_commit_hash_from_dir(dir_name)
         commit_hashes.append(commit_hash if commit_hash else None)
 
+    def _safe_get_timestamp(commit_hash):
+        try:
+            return (
+                get_commit_timestamp("meshtastic", "firmware", commit_hash)
+                if commit_hash
+                else None
+            )
+        except Exception as e:
+            logger.warning(
+                f"Unexpected error fetching timestamp for {commit_hash}: {e}"
+            )
+            return None
+
     # Fetch timestamps concurrently to improve performance
     with ThreadPoolExecutor(max_workers=min(5, len(commit_hashes))) as executor:
-        timestamps = list(
-            executor.map(
-                lambda h: (
-                    get_commit_timestamp("meshtastic", "firmware", h) if h else None
-                ),
-                commit_hashes,
-            )
-        )
+        timestamps = list(executor.map(_safe_get_timestamp, commit_hashes))
 
     dirs_with_timestamps = list(zip(matching_prerelease_dirs, timestamps, strict=True))
 
