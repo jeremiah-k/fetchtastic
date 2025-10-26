@@ -835,13 +835,15 @@ def _update_tracking_with_newest_prerelease(
 
     # Extract the single prerelease version and hash from directory names
     # Validate that directory name follows expected pattern: firmware-<version>
-    new_prerelease_id = None
-    for dir_name in prerelease_dirs:
-        if dir_name.startswith(FIRMWARE_DIR_PREFIX):
-            version_id = dir_name.removeprefix(FIRMWARE_DIR_PREFIX)
-            if version_id:  # Ensure version ID is not empty
-                new_prerelease_id = version_id.lower()
-                break
+    new_prerelease_id = next(
+        (
+            dn.removeprefix(FIRMWARE_DIR_PREFIX).lower()
+            for dn in prerelease_dirs
+            if dn.startswith(FIRMWARE_DIR_PREFIX)
+            and dn.removeprefix(FIRMWARE_DIR_PREFIX)
+        ),
+        None,
+    )
 
     if not new_prerelease_id:
         logger.debug("No valid firmware prerelease directory found")
@@ -1246,6 +1248,21 @@ def get_commit_timestamp(
                 f"GitHub API rate limit exceeded for commit {commit_hash}. "
                 f"Set GITHUB_TOKEN environment variable for higher rate limits."
             )
+        elif (
+            hasattr(e, "response")
+            and e.response is not None
+            and e.response.status_code == 401
+        ):
+            logger.warning(
+                f"GitHub token authentication failed for commit {commit_hash}: {e}. "
+                f"Retrying without authentication."
+            )
+            # Retry without token if authentication failed
+            if effective_token:
+                return get_commit_timestamp(
+                    repo_owner, repo_name, commit_hash, None, force_refresh
+                )
+            return None
         else:
             logger.warning(
                 f"HTTP error getting timestamp for commit {commit_hash}: {e}"
@@ -1285,7 +1302,8 @@ def check_for_prereleases(
     force_refresh=False,
 ):
     """
-    Discover prerelease firmware that are newer than the provided official release tag and download assets matching the given selection patterns into download_dir/firmware/prerelease.
+    Discover prerelease firmware for the next patch version only (e.g., v2.7.6 ⇒ prereleases v2.7.7.*)
+    and download assets matching the given selection patterns into download_dir/firmware/prerelease.
 
     If latest_release_tag is unsafe (fails sanitization) the call is a no-op and returns (False, []). The function also updates local prerelease tracking and prunes older prerelease directories as part of maintaining the prerelease download area.
 
@@ -1435,7 +1453,7 @@ def check_for_prereleases(
         key=lambda x: (
             x[1].astimezone(timezone.utc).timestamp()
             if x[1] is not None
-            else float("-inf")
+            else float("inf")
         ),
         reverse=True,
     )
@@ -1656,23 +1674,26 @@ def _send_ntfy_notification(
         pass
 
 
-def _get_latest_releases_data(url: str, scan_count: int = 10) -> List[Dict[str, Any]]:
+def _get_latest_releases_data(
+    url: str, scan_count: int = 10, github_token: Optional[str] = None
+) -> List[Dict[str, Any]]:
     """
-    Return a list of the most recent releases fetched from a GitHub releases API endpoint.
+    Return a list of most recent releases fetched from a GitHub releases API endpoint.
 
     Fetches up to `scan_count` releases from the provided GitHub API `url` (clamped to 1–100),
-    parses the JSON response, and returns releases sorted by their `published_at` timestamp
+    parses JSON response, and returns releases sorted by their `published_at` timestamp
     in descending order. Respects a short polite delay after the request and logs GitHub
     rate-limit remaining when available.
 
     Parameters:
         url (str): GitHub API URL that returns a list of releases (JSON).
         scan_count (int): Maximum number of releases to return (clamped to GitHub's per_page bounds).
+        github_token (str | None): Optional GitHub API token for higher rate limits.
 
     Returns:
         List[Dict[str, Any]]: Sorted list of release dictionaries (newest first). Returns an empty
         list on network or JSON parse errors. If sorting by `published_at` is not possible due
-        to missing or invalid keys, the unsorted JSON list is returned.
+        to missing or invalid keys, unsorted JSON list is returned.
     """
     try:
         # Add progress feedback
@@ -1684,16 +1705,32 @@ def _get_latest_releases_data(url: str, scan_count: int = 10) -> List[Dict[str, 
         else:
             logger.info("Fetching releases from GitHub...")
 
+        # Prepare headers with optional authentication
+        headers = {
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": get_user_agent(),
+        }
+
+        # Add authentication if token provided
+        effective_token = github_token or os.environ.get("GITHUB_TOKEN")
+        if effective_token:
+            headers["Authorization"] = f"token {effective_token}"
+            logger.debug("Using GitHub token for API authentication")
+        elif not _token_warning_shown:
+            logger.warning(
+                "No GITHUB_TOKEN found - using unauthenticated API requests (60/hour limit). "
+                "Set GITHUB_TOKEN environment variable or run 'fetchtastic setup github' for higher limits (5000/hour)."
+            )
+            with _token_warning_lock:
+                _token_warning_shown = True
+
         # Clamp scan_count to GitHub's per_page bounds
         scan_count = max(1, min(100, scan_count))
         response: requests.Response = requests.get(
             url,
             timeout=GITHUB_API_TIMEOUT,
-            headers={
-                "Accept": "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28",
-                "User-Agent": get_user_agent(),
-            },
+            headers=headers,
             params={"per_page": scan_count},
         )
         response.raise_for_status()
@@ -1720,6 +1757,23 @@ def _get_latest_releases_data(url: str, scan_count: int = 10) -> List[Dict[str, 
         # Log how many releases were fetched
         logger.debug(f"Fetched {len(releases)} releases from GitHub API")
 
+    except requests.HTTPError as e:
+        if (
+            hasattr(e, "response")
+            and e.response is not None
+            and e.response.status_code == 401
+        ):
+            logger.warning(
+                f"GitHub token authentication failed for releases API: {e}. "
+                f"Retrying without authentication."
+            )
+            # Retry without token if authentication failed
+            if effective_token:
+                return _get_latest_releases_data(url, scan_count, None)
+            return []
+        else:
+            logger.error(f"HTTP error fetching releases data from {url}: {e}")
+            return []  # Return empty list on error
     except requests.exceptions.RequestException as e:
         logger.error(f"Failed to fetch releases data from {url}: {e}")
         return []  # Return empty list on error
@@ -1896,6 +1950,7 @@ def _process_firmware_downloads(
             config.get(
                 "FIRMWARE_VERSIONS_TO_KEEP", RELEASE_SCAN_COUNT
             ),  # Use RELEASE_SCAN_COUNT if versions_to_keep not in config
+            config.get("GITHUB_TOKEN"),
         )
 
         keep_count = config.get(
@@ -2042,6 +2097,7 @@ def _process_apk_downloads(
         latest_android_releases: List[Dict[str, Any]] = _get_latest_releases_data(
             paths_and_urls["android_releases_url"],
             config.get("ANDROID_VERSIONS_TO_KEEP", RELEASE_SCAN_COUNT),
+            config.get("GITHUB_TOKEN"),
         )
 
         keep_count_apk = config.get(

@@ -136,9 +136,14 @@ def test_fetch_repo_contents_with_path(mocker, mock_repo_contents):
 
     menu_repo.fetch_repo_contents("firmware-2.7.4.c1f4f79")
 
-    # Verify the URL was constructed correctly
+    # Verify the URL was constructed correctly with proper headers
     expected_url = "https://api.github.com/repos/meshtastic/meshtastic.github.io/contents/firmware-2.7.4.c1f4f79"
-    mock_get.assert_called_once_with(expected_url, timeout=10)
+    expected_headers = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": mocker.ANY,  # User agent will be generated
+    }
+    mock_get.assert_called_once_with(expected_url, timeout=10, headers=expected_headers)
 
 
 def test_fetch_repo_contents_request_exception(mocker):

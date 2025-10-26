@@ -34,8 +34,8 @@ def fetch_firmware_assets():
     response.raise_for_status()
 
     # Log API response info for debugging
-    content_length = (
-        len(response.content) if hasattr(response.content, "__len__") else "unknown"
+    content_length = response.headers.get("Content-Length") or str(
+        len(response.content)
     )
     logger.debug(
         f"GitHub API response: {response.status_code} for {MESHTASTIC_FIRMWARE_RELEASES_URL} ({content_length} bytes)"
@@ -45,11 +45,15 @@ def fetch_firmware_assets():
     time.sleep(API_CALL_DELAY)
 
     releases = response.json()
-    # Get the latest release
-    latest_release = releases[0]
-    assets = latest_release["assets"]
-    # Sorted alphabetically
-    asset_names = sorted([asset["name"] for asset in assets])
+    if not isinstance(releases, list) or not releases:
+        logger.warning("No firmware releases found from GitHub API.")
+        return []
+    latest_release = releases[0] or {}
+    assets = latest_release.get("assets") or []
+    # Sorted alphabetically, tolerate missing names
+    asset_names = sorted(
+        [(asset.get("name") or "") for asset in assets if (asset.get("name") or "")]
+    )
     return asset_names
 
 

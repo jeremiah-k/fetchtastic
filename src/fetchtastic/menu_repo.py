@@ -1,6 +1,4 @@
-# src/fetchtastic/menu_repo.py
-
-
+import os
 import time
 
 import requests
@@ -12,13 +10,70 @@ from fetchtastic.constants import (
     MESHTASTIC_GITHUB_IO_CONTENTS_URL,
 )
 from fetchtastic.log_utils import logger
+from fetchtastic.utils import get_user_agent
+
+
+def _process_repo_contents(contents):
+    """
+    Process raw JSON contents from GitHub API and return sorted items.
+    """
+    # Filter for directories and files, excluding specific directories and files
+    repo_items = []
+    excluded_dirs = [".git", ".github", "node_modules", "__pycache__", ".vscode"]
+    excluded_files = [
+        ".gitignore",
+        "LICENSE",
+        "README.md",
+        "meshtastic-deb.asc",
+        "meshtastic-deb.gpg",
+    ]
+
+    for item in contents:
+        if item["type"] == "dir":
+            if item["name"] not in excluded_dirs and not item["name"].startswith("."):
+                # Store directory info
+                repo_items.append(
+                    {"name": item["name"], "path": item["path"], "type": "dir"}
+                )
+        elif item["type"] == "file":
+            if item["name"] not in excluded_files:
+                # Store file info
+                repo_items.append(
+                    {
+                        "name": item["name"],
+                        "path": item["path"],
+                        "type": "file",
+                        "download_url": item["download_url"],
+                    }
+                )
+
+    # Sort items: directories first, then files
+    dirs = [d for d in repo_items if d["type"] == "dir"]
+    files = [f for f in repo_items if f["type"] == "file"]
+
+    # Sort directories: firmware directories first, then others alphabetically
+    firmware_dirs = [d for d in dirs if d["name"].startswith("firmware-")]
+    other_dirs = [d for d in dirs if not d["name"].startswith("firmware-")]
+
+    # Sort firmware directories by version (assuming format firmware-x.y.z.commit)
+    firmware_dirs.sort(key=lambda x: x["name"], reverse=True)
+    # Sort other directories alphabetically
+    other_dirs.sort(key=lambda x: x["name"])
+
+    # Sort files alphabetically
+    files.sort(key=lambda x: x["name"])
+
+    # Combine sorted lists: directories first, then files
+    sorted_items = firmware_dirs + other_dirs + files
+
+    return sorted_items
 
 
 def fetch_repo_contents(path=""):
     """
-    Fetch contents (directories and files) from the Meshtastic GitHub Pages repository.
+    Fetch contents (directories and files) from Meshtastic GitHub Pages repository.
 
-    Given an optional repository-relative path (no leading or trailing slashes required), queries the GitHub Contents API for that path and returns a list of items describing directories and files found. Hidden and common infrastructure directories (e.g., .git, node_modules) and common repo-level files (e.g., README.md, LICENSE) are excluded. Returned directory entries have keys: "name", "path", "type" == "dir". File entries have keys: "name", "path", "type" == "file", and "download_url".
+    Given an optional repository-relative path (no leading or trailing slashes required), queries GitHub Contents API for that path and returns a list of items describing directories and files found. Hidden and common infrastructure directories (e.g., .git, node_modules) and common repo-level files (e.g., README.md, LICENSE) are excluded. Returned directory entries have keys: "name", "path", "type" == "dir". File entries have keys: "name", "path", "type" == "file", and "download_url".
 
     Sorting:
     - Directories are returned before files.
@@ -26,12 +81,12 @@ def fetch_repo_contents(path=""):
     - Files are sorted ascending by name.
 
     Parameters:
-        path (str): Optional repository-relative path to list (leading/trailing slashes will be trimmed). Use an empty string to list the repository root.
+        path (str): Optional repository-relative path to list (leading/trailing slashes will be trimmed). Use an empty string to list repository root.
 
     Returns:
         list: A list of dictionaries representing directories and files. Returns an empty list on network, parsing, or unexpected errors.
     """
-    # GitHub API URL for the repository contents
+    # GitHub API URL for repository contents
     base_url = MESHTASTIC_GITHUB_IO_CONTENTS_URL
     # Ensure proper URL construction - avoid double slashes
     if path:
@@ -41,12 +96,24 @@ def fetch_repo_contents(path=""):
         api_url = base_url
 
     try:
-        response = requests.get(api_url, timeout=GITHUB_API_TIMEOUT)
+        # Prepare headers with optional authentication
+        headers = {
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": get_user_agent(),
+        }
+
+        # Add authentication if token available
+        github_token = os.environ.get("GITHUB_TOKEN")
+        if github_token:
+            headers["Authorization"] = f"token {github_token}"
+
+        response = requests.get(api_url, timeout=GITHUB_API_TIMEOUT, headers=headers)
         response.raise_for_status()
 
         # Log API response info for debugging
-        content_length = (
-            len(response.content) if hasattr(response.content, "__len__") else "unknown"
+        content_length = response.headers.get("Content-Length") or str(
+            len(response.content)
         )
         logger.debug(
             f"GitHub API response: {response.status_code} for {api_url} ({content_length} bytes)"
@@ -56,59 +123,36 @@ def fetch_repo_contents(path=""):
         time.sleep(API_CALL_DELAY)
 
         contents = response.json()
+        return _process_repo_contents(contents)
 
-        # Filter for directories and files, excluding specific directories and files
-        repo_items = []
-        excluded_dirs = [".git", ".github", "node_modules", "__pycache__", ".vscode"]
-        excluded_files = [
-            ".gitignore",
-            "LICENSE",
-            "README.md",
-            "meshtastic-deb.asc",
-            "meshtastic-deb.gpg",
-        ]
-
-        for item in contents:
-            if item["type"] == "dir":
-                if item["name"] not in excluded_dirs and not item["name"].startswith(
-                    "."
-                ):
-                    # Store directory info
-                    repo_items.append(
-                        {"name": item["name"], "path": item["path"], "type": "dir"}
-                    )
-            elif item["type"] == "file":
-                if item["name"] not in excluded_files:
-                    # Store file info
-                    repo_items.append(
-                        {
-                            "name": item["name"],
-                            "path": item["path"],
-                            "type": "file",
-                            "download_url": item["download_url"],
-                        }
-                    )
-
-        # Sort items: directories first, then files
-        dirs = [d for d in repo_items if d["type"] == "dir"]
-        files = [f for f in repo_items if f["type"] == "file"]
-
-        # Sort directories: firmware directories first, then others alphabetically
-        firmware_dirs = [d for d in dirs if d["name"].startswith("firmware-")]
-        other_dirs = [d for d in dirs if not d["name"].startswith("firmware-")]
-
-        # Sort firmware directories by version (assuming format firmware-x.y.z.commit)
-        firmware_dirs.sort(key=lambda x: x["name"], reverse=True)
-        # Sort other directories alphabetically
-        other_dirs.sort(key=lambda x: x["name"])
-
-        # Sort files alphabetically
-        files.sort(key=lambda x: x["name"])
-
-        # Combine the sorted lists: directories first, then files
-        sorted_items = firmware_dirs + other_dirs + files
-
-        return sorted_items
+    except requests.HTTPError as e:
+        if (
+            hasattr(e, "response")
+            and e.response is not None
+            and e.response.status_code == 401
+        ):
+            logger.warning(
+                f"GitHub token authentication failed for repo contents API: {e}. "
+                f"Retrying without authentication."
+            )
+            # Retry without token if authentication failed
+            if github_token:
+                # Remove token and retry once
+                headers.pop("Authorization", None)
+                response = requests.get(
+                    api_url, timeout=GITHUB_API_TIMEOUT, headers=headers
+                )
+                response.raise_for_status()
+                # Continue with successful response
+                contents = response.json()
+                # Process response as normal (continue to existing logic)
+                return _process_repo_contents(contents)
+            return []
+        else:
+            logger.error(
+                f"HTTP error fetching repository contents from GitHub API: {e}"
+            )
+            return []
     except requests.RequestException as e:
         logger.error(f"Error fetching repository contents from GitHub API: {e}")
         return []
@@ -124,47 +168,46 @@ def fetch_repo_contents(path=""):
 
 def fetch_repo_directories():
     """
-    Fetches directories from the meshtastic.github.io repository.
+    Fetches directories from meshtastic.github.io repository.
     Returns a list of directory names, excluding common hidden directories.
 
     Note: This function is kept for backward compatibility.
     """
-    contents = fetch_repo_contents()
-    # Extract just the directory names for backward compatibility
-    return [item["name"] for item in contents if item["type"] == "dir"]
+    items = fetch_repo_contents()
+    return [item["name"] for item in items if item["type"] == "dir"]
 
 
-def fetch_directory_contents(directory):
+# Backward compatibility alias
+def fetch_directory_contents(path=""):
     """
-    Fetches the contents of a specific directory in the repository.
-    Returns a list of file information.
+    Fetch only files from directory contents for backward compatibility.
 
-    Note: This function is kept for backward compatibility.
-    It now returns only files, not subdirectories.
+    Parameters:
+        path (str): Optional repository-relative path to list.
+
+    Returns:
+        list: A list of dictionaries representing files only (directories filtered out).
     """
-    # Use the new fetch_repo_contents function
-    contents = fetch_repo_contents(directory)
+    all_items = fetch_repo_contents(path)
 
-    # Filter to only include files
-    files = [item for item in contents if item["type"] == "file"]
-
-    return files
+    # Filter to return only files, not directories
+    return [item for item in all_items if item.get("type") == "file"]
 
 
 def select_item(items, current_path=""):
     """
-    Displays a menu for the user to select a repository item (directory or file).
-    Returns the selected item information.
+    Displays a menu for user to select a repository item (directory or file).
+    Returns selected item information.
 
     Args:
         items: List of items (directories and files) to display
-        current_path: Current path in the repository (for display purposes)
+        current_path: Current path in repository (for display purposes)
     """
     if not items:
-        print("No items found in the repository.")
+        print("No items found in repository.")
         return None
 
-    # Create display names for the menu
+    # Create display names for menu
     display_names = []
     for item in items:
         if item["type"] == "dir":
@@ -201,7 +244,7 @@ def select_item(items, current_path=""):
 
     # Adjust for the quit option which is always at the end
     if index == len(items):
-        # This shouldn't happen as we already handled the quit option above
+        # This shouldn't happen as we already handled quit option above
         return {"type": "quit"}
 
     return items[index]
@@ -209,7 +252,7 @@ def select_item(items, current_path=""):
 
 def select_files(files):
     """
-    Displays a menu for the user to select files to download.
+    Displays a menu for user to select files to download.
     Returns a list of selected file information.
     """
     if not files:
@@ -223,7 +266,7 @@ def select_files(files):
     file_names.append("[Quit]")
 
     title = """Select the files you want to download (press SPACE to select, ENTER to confirm):
-Note: Selected files will be downloaded to the repo-dls directory.
+Note: Selected files will be downloaded to repo-dls directory.
 Select "[Quit]" to exit without downloading."""
 
     selected_options = pick(
@@ -234,7 +277,7 @@ Select "[Quit]" to exit without downloading."""
         print("No files selected for download.")
         return None
 
-    # Check if the quit option was selected
+    # Check if quit option was selected
     for option in selected_options:
         if option[0] == "[Quit]":
             print("Exiting without downloading.")
@@ -255,7 +298,6 @@ Select "[Quit]" to exit without downloading."""
 def run_menu():
     """
     Run an interactive CLI to browse the Meshtastic GitHub Pages repository and select files to download.
-
     Presents a navigable menu of directories and files (using fetch_repo_contents, select_item, and select_files), allowing the user to:
     - navigate into directories,
     - go back to parent directories,
@@ -264,7 +306,7 @@ def run_menu():
 
     Returns:
         dict: On success, a dictionary with:
-            - "directory" (str): the repository path containing the selected files (empty string for root).
+            - "directory" (str): repository path containing the selected files (empty string for root).
             - "files" (list): list of file dictionaries chosen by the user (each item matches entries returned by fetch_repo_contents).
         None: If the user quits/cancels, if no items/files are found, or if an error occurs during execution.
 

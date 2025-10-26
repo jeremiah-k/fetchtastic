@@ -28,9 +28,9 @@ def fetch_apk_assets():
     response.raise_for_status()
 
     # Log API response info for debugging
-    content_length = (
-        len(response.content) if hasattr(response.content, "__len__") else "unknown"
-    )
+    content_length = response.headers.get("Content-Length")
+    if content_length is None:
+        content_length = str(len(response.content))
     logger.debug(
         f"GitHub API response: {response.status_code} for {MESHTASTIC_ANDROID_RELEASES_URL} ({content_length} bytes)"
     )
