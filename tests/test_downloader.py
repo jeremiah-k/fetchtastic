@@ -1337,7 +1337,9 @@ def test_prerelease_tracking_json_format(tmp_path):
     # Test that new release resets the tracking
     new_release = "v2.7.9.newrelease"
     num3 = downloader.update_prerelease_tracking(
-        str(prerelease_dir), new_release, "firmware-2.7.10.abc123"  # Valid hex
+        str(prerelease_dir),
+        new_release,
+        "firmware-2.7.10.abc123",  # Valid hex
     )
     assert num3 == 1, "First prerelease after new release should be #1"
 
@@ -2016,8 +2018,9 @@ def test_process_firmware_downloads(
         "firmware_dir": "/tmp/firmware",  # nosec B108
         "download_dir": "/tmp",  # nosec B108
     }
-    with patch("builtins.open", mock_open(read_data="v1.0")), patch(
-        "os.path.exists", return_value=True
+    with (
+        patch("builtins.open", mock_open(read_data="v1.0")),
+        patch("os.path.exists", return_value=True),
     ):
         mock_get_releases.return_value = [{"tag_name": "v1.0"}]
         mock_check_and_download.return_value = (["v1.0"], ["v1.0"], [])
@@ -2206,7 +2209,8 @@ def test_device_hardware_manager_caching():
 
         # Test loading from cache
         manager = DeviceHardwareManager(
-            cache_dir=cache_dir, enabled=True  # API enabled but should use cache
+            cache_dir=cache_dir,
+            enabled=True,  # API enabled but should use cache
         )
 
         patterns = manager.get_device_patterns()
@@ -2229,7 +2233,8 @@ def test_matches_extract_patterns_with_device_manager():
 
         # Create manager with fallback patterns
         manager = DeviceHardwareManager(
-            cache_dir=cache_dir, enabled=False  # Use fallback patterns
+            cache_dir=cache_dir,
+            enabled=False,  # Use fallback patterns
         )
 
         extract_patterns = ["rak4631-", "tbeam-", "device-", "bleota"]
@@ -2777,7 +2782,8 @@ def test_device_manager_integration_ui_scenarios(tmp_path, caplog):
 
     # Test with device manager that has custom patterns
     manager = DeviceHardwareManager(
-        cache_dir=cache_dir, enabled=False  # Use fallback patterns
+        cache_dir=cache_dir,
+        enabled=False,  # Use fallback patterns
     )
 
     # Test device pattern detection with logging
@@ -3124,7 +3130,6 @@ def test_end_to_end_prerelease_workflow_ui_coverage(tmp_path, caplog):
             with patch(
                 "fetchtastic.downloader.download_file_with_retry"
             ) as mock_download:
-
                 # Mock repository responses
                 mock_dirs.return_value = ["firmware-2.7.1.789abc"]
                 mock_contents.return_value = [
@@ -3215,7 +3220,6 @@ def test_comprehensive_error_recovery_ui_workflow(tmp_path, caplog):
                 "fetchtastic.downloader.download_file_with_retry"
             ) as mock_download:
                 with patch("requests.get") as mock_get:
-
                     # Mock API responses - use version that matches expected v2.9.0 -> 2.9.1
                     mock_dirs.return_value = ["firmware-2.9.1.a1b2c3d"]
                     mock_contents.return_value = [
@@ -3245,7 +3249,7 @@ def test_comprehensive_error_recovery_ui_workflow(tmp_path, caplog):
                             cache_dir=cache_dir, enabled=False
                         )
 
-                    found, versions = downloader.check_for_prereleases(
+                    found, _versions = downloader.check_for_prereleases(
                         str(download_dir),
                         "v2.9.0",  # Expected prerelease version would be 2.9.1
                         ["rak4631-"],
@@ -4062,14 +4066,15 @@ def test_prerelease_functions_symlink_safety(tmp_path):
     assert sub_file.exists()
 
     # Test 1: check_for_prereleases symlink safety
-    with patch(
-        "fetchtastic.downloader.menu_repo.fetch_repo_directories"
-    ) as mock_fetch_dirs, patch(
-        "fetchtastic.downloader.menu_repo.fetch_directory_contents"
-    ) as mock_fetch_contents, patch(
-        "fetchtastic.downloader.download_file_with_retry"
-    ) as mock_download:
-
+    with (
+        patch(
+            "fetchtastic.downloader.menu_repo.fetch_repo_directories"
+        ) as mock_fetch_dirs,
+        patch(
+            "fetchtastic.downloader.menu_repo.fetch_directory_contents"
+        ) as mock_fetch_contents,
+        patch("fetchtastic.downloader.download_file_with_retry") as mock_download,
+    ):
         # Mock repository to return a newer prerelease with same version but new hash
         mock_fetch_dirs.return_value = ["firmware-1.0.1.fedcba"]
         mock_fetch_contents.return_value = [
@@ -4227,12 +4232,14 @@ def test_prerelease_symlink_traversal_attack_prevention(tmp_path):
         assert malicious_symlink.exists()
 
         # Mock and call check_for_prereleases
-        with patch(
-            "fetchtastic.downloader.menu_repo.fetch_repo_directories"
-        ) as mock_fetch_dirs, patch(
-            "fetchtastic.downloader.menu_repo.fetch_directory_contents"
-        ) as mock_fetch_contents:
-
+        with (
+            patch(
+                "fetchtastic.downloader.menu_repo.fetch_repo_directories"
+            ) as mock_fetch_dirs,
+            patch(
+                "fetchtastic.downloader.menu_repo.fetch_directory_contents"
+            ) as mock_fetch_contents,
+        ):
             mock_fetch_dirs.return_value = ["firmware-1.5.1.abc123def"]
             mock_fetch_contents.return_value = []  # No files to download
 
@@ -4287,12 +4294,14 @@ def test_prerelease_symlink_mixed_with_valid_directories(tmp_path):
     malicious_symlink.symlink_to(external_target, target_is_directory=True)
 
     # Mock and test
-    with patch(
-        "fetchtastic.downloader.menu_repo.fetch_repo_directories"
-    ) as mock_fetch_dirs, patch(
-        "fetchtastic.downloader.menu_repo.fetch_directory_contents"
-    ) as mock_fetch_contents:
-
+    with (
+        patch(
+            "fetchtastic.downloader.menu_repo.fetch_repo_directories"
+        ) as mock_fetch_dirs,
+        patch(
+            "fetchtastic.downloader.menu_repo.fetch_directory_contents"
+        ) as mock_fetch_contents,
+    ):
         mock_fetch_dirs.return_value = ["firmware-1.0.1.def456"]
         mock_fetch_contents.return_value = []
 
@@ -4402,7 +4411,7 @@ def test_batch_update_vs_individual_update_consistency(tmp_path):
     # Tracking info should be identical (both should track the latest prerelease)
     batch_info = downloader.get_prerelease_tracking_info(str(prerelease_dir1))
     # Use the last individual directory for comparison
-    last_individual_dir = tmp_path / f"individual_{len(prerelease_dirs)-1}"
+    last_individual_dir = tmp_path / f"individual_{len(prerelease_dirs) - 1}"
     individual_info = downloader.get_prerelease_tracking_info(str(last_individual_dir))
 
     assert batch_info["release"] == individual_info["release"]
@@ -4718,7 +4727,9 @@ def test_device_hardware_fallback_timestamp_prevents_churn(tmp_path, caplog):
 
     # Create manager with API disabled
     manager = DeviceHardwareManager(
-        cache_dir=cache_dir, enabled=False, cache_hours=24  # API disabled
+        cache_dir=cache_dir,
+        enabled=False,
+        cache_hours=24,  # API disabled
     )
 
     # First call should use fallback and log warning

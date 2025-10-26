@@ -720,19 +720,24 @@ def _read_prerelease_tracking_data(tracking_file):
                     version = tracking_data.get("version")
                     hash_val = tracking_data.get("hash")
 
-                    # For new format, we only track the current hash
-                    commits = [hash_val.lower()] if hash_val else []
+                    # Check if commits list exists (for accumulated tracking), otherwise use single hash
+                    commits = tracking_data.get("commits", [])
+                    if not commits and hash_val:
+                        commits = [hash_val.lower()]
+                    else:
+                        commits = [c.lower() for c in commits]
                     current_release = (
-                        f"v{version}" if not version.startswith("v") else version
+                        f"v{version}"
+                        if version and not version.startswith("v")
+                        else version
                     )
-                    last_updated = tracking_data.get("last_updated")
                 else:
                     # Legacy format
                     current_release = tracking_data.get("release")
                     commits = tracking_data.get("commits", [])
                     # Normalize commits to lowercase for consistency
                     commits = [commit.lower() for commit in commits]
-                    last_updated = tracking_data.get("last_updated")
+                last_updated = tracking_data.get("last_updated")
             read_from_json_success = True
         except (IOError, json.JSONDecodeError, UnicodeDecodeError) as e:
             logger.warning(f"Could not read prerelease tracking file: {e}")
@@ -844,14 +849,14 @@ def batch_update_prerelease_tracking(
     prerelease_dir, latest_release_tag, prerelease_dirs
 ):
     """
-    Update prerelease_tracking.json by adding any new commit hashes found in provided prerelease directory names and (if the official release tag changed) reset tracked commits to start from the new release.
+    Update prerelease_tracking.json by adding a new prerelease version found in the first valid prerelease directory name and (if the official release tag changed) reset tracked commits to start from the new release.
 
-    Reads existing tracking from prerelease_tracking.json (falling back to legacy text tracking), appends any previously-untracked commit hashes extracted from names like "firmware-1.2.3.<commit>", and writes a single updated prerelease_tracking.json containing keys "release", "commits", and "last_updated".
+    Reads existing tracking from prerelease_tracking.json (falling back to legacy text tracking), appends the previously-untracked prerelease version extracted from the first directory name like "firmware-1.2.3.<commit>", and writes a single updated prerelease_tracking.json containing keys "release", "commits", and "last_updated". Note: Only the latest prerelease directory is kept on disk (older directories are removed), but all prerelease versions for the current release are preserved in the tracking file.
 
     Parameters:
         prerelease_dir (str): Directory containing prerelease_tracking.json.
         latest_release_tag (str): Current official release tag; when this differs from the stored release tracked commits are reset.
-        prerelease_dirs (list[str]): Prerelease directory names to scan for commit hashes; entries without a commit are ignored.
+        prerelease_dirs (list[str]): Prerelease directory names to scan; only the first valid directory is processed, entries without a commit are ignored.
 
     Returns:
         int: Total number of tracked prerelease commits after the update.
@@ -864,14 +869,14 @@ def batch_update_prerelease_tracking(
     tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
 
     # Extract the single prerelease version and hash from directory names
-    new_commit = None
-    for dir_name in prerelease_dirs:
-        if dir_name.startswith("firmware-"):
-            commit = dir_name[9:]  # Remove "firmware-" prefix
-            commit_lower = commit.lower()  # Normalize to lowercase
-            if commit_lower:
-                new_commit = commit_lower
-                break  # Only process the first (and should be only) prerelease
+    new_commit = next(
+        (
+            commit.lower()
+            for dir_name in prerelease_dirs
+            if dir_name.startswith("firmware-") and (commit := dir_name[9:])
+        ),
+        None,
+    )
 
     if not new_commit:
         return 0
@@ -912,7 +917,7 @@ def batch_update_prerelease_tracking(
                     )
 
     # Update tracking with the new commit
-    updated_commits = existing_commits + [new_commit]
+    updated_commits = [*existing_commits, new_commit]
 
     # Write updated tracking data
     new_tracking_data = {
@@ -2216,9 +2221,10 @@ def extract_files(
                                 os.makedirs(
                                     target_dir_for_file, exist_ok=True
                                 )  # Can raise OSError
-                            with zip_ref.open(file_info) as source, open(
-                                target_path, "wb"
-                            ) as target_file:
+                            with (
+                                zip_ref.open(file_info) as source,
+                                open(target_path, "wb") as target_file,
+                            ):
                                 shutil.copyfileobj(
                                     source, target_file, length=1024 * 64
                                 )
