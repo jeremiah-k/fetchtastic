@@ -5,12 +5,12 @@ import shutil
 import time
 from pathlib import Path
 from unittest.mock import mock_open, patch
+
 import pytest
 import requests
+
 from fetchtastic import downloader
 from fetchtastic.device_hardware import DeviceHardwareManager
-import os
-import requests
 from fetchtastic.downloader import (
     check_for_prereleases,
     cleanup_superseded_prereleases,
@@ -50,12 +50,12 @@ def write_dummy_file():
 def mock_github_commit_timestamp(commit_timestamps):
     """
     Create a requests.get-compatible mock that returns commit timestamp data for specified commit hashes.
-    
+
     When the requested URL contains "commits/{hash}" for a hash present in commit_timestamps, the mock response's json() returns {"commit": {"committer": {"date": "<ISO timestamp>"}}} and raise_for_status() is a no-op. For other URLs the mock response's json() returns an empty dict and raise_for_status() is a no-op.
-    
+
     Parameters:
         commit_timestamps (dict): Mapping of commit hash (str) to ISO 8601 timestamp string.
-    
+
     Returns:
         function: A callable suitable for use as a side_effect for mocks of requests.get; it accepts (url, **kwargs) and returns a Mock response object.
     """
@@ -63,15 +63,15 @@ def mock_github_commit_timestamp(commit_timestamps):
     def mock_get_response(url, **_kwargs):
         """
         Return a requests-like mock response for GitHub commit timestamp endpoints used in tests.
-        
+
         When the URL contains "commits/{commit_hash}" for a commit_hash present in
         the surrounding `commit_timestamps` mapping, the mock's `json()` returns
         {"commit": {"committer": {"date": <timestamp>}}}. For all other URLs the
         mock's `json()` returns an empty dict. The mock's `raise_for_status()` is a no-op.
-        
+
         Parameters:
             url (str): The requested URL.
-        
+
         Returns:
             unittest.mock.Mock: A mock object implementing `json()` and `raise_for_status()`
             that simulates a GitHub commit-timestamp API response.
@@ -841,12 +841,12 @@ def test_check_for_prereleases_only_downloads_latest(
     def _fetch_contents(dir_name: str):
         """
         Constructs a single simulated firmware asset descriptor for a directory or tag name.
-        
+
         If `dir_name` starts with the prefix "firmware-", that prefix is removed when forming the firmware file base name; otherwise the full `dir_name` is used. The returned list contains one dictionary with keys "name" (e.g., "firmware-rak4631-<suffix>.uf2") and "download_url" (a URL pointing to "<dir_name>.uf2").
-        
+
         Parameters:
             dir_name (str): Directory or tag name used to construct the firmware asset entry.
-        
+
         Returns:
             list[dict]: A single-element list with an asset descriptor suitable for tests.
         """
@@ -1199,20 +1199,10 @@ def test_prerelease_tracking_functionality(
     assert "last_updated" in tracking_data
     assert tracking_data["release"] == latest_release_tag
 
-    # Optional: if commits are objects in new format, validate and check normalization/uniqueness by hash.
-    if tracking_data.get("commits") and isinstance(tracking_data["commits"][0], dict):
-        entry = tracking_data["commits"][0]
-        for k in ("version", "hash", "count", "timestamp"):
-            assert k in entry, f"commit entry missing '{k}'"
-        hashes = [e["hash"] for e in tracking_data["commits"] if "hash" in e]
-        assert hashes, "commits should contain at least one hash"
-        assert all(h == h.lower() for h in hashes)
-        assert len(set(hashes)) == len(hashes)
-    else:
-        # Legacy/flattened string list
-        assert tracking_data.get("commits"), "commits should not be empty"
-        assert all(c == c.lower() for c in tracking_data["commits"])
-        assert len(set(tracking_data["commits"])) == len(tracking_data["commits"])
+    # Commits should be a list of strings, normalized to lowercase and unique.
+    assert tracking_data.get("commits"), "commits should not be empty"
+    assert all(c == c.lower() for c in tracking_data["commits"])
+    assert len(set(tracking_data["commits"])) == len(tracking_data["commits"])
 
     # Test get_prerelease_tracking_info function
     info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
@@ -2728,7 +2718,6 @@ def test_tracking_file_error_handling_ui_messages(tmp_path, caplog):
 
         # Should handle permission error gracefully
         assert result == {}  # Should return empty dict on error
-        assert result == {}
 
     finally:
         tracking_file.chmod(0o644)  # Restore permissions
@@ -3119,13 +3108,13 @@ def test_backwards_compatibility_ui_scenarios():
 def test_end_to_end_prerelease_workflow_ui_coverage(tmp_path, caplog):
     """
     Exercise the full prerelease discovery, download, extraction, and cleanup workflow while asserting expected UI/log messages and filesystem changes.
-    
+
     This test simulates repository directory and asset listings, provides a DeviceHardwareManager fallback, creates existing prerelease directories with different commit hashes, and verifies that:
     - matching prerelease assets are discovered and downloaded according to include/exclude patterns,
     - superseded prerelease directories are removed while the newly downloaded prerelease directory is preserved,
     - logging contains informational messages reflecting key workflow steps,
     - the function reports that a prerelease was found and returns the downloaded prerelease directory name in the result set.
-    
+
     The pytest fixtures `tmp_path` and `caplog` are used to provide a temporary filesystem and capture log output.
     """
     from unittest.mock import patch
@@ -5999,13 +5988,13 @@ class TestNetworkFailureScenarios:
                 def mock_iter_content(_chunk_size):
                     """
                     Yield a single bytes chunk consisting of "data" repeated 10 times, then raise a ConnectionError.
-                    
+
                     Parameters:
                         _chunk_size: Ignored; present to match the signature of requests.Response.iter_content.
-                    
+
                     Returns:
                         A generator that yields one bytes object: b"data" * 10.
-                    
+
                     Raises:
                         requests.exceptions.ConnectionError: Always raised after yielding the single chunk.
                     """
