@@ -575,6 +575,7 @@ def test_run_setup_first_run_linux_simple(
         "n",  # No cron job
         "n",  # No reboot cron job
         "n",  # No NTFY notifications
+        "n",  # No GitHub token setup
         "n",  # Don't perform first run now
     ]
     mock_input.side_effect = user_inputs
@@ -654,6 +655,7 @@ def test_run_setup_first_run_windows(
         "n",  # No pre-releases
         "y",  # create startup shortcut
         "n",  # No NTFY notifications
+        "n",  # No GitHub token setup
         "",  # press enter to close
     ]
     mock_input.side_effect = user_inputs
@@ -734,6 +736,7 @@ def test_run_setup_first_run_termux(  # noqa: ARG001
         "y",  # cron job
         "y",  # boot script
         "n",  # No NTFY notifications
+        "n",  # No GitHub token setup
         "n",  # Don't perform first run now
     ]
     mock_input.side_effect = user_inputs
@@ -829,6 +832,7 @@ def test_run_setup_existing_config(
         "new-topic",  # new topic
         "n",  # no copy
         "n",  # no notify on download only
+        "n",  # No GitHub token setup
         "n",  # Don't perform first run now
     ]
     mock_input.side_effect = user_inputs
@@ -972,9 +976,10 @@ def test_section_shortcuts_mapping():
     assert SECTION_SHORTCUTS["f"] == "firmware"
     assert SECTION_SHORTCUTS["n"] == "notifications"
     assert SECTION_SHORTCUTS["m"] == "automation"
+    assert SECTION_SHORTCUTS["g"] == "github"
 
     # Test that all expected shortcuts exist
-    expected_shortcuts = {"b", "a", "f", "n", "m"}
+    expected_shortcuts = {"b", "a", "f", "n", "m", "g"}
     assert set(SECTION_SHORTCUTS.keys()) == expected_shortcuts
 
 
@@ -984,7 +989,14 @@ def test_setup_section_choices():
     """Test that SETUP_SECTION_CHOICES contains expected sections."""
     from fetchtastic.setup_config import SETUP_SECTION_CHOICES
 
-    expected_sections = {"base", "android", "firmware", "notifications", "automation"}
+    expected_sections = {
+        "base",
+        "android",
+        "firmware",
+        "notifications",
+        "automation",
+        "github",
+    }
     assert SETUP_SECTION_CHOICES == expected_sections
 
 
