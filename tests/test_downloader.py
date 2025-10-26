@@ -5891,7 +5891,7 @@ class TestNetworkFailureScenarios:
             with patch("requests.get") as mock_get:
                 mock_get.side_effect = failure
 
-                result = get_commit_timestamp("abc123")
+                result = get_commit_timestamp("meshtastic", "firmware", "abc123")
                 assert result is None
 
     def test_ssl_certificate_error_handling(self):
