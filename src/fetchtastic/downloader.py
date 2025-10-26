@@ -1322,6 +1322,7 @@ def check_for_prereleases(
     selected_patterns,
     exclude_patterns=None,  # log_message_func parameter removed
     device_manager=None,
+    github_token=None,
 ):
     """
     Discover prerelease firmware that are newer than the provided official release tag and download assets matching the given selection patterns into download_dir/firmware/prerelease.
@@ -1334,6 +1335,7 @@ def check_for_prereleases(
         selected_patterns (Iterable[str]): Patterns used to select which prerelease assets to download.
         exclude_patterns (Iterable[str] | None): Optional patterns to exclude assets from selection.
         device_manager: Optional device manager used for device-specific pattern matching (omitted from detailed docs as a common service).
+        github_token (str | None): Optional GitHub API token for higher rate limits.
 
     Returns:
         tuple[bool, list[str]]: (downloaded, versions)
@@ -1453,7 +1455,7 @@ def check_for_prereleases(
 
     def _safe_get_timestamp(commit_hash):
         return (
-            get_commit_timestamp("meshtastic", "firmware", commit_hash)
+            get_commit_timestamp("meshtastic", "firmware", commit_hash, github_token)
             if commit_hash
             else None
         )
@@ -1987,6 +1989,7 @@ def _process_firmware_downloads(
                         _get_prerelease_patterns(config),
                         exclude_patterns=config.get("EXCLUDE_PATTERNS", []),  # type: ignore
                         device_manager=device_manager,
+                        github_token=config.get("GITHUB_TOKEN"),
                     )
                 )
                 if prerelease_found:
