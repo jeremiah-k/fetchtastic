@@ -344,6 +344,16 @@ def test_prerelease_tracking_functionality(
     assert "last_updated" in tracking_data
     assert tracking_data["release"] == latest_release_tag
 
+    # Add shape check for last_updated to validate ISO-8601 format
+    import re
+
+    iso8601_pattern = (
+        r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?([+-]\d{2}:\d{2}|Z)?$"
+    )
+    assert re.match(
+        iso8601_pattern, tracking_data["last_updated"]
+    ), f"last_updated not in ISO-8601 format: {tracking_data['last_updated']}"
+
     # Commits should be a list of strings, normalized to lowercase and unique.
     assert tracking_data.get("commits"), "commits should not be empty"
     assert all(c == c.lower() for c in tracking_data["commits"])

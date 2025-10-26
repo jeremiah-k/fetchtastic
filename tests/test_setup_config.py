@@ -1,3 +1,4 @@
+import copy
 import importlib
 import os
 import subprocess
@@ -671,6 +672,15 @@ def test_run_setup_first_run_windows(
         mock_create_startup_shortcut.assert_called_once()
         mock_downloader_main.assert_not_called()
 
+        mock_yaml_dump.assert_called()
+        saved_config = mock_yaml_dump.call_args[0][0]
+
+        # Assert token is not set on Windows flow
+        assert (
+            "GITHUB_TOKEN" not in saved_config
+            or saved_config.get("GITHUB_TOKEN") is None
+        )
+
 
 @pytest.mark.configuration
 @pytest.mark.unit
@@ -948,8 +958,6 @@ def test_run_setup_partial_firmware_section(
     mock_menu_firmware.assert_called_once()
     mock_menu_apk.assert_not_called()
 
-    import copy
-
     saved_configs = [
         copy.deepcopy(args[0][0]) for args in mock_yaml_dump.call_args_list
     ]
@@ -958,6 +966,12 @@ def test_run_setup_partial_firmware_section(
 
     mock_setup_cron_job.assert_not_called()
     mock_setup_reboot_cron_job.assert_not_called()
+
+    # Verify GitHub token is not persisted when user declines
+    assert (
+        "GITHUB_TOKEN" not in saved_configs[-1]
+        or saved_configs[-1].get("GITHUB_TOKEN") is None
+    )
     mock_remove_cron_job.assert_not_called()
     mock_remove_reboot_cron_job.assert_not_called()
 
@@ -1479,12 +1493,15 @@ def test_setup_github_set_new_token(capsys, monkeypatch):
     config = {}
 
     # Mock inputs: yes to setup, enter valid token
-    inputs = ["y", "ghp_fake_token_for_testing_123456789012345678901234"]
+    inputs = [
+        "y",
+        "ghp_fake_token_for_testing_123456789012345678901234",
+    ]  # nosec S105 (test-only)
     input_iter = iter(inputs)
     monkeypatch.setattr("builtins.input", lambda _: next(input_iter))
     monkeypatch.setattr(
         "getpass.getpass",
-        lambda _: "ghp_fake_token_for_testing_123456789012345678901234",
+        lambda _: "ghp_fake_token_for_testing_123456789012345678901234",  # nosec S105 (test-only)
     )
 
     result = _setup_github(config)

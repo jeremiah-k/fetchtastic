@@ -1121,11 +1121,8 @@ def calculate_expected_prerelease_version(latest_version: str) -> str:
         if not latest_tuple or len(latest_tuple) < 2:
             return ""
         # Increment the patch version (third position) by 1
-        major, minor, patch = (
-            latest_tuple[0],
-            latest_tuple[1],
-            latest_tuple[2] if len(latest_tuple) > 2 else 0,
-        )
+        major, minor = latest_tuple[0], latest_tuple[1]
+        patch = latest_tuple[2] if len(latest_tuple) > 2 else 0
         expected_patch = patch + 1
         return f"{major}.{minor}.{expected_patch}"
     except (ValueError, TypeError, IndexError):
