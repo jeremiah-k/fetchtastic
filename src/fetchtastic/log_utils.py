@@ -35,9 +35,9 @@ def set_log_level(level_name: str) -> None:
       - For INFO and above:
         - RichHandler: message-only formatter ("%(message)s").
         - Non-Rich handlers: INFO_LOG_FORMAT with LOG_DATE_FORMAT.
-      - For levels below INFO:
-        - RichHandler: message plus source info ("%(message)s (%(name)s - %(module)s.%(funcName)s:%(lineno)d)").
-        - Non-Rich handlers: DEBUG_LOG_FORMAT with LOG_DATE_FORMAT.
+       - For levels below INFO:
+         - RichHandler: message-only formatter for cleaner console output.
+         - Non-Rich handlers: DEBUG_LOG_FORMAT with LOG_DATE_FORMAT.
     - Emits a log at the configured level confirming the new level when successful.
 
     Parameters:

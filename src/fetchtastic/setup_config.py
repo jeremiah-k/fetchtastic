@@ -1618,12 +1618,6 @@ def run_setup(sections: Optional[Sequence[str]] = None):
         except OSError as e:
             print(f"Error creating config directory: {e}")
 
-    # Save configuration to YAML file before proceeding
-    with open(CONFIG_FILE, "w") as f:
-        yaml.dump(config, f)
-
-    print(f"Configuration saved to: {CONFIG_FILE}")
-
     # Handle automation configuration
     config = _setup_automation(config, is_partial_run, wants)
 
@@ -1634,6 +1628,11 @@ def run_setup(sections: Optional[Sequence[str]] = None):
     # Handle GitHub token configuration
     if not is_partial_run or wants("github"):
         config = _setup_github(config)
+
+    # Persist configuration after all interactive sections
+    with open(CONFIG_FILE, "w") as f:
+        yaml.dump(config, f)
+    print(f"Configuration saved to: {CONFIG_FILE}")
 
     if not is_partial_run:
         # Ask if the user wants to perform a first run
