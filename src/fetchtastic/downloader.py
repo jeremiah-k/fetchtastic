@@ -907,21 +907,6 @@ def batch_update_prerelease_tracking(
         )
         return len(existing_commits)
 
-    # Clean up old prerelease directory if it exists and has different hash
-    if existing_commits:
-        old_commit = existing_commits[-1]
-        if old_commit != new_prerelease_id:
-            old_dir_path = os.path.join(prerelease_dir, f"firmware-{old_commit}")
-            if os.path.exists(old_dir_path):
-                if _safe_rmtree(old_dir_path, prerelease_dir, f"firmware-{old_commit}"):
-                    logger.info(
-                        f"Removed old prerelease directory: firmware-{old_commit}"
-                    )
-                else:
-                    logger.warning(
-                        f"Failed to remove old prerelease directory: firmware-{old_commit}"
-                    )
-
     # Update tracking with the new prerelease ID
     updated_commits = [*existing_commits, new_prerelease_id]
 
