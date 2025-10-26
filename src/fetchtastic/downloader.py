@@ -1263,31 +1263,29 @@ def get_commit_timestamp(
         else:
             return None
     except requests.HTTPError as e:
-        if (
-            hasattr(e, "response")
-            and e.response is not None
-            and e.response.status_code == 403
-        ):
-            logger.error(
-                f"GitHub API rate limit exceeded for commit {commit_hash}. "
-                f"Set GITHUB_TOKEN environment variable for higher rate limits."
-            )
-        elif (
-            hasattr(e, "response")
-            and e.response is not None
-            and e.response.status_code == 401
-        ):
-            logger.warning(
-                f"GitHub token authentication failed for commit {commit_hash}: {e}. "
-                f"Retrying without authentication."
-            )
-            # Retry without token if authentication failed
-            if effective_token:
-                return get_commit_timestamp(
-                    repo_owner, repo_name, commit_hash, None, force_refresh
+        if e.response is not None:
+            if e.response.status_code == 403:
+                logger.error(
+                    f"GitHub API rate limit exceeded for commit {commit_hash}. "
+                    f"Set GITHUB_TOKEN environment variable for higher rate limits."
                 )
-            return None
+            elif e.response.status_code == 401:
+                logger.warning(
+                    f"GitHub token authentication failed for commit {commit_hash}: {e}. "
+                    f"Retrying without authentication."
+                )
+                # Retry without token if authentication failed
+                if effective_token:
+                    return get_commit_timestamp(
+                        repo_owner, repo_name, commit_hash, None, force_refresh
+                    )
+                return None
+            else:
+                logger.warning(
+                    f"HTTP error getting timestamp for commit {commit_hash}: {e}"
+                )
         else:
+            # This branch is for when e.response is None
             logger.warning(
                 f"HTTP error getting timestamp for commit {commit_hash}: {e}"
             )
@@ -1784,11 +1782,7 @@ def _get_latest_releases_data(
         logger.debug(f"Fetched {len(releases)} releases from GitHub API")
 
     except requests.HTTPError as e:
-        if (
-            hasattr(e, "response")
-            and e.response is not None
-            and e.response.status_code == 401
-        ):
+        if e.response is not None and e.response.status_code == 401:
             logger.warning(
                 f"GitHub token authentication failed for releases API: {e}. "
                 f"Retrying without authentication."

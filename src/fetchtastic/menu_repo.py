@@ -136,11 +136,7 @@ def fetch_repo_contents(path=""):
         return _process_repo_contents(contents)
 
     except requests.HTTPError as e:
-        if (
-            hasattr(e, "response")
-            and e.response is not None
-            and e.response.status_code == 401
-        ):
+        if e.response is not None and e.response.status_code == 401:
             logger.warning(
                 f"GitHub token authentication failed for repo contents API: {e}. "
                 f"Retrying without authentication."
