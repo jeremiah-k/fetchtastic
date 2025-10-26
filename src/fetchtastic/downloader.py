@@ -674,19 +674,21 @@ def _read_prerelease_tracking_data(tracking_file):
     """
     Read prerelease tracking data from JSON, supporting both new and legacy formats.
 
-    Parses prerelease_tracking.json at tracking_file and returns a tuple (commits, current_release).
-    Supports both the new format (version, hash, count) and legacy format (release, commits list).
-    If the JSON file is missing or cannot be parsed, falls back to the legacy text reader
+    Parses prerelease_tracking.json at tracking_file and returns a tuple (commits, current_release, last_updated).
+    Supports both new format (version, hash, count) and legacy format (release, commits list).
+    If JSON file is missing or cannot be parsed, falls back to legacy text reader
     (_read_text_tracking_file) which reads prerelease_commits.txt-style data. Returns an empty
-    commit list and None for the release when no valid tracking information is available.
+    commit list and None for release when no valid tracking information is available.
 
     Returns:
-        tuple: (commits, current_release)
+        tuple: (commits, current_release, last_updated)
             commits (list[str]): Ordered list of prerelease commit hashes (may be empty).
-            current_release (str | None): Release tag associated with the commits, or None.
+            current_release (str | None): Release tag associated with commits, or None.
+            last_updated (str | None): ISO timestamp of last update, or None.
     """
     commits = []
     current_release = None
+    last_updated = None
     read_from_json_success = False
 
     if os.path.exists(tracking_file):
@@ -699,19 +701,20 @@ def _read_prerelease_tracking_data(tracking_file):
                     # New format: convert to legacy format for compatibility
                     version = tracking_data.get("version")
                     hash_val = tracking_data.get("hash")
-                    tracking_data.get("count", 1)
 
                     # For new format, we only track the current hash
                     commits = [hash_val.lower()] if hash_val else []
                     current_release = (
                         f"v{version}" if not version.startswith("v") else version
                     )
+                    last_updated = tracking_data.get("last_updated")
                 else:
                     # Legacy format
                     current_release = tracking_data.get("release")
                     commits = tracking_data.get("commits", [])
                     # Normalize commits to lowercase for consistency
                     commits = [commit.lower() for commit in commits]
+                    last_updated = tracking_data.get("last_updated")
             read_from_json_success = True
         except (IOError, json.JSONDecodeError, UnicodeDecodeError) as e:
             logger.warning(f"Could not read prerelease tracking file: {e}")
@@ -719,8 +722,9 @@ def _read_prerelease_tracking_data(tracking_file):
     if not read_from_json_success:
         # Fallback to legacy text format if JSON read failed or file didn't exist
         commits, current_release = _read_text_tracking_file(tracking_file)
+        last_updated = None
 
-    return commits, current_release
+    return commits, current_release, last_updated
 
 
 def _extract_commit_from_dir_name(dir_name: str) -> Optional[str]:
@@ -739,49 +743,6 @@ def _extract_commit_from_dir_name(dir_name: str) -> Optional[str]:
         return None
 
 
-def _read_new_prerelease_tracking_data(tracking_file):
-    """
-    Read prerelease tracking data in the new format.
-
-    Returns a dict with keys 'version', 'hash', 'count', 'timestamp' or None if no valid data.
-    """
-    if not os.path.exists(tracking_file):
-        return None
-
-    try:
-        with open(tracking_file, "r", encoding="utf-8") as f:
-            tracking_data = json.load(f)
-
-            # Check for new format
-            if "version" in tracking_data and "hash" in tracking_data:
-                return {
-                    "version": tracking_data.get("version"),
-                    "hash": tracking_data.get("hash"),
-                    "count": tracking_data.get("count", 1),
-                    "timestamp": tracking_data.get("timestamp"),
-                }
-            else:
-                # Legacy format - convert to new format
-                commits = tracking_data.get("commits", [])
-                if commits:
-                    # Get the latest commit from the list
-                    latest_commit = commits[-1]
-                    # Extract version from release tag
-                    release = tracking_data.get("release", "")
-                    version = release.lstrip("v") if release else "unknown"
-
-                    return {
-                        "version": version,
-                        "hash": latest_commit,
-                        "count": len(commits),
-                        "timestamp": tracking_data.get("last_updated"),
-                    }
-    except (IOError, json.JSONDecodeError, UnicodeDecodeError) as e:
-        logger.warning(f"Could not read prerelease tracking file: {e}")
-
-    return None
-
-
 def _compare_versions(version1: str, version2: str) -> int:
     """
     Compare two version strings.
@@ -792,7 +753,7 @@ def _compare_versions(version1: str, version2: str) -> int:
          1 if version1 > version2
     """
     try:
-        from packaging.version import Version
+        from packaging.version import InvalidVersion, Version
 
         v1 = Version(version1)
         v2 = Version(version2)
@@ -803,7 +764,7 @@ def _compare_versions(version1: str, version2: str) -> int:
             return 1
         else:
             return 0
-    except Exception:
+    except (InvalidVersion, TypeError):
         # Fallback to string comparison if version parsing fails
         if version1 < version2:
             return -1
@@ -896,19 +857,17 @@ def batch_update_prerelease_tracking(
     prerelease_dir, latest_release_tag, prerelease_dirs
 ):
     """
-    Update prerelease_tracking.json to track a single prerelease version with hash changes.
+    Update prerelease_tracking.json by adding any new commit hashes found in provided prerelease directory names and (if the official release tag changed) reset tracked commits to start from the new release.
 
-    This function tracks only ONE prerelease version (latest official + 1). When a new
-    prerelease appears with the same version but different hash, it replaces the old one.
-    This matches the actual behavior where there's only one prerelease version at a time.
+    Reads existing tracking from prerelease_tracking.json (falling back to legacy text tracking), appends any previously-untracked commit hashes extracted from names like "firmware-1.2.3.<commit>", and writes a single updated prerelease_tracking.json containing keys "release", "commits", and "last_updated".
 
     Parameters:
         prerelease_dir (str): Directory containing prerelease_tracking.json.
-        latest_release_tag (str): Current official release tag; when this differs from the stored release the tracked commits are reset.
+        latest_release_tag (str): Current official release tag; when this differs from the stored release tracked commits are reset.
         prerelease_dirs (list[str]): Prerelease directory names to scan for commit hashes; entries without a commit are ignored.
 
     Returns:
-        int: Total number of tracked prerelease commits for the current version.
+        int: Total number of tracked prerelease commits after the update.
              Returns 0 immediately if prerelease_dirs is empty.
              Returns 1 if writing the tracking file fails (fallback value).
     """
@@ -931,7 +890,9 @@ def batch_update_prerelease_tracking(
         return 0
 
     # Read current tracking data
-    existing_commits, existing_release = _read_prerelease_tracking_data(tracking_file)
+    existing_commits, existing_release, _ = _read_prerelease_tracking_data(
+        tracking_file
+    )
 
     # Check if we need to reset due to new official release
     if existing_release and existing_release != latest_release_tag:
@@ -941,14 +902,7 @@ def batch_update_prerelease_tracking(
         existing_commits = []
 
     # Check if this is a new hash for the same version
-    is_new_hash = True
-    if existing_commits:
-        # Extract hash parts for comparison
-        existing_hash = existing_commits[-1].split(".")[-1] if existing_commits else ""
-        new_hash = new_commit.split(".")[-1]
-
-        if existing_hash == new_hash:
-            is_new_hash = False
+    is_new_hash = new_commit not in existing_commits
 
     # Only update if it's a new hash
     if not is_new_hash:
@@ -1075,20 +1029,9 @@ def get_prerelease_tracking_info(prerelease_dir):
             Returns empty dict if no tracking file exists.
     """
     tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
-    commits, release = _read_prerelease_tracking_data(tracking_file)
+    commits, release, last_updated = _read_prerelease_tracking_data(tracking_file)
     if not commits and not release:
         return {}
-
-    # Try to read the JSON file to get last_updated timestamp
-    tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
-    last_updated = ""
-    if os.path.exists(tracking_file):
-        try:
-            with open(tracking_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                last_updated = data.get("last_updated", "")
-        except (IOError, json.JSONDecodeError):
-            pass
 
     return {
         "release": release,
@@ -1259,16 +1202,6 @@ def get_commit_timestamp(commit_hash: str) -> Optional[datetime]:
         logger.warning(f"Failed to get timestamp for commit {commit_hash}: {e}")
         return None
 
-    if verify_file_integrity(file_path):
-        return False
-
-    logger.warning(
-        f"Existing prerelease file {os.path.basename(file_path)} failed integrity check; re-downloading"
-    )
-    if not _prepare_for_redownload(file_path):
-        return False
-    return True
-
 
 def check_for_prereleases(
     download_dir,
@@ -1411,26 +1344,13 @@ def check_for_prereleases(
     dirs_with_timestamps = []
     for dir_name in matching_prerelease_dirs:
         commit_hash = get_commit_hash_from_dir(dir_name)
-        if commit_hash:
-            timestamp = get_commit_timestamp(commit_hash)
-            if timestamp:
-                dirs_with_timestamps.append((dir_name, timestamp))
-            else:
-                # If we can't get timestamp, use None to sort by name only
-                dirs_with_timestamps.append((dir_name, None))
-        else:
-            # If we can't extract hash, use None to sort by name only
-            dirs_with_timestamps.append((dir_name, None))
+        timestamp = get_commit_timestamp(commit_hash) if commit_hash else None
+        dirs_with_timestamps.append((dir_name, timestamp))
 
-    # Sort by timestamp (newest first), directories without timestamps preserve original order
-    with_timestamp = [(d, t) for d, t in dirs_with_timestamps if t is not None]
-    without_timestamp = [(d, t) for d, t in dirs_with_timestamps if t is None]
-
-    # Sort with timestamp items by commit time (newest first)
-    with_timestamp.sort(key=lambda x: x[1], reverse=True)
-
-    # Combine: with timestamp items (newest first) + without timestamp items (original order)
-    dirs_with_timestamps = with_timestamp + without_timestamp
+    # Sort by timestamp (newest first), placing items without a timestamp at end.
+    dirs_with_timestamps.sort(
+        key=lambda x: x[1] if x[1] is not None else datetime.min, reverse=True
+    )
 
     # Take newest one
     target_prereleases = [dir_name for dir_name, _ in dirs_with_timestamps[:1]]

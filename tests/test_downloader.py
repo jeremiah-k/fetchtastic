@@ -778,21 +778,9 @@ def test_check_for_prereleases_download_and_cleanup(
     stray.write_text("stale")
 
     # Mock GitHub API response for commit timestamp
-    def mock_get_response(url, **kwargs):
-        """Mock GitHub API response for commit timestamps."""
-        from unittest.mock import Mock
-
-        if "commits/abcdef" in url:
-            return Mock(
-                json=lambda: {
-                    "commit": {"committer": {"date": "2025-01-20T12:00:00Z"}}
-                },
-                raise_for_status=lambda: None,
-            )
-        else:
-            return Mock(json=lambda: {}, raise_for_status=lambda: None)
-
-    mock_get.side_effect = mock_get_response
+    mock_get.side_effect = mock_github_commit_timestamp(
+        {"abcdef": "2025-01-20T12:00:00Z"}
+    )
 
     latest_release_tag = "v2.7.6.111111"
     found, versions = downloader.check_for_prereleases(
@@ -4505,10 +4493,13 @@ def test_read_prerelease_tracking_data_json_format(tmp_path):
 
     tracking_file.write_text(json.dumps(tracking_data))
 
-    commits, current_release = _read_prerelease_tracking_data(str(tracking_file))
+    commits, current_release, last_updated = _read_prerelease_tracking_data(
+        str(tracking_file)
+    )
 
     assert commits == ["abc123", "def456", "ghi789"]
     assert current_release == "v2.7.8.a0c0388"
+    assert last_updated is None
 
 
 def test_read_prerelease_tracking_data_legacy_format(tmp_path):
@@ -4523,10 +4514,13 @@ def test_read_prerelease_tracking_data_legacy_format(tmp_path):
     legacy_file.write_text(legacy_content)
 
     # No JSON file exists
-    commits, current_release = _read_prerelease_tracking_data(str(tracking_file))
+    commits, current_release, last_updated = _read_prerelease_tracking_data(
+        str(tracking_file)
+    )
 
     assert commits == ["abc123", "def456"]
     assert current_release == "v2.7.6.111111"
+    assert last_updated is None
 
 
 def test_read_prerelease_tracking_data_json_fallback_to_legacy(tmp_path):
@@ -4543,10 +4537,13 @@ def test_read_prerelease_tracking_data_json_fallback_to_legacy(tmp_path):
     legacy_content = "Release: v2.7.5.old123\nold456\nold789\n"
     legacy_file.write_text(legacy_content)
 
-    commits, current_release = _read_prerelease_tracking_data(str(tracking_file))
+    commits, current_release, last_updated = _read_prerelease_tracking_data(
+        str(tracking_file)
+    )
 
     assert commits == ["old456", "old789"]
     assert current_release == "v2.7.5.old123"
+    assert last_updated is None
 
 
 def test_read_prerelease_tracking_data_no_files(tmp_path):
@@ -4556,10 +4553,13 @@ def test_read_prerelease_tracking_data_no_files(tmp_path):
     tracking_file = tmp_path / "prerelease_tracking.json"
 
     # No files exist
-    commits, current_release = _read_prerelease_tracking_data(str(tracking_file))
+    commits, current_release, last_updated = _read_prerelease_tracking_data(
+        str(tracking_file)
+    )
 
     assert commits == []
     assert current_release is None
+    assert last_updated is None
 
 
 def test_read_prerelease_tracking_data_empty_json(tmp_path):
@@ -4571,10 +4571,13 @@ def test_read_prerelease_tracking_data_empty_json(tmp_path):
     # Empty JSON object
     tracking_file.write_text("{}")
 
-    commits, current_release = _read_prerelease_tracking_data(str(tracking_file))
+    commits, current_release, last_updated = _read_prerelease_tracking_data(
+        str(tracking_file)
+    )
 
     assert commits == []
     assert current_release is None
+    assert last_updated is None
 
 
 def test_read_prerelease_tracking_data_malformed_legacy(tmp_path):
@@ -4589,11 +4592,14 @@ def test_read_prerelease_tracking_data_malformed_legacy(tmp_path):
     legacy_file.write_text(legacy_content)
 
     # No JSON file exists
-    commits, current_release = _read_prerelease_tracking_data(str(tracking_file))
+    commits, current_release, last_updated = _read_prerelease_tracking_data(
+        str(tracking_file)
+    )
 
     # Should treat all lines as commits in legacy format (more robust)
     assert commits == ["v2.7.6.111111", "abc123", "def456"]
     assert current_release == "unknown"
+    assert last_updated is None
 
 
 def test_get_user_agent_with_version():
