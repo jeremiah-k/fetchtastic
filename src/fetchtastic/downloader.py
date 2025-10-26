@@ -898,7 +898,7 @@ def batch_update_prerelease_tracking(
         existing_commits = []
 
     # Check if this is a new prerelease ID for the same version
-    is_new_id = new_prerelease_id not in existing_commits
+    is_new_id = new_prerelease_id not in set(existing_commits)
 
     # Only update if it's a new prerelease ID
     if not is_new_id:
