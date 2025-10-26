@@ -16,15 +16,8 @@ The original large test file has been split into focused modules:
 This module serves as the main entry point for test discovery.
 """
 
-from .test_download_core import *
-from .test_extraction import *
-from .test_notifications import *
-from .test_prereleases import *
-from .test_security_paths import *
-
-# Import all test modules to ensure pytest discovers all tests
-# This maintains backward compatibility with existing test runners
-from .test_versions import *
+# Pytest automatically discovers test functions from all modules in the tests/
+# directory, so no explicit imports are needed for test discovery.
 
 # test_device_hardware.py already exists and will be discovered separately
 

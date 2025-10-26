@@ -476,29 +476,3 @@ def test_warning_message_formatting():
     # which goes to stdout rather than caplog, so we just verify
     # logging call doesn't raise an exception
     assert True
-
-
-def test_error_message_formatting(caplog):
-    """Test that error messages are formatted correctly."""
-    from fetchtastic.log_utils import logger
-
-    # Test that logger can be called without error
-    logger.error("Failed to download firmware: Network timeout")
-
-    # The actual formatting is handled by Rich console output
-    # which goes to stdout rather than caplog, so we just verify
-    # the logging call doesn't raise an exception
-    assert True
-
-
-def test_warning_message_formatting(caplog):
-    """Test that warning messages are formatted correctly."""
-    from fetchtastic.log_utils import logger
-
-    # Test that logger can be called without error
-    logger.warning("Using fallback device patterns due to API failure")
-
-    # The actual formatting is handled by Rich console output
-    # which goes to stdout rather than caplog, so we just verify
-    # logging call doesn't raise an exception
-    assert True
