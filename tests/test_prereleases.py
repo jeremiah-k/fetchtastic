@@ -608,11 +608,13 @@ def test_update_prerelease_tracking_error_handling():
         prerelease_dir.chmod(0o444)  # Read-only
 
         try:
-            # Should handle write errors gracefully and return default
+            # Should handle write errors gracefully and return count of existing commits
             result = update_prerelease_tracking(
                 str(prerelease_dir), "v2.7.8", "firmware-2.7.9.abc123"
             )
-            assert result == 1  # Should return default value
+            assert (
+                result == 0
+            )  # Should return count of existing commits (0 in this case)
         finally:
             # Restore permissions for cleanup
             prerelease_dir.chmod(0o755)

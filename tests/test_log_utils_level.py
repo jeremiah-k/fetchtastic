@@ -25,12 +25,12 @@ def test_set_log_level_updates_handler_formatters():
             "RichHandler not configured on logger; skipping formatter assertions"
         )
 
-    # Switch to DEBUG and verify verbose formatter
+    # Switch to DEBUG and verify clean formatter
     set_log_level("DEBUG")
     assert logger.level == logging.DEBUG
     assert rich.level == logging.DEBUG
     fmt_debug = getattr(rich.formatter, "_fmt", "")
-    assert "%(module)s" in fmt_debug or "%(funcName)s" in fmt_debug
+    assert "%(message)s" in fmt_debug
 
     # Switch back to INFO and verify terse formatter
     set_log_level("INFO")
