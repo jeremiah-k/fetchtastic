@@ -726,11 +726,10 @@ def _read_prerelease_tracking_data(tracking_file):
                     if not commits_raw and hash_val:
                         commits_raw = [hash_val]
                     commits = [c.lower() for c in (commits_raw or [])]
-                    current_release = (
-                        f"v{version}"
-                        if version and not version.startswith("v")
-                        else version
-                    )
+                    if version and not version.startswith("v"):
+                        current_release = f"v{version}"
+                    else:
+                        current_release = version
                 else:
                     # Legacy format
                     current_release = tracking_data.get("release")
@@ -916,8 +915,6 @@ def batch_update_prerelease_tracking(
         "commits": updated_commits,
         "last_updated": datetime.now().astimezone().isoformat(),
     }
-
-    os.makedirs(prerelease_dir, exist_ok=True)
 
     if not _atomic_write_json(tracking_file, new_tracking_data):
         return 1  # Default to 1 if we can't track
@@ -1164,10 +1161,12 @@ def calculate_expected_prerelease_version(latest_version: str) -> str:
         return ""
 
 
-def get_commit_timestamp(commit_hash: str) -> Optional[datetime]:
-    """Get commit timestamp from GitHub API for meshtastic/firmware repo."""
+def get_commit_timestamp(
+    repo_owner: str, repo_name: str, commit_hash: str
+) -> Optional[datetime]:
+    """Get commit timestamp from GitHub API for a given repository."""
     try:
-        api_url = f"{GITHUB_API_BASE}/meshtastic/firmware/commits/{commit_hash}"
+        api_url = f"{GITHUB_API_BASE}/{repo_owner}/{repo_name}/commits/{commit_hash}"
         response = requests.get(api_url, timeout=GITHUB_API_TIMEOUT)
         response.raise_for_status()
 
@@ -1334,7 +1333,10 @@ def check_for_prereleases(
     with ThreadPoolExecutor(max_workers=5) as executor:
         timestamps = list(
             executor.map(
-                lambda h: get_commit_timestamp(h) if h else None, commit_hashes
+                lambda h: (
+                    get_commit_timestamp("meshtastic", "firmware", h) if h else None
+                ),
+                commit_hashes,
             )
         )
 
