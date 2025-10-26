@@ -242,8 +242,7 @@ def test_check_and_download_happy_path_with_extraction(tmp_path, caplog):
         Returns:
             bool: True on success.
         """
-        import os
-        import zipfile
+        # uses top-level imports: os, zipfile
 
         os.makedirs(os.path.dirname(dest), exist_ok=True)
         with zipfile.ZipFile(dest, "w") as zf:
@@ -251,7 +250,7 @@ def test_check_and_download_happy_path_with_extraction(tmp_path, caplog):
         return True
 
     with patch("fetchtastic.downloader.download_file_with_retry", side_effect=_mock_dl):
-        downloaded, new_versions, failures = downloader.check_and_download(
+        downloaded, _new_versions, failures = downloader.check_and_download(
             releases,
             latest_release_file,
             "Firmware",
@@ -272,7 +271,8 @@ def test_check_and_download_happy_path_with_extraction(tmp_path, caplog):
     extracted = tmp_path / release_tag / "device-install.sh"
     assert extracted.exists()
 
-    assert os.access(extracted, os.X_OK)
+    if os.name != "nt":
+        assert os.access(extracted, os.X_OK)
 
 
 def test_auto_extract_with_empty_patterns_does_not_extract(tmp_path, caplog):
@@ -302,8 +302,7 @@ def test_auto_extract_with_empty_patterns_does_not_extract(tmp_path, caplog):
 
     # Mock downloader to write a real ZIP that contains a file that would normally be extracted
     def _mock_dl(_url, dest):
-        import os
-        import zipfile
+        # uses top-level imports: os, zipfile
 
         os.makedirs(os.path.dirname(dest), exist_ok=True)
         with zipfile.ZipFile(dest, "w") as zf:
@@ -311,7 +310,7 @@ def test_auto_extract_with_empty_patterns_does_not_extract(tmp_path, caplog):
         return True
 
     with patch("fetchtastic.downloader.download_file_with_retry", side_effect=_mock_dl):
-        downloaded, new_versions, failures = downloader.check_and_download(
+        downloaded, _new_versions, failures = downloader.check_and_download(
             releases,
             latest_release_file,
             "Firmware",
@@ -422,14 +421,14 @@ def test_check_and_download_corrupted_existing_zip_records_failure(tmp_path):
     # Write the latest release file to indicate this release is current
     Path(latest_release_file).write_text(release_tag)
 
-    def mock_download(url, path):
+    def mock_download(_url, _path):
         # Mock download failure to test error handling
         return False
 
     with patch(
         "fetchtastic.downloader.download_file_with_retry", side_effect=mock_download
     ):
-        downloaded, new_versions, failures = downloader.check_and_download(
+        downloaded, _new_versions, failures = downloader.check_and_download(
             releases,
             latest_release_file,
             "Firmware",
@@ -446,10 +445,10 @@ def test_check_and_download_corrupted_existing_zip_records_failure(tmp_path):
     assert len(failures) == 1
     assert failures[0]["release_tag"] == release_tag
     assert failures[0]["reason"] == "download_file_with_retry returned False"
-    assert new_versions == []
+    assert _new_versions == []
 
 
-def test_check_and_download_redownloads_mismatched_non_zip(tmp_path, write_dummy_file):
+def test_check_and_download_redownloads_mismatched_non_zip(tmp_path):
     """Non-ZIP files with mismatched sizes should be redownloaded."""
     release_tag = "v1.0.0"
     file_name = "firmware-rak4631-1.0.0.bin"
@@ -711,7 +710,7 @@ class TestDownloadCoreIntegration:
         latest_release_file = str(tmp_path / "latest.txt")
         download_dir = str(tmp_path / "downloads")
 
-        def mock_download(url, path):
+        def mock_download(_url, _path):
             # Mock download that returns False to test error handling
             return False
 
@@ -778,7 +777,7 @@ class TestDownloadCoreIntegration:
             assert failed == []
 
         # Second run - v1.0 should be up to date
-        def mock_download_second_run(url, path):
+        def mock_download_second_run(_url, _path):
             # This should not be called if file exists and is complete
             # If called, just return True to allow test to continue
             return True

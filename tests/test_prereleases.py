@@ -577,8 +577,8 @@ def test_prerelease_existing_files_tracking(tmp_path):
 def test_get_prerelease_tracking_info_error_handling():
     """Test error handling in get_prerelease_tracking_info."""
     import tempfile
-    from pathlib import Path
 
+    # uses top-level imports: Path
     from fetchtastic.downloader import get_prerelease_tracking_info
 
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -599,8 +599,8 @@ def test_get_prerelease_tracking_info_error_handling():
 def test_update_prerelease_tracking_error_handling():
     """Test error handling in update_prerelease_tracking."""
     import tempfile
-    from pathlib import Path
 
+    # uses top-level imports: Path
     import pytest
 
     from fetchtastic.downloader import update_prerelease_tracking

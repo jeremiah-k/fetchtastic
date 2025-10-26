@@ -54,7 +54,8 @@ def test_extract_files(dummy_zip_file, tmp_path):
     assert not (extract_dir / "notes.txt").exists()
 
     # Check that shell script was made executable
-    assert os.access(extract_dir / "device-update.sh", os.X_OK)
+    if os.name != "nt":
+        assert os.access(extract_dir / "device-update.sh", os.X_OK)
 
 
 def test_extract_files_preserves_subdirectories(tmp_path):
@@ -79,7 +80,8 @@ def test_extract_files_preserves_subdirectories(tmp_path):
 
     assert bin_path.exists()
     assert sh_path.exists()
-    assert os.access(sh_path, os.X_OK)
+    if os.name != "nt":
+        assert os.access(sh_path, os.X_OK)
     assert not (out_dir / "sub/notes.txt").exists()
 
 
@@ -191,7 +193,8 @@ def test_extract_files_matching_and_exclude(tmp_path):
     # script extracted and made executable
     sh_path = out_dir / "device-install.sh"
     assert sh_path.exists()
-    assert os.access(sh_path, os.X_OK)
+    if os.name != "nt":
+        assert os.access(sh_path, os.X_OK)
 
     # No further changes; validates include/exclude and executable bit behavior
 

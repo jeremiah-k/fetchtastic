@@ -470,20 +470,21 @@ class TestSecurityInputValidation:
 
 
 @pytest.mark.parametrize(
-    "extract_dir, file_path, should_raise",
+    "file_path, should_raise",
     [
         # Safe paths
-        ("/tmp/extract", "firmware.bin", False),
-        ("/tmp/extract", "subdir/firmware.bin", False),
-        ("/tmp/extract", "deep/nested/path/file.txt", False),
+        ("firmware.bin", False),
+        ("subdir/firmware.bin", False),
+        ("deep/nested/path/file.txt", False),
         # Dangerous paths
-        ("/tmp/extract", "../../../etc/passwd", True),
-        ("/tmp/extract", "/etc/passwd", True),
-        ("/tmp/extract", "test/../../../etc/passwd", True),
+        ("../../../etc/passwd", True),
+        ("/etc/passwd", True),
+        ("test/../../../etc/passwd", True),
     ],
 )
-def test_safe_extract_path(extract_dir, file_path, should_raise):
+def test_safe_extract_path(tmp_path, file_path, should_raise):
     """Test the safe path extraction logic to prevent directory traversal."""
+    extract_dir = str(tmp_path / "extract")
     if should_raise:
         with pytest.raises(ValueError):
             downloader.safe_extract_path(extract_dir, file_path)
@@ -498,7 +499,7 @@ def test_safe_extract_path(extract_dir, file_path, should_raise):
 @patch("fetchtastic.downloader.menu_repo.fetch_directory_contents")
 @patch("fetchtastic.downloader.menu_repo.fetch_repo_directories")
 def test_check_and_download_skips_unsafe_release_tag(
-    mock_fetch_dirs, mock_fetch_contents, mock_download, tmp_path
+    _mock_fetch_dirs, _mock_fetch_contents, _mock_download, tmp_path
 ):
     """Releases with unsafe tag names are ignored to prevent path traversal."""
 
@@ -537,7 +538,7 @@ def test_check_and_download_skips_unsafe_release_tag(
 @patch("fetchtastic.downloader.menu_repo.fetch_directory_contents")
 @patch("fetchtastic.downloader.menu_repo.fetch_repo_directories")
 def test_check_and_download_skips_unsafe_asset_name(
-    mock_fetch_dirs, mock_fetch_contents, mock_download, tmp_path
+    _mock_fetch_dirs, _mock_fetch_contents, _mock_download, tmp_path
 ):
     """Assets with unsafe filenames are skipped before download attempts."""
 
@@ -635,7 +636,7 @@ def test_prerelease_symlink_traversal_attack_prevention(
     ]
 
     # Mock download to create a file
-    def mock_download_func(url, dest_path, max_retries=3, backoff_factor=1.0):
+    def mock_download_func(_url, dest_path, _max_retries=3, _backoff_factor=1.0):
         dest_path.parent.mkdir(parents=True, exist_ok=True)
         dest_path.write_text("mock firmware content")
 
@@ -675,7 +676,7 @@ def test_prerelease_symlink_mixed_with_valid_directories(
     ]
 
     # Mock download to create a file
-    def mock_download_func(url, dest_path, max_retries=3, backoff_factor=1.0):
+    def mock_download_func(_url, dest_path, _max_retries=3, _backoff_factor=1.0):
         dest_path.parent.mkdir(parents=True, exist_ok=True)
         dest_path.write_text("mock firmware content")
 
