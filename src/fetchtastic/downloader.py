@@ -11,7 +11,7 @@ import time
 import zipfile
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import IO, Any, Callable, Dict, List, Optional, Tuple, Union
 
 import requests
@@ -860,7 +860,7 @@ def batch_update_prerelease_tracking(
 
     This function maintains two levels of state:
     - **On disk**: Keeps only the newest prerelease directory; older directories are automatically removed.
-    - **In tracking file**: Preserves a cumulative list of all prerelease IDs for the current release version.
+    - **In tracking file**: Preserves a cumulative list of all prerelease IDs for the current release version (full IDs like '2.7.7.abcd', not just commit hashes).
 
     If the official release tag changes, tracked prerelease IDs are reset to start fresh for the new release.
 
@@ -1357,11 +1357,16 @@ def check_for_prereleases(
             )
         )
 
-    dirs_with_timestamps = list(zip(matching_prerelease_dirs, timestamps))
+    dirs_with_timestamps = list(zip(matching_prerelease_dirs, timestamps, strict=True))
 
     # Sort by timestamp (newest first), placing items without a timestamp at end.
     dirs_with_timestamps.sort(
-        key=lambda x: x[1] if x[1] is not None else datetime.min, reverse=True
+        key=lambda x: (
+            x[1].astimezone(timezone.utc).timestamp()
+            if x[1] is not None
+            else float("-inf")
+        ),
+        reverse=True,
     )
 
     # Take newest one

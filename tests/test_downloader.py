@@ -5412,8 +5412,12 @@ class TestSecurityPathTraversal:
 
         for safe_path in safe_paths:
             result = safe_extract_path(extract_dir, safe_path)
-            # Should return safe absolute path
-            assert result.startswith(extract_dir + "/")
+            # Should return safe absolute path within extract_dir (cross-platform)
+            import os
+
+            assert os.path.commonpath(
+                [os.path.abspath(result), os.path.abspath(extract_dir)]
+            ) == os.path.abspath(extract_dir)
             assert ".." not in result
 
 
@@ -6209,7 +6213,7 @@ class TestIntegrationScenarios:
                 mock_post.return_value = mock_response
 
                 result = _send_ntfy_notification(
-                    "Test message", "https://ntfy.sh", "test-topic"
+                    "https://ntfy.sh", "test-topic", "Test message"
                 )
 
                 # Should complete without error
