@@ -414,7 +414,11 @@ class TestDeviceHardwareManager:
             assert not cache_file.exists()
 
     def test_load_device_patterns_integration(self):
-        """Test _load_device_patterns integration."""
+        """
+        Verify that _load_device_patterns retrieves device patterns from the API and returns them as a set when a fresh cache is absent.
+        
+        This integration test confirms that when the cache directory is new and the remote API returns platform entries containing `platformioTarget`, the manager's `_load_device_patterns` method collects those targets and returns them as a set of pattern strings.
+        """
         with tempfile.TemporaryDirectory() as temp_dir:
             cache_dir = Path(temp_dir)
 
@@ -572,6 +576,11 @@ class TestDeviceHardwareManagerEdgeCases:
             results = []
 
             def check_patterns():
+                """
+                Append the current count of device patterns to the global `results` list.
+                
+                Calls manager.get_device_patterns() and appends the length of the returned pattern set to `results`.
+                """
                 patterns = manager.get_device_patterns()
                 results.append(len(patterns))
 
