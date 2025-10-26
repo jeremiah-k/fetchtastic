@@ -923,7 +923,7 @@ def batch_update_prerelease_tracking(
     }
 
     if not _atomic_write_json(tracking_file, new_tracking_data):
-        return len(existing_commits)  # Return last known good count if write fails
+        return 1  # Return fallback value if write fails
 
     logger.info(
         f"Prerelease tracking updated: {len(updated_commits)} prerelease IDs tracked, latest: {new_prerelease_id}"

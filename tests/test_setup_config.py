@@ -1475,7 +1475,7 @@ def test_setup_github_set_new_token(capsys, monkeypatch):
     config = {}
 
     # Mock inputs: yes to setup, enter valid token
-    inputs = ["y", "fake_token_for_testing_123456789012345678901234567890"]
+    inputs = ["y", "ghp_fake_token_for_testing_123456789012345678901234"]
     input_iter = iter(inputs)
     monkeypatch.setattr("builtins.input", lambda _: next(input_iter))
 
@@ -1483,8 +1483,7 @@ def test_setup_github_set_new_token(capsys, monkeypatch):
 
     assert result is config
     assert (
-        result["GITHUB_TOKEN"]
-        == "fake_token_for_testing_123456789012345678901234567890"
+        result["GITHUB_TOKEN"] == "ghp_fake_token_for_testing_123456789012345678901234"
     )
     captured = capsys.readouterr()
     assert "GitHub API requests have different rate limits:" in captured.out
