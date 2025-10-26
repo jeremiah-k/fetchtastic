@@ -743,37 +743,6 @@ def _extract_commit_from_dir_name(dir_name: str) -> Optional[str]:
         return None
 
 
-def _compare_versions(version1: str, version2: str) -> int:
-    """
-    Compare two version strings.
-
-    Returns:
-        -1 if version1 < version2
-         0 if version1 == version2
-         1 if version1 > version2
-    """
-    try:
-        from packaging.version import InvalidVersion, Version
-
-        v1 = Version(version1)
-        v2 = Version(version2)
-
-        if v1 < v2:
-            return -1
-        elif v1 > v2:
-            return 1
-        else:
-            return 0
-    except (InvalidVersion, TypeError):
-        # Fallback to string comparison if version parsing fails
-        if version1 < version2:
-            return -1
-        elif version1 > version2:
-            return 1
-        else:
-            return 0
-
-
 def _get_existing_prerelease_dirs(prerelease_dir: str) -> list[str]:
     """
     Return safe prerelease directory names directly under ``prerelease_dir``.
@@ -915,14 +884,13 @@ def batch_update_prerelease_tracking(
         if old_commit != new_commit:
             old_dir_path = os.path.join(prerelease_dir, f"firmware-{old_commit}")
             if os.path.exists(old_dir_path):
-                try:
-                    _safe_rmtree(old_dir_path, prerelease_dir, f"firmware-{old_commit}")
+                if _safe_rmtree(old_dir_path, prerelease_dir, f"firmware-{old_commit}"):
                     logger.info(
                         f"Removed old prerelease directory: firmware-{old_commit}"
                     )
-                except Exception as e:
+                else:
                     logger.warning(
-                        f"Failed to remove old prerelease directory {old_dir_path}: {e}"
+                        f"Failed to remove old prerelease directory: firmware-{old_commit}"
                     )
 
     # Update tracking with the new commit
