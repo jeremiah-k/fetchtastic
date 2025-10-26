@@ -2857,6 +2857,9 @@ def check_and_download(
             if any_downloaded and release_tag not in downloaded_versions:
                 # Add to downloaded_versions only if at least one asset from this release was successfully downloaded
                 downloaded_versions.append(release_tag)
+                # Also add to new_versions_available if this is a newer release than what was saved
+                if saved_release_tag is None or release_tag != saved_release_tag:
+                    new_versions_available.append(release_tag)
 
             if auto_extract and release_type == "Firmware":
                 for asset_data in release_data.get(

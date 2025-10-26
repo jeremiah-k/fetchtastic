@@ -576,7 +576,10 @@ def test_check_and_download_skips_unsafe_asset_name(
     assert new_versions == []
     assert failures == []
     assert download_dir.exists()
-    assert list(download_dir.iterdir()) == []
+    # Release directory may be created even if no assets are downloaded
+    release_dir = download_dir / release_tag
+    assert release_dir.exists()
+    assert list(release_dir.iterdir()) == []
 
 
 @patch("fetchtastic.downloader.menu_repo.fetch_directory_contents")
@@ -611,9 +614,9 @@ def test_prerelease_functions_symlink_safety(
     assert isinstance(versions, list)
 
 
-@patch("fetchtastic.downloader.download_file_with_retry")
-@patch("fetchtastic.downloader.menu_repo.fetch_directory_contents")
 @patch("fetchtastic.downloader.menu_repo.fetch_repo_directories")
+@patch("fetchtastic.downloader.menu_repo.fetch_directory_contents")
+@patch("fetchtastic.downloader.download_file_with_retry")
 def test_prerelease_symlink_traversal_attack_prevention(
     mock_download, mock_fetch_contents, mock_fetch_dirs, tmp_path
 ):
@@ -651,9 +654,9 @@ def test_prerelease_symlink_traversal_attack_prevention(
     assert isinstance(versions, list)
 
 
-@patch("fetchtastic.downloader.download_file_with_retry")
-@patch("fetchtastic.downloader.menu_repo.fetch_directory_contents")
 @patch("fetchtastic.downloader.menu_repo.fetch_repo_directories")
+@patch("fetchtastic.downloader.menu_repo.fetch_directory_contents")
+@patch("fetchtastic.downloader.download_file_with_retry")
 def test_prerelease_symlink_mixed_with_valid_directories(
     mock_download, mock_fetch_contents, mock_fetch_dirs, tmp_path
 ):

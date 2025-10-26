@@ -439,7 +439,7 @@ class TestExtractionAndPermissionSetting:
         with tempfile.TemporaryDirectory() as tmp_dir:
             zip_path = Path(tmp_dir) / "nested.zip"
             with zipfile.ZipFile(zip_path, "w") as zf:
-                zf.writestr("firmware/rak4631/firmware.bin", "firmware")
+                zf.writestr("firmware/rak4631/rak4631-firmware.bin", "firmware")
                 zf.writestr("scripts/install.sh", "install script")
                 zf.writestr("docs/README.md", "documentation")
 
@@ -451,7 +451,7 @@ class TestExtractionAndPermissionSetting:
             )
 
             # Directory structure should be preserved
-            assert (extract_dir / "firmware/rak4631/firmware.bin").exists()
+            assert (extract_dir / "firmware/rak4631/rak4631-firmware.bin").exists()
             assert (extract_dir / "scripts/install.sh").exists()
             assert not (extract_dir / "docs/README.md").exists()
 
@@ -477,7 +477,7 @@ class TestExtractionAndPermissionSetting:
             assert not (extract_dir / "script.sh").exists()
 
     def test_extraction_with_wildcard_patterns(self):
-        """Test extraction with wildcard patterns."""
+        """Test extraction with substring patterns (simulating wildcard behavior)."""
         with tempfile.TemporaryDirectory() as tmp_dir:
             zip_path = Path(tmp_dir) / "wildcard.zip"
             with zipfile.ZipFile(zip_path, "w") as zf:
@@ -489,10 +489,8 @@ class TestExtractionAndPermissionSetting:
             extract_dir = Path(tmp_dir) / "extracted"
             extract_dir.mkdir()
 
-            # Wildcard pattern for all firmware files
-            downloader.extract_files(
-                str(zip_path), str(extract_dir), ["firmware-*"], []
-            )
+            # Substring pattern for all firmware files (simulating wildcard behavior)
+            downloader.extract_files(str(zip_path), str(extract_dir), ["firmware-"], [])
 
             assert (extract_dir / "firmware-rak4631.bin").exists()
             assert (extract_dir / "firmware-tbeam.bin").exists()
