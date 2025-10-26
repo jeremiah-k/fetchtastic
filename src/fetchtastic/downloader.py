@@ -242,13 +242,13 @@ def _newer_tags_since_saved(
 def compare_versions(version1, version2):
     """
     Compare two version strings, preferring PEP 440 semantics when possible and falling back to a human-friendly natural ordering for nonstandard forms.
-    
+
     This function attempts to normalize and parse inputs as PEP 440 versions (handling common variants like a leading "v" or trailing hash-like local segments) and, if both parse, compares them according to PEP 440 rules (including prerelease and local-version semantics). If one or both inputs cannot be parsed as PEP 440, a conservative natural-sort fallback is used that splits each string into numeric and alphabetic runs for human-friendly ordering.
-    
+
     Parameters:
         version1 (str): First version string to compare.
         version2 (str): Second version string to compare.
-    
+
     Returns:
         int: `1` if version1 is greater than version2, `0` if they are equal, `-1` if version1 is less than version2.
     """
@@ -268,9 +268,9 @@ def compare_versions(version1, version2):
         # Split into digit or alpha runs; drop punctuation to avoid lexical noise
         """
         Produce a natural-sort key by splitting a string into contiguous digit and alphabetic runs.
-        
+
         The input is lowercased and punctuation is ignored by only capturing sequences of digits or letters. Numeric runs are converted to integers while alphabetic runs remain as lowercase strings; the resulting list can be used as a sorting key for human-friendly ordering (e.g., "v2" < "v10").
-        
+
         Returns:
             list: Components of the key where digit runs are `int` and alphabetic runs are `str`.
         """
@@ -642,14 +642,14 @@ def compare_file_hashes(file1, file2):
 def _read_text_tracking_file(tracking_file):
     """
     Read legacy text-format prerelease tracking data.
-    
+
     Parses a sibling "prerelease_commits.txt" next to the provided tracking file. Supported formats:
     - Modern text format: first non-empty line begins with "Release: <tag>", subsequent lines are commit hashes.
     - Legacy format: every non-empty line is a commit and the release is reported as "unknown".
-    
+
     Parameters:
         tracking_file (str): Path to the JSON tracking file used to locate the sibling "prerelease_commits.txt".
-    
+
     Returns:
         tuple[list[str], str | None]: (commits, current_release)
             - commits: list of commit hashes normalized to lowercase (empty if file missing or unreadable).
@@ -690,9 +690,9 @@ def _ensure_v_prefix_if_missing(version: Optional[str]) -> Optional[str]:
 def _read_prerelease_tracking_data(tracking_file):
     """
     Read prerelease tracking information from a JSON tracking file or fall back to the legacy text format.
-    
+
     Attempts to parse prerelease_tracking.json supporting both the newer schema (keys like "version", "hash", "commits", "last_updated"/"timestamp") and the legacy JSON schema ("release", "commits"). If the JSON read fails or the file does not exist, falls back to reading legacy text-formatted tracking via _read_text_tracking_file. Commit hashes are normalized to lowercase and the release tag is normalized to include a leading "v" when applicable.
-    
+
     Returns:
         tuple: (commits, current_release, last_updated)
             commits (list[str]): Ordered list of prerelease commit hashes (may be empty).
@@ -747,11 +747,11 @@ def _read_prerelease_tracking_data(tracking_file):
 def _extract_commit_from_dir_name(dir_name: str) -> Optional[str]:
     """
     Extract the commit hash fragment from a prerelease directory name.
-    
+
     Recognizes a trailing hexadecimal commit fragment of 6–12 characters in strings
     such as "firmware-2.7.7.abcdef" or "firmware-2.7.7.abcdef-extra". The match
     is case-insensitive and normalized to lowercase.
-    
+
     Returns:
         str: The extracted commit hash in lowercase if found, `None` otherwise.
     """
@@ -926,18 +926,18 @@ def batch_update_prerelease_tracking(
 def matches_extract_patterns(filename, extract_patterns, device_manager=None):
     """
     Determine whether a filename matches any of the configured extract patterns.
-    
+
     Matching is case-insensitive and supports:
     - file-type prefix patterns (from FILE_TYPE_PREFIXES) matched by substring,
     - device patterns (identified by trailing '-' or '_' or via device_manager.is_device_pattern()) that match device names with boundary-aware regexes (short patterns use word-boundary matching),
     - the special "littlefs-" pattern which matches filenames starting with "littlefs-",
     - and general substring patterns as a fallback.
-    
+
     Parameters:
         filename (str): The file name to test.
         extract_patterns (Iterable[str]): Patterns from configuration to match against.
         device_manager (optional): Object providing is_device_pattern(pattern) to identify device patterns.
-    
+
     Returns:
         bool: `True` if any pattern matches the filename, `False` otherwise.
     """
@@ -997,9 +997,9 @@ def matches_extract_patterns(filename, extract_patterns, device_manager=None):
 def get_prerelease_tracking_info(prerelease_dir):
     """
     Return summarized prerelease tracking data read from prerelease_tracking.json.
-    
+
     Reads tracking data from prerelease_tracking.json in the given directory and returns a dictionary summarizing the tracked release and prerelease commits; returns an empty dict when no tracking data exists.
-    
+
     Returns:
         dict: Summary of tracking data with keys:
             - "release" (str | None): Latest official release tag, or None if not present.
@@ -1028,15 +1028,15 @@ def _iter_matching_prerelease_files(
 ) -> List[Dict[str, str]]:
     """
     List prerelease assets in a remote directory that match selection patterns and do not match any exclusion patterns.
-    
+
     Scans the remote directory named by dir_name, filters entries by selected_patterns (device-aware when a DeviceHardwareManager is provided), excludes filenames matching any pattern in exclude_patterns_list, and skips unsafe filesystem path components.
-    
+
     Parameters:
         dir_name (str): Remote prerelease directory to inspect.
         selected_patterns (list): Patterns used to select matching assets.
         exclude_patterns_list (list): fnmatch-style patterns; any match causes an asset to be skipped.
         device_manager: Optional DeviceHardwareManager used for device-specific pattern resolution.
-    
+
     Returns:
         List[Dict[str, str]]: List of dicts each containing:
             - "name": sanitized filename safe as a single path component
@@ -1110,10 +1110,10 @@ def _prepare_for_redownload(file_path: str) -> bool:
 def _prerelease_needs_download(file_path: str) -> bool:
     """
     Decides whether a prerelease asset should be downloaded.
-    
+
     Parameters:
         file_path (str): Path to the local prerelease asset file.
-    
+
     Returns:
         True if the file is missing or fails integrity verification and can be prepared for re-download, False otherwise.
     """
@@ -1134,10 +1134,10 @@ def _prerelease_needs_download(file_path: str) -> bool:
 def extract_version(dir_name: str) -> str:
     """
     Extract the version substring from a prerelease directory name prefixed with "firmware-".
-    
+
     Parameters:
         dir_name (str): Prerelease directory name (for example, "firmware-2.7.7.abcdef").
-    
+
     Returns:
         str: The portion of the name after "firmware-" (e.g., "2.7.7.abcdef"); returns the original `dir_name` unchanged if it does not start with "firmware-".
     """
@@ -1147,10 +1147,10 @@ def extract_version(dir_name: str) -> str:
 def calculate_expected_prerelease_version(latest_version: str) -> str:
     """
     Compute the expected prerelease version by incrementing the patch component of the given latest version.
-    
+
     Parameters:
         latest_version (str): Version string of the latest official release (for example "2.7.6" or "v2.7.6").
-    
+
     Returns:
         str: Expected prerelease version in the form "MAJOR.MINOR.PATCH" where PATCH is incremented by one, or an empty string if the input cannot be parsed to determine major and minor components.
     """
@@ -1178,12 +1178,12 @@ def get_commit_timestamp(
 ) -> Optional[datetime]:
     """
     Retrieve the committer timestamp for a commit in a GitHub repository.
-    
+
     Parameters:
         repo_owner (str): GitHub repository owner or organization.
         repo_name (str): Repository name.
         commit_hash (str): Full SHA or abbreviated commit hash.
-    
+
     Returns:
         datetime: Committer timestamp as an aware UTC `datetime`, or `None` if the timestamp is unavailable or the request fails.
     """
@@ -1218,9 +1218,9 @@ def get_commit_timestamp(
 def _get_commit_hash_from_dir(dir_name: str) -> str:
     """
     Extracts a commit hash from a prerelease directory name.
-    
+
     Searches the version portion (after the "firmware-" prefix) for a hexadecimal commit identifier of 6–40 characters and returns it in lowercase if found; returns an empty string when no commit hash is present.
-    
+
     Returns:
         commit_hash (str): Lowercase commit hash when present, otherwise an empty string.
     """
@@ -1376,7 +1376,7 @@ def check_for_prereleases(
                 if commit_hash
                 else None
             )
-        except Exception as e:
+        except (requests.RequestException, ValueError, KeyError) as e:
             logger.warning(
                 f"Unexpected error fetching timestamp for {commit_hash}: {e}"
             )
@@ -2216,7 +2216,7 @@ def extract_files(
 ) -> None:
     """
     Extract selected files from a ZIP archive into the target directory.
-    
+
     Only archive members whose base filename matches one of the provided `patterns`
     (via the centralized matcher) and do not match any `exclude_patterns` are
     extracted. If `patterns` is empty, extraction is skipped. The archive's
@@ -2225,7 +2225,7 @@ def extract_files(
     extension are made executable after extraction. Unsafe extraction paths are
     skipped (validated via safe_extract_path). If the ZIP is corrupted it will be
     removed; IO, OS, and ZIP errors are logged and handled internally.
-    
+
     Parameters:
         zip_path (str): Path to the ZIP archive to read.
         extract_dir (str): Destination directory where files will be extracted.
