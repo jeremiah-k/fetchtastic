@@ -270,6 +270,25 @@ def test_user_facing_status_messages(tmp_path, caplog):
     """Test user-facing status messages during operations."""
     caplog.set_level("INFO", logger="fetchtastic")
 
+    latest_release_file = str(tmp_path / "latest.txt")
+    download_dir = str(tmp_path / "downloads")
+
+    # Pre-create release directory to simulate up-to-date state
+    release_dir = Path(download_dir) / "v1.0.0"
+    release_dir.mkdir(parents=True)
+
+    # Create a valid ZIP file
+    import zipfile
+
+    zip_path = release_dir / "firmware-rak4631-1.0.0.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        # Content doesn't matter; we will record the actual archive size
+        content = "x" * 950
+        zf.writestr("test.txt", content)
+
+    # Compute the actual size after creating the ZIP file
+    actual_size = zip_path.stat().st_size
+
     # Test up-to-date message
     releases = [
         {
@@ -279,28 +298,12 @@ def test_user_facing_status_messages(tmp_path, caplog):
                 {
                     "name": "firmware-rak4631-1.0.0.zip",
                     "browser_download_url": "https://example.com/firmware.zip",
-                    "size": 1064,  # Match actual ZIP file size
+                    "size": actual_size,
                 }
             ],
             "body": "Release notes",
         }
     ]
-
-    latest_release_file = str(tmp_path / "latest.txt")
-    download_dir = str(tmp_path / "downloads")
-
-    # Pre-create release directory to simulate up-to-date state
-    release_dir = Path(download_dir) / "v1.0.0"
-    release_dir.mkdir(parents=True)
-
-    # Create a valid ZIP file with matching size
-    import zipfile
-
-    zip_path = release_dir / "firmware-rak4631-1.0.0.zip"
-    with zipfile.ZipFile(zip_path, "w") as zf:
-        # Create content that matches the expected size (approximately)
-        content = "x" * 950  # Close to 1000 bytes
-        zf.writestr("test.txt", content)
 
     Path(latest_release_file).write_text("v1.0.0")
 
