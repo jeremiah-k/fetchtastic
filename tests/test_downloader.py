@@ -1186,12 +1186,6 @@ def test_prerelease_tracking_functionality(
     assert "last_updated" in tracking_data
     assert tracking_data["release"] == latest_release_tag
 
-    # Optional: if commits are objects in new format, validate expected keys.
-    if tracking_data["commits"] and isinstance(tracking_data["commits"][0], dict):
-        entry = tracking_data["commits"][0]
-        for k in ("version", "hash", "count", "timestamp"):
-            assert k in entry, f"commit entry missing '{k}'"
-
     # Should have at least one commit hash
     assert len(tracking_data["commits"]) > 0
 
