@@ -5813,6 +5813,11 @@ class TestNetworkFailureScenarios:
             with patch("requests.get") as mock_get:
                 mock_get.side_effect = failure
 
+                # Clear cache to ensure clean test state
+                from fetchtastic.downloader import clear_commit_timestamp_cache
+
+                clear_commit_timestamp_cache()
+
                 result = get_commit_timestamp("meshtastic", "firmware", "abc123")
                 assert result is None
 

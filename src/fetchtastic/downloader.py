@@ -1175,6 +1175,17 @@ def calculate_expected_prerelease_version(latest_version: str) -> str:
         return ""
 
 
+# Global cache for commit timestamps to avoid repeated API calls
+_commit_timestamp_cache: Dict[str, Tuple[datetime, datetime]] = {}
+_CACHE_EXPIRY_HOURS = 24  # Cache timestamps for 24 hours
+
+
+def clear_commit_timestamp_cache() -> None:
+    """Clear the global commit timestamp cache. Useful for testing."""
+    global _commit_timestamp_cache
+    _commit_timestamp_cache.clear()
+
+
 def get_commit_timestamp(
     repo_owner: str, repo_name: str, commit_hash: str
 ) -> Optional[datetime]:
@@ -1189,16 +1200,42 @@ def get_commit_timestamp(
     Returns:
         datetime: Committer timestamp as an aware UTC `datetime`, or `None` if the timestamp is unavailable or the request fails.
     """
+    # Create cache key
+    cache_key = f"{repo_owner}/{repo_name}/{commit_hash}"
+
+    # Check cache first
+    if cache_key in _commit_timestamp_cache:
+        timestamp, cached_at = _commit_timestamp_cache[cache_key]
+        age = datetime.now(timezone.utc) - cached_at
+        if age.total_seconds() < _CACHE_EXPIRY_HOURS * 3600:
+            logger.debug(f"Using cached timestamp for commit {commit_hash}")
+            return timestamp
+        else:
+            # Remove expired cache entry
+            del _commit_timestamp_cache[cache_key]
+
+    # Check for GitHub token in environment for better rate limits
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": get_user_agent(),
+    }
+
+    github_token = os.environ.get("GITHUB_TOKEN")
+    if github_token:
+        headers["Authorization"] = f"token {github_token}"
+        logger.debug("Using GitHub token for API authentication")
+    else:
+        logger.warning(
+            "No GITHUB_TOKEN found - using unauthenticated API requests (rate limited)"
+        )
+
     try:
         api_url = f"{GITHUB_API_BASE}/{repo_owner}/{repo_name}/commits/{commit_hash}"
         response = requests.get(
             api_url,
             timeout=GITHUB_API_TIMEOUT,
-            headers={
-                "Accept": "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28",
-                "User-Agent": get_user_agent(),
-            },
+            headers=headers,
         )
         response.raise_for_status()
 
@@ -1209,9 +1246,30 @@ def get_commit_timestamp(
         commit_date_str = commit_data.get("commit", {}).get("committer", {}).get("date")
         if commit_date_str:
             # Parse ISO 8601 date string
-            return datetime.fromisoformat(commit_date_str.replace("Z", "+00:00"))
+            timestamp = datetime.fromisoformat(commit_date_str.replace("Z", "+00:00"))
+
+            # Cache the result
+            _commit_timestamp_cache[cache_key] = (timestamp, datetime.now(timezone.utc))
+            logger.debug(f"Cached timestamp for commit {commit_hash}")
+
+            return timestamp
         else:
             return None
+    except requests.HTTPError as e:
+        if (
+            hasattr(e, "response")
+            and e.response is not None
+            and e.response.status_code == 403
+        ):
+            logger.error(
+                f"GitHub API rate limit exceeded for commit {commit_hash}. "
+                f"Set GITHUB_TOKEN environment variable for higher rate limits."
+            )
+        else:
+            logger.warning(
+                f"HTTP error getting timestamp for commit {commit_hash}: {e}"
+            )
+        return None
     except (requests.RequestException, ValueError, KeyError) as e:
         logger.warning(f"Failed to get timestamp for commit {commit_hash}: {e}")
         return None
