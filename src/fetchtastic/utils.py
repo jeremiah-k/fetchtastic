@@ -416,6 +416,7 @@ def download_file_with_retry(
             retry_delay = WINDOWS_INITIAL_RETRY_DELAY
             for i in range(WINDOWS_MAX_REPLACE_RETRIES):
                 try:
+                    # Force garbage collection to release file handles before attempting move
                     gc.collect()
                     logger.debug(
                         f"Attempting to move temporary file {temp_path} to {download_path} (Windows attempt {i + 1}/{WINDOWS_MAX_REPLACE_RETRIES})"

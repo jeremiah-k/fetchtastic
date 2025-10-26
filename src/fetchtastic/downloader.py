@@ -385,8 +385,13 @@ def cleanup_superseded_prereleases(
                     "Removing symlink in prerelease dir to prevent traversal: %s",
                     dir_name,
                 )
-                _safe_rmtree(prerelease_path, prerelease_dir, dir_name)
-                cleaned_up = True
+                try:
+                    _safe_rmtree(prerelease_path, prerelease_dir, dir_name)
+                    cleaned_up = True
+                except Exception as e:
+                    logger.error(
+                        "Failed to remove symlink %s in prerelease dir: %s", dir_name, e
+                    )
                 continue
             dir_release_tuple = _get_release_tuple(dir_version)
 
@@ -674,7 +679,7 @@ def _read_text_tracking_file(tracking_file):
                 commits_raw = lines
             commits = [
                 commit.lower() for commit in commits_raw
-            ]  # Normalize to lowercase
+            ]  # Normalize to lowercase for consistency in case-insensitive comparisons for case-insensitive comparisons and consistency
             return commits, current_release
     except (IOError, UnicodeDecodeError) as e:
         logger.debug(f"Could not read legacy prerelease tracking file: {e}")
@@ -872,17 +877,17 @@ def batch_update_prerelease_tracking(
     tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
 
     # Extract the single prerelease version and hash from directory names
-    new_prerelease_id = next(
-        (
-            version_id.lower()
-            for dir_name in prerelease_dirs
-            if dir_name.startswith("firmware-")
-            and (version_id := dir_name[len("firmware-") :])
-        ),
-        None,
-    )
+    # Validate that directory name follows expected pattern: firmware-<version>
+    new_prerelease_id = None
+    for dir_name in prerelease_dirs:
+        if dir_name.startswith("firmware-"):
+            version_id = dir_name[len("firmware-") :]
+            if version_id:  # Ensure version ID is not empty
+                new_prerelease_id = version_id.lower()
+                break
 
     if not new_prerelease_id:
+        logger.debug("No valid firmware prerelease directory found")
         return 0
 
     # Read current tracking data
@@ -1112,13 +1117,20 @@ def _prepare_for_redownload(file_path: str) -> bool:
 
 def _prerelease_needs_download(file_path: str) -> bool:
     """
-    Decides whether a prerelease asset should be downloaded.
+    Determine whether a prerelease file at `file_path` needs to be (re)downloaded.
+
+    This function checks for file existence and verifies integrity. Returns True when
+    the file is missing or fails integrity validation and has been prepared for
+    re-download. If integrity fails but preparation for re-download does not
+    succeed, returns False.
 
     Parameters:
         file_path (str): Path to the local prerelease asset file.
 
     Returns:
-        True if the file is missing or fails integrity verification and can be prepared for re-download, False otherwise.
+        bool: True if the caller should download the file; False otherwise.
+              Returns True if file is missing or fails integrity verification
+              and can be prepared for re-download, False otherwise.
     """
     if not os.path.exists(file_path):
         return True

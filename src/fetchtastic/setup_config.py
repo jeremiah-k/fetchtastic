@@ -1286,8 +1286,16 @@ def _setup_github(config: dict) -> dict:
         ).strip()
 
         if token:
-            # Basic validation - GitHub tokens are at least 40 characters for classic tokens
-            if len(token) >= 20:  # Allow for both classic and fine-grained tokens
+            # Enhanced validation - GitHub tokens have specific prefixes and formats
+            # Classic PATs: start with "ghp_" and are 40 characters total (including prefix)
+            # Fine-grained PATs: start with "github_pat_"
+            # OAuth tokens: start with "gho_"
+            # GitHub App user tokens: start with "ghu_"
+            # GitHub App installation tokens: start with "ghs_"
+            # GitHub App refresh tokens: start with "ghr_"
+            valid_prefixes = ("ghp_", "github_pat_", "gho_", "ghu_", "ghs_", "ghr_")
+
+            if token.startswith(valid_prefixes) and len(token) >= 20:
                 config["GITHUB_TOKEN"] = token
                 print("✓ GitHub token saved successfully!")
                 print(
@@ -1295,7 +1303,9 @@ def _setup_github(config: dict) -> dict:
                 )
             else:
                 print(
-                    "⚠ Invalid token format. GitHub tokens should be at least 20 characters."
+                    "⚠ Invalid token format. GitHub tokens must start with one of: "
+                    "ghp_ (classic PAT), github_pat_ (fine-grained PAT), gho_ (OAuth), "
+                    "ghu_ (GitHub App user), ghs_ (GitHub App installation), ghr_ (GitHub App refresh)."
                 )
                 print("  No changes saved. Please try again if needed.")
         else:
