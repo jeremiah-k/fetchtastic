@@ -1471,7 +1471,9 @@ def test_setup_github_existing_token_keep(capsys, monkeypatch):
     """Test _setup_github when token exists and user keeps it."""
     from fetchtastic.setup_config import _setup_github
 
-    config = {"GITHUB_TOKEN": "fake_existing_token_12345678901234567890"}
+    config = {
+        "GITHUB_TOKEN": "fake_existing_token_12345678901234567890"
+    }  # nosec S105 (test-only)
 
     # Mock input to keep existing token
     monkeypatch.setattr("builtins.input", lambda _: "n")

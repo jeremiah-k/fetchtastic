@@ -1116,20 +1116,18 @@ def calculate_expected_prerelease_version(latest_version: str) -> str:
     Returns:
         str: Expected prerelease version in the form "MAJOR.MINOR.PATCH" where PATCH is incremented by one, or an empty string if the input cannot be parsed to determine major and minor components.
     """
-    try:
-        latest_tuple = _get_release_tuple(latest_version)
-        if not latest_tuple or len(latest_tuple) < 2:
-            return ""
-        # Increment the patch version (third position) by 1
-        major, minor = latest_tuple[0], latest_tuple[1]
-        patch = latest_tuple[2] if len(latest_tuple) > 2 else 0
-        expected_patch = patch + 1
-        return f"{major}.{minor}.{expected_patch}"
-    except (ValueError, TypeError, IndexError):
+    latest_tuple = _get_release_tuple(latest_version)
+    if not latest_tuple or len(latest_tuple) < 2:
         logger.warning(
-            f"Could not calculate expected prerelease version from: {latest_version}"
+            "Could not calculate expected prerelease version from: %s", latest_version
         )
         return ""
+
+    # Increment the patch version (third position) by 1
+    major, minor = latest_tuple[0], latest_tuple[1]
+    patch = latest_tuple[2] if len(latest_tuple) > 2 else 0
+    expected_patch = patch + 1
+    return f"{major}.{minor}.{expected_patch}"
 
 
 # Global cache for commit timestamps to avoid repeated API calls
