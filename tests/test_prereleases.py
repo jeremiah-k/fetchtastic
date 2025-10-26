@@ -612,9 +612,7 @@ def test_update_prerelease_tracking_error_handling():
             result = update_prerelease_tracking(
                 str(prerelease_dir), "v2.7.8", "firmware-2.7.9.abc123"
             )
-            assert (
-                result == 0
-            )  # Should return count of existing commits (0 in this case)
+            assert result == 1  # Should return 1 on write failure as per docstring
         finally:
             # Restore permissions for cleanup
             prerelease_dir.chmod(0o755)
