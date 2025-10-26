@@ -69,6 +69,7 @@ SETUP_SECTION_CHOICES: Set[str] = {
     "firmware",  # Firmware download preferences (including prereleases/extraction)
     "notifications",  # NTFY configuration
     "automation",  # Cron/startup automation choices
+    "github",  # GitHub API token configuration
 }
 
 SECTION_SHORTCUTS = {
@@ -77,6 +78,7 @@ SECTION_SHORTCUTS = {
     "f": "firmware",
     "n": "notifications",
     "m": "automation",
+    "g": "github",
 }
 
 
@@ -1220,6 +1222,93 @@ def _setup_notifications(config: dict) -> dict:
     return config
 
 
+def _setup_github(config: dict) -> dict:
+    """
+    Configure GitHub API token for higher rate limits interactively.
+
+    Prompts the user to optionally set up a GitHub personal access token for API requests.
+    Explains the rate limit benefits (60/hour vs 5000/hour) and provides guidance
+    on token creation. Updates the GITHUB_TOKEN key in the provided config.
+
+    Parameters:
+        config (dict): Current configuration dictionary to be modified in-place and returned.
+
+    Returns:
+        dict: The updated configuration dictionary with GITHUB_TOKEN potentially set.
+    """
+    print("\n" + "=" * 60)
+    print("GitHub API Token Configuration")
+    print("=" * 60)
+    print()
+    print("GitHub API requests have different rate limits:")
+    print("  • Without token: 60 requests per hour")
+    print("  • With personal token: 5,000 requests per hour")
+    print()
+    print("A token is optional but recommended for better performance,")
+    print("especially if you frequently check for prereleases.")
+    print()
+
+    # Check if token already exists
+    current_token = config.get("GITHUB_TOKEN", "")
+    if current_token:
+        masked_token = current_token[:8] + "..." if len(current_token) > 8 else "***"
+        print(f"Current status: Token configured ({masked_token})")
+        change_choice = (
+            input("Would you like to change the GitHub token? [y/n] (default: no): ")
+            .strip()
+            .lower()
+        )
+        if change_choice not in ["y", "yes"]:
+            print("Keeping existing GitHub token configuration.")
+            return config
+    else:
+        print("No GitHub token currently configured.")
+
+    print()
+    setup_choice = (
+        input("Would you like to set up a GitHub token now? [y/n] (default: no): ")
+        .strip()
+        .lower()
+    )
+
+    if setup_choice in ["y", "yes"]:
+        print("\nTo create a GitHub personal access token:")
+        print("1. Visit: https://github.com/settings/tokens")
+        print("2. Click 'Generate new token (classic)'")
+        print("3. Give it a descriptive name (e.g., 'Fetchtastic')")
+        print("4. Select 'public_repo' scope only (no additional permissions needed)")
+        print("5. Click 'Generate token'")
+        print("6. Copy the token and paste it below")
+        print()
+
+        token = input(
+            "Enter your GitHub personal access token (or press Enter to skip): "
+        ).strip()
+
+        if token:
+            # Basic validation - GitHub tokens are at least 40 characters for classic tokens
+            if len(token) >= 20:  # Allow for both classic and fine-grained tokens
+                config["GITHUB_TOKEN"] = token
+                print("✓ GitHub token saved successfully!")
+                print(
+                    "  This will be used for API authentication (5000 requests/hour)."
+                )
+            else:
+                print(
+                    "⚠ Invalid token format. GitHub tokens should be at least 20 characters."
+                )
+                print("  No changes saved. Please try again if needed.")
+        else:
+            print("No token entered. Continuing without GitHub token.")
+            config["GITHUB_TOKEN"] = ""
+    else:
+        print("Skipping GitHub token setup.")
+        config["GITHUB_TOKEN"] = ""
+
+    print()
+    return config
+
+
 def _setup_base(
     config: dict, is_partial_run: bool, is_first_run: bool, wants: Callable[[str], bool]
 ) -> dict:
@@ -1529,6 +1618,10 @@ def run_setup(sections: Optional[Sequence[str]] = None):
     # Handle notifications configuration
     if not is_partial_run or wants("notifications"):
         config = _setup_notifications(config)
+
+    # Handle GitHub token configuration
+    if not is_partial_run or wants("github"):
+        config = _setup_github(config)
 
     if not is_partial_run:
         # Ask if the user wants to perform a first run

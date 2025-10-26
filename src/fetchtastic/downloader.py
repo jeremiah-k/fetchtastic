@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import tempfile
+import threading
 import time
 import zipfile
 from collections import defaultdict
@@ -1178,16 +1179,22 @@ def calculate_expected_prerelease_version(latest_version: str) -> str:
 # Global cache for commit timestamps to avoid repeated API calls
 _commit_timestamp_cache: Dict[str, Tuple[datetime, datetime]] = {}
 _CACHE_EXPIRY_HOURS = 24  # Cache timestamps for 24 hours
+_token_warning_shown = False  # Track if we've shown the token warning this session
+_token_warning_lock = threading.Lock()  # Lock for thread-safe token warning
 
 
 def clear_commit_timestamp_cache() -> None:
     """Clear the global commit timestamp cache. Useful for testing."""
-    global _commit_timestamp_cache
+    global _commit_timestamp_cache, _token_warning_shown
     _commit_timestamp_cache.clear()
+    _token_warning_shown = False
 
 
 def get_commit_timestamp(
-    repo_owner: str, repo_name: str, commit_hash: str
+    repo_owner: str,
+    repo_name: str,
+    commit_hash: str,
+    github_token: Optional[str] = None,
 ) -> Optional[datetime]:
     """
     Retrieve the committer timestamp for a commit in a GitHub repository.
@@ -1221,14 +1228,20 @@ def get_commit_timestamp(
         "User-Agent": get_user_agent(),
     }
 
-    github_token = os.environ.get("GITHUB_TOKEN")
-    if github_token:
-        headers["Authorization"] = f"token {github_token}"
+    # Use provided token or fall back to environment variable
+    effective_token = github_token or os.environ.get("GITHUB_TOKEN")
+    if effective_token:
+        headers["Authorization"] = f"token {effective_token}"
         logger.debug("Using GitHub token for API authentication")
     else:
-        logger.warning(
-            "No GITHUB_TOKEN found - using unauthenticated API requests (rate limited)"
-        )
+        with _token_warning_lock:
+            global _token_warning_shown
+            if not _token_warning_shown:
+                logger.warning(
+                    "No GITHUB_TOKEN found - using unauthenticated API requests (60/hour limit). "
+                    "Set GITHUB_TOKEN environment variable or run 'fetchtastic setup github' for higher limits (5000/hour)."
+                )
+                _token_warning_shown = True
 
     try:
         api_url = f"{GITHUB_API_BASE}/{repo_owner}/{repo_name}/commits/{commit_hash}"
