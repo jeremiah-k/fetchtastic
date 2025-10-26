@@ -1428,6 +1428,67 @@ def test_non_windows_platform_no_modules(mocker, reload_setup_config_module):
 
 @pytest.mark.configuration
 @pytest.mark.unit
+def test_setup_github_no_token(capsys, monkeypatch):
+    """Test _setup_github when no token is configured and user declines."""
+    from fetchtastic.setup_config import _setup_github
+
+    config = {}
+
+    # Mock input to decline setting up token
+    monkeypatch.setattr("builtins.input", lambda _: "n")
+
+    result = _setup_github(config)
+
+    assert result is config  # Should return the same config dict
+    captured = capsys.readouterr()
+    assert "GitHub API requests have different rate limits:" in captured.out
+    assert "60 requests per hour" in captured.out
+    assert "5,000 requests per hour" in captured.out
+    assert "83x more!" not in captured.out  # Ensure promotional text is removed
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_github_existing_token_keep(capsys, monkeypatch):
+    """Test _setup_github when token exists and user keeps it."""
+    from fetchtastic.setup_config import _setup_github
+
+    config = {"GITHUB_TOKEN": "ghp_existingtoken12345678901234567890"}
+
+    # Mock input to keep existing token
+    monkeypatch.setattr("builtins.input", lambda _: "n")
+
+    result = _setup_github(config)
+
+    assert result is config
+    assert result["GITHUB_TOKEN"] == "ghp_existingtoken12345678901234567890"
+    captured = capsys.readouterr()
+    assert "Current status: Token configured" in captured.out
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_github_set_new_token(capsys, monkeypatch):
+    """Test _setup_github when user sets a new token."""
+    from fetchtastic.setup_config import _setup_github
+
+    config = {}
+
+    # Mock inputs: yes to setup, enter valid token
+    inputs = ["y", "ghp_newtoken123456789012345678901234567890"]
+    input_iter = iter(inputs)
+    monkeypatch.setattr("builtins.input", lambda _: next(input_iter))
+
+    result = _setup_github(config)
+
+    assert result is config
+    assert result["GITHUB_TOKEN"] == "ghp_newtoken123456789012345678901234567890"
+    captured = capsys.readouterr()
+    assert "GitHub API requests have different rate limits:" in captured.out
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
 def test_get_prerelease_patterns_selected_assets_none():
     """Test _get_prerelease_patterns with SELECTED_PRERELEASE_ASSETS set to None."""
     from fetchtastic.downloader import _get_prerelease_patterns
