@@ -948,7 +948,11 @@ def test_run_setup_partial_firmware_section(
     mock_menu_firmware.assert_called_once()
     mock_menu_apk.assert_not_called()
 
-    saved_configs = [args[0][0] for args in mock_yaml_dump.call_args_list]
+    import copy
+
+    saved_configs = [
+        copy.deepcopy(args[0][0]) for args in mock_yaml_dump.call_args_list
+    ]
     assert any(cfg.get("FIRMWARE_VERSIONS_TO_KEEP") == 4 for cfg in saved_configs)
     assert any(cfg.get("CHECK_PRERELEASES") is True for cfg in saved_configs)
 
@@ -1453,7 +1457,7 @@ def test_setup_github_existing_token_keep(capsys, monkeypatch):
     """Test _setup_github when token exists and user keeps it."""
     from fetchtastic.setup_config import _setup_github
 
-    config = {"GITHUB_TOKEN": "fake_existing_token_12345678901234567890"}
+    config = {"GITHUB_TOKEN": "fake_existing_token_12345678901234567890"}  # noqa: S105
 
     # Mock input to keep existing token
     monkeypatch.setattr("builtins.input", lambda _: "n")
@@ -1475,9 +1479,13 @@ def test_setup_github_set_new_token(capsys, monkeypatch):
     config = {}
 
     # Mock inputs: yes to setup, enter valid token
-    inputs = ["y", "ghp_fake_token_for_testing_123456789012345678901234"]
+    inputs = ["y", "ghp_fake_token_for_testing_123456789012345678901234"]  # noqa: S105
     input_iter = iter(inputs)
     monkeypatch.setattr("builtins.input", lambda _: next(input_iter))
+    monkeypatch.setattr(
+        "getpass.getpass",
+        lambda _: "ghp_fake_token_for_testing_123456789012345678901234",
+    )
 
     result = _setup_github(config)
 
@@ -1557,43 +1565,3 @@ def test_get_prerelease_patterns_precedence():
 
         assert result == ["new-pattern"]
         mock_logger.warning.assert_not_called()  # No deprecation warning when using new key
-
-
-@pytest.mark.configuration
-@pytest.mark.unit
-def test_extract_commit_from_dir_name_valid():
-    """Test _extract_commit_from_dir_name with valid directory names."""
-    from fetchtastic.downloader import _extract_commit_from_dir_name
-
-    test_cases = [
-        ("firmware-2.7.7.abcdef", "abcdef"),
-        ("firmware-2.8.0.123456", "123456"),
-        ("firmware-2.9.0-rc1.fedcba", "fedcba"),
-        ("FIRMWARE-2.7.8.ABCDEF", "abcdef"),  # Case normalization
-    ]
-
-    for dir_name, expected in test_cases:
-        result = _extract_commit_from_dir_name(dir_name)
-        assert result == expected, f"Failed for {dir_name}"
-
-
-@pytest.mark.configuration
-@pytest.mark.unit
-def test_extract_commit_from_dir_name_invalid():
-    """Test _extract_commit_from_dir_name with invalid directory names."""
-    from fetchtastic.downloader import _extract_commit_from_dir_name
-
-    invalid_cases = [
-        "firmware-unknown",
-        "not-a-firmware-dir",
-        "firmware-2.7.8",  # No commit hash
-        "random-directory",
-    ]
-
-    with patch("fetchtastic.downloader.logger") as mock_logger:
-        for dir_name in invalid_cases:
-            result = _extract_commit_from_dir_name(dir_name)
-            assert result is None, f"Should return None for {dir_name}"
-
-        # Should have logged debug messages for each invalid case
-        assert mock_logger.debug.call_count == len(invalid_cases)

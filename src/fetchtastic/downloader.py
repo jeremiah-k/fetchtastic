@@ -385,14 +385,12 @@ def cleanup_superseded_prereleases(
                     "Removing symlink in prerelease dir to prevent traversal: %s",
                     dir_name,
                 )
-                try:
-                    _safe_rmtree(prerelease_path, prerelease_dir, dir_name)
+                if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
                     cleaned_up = True
-                except Exception as e:
+                else:
                     logger.error(
-                        "Failed to remove symlink %s in prerelease dir: %s", dir_name, e
+                        "Failed to remove symlink %s in prerelease dir", dir_name
                     )
-                    # Exit early if symlink removal fails to prevent security vulnerability
                     return False
                 continue
             dir_release_tuple = _get_release_tuple(dir_version)
@@ -653,7 +651,7 @@ def _read_text_tracking_file(tracking_file):
     Read legacy text-format prerelease tracking data.
 
     Parses a sibling "prerelease_commits.txt" next to the provided tracking file. Supported formats:
-    - Modern text format: first non-empty line begins with "Release: <tag>", subsequent lines are commit hashes.
+    - Modern text format: first non-empty line begins with "Release: <tag>", subsequent lines are prerelease IDs.
     - Legacy format: every non-empty line is a commit and the release is reported as "unknown".
 
     Parameters:
@@ -661,7 +659,7 @@ def _read_text_tracking_file(tracking_file):
 
     Returns:
         tuple[list[str], str | None]: (commits, current_release)
-            - commits: list of commit hashes normalized to lowercase (empty if file missing or unreadable).
+            - commits: list of prerelease IDs normalized to lowercase (empty if file missing or unreadable).
             - current_release: the release tag for the commits, the string "unknown" for legacy-format files, or None if the text file is missing/unreadable.
     """
     try:
@@ -704,7 +702,7 @@ def _read_prerelease_tracking_data(tracking_file):
 
     Returns:
         tuple: (commits, current_release, last_updated)
-            commits (list[str]): Ordered list of prerelease commit hashes (may be empty).
+            commits (list[str]): Ordered list of prerelease IDs (may be empty).
             current_release (str | None): Release tag associated with the commits, or None if unknown.
             last_updated (str | None): ISO timestamp of the last update from JSON (or None if unavailable).
     """
@@ -751,25 +749,6 @@ def _read_prerelease_tracking_data(tracking_file):
         last_updated = None
 
     return commits, current_release, last_updated
-
-
-def _extract_commit_from_dir_name(dir_name: str) -> Optional[str]:
-    """
-    Extract the commit hash fragment from a prerelease directory name.
-
-    Recognizes a trailing hexadecimal commit fragment of 6–12 characters in strings
-    such as "firmware-2.7.7.abcdef" or "firmware-2.7.7.abcdef-extra". The match
-    is case-insensitive and normalized to lowercase.
-
-    Returns:
-        str: The extracted commit hash in lowercase if found, `None` otherwise.
-    """
-    commit_match = re.search(r"\.([a-f0-9]{6,12})(?:[.-]|$)", dir_name, re.IGNORECASE)
-    if commit_match:
-        return commit_match.group(1).lower()  # Normalize to lowercase
-    else:
-        logger.debug(f"Could not extract commit hash from directory name: '{dir_name}'")
-        return None
 
 
 def _get_existing_prerelease_dirs(prerelease_dir: str) -> list[str]:
@@ -1013,7 +992,7 @@ def get_prerelease_tracking_info(prerelease_dir):
     Returns:
         dict: Summary of tracking data with keys:
             - "release" (str | None): Latest official release tag, or None if not present.
-            - "commits" (list[str]): List of tracked prerelease commit hashes (may be empty).
+            - "commits" (list[str]): List of tracked prerelease IDs (may be empty).
             - "prerelease_count" (int): Number of tracked prerelease commits.
             - "last_updated" (str | None): ISO 8601 timestamp of the last update, or None.
     """
@@ -1185,6 +1164,7 @@ _commit_timestamp_cache: Dict[str, Tuple[datetime, datetime]] = {}
 _CACHE_EXPIRY_HOURS = 24  # Cache timestamps for 24 hours
 _token_warning_shown = False  # Track if we've shown the token warning this session
 _token_warning_lock = threading.Lock()  # Lock for thread-safe token warning
+_cache_lock = threading.Lock()  # Lock for thread-safe cache access
 
 
 def clear_commit_timestamp_cache() -> None:
@@ -1215,7 +1195,7 @@ def get_commit_timestamp(
     cache_key = f"{repo_owner}/{repo_name}/{commit_hash}"
 
     # Check cache first (thread-safe)
-    with _token_warning_lock:
+    with _cache_lock:
         if cache_key in _commit_timestamp_cache:
             timestamp, cached_at = _commit_timestamp_cache[cache_key]
             age = datetime.now(timezone.utc) - cached_at
@@ -1267,7 +1247,7 @@ def get_commit_timestamp(
             timestamp = datetime.fromisoformat(commit_date_str.replace("Z", "+00:00"))
 
             # Cache the result (thread-safe)
-            with _token_warning_lock:
+            with _cache_lock:
                 _commit_timestamp_cache[cache_key] = (
                     timestamp,
                     datetime.now(timezone.utc),
@@ -1301,7 +1281,7 @@ def _get_commit_hash_from_dir(dir_name: str) -> str:
     """
     Extracts a commit hash from a prerelease directory name.
 
-    Searches the version portion (after the "firmware-" prefix) for a hexadecimal commit identifier of 6–40 characters and returns it in lowercase if found; returns an empty string when no commit hash is present.
+    Searches the version portion (after the "firmware-" prefix) for a hexadecimal commit identifier of 6-40 characters and returns it in lowercase if found; returns an empty string when no commit hash is present.
 
     Returns:
         commit_hash (str): Lowercase commit hash when present, otherwise an empty string.
@@ -1464,7 +1444,12 @@ def check_for_prereleases(
     with ThreadPoolExecutor(max_workers=min(5, len(commit_hashes))) as executor:
         timestamps = list(executor.map(_safe_get_timestamp, commit_hashes))
 
-    dirs_with_timestamps = list(zip(matching_prerelease_dirs, timestamps, strict=True))
+    try:
+        dirs_with_timestamps = list(
+            zip(matching_prerelease_dirs, timestamps, strict=True)
+        )
+    except TypeError:
+        dirs_with_timestamps = list(zip(matching_prerelease_dirs, timestamps))
 
     # Sort by timestamp (newest first), placing items without a timestamp at end.
     dirs_with_timestamps.sort(
@@ -1479,7 +1464,6 @@ def check_for_prereleases(
     # Take newest one
     target_prereleases = [dir_name for dir_name, _ in dirs_with_timestamps[:1]]
 
-    os.makedirs(prerelease_dir, exist_ok=True)
     # Resolve once for containment checks
     real_prerelease_base = os.path.realpath(prerelease_dir)
 
@@ -1726,7 +1710,7 @@ def _get_latest_releases_data(url: str, scan_count: int = 10) -> List[Dict[str, 
             headers={
                 "Accept": "application/vnd.github+json",
                 "X-GitHub-Api-Version": "2022-11-28",
-                "User-Agent": "Fetchtastic",
+                "User-Agent": get_user_agent(),
             },
             params={"per_page": scan_count},
         )

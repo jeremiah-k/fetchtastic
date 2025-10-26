@@ -1,5 +1,6 @@
 # src/fetchtastic/setup_config.py
 
+import getpass
 import os
 import platform
 import random
@@ -410,6 +411,7 @@ def _prompt_for_setup_sections() -> Optional[Set[str]]:
     print("  [f] firmware       — firmware download preferences")
     print("  [n] notifications  — NTFY server/topic settings")
     print("  [m] automation     — scheduled/automatic execution options")
+    print("  [g] github         — GitHub API token (rate-limit boost)")
 
     while True:
         response = input(
@@ -1251,7 +1253,7 @@ def _setup_github(config: dict) -> dict:
     # Check if token already exists
     current_token = config.get("GITHUB_TOKEN")
     if current_token:
-        masked_token = current_token[:8] + "..." if len(current_token) > 8 else "***"
+        masked_token = current_token[:4] + "..." if len(current_token) > 4 else "***"
         print(f"Current status: Token configured ({masked_token})")
         change_choice = (
             input("Would you like to change the GitHub token? [y/n] (default: no): ")
@@ -1281,7 +1283,7 @@ def _setup_github(config: dict) -> dict:
         print("6. Copy the token and paste it below")
         print()
 
-        token = input(
+        token = getpass.getpass(
             "Enter your GitHub personal access token (or press Enter to skip): "
         ).strip()
 
@@ -1310,10 +1312,10 @@ def _setup_github(config: dict) -> dict:
                 print("  No changes saved. Please try again if needed.")
         else:
             print("No token entered. Continuing without GitHub token.")
-            config["GITHUB_TOKEN"] = None
+            config.pop("GITHUB_TOKEN", None)
     else:
         print("Skipping GitHub token setup.")
-        config["GITHUB_TOKEN"] = None
+        config.pop("GITHUB_TOKEN", None)
 
     print()
     return config

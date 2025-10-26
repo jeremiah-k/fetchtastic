@@ -18,6 +18,16 @@ from fetchtastic.downloader import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _deny_network():
+    def _no_net(*args, **kwargs):
+        raise AssertionError("Network access is blocked in tests")
+
+    with patch("fetchtastic.downloader.requests.get", _no_net):
+        with patch("fetchtastic.downloader.requests.post", _no_net):
+            yield
+
+
 def mock_github_commit_timestamp(commit_timestamps):
     """
     Create a requests.get-compatible mock that returns commit timestamp data for specified commit hashes.
@@ -51,14 +61,18 @@ def mock_github_commit_timestamp(commit_timestamps):
 
         # Extract commit hash from URL
         for commit_hash, timestamp in commit_timestamps.items():
-            if f"commits/{commit_hash}" in url:
+            if f"/commits/{commit_hash}" in url or f"/git/commits/{commit_hash}" in url:
                 return Mock(
                     json=lambda ts=timestamp: {"commit": {"committer": {"date": ts}}},
                     raise_for_status=lambda: None,
+                    status_code=200,
+                    ok=True,
                 )
 
         # Default response for other URLs
-        return Mock(json=lambda: {}, raise_for_status=lambda: None)
+        return Mock(
+            json=lambda: {}, raise_for_status=lambda: None, status_code=404, ok=False
+        )
 
     return mock_get_response
 
@@ -78,8 +92,9 @@ def write_dummy_file():
         Returns:
             bool: Always returns True on successful write.
         """
-        os.makedirs(os.path.dirname(dest), exist_ok=True)
-        with open(dest, "wb") as f:
+        path = Path(dest)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "wb") as f:
             f.write(data)
         return True
 
@@ -402,37 +417,47 @@ def test_prerelease_directory_cleanup(tmp_path, write_dummy_file):
             "fetchtastic.downloader.menu_repo.fetch_directory_contents"
         ) as mock_contents:
             mock_dirs.return_value = ["firmware-2.7.6.789abc"]
-            mock_contents.return_value = [
-                {
-                    "name": "firmware-rak4631-2.7.6.789abc.uf2",
-                    "download_url": "https://example.invalid/rak4631.uf2",
-                }
-            ]
+
+            def _dir_aware_contents(dir_name: str):
+                base = dir_name.removeprefix("firmware-")
+                return [
+                    {
+                        "name": f"firmware-rak4631-{base}.uf2",
+                        "download_url": f"https://example.invalid/{dir_name}.uf2",
+                    }
+                ]
+
+            mock_contents.side_effect = _dir_aware_contents
 
             with patch("fetchtastic.downloader.download_file_with_retry") as mock_dl:
                 mock_dl.side_effect = lambda _url, dest: write_dummy_file(
                     dest, b"new data"
                 )
 
-                # Run prerelease check - this should clean up old directories
-                found, versions = downloader.check_for_prereleases(
-                    str(download_dir),
-                    "v2.7.5.baseline",
-                    ["rak4631-"],
-                    exclude_patterns=[],
-                )
+                with patch("requests.get") as mock_get:
+                    mock_get.side_effect = mock_github_commit_timestamp(
+                        {"789abc": "2025-01-20T12:00:00Z"}
+                    )
 
-                # Verify the function succeeded
-                assert found is True
-                assert "firmware-2.7.6.789abc" in versions
+                    # Run prerelease check - this should clean up old directories
+                    found, versions = downloader.check_for_prereleases(
+                        str(download_dir),
+                        "v2.7.5.baseline",
+                        ["rak4631-"],
+                        exclude_patterns=[],
+                    )
 
-                # Verify old directories were removed
-                assert (
-                    not old_dir1.exists()
-                ), "Old prerelease directory should be removed"
-                assert (
-                    not old_dir2.exists()
-                ), "Old prerelease directory should be removed"
+                    # Verify the function succeeded
+                    assert found is True
+                    assert "firmware-2.7.6.789abc" in versions
+
+                    # Verify old directories were removed
+                    assert (
+                        not old_dir1.exists()
+                    ), "Old prerelease directory should be removed"
+                    assert (
+                        not old_dir2.exists()
+                    ), "Old prerelease directory should be removed"
 
                 # Verify new directory was created
                 new_dir = prerelease_dir / "firmware-2.7.6.789abc"
@@ -547,20 +572,35 @@ def test_prerelease_existing_files_tracking(tmp_path):
             "fetchtastic.downloader.menu_repo.fetch_directory_contents"
         ) as mock_contents:
             mock_dirs.return_value = ["firmware-2.7.7.abcdef"]
-            mock_contents.return_value = [
-                {
-                    "name": "firmware-rak4631-2.7.7.abcdef.uf2",
-                    "download_url": "https://example.invalid/rak4631.uf2",
-                }
-            ]
 
-            found, versions = downloader.check_for_prereleases(
-                str(download_dir), "v2.7.6.111111", ["rak4631-"], exclude_patterns=[]
-            )
+            def _dir_aware_contents(dir_name: str):
+                base = dir_name.removeprefix("firmware-")
+                return [
+                    {
+                        "name": f"firmware-rak4631-{base}.uf2",
+                        "download_url": f"https://example.invalid/{dir_name}.uf2",
+                    }
+                ]
 
-            # Should track existing files but not report as "downloaded"
-            assert found is False  # No new downloads occurred
-            assert "firmware-2.7.7.abcdef" in versions  # But directory is still tracked
+            mock_contents.side_effect = _dir_aware_contents
+
+            with patch("requests.get") as mock_get:
+                mock_get.side_effect = mock_github_commit_timestamp(
+                    {"abcdef": "2025-01-20T12:00:00Z"}
+                )
+
+                found, versions = downloader.check_for_prereleases(
+                    str(download_dir),
+                    "v2.7.6.111111",
+                    ["rak4631-"],
+                    exclude_patterns=[],
+                )
+
+                # Should track existing files but not report as "downloaded"
+                assert found is False  # No new downloads occurred
+                assert (
+                    "firmware-2.7.7.abcdef" in versions
+                )  # But directory is still tracked
 
             # And tracking JSON should reflect that commit
             info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
