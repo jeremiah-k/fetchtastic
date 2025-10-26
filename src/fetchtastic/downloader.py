@@ -869,16 +869,16 @@ def batch_update_prerelease_tracking(
     tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
 
     # Extract the single prerelease version and hash from directory names
-    new_commit = next(
+    new_prerelease_id = next(
         (
-            commit.lower()
+            version_id.lower()
             for dir_name in prerelease_dirs
-            if dir_name.startswith("firmware-") and (commit := dir_name[9:])
+            if dir_name.startswith("firmware-") and (version_id := dir_name[9:])
         ),
         None,
     )
 
-    if not new_commit:
+    if not new_prerelease_id:
         return 0
 
     # Read current tracking data
@@ -893,18 +893,20 @@ def batch_update_prerelease_tracking(
         )
         existing_commits = []
 
-    # Check if this is a new hash for the same version
-    is_new_hash = new_commit not in existing_commits
+    # Check if this is a new prerelease ID for the same version
+    is_new_id = new_prerelease_id not in existing_commits
 
-    # Only update if it's a new hash
-    if not is_new_hash:
-        logger.debug(f"Prerelease {new_commit} already tracked, no update needed")
+    # Only update if it's a new prerelease ID
+    if not is_new_id:
+        logger.debug(
+            f"Prerelease {new_prerelease_id} already tracked, no update needed"
+        )
         return len(existing_commits)
 
     # Clean up old prerelease directory if it exists and has different hash
     if existing_commits:
         old_commit = existing_commits[-1]
-        if old_commit != new_commit:
+        if old_commit != new_prerelease_id:
             old_dir_path = os.path.join(prerelease_dir, f"firmware-{old_commit}")
             if os.path.exists(old_dir_path):
                 if _safe_rmtree(old_dir_path, prerelease_dir, f"firmware-{old_commit}"):
@@ -916,8 +918,8 @@ def batch_update_prerelease_tracking(
                         f"Failed to remove old prerelease directory: firmware-{old_commit}"
                     )
 
-    # Update tracking with the new commit
-    updated_commits = [*existing_commits, new_commit]
+    # Update tracking with the new prerelease ID
+    updated_commits = [*existing_commits, new_prerelease_id]
 
     # Write updated tracking data
     new_tracking_data = {
@@ -932,7 +934,7 @@ def batch_update_prerelease_tracking(
         return 1  # Default to 1 if we can't track
 
     logger.info(
-        f"Prerelease tracking updated: {len(updated_commits)} commits tracked, latest: {new_commit}"
+        f"Prerelease tracking updated: {len(updated_commits)} prerelease IDs tracked, latest: {new_prerelease_id}"
     )
     return len(updated_commits)
 
@@ -1326,9 +1328,10 @@ def check_for_prereleases(
     def get_commit_hash_from_dir(dir_name: str) -> str:
         """Extract commit hash from directory name."""
         version_part = extract_version(dir_name)  # Removes "firmware-" prefix
-        version_parts = version_part.split(".")
-        if len(version_parts) >= 4:
-            return version_parts[3]  # Hash is after version.x.y.z.hash
+        # Use regex to find a hex string of 6-40 characters, which is more robust
+        commit_match = re.search(r"\.([a-f0-9]{6,40})", version_part, re.IGNORECASE)
+        if commit_match:
+            return commit_match.group(1)
         return ""
 
     # Get timestamps for each directory
