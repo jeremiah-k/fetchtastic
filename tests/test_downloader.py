@@ -4341,13 +4341,13 @@ def test_batch_update_prerelease_tracking(tmp_path):
     assert info["prerelease_count"] == 1
     assert "2.7.7.abc123" in info["commits"]
 
-    # Test batch update with same version but different hash (should replace)
+    # Test batch update with same version but different hash (should add)
     prerelease_dir_second = "firmware-2.7.7.def456"  # Same version, different hash
 
     num2 = downloader.batch_update_prerelease_tracking(
         str(prerelease_dir), latest_release, [prerelease_dir_second]
     )
-    assert num2 == 2, "Should have 2 total commits (hash replacement)"
+    assert num2 == 2, "Should have 2 total commits (new hash added)"
 
     # Verify new hash was added
     info2 = downloader.get_prerelease_tracking_info(str(prerelease_dir))
@@ -5655,9 +5655,9 @@ class TestVersionComparisonEdgeCases:
         )  # notaversion > alsonotaversion
         assert compare_versions("alsonotaversion", "notaversion") == -1
         assert (
-            compare_versions("1.0.0", "notaversion") == -1
-        )  # [1,0,0] < ['notaversion'] when compared as strings
-        assert compare_versions("notaversion", "1.0.0") == 1
+            compare_versions("1.0.0", "notaversion") == 1
+        )  # [1,0,0] > ['notaversion'] since numbers > strings
+        assert compare_versions("notaversion", "1.0.0") == -1
 
         # Whitespace handling
         assert compare_versions(" 1.0.0 ", "1.0.0") == 0

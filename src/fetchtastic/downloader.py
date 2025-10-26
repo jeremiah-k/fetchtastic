@@ -285,19 +285,18 @@ def compare_versions(version1, version2):
 
     # Element-wise comparison of natural sort keys
     for a, b in zip(k1, k2, strict=False):
-        # Convert both to string for comparison if types differ
-        if not isinstance(a, type(b)):
-            a_str = str(a)
-            b_str = str(b)
-            if a_str > b_str:
-                return 1
-            elif a_str < b_str:
-                return -1
-        else:
-            if a > b:
-                return 1
-            elif a < b:
-                return -1
+        is_a_digit = isinstance(a, int)
+        is_b_digit = isinstance(b, int)
+
+        if is_a_digit != is_b_digit:
+            # Mixed types: numbers are always greater than strings for versioning.
+            return 1 if is_a_digit else -1
+
+        # Same types: direct comparison is safe.
+        if a > b:
+            return 1
+        elif a < b:
+            return -1
 
     # If we get here, one is a prefix of the other or they're equal
     if len(k1) > len(k2):
