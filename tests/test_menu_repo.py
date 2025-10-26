@@ -143,7 +143,11 @@ def test_fetch_repo_contents_with_path(mocker, mock_repo_contents):
         "X-GitHub-Api-Version": "2022-11-28",
         "User-Agent": mocker.ANY,  # User agent will be generated
     }
-    mock_get.assert_called_once_with(expected_url, timeout=10, headers=expected_headers)
+    from fetchtastic.constants import GITHUB_API_TIMEOUT
+
+    mock_get.assert_called_once_with(
+        expected_url, timeout=GITHUB_API_TIMEOUT, headers=expected_headers
+    )
 
 
 def test_fetch_repo_contents_request_exception(mocker):

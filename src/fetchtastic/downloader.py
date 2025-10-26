@@ -269,7 +269,7 @@ def compare_versions(version1, version2):
         The input is lowercased and punctuation is ignored by only capturing sequences of digits or letters. Numeric runs are converted to integers while alphabetic runs remain as lowercase strings; the resulting list can be used as a sorting key for human-friendly ordering (e.g., "v2" < "v10").
 
         Returns:
-            list: Components of the key where digit runs are `int` and alphabetic runs are `str`.
+            list[tuple[int, int | str]]: Tagged components (1,int) for digits and (0,str) for letters to ensure type-safe comparisons.
         """
         parts = re.findall(r"\d+|[A-Za-z]+", s.lower())
         # Tag parts to ensure comparable types: (1, int) > (0, str)
@@ -1164,6 +1164,8 @@ def get_commit_timestamp(
     Returns:
         datetime: Committer timestamp as an aware UTC `datetime`, or `None` if the timestamp is unavailable or the request fails.
     """
+    global _token_warning_shown
+
     # Create cache key
     cache_key = f"{repo_owner}/{repo_name}/{commit_hash}"
 
@@ -1193,7 +1195,6 @@ def get_commit_timestamp(
         logger.debug("Using GitHub token for API authentication")
     else:
         with _token_warning_lock:
-            global _token_warning_shown
             if not _token_warning_shown:
                 logger.warning(
                     "No GITHUB_TOKEN found - using unauthenticated API requests (60/hour limit). "
@@ -1453,7 +1454,7 @@ def check_for_prereleases(
         key=lambda x: (
             x[1].astimezone(timezone.utc).timestamp()
             if x[1] is not None
-            else float("inf")
+            else float("-inf")  # ensure missing timestamps sort last with reverse=True
         ),
         reverse=True,
     )
@@ -1695,6 +1696,7 @@ def _get_latest_releases_data(
         list on network or JSON parse errors. If sorting by `published_at` is not possible due
         to missing or invalid keys, unsorted JSON list is returned.
     """
+    global _token_warning_shown
     try:
         # Add progress feedback
         url_l = url.lower()
@@ -1717,13 +1719,14 @@ def _get_latest_releases_data(
         if effective_token:
             headers["Authorization"] = f"token {effective_token}"
             logger.debug("Using GitHub token for API authentication")
-        elif not _token_warning_shown:
-            logger.warning(
-                "No GITHUB_TOKEN found - using unauthenticated API requests (60/hour limit). "
-                "Set GITHUB_TOKEN environment variable or run 'fetchtastic setup github' for higher limits (5000/hour)."
-            )
+        else:
             with _token_warning_lock:
-                _token_warning_shown = True
+                if not _token_warning_shown:
+                    logger.warning(
+                        "No GITHUB_TOKEN found - using unauthenticated API requests (60/hour limit). "
+                        "Set GITHUB_TOKEN environment variable or run 'fetchtastic setup github' for higher limits (5000/hour)."
+                    )
+                    _token_warning_shown = True
 
         # Clamp scan_count to GitHub's per_page bounds
         scan_count = max(1, min(100, scan_count))

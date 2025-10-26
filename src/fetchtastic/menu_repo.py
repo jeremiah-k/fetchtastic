@@ -6,6 +6,7 @@ from pick import pick
 
 from fetchtastic.constants import (
     API_CALL_DELAY,
+    FIRMWARE_DIR_PREFIX,
     GITHUB_API_TIMEOUT,
     MESHTASTIC_GITHUB_IO_CONTENTS_URL,
 )
@@ -52,11 +53,20 @@ def _process_repo_contents(contents):
     files = [f for f in repo_items if f["type"] == "file"]
 
     # Sort directories: firmware directories first, then others alphabetically
-    firmware_dirs = [d for d in dirs if d["name"].startswith("firmware-")]
-    other_dirs = [d for d in dirs if not d["name"].startswith("firmware-")]
+    firmware_dirs = [d for d in dirs if d["name"].startswith(FIRMWARE_DIR_PREFIX)]
+    other_dirs = [d for d in dirs if not d["name"].startswith(FIRMWARE_DIR_PREFIX)]
 
-    # Sort firmware directories by version (assuming format firmware-x.y.z.commit)
-    firmware_dirs.sort(key=lambda x: x["name"], reverse=True)
+    # Sort firmware directories by base version (x.y.z) desc, fallback to name
+    def _fw_dir_key(d):
+        name = d["name"]
+        ver = name.split(FIRMWARE_DIR_PREFIX, 1)[-1].split(".", 3)[:3]
+        try:
+            nums = tuple(int(p) for p in ver)
+        except (ValueError, TypeError):
+            nums = ()
+        return (nums, name)
+
+    firmware_dirs.sort(key=_fw_dir_key, reverse=True)
     # Sort other directories alphabetically
     other_dirs.sort(key=lambda x: x["name"])
 
@@ -139,14 +149,18 @@ def fetch_repo_contents(path=""):
             if github_token:
                 # Remove token and retry once
                 headers.pop("Authorization", None)
-                response = requests.get(
-                    api_url, timeout=GITHUB_API_TIMEOUT, headers=headers
-                )
-                response.raise_for_status()
-                # Continue with successful response
-                contents = response.json()
-                # Process response as normal (continue to existing logic)
-                return _process_repo_contents(contents)
+                try:
+                    response = requests.get(
+                        api_url, timeout=GITHUB_API_TIMEOUT, headers=headers
+                    )
+                    response.raise_for_status()
+                    contents = response.json()
+                    return _process_repo_contents(contents)
+                except requests.RequestException as retry_e:
+                    logger.error(
+                        f"Retry for repo contents API failed after auth error: {retry_e}"
+                    )
+                    return []
             return []
         else:
             logger.error(
