@@ -800,16 +800,16 @@ def update_prerelease_tracking(prerelease_dir, latest_release_tag, current_prere
          int: Number of tracked prerelease commits actually persisted to disk (0 on write failure).
     """
     result = _update_tracking_with_newest_prerelease(
-        prerelease_dir, latest_release_tag, [current_prerelease]
+        prerelease_dir, latest_release_tag, current_prerelease
     )
     return result if result is not None else 0
 
 
 def _update_tracking_with_newest_prerelease(
-    prerelease_dir, latest_release_tag, prerelease_dirs
+    prerelease_dir: str, latest_release_tag: str, newest_prerelease_dir: str
 ) -> Optional[int]:
     """
-    Update prerelease_tracking.json by recording the newest prerelease identifier (from the first valid directory).
+    Update prerelease_tracking.json by recording the newest prerelease identifier.
 
     This function maintains two levels of state:
     - **On disk**: Keeps only the newest prerelease directory; older directories are automatically removed.
@@ -819,31 +819,28 @@ def _update_tracking_with_newest_prerelease(
 
     Parameters:
         prerelease_dir (str): Directory containing prerelease_tracking.json.
-        latest_release_tag (str): Current official release tag; when this differs from the stored release tracked prerelease IDs are reset.
-        prerelease_dirs (list[str]): Prerelease directory names to scan; only the first valid directory is processed, entries without a commit are ignored.
+        latest_release_tag (str): Current official release tag; when this differs from the stored release, tracked prerelease IDs are reset.
+        newest_prerelease_dir (str): Newest prerelease directory name to process; entries without a commit are ignored.
 
       Returns:
-          Optional[int]: Total number of tracked prerelease commits after the update.
-               Returns 0 immediately if prerelease_dirs is empty.
+          Optional[int]: Total number of tracked prerelease commits after update.
+               Returns 0 immediately if newest_prerelease_dir is empty or invalid.
                Returns None if the tracking file could not be written to disk.
                Returns the number of commits actually persisted to disk on success.
     """
-    if not prerelease_dirs:
+    if not newest_prerelease_dir:
         return 0
 
     tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
 
-    # Extract the single prerelease version and hash from directory names
+    # Extract single prerelease version and hash from directory name
     # Validate that directory name follows expected pattern: firmware-<version>
-    new_prerelease_id = next(
-        (
-            dn.removeprefix(FIRMWARE_DIR_PREFIX).lower()
-            for dn in prerelease_dirs
-            if dn.startswith(FIRMWARE_DIR_PREFIX)
-            and dn.removeprefix(FIRMWARE_DIR_PREFIX)
-        ),
-        None,
-    )
+    if newest_prerelease_dir.startswith(FIRMWARE_DIR_PREFIX):
+        new_prerelease_id = newest_prerelease_dir.removeprefix(
+            FIRMWARE_DIR_PREFIX
+        ).lower()
+    else:
+        new_prerelease_id = None
 
     if not new_prerelease_id:
         logger.debug("No valid firmware prerelease directory found")
@@ -1627,10 +1624,11 @@ def check_for_prereleases(
             downloaded_versions.append(version)
 
     if target_prereleases:
+        newest_prerelease = target_prereleases[0]
         prerelease_number = _update_tracking_with_newest_prerelease(
-            prerelease_dir, latest_release_tag, target_prereleases
+            prerelease_dir, latest_release_tag, newest_prerelease
         )
-        tracked_label = target_prereleases[0]
+        tracked_label = newest_prerelease
         if prerelease_number is not None:
             if downloaded_files:
                 logger.info(
@@ -3117,6 +3115,12 @@ def check_and_download(
     newer_tags: List[str] = _newer_tags_since_saved(tags_order, saved_release_tag)
 
     # Only look for undownloaded newer releases if we haven't already added them during download loop
+
+    # Determine which newer releases should be reported as newly available:
+    # - If actions were taken (downloads attempted): Only report releases that were successfully downloaded
+    #   This prevents reporting versions as "available" when downloads actually failed
+    # - If no actions taken (e.g., all assets up-to-date): Report all newer releases
+    #   This ensures users are notified about new versions even when no downloads were needed
     if actions_taken:
         # When actions were taken, only add newer releases if we actually downloaded something
         # If all downloads failed, don't report any new available versions
