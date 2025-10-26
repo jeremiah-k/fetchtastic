@@ -1170,16 +1170,32 @@ def get_commit_timestamp(
     cache_key = f"{repo_owner}/{repo_name}/{commit_hash}"
 
     # Check cache first (thread-safe) unless force_refresh is True
+    cache_operation = None  # Track what cache operation we're performing
     with _cache_lock:
         if cache_key in _commit_timestamp_cache and not force_refresh:
             timestamp, cached_at = _commit_timestamp_cache[cache_key]
             age = datetime.now(timezone.utc) - cached_at
             if age.total_seconds() < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 3600:
-                logger.debug(f"Using cached timestamp for commit {commit_hash}")
+                logger.debug(
+                    f"Using cached timestamp for commit {commit_hash} (cached {age.total_seconds():.0f}s ago)"
+                )
                 return timestamp
             else:
                 # Remove expired cache entry
+                logger.debug(
+                    f"Cache expired for commit {commit_hash} (was {age.total_seconds():.0f}s ago, limit is {COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS}h)"
+                )
                 del _commit_timestamp_cache[cache_key]
+                cache_operation = "refresh"
+        else:
+            if cache_key in _commit_timestamp_cache:
+                cache_operation = "refresh"
+                logger.debug(
+                    f"Cache expired for commit {commit_hash} - refreshing from API"
+                )
+            else:
+                cache_operation = "new"
+                logger.debug(f"Cache miss for commit {commit_hash} - fetching from API")
 
     # Check for GitHub token in environment for better rate limits
     headers = {
@@ -1234,7 +1250,14 @@ def get_commit_timestamp(
                     timestamp,
                     datetime.now(timezone.utc),
                 )
-            logger.debug(f"Cached timestamp for commit {commit_hash}")
+            if cache_operation == "refresh":
+                logger.debug(
+                    f"Refreshed cached timestamp for commit {commit_hash} (updated from API)"
+                )
+            else:
+                logger.debug(
+                    f"Cached new timestamp for commit {commit_hash} (fetched from API)"
+                )
 
             return timestamp
         else:
