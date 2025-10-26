@@ -1249,7 +1249,7 @@ def _setup_github(config: dict) -> dict:
     print()
 
     # Check if token already exists
-    current_token = config.get("GITHUB_TOKEN", "")
+    current_token = config.get("GITHUB_TOKEN")
     if current_token:
         masked_token = current_token[:8] + "..." if len(current_token) > 8 else "***"
         print(f"Current status: Token configured ({masked_token})")
@@ -1300,10 +1300,10 @@ def _setup_github(config: dict) -> dict:
                 print("  No changes saved. Please try again if needed.")
         else:
             print("No token entered. Continuing without GitHub token.")
-            config["GITHUB_TOKEN"] = ""
+            config["GITHUB_TOKEN"] = None
     else:
         print("Skipping GitHub token setup.")
-        config["GITHUB_TOKEN"] = ""
+        config["GITHUB_TOKEN"] = None
 
     print()
     return config

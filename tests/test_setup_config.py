@@ -1453,7 +1453,7 @@ def test_setup_github_existing_token_keep(capsys, monkeypatch):
     """Test _setup_github when token exists and user keeps it."""
     from fetchtastic.setup_config import _setup_github
 
-    config = {"GITHUB_TOKEN": "ghp_existingtoken12345678901234567890"}
+    config = {"GITHUB_TOKEN": "fake_existing_token_12345678901234567890"}
 
     # Mock input to keep existing token
     monkeypatch.setattr("builtins.input", lambda _: "n")
@@ -1461,7 +1461,7 @@ def test_setup_github_existing_token_keep(capsys, monkeypatch):
     result = _setup_github(config)
 
     assert result is config
-    assert result["GITHUB_TOKEN"] == "ghp_existingtoken12345678901234567890"
+    assert result["GITHUB_TOKEN"] == "fake_existing_token_12345678901234567890"
     captured = capsys.readouterr()
     assert "Current status: Token configured" in captured.out
 
@@ -1475,14 +1475,17 @@ def test_setup_github_set_new_token(capsys, monkeypatch):
     config = {}
 
     # Mock inputs: yes to setup, enter valid token
-    inputs = ["y", "ghp_newtoken123456789012345678901234567890"]
+    inputs = ["y", "fake_token_for_testing_123456789012345678901234567890"]
     input_iter = iter(inputs)
     monkeypatch.setattr("builtins.input", lambda _: next(input_iter))
 
     result = _setup_github(config)
 
     assert result is config
-    assert result["GITHUB_TOKEN"] == "ghp_newtoken123456789012345678901234567890"
+    assert (
+        result["GITHUB_TOKEN"]
+        == "fake_token_for_testing_123456789012345678901234567890"
+    )
     captured = capsys.readouterr()
     assert "GitHub API requests have different rate limits:" in captured.out
 

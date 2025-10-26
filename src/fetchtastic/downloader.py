@@ -1210,16 +1210,17 @@ def get_commit_timestamp(
     # Create cache key
     cache_key = f"{repo_owner}/{repo_name}/{commit_hash}"
 
-    # Check cache first
-    if cache_key in _commit_timestamp_cache:
-        timestamp, cached_at = _commit_timestamp_cache[cache_key]
-        age = datetime.now(timezone.utc) - cached_at
-        if age.total_seconds() < _CACHE_EXPIRY_HOURS * 3600:
-            logger.debug(f"Using cached timestamp for commit {commit_hash}")
-            return timestamp
-        else:
-            # Remove expired cache entry
-            del _commit_timestamp_cache[cache_key]
+    # Check cache first (thread-safe)
+    with _token_warning_lock:
+        if cache_key in _commit_timestamp_cache:
+            timestamp, cached_at = _commit_timestamp_cache[cache_key]
+            age = datetime.now(timezone.utc) - cached_at
+            if age.total_seconds() < _CACHE_EXPIRY_HOURS * 3600:
+                logger.debug(f"Using cached timestamp for commit {commit_hash}")
+                return timestamp
+            else:
+                # Remove expired cache entry
+                del _commit_timestamp_cache[cache_key]
 
     # Check for GitHub token in environment for better rate limits
     headers = {
@@ -1261,8 +1262,12 @@ def get_commit_timestamp(
             # Parse ISO 8601 date string
             timestamp = datetime.fromisoformat(commit_date_str.replace("Z", "+00:00"))
 
-            # Cache the result
-            _commit_timestamp_cache[cache_key] = (timestamp, datetime.now(timezone.utc))
+            # Cache the result (thread-safe)
+            with _token_warning_lock:
+                _commit_timestamp_cache[cache_key] = (
+                    timestamp,
+                    datetime.now(timezone.utc),
+                )
             logger.debug(f"Cached timestamp for commit {commit_hash}")
 
             return timestamp
