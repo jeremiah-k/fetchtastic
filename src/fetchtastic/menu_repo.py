@@ -45,8 +45,11 @@ def fetch_repo_contents(path=""):
         response.raise_for_status()
 
         # Log API response info for debugging
+        content_length = (
+            len(response.content) if hasattr(response.content, "__len__") else "unknown"
+        )
         logger.debug(
-            f"GitHub API response: {response.status_code} for {api_url} ({len(response.content)} bytes)"
+            f"GitHub API response: {response.status_code} for {api_url} ({content_length} bytes)"
         )
 
         # Small delay to be respectful to GitHub API

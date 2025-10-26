@@ -1209,8 +1209,11 @@ def get_commit_timestamp(
         response.raise_for_status()
 
         # Log API response info for debugging
+        content_length = (
+            len(response.content) if hasattr(response.content, "__len__") else "unknown"
+        )
         logger.debug(
-            f"GitHub API response: {response.status_code} for {api_url} ({len(response.content)} bytes)"
+            f"GitHub API response: {response.status_code} for {api_url} ({content_length} bytes)"
         )
 
         # Small delay to be respectful to GitHub API
@@ -1696,8 +1699,11 @@ def _get_latest_releases_data(url: str, scan_count: int = 10) -> List[Dict[str, 
         response.raise_for_status()
 
         # Log API response info for debugging
+        content_length = (
+            len(response.content) if hasattr(response.content, "__len__") else "unknown"
+        )
         logger.debug(
-            f"GitHub API response: {response.status_code} for {url} ({len(response.content)} bytes)"
+            f"GitHub API response: {response.status_code} for {url} ({content_length} bytes)"
         )
 
         # Small delay to be respectful to GitHub API

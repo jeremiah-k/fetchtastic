@@ -10,6 +10,7 @@ from fetchtastic.constants import (
     GITHUB_API_TIMEOUT,
     MESHTASTIC_FIRMWARE_RELEASES_URL,
 )
+from fetchtastic.log_utils import logger
 from fetchtastic.utils import extract_base_name
 
 
@@ -33,8 +34,11 @@ def fetch_firmware_assets():
     response.raise_for_status()
 
     # Log API response info for debugging
+    content_length = (
+        len(response.content) if hasattr(response.content, "__len__") else "unknown"
+    )
     logger.debug(
-        f"GitHub API response: {response.status_code} for {MESHTASTIC_FIRMWARE_RELEASES_URL} ({len(response.content)} bytes)"
+        f"GitHub API response: {response.status_code} for {MESHTASTIC_FIRMWARE_RELEASES_URL} ({content_length} bytes)"
     )
 
     # Small delay to be respectful to GitHub API
