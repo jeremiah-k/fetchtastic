@@ -1702,7 +1702,7 @@ def _get_latest_releases_data(
     """
     Return a list of most recent releases fetched from a GitHub releases API endpoint.
 
-    Fetches up to `scan_count` releases from the provided GitHub API `url` (clamped to 1–100),
+    Fetches up to `scan_count` releases from the provided GitHub API `url` (clamped to 1-100),
     parses JSON response, and returns releases sorted by their `published_at` timestamp
     in descending order. Respects a short polite delay after the request and logs GitHub
     rate-limit remaining when available.

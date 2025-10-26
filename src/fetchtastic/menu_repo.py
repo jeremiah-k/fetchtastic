@@ -13,6 +13,16 @@ from fetchtastic.constants import (
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import get_user_agent
 
+# Module-level constants for repository content filtering
+EXCLUDED_DIRS = [".git", ".github", "node_modules", "__pycache__", ".vscode"]
+EXCLUDED_FILES = [
+    ".gitignore",
+    "LICENSE",
+    "README.md",
+    "meshtastic-deb.asc",
+    "meshtastic-deb.gpg",
+]
+
 
 def _process_repo_contents(contents):
     """
@@ -20,24 +30,16 @@ def _process_repo_contents(contents):
     """
     # Filter for directories and files, excluding specific directories and files
     repo_items = []
-    excluded_dirs = [".git", ".github", "node_modules", "__pycache__", ".vscode"]
-    excluded_files = [
-        ".gitignore",
-        "LICENSE",
-        "README.md",
-        "meshtastic-deb.asc",
-        "meshtastic-deb.gpg",
-    ]
 
     for item in contents:
         if item["type"] == "dir":
-            if item["name"] not in excluded_dirs and not item["name"].startswith("."):
+            if item["name"] not in EXCLUDED_DIRS and not item["name"].startswith("."):
                 # Store directory info
                 repo_items.append(
                     {"name": item["name"], "path": item["path"], "type": "dir"}
                 )
         elif item["type"] == "file":
-            if item["name"] not in excluded_files:
+            if item["name"] not in EXCLUDED_FILES:
                 # Store file info
                 repo_items.append(
                     {
@@ -137,12 +139,12 @@ def fetch_repo_contents(path=""):
 
     except requests.HTTPError as e:
         if e.response is not None and e.response.status_code == 401:
-            logger.warning(
-                f"GitHub token authentication failed for repo contents API: {e}. "
-                f"Retrying without authentication."
-            )
             # Retry without token if authentication failed
             if github_token:
+                logger.warning(
+                    f"GitHub token authentication failed for repo contents API: {e}. "
+                    f"Retrying without authentication."
+                )
                 # Remove token and retry once
                 headers.pop("Authorization", None)
                 try:
@@ -157,6 +159,8 @@ def fetch_repo_contents(path=""):
                         f"Retry for repo contents API failed after auth error: {retry_e}"
                     )
                     return []
+            else:
+                logger.warning(f"GitHub API returned 401 for repo contents API: {e}")
             return []
         else:
             logger.error(
