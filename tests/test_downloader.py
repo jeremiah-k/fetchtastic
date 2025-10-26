@@ -745,7 +745,7 @@ def test_cleanup_superseded_prereleases_handles_commit_suffix(tmp_path):
 @patch("fetchtastic.downloader.download_file_with_retry")
 @patch("requests.get")
 def test_check_for_prereleases_download_and_cleanup(
-    mock_get, mock_dl, mock_fetch_contents, mock_fetch_dirs, tmp_path
+    mock_get, mock_dl, mock_fetch_contents, mock_fetch_dirs, tmp_path, write_dummy_file
 ):
     """Check that prerelease discovery downloads matching assets and cleans stale entries."""
     # Repo has a newer prerelease and some other dirs
@@ -765,21 +765,7 @@ def test_check_for_prereleases_download_and_cleanup(
         },
     ]
 
-    # Simulate successful download only for the matching file
-    def _mock_dl(_url, dest):
-        # Create the file to emulate a successful download
-        """
-        Mock download helper used in tests.
-
-        Creates parent directories for `dest` if needed, writes a small binary payload (b"data") to `dest`, and returns True to indicate a successful download. Overwrites any existing file at `dest`.
-        """
-
-        os.makedirs(os.path.dirname(dest), exist_ok=True)
-        with open(dest, "wb") as f:
-            f.write(b"data")
-        return True
-
-    mock_dl.side_effect = _mock_dl
+    mock_dl.side_effect = lambda _url, dest: write_dummy_file(dest)
 
     download_dir = tmp_path
     firmware_dir = download_dir / "firmware"
@@ -829,7 +815,7 @@ def test_check_for_prereleases_download_and_cleanup(
 @patch("fetchtastic.downloader.download_file_with_retry")
 @patch("requests.get")
 def test_check_for_prereleases_only_downloads_latest(
-    mock_get, mock_dl, mock_fetch_contents, mock_fetch_dirs, tmp_path
+    mock_get, mock_dl, mock_fetch_contents, mock_fetch_dirs, tmp_path, write_dummy_file
 ):
     """Ensure only the newest prerelease is downloaded and older ones are removed."""
 
@@ -861,19 +847,7 @@ def test_check_for_prereleases_only_downloads_latest(
 
     mock_fetch_contents.side_effect = _fetch_contents
 
-    def _mock_download(_url: str, dest: str) -> bool:
-        """
-        Test helper that simulates downloading a file.
-
-        Creates parent directories for `dest`, writes the bytes b"data" to `dest`, and returns True.
-        The `_url` parameter is accepted for API compatibility but ignored.
-        """
-        path = Path(dest)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(b"data")
-        return True
-
-    mock_dl.side_effect = _mock_download
+    mock_dl.side_effect = lambda _url, dest: write_dummy_file(dest)
 
     # Mock GitHub API responses for commit timestamps
     mock_get.side_effect = mock_github_commit_timestamp(
@@ -1246,7 +1220,7 @@ def test_prerelease_smart_pattern_matching():
             ), f"File {filename} should NOT match patterns {extract_patterns}"
 
 
-def test_prerelease_directory_cleanup(tmp_path):
+def test_prerelease_directory_cleanup(tmp_path, write_dummy_file):
     """Test that old prerelease directories are cleaned up when new ones arrive."""
     download_dir = tmp_path
     prerelease_dir = download_dir / "firmware" / "prerelease"
@@ -1280,16 +1254,9 @@ def test_prerelease_directory_cleanup(tmp_path):
             ]
 
             with patch("fetchtastic.downloader.download_file_with_retry") as mock_dl:
-
-                def _mock_dl(_url, dest):
-                    import os
-
-                    os.makedirs(os.path.dirname(dest), exist_ok=True)
-                    with open(dest, "wb") as f:
-                        f.write(b"new data")
-                    return True
-
-                mock_dl.side_effect = _mock_dl
+                mock_dl.side_effect = lambda _url, dest: write_dummy_file(
+                    dest, b"new data"
+                )
 
                 # Run prerelease check - this should clean up old directories
                 found, versions = downloader.check_for_prereleases(
@@ -1491,7 +1458,7 @@ def test_check_and_download_corrupted_existing_zip_records_failure(tmp_path):
     )
 
 
-def test_check_and_download_redownloads_mismatched_non_zip(tmp_path):
+def test_check_and_download_redownloads_mismatched_non_zip(tmp_path, write_dummy_file):
     """Non-zip assets with wrong size should be re-downloaded."""
 
     release_tag = "v6.1.0"
@@ -1517,27 +1484,11 @@ def test_check_and_download_redownloads_mismatched_non_zip(tmp_path):
         }
     ]
 
-    def _mock_download(_url: str, dest: str) -> bool:
-        """
-        Create parent directories and write a fixed binary payload to `dest`, emulating a successful download.
-
-        Parameters:
-            _url (str): Ignored; present to match downloader signature.
-            dest (str): Filesystem path where the mock download will write the file.
-
-        Returns:
-            bool: Always True to indicate success.
-        """
-        path = Path(dest)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(b"new-data")
-        return True
-
     latest_release_file = str(tmp_path / "latest_firmware_release.txt")
 
     with patch(
         "fetchtastic.downloader.download_file_with_retry",
-        side_effect=_mock_download,
+        side_effect=lambda _url, dest: write_dummy_file(dest, b"new-data"),
     ) as mock_dl:
         downloaded, _new_versions, failures = downloader.check_and_download(
             releases,
@@ -3593,6 +3544,7 @@ def test_device_hardware_manager_error_scenarios(tmp_path, caplog):
         assert len(patterns) > 0  # Fallback patterns should be available
 
 
+@pytest.mark.skipif(os.name == "nt", reason="chmod semantics differ on Windows")
 def test_device_hardware_manager_cache_scenarios(tmp_path):
     """Test DeviceHardwareManager cache scenarios for UI coverage."""
     cache_dir = tmp_path / "cache"
@@ -4847,7 +4799,7 @@ def test_check_for_prereleases_boolean_semantics_no_new_downloads(
 @patch("fetchtastic.downloader.menu_repo.fetch_directory_contents")
 @patch("fetchtastic.downloader.menu_repo.fetch_repo_directories")
 def test_check_for_prereleases_skips_same_base_version(
-    mock_fetch_dirs, mock_fetch_contents, mock_download, tmp_path
+    mock_fetch_dirs, mock_fetch_contents, mock_download, tmp_path, write_dummy_file
 ):
     """Ensure prereleases with same base version as release are skipped (only newer base versions included)."""
     download_dir = tmp_path
@@ -4884,23 +4836,7 @@ def test_check_for_prereleases_skips_same_base_version(
 
     mock_fetch_contents.side_effect = _fetch_contents
 
-    def _mock_download(_url, dest):
-        """
-        Create a dummy file containing fixed binary data at the given destination path.
-
-        Parameters:
-            _url (str): Ignored; kept for signature compatibility.
-            dest (str): Filesystem path where the dummy file will be created. Parent directories will be created if needed.
-
-        Returns:
-            bool: `True` if the file was written successfully, `False` otherwise.
-        """
-        os.makedirs(os.path.dirname(dest), exist_ok=True)
-        with open(dest, "wb") as f:
-            f.write(b"data")
-        return True
-
-    mock_download.side_effect = _mock_download
+    mock_download.side_effect = lambda _url, dest: write_dummy_file(dest)
 
     found, versions = downloader.check_for_prereleases(
         download_dir,
