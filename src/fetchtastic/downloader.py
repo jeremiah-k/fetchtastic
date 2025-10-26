@@ -1191,13 +1191,9 @@ def _prepare_for_redownload(file_path: str) -> bool:
 
 def _prerelease_needs_download(file_path: str) -> bool:
     """
-    Determine whether a prerelease file at `file_path` needs to be (re)downloaded.
+    Determine if a prerelease file needs to be downloaded based on existence and integrity.
 
-    Checks for existence and verifies integrity. Returns True when the file is missing
-    or fails integrity validation and has been prepared for re-download. If integrity
-    fails but preparation for re-download does not succeed, returns False.
-
-    Parameters:
+    Args:
         file_path (str): Path to the local prerelease asset file.
 
     Returns:
@@ -1205,6 +1201,63 @@ def _prerelease_needs_download(file_path: str) -> bool:
     """
     if not os.path.exists(file_path):
         return True
+
+    if verify_file_integrity(file_path):
+        return False
+
+    logger.warning(
+        f"Existing prerelease file {os.path.basename(file_path)} failed integrity check; re-downloading"
+    )
+    if not _prepare_for_redownload(file_path):
+        return False
+    return True
+
+
+def extract_version(dir_name: str) -> str:
+    """Return the portion after the 'firmware-' prefix in prerelease directory names."""
+    return dir_name[9:] if dir_name.startswith("firmware-") else dir_name
+
+
+def calculate_expected_prerelease_version(latest_version: str) -> str:
+    """Calculate the expected prerelease version (latest + 1)."""
+    try:
+        latest_tuple = _get_release_tuple(latest_version)
+        if not latest_tuple or len(latest_tuple) < 2:
+            return ""
+        # Increment the patch version (third position) by 1
+        major, minor, patch = (
+            latest_tuple[0],
+            latest_tuple[1],
+            latest_tuple[2] if len(latest_tuple) > 2 else 0,
+        )
+        expected_patch = patch + 1
+        return f"{major}.{minor}.{expected_patch}"
+    except (ValueError, TypeError, IndexError):
+        logger.warning(
+            f"Could not calculate expected prerelease version from: {latest_version}"
+        )
+        return ""
+
+
+def get_commit_timestamp(commit_hash: str) -> Optional[datetime]:
+    """Get commit timestamp from GitHub API for meshtastic/firmware repo."""
+    try:
+        api_url = f"{GITHUB_API_BASE}/meshtastic/firmware/commits/{commit_hash}"
+        response = requests.get(api_url, timeout=GITHUB_API_TIMEOUT)
+        response.raise_for_status()
+
+        # Small delay to be respectful to GitHub API
+        time.sleep(API_CALL_DELAY)
+
+        commit_data = response.json()
+        commit_date_str = commit_data.get("commit", {}).get("committer", {}).get("date")
+        if commit_date_str:
+            # Parse ISO 8601 date string
+            return datetime.fromisoformat(commit_date_str.replace("Z", "+00:00"))
+        return None
+    except (requests.RequestException, ValueError, KeyError) as e:
+        logger.warning(f"Failed to get timestamp for commit {commit_hash}: {e}")
+        return None
 
     if verify_file_integrity(file_path):
         return False
@@ -1286,59 +1339,6 @@ def check_for_prereleases(
             },
         ):
             logger.debug(f"Could not reset prerelease tracking file: {tracking_file}")
-
-    def extract_version(dir_name: str) -> str:
-        """Return the portion after the 'firmware-' prefix in prerelease directory names."""
-        return dir_name[9:] if dir_name.startswith("firmware-") else dir_name
-
-    def calculate_expected_prerelease_version(latest_version: str) -> str:
-        """Calculate the expected prerelease version (latest + 1)."""
-        try:
-            latest_tuple = _get_release_tuple(latest_version)
-            if not latest_tuple or len(latest_tuple) < 2:
-                return ""
-
-            # Increment the patch version (third position) by 1
-            major, minor, patch = (
-                latest_tuple[0],
-                latest_tuple[1],
-                latest_tuple[2] if len(latest_tuple) > 2 else 0,
-            )
-            expected_patch = patch + 1
-            return f"{major}.{minor}.{expected_patch}"
-        except (ValueError, TypeError, IndexError):
-            logger.warning(
-                f"Could not calculate expected prerelease version from: {latest_version}"
-            )
-            return ""
-
-    def get_commit_timestamp(commit_hash: str) -> Optional[datetime]:
-        """Get commit timestamp from GitHub API for meshtastic/firmware repo."""
-        try:
-            api_url = f"{GITHUB_API_BASE}/meshtastic/firmware/commits/{commit_hash}"
-            response = requests.get(api_url, timeout=GITHUB_API_TIMEOUT)
-            response.raise_for_status()
-
-            # Small delay to be respectful to GitHub API
-            time.sleep(API_CALL_DELAY)
-
-            commit_data = response.json()
-            commit_date_str = (
-                commit_data.get("commit", {}).get("committer", {}).get("date")
-            )
-            if commit_date_str:
-                # Parse ISO 8601 date string
-                return datetime.fromisoformat(commit_date_str.replace("Z", "+00:00"))
-
-            logger.warning(f"No commit date found for hash {commit_hash}")
-            return None
-
-        except requests.RequestException as e:
-            logger.warning(f"Failed to fetch commit timestamp for {commit_hash}: {e}")
-            return None
-        except (ValueError, KeyError) as e:
-            logger.warning(f"Failed to parse commit timestamp for {commit_hash}: {e}")
-            return None
 
     exclude_patterns_list = exclude_patterns or []
     latest_release_version = latest_release_tag.lstrip("v")
