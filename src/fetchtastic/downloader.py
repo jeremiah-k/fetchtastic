@@ -281,9 +281,27 @@ def compare_versions(version1, version2):
         return [int(p) if p.isdigit() else p for p in parts]
 
     k1, k2 = _nat_key(version1), _nat_key(version2)
-    if k1 > k2:
+
+    # Element-wise comparison of natural sort keys
+    for a, b in zip(k1, k2, strict=False):
+        # Convert both to string for comparison if types differ
+        if type(a) != type(b):
+            a_str = str(a)
+            b_str = str(b)
+            if a_str > b_str:
+                return 1
+            elif a_str < b_str:
+                return -1
+        else:
+            if a > b:
+                return 1
+            elif a < b:
+                return -1
+
+    # If we get here, one is a prefix of the other or they're equal
+    if len(k1) > len(k2):
         return 1
-    elif k1 < k2:
+    elif len(k1) < len(k2):
         return -1
     return 0
 

@@ -11,18 +11,16 @@ Tests DeviceHardwareManager functionality including:
 """
 
 import json
-import os
 import tempfile
 import time
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import pytest
 import requests
 
 from fetchtastic.device_hardware import (
     FALLBACK_DEVICE_PATTERNS,
-    MIN_DEVICE_PATTERN_PREFIX_LEN,
     DeviceHardwareManager,
 )
 from fetchtastic.utils import get_user_agent
@@ -66,7 +64,7 @@ class TestDeviceHardwareManager:
             cache_dir = Path(temp_dir) / "subdir" / "cache"
             assert not cache_dir.exists()
 
-            manager = DeviceHardwareManager(cache_dir=cache_dir)
+            DeviceHardwareManager(cache_dir=cache_dir)
 
             assert cache_dir.exists()
             assert cache_dir.is_dir()
@@ -678,7 +676,7 @@ class TestDeviceHardwareManagerPerformance:
                 manager._last_fetch_time = old_time
 
                 start_time = time.time()
-                patterns2 = manager.get_device_patterns()
+                manager.get_device_patterns()
                 api_time = time.time() - start_time
 
                 # Cache should be significantly faster
