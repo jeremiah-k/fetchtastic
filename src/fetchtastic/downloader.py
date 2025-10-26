@@ -3122,19 +3122,13 @@ def check_and_download(
     # - If no actions taken (e.g., all assets up-to-date): Report all newer releases
     #   This ensures users are notified about new versions even when no downloads were needed
     if actions_taken:
-        # When actions were taken, only add newer releases if we actually downloaded something
-        # If all downloads failed, don't report any new available versions
-        if downloaded_versions:
-            new_candidates: List[str] = [
-                t
-                for t in newer_tags
-                if t not in downloaded_versions and t not in new_versions_available
-            ]
-        else:
-            # All downloads failed, don't report any new versions
-            new_candidates: List[str] = []
+        # When actions were taken, don't add additional candidates
+        # Successfully downloaded versions were already added to new_versions_available during the download loop
+        # This prevents reporting versions as "available" when downloads actually failed
+        new_candidates: List[str] = []
     else:
         # When no actions were taken, add all newer releases that weren't downloaded
+        # This ensures users are notified about new versions even when no downloads were needed
         new_candidates: List[str] = [
             t for t in newer_tags if t not in downloaded_versions
         ]

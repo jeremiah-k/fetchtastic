@@ -61,7 +61,7 @@ def _process_repo_contents(contents):
     # Sort firmware directories by base version (x.y.z) desc, fallback to name
     def _fw_dir_key(d):
         name = d["name"]
-        ver = name.split(FIRMWARE_DIR_PREFIX, 1)[-1].split(".", 3)[:3]
+        ver = name.removeprefix(FIRMWARE_DIR_PREFIX).split(".", 3)[:3]
         try:
             nums = tuple(int(p) for p in ver)
         except (ValueError, TypeError):
