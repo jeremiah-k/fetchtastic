@@ -689,6 +689,13 @@ def _read_text_tracking_file(tracking_file):
     return [], None
 
 
+def _ensure_v_prefix(version: Optional[str]) -> Optional[str]:
+    """Add 'v' prefix to version if missing."""
+    if version and not version.startswith("v"):
+        return f"v{version}"
+    return version
+
+
 def _read_prerelease_tracking_data(tracking_file):
     """
     Read prerelease tracking data from JSON, supporting both new and legacy formats.
@@ -726,10 +733,7 @@ def _read_prerelease_tracking_data(tracking_file):
                     if not commits_raw and hash_val:
                         commits_raw = [hash_val]
                     commits = [c.lower() for c in (commits_raw or [])]
-                    if version and not version.startswith("v"):
-                        current_release = f"v{version}"
-                    else:
-                        current_release = version
+                    current_release = _ensure_v_prefix(version)
                 else:
                     # Legacy format
                     current_release = tracking_data.get("release")
@@ -848,7 +852,7 @@ def batch_update_prerelease_tracking(
     prerelease_dir, latest_release_tag, prerelease_dirs
 ):
     """
-    Update prerelease_tracking.json by recording a new prerelease version found in the first valid directory.
+    Update prerelease_tracking.json by recording the newest prerelease version (from the first valid directory).
 
     This function maintains two levels of state:
     - **On disk**: Keeps only the newest prerelease directory; older directories are automatically removed.

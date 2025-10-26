@@ -2693,7 +2693,6 @@ def test_tracking_file_error_handling_ui_messages(tmp_path, caplog):
 
     # Should handle UTF-8 decode error gracefully
     assert result == {}  # Should return empty dict on error
-    assert result == {}  # Should return empty dict
 
     caplog.clear()
 
@@ -4467,7 +4466,7 @@ def test_commit_case_normalization(tmp_path):
     )
 
     # Should be 2 total (new hash added)
-    assert num2 == 2, "Should have 2 total commits (hash replacement)"
+    assert num2 == 2, "Should have 2 total commits (new hash added)"
 
     # Verify final state
     info2 = downloader.get_prerelease_tracking_info(str(prerelease_dir))
@@ -5337,18 +5336,16 @@ class TestSecurityPathTraversal:
             sanitized = _sanitize_path_component(edge_case)
             # Dangerous edge cases should return None
             if edge_case in ["", ".", "..", "\x00\x01\x02"]:
-                assert (
-                    sanitized is None
-                ), f"Edge case should return None: {repr(edge_case)}"
+                assert sanitized is None, f"Edge case should return None: {edge_case!r}"
             else:
                 # Other cases might be handled differently but should be safe
                 assert sanitized is None or isinstance(sanitized, str)
 
-    def test_safe_extract_path_prevents_traversal(self):
+    def test_safe_extract_path_prevents_traversal(self, tmp_path):
         """Test that safe_extract_path prevents directory traversal."""
         from fetchtastic.downloader import safe_extract_path
 
-        extract_dir = "/tmp/extract"
+        extract_dir = str(tmp_path / "extract")
 
         # Test various traversal attempts
         malicious_paths = [
@@ -5393,11 +5390,11 @@ class TestSecurityPathTraversal:
                 # But result should still be within extract_dir due to normpath
                 assert result.startswith(extract_dir)
 
-    def test_safe_extract_path_allows_safe_paths(self):
+    def test_safe_extract_path_allows_safe_paths(self, tmp_path):
         """Test that safe_extract_path allows legitimate paths."""
         from fetchtastic.downloader import safe_extract_path
 
-        extract_dir = "/tmp/extract"
+        extract_dir = str(tmp_path / "extract")
 
         safe_paths = [
             "firmware.bin",
@@ -5433,9 +5430,7 @@ class TestSecurityInputValidation:
 
         for unsafe_tag in unsafe_tags:
             sanitized = _sanitize_path_component(unsafe_tag)
-            assert (
-                sanitized is None
-            ), f"Unsafe tag should return None: {repr(unsafe_tag)}"
+            assert sanitized is None, f"Unsafe tag should return None: {unsafe_tag!r}"
 
         # Test that CRLF characters are allowed (they're not path separators)
         crlf_tags = [
@@ -5445,9 +5440,7 @@ class TestSecurityInputValidation:
 
         for crlf_tag in crlf_tags:
             sanitized = _sanitize_path_component(crlf_tag)
-            assert (
-                sanitized == crlf_tag
-            ), f"CRLF tag should be allowed: {repr(crlf_tag)}"
+            assert sanitized == crlf_tag, f"CRLF tag should be allowed: {crlf_tag!r}"
 
         # Test Windows-style paths separately (behavior depends on platform)
         windows_paths = [
@@ -5511,7 +5504,7 @@ class TestSecurityInputValidation:
                 # Malicious filenames should be rejected
                 assert (
                     sanitized is None
-                ), f"Malicious filename should return None: {repr(filename)}"
+                ), f"Malicious filename should return None: {filename!r}"
             else:
                 # Safe filenames should be preserved
                 assert sanitized is not None
@@ -5537,7 +5530,7 @@ class TestSecurityInputValidation:
             sanitized = _sanitize_path_component(dir_name)
             assert (
                 sanitized is None
-            ), f"Unsafe directory name should return None: {repr(dir_name)}"
+            ), f"Unsafe directory name should return None: {dir_name!r}"
 
         # Test that CRLF characters are allowed (they're not path separators)
         crlf_dir_names = [
@@ -5549,7 +5542,7 @@ class TestSecurityInputValidation:
             sanitized = _sanitize_path_component(crlf_dir)
             assert (
                 sanitized == crlf_dir
-            ), f"CRLF directory name should be allowed: {repr(crlf_dir)}"
+            ), f"CRLF directory name should be allowed: {crlf_dir!r}"
 
 
 class TestVersionComparisonEdgeCases:
@@ -5932,7 +5925,7 @@ class TestNetworkFailureScenarios:
                 mock_response = Mock()
                 mock_response.status_code = 200
                 mock_response.headers = {"content-length": "40"}
-                mock_response.iter_content = lambda chunk_size: [b"data"] * 10
+                mock_response.iter_content = lambda **_: [b"data"] * 10
                 mock_session.get.return_value = mock_response
 
                 result = download_file_with_retry(
@@ -5964,7 +5957,7 @@ class TestNetworkFailureScenarios:
                 mock_response.headers = {"content-length": "1024"}
 
                 # Simulate interruption after some chunks
-                def mock_iter_content(chunk_size):
+                def mock_iter_content(_chunk_size):
                     yield b"data" * 10
                     raise requests.exceptions.ConnectionError("Connection interrupted")
 
@@ -6032,7 +6025,7 @@ class TestIntegrationScenarios:
                 ) as mock_download:
                     mock_download.return_value = True
 
-                    downloaded, new_versions, failed, latest = (
+                    downloaded, new_versions, _failed, latest = (
                         _process_firmware_downloads(config, paths_and_urls)
                     )
 
@@ -6089,7 +6082,7 @@ class TestIntegrationScenarios:
                 ) as mock_download:
                     mock_download.return_value = True
 
-                    downloaded, new_versions, failed, latest = _process_apk_downloads(
+                    downloaded, new_versions, _failed, latest = _process_apk_downloads(
                         config, paths_and_urls
                     )
 
