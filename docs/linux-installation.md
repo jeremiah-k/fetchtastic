@@ -23,7 +23,7 @@ If you prefer to install manually or need more control over the process:
 
 ### Prerequisites
 
-- Python 3.8 or higher
+- Python 3.10 or higher
 - pip (usually comes with Python)
 
 ### Step 1: Install pipx (Recommended)
