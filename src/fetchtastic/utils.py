@@ -301,7 +301,7 @@ def download_file_with_retry(
                 )
                 return False
 
-    temp_path = f"{download_path}.tmp.{os.getpid()}.{int(time.time()*1000)}"
+    temp_path = f"{download_path}.tmp.{os.getpid()}.{int(time.time() * 1000)}"
     session = requests.Session()
     response = None  # ensure we can close the Response in finally
     try:
@@ -418,7 +418,7 @@ def download_file_with_retry(
                 try:
                     gc.collect()
                     logger.debug(
-                        f"Attempting to move temporary file {temp_path} to {download_path} (Windows attempt {i+1}/{WINDOWS_MAX_REPLACE_RETRIES})"
+                        f"Attempting to move temporary file {temp_path} to {download_path} (Windows attempt {i + 1}/{WINDOWS_MAX_REPLACE_RETRIES})"
                     )
                     os.replace(temp_path, download_path)
                     logger.debug(

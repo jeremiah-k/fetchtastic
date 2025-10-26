@@ -266,7 +266,7 @@ def test_check_for_prereleases_only_downloads_latest(
 
 
 @patch("fetchtastic.downloader.menu_repo.fetch_repo_directories")
-def test_check_for_prereleases_no_directories(mock_fetch_dirs):
+def test_check_for_prereleases_no_directories(mock_fetch_dirs, tmp_path):
     """If repo has no firmware directories, function returns False, []."""
     mock_fetch_dirs.return_value = []
     found, versions = downloader.check_for_prereleases(
