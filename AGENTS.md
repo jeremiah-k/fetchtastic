@@ -123,7 +123,7 @@ python -m pytest tests/ -m "not slow"
 
 ```bash
 # Check if virtual environment is active (should show venv path)
-which python  # Use 'where python' on Windows
+which python  # Use 'where.exe python' on Windows
 
 # Verify pytest installation
 python -m pytest --version

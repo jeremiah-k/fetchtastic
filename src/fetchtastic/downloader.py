@@ -29,6 +29,7 @@ except ImportError:
 from fetchtastic import menu_repo, setup_config
 from fetchtastic.constants import (
     API_CALL_DELAY,
+    COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS,
     DEFAULT_ANDROID_VERSIONS_TO_KEEP,
     DEFAULT_FIRMWARE_VERSIONS_TO_KEEP,
     DEVICE_HARDWARE_API_URL,
@@ -39,6 +40,7 @@ from fetchtastic.constants import (
     GITHUB_API_TIMEOUT,
     LATEST_ANDROID_RELEASE_FILE,
     LATEST_FIRMWARE_RELEASE_FILE,
+    MAX_CONCURRENT_TIMESTAMP_FETCHES,
     MESHTASTIC_ANDROID_RELEASES_URL,
     MESHTASTIC_FIRMWARE_RELEASES_URL,
     NTFY_REQUEST_TIMEOUT,
@@ -273,25 +275,9 @@ def compare_versions(version1, version2):
 
     k1, k2 = _nat_key(version1), _nat_key(version2)
 
-    # Element-wise comparison of natural sort keys
-    for a, b in zip(k1, k2, strict=False):
-        is_a_digit = isinstance(a, int)
-        is_b_digit = isinstance(b, int)
-
-        if is_a_digit != is_b_digit:
-            # Mixed types: numbers are always greater than strings for versioning.
-            return 1 if is_a_digit else -1
-
-        # Same types: direct comparison is safe.
-        if a > b:
-            return 1
-        elif a < b:
-            return -1
-
-    # If we get here, one is a prefix of the other or they're equal
-    if len(k1) > len(k2):
+    if k1 > k2:
         return 1
-    elif len(k1) < len(k2):
+    elif k1 < k2:
         return -1
     return 0
 
@@ -845,7 +831,7 @@ def batch_update_prerelease_tracking(
     new_prerelease_id = None
     for dir_name in prerelease_dirs:
         if dir_name.startswith("firmware-"):
-            version_id = dir_name[len("firmware-") :]
+            version_id = dir_name.removeprefix("firmware-")
             if version_id:  # Ensure version ID is not empty
                 new_prerelease_id = version_id.lower()
                 break
@@ -1144,7 +1130,6 @@ def calculate_expected_prerelease_version(latest_version: str) -> str:
 
 # Global cache for commit timestamps to avoid repeated API calls
 _commit_timestamp_cache: Dict[str, Tuple[datetime, datetime]] = {}
-_CACHE_EXPIRY_HOURS = 24  # Cache timestamps for 24 hours
 _token_warning_shown = False  # Track if we've shown the token warning this session
 _token_warning_lock = threading.Lock()  # Lock for thread-safe token warning
 _cache_lock = threading.Lock()  # Lock for thread-safe cache access
@@ -1182,7 +1167,7 @@ def get_commit_timestamp(
         if cache_key in _commit_timestamp_cache:
             timestamp, cached_at = _commit_timestamp_cache[cache_key]
             age = datetime.now(timezone.utc) - cached_at
-            if age.total_seconds() < _CACHE_EXPIRY_HOURS * 3600:
+            if age.total_seconds() < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 3600:
                 logger.debug(f"Using cached timestamp for commit {commit_hash}")
                 return timestamp
             else:
@@ -1424,15 +1409,12 @@ def check_for_prereleases(
         )
 
     # Fetch timestamps concurrently to improve performance
-    with ThreadPoolExecutor(max_workers=min(5, len(commit_hashes))) as executor:
+    with ThreadPoolExecutor(
+        max_workers=min(MAX_CONCURRENT_TIMESTAMP_FETCHES, len(commit_hashes))
+    ) as executor:
         timestamps = list(executor.map(_safe_get_timestamp, commit_hashes))
 
-    try:
-        dirs_with_timestamps = list(
-            zip(matching_prerelease_dirs, timestamps, strict=True)
-        )
-    except TypeError:
-        dirs_with_timestamps = list(zip(matching_prerelease_dirs, timestamps))
+    dirs_with_timestamps = list(zip(matching_prerelease_dirs, timestamps, strict=True))
 
     # Sort by timestamp (newest first), placing items without a timestamp at end.
     dirs_with_timestamps.sort(
