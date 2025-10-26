@@ -3236,6 +3236,7 @@ def test_comprehensive_error_recovery_ui_workflow(tmp_path, caplog):
                 # Note: Since download failed, the prerelease directory may not be tracked
                 # The test verifies that the system handles errors gracefully, not that
                 # the prerelease is successfully processed despite errors
+                assert "firmware-2.9.1.a1b2c3d" in _versions
 
                 # Should still provide device patterns despite cache corruption
                 patterns = device_manager.get_device_patterns()
