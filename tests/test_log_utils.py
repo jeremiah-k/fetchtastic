@@ -152,7 +152,10 @@ class TestLogUtils:
         assert log_utils.LOGGER_NAME == "fetchtastic"
         assert log_utils.LOG_DATE_FORMAT == "%Y-%m-%d %H:%M:%S"
         assert "%(asctime)s - %(levelname)s - %(message)s" in log_utils.INFO_LOG_FORMAT
-        assert "%(asctime)s - %(levelname)s - %(message)s" in log_utils.DEBUG_LOG_FORMAT
+        assert (
+            "%(asctime)s - %(levelname)s - %(name)s: %(message)s"
+            == log_utils.DEBUG_LOG_FORMAT
+        )
 
     def test_logger_logging_methods(self):
         """Test that logger methods work correctly."""

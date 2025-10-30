@@ -54,7 +54,7 @@ EXECUTABLE_PERMISSIONS = 0o755
 LOGGER_NAME = "fetchtastic"
 LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 INFO_LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
-DEBUG_LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
+DEBUG_LOG_FORMAT = "%(asctime)s - %(levelname)s - %(name)s: %(message)s"
 LOG_FILE_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
 LOG_FILE_BACKUP_COUNT = 5
 
