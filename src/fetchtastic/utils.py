@@ -5,6 +5,7 @@ import importlib.metadata
 import os
 import platform
 import re
+import threading
 import time
 import zipfile
 from typing import Any, Dict, List, Optional  # Callable removed
@@ -38,6 +39,10 @@ _PUNC_RX = re.compile(r"[^a-z0-9]+")
 
 # Cache for the User-Agent string to avoid repeated metadata lookups
 _USER_AGENT_CACHE = None
+
+# Thread-safe token warning tracking (centralized)
+_token_warning_shown = False
+_token_warning_lock = threading.Lock()
 
 
 def get_user_agent() -> str:
@@ -87,6 +92,30 @@ def get_effective_github_token(
     )
 
 
+def _show_token_warning_if_needed(
+    effective_token: Optional[str], allow_env_token: bool
+) -> None:
+    """
+    Show thread-safe warning about missing GitHub token if needed.
+
+    This function centralizes the token warning logic to avoid duplication
+    across the codebase and ensures the warning is shown only once per session.
+
+    Args:
+        effective_token: The effective GitHub token (None if no token)
+        allow_env_token: Whether environment token usage is allowed
+    """
+    if not effective_token and allow_env_token:
+        global _token_warning_shown
+        with _token_warning_lock:
+            if not _token_warning_shown:
+                logger.warning(
+                    "No GITHUB_TOKEN found - using unauthenticated API requests (60/hour limit). "
+                    "Set GITHUB_TOKEN environment variable or run 'fetchtastic setup github' for higher limits (5000/hour)."
+                )
+                _token_warning_shown = True
+
+
 def make_github_api_request(
     url: str,
     github_token: Optional[str] = None,
@@ -132,6 +161,9 @@ def make_github_api_request(
     if effective_token:
         headers["Authorization"] = f"token {effective_token}"
         logger.debug("Using GitHub token for API authentication")
+
+    # Show warning if no token available (centralized logic)
+    _show_token_warning_if_needed(effective_token, allow_env_token)
 
     # Make the request
     actual_timeout = timeout or GITHUB_API_TIMEOUT

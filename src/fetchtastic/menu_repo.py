@@ -1,5 +1,4 @@
 import os
-import threading
 
 import requests
 from pick import pick
@@ -11,7 +10,6 @@ from fetchtastic.constants import (
 )
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import (
-    get_effective_github_token,
     make_github_api_request,
 )
 
@@ -24,10 +22,6 @@ EXCLUDED_FILES = [
     "meshtastic-deb.asc",
     "meshtastic-deb.gpg",
 ]
-
-# Thread-safe token warning tracking
-_token_warning_shown = False
-_token_warning_lock = threading.Lock()
 
 
 def _process_repo_contents(contents):
@@ -114,23 +108,11 @@ def fetch_repo_contents(path="", allow_env_token=True, github_token=None):
     else:
         api_url = base_url
 
-    # Handle token warning for thread safety
-    effective_token = get_effective_github_token(github_token, allow_env_token)
-    if not effective_token and allow_env_token:
-        global _token_warning_shown
-        with _token_warning_lock:
-            if not _token_warning_shown:
-                logger.warning(
-                    "No GITHUB_TOKEN found - using unauthenticated API requests (60/hour limit). "
-                    "Set GITHUB_TOKEN environment variable or run 'fetchtastic setup github' for higher limits (5000/hour)."
-                )
-                _token_warning_shown = True
-
     try:
         response = make_github_api_request(
             api_url,
-            github_token=effective_token,
-            allow_env_token=False,  # Already handled above
+            github_token=github_token,
+            allow_env_token=allow_env_token,
             timeout=GITHUB_API_TIMEOUT,
         )
         contents = response.json()

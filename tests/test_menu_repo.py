@@ -143,7 +143,7 @@ def test_fetch_repo_contents_with_path(mocker, mock_repo_contents):
     mock_get.assert_called_once_with(
         expected_url,
         github_token=None,
-        allow_env_token=False,  # Now handled at higher level for thread safety
+        allow_env_token=True,  # Warning logic now centralized in make_github_api_request
         timeout=GITHUB_API_TIMEOUT,
     )
 

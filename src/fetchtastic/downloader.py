@@ -57,7 +57,6 @@ from fetchtastic.log_utils import logger
 from fetchtastic.setup_config import display_version_info, get_upgrade_command
 from fetchtastic.utils import (
     download_file_with_retry,
-    get_effective_github_token,
     get_hash_file_path,
     make_github_api_request,
     matches_selected_patterns,
@@ -1221,21 +1220,18 @@ def calculate_expected_prerelease_version(latest_version: str) -> str:
 
 # Global cache for commit timestamps to avoid repeated API calls
 _commit_timestamp_cache: Dict[str, Tuple[datetime, datetime]] = {}
-_token_warning_shown = False  # Track if we've shown the token warning this session
-_token_warning_lock = threading.Lock()  # Lock for thread-safe token warning
 _cache_lock = threading.Lock()  # Lock for thread-safe cache access
 
 
 def clear_commit_timestamp_cache() -> None:
     """Clear the global commit timestamp cache. Useful for testing."""
-    global _commit_timestamp_cache, _token_warning_shown
+    global _commit_timestamp_cache
 
-    # Clear cache first (no lock needed for dict clear)
+    # Clear cache (no lock needed for dict clear)
     _commit_timestamp_cache.clear()
 
-    # Clear token warning flag under lock to prevent race conditions
-    with _token_warning_lock:
-        _token_warning_shown = False
+    # Note: Token warning flag is now centralized in utils.py and will be cleared
+    # when the application restarts, which is appropriate behavior.
 
 
 def get_commit_timestamp(
@@ -1257,7 +1253,6 @@ def get_commit_timestamp(
     Returns:
         datetime: Committer timestamp as an aware UTC `datetime`, or `None` if the timestamp is unavailable or the request fails.
     """
-    global _token_warning_shown
 
     # Create cache key
     cache_key = f"{repo_owner}/{repo_name}/{commit_hash}"
@@ -1283,22 +1278,12 @@ def get_commit_timestamp(
         # Fetch from API after cache miss/expiry or forced refresh
         logger.debug(f"Cache miss for commit {commit_hash} - fetching from API")
 
-    # Check for GitHub token and handle thread-safe warning
-    effective_token = get_effective_github_token(github_token, allow_env_token)
-    if not effective_token and allow_env_token:
-        with _token_warning_lock:
-            if not _token_warning_shown:
-                logger.warning(
-                    "No GITHUB_TOKEN found - using unauthenticated API requests (60/hour limit). "
-                    "Set GITHUB_TOKEN environment variable or run 'fetchtastic setup github' for higher limits (5000/hour)."
-                )
-                _token_warning_shown = True
-
     try:
         api_url = f"{GITHUB_API_BASE}/{repo_owner}/{repo_name}/commits/{commit_hash}"
         response = make_github_api_request(
             api_url,
-            github_token=effective_token,
+            github_token=github_token,
+            allow_env_token=allow_env_token,
             timeout=GITHUB_API_TIMEOUT,
         )
 
@@ -1334,7 +1319,7 @@ def get_commit_timestamp(
                     f"Retrying without authentication."
                 )
                 # Retry without token if authentication failed
-                if effective_token:
+                if github_token:
                     return get_commit_timestamp(
                         repo_owner,
                         repo_name,
@@ -1785,9 +1770,6 @@ def _get_latest_releases_data(
         list on network or JSON parse errors. If sorting by `published_at` is not possible due
         to missing or invalid keys, unsorted JSON list is returned.
     """
-    global _token_warning_shown
-    # Initialize effective_token to handle unbound variable in except blocks
-    effective_token = get_effective_github_token(github_token, allow_env_token)
     try:
         # Add progress feedback
         url_l = url.lower()
@@ -1798,21 +1780,12 @@ def _get_latest_releases_data(
         else:
             logger.info("Fetching releases from GitHub...")
 
-        # Handle thread-safe token warning
-        if not effective_token and allow_env_token:
-            with _token_warning_lock:
-                if not _token_warning_shown:
-                    logger.warning(
-                        "No GITHUB_TOKEN found - using unauthenticated API requests (60/hour limit). "
-                        "Set GITHUB_TOKEN environment variable or run 'fetchtastic setup github' for higher limits (5000/hour)."
-                    )
-                    _token_warning_shown = True
-
         # Clamp scan_count to GitHub's per_page bounds
         scan_count = max(1, min(100, scan_count))
         response: requests.Response = make_github_api_request(
             url,
-            github_token=effective_token,
+            github_token=github_token,
+            allow_env_token=allow_env_token,
             params={"per_page": scan_count},
             timeout=GITHUB_API_TIMEOUT,
         )
@@ -1829,7 +1802,7 @@ def _get_latest_releases_data(
                 f"Retrying without authentication."
             )
             # Retry without token if authentication failed
-            if effective_token:
+            if github_token:
                 return _get_latest_releases_data(
                     url, scan_count, None, allow_env_token=False
                 )
