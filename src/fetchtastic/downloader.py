@@ -1483,7 +1483,7 @@ def check_for_prereleases(
     # Sort by timestamp (newest first), placing items without a timestamp at end.
     dirs_with_timestamps.sort(
         key=lambda x: (
-            x[1].astimezone(timezone.utc).timestamp()
+            x[1].timestamp()
             if x[1] is not None
             else float("-inf")  # ensure missing timestamps sort last with reverse=True
         ),
