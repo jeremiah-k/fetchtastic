@@ -1,6 +1,8 @@
 import os
 
 import requests
+from packaging.version import InvalidVersion
+from packaging.version import parse as parse_version
 from pick import pick
 
 from fetchtastic.constants import (
@@ -61,12 +63,12 @@ def _process_repo_contents(contents):
     # Sort firmware directories by base version (x.y.z) desc, fallback to name
     def _fw_dir_key(d):
         name = d["name"]
-        ver = name.removeprefix(FIRMWARE_DIR_PREFIX).split(".", 3)[:3]
+        version_str = name.removeprefix(FIRMWARE_DIR_PREFIX)
         try:
-            nums = tuple(int(p) for p in ver)
-        except (ValueError, TypeError):
-            nums = ()
-        return (nums, name)
+            parsed = parse_version(version_str)
+        except InvalidVersion:
+            return (parse_version("0"), name)
+        return (parsed, name)
 
     firmware_dirs.sort(key=_fw_dir_key, reverse=True)
     # Sort other directories alphabetically
