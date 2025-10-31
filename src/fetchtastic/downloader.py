@@ -877,8 +877,8 @@ def _update_tracking_with_newest_prerelease(
 
     # Update tracking with the new prerelease ID
     updated_commits = [*existing_commits, new_prerelease_id]
-    # Extract commit hash for the newest prerelease ID (e.g., "2.7.7.abcd123")
-    commit_hash = _get_commit_hash_from_dir(f"{FIRMWARE_DIR_PREFIX}{new_prerelease_id}")
+    # Extract commit hash for the newest prerelease directory
+    commit_hash = _get_commit_hash_from_dir(newest_prerelease_dir)
 
     # Write updated tracking data in new format
     now_iso = datetime.now().astimezone().isoformat()
