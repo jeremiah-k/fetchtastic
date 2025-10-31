@@ -71,12 +71,11 @@ firmware and Android APK releases. The versioning approach accounts for:
 
 Expected Version Formats:
 - Stable releases: "v2.7.8", "2.7.8"
-- Prereleases: "v2.7.8-rc1", "2.7.8.a0c0388", "1.2-rc1"
-- Development versions: "2.7.8-dev", "2.7.8-alpha1"
+- Prereleases: "2.7.13.abcdef" (next patch version + commit hash)
 
 Key Design Principles:
 1. Prereleases and stable releases come from separate repositories
-2. Prerelease versions are newer than their base stable version but older than the next stable version
+2. Prerelease versions are the next patch version with commit hash suffix
 3. Version normalization handles various formats consistently for comparisons
 4. Tuple-based optimizations provide performance while maintaining correctness
 
@@ -981,7 +980,10 @@ def _update_tracking_with_newest_prerelease(
     )
 
     # Check if we need to reset due to new official release
-    if existing_release and existing_release != latest_release_tag:
+    clean_latest_release = (
+        _extract_clean_version(latest_release_tag) or latest_release_tag
+    )
+    if existing_release and existing_release != clean_latest_release:
         logger.info(
             f"New release {latest_release_tag} detected (previously tracking {existing_release}). Resetting prerelease tracking."
         )
@@ -1005,7 +1007,8 @@ def _update_tracking_with_newest_prerelease(
     # Write updated tracking data in new format
     now_iso = datetime.now().astimezone().isoformat()
     new_tracking_data = {
-        "version": latest_release_tag,  # preserve as-is (may include hash)
+        "version": _extract_clean_version(latest_release_tag)
+        or latest_release_tag,  # base version without hash
         "commits": updated_commits,  # full prerelease IDs in version+hash format
         "hash": commit_hash,  # optional single latest hash
         "count": len(updated_commits),  # total tracked prereleases
@@ -1434,7 +1437,10 @@ def check_for_prereleases(
     tracking_info = get_prerelease_tracking_info(prerelease_dir)
     tracked_release = tracking_info.get("release")
 
-    if tracked_release and tracked_release != latest_release_tag:
+    clean_latest_release = (
+        _extract_clean_version(latest_release_tag) or latest_release_tag
+    )
+    if tracked_release and tracked_release != clean_latest_release:
         logger.info(
             f"New release {latest_release_tag} detected (previously tracking {tracked_release})."
             " Cleaning pre-release directory."
@@ -1683,18 +1689,9 @@ def check_for_prereleases(
                         )
 
                 downloaded_files.append(file_path)
-            except requests.exceptions.RequestException as e:
+            except (requests.RequestException, IOError, OSError) as e:
                 logger.error(
-                    f"Network error downloading pre-release file {file_name} from {download_url}: {e}"
-                )
-            except IOError as e:
-                logger.error(
-                    f"File I/O error while downloading pre-release file {file_name} to {file_path}: {e}"
-                )
-            except Exception as e:  # noqa: BLE001 - unexpected errors
-                logger.error(
-                    f"Unexpected error downloading pre-release file {file_name}: {e}",
-                    exc_info=True,
+                    f"Network or I/O error downloading pre-release file {file_name}: {e}"
                 )
 
     downloaded_versions: List[str] = []

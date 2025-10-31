@@ -342,7 +342,11 @@ def test_prerelease_tracking_functionality(
     assert "version" in tracking_data
     assert "commits" in tracking_data
     assert "last_updated" in tracking_data
-    assert tracking_data["version"] == latest_release_tag
+    # Version field should be the clean base version without hash
+    expected_clean_version = (
+        downloader._extract_clean_version(latest_release_tag) or latest_release_tag
+    )
+    assert tracking_data["version"] == expected_clean_version
 
     # Add shape check for last_updated to validate ISO-8601 format
     import re
@@ -361,7 +365,10 @@ def test_prerelease_tracking_functionality(
 
     # Test get_prerelease_tracking_info function
     info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
-    assert info["release"] == latest_release_tag
+    expected_clean_version = (
+        downloader._extract_clean_version(latest_release_tag) or latest_release_tag
+    )
+    assert info["release"] == expected_clean_version
     assert info["prerelease_count"] > 0
     assert len(info["commits"]) > 0
 
@@ -498,7 +505,10 @@ def test_prerelease_tracking_json_format(tmp_path):
 
     # Test reading the tracking file
     info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
-    assert info["release"] == latest_release
+    expected_clean_version = (
+        downloader._extract_clean_version(latest_release) or latest_release
+    )
+    assert info["release"] == expected_clean_version
     assert info["prerelease_count"] == 2
     assert "2.7.7.abcdef" in info["commits"]
     assert "2.7.8.fedcba" in info["commits"]
@@ -514,7 +524,10 @@ def test_prerelease_tracking_json_format(tmp_path):
 
     # Verify tracking was reset
     info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
-    assert info["release"] == new_release
+    expected_clean_new_release = (
+        downloader._extract_clean_version(new_release) or new_release
+    )
+    assert info["release"] == expected_clean_new_release
     assert info["prerelease_count"] == 1
     assert "2.7.10.abc123" in info["commits"]
     assert "2.7.7.abcdef" not in info["commits"], "Old commits should be cleared"
