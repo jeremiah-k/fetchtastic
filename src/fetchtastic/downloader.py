@@ -695,11 +695,11 @@ def _normalize_commit_identifier(commit_id: str, release_version: Optional[str])
     commit_id = commit_id.lower()
 
     # If it already looks like version+hash (contains version numbers and hex chars), return as-is
-    if re.search(r"^\d+\.\d+\.\d+\.[a-f0-9]{6,}", commit_id):
+    if re.search(r"^\d+\.\d+\.\d+\.[a-f0-9]{6,40}$", commit_id):
         return commit_id
 
     # If it's just a hash, try to extract version from release_version
-    if re.match(r"^[a-f0-9]{6,}$", commit_id):
+    if re.match(r"^[a-f0-9]{6,40}$", commit_id):
         if release_version:
             # Extract version part (remove 'v' prefix and any hash)
             clean_version = _extract_clean_version(release_version)
