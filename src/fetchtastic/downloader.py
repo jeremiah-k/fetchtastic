@@ -1369,15 +1369,9 @@ def get_commit_timestamp(
         else:
             return None
     except requests.HTTPError as e:
-        if e.response is not None and e.response.status_code == 403:
-            # Specific 403 handling for commit timestamp requests
-            # This provides context-specific error messaging for commit API calls
-            # rather than using the generic rate limit message from make_github_api_request
-            logger.error(
-                f"GitHub API rate limit exceeded for commit {commit_hash}. "
-                f"Set GITHUB_TOKEN environment variable for higher rate limits."
-            )
-        else:
+        # The make_github_api_request function already logs a detailed message for 403 rate limit errors.
+        # We only need to log other HTTP errors here that were not already handled.
+        if e.response is None or e.response.status_code != 403:
             logger.warning(
                 f"HTTP error getting timestamp for commit {commit_hash}: {e}"
             )
