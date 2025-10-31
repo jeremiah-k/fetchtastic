@@ -2964,6 +2964,13 @@ def check_and_download(
                         (browser_download_url, asset_download_path)
                     )
                 else:
+                    if force_refresh:
+                        if not _prepare_for_redownload(asset_download_path):
+                            continue
+                        assets_to_download.append(
+                            (browser_download_url, asset_download_path)
+                        )
+                        continue
                     expected_size = asset.get("size")
                     if expected_size is not None:
                         try:
