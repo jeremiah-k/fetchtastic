@@ -9,10 +9,7 @@ from fetchtastic.constants import (
     MESHTASTIC_GITHUB_IO_CONTENTS_URL,
 )
 from fetchtastic.log_utils import logger
-from fetchtastic.utils import (
-    get_effective_github_token,
-    make_github_api_request,
-)
+from fetchtastic.utils import make_github_api_request
 
 # Module-level constants for repository content filtering
 EXCLUDED_DIRS = [".git", ".github", "node_modules", "__pycache__", ".vscode"]
@@ -247,22 +244,18 @@ Select "[Quit]" to exit without downloading."""
         print("No files selected for download.")
         return None
 
-    # Check if quit option was selected
+    # Process selected options
+    selected_files = []
     for option in selected_options:
+        # The 'pick' library returns a list of (option, index) tuples.
         option_name = option[0] if isinstance(option, (tuple, list)) else str(option)
         if option_name == "[Quit]":
             print("Exiting without downloading.")
             return None
-
-    # Get the full file information for selected files
-    selected_files = []
-    for option in selected_options:
-        option_name = option[0] if isinstance(option, (tuple, list)) else str(option)
-        for file in files:
-            if file["name"] == option_name:
-                selected_files.append(file)
+        for file_info in files:
+            if file_info["name"] == option_name:
+                selected_files.append(file_info)
                 break
-
     return selected_files
 
 

@@ -1696,7 +1696,8 @@ def check_for_prereleases(
                 downloaded_files.append(file_path)
             except (requests.RequestException, IOError, OSError) as e:
                 logger.error(
-                    f"Network or I/O error downloading pre-release file {file_name}: {e}"
+                    f"Network or I/O error downloading pre-release file {file_name}: {e}",
+                    exc_info=True,
                 )
 
     downloaded_versions: List[str] = []
