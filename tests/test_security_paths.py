@@ -10,6 +10,7 @@ This module contains tests for:
 
 import os
 import platform
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -637,8 +638,8 @@ def test_prerelease_symlink_traversal_attack_prevention(
 
     # Mock download to create a file
     def mock_download_func(_url, dest_path, _max_retries=3, _backoff_factor=1.0):
-        dest_path.parent.mkdir(parents=True, exist_ok=True)
-        dest_path.write_text("mock firmware content")
+        Path(dest_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(dest_path).write_text("mock firmware content")
 
     mock_download.side_effect = mock_download_func
 
@@ -677,8 +678,8 @@ def test_prerelease_symlink_mixed_with_valid_directories(
 
     # Mock download to create a file
     def mock_download_func(_url, dest_path, _max_retries=3, _backoff_factor=1.0):
-        dest_path.parent.mkdir(parents=True, exist_ok=True)
-        dest_path.write_text("mock firmware content")
+        Path(dest_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(dest_path).write_text("mock firmware content")
 
     mock_download.side_effect = mock_download_func
 
