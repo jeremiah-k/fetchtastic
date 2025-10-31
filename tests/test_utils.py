@@ -47,7 +47,10 @@ def test_hash_functions(temp_file):
     assert actual_hash == expected_hash
 
     # Save and load hash
-    utils.save_file_hash(str(file_path), actual_hash)
+    if actual_hash is not None:
+        utils.save_file_hash(str(file_path), actual_hash)
+    else:
+        pytest.fail("calculate_sha256 returned None for valid file")
     loaded_hash = utils.load_file_hash(str(file_path))
     assert loaded_hash == actual_hash
 
@@ -108,7 +111,10 @@ def test_download_file_with_retry_existing_valid(mock_session, tmp_path):
 
     # Create a valid hash file
     file_hash = utils.calculate_sha256(str(download_path))
-    utils.save_file_hash(str(download_path), file_hash)
+    if file_hash is not None:
+        utils.save_file_hash(str(download_path), file_hash)
+    else:
+        pytest.fail("calculate_sha256 returned None for valid file")
 
     result = utils.download_file_with_retry(
         "http://example.com/file.txt", str(download_path)
