@@ -34,8 +34,11 @@ def write_dummy_file():
         Returns:
             bool: Always returns True on successful write.
         """
-        os.makedirs(os.path.dirname(dest), exist_ok=True)
-        with open(dest, "wb") as f:
+        from pathlib import Path
+
+        dest_path = Path(dest)
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        with dest_path.open("wb") as f:
             f.write(data)
         return True
 

@@ -667,6 +667,17 @@ def _ensure_v_prefix_if_missing(version: Optional[str]) -> Optional[str]:
     return version
 
 
+def _get_effective_github_token(
+    github_token: Optional[str], allow_env_token: bool
+) -> Optional[str]:
+    """Return the effective GitHub token from arguments or environment."""
+    return (
+        github_token
+        if github_token is not None
+        else (os.environ.get("GITHUB_TOKEN") if allow_env_token else None)
+    )
+
+
 def _read_prerelease_tracking_data(tracking_file):
     """
     Read prerelease tracking information from a JSON tracking file or fall back to the legacy text format.
@@ -706,7 +717,9 @@ def _read_prerelease_tracking_data(tracking_file):
                         commits_raw = [hash_val]
                 else:
                     # Legacy format
-                    current_release = tracking_data.get("release")
+                    current_release = _ensure_v_prefix_if_missing(
+                        tracking_data.get("release")
+                    )
                     commits_raw = tracking_data.get("commits", [])
 
                 # Normalize commits to lowercase for consistency, done once
@@ -1031,7 +1044,8 @@ def _iter_matching_prerelease_files(
             continue
 
         if any(
-            fnmatch.fnmatch(file_name, pattern) for pattern in exclude_patterns_list
+            fnmatch.fnmatch(file_name.lower(), pattern.lower())
+            for pattern in exclude_patterns_list
         ):
             logger.debug(
                 "Skipping pre-release file %s (matched exclude pattern)",
@@ -1190,13 +1204,8 @@ def get_commit_timestamp(
                 )
                 del _commit_timestamp_cache[cache_key]
 
-        # Log the fetch reason
-        if fetch_reason == "refresh":
-            logger.debug(
-                f"Refreshing cache for commit {commit_hash} - fetching from API"
-            )
-        else:
-            logger.debug(f"Cache miss for commit {commit_hash} - fetching from API")
+        # Fetch from API after cache miss/expiry or forced refresh
+        logger.debug(f"Cache miss for commit {commit_hash} - fetching from API")
 
     # Check for GitHub token in environment for better rate limits
     headers = {
@@ -1206,11 +1215,7 @@ def get_commit_timestamp(
     }
 
     # Use provided token or fall back to environment variable
-    effective_token = (
-        github_token
-        if github_token is not None
-        else (os.environ.get("GITHUB_TOKEN") if allow_env_token else None)
-    )
+    effective_token = _get_effective_github_token(github_token, allow_env_token)
     if effective_token:
         headers["Authorization"] = f"token {effective_token}"
         logger.debug("Using GitHub token for API authentication")
@@ -1255,14 +1260,9 @@ def get_commit_timestamp(
                     timestamp,
                     datetime.now(timezone.utc),
                 )
-            if fetch_reason == "refresh":
-                logger.debug(
-                    f"Refreshed cached timestamp for commit {commit_hash} (updated from API)"
-                )
-            else:
-                logger.debug(
-                    f"Cached new timestamp for commit {commit_hash} (fetched from API)"
-                )
+            logger.debug(
+                f"Cached timestamp for commit {commit_hash} (fetched from API)"
+            )
 
             return timestamp
         else:
@@ -1391,7 +1391,7 @@ def check_for_prereleases(
         if not _atomic_write_json(
             tracking_file,
             {
-                "release": latest_release_tag,
+                "version": latest_release_tag,
                 "commits": [],
                 "last_updated": datetime.now().astimezone().isoformat(),
             },
@@ -1474,7 +1474,7 @@ def check_for_prereleases(
 
     # Fetch timestamps concurrently to improve performance
     with ThreadPoolExecutor(
-        max_workers=min(MAX_CONCURRENT_TIMESTAMP_FETCHES, len(commit_hashes))
+        max_workers=max(1, min(MAX_CONCURRENT_TIMESTAMP_FETCHES, len(commit_hashes)))
     ) as executor:
         timestamps = list(executor.map(_safe_get_timestamp, commit_hashes))
 
@@ -1750,11 +1750,7 @@ def _get_latest_releases_data(
         }
 
         # Add authentication if token provided
-        effective_token = (
-            github_token
-            if github_token is not None
-            else (os.environ.get("GITHUB_TOKEN") if allow_env_token else None)
-        )
+        effective_token = _get_effective_github_token(github_token, allow_env_token)
         if effective_token:
             headers["Authorization"] = f"token {effective_token}"
             logger.debug("Using GitHub token for API authentication")
@@ -2403,7 +2399,8 @@ def extract_files(
                 if not base_name:
                     continue
                 if any(
-                    fnmatch.fnmatch(base_name, exclude) for exclude in exclude_patterns
+                    fnmatch.fnmatch(base_name.lower(), exclude.lower())
+                    for exclude in exclude_patterns
                 ):
                     continue
 
@@ -2560,7 +2557,10 @@ def _is_release_complete(
             continue
 
         # Skip files that match exclude patterns
-        if any(fnmatch.fnmatch(file_name, exclude) for exclude in exclude_patterns):
+        if any(
+            fnmatch.fnmatch(file_name.lower(), exclude.lower())
+            for exclude in exclude_patterns
+        ):
             continue
 
         expected_assets.append(file_name)
@@ -2917,7 +2917,10 @@ def check_and_download(
                     )
                     continue
                 # Honor exclude patterns at download-time as well
-                if any(fnmatch.fnmatch(file_name, ex) for ex in exclude_patterns_list):
+                if any(
+                    fnmatch.fnmatch(file_name.lower(), ex.lower())
+                    for ex in exclude_patterns_list
+                ):
                     logger.debug(
                         "Skipping %s asset %s (matched exclude pattern)",
                         release_type,
@@ -3214,7 +3217,8 @@ def check_extraction_needed(
                 if not base_name:
                     continue
                 if any(
-                    fnmatch.fnmatch(base_name, exclude) for exclude in exclude_patterns
+                    fnmatch.fnmatch(base_name.lower(), exclude.lower())
+                    for exclude in exclude_patterns
                 ):
                     continue
                 if matches_selected_patterns(base_name, patterns):
