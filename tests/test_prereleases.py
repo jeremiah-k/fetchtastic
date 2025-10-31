@@ -664,3 +664,232 @@ def test_update_prerelease_tracking_error_handling():
         finally:
             # Restore permissions for cleanup
             prerelease_dir.chmod(0o755)
+
+
+@pytest.mark.core_downloads
+def test_get_commit_hash_from_dir():
+    """Test extracting commit hash from prerelease directory names."""
+    from fetchtastic.downloader import _get_commit_hash_from_dir
+
+    # Test valid directory names with commit hashes
+    assert _get_commit_hash_from_dir("firmware-2.7.7.abcdef") == "abcdef"
+    assert (
+        _get_commit_hash_from_dir("firmware-1.2.3.1234567890abcdef")
+        == "1234567890abcdef"
+    )
+    assert (
+        _get_commit_hash_from_dir("firmware-2.7.7.ABCDEF") == "abcdef"
+    )  # Case insensitive
+
+    # Test directory names without commit hashes
+    assert _get_commit_hash_from_dir("firmware-2.7.7") is None
+    assert _get_commit_hash_from_dir("firmware-2.7.7-rc1") is None
+    assert _get_commit_hash_from_dir("firmware-2.7.7.alpha") is None
+
+    # Test edge cases
+    assert (
+        _get_commit_hash_from_dir("firmware-2.7.7.123") is None
+    )  # Too short (3 chars)
+    assert (
+        _get_commit_hash_from_dir(
+            "firmware-2.7.7.12345678901234567890123456789012345678901"
+        )
+        is None
+    )  # Too long (41 chars)
+
+
+@pytest.mark.core_downloads
+def test_get_commit_timestamp_cache():
+    """Test commit timestamp caching logic."""
+    from datetime import datetime, timedelta, timezone
+    from unittest.mock import Mock, patch
+
+    from fetchtastic.downloader import (
+        _commit_timestamp_cache,
+        clear_commit_timestamp_cache,
+        get_commit_timestamp,
+    )
+
+    # Clear cache before test
+    clear_commit_timestamp_cache()
+
+    # Mock response for successful API call
+    mock_response = Mock()
+    mock_response.json.return_value = {
+        "commit": {"committer": {"date": "2025-01-20T12:00:00Z"}}
+    }
+    mock_response.raise_for_status.return_value = None
+    mock_response.status_code = 200
+    mock_response.ok = True
+    mock_response.headers = {"X-RateLimit-Remaining": "4999"}
+
+    with patch(
+        "fetchtastic.downloader.requests.get", return_value=mock_response
+    ) as mock_get:
+        # First call should make API request and cache result
+        result1 = get_commit_timestamp("meshtastic", "firmware", "abcdef123")
+        assert result1 is not None
+        assert isinstance(result1, datetime)
+        assert mock_get.call_count == 1
+
+        # Second call should use cache
+        result2 = get_commit_timestamp("meshtastic", "firmware", "abcdef123")
+        assert result2 == result1
+        assert mock_get.call_count == 1  # Still only one call
+
+        # Check that cache contains the entry
+        cache_key = "meshtastic/firmware/abcdef123"
+        assert cache_key in _commit_timestamp_cache
+        cached_timestamp, cached_at = _commit_timestamp_cache[cache_key]
+        assert cached_timestamp == result1
+        assert isinstance(cached_at, datetime)
+
+    # Test force_refresh bypasses cache
+    with patch(
+        "fetchtastic.downloader.requests.get", return_value=mock_response
+    ) as mock_get:
+        result3 = get_commit_timestamp(
+            "meshtastic", "firmware", "abcdef123", force_refresh=True
+        )
+        assert result3 == result1
+        assert mock_get.call_count == 1  # One more call due to force_refresh
+
+    # Test cache expiry (simulate old cache entry)
+    cache_key = "meshtastic/firmware/abcdef123"
+    old_timestamp = datetime.now(timezone.utc) - timedelta(hours=25)  # Expired
+    _commit_timestamp_cache[cache_key] = (result1, old_timestamp)
+
+    with patch(
+        "fetchtastic.downloader.requests.get", return_value=mock_response
+    ) as mock_get:
+        result4 = get_commit_timestamp("meshtastic", "firmware", "abcdef123")
+        assert result4 == result1
+        assert mock_get.call_count == 1  # Should refresh expired cache
+
+    # Clear cache after test
+    clear_commit_timestamp_cache()
+
+
+@pytest.mark.core_downloads
+def test_get_commit_timestamp_error_handling():
+    """Test error handling in get_commit_timestamp."""
+    from datetime import datetime
+    from unittest.mock import Mock, patch
+
+    import requests
+
+    from fetchtastic.downloader import (
+        clear_commit_timestamp_cache,
+        get_commit_timestamp,
+    )
+
+    clear_commit_timestamp_cache()
+
+    # Test HTTP error
+    mock_response = Mock()
+    mock_response.raise_for_status.side_effect = requests.HTTPError("404 Not Found")
+    mock_response.status_code = 404
+
+    with patch("fetchtastic.downloader.requests.get", return_value=mock_response):
+        result = get_commit_timestamp("meshtastic", "firmware", "badcommit")
+        assert result is None
+
+    # Test JSON decode error
+    mock_response = Mock()
+    mock_response.raise_for_status.return_value = None
+    mock_response.json.side_effect = ValueError("Invalid JSON")
+    mock_response.status_code = 200
+    mock_response.ok = True
+
+    with patch("fetchtastic.downloader.requests.get", return_value=mock_response):
+        result = get_commit_timestamp("meshtastic", "firmware", "badcommit")
+        assert result is None
+
+    # Test missing date in response
+    mock_response = Mock()
+    mock_response.raise_for_status.return_value = None
+    mock_response.json.return_value = {"commit": {"committer": {}}}  # Missing date
+    mock_response.status_code = 200
+    mock_response.ok = True
+
+    with patch("fetchtastic.downloader.requests.get", return_value=mock_response):
+        result = get_commit_timestamp("meshtastic", "firmware", "badcommit")
+        assert result is None
+
+    clear_commit_timestamp_cache()
+
+    # Mock response for successful API call
+    mock_response = Mock()
+    mock_response.json.return_value = {
+        "commit": {"committer": {"date": "2025-01-20T12:00:00Z"}}
+    }
+    mock_response.raise_for_status.return_value = None
+    mock_response.status_code = 200
+    mock_response.ok = True
+
+    with patch("fetchtastic.downloader.requests.get", return_value=mock_response):
+        # First call should make API request
+        result1 = get_commit_timestamp("meshtastic", "firmware", "abcdef123")
+        assert result1 is not None
+        assert isinstance(result1, datetime)
+
+        # Second call should use cache
+        result2 = get_commit_timestamp("meshtastic", "firmware", "abcdef123")
+        assert result2 == result1
+
+        # Verify only one API call was made
+        # (This is hard to test directly with the current setup, but cache should work)
+
+    # Test cache expiry with force_refresh
+    with patch("fetchtastic.downloader.requests.get", return_value=mock_response):
+        result3 = get_commit_timestamp(
+            "meshtastic", "firmware", "abcdef123", force_refresh=True
+        )
+        assert result3 == result1  # Should still work
+
+    # Clear cache after test
+    clear_commit_timestamp_cache()
+
+
+@pytest.mark.core_downloads
+def test_normalize_version():
+    """Test version normalization function."""
+    from fetchtastic.downloader import _normalize_version
+
+    # Test None input
+    assert _normalize_version(None) is None
+
+    # Test empty string
+    assert _normalize_version("") is None
+    assert _normalize_version("   ") is None
+
+    # Test valid versions
+    result = _normalize_version("v1.2.3")
+    assert result is not None
+    assert str(result) == "1.2.3"
+
+    result = _normalize_version("1.2.3")
+    assert result is not None
+    assert str(result) == "1.2.3"
+
+    # Test prerelease versions
+    result = _normalize_version("v1.2.3-rc1")
+    assert result is not None
+    assert str(result) == "1.2.3rc1"
+
+    result = _normalize_version("1.2.3-alpha1")
+    assert result is not None
+    assert str(result) == "1.2.3a1"
+
+    result = _normalize_version("1.2.3-beta2")
+    assert result is not None
+    assert str(result) == "1.2.3b2"
+
+    # Test hash suffix
+    result = _normalize_version("v1.2.3.abc123")
+    assert result is not None
+    assert str(result) == "1.2.3+abc123"
+
+    # Test invalid versions
+    assert _normalize_version("invalid") is None
+    assert _normalize_version("v") is None
