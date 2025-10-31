@@ -12,6 +12,7 @@ from fetchtastic.constants import (
 )
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import (
+    get_effective_github_token,
     make_github_api_request,
 )
 
@@ -110,6 +111,9 @@ def fetch_repo_contents(path="", allow_env_token=True, github_token=None):
     else:
         api_url = base_url
 
+    # Get effective token for authentication logic
+    effective_token = get_effective_github_token(github_token, allow_env_token)
+
     try:
         response = make_github_api_request(
             api_url,
@@ -118,12 +122,13 @@ def fetch_repo_contents(path="", allow_env_token=True, github_token=None):
             timeout=GITHUB_API_TIMEOUT,
         )
         contents = response.json()
+
         return _process_repo_contents(contents)
 
     except requests.HTTPError as e:
         if e.response is not None and e.response.status_code == 401:
             # Retry without token if authentication failed
-            if github_token or (allow_env_token and os.environ.get("GITHUB_TOKEN")):
+            if effective_token:
                 logger.warning(
                     f"GitHub token authentication failed for repo contents API: {e}. "
                     f"Retrying without authentication."

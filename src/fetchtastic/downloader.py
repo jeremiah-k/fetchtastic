@@ -135,14 +135,22 @@ def _normalize_version(
             try:
                 return parse_version(f"{m_pr.group(1)}{kind}{num}")
             except InvalidVersion:
-                pass
+                logger.debug(
+                    "Could not parse '%s' as a standard prerelease version.",
+                    trimmed,
+                    exc_info=True,
+                )
 
         m_hash = HASH_SUFFIX_VERSION_RX.match(trimmed)
         if m_hash:
             try:
                 return parse_version(f"{m_hash.group(1)}+{m_hash.group(2)}")
             except InvalidVersion:
-                pass
+                logger.debug(
+                    "Could not parse '%s' as a version with a local version identifier.",
+                    trimmed,
+                    exc_info=True,
+                )
 
     return None
 
@@ -1477,13 +1485,10 @@ def check_for_prereleases(
             continue
 
         # Extract base version (without hash) to check if it matches expected
-        dir_version_parts = dir_version.split(".")
-        if len(dir_version_parts) < 3:
+        match = re.match(r"(\d+\.\d+\.\d+)", dir_version)
+        if not match:
             continue
-
-        dir_base_version = (
-            f"{dir_version_parts[0]}.{dir_version_parts[1]}.{dir_version_parts[2]}"
-        )
+        dir_base_version = match.group(1)
 
         # Only include directories that match the expected prerelease version
         if dir_base_version == expected_prerelease_version:
