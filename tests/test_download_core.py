@@ -730,7 +730,7 @@ class TestDownloadCoreIntegration:
 
             # Should record failure when download returns False
             assert downloaded == []
-            assert new == []
+            assert new == ["v1.0.0"]  # Notify about new version even if download failed
             assert len(failed) == 1
             assert failed[0]["release_tag"] == "v1.0.0"
             assert failed[0]["reason"] == "download_file_with_retry returned False"

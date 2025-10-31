@@ -1149,6 +1149,7 @@ def get_commit_timestamp(
     commit_hash: str,
     github_token: Optional[str] = None,
     force_refresh: bool = False,
+    allow_env_token: bool = True,
 ) -> Optional[datetime]:
     """
     Retrieve the committer timestamp for a commit in a GitHub repository.
@@ -1202,11 +1203,15 @@ def get_commit_timestamp(
     }
 
     # Use provided token or fall back to environment variable
-    effective_token = github_token or os.environ.get("GITHUB_TOKEN")
+    effective_token = (
+        github_token
+        if github_token is not None
+        else (os.environ.get("GITHUB_TOKEN") if allow_env_token else None)
+    )
     if effective_token:
         headers["Authorization"] = f"token {effective_token}"
         logger.debug("Using GitHub token for API authentication")
-    else:
+    elif allow_env_token:
         with _token_warning_lock:
             if not _token_warning_shown:
                 logger.warning(
@@ -1274,7 +1279,12 @@ def get_commit_timestamp(
                 # Retry without token if authentication failed
                 if effective_token:
                     return get_commit_timestamp(
-                        repo_owner, repo_name, commit_hash, None, force_refresh
+                        repo_owner,
+                        repo_name,
+                        commit_hash,
+                        None,
+                        force_refresh,
+                        allow_env_token=False,
                     )
                 return None
             else:
@@ -1695,7 +1705,10 @@ def _send_ntfy_notification(
 
 
 def _get_latest_releases_data(
-    url: str, scan_count: int = 10, github_token: Optional[str] = None
+    url: str,
+    scan_count: int = 10,
+    github_token: Optional[str] = None,
+    allow_env_token: bool = True,
 ) -> List[Dict[str, Any]]:
     """
     Return a list of most recent releases fetched from a GitHub releases API endpoint.
@@ -1734,11 +1747,15 @@ def _get_latest_releases_data(
         }
 
         # Add authentication if token provided
-        effective_token = github_token or os.environ.get("GITHUB_TOKEN")
+        effective_token = (
+            github_token
+            if github_token is not None
+            else (os.environ.get("GITHUB_TOKEN") if allow_env_token else None)
+        )
         if effective_token:
             headers["Authorization"] = f"token {effective_token}"
             logger.debug("Using GitHub token for API authentication")
-        else:
+        elif allow_env_token:
             with _token_warning_lock:
                 if not _token_warning_shown:
                     logger.warning(
@@ -1787,7 +1804,9 @@ def _get_latest_releases_data(
             )
             # Retry without token if authentication failed
             if effective_token:
-                return _get_latest_releases_data(url, scan_count, None)
+                return _get_latest_releases_data(
+                    url, scan_count, None, allow_env_token=False
+                )
             return []
         else:
             logger.error(f"HTTP error fetching releases data from {url}: {e}")
@@ -3122,16 +3141,13 @@ def check_and_download(
     # - If no actions taken (e.g., all assets up-to-date): Report all newer releases
     #   This ensures users are notified about new versions even when no downloads were needed
     if actions_taken:
-        # When actions were taken, don't add additional candidates
-        # Successfully downloaded versions were already added to new_versions_available during the download loop
-        # This prevents reporting versions as "available" when downloads actually failed
-        new_candidates: List[str] = []
-    else:
-        # When no actions were taken, add all newer releases that weren't downloaded
-        # This ensures users are notified about new versions even when no downloads were needed
         new_candidates: List[str] = [
-            t for t in newer_tags if t not in downloaded_versions
+            t
+            for t in newer_tags
+            if t not in downloaded_versions and t not in new_versions_available
         ]
+    else:
+        new_candidates = [t for t in newer_tags if t not in new_versions_available]
 
     if not actions_taken and not new_candidates:
         logger.info(f"All {release_type} assets are up to date.")
