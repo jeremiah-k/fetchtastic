@@ -126,25 +126,8 @@ def fetch_repo_contents(path="", allow_env_token=True, github_token=None):
         return _process_repo_contents(contents)
 
     except requests.HTTPError as e:
-        if e.response is not None and e.response.status_code == 401:
-            # Retry without token if authentication failed
-            if effective_token:
-                logger.warning(
-                    f"GitHub token authentication failed for repo contents API: {e}. "
-                    f"Retrying without authentication."
-                )
-                # Retry without token
-                return fetch_repo_contents(
-                    path, allow_env_token=False, github_token=None
-                )
-            else:
-                logger.warning(f"GitHub API returned 401 for repo contents API: {e}")
-            return []
-        else:
-            logger.error(
-                f"HTTP error fetching repository contents from GitHub API: {e}"
-            )
-            return []
+        logger.error(f"HTTP error fetching repository contents from GitHub API: {e}")
+        return []
     except requests.RequestException as e:
         logger.error(f"Error fetching repository contents from GitHub API: {e}")
         return []

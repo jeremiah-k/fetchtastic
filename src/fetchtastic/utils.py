@@ -122,6 +122,7 @@ def make_github_api_request(
     allow_env_token: bool = True,
     params: Optional[Dict[str, Any]] = None,
     timeout: Optional[int] = None,
+    _is_retry: bool = False,
 ) -> requests.Response:
     """
     Make an authenticated GitHub API request with proper headers, rate limiting, and error handling.
@@ -129,6 +130,7 @@ def make_github_api_request(
     This function handles:
     - Setting proper GitHub API headers
     - Authentication using provided token or environment variable
+    - Automatic retry without token on 401 error
     - Rate limit warnings
     - Polite delays after requests
 
@@ -138,13 +140,14 @@ def make_github_api_request(
         allow_env_token (bool): Whether to allow using environment variable token
         params (Optional[Dict[str, Any]]): Query parameters for the request
         timeout (Optional[int]): Request timeout in seconds
+        _is_retry (bool): Internal flag to prevent infinite recursion on retries.
 
     Returns:
         requests.Response: The response object
 
     Raises:
-        requests.HTTPError: For HTTP errors (except 401 which triggers retry)
-        requests.RequestException: For other request-related errors
+        requests.HTTPError: For HTTP errors.
+        requests.RequestException: For other request-related errors.
     """
     from fetchtastic.constants import API_CALL_DELAY, GITHUB_API_TIMEOUT
     from fetchtastic.log_utils import logger
@@ -165,10 +168,32 @@ def make_github_api_request(
     # Show warning if no token available (centralized logic)
     _show_token_warning_if_needed(effective_token, allow_env_token)
 
-    # Make the request
-    actual_timeout = timeout or GITHUB_API_TIMEOUT
-    response = requests.get(url, timeout=actual_timeout, headers=headers, params=params)
-    response.raise_for_status()
+    try:
+        # Make the request
+        actual_timeout = timeout or GITHUB_API_TIMEOUT
+        response = requests.get(
+            url, timeout=actual_timeout, headers=headers, params=params
+        )
+        response.raise_for_status()
+    except requests.HTTPError as e:
+        if (
+            not _is_retry
+            and e.response is not None
+            and e.response.status_code == 401
+            and effective_token
+        ):
+            logger.warning(
+                f"GitHub token authentication failed for {url}. Retrying without authentication."
+            )
+            return make_github_api_request(
+                url,
+                github_token=None,
+                allow_env_token=False,  # Don't try env token on retry
+                params=params,
+                timeout=timeout,
+                _is_retry=True,
+            )
+        raise
 
     # Log API response info for debugging
     content_length = response.headers.get("Content-Length", "unknown")
@@ -456,7 +481,7 @@ def download_file_with_retry(
                 status=DEFAULT_CONNECT_RETRIES,
                 backoff_factor=DEFAULT_BACKOFF_FACTOR,
                 status_forcelist=[408, 429, 500, 502, 503, 504],
-                method_whitelist=frozenset({"GET", "HEAD"}),  # type: ignore[arg-type]
+                allowed_methods=frozenset({"GET", "HEAD"}),  # type: ignore[arg-type]
                 raise_on_status=False,
             )
         adapter = HTTPAdapter(max_retries=retry_strategy)
