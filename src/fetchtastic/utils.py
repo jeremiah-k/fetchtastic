@@ -481,7 +481,7 @@ def download_file_with_retry(
                 status=DEFAULT_CONNECT_RETRIES,
                 backoff_factor=DEFAULT_BACKOFF_FACTOR,
                 status_forcelist=[408, 429, 500, 502, 503, 504],
-                allowed_methods=frozenset({"GET", "HEAD"}),  # type: ignore[arg-type]
+                method_whitelist=frozenset({"GET", "HEAD"}),  # type: ignore[arg-type]
                 raise_on_status=False,
             )
         adapter = HTTPAdapter(max_retries=retry_strategy)
