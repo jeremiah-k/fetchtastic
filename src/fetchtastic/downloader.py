@@ -475,7 +475,11 @@ def _atomic_write_text(file_path: str, content: str) -> bool:
 
     Writes `content` to `file_path` by delegating to the atomic writer helper; the write is performed to a temporary file and renamed into place to avoid partial writes. Returns True on success and False on error.
     """
-    return _atomic_write(file_path, lambda f: f.write(content), suffix=".txt")
+
+    def _write_text_content(f: IO[str]) -> None:
+        f.write(content)
+
+    return _atomic_write(file_path, _write_text_content, suffix=".txt")
 
 
 def _atomic_write_json(file_path: str, data: dict) -> bool:
@@ -1182,11 +1186,8 @@ def get_commit_timestamp(
     # Create cache key
     cache_key = f"{repo_owner}/{repo_name}/{commit_hash}"
 
-    # Determine fetch reason before cache operations
-    fetch_reason = "new"
     with _cache_lock:
         if force_refresh and cache_key in _commit_timestamp_cache:
-            fetch_reason = "refresh"
             del _commit_timestamp_cache[cache_key]
         elif not force_refresh and cache_key in _commit_timestamp_cache:
             timestamp, cached_at = _commit_timestamp_cache[cache_key]
@@ -1198,7 +1199,6 @@ def get_commit_timestamp(
                 return timestamp
             else:
                 # Expired cache entry
-                fetch_reason = "refresh"
                 logger.debug(
                     f"Cache expired for commit {commit_hash} (was {age.total_seconds():.0f}s ago, limit is {COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS}h)"
                 )
