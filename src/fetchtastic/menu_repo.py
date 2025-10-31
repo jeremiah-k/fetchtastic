@@ -81,7 +81,7 @@ def _process_repo_contents(contents):
     return sorted_items
 
 
-def fetch_repo_contents(path=""):
+def fetch_repo_contents(path="", allow_env_token=True):
     """
     Fetch contents (directories and files) from Meshtastic GitHub Pages repository.
 
@@ -94,6 +94,7 @@ def fetch_repo_contents(path=""):
 
     Parameters:
         path (str): Optional repository-relative path to list (leading/trailing slashes will be trimmed). Use an empty string to list repository root.
+        allow_env_token (bool): Whether to allow using GITHUB_TOKEN from environment for authentication.
 
     Returns:
         list: A list of dictionaries representing directories and files. Returns an empty list on network, parsing, or unexpected errors.
@@ -116,9 +117,9 @@ def fetch_repo_contents(path=""):
         }
 
         # Add authentication if token available
-        github_token = os.environ.get("GITHUB_TOKEN")
-        if github_token:
-            headers["Authorization"] = f"token {github_token}"
+        effective_token = os.environ.get("GITHUB_TOKEN") if allow_env_token else None
+        if effective_token:
+            headers["Authorization"] = f"token {effective_token}"
 
         response = requests.get(api_url, timeout=GITHUB_API_TIMEOUT, headers=headers)
         response.raise_for_status()
@@ -140,25 +141,13 @@ def fetch_repo_contents(path=""):
     except requests.HTTPError as e:
         if e.response is not None and e.response.status_code == 401:
             # Retry without token if authentication failed
-            if github_token:
+            if effective_token:
                 logger.warning(
                     f"GitHub token authentication failed for repo contents API: {e}. "
                     f"Retrying without authentication."
                 )
-                # Remove token and retry once
-                headers.pop("Authorization", None)
-                try:
-                    response = requests.get(
-                        api_url, timeout=GITHUB_API_TIMEOUT, headers=headers
-                    )
-                    response.raise_for_status()
-                    contents = response.json()
-                    return _process_repo_contents(contents)
-                except requests.RequestException as retry_e:
-                    logger.error(
-                        f"Retry for repo contents API failed after auth error: {retry_e}"
-                    )
-                    return []
+                # Retry without token
+                return fetch_repo_contents(path, allow_env_token=False)
             else:
                 logger.warning(f"GitHub API returned 401 for repo contents API: {e}")
             return []
