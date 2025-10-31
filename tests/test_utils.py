@@ -447,8 +447,8 @@ def test_urllib3_v1_fallback_retry_creation(mock_retry, mock_session, tmp_path):
     # Second call should have v1 parameters
     second_call_kwargs = mock_retry.call_args_list[1][1]
     assert "respect_retry_after_header" not in second_call_kwargs
-    assert "method_whitelist" in second_call_kwargs
-    assert "allowed_methods" not in second_call_kwargs
+    assert "allowed_methods" in second_call_kwargs
+    assert "method_whitelist" not in second_call_kwargs
 
 
 def test_matches_selected_patterns_keyword_heuristic():

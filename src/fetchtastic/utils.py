@@ -123,6 +123,7 @@ def make_github_api_request(
     params: Optional[Dict[str, Any]] = None,
     timeout: Optional[int] = None,
     _is_retry: bool = False,
+    custom_403_message: Optional[str] = None,
 ) -> requests.Response:
     """
     Make an authenticated GitHub API request with proper headers, rate limiting, and error handling.
@@ -141,6 +142,7 @@ def make_github_api_request(
         params (Optional[Dict[str, Any]]): Query parameters for the request
         timeout (Optional[int]): Request timeout in seconds
         _is_retry (bool): Internal flag to prevent infinite recursion on retries.
+        custom_403_message (Optional[str]): Custom message for 403 errors, overrides default rate limit message
 
     Returns:
         requests.Response: The response object
@@ -192,7 +194,16 @@ def make_github_api_request(
                 params=params,
                 timeout=timeout,
                 _is_retry=True,
+                custom_403_message=custom_403_message,
             )
+        elif e.response is not None and e.response.status_code == 403:
+            if custom_403_message:
+                logger.error(custom_403_message)
+            else:
+                logger.error(
+                    f"GitHub API rate limit exceeded for {url}. "
+                    f"Set GITHUB_TOKEN environment variable for higher rate limits."
+                )
         raise
 
     # Log API response info for debugging
@@ -481,7 +492,7 @@ def download_file_with_retry(
                 status=DEFAULT_CONNECT_RETRIES,
                 backoff_factor=DEFAULT_BACKOFF_FACTOR,
                 status_forcelist=[408, 429, 500, 502, 503, 504],
-                method_whitelist=frozenset({"GET", "HEAD"}),  # type: ignore[arg-type]
+                allowed_methods=frozenset({"GET", "HEAD"}),  # type: ignore[arg-type]
                 raise_on_status=False,
             )
         adapter = HTTPAdapter(max_retries=retry_strategy)

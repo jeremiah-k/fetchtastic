@@ -1,17 +1,11 @@
 # src/fetchtastic/menu_firmware.py
 
-import time
-
 import requests
 from pick import pick
 
-from fetchtastic.constants import (
-    API_CALL_DELAY,
-    GITHUB_API_TIMEOUT,
-    MESHTASTIC_FIRMWARE_RELEASES_URL,
-)
+from fetchtastic.constants import MESHTASTIC_FIRMWARE_RELEASES_URL
 from fetchtastic.log_utils import logger
-from fetchtastic.utils import extract_base_name
+from fetchtastic.utils import extract_base_name, make_github_api_request
 
 
 def fetch_firmware_assets():
@@ -26,23 +20,9 @@ def fetch_firmware_assets():
         list[str]: Sorted asset filenames present in the latest release.
 
     Raises:
-        requests.HTTPError: If the HTTP request returns a non-2xx status (raised by response.raise_for_status()).
+        requests.HTTPError: If the HTTP request returns a non-2xx status (raised by make_github_api_request()).
     """
-    response = requests.get(
-        MESHTASTIC_FIRMWARE_RELEASES_URL, timeout=GITHUB_API_TIMEOUT
-    )
-    response.raise_for_status()
-
-    # Log API response info for debugging
-    content_length = response.headers.get("Content-Length") or str(
-        len(response.content)
-    )
-    logger.debug(
-        f"GitHub API response: {response.status_code} for {MESHTASTIC_FIRMWARE_RELEASES_URL} ({content_length} bytes)"
-    )
-
-    # Small delay to be respectful to GitHub API
-    time.sleep(API_CALL_DELAY)
+    response = make_github_api_request(MESHTASTIC_FIRMWARE_RELEASES_URL)
 
     releases = response.json()
     if not isinstance(releases, list) or not releases:
