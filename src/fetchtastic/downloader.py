@@ -768,12 +768,24 @@ def _parse_new_json_format(
     if commits_raw is None and hash_val:
         commits_raw = [hash_val]
 
+    # Validate commits_raw is a list to prevent data corruption
+    if not isinstance(commits_raw, list):
+        logger.warning(
+            f"Invalid commits format in tracking file: expected list, got {type(commits_raw)}. Resetting commits."
+        )
+        commits_raw = []
+
     # Normalize commits to version+hash format for consistency
     commits = []
-    for commit in commits_raw or []:
-        normalized = _normalize_commit_identifier(commit.lower(), current_release)
-        if normalized:
-            commits.append(normalized)
+    for commit in commits_raw:
+        if isinstance(commit, str):
+            normalized = _normalize_commit_identifier(commit.lower(), current_release)
+            if normalized:
+                commits.append(normalized)
+        else:
+            logger.warning(
+                f"Invalid commit entry in tracking file: expected str, got {type(commit)}. Skipping."
+            )
 
     last_updated = tracking_data.get("last_updated") or tracking_data.get("timestamp")
     return commits, current_release, last_updated
