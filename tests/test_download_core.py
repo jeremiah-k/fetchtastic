@@ -838,3 +838,65 @@ class TestDownloadCoreIntegration:
             assert "v2.0.0" in downloaded
             assert new == ["v2.0.0"]
             assert failed == []
+
+    def test_partial_download_failure_notifies_all_new_versions(self, tmp_path, mocker):
+        """Test that when some downloads succeed and some fail, all new versions are reported."""
+        releases = [
+            {
+                "tag_name": "v1.0.0",
+                "published_at": "2024-01-01T00:00:00Z",
+                "assets": [
+                    {
+                        "name": "firmware-rak4631-1.0.0.zip",
+                        "browser_download_url": "https://example.com/firmware1.zip",
+                        "size": 1000,
+                    }
+                ],
+                "body": "Release notes",
+            },
+            {
+                "tag_name": "v1.1.0",
+                "published_at": "2024-01-02T00:00:00Z",
+                "assets": [
+                    {
+                        "name": "firmware-rak4631-1.1.0.zip",
+                        "browser_download_url": "https://example.com/firmware2.zip",
+                        "size": 1000,
+                    }
+                ],
+                "body": "Release notes",
+            },
+        ]
+
+        latest_release_file = str(tmp_path / "latest.txt")
+        download_dir = str(tmp_path / "downloads")
+
+        # Mock download to succeed for v1.0.0 but fail for v1.1.0
+        def mock_download(url, path):
+            if "firmware1.zip" in url:
+                return True  # v1.0.0 succeeds
+            else:
+                return False  # v1.1.0 fails
+
+        with patch(
+            "fetchtastic.downloader.download_file_with_retry", side_effect=mock_download
+        ):
+            downloaded, new, failed = downloader.check_and_download(
+                releases,
+                latest_release_file,
+                "Firmware",
+                download_dir,
+                versions_to_keep=2,
+                extract_patterns=[],
+                selected_patterns=["rak4631-"],
+                auto_extract=False,
+                exclude_patterns=[],
+            )
+
+            # Should have downloaded v1.0.0 successfully
+            assert downloaded == ["v1.0.0"]
+            # Should notify about both new versions (success and failure)
+            assert set(new) == {"v1.0.0", "v1.1.0"}
+            # Should have one failure
+            assert len(failed) == 1
+            assert failed[0]["release_tag"] == "v1.1.0"
