@@ -748,17 +748,69 @@ def _extract_clean_version(version_with_hash: Optional[str]) -> Optional[str]:
     return _ensure_v_prefix_if_missing(version_with_hash)
 
 
+def _parse_new_json_format(
+    tracking_data: Dict[str, Any],
+) -> tuple[list[str], str | None, str | None]:
+    """
+    Parse new JSON format with version, hash, commits, and last_updated fields.
+
+    Returns:
+        tuple: (commits, current_release, last_updated)
+    """
+    version = tracking_data.get("version")
+    hash_val = tracking_data.get("hash")
+    current_release = _ensure_v_prefix_if_missing(version)
+
+    # Check if commits list exists, otherwise use single hash
+    commits_raw = tracking_data.get("commits")
+    if commits_raw is None and hash_val:
+        commits_raw = [hash_val]
+
+    # Normalize commits to version+hash format for consistency
+    commits = []
+    for commit in commits_raw or []:
+        normalized = _normalize_commit_identifier(commit.lower(), current_release)
+        if normalized:
+            commits.append(normalized)
+
+    last_updated = tracking_data.get("last_updated") or tracking_data.get("timestamp")
+    return commits, current_release, last_updated
+
+
+def _parse_legacy_json_format(
+    tracking_data: Dict[str, Any],
+) -> tuple[list[str], str | None, str | None]:
+    """
+    Parse legacy JSON format with release and commits fields.
+
+    Returns:
+        tuple: (commits, current_release, last_updated)
+    """
+    current_release = _ensure_v_prefix_if_missing(tracking_data.get("release"))
+    commits_raw = tracking_data.get("commits", [])
+
+    # Normalize commits to version+hash format for consistency
+    commits = []
+    for commit in commits_raw or []:
+        normalized = _normalize_commit_identifier(commit.lower(), current_release)
+        if normalized:
+            commits.append(normalized)
+
+    last_updated = tracking_data.get("last_updated") or tracking_data.get("timestamp")
+    return commits, current_release, last_updated
+
+
 def _read_prerelease_tracking_data(tracking_file):
     """
-    Read prerelease tracking information from a JSON tracking file or fall back to the legacy text format.
+    Read prerelease tracking information from a JSON tracking file or fall back to legacy text format.
 
-    Attempts to parse prerelease_tracking.json supporting both the newer schema (keys like "version", "hash", "commits", "last_updated"/"timestamp") and the legacy JSON schema ("release", "commits"). If the JSON read fails or the file does not exist, falls back to reading legacy text-formatted tracking via _read_text_tracking_file. Commit hashes are normalized to lowercase and the release tag is normalized to include a leading "v" when applicable.
+    Attempts to parse prerelease_tracking.json supporting both newer schema (keys like "version", "hash", "commits", "last_updated"/"timestamp") and legacy JSON schema ("release", "commits"). If JSON read fails or file does not exist, falls back to reading legacy text-formatted tracking via _read_text_tracking_file. Commit hashes are normalized to lowercase and release tag is normalized to include a leading "v" when applicable.
 
     Returns:
         tuple: (commits, current_release, last_updated)
             commits (list[str]): Ordered list of prerelease IDs (may be empty).
-            current_release (str | None): Release tag associated with the commits, or None if unknown.
-            last_updated (str | None): ISO timestamp of the last update from JSON (or None if unavailable).
+            current_release (str | None): Release tag associated with commits, or None if unknown.
+            last_updated (str | None): ISO timestamp of last update from JSON (or None if unavailable).
     """
     commits = []
     current_release = None
@@ -772,37 +824,19 @@ def _read_prerelease_tracking_data(tracking_file):
 
                 # Check for new format (version, hash, count)
                 # Note: "count" is not used; reserved for future aggregation.
-                commits_raw = []
                 if "version" in tracking_data and (
                     "hash" in tracking_data or "commits" in tracking_data
                 ):
                     # New format: convert to legacy format for compatibility
-                    version = tracking_data.get("version")
-                    hash_val = tracking_data.get("hash")
-                    current_release = _ensure_v_prefix_if_missing(version)
-
-                    # Check if commits list exists, otherwise use single hash
-                    commits_raw = tracking_data.get("commits")
-                    if commits_raw is None and hash_val:
-                        commits_raw = [hash_val]
+                    commits, current_release, last_updated = _parse_new_json_format(
+                        tracking_data
+                    )
                 else:
                     # Legacy format
-                    current_release = _ensure_v_prefix_if_missing(
-                        tracking_data.get("release")
+                    commits, current_release, last_updated = _parse_legacy_json_format(
+                        tracking_data
                     )
-                    commits_raw = tracking_data.get("commits", [])
 
-                # Normalize commits to version+hash format for consistency
-                commits = []
-                for commit in commits_raw or []:
-                    normalized = _normalize_commit_identifier(
-                        commit.lower(), current_release
-                    )
-                    if normalized:
-                        commits.append(normalized)
-                last_updated = tracking_data.get("last_updated") or tracking_data.get(
-                    "timestamp"
-                )
             read_from_json_success = True
         except (IOError, json.JSONDecodeError, UnicodeDecodeError) as e:
             logger.warning(f"Could not read prerelease tracking file: {e}")

@@ -1,5 +1,3 @@
-import os
-
 import requests
 from packaging.version import InvalidVersion
 from packaging.version import parse as parse_version
@@ -112,7 +110,7 @@ def fetch_repo_contents(path="", allow_env_token=True, github_token=None):
         api_url = base_url
 
     # Get effective token for authentication logic
-    effective_token = get_effective_github_token(github_token, allow_env_token)
+    get_effective_github_token(github_token, allow_env_token)
 
     try:
         response = make_github_api_request(
