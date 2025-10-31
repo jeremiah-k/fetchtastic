@@ -55,8 +55,10 @@ from fetchtastic.log_utils import logger
 from fetchtastic.setup_config import display_version_info, get_upgrade_command
 from fetchtastic.utils import (
     download_file_with_retry,
+    get_effective_github_token,
     get_hash_file_path,
     get_user_agent,
+    make_github_api_request,
     matches_selected_patterns,
     verify_file_integrity,
 )
@@ -671,17 +673,6 @@ def _ensure_v_prefix_if_missing(version: Optional[str]) -> Optional[str]:
     return version
 
 
-def _get_effective_github_token(
-    github_token: Optional[str], allow_env_token: bool
-) -> Optional[str]:
-    """Return the effective GitHub token from arguments or environment."""
-    return (
-        github_token
-        if github_token is not None
-        else (os.environ.get("GITHUB_TOKEN") if allow_env_token else None)
-    )
-
-
 def _read_prerelease_tracking_data(tracking_file):
     """
     Read prerelease tracking information from a JSON tracking file or fall back to the legacy text format.
@@ -1213,19 +1204,9 @@ def get_commit_timestamp(
         # Fetch from API after cache miss/expiry or forced refresh
         logger.debug(f"Cache miss for commit {commit_hash} - fetching from API")
 
-    # Check for GitHub token in environment for better rate limits
-    headers = {
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": get_user_agent(),
-    }
-
-    # Use provided token or fall back to environment variable
-    effective_token = _get_effective_github_token(github_token, allow_env_token)
-    if effective_token:
-        headers["Authorization"] = f"token {effective_token}"
-        logger.debug("Using GitHub token for API authentication")
-    elif allow_env_token:
+    # Check for GitHub token and handle thread-safe warning
+    effective_token = get_effective_github_token(github_token, allow_env_token)
+    if not effective_token and allow_env_token:
         with _token_warning_lock:
             if not _token_warning_shown:
                 logger.warning(
@@ -1236,23 +1217,12 @@ def get_commit_timestamp(
 
     try:
         api_url = f"{GITHUB_API_BASE}/{repo_owner}/{repo_name}/commits/{commit_hash}"
-        response = requests.get(
+        response = make_github_api_request(
             api_url,
+            github_token=github_token,
+            allow_env_token=False,  # We already handled warning above
             timeout=GITHUB_API_TIMEOUT,
-            headers=headers,
         )
-        response.raise_for_status()
-
-        # Log API response info for debugging
-        content_length = (
-            len(response.content) if hasattr(response.content, "__len__") else "unknown"
-        )
-        logger.debug(
-            f"GitHub API response: {response.status_code} for {api_url} ({content_length} bytes)"
-        )
-
-        # Small delay to be respectful to GitHub API
-        time.sleep(API_CALL_DELAY)
 
         commit_data = response.json()
         commit_date_str = commit_data.get("commit", {}).get("committer", {}).get("date")
@@ -1748,19 +1718,9 @@ def _get_latest_releases_data(
         else:
             logger.info("Fetching releases from GitHub...")
 
-        # Prepare headers with optional authentication
-        headers = {
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-            "User-Agent": get_user_agent(),
-        }
-
-        # Add authentication if token provided
-        effective_token = _get_effective_github_token(github_token, allow_env_token)
-        if effective_token:
-            headers["Authorization"] = f"token {effective_token}"
-            logger.debug("Using GitHub token for API authentication")
-        elif allow_env_token:
+        # Handle thread-safe token warning
+        effective_token = get_effective_github_token(github_token, allow_env_token)
+        if not effective_token and allow_env_token:
             with _token_warning_lock:
                 if not _token_warning_shown:
                     logger.warning(
@@ -1771,30 +1731,13 @@ def _get_latest_releases_data(
 
         # Clamp scan_count to GitHub's per_page bounds
         scan_count = max(1, min(100, scan_count))
-        response: requests.Response = requests.get(
+        response: requests.Response = make_github_api_request(
             url,
-            timeout=GITHUB_API_TIMEOUT,
-            headers=headers,
+            github_token=github_token,
+            allow_env_token=False,  # We already handled warning above
             params={"per_page": scan_count},
+            timeout=GITHUB_API_TIMEOUT,
         )
-        response.raise_for_status()
-
-        # Log API response info for debugging
-        content_length = (
-            len(response.content) if hasattr(response.content, "__len__") else "unknown"
-        )
-        logger.debug(
-            f"GitHub API response: {response.status_code} for {url} ({content_length} bytes)"
-        )
-
-        # Small delay to be respectful to GitHub API
-        time.sleep(API_CALL_DELAY)
-        try:
-            rl = response.headers.get("X-RateLimit-Remaining")
-            if rl is not None:
-                logger.debug(f"GitHub API rate-limit remaining: {rl}")
-        except (KeyError, ValueError, AttributeError) as e:
-            logger.debug(f"Could not parse rate-limit header: {e}")
 
         releases: List[Dict[str, Any]] = response.json()
 

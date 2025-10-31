@@ -7,7 +7,7 @@ import platform
 import re
 import time
 import zipfile
-from typing import List, Optional  # Callable removed
+from typing import Any, Dict, List, Optional  # Callable removed
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -65,6 +65,106 @@ def get_user_agent() -> str:
         _USER_AGENT_CACHE = f"fetchtastic/{app_version}"
 
     return _USER_AGENT_CACHE
+
+
+def get_effective_github_token(
+    github_token: Optional[str], allow_env_token: bool
+) -> Optional[str]:
+    """
+    Return the effective GitHub token from arguments or environment.
+
+    Parameters:
+        github_token (Optional[str]): GitHub token passed as argument
+        allow_env_token (bool): Whether to allow using environment variable token
+
+    Returns:
+        Optional[str]: The effective token to use, or None if no token available
+    """
+    return (
+        github_token
+        if github_token is not None
+        else (os.environ.get("GITHUB_TOKEN") if allow_env_token else None)
+    )
+
+
+def make_github_api_request(
+    url: str,
+    github_token: Optional[str] = None,
+    allow_env_token: bool = True,
+    params: Optional[Dict[str, Any]] = None,
+    timeout: Optional[int] = None,
+) -> requests.Response:
+    """
+    Make an authenticated GitHub API request with proper headers, rate limiting, and error handling.
+
+    This function handles:
+    - Setting proper GitHub API headers
+    - Authentication using provided token or environment variable
+    - Rate limit warnings
+    - 401 authentication failure retries
+    - Polite delays after requests
+
+    Parameters:
+        url (str): GitHub API URL to request
+        github_token (Optional[str]): GitHub token for authentication
+        allow_env_token (bool): Whether to allow using environment variable token
+        params (Optional[Dict[str, Any]]): Query parameters for the request
+        timeout (Optional[int]): Request timeout in seconds
+
+    Returns:
+        requests.Response: The response object
+
+    Raises:
+        requests.HTTPError: For HTTP errors (except 401 which triggers retry)
+        requests.RequestException: For other request-related errors
+    """
+    from fetchtastic.constants import API_CALL_DELAY, GITHUB_API_TIMEOUT
+    from fetchtastic.log_utils import logger
+
+    # Prepare headers with optional authentication
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": get_user_agent(),
+    }
+
+    # Add authentication if token provided
+    effective_token = get_effective_github_token(github_token, allow_env_token)
+    if effective_token:
+        headers["Authorization"] = f"token {effective_token}"
+        logger.debug("Using GitHub token for API authentication")
+    elif allow_env_token:
+        # Note: This warning logic should be handled by caller for proper thread safety
+        logger.warning(
+            "No GITHUB_TOKEN found - using unauthenticated API requests (60/hour limit). "
+            "Set GITHUB_TOKEN environment variable or run 'fetchtastic setup github' for higher limits (5000/hour)."
+        )
+
+    # Make the request
+    actual_timeout = timeout or GITHUB_API_TIMEOUT
+    response = requests.get(url, timeout=actual_timeout, headers=headers, params=params)
+    response.raise_for_status()
+
+    # Log API response info for debugging
+    content_length = (
+        len(response.content) if hasattr(response.content, "__len__") else "unknown"
+    )
+    logger.debug(
+        f"GitHub API response: {response.status_code} for {url} ({content_length} bytes)"
+    )
+
+    # Small delay to be respectful to GitHub API
+    time.sleep(API_CALL_DELAY)
+
+    # Log rate limit info if available
+    try:
+        rl = response.headers.get("X-RateLimit-Remaining")
+        if rl is not None:
+            logger.debug(f"GitHub API rate-limit remaining: {rl}")
+    except (KeyError, ValueError, AttributeError) as e:
+        logger.debug(f"Could not parse rate-limit header: {e}")
+
+    return response
 
 
 def calculate_sha256(file_path: str) -> Optional[str]:

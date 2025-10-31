@@ -11,7 +11,7 @@ from fetchtastic.constants import (
     MESHTASTIC_GITHUB_IO_CONTENTS_URL,
 )
 from fetchtastic.log_utils import logger
-from fetchtastic.utils import get_user_agent
+from fetchtastic.utils import get_effective_github_token, get_user_agent
 
 # Module-level constants for repository content filtering
 EXCLUDED_DIRS = [".git", ".github", "node_modules", "__pycache__", ".vscode"]
@@ -81,7 +81,7 @@ def _process_repo_contents(contents):
     return sorted_items
 
 
-def fetch_repo_contents(path="", allow_env_token=True):
+def fetch_repo_contents(path="", allow_env_token=True, github_token=None):
     """
     Fetch contents (directories and files) from Meshtastic GitHub Pages repository.
 
@@ -117,7 +117,7 @@ def fetch_repo_contents(path="", allow_env_token=True):
         }
 
         # Add authentication if token available
-        effective_token = os.environ.get("GITHUB_TOKEN") if allow_env_token else None
+        effective_token = get_effective_github_token(github_token, allow_env_token)
         if effective_token:
             headers["Authorization"] = f"token {effective_token}"
 
