@@ -34,8 +34,6 @@ def write_dummy_file():
         Returns:
             bool: Always returns True on successful write.
         """
-        from pathlib import Path
-
         dest_path = Path(dest)
         dest_path.parent.mkdir(parents=True, exist_ok=True)
         with dest_path.open("wb") as f:

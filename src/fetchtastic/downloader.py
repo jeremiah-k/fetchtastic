@@ -888,12 +888,18 @@ def _update_tracking_with_newest_prerelease(
 
     # Update tracking with the new prerelease ID
     updated_commits = [*existing_commits, new_prerelease_id]
+    # Extract commit hash for the newest prerelease ID (e.g., "2.7.7.abcd123")
+    commit_hash = _get_commit_hash_from_dir(f"{FIRMWARE_DIR_PREFIX}{new_prerelease_id}")
 
     # Write updated tracking data in new format
+    now_iso = datetime.now().astimezone().isoformat()
     new_tracking_data = {
-        "version": latest_release_tag,
-        "commits": updated_commits,
-        "last_updated": datetime.now().astimezone().isoformat(),
+        "version": latest_release_tag,  # normalized with leading 'v'
+        "commits": updated_commits,  # full prerelease IDs
+        "hash": commit_hash,  # optional single latest hash
+        "count": len(updated_commits),  # total tracked prereleases
+        "timestamp": now_iso,  # per PR format
+        "last_updated": now_iso,  # maintain compatibility with existing readers
     }
 
     if not _atomic_write_json(tracking_file, new_tracking_data):
