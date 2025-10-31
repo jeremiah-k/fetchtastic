@@ -1,5 +1,6 @@
 import os
 import time
+from typing import Any, List, Tuple
 
 import requests
 from pick import pick
@@ -141,13 +142,15 @@ def fetch_repo_contents(path="", allow_env_token=True, github_token=None):
     except requests.HTTPError as e:
         if e.response is not None and e.response.status_code == 401:
             # Retry without token if authentication failed
-            if effective_token:
+            if github_token or (allow_env_token and os.environ.get("GITHUB_TOKEN")):
                 logger.warning(
                     f"GitHub token authentication failed for repo contents API: {e}. "
                     f"Retrying without authentication."
                 )
                 # Retry without token
-                return fetch_repo_contents(path, allow_env_token=False)
+                return fetch_repo_contents(
+                    path, allow_env_token=False, github_token=None
+                )
             else:
                 logger.warning(f"GitHub API returned 401 for repo contents API: {e}")
             return []
@@ -242,7 +245,7 @@ def select_item(items, current_path=""):
         return {"type": "quit"}
 
     # Adjust index if we added a "Go back" option
-    if current_path:
+    if current_path and isinstance(index, int):
         index -= 1
 
     # Adjust for the quit option which is always at the end
@@ -280,18 +283,22 @@ Select "[Quit]" to exit without downloading."""
         print("No files selected for download.")
         return None
 
+    # Type annotation for pick with multiselect=True returns List[Tuple[str, Any]]
+    typed_options: List[Tuple[str, Any]] = selected_options  # type: ignore
+
     # Check if quit option was selected
-    for option in selected_options:
-        if option[0] == "[Quit]":
+    for option in typed_options:
+        option_name = option[0] if isinstance(option, (tuple, list)) else str(option)
+        if option_name == "[Quit]":
             print("Exiting without downloading.")
             return None
 
     # Get the full file information for selected files
     selected_files = []
-    for option in selected_options:
-        file_name = option[0]
+    for option in typed_options:
+        option_name = option[0] if isinstance(option, (tuple, list)) else str(option)
         for file in files:
-            if file["name"] == file_name:
+            if file["name"] == option_name:
                 selected_files.append(file)
                 break
 

@@ -28,7 +28,6 @@ except ImportError:
 
 from fetchtastic import menu_repo, setup_config
 from fetchtastic.constants import (
-    API_CALL_DELAY,
     COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS,
     DEFAULT_ANDROID_VERSIONS_TO_KEEP,
     DEFAULT_FIRMWARE_VERSIONS_TO_KEEP,
@@ -57,7 +56,6 @@ from fetchtastic.utils import (
     download_file_with_retry,
     get_effective_github_token,
     get_hash_file_path,
-    get_user_agent,
     make_github_api_request,
     matches_selected_patterns,
     verify_file_integrity,
