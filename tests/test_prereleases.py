@@ -57,7 +57,6 @@ def mock_github_commit_timestamp(commit_timestamps):
             unittest.mock.Mock: A mock object implementing `json()` and `raise_for_status()`
             that simulates a GitHub commit-timestamp API response.
         """
-        from unittest.mock import Mock
 
         # Extract commit hash from URL
         for commit_hash, timestamp in commit_timestamps.items():
@@ -715,7 +714,7 @@ def test_get_commit_hash_from_dir():
 def test_get_commit_timestamp_cache():
     """Test commit timestamp caching logic."""
     from datetime import datetime, timedelta, timezone
-    from unittest.mock import Mock, patch
+    from unittest.mock import patch
 
     from fetchtastic.downloader import (
         _commit_timestamp_cache,
@@ -787,7 +786,7 @@ def test_get_commit_timestamp_cache():
 def test_get_commit_timestamp_error_handling():
     """Test error handling in get_commit_timestamp."""
     from datetime import datetime
-    from unittest.mock import Mock, patch
+    from unittest.mock import patch
 
     import requests
 
