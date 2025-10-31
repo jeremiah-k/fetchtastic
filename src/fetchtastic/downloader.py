@@ -766,7 +766,11 @@ def _parse_new_json_format(
     # Check if commits list exists, otherwise use single hash
     commits_raw = tracking_data.get("commits")
     if commits_raw is None and hash_val:
-        commits_raw = [hash_val]
+        expected = calculate_expected_prerelease_version(current_release)
+        if expected:
+            commits_raw = [f"{expected}.{hash_val}"]
+        else:
+            commits_raw = [hash_val]
 
     # Validate commits_raw is a list to prevent data corruption
     if not isinstance(commits_raw, list):

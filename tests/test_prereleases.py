@@ -14,14 +14,24 @@ import pytest
 
 from fetchtastic import downloader
 from fetchtastic.downloader import (
+    _commit_timestamp_cache,
+    _get_commit_hash_from_dir,
+    _normalize_version,
+    clear_commit_timestamp_cache,
+    get_commit_timestamp,
+    get_prerelease_tracking_info,
     matches_extract_patterns,
+    update_prerelease_tracking,
 )
+
+# Constant for blocked network message
+_BLOCKED_NETWORK_MSG = "Network access is blocked in tests"
 
 
 @pytest.fixture(autouse=True)
 def _deny_network():
     def _no_net(*_args, **_kwargs):
-        raise AssertionError("Network access is blocked in tests")
+        raise AssertionError(_BLOCKED_NETWORK_MSG)
 
     with patch("fetchtastic.downloader.requests.get", _no_net):
         with patch("fetchtastic.downloader.requests.post", _no_net):
@@ -634,7 +644,6 @@ def test_get_prerelease_tracking_info_error_handling():
     import tempfile
 
     # uses top-level imports: Path
-    from fetchtastic.downloader import get_prerelease_tracking_info
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         prerelease_dir = Path(tmp_dir)
@@ -656,7 +665,6 @@ def test_update_prerelease_tracking_error_handling():
     import tempfile
 
     # uses top-level imports: Path
-    from fetchtastic.downloader import update_prerelease_tracking
 
     if os.name == "nt":
         pytest.skip("Permission bits unreliable on Windows")
@@ -681,7 +689,6 @@ def test_update_prerelease_tracking_error_handling():
 @pytest.mark.core_downloads
 def test_get_commit_hash_from_dir():
     """Test extracting commit hash from prerelease directory names."""
-    from fetchtastic.downloader import _get_commit_hash_from_dir
 
     # Test valid directory names with commit hashes
     assert _get_commit_hash_from_dir("firmware-2.7.7.abcdef") == "abcdef"
@@ -715,12 +722,6 @@ def test_get_commit_timestamp_cache():
     """Test commit timestamp caching logic."""
     from datetime import datetime, timedelta, timezone
     from unittest.mock import patch
-
-    from fetchtastic.downloader import (
-        _commit_timestamp_cache,
-        clear_commit_timestamp_cache,
-        get_commit_timestamp,
-    )
 
     # Clear cache before test
     clear_commit_timestamp_cache()
@@ -789,11 +790,6 @@ def test_get_commit_timestamp_error_handling():
     from unittest.mock import patch
 
     import requests
-
-    from fetchtastic.downloader import (
-        clear_commit_timestamp_cache,
-        get_commit_timestamp,
-    )
 
     clear_commit_timestamp_cache()
 
@@ -866,7 +862,6 @@ def test_get_commit_timestamp_error_handling():
 @pytest.mark.core_downloads
 def test_normalize_version():
     """Test version normalization function."""
-    from fetchtastic.downloader import _normalize_version
 
     # Test None input
     assert _normalize_version(None) is None
