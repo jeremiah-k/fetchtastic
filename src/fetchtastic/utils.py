@@ -132,12 +132,6 @@ def make_github_api_request(
     if effective_token:
         headers["Authorization"] = f"token {effective_token}"
         logger.debug("Using GitHub token for API authentication")
-    elif allow_env_token:
-        # Note: This warning logic should be handled by caller for proper thread safety
-        logger.warning(
-            "No GITHUB_TOKEN found - using unauthenticated API requests (60/hour limit). "
-            "Set GITHUB_TOKEN environment variable or run 'fetchtastic setup github' for higher limits (5000/hour)."
-        )
 
     # Make the request
     actual_timeout = timeout or GITHUB_API_TIMEOUT

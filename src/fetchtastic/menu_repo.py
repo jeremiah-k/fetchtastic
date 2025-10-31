@@ -11,6 +11,7 @@ from fetchtastic.constants import (
 )
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import (
+    get_effective_github_token,
     make_github_api_request,
 )
 
@@ -109,11 +110,20 @@ def fetch_repo_contents(path="", allow_env_token=True, github_token=None):
     else:
         api_url = base_url
 
+    # Handle token warning for thread safety
+    effective_token = get_effective_github_token(github_token, allow_env_token)
+    if not effective_token and allow_env_token:
+        # This warning is not thread-safe, but this function is not called concurrently.
+        logger.warning(
+            "No GITHUB_TOKEN found - using unauthenticated API requests (60/hour limit). "
+            "Set GITHUB_TOKEN environment variable or run 'fetchtastic setup github' for higher limits (5000/hour)."
+        )
+
     try:
         response = make_github_api_request(
             api_url,
-            github_token=github_token,
-            allow_env_token=allow_env_token,
+            github_token=effective_token,
+            allow_env_token=False,  # Already handled above
             timeout=GITHUB_API_TIMEOUT,
         )
         contents = response.json()

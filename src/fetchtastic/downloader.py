@@ -1799,7 +1799,6 @@ def _get_latest_releases_data(
             logger.info("Fetching releases from GitHub...")
 
         # Handle thread-safe token warning
-        effective_token = get_effective_github_token(github_token, allow_env_token)
         if not effective_token and allow_env_token:
             with _token_warning_lock:
                 if not _token_warning_shown:
