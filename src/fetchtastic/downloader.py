@@ -3135,19 +3135,9 @@ def check_and_download(
 
     # Only look for undownloaded newer releases if we haven't already added them during download loop
 
-    # Determine which newer releases should be reported as newly available:
-    # - If actions were taken (downloads attempted): Only report releases that were successfully downloaded
-    #   This prevents reporting versions as "available" when downloads actually failed
-    # - If no actions taken (e.g., all assets up-to-date): Report all newer releases
-    #   This ensures users are notified about new versions even when no downloads were needed
-    if actions_taken:
-        new_candidates: List[str] = [
-            t
-            for t in newer_tags
-            if t not in downloaded_versions and t not in new_versions_available
-        ]
-    else:
-        new_candidates = [t for t in newer_tags if t not in new_versions_available]
+    # Report all newer releases that were not successfully downloaded as newly available.
+    # This ensures users are notified about new versions even if the download failed.
+    new_candidates: List[str] = [t for t in newer_tags if t not in downloaded_versions]
 
     if not actions_taken and not new_candidates:
         logger.info(f"All {release_type} assets are up to date.")
