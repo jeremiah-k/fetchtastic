@@ -1169,9 +1169,11 @@ def get_commit_timestamp(
     cache_key = f"{repo_owner}/{repo_name}/{commit_hash}"
 
     # Check cache first (thread-safe) unless force_refresh is True
-    cache_operation = None  # Track what cache operation we're performing
     with _cache_lock:
-        if cache_key in _commit_timestamp_cache and not force_refresh:
+        if force_refresh and cache_key in _commit_timestamp_cache:
+            del _commit_timestamp_cache[cache_key]
+
+        if not force_refresh and cache_key in _commit_timestamp_cache:
             timestamp, cached_at = _commit_timestamp_cache[cache_key]
             age = datetime.now(timezone.utc) - cached_at
             if age.total_seconds() < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 3600:
@@ -1180,21 +1182,21 @@ def get_commit_timestamp(
                 )
                 return timestamp
             else:
-                # Remove expired cache entry
+                # Expired cache entry
                 logger.debug(
                     f"Cache expired for commit {commit_hash} (was {age.total_seconds():.0f}s ago, limit is {COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS}h)"
                 )
                 del _commit_timestamp_cache[cache_key]
-                cache_operation = "refresh"
+
+        # Determine cache operation after handling cache hits/expiry
+        if cache_key not in _commit_timestamp_cache:
+            cache_operation = "new"
+            logger.debug(f"Cache miss for commit {commit_hash} - fetching from API")
         else:
-            if cache_key in _commit_timestamp_cache:
-                cache_operation = "refresh"
-                logger.debug(
-                    f"Cache expired for commit {commit_hash} - refreshing from API"
-                )
-            else:
-                cache_operation = "new"
-                logger.debug(f"Cache miss for commit {commit_hash} - fetching from API")
+            cache_operation = "refresh"
+            logger.debug(
+                f"Refreshing cache for commit {commit_hash} - fetching from API"
+            )
 
     # Check for GitHub token in environment for better rate limits
     headers = {
@@ -1303,14 +1305,14 @@ def get_commit_timestamp(
         return None
 
 
-def _get_commit_hash_from_dir(dir_name: str) -> str:
+def _get_commit_hash_from_dir(dir_name: str) -> Optional[str]:
     """
     Extracts a commit hash from a prerelease directory name.
 
-    Searches the version portion (after the "firmware-" prefix) for a hexadecimal commit identifier of 6-40 characters and returns it in lowercase if found; returns an empty string when no commit hash is present.
+    Searches the version portion (after the "firmware-" prefix) for a hexadecimal commit identifier of 6-40 characters and returns it in lowercase if found; returns None when no commit hash is present.
 
     Returns:
-        commit_hash (str): Lowercase commit hash when present, otherwise an empty string.
+        commit_hash (Optional[str]): Lowercase commit hash when present, otherwise None.
     """
     version_part = extract_version(dir_name)  # Removes "firmware-" prefix
     # Use regex to find a hex string of 6-40 characters, which is more robust
@@ -1319,7 +1321,7 @@ def _get_commit_hash_from_dir(dir_name: str) -> str:
     )
     if commit_match:
         return commit_match.group(1).lower()
-    return ""
+    return None
 
 
 def check_for_prereleases(
@@ -1459,7 +1461,7 @@ def check_for_prereleases(
     commit_hashes = []
     for dir_name in matching_prerelease_dirs:
         commit_hash = _get_commit_hash_from_dir(dir_name)
-        commit_hashes.append(commit_hash if commit_hash else None)
+        commit_hashes.append(commit_hash)
 
     def _safe_get_timestamp(commit_hash):
         return (
