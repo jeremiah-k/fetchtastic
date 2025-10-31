@@ -1168,12 +1168,13 @@ def get_commit_timestamp(
     # Create cache key
     cache_key = f"{repo_owner}/{repo_name}/{commit_hash}"
 
-    # Check cache first (thread-safe) unless force_refresh is True
+    # Determine fetch reason before cache operations
+    fetch_reason = "new"
     with _cache_lock:
         if force_refresh and cache_key in _commit_timestamp_cache:
+            fetch_reason = "refresh"
             del _commit_timestamp_cache[cache_key]
-
-        if not force_refresh and cache_key in _commit_timestamp_cache:
+        elif not force_refresh and cache_key in _commit_timestamp_cache:
             timestamp, cached_at = _commit_timestamp_cache[cache_key]
             age = datetime.now(timezone.utc) - cached_at
             if age.total_seconds() < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 3600:
@@ -1183,20 +1184,19 @@ def get_commit_timestamp(
                 return timestamp
             else:
                 # Expired cache entry
+                fetch_reason = "refresh"
                 logger.debug(
                     f"Cache expired for commit {commit_hash} (was {age.total_seconds():.0f}s ago, limit is {COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS}h)"
                 )
                 del _commit_timestamp_cache[cache_key]
 
-        # Determine cache operation after handling cache hits/expiry
-        if cache_key not in _commit_timestamp_cache:
-            cache_operation = "new"
-            logger.debug(f"Cache miss for commit {commit_hash} - fetching from API")
-        else:
-            cache_operation = "refresh"
+        # Log the fetch reason
+        if fetch_reason == "refresh":
             logger.debug(
                 f"Refreshing cache for commit {commit_hash} - fetching from API"
             )
+        else:
+            logger.debug(f"Cache miss for commit {commit_hash} - fetching from API")
 
     # Check for GitHub token in environment for better rate limits
     headers = {
@@ -1255,7 +1255,7 @@ def get_commit_timestamp(
                     timestamp,
                     datetime.now(timezone.utc),
                 )
-            if cache_operation == "refresh":
+            if fetch_reason == "refresh":
                 logger.debug(
                     f"Refreshed cached timestamp for commit {commit_hash} (updated from API)"
                 )
