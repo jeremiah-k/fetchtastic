@@ -857,9 +857,14 @@ def _read_prerelease_tracking_data(tracking_file):
 
     if not read_from_json_success:
         # Fallback to legacy text format if JSON read failed or file didn't exist
-        commits, current_release = _read_text_tracking_file(tracking_file)
+        commits_raw, current_release = _read_text_tracking_file(tracking_file)
         if current_release and current_release != "unknown":
             current_release = _ensure_v_prefix_if_missing(current_release)
+        # Normalize commits to version+hash format for consistency
+        commits = [
+            _normalize_commit_identifier(commit, current_release)
+            for commit in commits_raw
+        ]
         last_updated = None
 
     return commits, current_release, last_updated
@@ -1010,7 +1015,7 @@ def _update_tracking_with_newest_prerelease(
         return len(existing_commits)
 
     # Update tracking with the new prerelease ID
-    updated_commits = [*existing_commits, new_prerelease_id]
+    updated_commits = list(dict.fromkeys([*existing_commits, new_prerelease_id]))
     # Extract commit hash for the newest prerelease directory
     commit_hash = _get_commit_hash_from_dir(newest_prerelease_dir)
 

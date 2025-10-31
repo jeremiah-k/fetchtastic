@@ -568,8 +568,8 @@ def test_prerelease_tracking_edge_cases(tmp_path):
     info = downloader.get_prerelease_tracking_info(str(old_format_dir))
     assert info["release"] == "unknown"
     assert info["prerelease_count"] == 2
-    assert "abcdef" in info["commits"]
-    assert "ghijkl" in info["commits"]
+    assert "unknown.abcdef" in info["commits"]  # normalized hash
+    assert "ghijkl" in info["commits"]  # non-hash left as-is
 
     # Test reading non-existent tracking file
     no_file_dir = tmp_path / "no_file_test"

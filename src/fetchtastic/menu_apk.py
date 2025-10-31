@@ -2,7 +2,6 @@
 
 import json
 
-import requests
 from pick import pick
 
 from fetchtastic.constants import (
