@@ -992,9 +992,7 @@ def _update_tracking_with_newest_prerelease(
     )
 
     # Check if we need to reset due to new official release
-    clean_latest_release = (
-        _extract_clean_version(latest_release_tag) or latest_release_tag
-    )
+    clean_latest_release = _extract_clean_version(latest_release_tag)
     if existing_release and existing_release != clean_latest_release:
         logger.info(
             f"New release {latest_release_tag} detected (previously tracking {existing_release}). Resetting prerelease tracking."
@@ -1019,8 +1017,9 @@ def _update_tracking_with_newest_prerelease(
     # Write updated tracking data in new format
     now_iso = datetime.now().astimezone().isoformat()
     new_tracking_data = {
-        "version": _extract_clean_version(latest_release_tag)
-        or latest_release_tag,  # base version without hash
+        "version": _extract_clean_version(
+            latest_release_tag
+        ),  # base version without hash
         "commits": updated_commits,  # full prerelease IDs in version+hash format
         "hash": commit_hash,  # optional single latest hash
         "count": len(updated_commits),  # total tracked prereleases
