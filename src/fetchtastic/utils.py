@@ -101,7 +101,6 @@ def make_github_api_request(
     - Setting proper GitHub API headers
     - Authentication using provided token or environment variable
     - Rate limit warnings
-    - 401 authentication failure retries
     - Polite delays after requests
 
     Parameters:
@@ -146,9 +145,7 @@ def make_github_api_request(
     response.raise_for_status()
 
     # Log API response info for debugging
-    content_length = (
-        len(response.content) if hasattr(response.content, "__len__") else "unknown"
-    )
+    content_length = response.headers.get("Content-Length", "unknown")
     logger.debug(
         f"GitHub API response: {response.status_code} for {url} ({content_length} bytes)"
     )

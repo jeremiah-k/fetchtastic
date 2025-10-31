@@ -1217,8 +1217,7 @@ def get_commit_timestamp(
         api_url = f"{GITHUB_API_BASE}/{repo_owner}/{repo_name}/commits/{commit_hash}"
         response = make_github_api_request(
             api_url,
-            github_token=github_token,
-            allow_env_token=False,  # We already handled warning above
+            github_token=effective_token,
             timeout=GITHUB_API_TIMEOUT,
         )
 
@@ -1731,8 +1730,7 @@ def _get_latest_releases_data(
         scan_count = max(1, min(100, scan_count))
         response: requests.Response = make_github_api_request(
             url,
-            github_token=github_token,
-            allow_env_token=False,  # We already handled warning above
+            github_token=effective_token,
             params={"per_page": scan_count},
             timeout=GITHUB_API_TIMEOUT,
         )
