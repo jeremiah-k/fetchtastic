@@ -1,20 +1,16 @@
 import os
-import time
 from typing import Any, List, Tuple
 
 import requests
 from pick import pick
 
 from fetchtastic.constants import (
-    API_CALL_DELAY,
     FIRMWARE_DIR_PREFIX,
     GITHUB_API_TIMEOUT,
     MESHTASTIC_GITHUB_IO_CONTENTS_URL,
 )
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import (
-    get_effective_github_token,
-    get_user_agent,
     make_github_api_request,
 )
 

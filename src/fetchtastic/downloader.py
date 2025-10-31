@@ -230,7 +230,10 @@ def _newer_tags_since_saved(
     If tags_order is ordered newest-first, this returns all tags preceding the first occurrence of saved_release_tag. If saved_release_tag is None, missing, or not found in tags_order, the full tags_order is returned (treated as all newer).
     """
     try:
-        idx_saved = tags_order.index(saved_release_tag)
+        if saved_release_tag is not None:
+            idx_saved = tags_order.index(saved_release_tag)
+        else:
+            idx_saved = len(tags_order)
     except (ValueError, TypeError):
         idx_saved = len(tags_order)
     return tags_order[:idx_saved]
@@ -384,6 +387,10 @@ def cleanup_superseded_prereleases(
             )
 
             if can_compare_tuples:
+                # Both tuples are guaranteed non-None by can_compare_tuples check
+                assert (
+                    dir_release_tuple is not None and latest_release_tuple is not None
+                )
                 if dir_release_tuple > latest_release_tuple:
                     continue
                 # Prerelease is older or same version, so it's superseded.
@@ -1658,8 +1665,8 @@ def _send_ntfy_notification(
         title (Optional[str]): The title of the notification.
     """
     if ntfy_server and ntfy_topic:
+        ntfy_url: str = f"{ntfy_server.rstrip('/')}/{ntfy_topic}"
         try:
-            ntfy_url: str = f"{ntfy_server.rstrip('/')}/{ntfy_topic}"
             headers = {
                 "Content-Type": "text/plain; charset=utf-8",
             }
@@ -1705,6 +1712,8 @@ def _get_latest_releases_data(
         to missing or invalid keys, unsorted JSON list is returned.
     """
     global _token_warning_shown
+    # Initialize effective_token to handle unbound variable in except blocks
+    effective_token = get_effective_github_token(github_token, allow_env_token)
     try:
         # Add progress feedback
         url_l = url.lower()
