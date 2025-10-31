@@ -1,5 +1,7 @@
 # src/fetchtastic/menu_firmware.py
 
+import json
+
 import requests
 from pick import pick
 
@@ -24,7 +26,11 @@ def fetch_firmware_assets():
     """
     response = make_github_api_request(MESHTASTIC_FIRMWARE_RELEASES_URL)
 
-    releases = response.json()
+    try:
+        releases = response.json()
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to decode JSON from GitHub API: {e}")
+        return []
     if not isinstance(releases, list) or not releases:
         logger.warning("No firmware releases found from GitHub API.")
         return []

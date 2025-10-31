@@ -1545,15 +1545,23 @@ def check_for_prereleases(
 
     dirs_with_timestamps = list(zip(matching_prerelease_dirs, timestamps, strict=True))
 
-    # Sort by timestamp (newest first), placing items without a timestamp at end.
-    dirs_with_timestamps.sort(
-        key=lambda x: (
-            x[1].timestamp()
-            if x[1] is not None
-            else float("-inf")  # ensure missing timestamps sort last with reverse=True
-        ),
-        reverse=True,
-    )
+    # Sort prereleases by recency: timestamped items first (by timestamp), then non-timestamped (by commit hash)
+    # This ensures that when timestamps are available, we use them for accurate recency.
+    # When timestamps fail (e.g., API errors), we fall back to commit hash for deterministic ordering.
+    # Note: All prereleases here have the same base version, so version comparison doesn't help distinguish recency.
+    def sort_key(item):
+        dir_name, timestamp = item
+        commit_hash = _get_commit_hash_from_dir(dir_name)
+
+        if timestamp is not None:
+            # Primary: items with timestamps, sorted by timestamp (newest first)
+            return (1, timestamp.timestamp())
+        else:
+            # Fallback: items without timestamps, sorted by commit hash (lexicographically descending)
+            # Commit hashes are random, but this provides a deterministic fallback ordering
+            return (0, commit_hash or "")
+
+    dirs_with_timestamps.sort(key=sort_key, reverse=True)
 
     # Take newest one
     target_prereleases = [dir_name for dir_name, _ in dirs_with_timestamps[:1]]
@@ -1816,7 +1824,11 @@ def _get_latest_releases_data(
             timeout=GITHUB_API_TIMEOUT,
         )
 
-        releases: List[Dict[str, Any]] = response.json()
+        try:
+            releases: List[Dict[str, Any]] = response.json()
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to decode JSON from {url}: {e}")
+            return []
 
         # Log how many releases were fetched
         logger.debug(f"Fetched {len(releases)} releases from GitHub API")
