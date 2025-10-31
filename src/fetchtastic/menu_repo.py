@@ -12,7 +12,11 @@ from fetchtastic.constants import (
     MESHTASTIC_GITHUB_IO_CONTENTS_URL,
 )
 from fetchtastic.log_utils import logger
-from fetchtastic.utils import get_effective_github_token, get_user_agent
+from fetchtastic.utils import (
+    get_effective_github_token,
+    get_user_agent,
+    make_github_api_request,
+)
 
 # Module-level constants for repository content filtering
 EXCLUDED_DIRS = [".git", ".github", "node_modules", "__pycache__", ".vscode"]
@@ -110,32 +114,12 @@ def fetch_repo_contents(path="", allow_env_token=True, github_token=None):
         api_url = base_url
 
     try:
-        # Prepare headers with optional authentication
-        headers = {
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-            "User-Agent": get_user_agent(),
-        }
-
-        # Add authentication if token available
-        effective_token = get_effective_github_token(github_token, allow_env_token)
-        if effective_token:
-            headers["Authorization"] = f"token {effective_token}"
-
-        response = requests.get(api_url, timeout=GITHUB_API_TIMEOUT, headers=headers)
-        response.raise_for_status()
-
-        # Log API response info for debugging
-        content_length = response.headers.get("Content-Length") or str(
-            len(response.content)
+        response = make_github_api_request(
+            api_url,
+            github_token=github_token,
+            allow_env_token=allow_env_token,
+            timeout=GITHUB_API_TIMEOUT,
         )
-        logger.debug(
-            f"GitHub API response: {response.status_code} for {api_url} ({content_length} bytes)"
-        )
-
-        # Small delay to be respectful to GitHub API
-        time.sleep(API_CALL_DELAY)
-
         contents = response.json()
         return _process_repo_contents(contents)
 
