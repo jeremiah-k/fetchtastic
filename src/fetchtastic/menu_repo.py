@@ -109,9 +109,6 @@ def fetch_repo_contents(path="", allow_env_token=True, github_token=None):
     else:
         api_url = base_url
 
-    # Get effective token for authentication logic
-    get_effective_github_token(github_token, allow_env_token)
-
     try:
         response = make_github_api_request(
             api_url,

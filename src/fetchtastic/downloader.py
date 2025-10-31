@@ -682,8 +682,11 @@ def _read_text_tracking_file(tracking_file):
 
 
 def _ensure_v_prefix_if_missing(version: Optional[str]) -> Optional[str]:
-    """Add 'v' prefix to version if missing."""
-    if version and not version.startswith("v"):
+    """Add 'v' prefix to version if missing (case-insensitive)."""
+    if version is None:
+        return None
+    version = version.strip()
+    if version and not version.lower().startswith("v"):
         return f"v{version}"
     return version
 
@@ -733,8 +736,8 @@ def _extract_clean_version(version_with_hash: Optional[str]) -> Optional[str]:
     if not version_with_hash:
         return None
 
-    # Remove 'v' prefix for processing
-    version_part = version_with_hash.lstrip("v")
+    # Remove leading 'v'/'V' for processing
+    version_part = version_with_hash.lstrip("vV")
 
     # Split on first dot after version numbers to separate version from hash
     # Pattern: major.minor.patch[.hash]
@@ -844,6 +847,8 @@ def _read_prerelease_tracking_data(tracking_file):
     if not read_from_json_success:
         # Fallback to legacy text format if JSON read failed or file didn't exist
         commits, current_release = _read_text_tracking_file(tracking_file)
+        if current_release and current_release != "unknown":
+            current_release = _ensure_v_prefix_if_missing(current_release)
         last_updated = None
 
     return commits, current_release, last_updated
@@ -1269,8 +1274,9 @@ def clear_commit_timestamp_cache() -> None:
     """Clear the global commit timestamp cache. Useful for testing."""
     global _commit_timestamp_cache
 
-    # Clear cache (no lock needed for dict clear)
-    _commit_timestamp_cache.clear()
+    # Clear cache under lock to avoid races with concurrent readers/writers
+    with _cache_lock:
+        _commit_timestamp_cache.clear()
 
     # Note: Token warning flag is now centralized in utils.py and will be cleared
     # when the application restarts, which is appropriate behavior.
@@ -2022,6 +2028,7 @@ def _process_firmware_downloads(
                 selected_patterns=config.get("SELECTED_FIRMWARE_ASSETS", []),  # type: ignore
                 auto_extract=config.get("AUTO_EXTRACT", False),
                 exclude_patterns=config.get("EXCLUDE_PATTERNS", []),  # type: ignore
+                force_refresh=force_refresh,
             )
         )
         downloaded_firmwares.extend(fw_downloaded)
@@ -2104,7 +2111,7 @@ def _process_firmware_downloads(
 
 
 def _process_apk_downloads(
-    config: Dict[str, Any], paths_and_urls: Dict[str, str]
+    config: Dict[str, Any], paths_and_urls: Dict[str, str], force_refresh: bool = False
 ) -> Tuple[List[str], List[str], List[Dict[str, str]], Optional[str]]:
     """
     Process Android APK releases: fetch release metadata, download selected APK assets, and report what changed.
@@ -2168,7 +2175,7 @@ def _process_apk_downloads(
                 [],
                 selected_patterns=config.get("SELECTED_APK_ASSETS", []),  # type: ignore
                 auto_extract=False,
-                exclude_patterns=[],
+                force_refresh=force_refresh,
             )
         )
         downloaded_apks.extend(apk_downloaded)
@@ -2649,6 +2656,7 @@ def check_and_download(
     selected_patterns: Optional[List[str]] = None,
     auto_extract: bool = False,
     exclude_patterns: Optional[List[str]] = None,
+    force_refresh: bool = False,
 ) -> Tuple[List[str], List[str], List[Dict[str, str]]]:
     """
     Check releases for missing or corrupted assets, download matching assets, optionally extract ZIPs, and prune old release directories.
@@ -2762,7 +2770,7 @@ def check_and_download(
                     continue
 
             # Check if this release has already been downloaded and is complete
-            if _is_release_complete(
+            if not force_refresh and _is_release_complete(
                 release_data, release_dir, selected_patterns, exclude_patterns_list
             ):
                 logger.debug(
@@ -3319,7 +3327,7 @@ def main(force_refresh: bool = False) -> None:
         latest_firmware_version,
     ) = _process_firmware_downloads(config, paths_and_urls, force_refresh)
     downloaded_apks, new_apk_versions, failed_apk_list, latest_apk_version = (
-        _process_apk_downloads(config, paths_and_urls)
+        _process_apk_downloads(config, paths_and_urls, force_refresh)
     )
 
     if failed_firmware_list:
