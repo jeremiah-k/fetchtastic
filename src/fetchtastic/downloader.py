@@ -690,6 +690,7 @@ def _read_prerelease_tracking_data(tracking_file):
                 tracking_data = json.load(f)
 
                 # Check for new format (version, hash, count)
+                # Note: "count" is not used; reserved for future aggregation.
                 commits_raw = []
                 if "version" in tracking_data and (
                     "hash" in tracking_data or "commits" in tracking_data
@@ -3132,8 +3133,6 @@ def check_and_download(
         if (tag := _sanitize_path_component(rd.get("tag_name"))) is not None
     ]
     newer_tags: List[str] = _newer_tags_since_saved(tags_order, saved_release_tag)
-
-    # Only look for undownloaded newer releases if we haven't already added them during download loop
 
     # Report all newer releases that were not successfully downloaded as newly available.
     # This ensures users are notified about new versions even if the download failed.

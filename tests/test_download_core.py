@@ -339,8 +339,6 @@ def test_check_and_download_release_already_complete_logs_up_to_date(tmp_path, c
     zip_name = "firmware-rak4631-1.0.0.zip"
 
     # Prepare a valid zip already present in the release directory
-    import os
-    import zipfile
 
     release_dir = tmp_path / release_tag
     release_dir.mkdir()
