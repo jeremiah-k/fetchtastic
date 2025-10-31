@@ -9,7 +9,6 @@ This module contains tests for:
 - File integrity verification
 """
 
-import json
 import os
 import zipfile
 from pathlib import Path
@@ -853,7 +852,7 @@ class TestDownloadCoreIntegration:
             assert failed == []
 
     @pytest.mark.core_downloads
-    def test_partial_download_failure_notifies_all_new_versions(self, tmp_path, mocker):
+    def test_partial_download_failure_notifies_all_new_versions(self, tmp_path):
         """Test that when some downloads succeed and some fail, all new versions are reported."""
         releases = [
             {
@@ -886,7 +885,7 @@ class TestDownloadCoreIntegration:
         download_dir = str(tmp_path / "downloads")
 
         # Mock download to succeed for v1.0.0 but fail for v1.1.0
-        def mock_download(url, path):
+        def mock_download(url, _path):
             if "firmware1.zip" in url:
                 return True  # v1.0.0 succeeds
             else:
