@@ -13,17 +13,20 @@ import zipfile
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from typing import IO, Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import IO, TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
 
 import requests
 from packaging.version import InvalidVersion, Version
 from packaging.version import parse as parse_version
 
 # Try to import LegacyVersion for type annotations (available in older packaging versions)
-try:
-    from packaging.version import LegacyVersion
-except ImportError:
-    LegacyVersion = type(None)  # type: ignore
+if TYPE_CHECKING:
+    try:
+        from packaging.version import LegacyVersion  # type: ignore
+    except ImportError:
+        LegacyVersion = None  # type: ignore
+else:
+    LegacyVersion = None  # Runtime fallback
 
 
 from fetchtastic import menu_repo, setup_config
@@ -97,7 +100,7 @@ VERSION_BASE_RX = re.compile(r"^(\d+(?:\.\d+)*)")
 
 def _normalize_version(
     version: Optional[str],
-) -> Optional[Union[Version, LegacyVersion]]:
+) -> Optional[Union[Version, Any]]:  # Use Any when LegacyVersion not available
     """
     Normalize a version string into a packaging `Version` object when possible.
 
