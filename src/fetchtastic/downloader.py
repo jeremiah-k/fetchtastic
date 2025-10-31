@@ -1381,8 +1381,13 @@ def get_commit_timestamp(
                 f"HTTP error getting timestamp for commit {commit_hash}: {e}"
             )
         return None
-    except (requests.RequestException, ValueError, KeyError) as e:
-        logger.warning(f"Failed to get timestamp for commit {commit_hash}: {e}")
+    except requests.RequestException as e:
+        logger.warning(f"Network error getting timestamp for commit {commit_hash}: {e}")
+        return None
+    except (json.JSONDecodeError, ValueError) as e:
+        logger.warning(
+            f"Failed to parse API response or timestamp for commit {commit_hash}: {e}"
+        )
         return None
 
 
@@ -1475,7 +1480,7 @@ def check_for_prereleases(
         if not _atomic_write_json(
             tracking_file,
             {
-                "version": latest_release_tag,
+                "version": clean_latest_release,
                 "commits": [],
                 "last_updated": datetime.now().astimezone().isoformat(),
             },
