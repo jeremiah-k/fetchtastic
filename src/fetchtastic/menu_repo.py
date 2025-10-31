@@ -1,6 +1,5 @@
 import os
 import threading
-from typing import Any, List, Tuple
 
 import requests
 from pick import pick
@@ -281,11 +280,8 @@ Select "[Quit]" to exit without downloading."""
         print("No files selected for download.")
         return None
 
-    # Type annotation for pick with multiselect=True returns List[Tuple[str, Any]]
-    typed_options: List[Tuple[str, Any]] = selected_options  # type: ignore
-
     # Check if quit option was selected
-    for option in typed_options:
+    for option in selected_options:
         option_name = option[0] if isinstance(option, (tuple, list)) else str(option)
         if option_name == "[Quit]":
             print("Exiting without downloading.")
@@ -293,7 +289,7 @@ Select "[Quit]" to exit without downloading."""
 
     # Get the full file information for selected files
     selected_files = []
-    for option in typed_options:
+    for option in selected_options:
         option_name = option[0] if isinstance(option, (tuple, list)) else str(option)
         for file in files:
             if file["name"] == option_name:
