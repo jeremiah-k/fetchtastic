@@ -709,14 +709,6 @@ def _normalize_commit_identifier(commit_id: str, release_version: Optional[str])
     # Fallback: return as-is
     return commit_id
 
-    # If it's just a hash, prefix with the release version (without 'v')
-    if release_version and re.match(r"^[a-f0-9]{6,}$", commit_id.lower()):
-        version_without_v = release_version.lstrip("v")
-        return f"{version_without_v}.{commit_id.lower()}"
-
-    # Fallback: return as-is lowercase
-    return commit_id.lower()
-
 
 def _extract_clean_version(version_with_hash: Optional[str]) -> Optional[str]:
     """
@@ -1234,8 +1226,13 @@ _cache_lock = threading.Lock()  # Lock for thread-safe cache access
 def clear_commit_timestamp_cache() -> None:
     """Clear the global commit timestamp cache. Useful for testing."""
     global _commit_timestamp_cache, _token_warning_shown
+
+    # Clear cache first (no lock needed for dict clear)
     _commit_timestamp_cache.clear()
-    _token_warning_shown = False
+
+    # Clear token warning flag under lock to prevent race conditions
+    with _token_warning_lock:
+        _token_warning_shown = False
 
 
 def get_commit_timestamp(
