@@ -678,6 +678,74 @@ def _ensure_v_prefix_if_missing(version: Optional[str]) -> Optional[str]:
     return version
 
 
+def _normalize_commit_identifier(commit_id: str, release_version: Optional[str]) -> str:
+    """
+    Normalize a commit identifier to version+hash format for consistency.
+
+    Args:
+        commit_id: The commit identifier (may be hash-only or version+hash)
+        release_version: The release version (e.g., "v2.7.13") to use for hash-only entries
+
+    Returns:
+        Normalized commit identifier in version+hash format (e.g., "2.7.13.abcdef")
+    """
+    commit_id = commit_id.lower()
+
+    # If it already looks like version+hash (contains version numbers and hex chars), return as-is
+    if re.search(r"^\d+\.\d+\.\d+\.[a-f0-9]{6,}", commit_id):
+        return commit_id
+
+    # If it's just a hash, try to extract version from release_version
+    if re.match(r"^[a-f0-9]{6,}$", commit_id):
+        if release_version:
+            # Extract version part (remove 'v' prefix and any hash)
+            clean_version = _extract_clean_version(release_version)
+            if clean_version:
+                version_without_v = clean_version.lstrip("v")
+                return f"{version_without_v}.{commit_id}"
+        # If we can't determine version, just return hash as-is
+        return commit_id
+
+    # Fallback: return as-is
+    return commit_id
+
+    # If it's just a hash, prefix with the release version (without 'v')
+    if release_version and re.match(r"^[a-f0-9]{6,}$", commit_id.lower()):
+        version_without_v = release_version.lstrip("v")
+        return f"{version_without_v}.{commit_id.lower()}"
+
+    # Fallback: return as-is lowercase
+    return commit_id.lower()
+
+
+def _extract_clean_version(version_with_hash: Optional[str]) -> Optional[str]:
+    """
+    Extract clean version from a string that may contain version+hash.
+
+    Args:
+        version_with_hash: String that may be like "v2.7.13" or "v2.7.13.abcdef"
+
+    Returns:
+        Clean version string (e.g., "v2.7.13") or None if input is None
+    """
+    if not version_with_hash:
+        return None
+
+    # Remove 'v' prefix for processing
+    version_part = version_with_hash.lstrip("v")
+
+    # Split on first dot after version numbers to separate version from hash
+    # Pattern: major.minor.patch[.hash]
+    parts = version_part.split(".")
+    if len(parts) >= 3:
+        # Take first 3 parts as version (major.minor.patch)
+        clean_version = ".".join(parts[:3])
+        return f"v{clean_version}"
+
+    # If it doesn't look like version+hash, return as-is with v prefix
+    return _ensure_v_prefix_if_missing(version_with_hash)
+
+
 def _read_prerelease_tracking_data(tracking_file):
     """
     Read prerelease tracking information from a JSON tracking file or fall back to the legacy text format.
@@ -722,8 +790,14 @@ def _read_prerelease_tracking_data(tracking_file):
                     )
                     commits_raw = tracking_data.get("commits", [])
 
-                # Normalize commits to lowercase for consistency, done once
-                commits = [commit.lower() for commit in (commits_raw or [])]
+                # Normalize commits to version+hash format for consistency
+                commits = []
+                for commit in commits_raw or []:
+                    normalized = _normalize_commit_identifier(
+                        commit.lower(), current_release
+                    )
+                    if normalized:
+                        commits.append(normalized)
                 last_updated = tracking_data.get("last_updated") or tracking_data.get(
                     "timestamp"
                 )
@@ -890,8 +964,8 @@ def _update_tracking_with_newest_prerelease(
     # Write updated tracking data in new format
     now_iso = datetime.now().astimezone().isoformat()
     new_tracking_data = {
-        "version": latest_release_tag,  # normalized with leading 'v'
-        "commits": updated_commits,  # full prerelease IDs
+        "version": latest_release_tag,  # preserve as-is (may include hash)
+        "commits": updated_commits,  # full prerelease IDs in version+hash format
         "hash": commit_hash,  # optional single latest hash
         "count": len(updated_commits),  # total tracked prereleases
         "timestamp": now_iso,  # per PR format
