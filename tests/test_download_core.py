@@ -9,6 +9,7 @@ This module contains tests for:
 - File integrity verification
 """
 
+import json
 import os
 import zipfile
 from pathlib import Path
@@ -42,6 +43,7 @@ def write_dummy_file():
     return _write
 
 
+@pytest.mark.core_downloads
 def test_cleanup_old_versions(tmp_path):
     """Test the logic for cleaning up old version directories."""
     firmware_dir = tmp_path / "firmware"
@@ -64,6 +66,7 @@ def test_cleanup_old_versions(tmp_path):
     assert (firmware_dir / "prerelease").exists()
 
 
+@pytest.mark.core_downloads
 def test_check_and_download_logs_when_no_assets_match(tmp_path, caplog):
     """When a release is new but no assets match selection, log a helpful message."""
     # Capture logs from 'fetchtastic' logger used by downloader
@@ -127,6 +130,7 @@ def test_check_and_download_logs_when_no_assets_match(tmp_path, caplog):
     assert "current selection/exclude filters" in caplog.text
 
 
+@pytest.mark.core_downloads
 def test_new_versions_detection_with_saved_tag(tmp_path):
     """
     Verify new-release detection honors a saved latest-tag and that only releases newer than the saved tag (by list position, newest-first) are considered — but only releases with matching asset patterns are reported.
@@ -199,6 +203,7 @@ def test_new_versions_detection_with_saved_tag(tmp_path):
     assert new_versions == []
 
 
+@pytest.mark.core_downloads
 def test_check_and_download_happy_path_with_extraction(tmp_path, caplog):
     """Covers successful download path, latest tag save, and auto-extract."""
     caplog.set_level("INFO", logger="fetchtastic")
@@ -274,6 +279,7 @@ def test_check_and_download_happy_path_with_extraction(tmp_path, caplog):
         assert os.access(extracted, os.X_OK)
 
 
+@pytest.mark.core_downloads
 def test_auto_extract_with_empty_patterns_does_not_extract(tmp_path, caplog):
     """When AUTO_EXTRACT is True but EXTRACT_PATTERNS is empty, do not extract any files."""
     caplog.set_level("INFO", logger="fetchtastic")
@@ -331,6 +337,7 @@ def test_auto_extract_with_empty_patterns_does_not_extract(tmp_path, caplog):
     assert not extracted.exists()
 
 
+@pytest.mark.core_downloads
 def test_check_and_download_release_already_complete_logs_up_to_date(tmp_path, caplog):
     """When a release is already downloaded and up-to-date, log that it's up to date."""
     caplog.set_level("INFO", logger="fetchtastic")
@@ -386,6 +393,7 @@ def test_check_and_download_release_already_complete_logs_up_to_date(tmp_path, c
     assert new_versions == []
 
 
+@pytest.mark.core_downloads
 def test_check_and_download_corrupted_existing_zip_records_failure(tmp_path):
     """When an existing ZIP is corrupted, it should be treated as a failure and redownloaded."""
     release_tag = "v1.0.0"
@@ -445,6 +453,7 @@ def test_check_and_download_corrupted_existing_zip_records_failure(tmp_path):
     assert _new_versions == []
 
 
+@pytest.mark.core_downloads
 def test_check_and_download_redownloads_mismatched_non_zip(tmp_path):
     """Non-ZIP files with mismatched sizes should be redownloaded."""
     release_tag = "v1.0.0"
@@ -499,6 +508,7 @@ def test_check_and_download_redownloads_mismatched_non_zip(tmp_path):
         mock_download.assert_called_once()
 
 
+@pytest.mark.core_downloads
 def test_check_and_download_missing_download_url(tmp_path):
     """Assets missing download_url should be skipped."""
     releases = [
@@ -542,6 +552,7 @@ def test_check_and_download_missing_download_url(tmp_path):
 class TestDownloadCoreIntegration:
     """Integration tests for core download functionality."""
 
+    @pytest.mark.core_downloads
     def test_check_and_download_comprehensive_flow(self, mocker, tmp_path):
         """Test comprehensive download flow with all features."""
         releases = [
@@ -590,6 +601,7 @@ class TestDownloadCoreIntegration:
         # Check that cleanup was called with correct versions to keep
         mock_cleanup.assert_called_once()
 
+    @pytest.mark.core_downloads
     def test_download_with_multiple_assets_selection(self, tmp_path):
         """Test download behavior with multiple assets and pattern selection."""
         releases = [
@@ -641,6 +653,7 @@ class TestDownloadCoreIntegration:
             assert new == ["v1.0.0"]
             assert failed == []
 
+    @pytest.mark.core_downloads
     def test_download_with_exclude_patterns(self, tmp_path):
         """Test download behavior with exclude patterns."""
         releases = [
@@ -687,6 +700,7 @@ class TestDownloadCoreIntegration:
             assert new == ["v1.0.0"]
             assert failed == []
 
+    @pytest.mark.core_downloads
     def test_download_error_handling_and_recovery(self, tmp_path):
         """Test error handling during download process."""
         releases = [
@@ -733,6 +747,7 @@ class TestDownloadCoreIntegration:
             assert failed[0]["release_tag"] == "v1.0.0"
             assert failed[0]["reason"] == "download_file_with_retry returned False"
 
+    @pytest.mark.core_downloads
     def test_version_tracking_across_multiple_runs(self, tmp_path):
         """Test version tracking across multiple download runs."""
         latest_release_file = str(tmp_path / "latest.txt")
@@ -837,6 +852,7 @@ class TestDownloadCoreIntegration:
             assert new == ["v2.0.0"]
             assert failed == []
 
+    @pytest.mark.core_downloads
     def test_partial_download_failure_notifies_all_new_versions(self, tmp_path, mocker):
         """Test that when some downloads succeed and some fail, all new versions are reported."""
         releases = [
@@ -898,3 +914,53 @@ class TestDownloadCoreIntegration:
             # Should have one failure
             assert len(failed) == 1
             assert failed[0]["release_tag"] == "v1.1.0"
+
+    @pytest.mark.core_downloads
+    def test_no_downloads_attempted_still_reports_new_versions(self, tmp_path):
+        """Test that when no downloads are attempted, new versions are still reported."""
+        releases = [
+            {
+                "tag_name": "v1.0.0",
+                "published_at": "2024-01-01T00:00:00Z",
+                "assets": [
+                    {
+                        "name": "firmware-rak4631-1.0.0.zip",
+                        "browser_download_url": "https://example.com/firmware.zip",
+                        "size": 1000,
+                    }
+                ],
+                "body": "Release notes",
+            }
+        ]
+
+        latest_release_file = str(tmp_path / "latest.txt")
+        download_dir = str(tmp_path / "downloads")
+
+        # Create the download directory and file to simulate already downloaded
+        release_dir = tmp_path / "downloads" / "v1.0.0"
+        release_dir.mkdir(parents=True)
+        zip_path = release_dir / "firmware-rak4631-1.0.0.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("test.txt", "x" * 900)
+
+        # Write latest release file
+        with open(latest_release_file, "w") as f:
+            f.write("v1.0.0")
+
+        downloaded, new, failed = downloader.check_and_download(
+            releases,
+            latest_release_file,
+            "Firmware",
+            download_dir,
+            versions_to_keep=2,
+            extract_patterns=[],
+            selected_patterns=["rak4631-"],
+            auto_extract=False,
+            exclude_patterns=[],
+        )
+
+        # Should not download anything (already exists and matches)
+        assert downloaded == []
+        # Should not report new versions since it's the same as saved
+        assert new == []
+        assert failed == []
