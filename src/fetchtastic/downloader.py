@@ -872,9 +872,9 @@ def _update_tracking_with_newest_prerelease(
     # Update tracking with the new prerelease ID
     updated_commits = [*existing_commits, new_prerelease_id]
 
-    # Write updated tracking data
+    # Write updated tracking data in new format
     new_tracking_data = {
-        "release": latest_release_tag,
+        "version": latest_release_tag,
         "commits": updated_commits,
         "last_updated": datetime.now().astimezone().isoformat(),
     }

@@ -338,11 +338,11 @@ def test_prerelease_tracking_functionality(
     with open(tracking_file, "r") as f:
         tracking_data = json.load(f)
 
-    # Check JSON tracking file format
-    assert "release" in tracking_data
+    # Check JSON tracking file format (new format)
+    assert "version" in tracking_data
     assert "commits" in tracking_data
     assert "last_updated" in tracking_data
-    assert tracking_data["release"] == latest_release_tag
+    assert tracking_data["version"] == latest_release_tag
 
     # Add shape check for last_updated to validate ISO-8601 format
     import re
