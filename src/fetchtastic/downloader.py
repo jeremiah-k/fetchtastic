@@ -1596,7 +1596,7 @@ def get_commit_timestamp(
         KeyError,
         ValueError,
     ) as e:
-        logger.debug(f"Failed to get commit timestamp for {commit_hash}: {e}")
+        logger.warning(f"Failed to get commit timestamp for {commit_hash}: {e}")
 
     return None
 
