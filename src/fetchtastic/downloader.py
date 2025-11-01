@@ -278,7 +278,7 @@ def compare_versions(version1, version2):
         """
         Produce a natural-sort key by splitting a string into contiguous digit and alphabetic runs.
 
-        The input is lowercased and punctuation is ignored by only capturing sequences of digits or letters. Numeric runs are converted to integers while alphabetic runs remain as lowercase strings; the resulting list can be used as a sorting key for human-friendly ordering (e.g., "v2" < "v10").
+        The input is lowercased and punctuation is ignored by only capturing sequences of digits or letters. Numeric runs are converted to integers and alphabetic runs remain as lowercase strings. The function returns a list of tagged tuples that can be used as a sorting key for human-friendly ordering (e.g., "v2" < "v10").
 
         Returns:
             list[tuple[int, int | str]]: Tagged components (1,int) for digits and (0,str) for letters to ensure type-safe comparisons.
@@ -851,7 +851,7 @@ def _read_prerelease_tracking_data(tracking_file):
                 if "version" in tracking_data and (
                     "hash" in tracking_data or "commits" in tracking_data
                 ):
-                    # New format: convert to legacy format for compatibility
+                    # New format: parse into standard internal representation.
                     commits, current_release, last_updated = _parse_new_json_format(
                         tracking_data
                     )
