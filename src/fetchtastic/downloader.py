@@ -1288,23 +1288,20 @@ def extract_version(dir_name: str) -> str:
 
 def _get_commit_hash_from_dir(dir_name: str) -> Optional[str]:
     """
-    Extract commit hash from a prerelease directory name.
+    Extracts a commit hash from a prerelease directory name.
 
-    Parameters:
-        dir_name (str): Directory name, e.g., "firmware-2.7.7.abcdef"
+    Searches the version portion (after the "firmware-" prefix) for a hexadecimal commit identifier of 4-40 characters and returns it in lowercase if found; returns None when no commit hash is present.
 
     Returns:
-        Optional[str]: The commit hash if present (e.g., "abcdef"), None otherwise
+        commit_hash (Optional[str]): Lowercase commit hash when present, otherwise None.
     """
-    version_part = extract_version(dir_name)
-    # Look for a hash after the version (separated by a dot)
-    # Pattern: version.hash where hash is hex characters, 4-40 chars long
-    parts = version_part.split(".")
-    if len(parts) >= 2:
-        # Check if the last part looks like a commit hash (hex characters, 4-40 chars)
-        hash_part = parts[-1]
-        if 4 <= len(hash_part) <= 40 and re.match(r"^[0-9a-f]+$", hash_part.lower()):
-            return hash_part.lower()
+    version_part = extract_version(dir_name)  # Removes "firmware-" prefix
+    # Use regex to find a hex string of 4-40 characters, which is more robust
+    commit_match = re.search(
+        r"\.([a-f0-9]{4,40})(?:[.-]|$)", version_part, re.IGNORECASE
+    )
+    if commit_match:
+        return commit_match.group(1).lower()
     return None
 
 
@@ -1334,6 +1331,7 @@ def calculate_expected_prerelease_version(latest_version: str) -> str:
 
 # Global cache for commit timestamps to avoid repeated API calls
 _commit_timestamp_cache: Dict[str, Tuple[datetime, datetime]] = {}
+_commit_cache_loaded = False
 _cache_lock = threading.Lock()  # Lock for thread-safe cache access
 
 # Cache file path for persistent storage
@@ -1405,6 +1403,7 @@ def _load_commit_cache() -> None:
 
         with _cache_lock:
             _commit_timestamp_cache.update(loaded)
+            _commit_cache_loaded = True
         logger.debug(f"Loaded {len(loaded)} commit timestamps from cache")
 
     except (IOError, json.JSONDecodeError) as e:
@@ -1437,9 +1436,9 @@ def _load_releases_cache() -> None:
                     cache_entry["cached_at"].replace("Z", "+00:00")
                 )
 
-                # Check if entry is still valid (not expired) - use same expiry as commit timestamps
+                # Check if entry is still valid (not expired)
                 age = current_time - cached_at
-                if age.total_seconds() < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 60 * 60:
+                if age.total_seconds() < RELEASES_CACHE_EXPIRY_HOURS * 60 * 60:
                     loaded[cache_key] = (releases_data, cached_at)
             except (ValueError, TypeError, KeyError) as e:
                 # Skip invalid entries
@@ -1687,15 +1686,15 @@ def get_commit_timestamp(
     Returns:
         Optional[datetime]: Commit timestamp or None if not found
     """
-    global _commit_timestamp_cache
+    global _commit_timestamp_cache, _commit_cache_loaded
 
     cache_key = f"{owner}/{repo}/{commit_hash}"
 
     # Load cache on first access
-    with _cache_lock:
-        need_load = not _commit_timestamp_cache
-    if need_load:
-        _load_commit_cache()
+    if not _commit_cache_loaded:
+        with _cache_lock:
+            if not _commit_cache_loaded:
+                _load_commit_cache()
 
     with _cache_lock:
         if force_refresh and cache_key in _commit_timestamp_cache:
@@ -1851,12 +1850,10 @@ def _get_latest_releases_data(
     cache_key = f"{url}?per_page={scan_count}"
 
     # Load cache from file on first access (thread-safe)
-    with _cache_lock:
-        if not _releases_cache_loaded:
-            # Release lock while doing I/O; the loader will re-acquire to publish.
-            pass
     if not _releases_cache_loaded:
-        _load_releases_cache()  # publishes under lock per loader fix
+        with _cache_lock:
+            if not _releases_cache_loaded:
+                _load_releases_cache()
 
     with _cache_lock:
         if force_refresh and cache_key in _releases_cache:

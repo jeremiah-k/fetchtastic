@@ -315,12 +315,10 @@ def make_github_api_request(
 
     # Initialize rate limit cache if needed
     global _rate_limit_cache_loaded
-    with _rate_limit_lock:
-        if not _rate_limit_cache_loaded:
-            # Release lock while doing I/O; the loader will re-acquire to publish.
-            pass
     if not _rate_limit_cache_loaded:
-        _load_rate_limit_cache()
+        with _rate_limit_lock:
+            if not _rate_limit_cache_loaded:
+                _load_rate_limit_cache()
 
     # Create token hash for caching
     token_hash = hashlib.sha256((effective_token or "no-token").encode()).hexdigest()[
