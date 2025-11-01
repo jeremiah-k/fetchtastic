@@ -1630,6 +1630,12 @@ def check_for_prereleases(
             )
             return False, []
 
+        # Update tracking with all known prerelease directories
+        for dir_name in matching_prerelease_dirs:
+            update_prerelease_tracking(
+                prerelease_base_dir, latest_release_tag, dir_name
+            )
+
         # Sort by commit timestamp to get the newest
         # Get timestamps for each directory
         commit_hashes: List[Optional[str]] = [
