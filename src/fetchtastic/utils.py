@@ -144,6 +144,7 @@ def _load_rate_limit_cache() -> None:
     global _rate_limit_cache, _rate_limit_cache_loaded
     cache_file = _get_rate_limit_cache_file()
 
+    loaded: Dict[str, Tuple[int, datetime]] = {}
     try:
         if not os.path.exists(cache_file):
             return
@@ -157,7 +158,6 @@ def _load_rate_limit_cache() -> None:
 
         # Convert string timestamps back to datetime objects (build locally)
         current_time = datetime.now(timezone.utc)
-        loaded: Dict[str, Tuple[int, datetime]] = {}
         for cache_key, cache_value in cache_data.items():
             try:
                 # Validate value structure
