@@ -1744,14 +1744,16 @@ def _find_latest_remote_prerelease_dir(
         # Return the newest one
         return dirs_with_timestamps[0][0] if dirs_with_timestamps else None
 
-    except (
-        requests.RequestException,
-        OSError,
-        ValueError,
-        KeyError,
-        json.JSONDecodeError,
-    ) as e:
-        logger.error(f"Error finding remote prerelease directories: {e}", exc_info=True)
+    except (requests.RequestException, OSError) as e:
+        # Network/IO errors - these are expected and recoverable
+        logger.error(f"Network/IO error finding remote prerelease directories: {e}")
+        return None
+    except (ValueError, KeyError, json.JSONDecodeError) as e:
+        # Parsing/logic errors - these indicate bugs or API changes
+        logger.error(
+            f"Data parsing error finding remote prerelease directories: {e}",
+            exc_info=True,
+        )
         return None
 
 
@@ -2041,14 +2043,15 @@ def get_commit_timestamp(
             # Save cache
             _save_commit_cache()
             return timestamp
-    except (
-        requests.HTTPError,
-        requests.RequestException,
-        json.JSONDecodeError,
-        KeyError,
-        ValueError,
-    ) as e:
-        logger.warning(f"Failed to get commit timestamp for {commit_hash}: {e}")
+    except (requests.HTTPError, requests.RequestException) as e:
+        # Network errors - these are expected and recoverable
+        logger.warning(f"Network error getting commit timestamp for {commit_hash}: {e}")
+    except (json.JSONDecodeError, KeyError, ValueError) as e:
+        # Parsing/logic errors - these indicate bugs or API changes
+        logger.error(
+            f"Data parsing error getting commit timestamp for {commit_hash}: {e}",
+            exc_info=True,
+        )
 
     return None
 
