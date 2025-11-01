@@ -381,6 +381,15 @@ def test_prerelease_directory_cleanup(tmp_path, write_dummy_file):
             mock_dirs.return_value = ["firmware-2.7.7.789abc"]
 
             def _dir_aware_contents(dir_name: str):
+                """
+                Return a mock directory listing containing a single prerelease firmware asset whose path and download_url incorporate the provided directory name.
+                
+                Parameters:
+                    dir_name (str): Directory name used as the prerelease directory component in the returned asset's `path` and `download_url`.
+                
+                Returns:
+                    list[dict]: A list with one asset mapping containing the keys `name`, `path`, and `download_url`. The `path` and `download_url` reflect a hierarchical prerelease location that includes `dir_name`.
+                """
                 return [
                     {
                         "name": "firmware-rak4631-2.7.7.789abc.uf2",
