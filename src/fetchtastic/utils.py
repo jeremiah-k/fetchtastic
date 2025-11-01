@@ -142,6 +142,11 @@ def _get_rate_limit_cache_file() -> str:
 def _load_rate_limit_cache() -> None:
     """Load rate limit cache from persistent storage."""
     global _rate_limit_cache, _rate_limit_cache_loaded
+
+    with _rate_limit_lock:
+        if _rate_limit_cache_loaded:
+            return
+
     cache_file = _get_rate_limit_cache_file()
 
     loaded: Dict[str, Tuple[int, datetime]] = {}
@@ -313,11 +318,10 @@ def make_github_api_request(
     # Show warning if no token available (centralized logic)
     _show_token_warning_if_needed(effective_token, allow_env_token)
 
-    # Initialize rate limit cache if needed (thread-safe)
+    # Initialize rate limit cache if needed
     global _rate_limit_cache_loaded
-    with _rate_limit_lock:
-        if not _rate_limit_cache_loaded:
-            _load_rate_limit_cache()
+    if not _rate_limit_cache_loaded:
+        _load_rate_limit_cache()
 
     # Create token hash for caching
     token_hash = hashlib.sha256((effective_token or "no-token").encode()).hexdigest()[

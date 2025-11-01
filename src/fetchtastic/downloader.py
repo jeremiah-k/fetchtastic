@@ -1383,6 +1383,11 @@ def _get_releases_cache_file() -> str:
 def _load_commit_cache() -> None:
     """Load commit timestamp cache from persistent storage."""
     global _commit_timestamp_cache, _commit_cache_loaded
+
+    with _cache_lock:
+        if _commit_cache_loaded:
+            return
+
     cache_file = _get_commit_cache_file()
 
     try:
@@ -1431,6 +1436,11 @@ def _load_commit_cache() -> None:
 def _load_releases_cache() -> None:
     """Load releases cache from persistent storage."""
     global _releases_cache, _releases_cache_loaded
+
+    with _cache_lock:
+        if _releases_cache_loaded:
+            return
+
     cache_file = _get_releases_cache_file()
 
     try:
@@ -1803,10 +1813,9 @@ def get_commit_timestamp(
 
     cache_key = f"{owner}/{repo}/{commit_hash}"
 
-    # Load cache on first access (thread-safe)
-    with _cache_lock:
-        if not _commit_cache_loaded:
-            _load_commit_cache()
+    # Load cache on first access
+    if not _commit_cache_loaded:
+        _load_commit_cache()
 
     with _cache_lock:
         if force_refresh and cache_key in _commit_timestamp_cache:
@@ -1965,10 +1974,9 @@ def _get_latest_releases_data(
     # Create cache key based on URL and scan count
     cache_key = f"{url}?per_page={scan_count}"
 
-    # Load cache from file on first access (thread-safe)
-    with _cache_lock:
-        if not _releases_cache_loaded:
-            _load_releases_cache()
+    # Load cache from file on first access
+    if not _releases_cache_loaded:
+        _load_releases_cache()
 
     with _cache_lock:
         if force_refresh and cache_key in _releases_cache:
