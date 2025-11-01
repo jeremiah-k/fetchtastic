@@ -1573,6 +1573,37 @@ def _save_releases_cache() -> None:
         logger.debug(f"Could not save releases cache: {e}")
 
 
+def _clear_cache_generic(
+    cache_dict: Dict[str, Any],
+    cache_loaded_ref: List[bool],
+    cache_file_getter: Callable[[], str],
+    cache_name: str,
+    lock: Any = _cache_lock,
+) -> None:
+    """
+    Generic cache clearing helper to reduce code duplication.
+
+    Parameters:
+        cache_dict: The cache dictionary to clear
+        cache_loaded_ref: List containing the loaded flag (to allow modification)
+        cache_file_getter: Function that returns the cache file path
+        cache_name: Name of the cache for logging purposes
+        lock: Lock to use for thread safety (defaults to _cache_lock)
+    """
+    with lock:
+        cache_dict.clear()
+        if cache_loaded_ref:
+            cache_loaded_ref[0] = False
+
+    try:
+        cache_file = cache_file_getter()
+        if os.path.exists(cache_file):
+            os.remove(cache_file)
+            logger.debug(f"Removed {cache_name} cache file")
+    except OSError as e:
+        logger.debug(f"Error clearing {cache_name} cache file: {e}")
+
+
 def _clear_commit_cache() -> None:
     """
     Clear the in-memory and on-disk commit timestamp cache.
@@ -1582,17 +1613,18 @@ def _clear_commit_cache() -> None:
     """
     global _commit_timestamp_cache, _commit_cache_loaded
 
-    with _cache_lock:
-        _commit_timestamp_cache.clear()
-        _commit_cache_loaded = False
+    # Create reference to loaded flag for modification
+    loaded_ref = [_commit_cache_loaded]
 
-    try:
-        cache_file = _get_commit_cache_file()
-        if os.path.exists(cache_file):
-            os.remove(cache_file)
-            logger.debug("Removed commit timestamp cache file")
-    except OSError as e:
-        logger.debug(f"Error clearing commit timestamp cache file: {e}")
+    _clear_cache_generic(
+        cache_dict=_commit_timestamp_cache,
+        cache_loaded_ref=loaded_ref,
+        cache_file_getter=_get_commit_cache_file,
+        cache_name="commit timestamp",
+    )
+
+    # Update the global variable from the reference
+    _commit_cache_loaded = loaded_ref[0]
 
 
 def clear_all_caches() -> None:
@@ -1606,19 +1638,20 @@ def clear_all_caches() -> None:
     # Clear commit cache using helper
     _clear_commit_cache()
 
-    # Clear releases cache
-    with _cache_lock:
-        _releases_cache.clear()
-        _releases_cache_loaded = False
+    # Clear releases cache using generic helper
+    loaded_ref = [_releases_cache_loaded]
 
-    # Remove releases cache file
-    try:
-        releases_cache_file = _get_releases_cache_file()
-        if os.path.exists(releases_cache_file):
-            os.remove(releases_cache_file)
-        logger.debug("Cleared all caches")
-    except OSError as e:
-        logger.debug(f"Error clearing releases cache file: {e}")
+    _clear_cache_generic(
+        cache_dict=_releases_cache,
+        cache_loaded_ref=loaded_ref,
+        cache_file_getter=_get_releases_cache_file,
+        cache_name="releases",
+    )
+
+    # Update the global variable from the reference
+    _releases_cache_loaded = loaded_ref[0]
+
+    logger.debug("Cleared all caches")
 
 
 def _find_latest_remote_prerelease_dir(
