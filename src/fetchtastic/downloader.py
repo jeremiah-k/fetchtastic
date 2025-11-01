@@ -1820,7 +1820,29 @@ def _download_prerelease_assets(
             relative_path = file_info["path"].removeprefix(f"{remote_dir}/")
             file_path = os.path.join(prerelease_dir, relative_path)
         else:
+            relative_path = file_name
             file_path = os.path.join(prerelease_dir, file_name)
+
+        # Security: Prevent path traversal. Ensure the final path is within the base directory.
+        # Check for both Unix and Windows path traversal patterns
+        if (
+            "../" in relative_path
+            or "..\\" in relative_path
+            or relative_path.startswith("/")
+            or relative_path.startswith("\\")
+        ):
+            logger.warning(
+                f"Skipping asset with unsafe path that escapes base directory: {file_path}"
+            )
+            continue
+
+        # Additional check using realpath to catch edge cases
+        real_prerelease_dir = os.path.realpath(prerelease_dir)
+        if not os.path.realpath(file_path).startswith(real_prerelease_dir):
+            logger.warning(
+                f"Skipping asset with unsafe path that escapes base directory: {file_path}"
+            )
+            continue
 
         # Ensure parent directory exists for hierarchical paths
         parent_dir = os.path.dirname(file_path)
