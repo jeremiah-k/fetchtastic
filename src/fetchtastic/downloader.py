@@ -10,6 +10,7 @@ import tempfile
 import threading
 import time
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import IO, TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
 
@@ -1579,9 +1580,99 @@ def check_for_prereleases(
     else:
         newest_dir = None
 
-    # Fetch remote prerelease directory to check for newer files
+    # Fetch remote prerelease directories
     try:
-        remote_dir = f"firmware/prerelease/firmware-{expected_version}"
+        directories = menu_repo.fetch_repo_directories()
+        if not directories:
+            logger.info("No firmware directories found in the repository.")
+            return False, []
+
+        # Only look for prerelease directories matching the expected version
+        matching_prerelease_dirs: List[str] = []
+        for raw_dir_name in directories:
+            if not raw_dir_name.startswith("firmware-"):
+                continue
+
+            dir_name = _sanitize_path_component(raw_dir_name)
+            if dir_name is None:
+                logger.warning(
+                    "Skipping unsafe prerelease directory name from repository: %s",
+                    raw_dir_name,
+                )
+                continue
+
+            dir_version = extract_version(dir_name)
+            if not re.match(
+                r"^\d+\.\d+\.\d+(?:\.[a-f0-9]+)?(?:[-\.]?(?:rc|dev|b|beta|alpha)\d+)?(?:\+[0-9A-Za-z]+)?$",
+                dir_version,
+            ):
+                logger.debug(
+                    "Repository prerelease directory %s uses a non-standard version format; skipping",
+                    dir_name,
+                )
+                continue
+
+            # Extract base version (without hash) to check if it matches expected
+            match = re.match(r"(\d+\.\d+\.\d+)", dir_version)
+            if not match:
+                continue
+            dir_base_version = match.group(1)
+
+            # Only include directories that match the expected prerelease version
+            if dir_base_version == expected_version:
+                matching_prerelease_dirs.append(dir_name)
+
+        if not matching_prerelease_dirs:
+            logger.info(
+                f"No prerelease directories found for expected version {expected_version}"
+            )
+            return False, []
+
+        # Sort by commit timestamp to get the newest
+        # Get timestamps for each directory
+        commit_hashes: List[Optional[str]] = [
+            _get_commit_hash_from_dir(d) for d in matching_prerelease_dirs
+        ]
+
+        def _safe_get_timestamp(commit_hash):
+            return (
+                get_commit_timestamp(
+                    "meshtastic", "firmware", commit_hash, github_token, force_refresh
+                )
+                if commit_hash
+                else None
+            )
+
+        # Fetch timestamps concurrently to improve performance
+        with ThreadPoolExecutor(
+            max_workers=max(1, min(4, len(commit_hashes)))
+        ) as executor:
+            timestamps = list(executor.map(_safe_get_timestamp, commit_hashes))
+
+        dirs_with_timestamps = list(
+            zip(matching_prerelease_dirs, commit_hashes, timestamps, strict=True)
+        )
+
+        # Sort prereleases by recency: timestamped items first (by timestamp), then non-timestamped (by commit hash)
+        def sort_key(item):
+            _dir_name, commit_hash, timestamp = item
+
+            if timestamp is not None:
+                # Primary: items with timestamps, sorted by timestamp (newest first)
+                return (1, timestamp.timestamp())
+            else:
+                # Fallback: items without timestamps, sorted by commit hash (lexicographically descending)
+                return (0, commit_hash or "")
+
+        dirs_with_timestamps.sort(key=sort_key, reverse=True)
+
+        # Take newest one
+        target_prereleases = [
+            dir_name for dir_name, _hash, _ts in dirs_with_timestamps[:1]
+        ]
+
+        # Now fetch files from the target directory
+        remote_dir = target_prereleases[0]
 
         remote_files = _iter_matching_prerelease_files(
             remote_dir, selected_patterns, exclude_patterns_list, device_manager
@@ -1595,20 +1686,8 @@ def check_for_prereleases(
 
         logger.debug(f"Found {len(remote_files)} matching prerelease files")
 
-        # Determine the prerelease directory name from the first file's path
-        # This assumes all files in the remote response come from the same prerelease version
-        prerelease_dir_name = f"firmware-{expected_version}"
-
-        # Extract commit hash if present in directory structure
-        # (menu_repo returns paths like "firmware/prerelease/firmware-2.7.7.abcdef/file.bin")
-        if remote_files:
-            # Try to extract full version including hash from first file's path
-            first_file_path = remote_files[0].get("path", "")
-            path_parts = first_file_path.split("/")
-            for part in path_parts:
-                if part.startswith("firmware-") and expected_version in part:
-                    prerelease_dir_name = part
-                    break
+        # The prerelease directory name is the remote directory name
+        prerelease_dir_name = remote_dir
 
         prerelease_dir = os.path.join(prerelease_base_dir, prerelease_dir_name)
 
