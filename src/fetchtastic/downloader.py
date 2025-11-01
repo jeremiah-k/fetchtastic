@@ -1373,11 +1373,12 @@ def _save_commit_cache() -> None:
     cache_file = _get_commit_cache_file()
 
     try:
-        # Convert datetime objects to ISO strings for JSON serialization
-        cache_data = {
-            cache_key: (timestamp.isoformat(), cached_at.isoformat())
-            for cache_key, (timestamp, cached_at) in _commit_timestamp_cache.items()
-        }
+        # Convert datetime objects to ISO strings while cache is locked
+        with _cache_lock:
+            cache_data = {
+                cache_key: (timestamp.isoformat(), cached_at.isoformat())
+                for cache_key, (timestamp, cached_at) in _commit_timestamp_cache.items()
+            }
 
         # Write to temporary file first, then atomically replace
         temp_file = f"{cache_file}.tmp"
@@ -1704,6 +1705,9 @@ def check_for_prereleases(
 
     # Take newest one
     target_prereleases = [dir_name for dir_name, _hash, _ts in dirs_with_timestamps[:1]]
+
+    # Ensure prerelease directory exists
+    os.makedirs(prerelease_dir, exist_ok=True)
 
     # Resolve once for containment checks
     real_prerelease_base = os.path.realpath(prerelease_dir)

@@ -329,7 +329,7 @@ def make_github_api_request(
         # Try to get actual content length if header is missing
         try:
             content_length = str(len(response.content))
-        except Exception:
+        except (AttributeError, TypeError):
             content_length = "unknown"
     logger.debug(
         f"GitHub API response: {response.status_code} for {url} ({content_length} bytes)"
@@ -689,7 +689,7 @@ def download_file_with_retry(
             )
         except TypeError as e:
             # urllib3 v1 fallback - parameters may differ between versions
-            # Try with list instead of frozenset for allowed_methods (type compatibility)
+            # Use method_whitelist for older urllib3 versions
             try:
                 retry_strategy = Retry(
                     total=DEFAULT_CONNECT_RETRIES,
@@ -698,14 +698,11 @@ def download_file_with_retry(
                     status=DEFAULT_CONNECT_RETRIES,
                     backoff_factor=DEFAULT_BACKOFF_FACTOR,
                     status_forcelist=[408, 429, 500, 502, 503, 504],
-                    allowed_methods=[
-                        "GET",
-                        "HEAD",
-                    ],  # urllib3 v1 may expect list instead of frozenset
+                    method_whitelist=frozenset({"GET", "HEAD"}),  # urllib3 v1 parameter
                     raise_on_status=False,
                 )
             except (TypeError, ValueError):
-                # If allowed_methods also fails, try minimal parameters
+                # If method_whitelist also fails, try minimal parameters
                 retry_strategy = Retry(
                     total=DEFAULT_CONNECT_RETRIES,
                     backoff_factor=DEFAULT_BACKOFF_FACTOR,
