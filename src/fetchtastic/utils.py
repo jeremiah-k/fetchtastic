@@ -59,7 +59,7 @@ _rate_limit_cache_loaded = False
 def get_user_agent() -> str:
     """
     Return the User-Agent string used for HTTP requests.
-    
+
     Returns:
         str: The string "fetchtastic/{version}", where {version} is the package version or "unknown" if the version cannot be determined.
     """
@@ -135,7 +135,7 @@ def _get_rate_limit_cache_file() -> str:
 def _load_rate_limit_cache() -> None:
     """
     Load persisted GitHub rate-limit entries into the in-memory cache.
-    
+
     This function reads a cached JSON file of rate-limit entries, validates its structure, converts stored ISO timestamps back to datetimes, and retains only entries updated within the last hour. Loaded entries are merged into the module-level rate-limit cache and the cache is marked as loaded. The operation is thread-safe and idempotent (subsequent calls are no-ops). IO or JSON parse errors are silently ignored.
     """
     global _rate_limit_cache, _rate_limit_cache_loaded
@@ -189,13 +189,13 @@ def _load_rate_limit_cache() -> None:
 def _parse_rate_limit_header(header_value: Any) -> Optional[int]:
     """
     Parse an HTTP rate-limit header value into an integer remaining count.
-    
+
     Accepts numeric strings, integers, or floats and returns their integer representation.
     Non-numeric or otherwise unparsable values return `None`.
-    
+
     Parameters:
         header_value (Any): The raw header value to parse (commonly a str, int, or float).
-    
+
     Returns:
         Optional[int]: The parsed integer value if successful, `None` otherwise.
     """
@@ -212,7 +212,7 @@ def _parse_rate_limit_header(header_value: Any) -> Optional[int]:
 def _save_rate_limit_cache() -> None:
     """
     Persist the in-memory rate-limit cache to the on-disk cache file.
-    
+
     Writes the current in-memory rate-limit entries to the cache file returned by
     `_get_rate_limit_cache_file`. Timestamps are serialized as ISO 8601 strings and
     the file is written atomically (temporary file then replace). I/O errors during
@@ -221,11 +221,12 @@ def _save_rate_limit_cache() -> None:
     cache_file = _get_rate_limit_cache_file()
 
     try:
-        # Convert datetime objects to ISO strings for JSON serialization
-        cache_data = {
-            cache_key: (remaining, cached_at.isoformat())
-            for cache_key, (remaining, cached_at) in _rate_limit_cache.items()
-        }
+        # Snapshot under lock, then write outside to minimize contention
+        with _rate_limit_lock:
+            cache_data = {
+                cache_key: (remaining, cached_at.isoformat())
+                for cache_key, (remaining, cached_at) in _rate_limit_cache.items()
+            }
 
         # Write to temporary file first, then atomically replace
         temp_file = f"{cache_file}.tmp"
@@ -397,16 +398,16 @@ def make_github_api_request(
     # Enhanced rate limit tracking and logging
     try:
         # Safely get headers with fallback for missing headers attribute (e.g., in tests)
-        headers = getattr(response, "headers", None)
+        resp_headers = getattr(response, "headers", None)
 
-        if headers is None:
-            headers = {}
+        if resp_headers is None:
+            resp_headers = {}
         # CaseInsensitiveDict is not a dict subclass, so check for dict-like behavior
-        elif not hasattr(headers, "get"):
-            headers = {}
+        elif not hasattr(resp_headers, "get"):
+            resp_headers = {}
 
-        rl_header = headers.get("X-RateLimit-Remaining")
-        rl_reset = headers.get("X-RateLimit-Reset")
+        rl_header = resp_headers.get("X-RateLimit-Remaining")
+        rl_reset = resp_headers.get("X-RateLimit-Reset")
 
         if rl_header is not None:
             remaining = _parse_rate_limit_header(rl_header)
@@ -591,9 +592,9 @@ def download_file_with_retry(
 ) -> bool:
     """
     Download a file from `url` to `download_path`, ensuring integrity and performing atomic replacement.
-    
+
     Performs integrity checks (SHA-256 sidecar and ZIP validation for archives), skips download when an existing file is verified, streams content to a temporary file with retry-capable HTTP requests, and replaces the target file atomically (with Windows-specific retries for transient access errors). On successful install, saves a companion `.sha256` hash file next to the downloaded file. Cleans up temporary and partially downloaded files on failure.
-    
+
     Returns:
         True if the file is present and verified or was downloaded and installed successfully, `False` on any failure.
     """

@@ -42,7 +42,9 @@ def _deny_network():
 
     with patch("fetchtastic.downloader.requests.get", _no_net):
         with patch("fetchtastic.downloader.requests.post", _no_net):
-            yield
+            with patch("fetchtastic.utils.requests.get", _no_net):
+                with patch("fetchtastic.utils.requests.post", _no_net):
+                    yield
 
 
 def mock_github_commit_timestamp(commit_timestamps):
@@ -383,10 +385,10 @@ def test_prerelease_directory_cleanup(tmp_path, write_dummy_file):
             def _dir_aware_contents(dir_name: str):
                 """
                 Return a mock directory listing containing a single prerelease firmware asset whose path and download_url incorporate the provided directory name.
-                
+
                 Parameters:
                     dir_name (str): Directory name used as the prerelease directory component in the returned asset's `path` and `download_url`.
-                
+
                 Returns:
                     list[dict]: A list with one asset mapping containing the keys `name`, `path`, and `download_url`. The `path` and `download_url` reflect a hierarchical prerelease location that includes `dir_name`.
                 """
@@ -405,8 +407,10 @@ def test_prerelease_directory_cleanup(tmp_path, write_dummy_file):
                     dest, b"new data"
                 )
 
-                with patch("fetchtastic.downloader.requests.get") as mock_get:
-                    mock_get.side_effect = mock_github_commit_timestamp(
+                with patch(
+                    "fetchtastic.downloader.make_github_api_request"
+                ) as mock_api:
+                    mock_api.side_effect = mock_github_commit_timestamp(
                         {"789abc": "2025-01-20T12:00:00Z"}
                     )
 

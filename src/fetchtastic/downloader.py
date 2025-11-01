@@ -302,16 +302,16 @@ def cleanup_superseded_prereleases(
 ):  # log_message_func parameter removed
     """
     Remove prerelease firmware directories that are superseded by an official release.
-    
+
     Scans download_dir/firmware/prerelease for directories named "firmware-<version>" (optionally with a commit/hash suffix).
     If a prerelease's base version matches or is older than the provided latest official release tag, the prerelease directory
     (or unsafe symlink) is removed. Invalidly formatted names are skipped. If no prerelease directories remain, associated
     prerelease tracking files are also removed.
-    
+
     Parameters:
         download_dir (str): Base download directory containing firmware/prerelease.
         latest_release_tag (str): Latest official release tag (may include a leading 'v').
-    
+
     Returns:
         bool: `True` if one or more prerelease directories were removed, `False` otherwise.
     """
@@ -756,24 +756,24 @@ def _parse_new_json_format(
 ) -> tuple[list[str], str | None, str | None]:
     """
     Parse prerelease tracking JSON in the new format into normalized commits, the current release, and a last-updated timestamp.
-    
+
     Accepts a mapping produced from the new prerelease tracking JSON. Expected keys include:
     - "version": the release version (e.g., "v1.2.3" or "1.2.3"),
     - "hash": a commit hash string used as a fallback when "commits" is absent,
     - "commits": an optional list of commit identifiers (strings),
     - "last_updated" or "timestamp": an optional timestamp string.
-    
+
     Behavior:
     - Ensures the returned current release has a leading "v" when possible.
     - When "commits" is missing but "hash" is present, attempts to synthesize a version+hash commit using the expected prerelease version.
     - Validates that "commits" is a list; non-list values are treated as an empty list.
     - Normalizes each commit identifier to a consistent lowercase version+hash form when possible, skips invalid entries, and preserves original order while removing duplicates.
-    
+
     Parameters:
         tracking_data (dict): Parsed JSON object from a prerelease tracking file.
-    
+
     Returns:
-        tuple[list[str], str | None, str | None]: 
+        tuple[list[str], str | None, str | None]:
             - commits: list of normalized commit identifiers (version+hash strings) in preserved order without duplicates,
             - current_release: the release version with a leading "v" when available, or `None` if unspecified,
             - last_updated: timestamp string from "last_updated" or "timestamp" if present, otherwise `None`.
@@ -821,15 +821,15 @@ def _parse_legacy_json_format(
 ) -> tuple[list[str], str | None, str | None]:
     """
     Parse legacy prerelease tracking JSON that uses top-level `release`, `commits`, and optional timestamp keys.
-    
+
     This normalizes commit identifiers into `version+hash` form, pairing bare commit hashes with an inferred next-prerelease base when possible, and preserves the original release string (ensuring a leading "v" if missing).
-    
+
     Parameters:
         tracking_data (dict): Parsed JSON object expected to contain:
             - "release": optional release string (e.g., "v1.2.3" or "1.2.3")
             - "commits": optional list of commit identifiers (hashes or version+hash)
             - "last_updated" or "timestamp": optional timestamp string
-    
+
     Returns:
         tuple: (commits, current_release, last_updated)
             - commits (list[str]): Ordered, deduplicated list of normalized `version+hash` commit identifiers.
@@ -1203,15 +1203,15 @@ def _iter_matching_prerelease_files(
 ) -> List[Dict[str, str]]:
     """
     Return prerelease assets in a remote directory that match selection patterns and do not match any exclusion patterns.
-    
+
     Filters the remote directory named by dir_name using selected_patterns (resolved with device_manager when provided), excludes any filenames matching patterns in exclude_patterns_list, and skips entries with unsafe path components.
-    
+
     Parameters:
         dir_name (str): Remote prerelease directory to inspect.
         selected_patterns (list): Patterns used to select matching assets; may include device-aware patterns.
         exclude_patterns_list (list): fnmatch-style patterns; any match causes an asset to be skipped.
         device_manager: Optional DeviceHardwareManager used to resolve device-specific patterns.
-    
+
     Returns:
         list: A list of dictionaries, each with keys:
             - "name": sanitized filename safe as a single path component
@@ -1252,7 +1252,6 @@ def _iter_matching_prerelease_files(
             {
                 "name": safe_file_name,
                 "download_url": download_url,
-                "path": entry.get("path", ""),
             }
         )
 
@@ -1317,7 +1316,7 @@ def _prerelease_needs_download(file_path: str) -> bool:
 def extract_version(dir_name: str) -> str:
     """
     Extract the version substring from a prerelease directory name that starts with "firmware-".
-    
+
     Returns:
         The directory name with the "firmware-" prefix removed.
     """
@@ -1388,7 +1387,7 @@ downloads_skipped = False
 def _ensure_cache_dir() -> str:
     """
     Ensure the per-user cache directory for fetchtastic exists and return its path.
-    
+
     Returns:
         cache_dir (str): Absolute path to the cache directory.
     """
@@ -1400,9 +1399,9 @@ def _ensure_cache_dir() -> str:
 def _get_commit_cache_file() -> str:
     """
     Return the filesystem path for the persistent commit timestamp cache file.
-    
+
     The path points to "commit_timestamps.json" inside the module's cache directory (created via _ensure_cache_dir()).
-    
+
     Returns:
         str: Path to the commit timestamp cache file.
     """
@@ -1415,7 +1414,7 @@ def _get_commit_cache_file() -> str:
 def _get_releases_cache_file() -> str:
     """
     Return the filesystem path of the persistent releases cache file.
-    
+
     Returns:
         str: Path to the releases cache JSON file inside the application's cache directory.
     """
@@ -1428,7 +1427,7 @@ def _get_releases_cache_file() -> str:
 def _load_commit_cache() -> None:
     """
     Load cached commit timestamps from disk into the in-memory commit timestamp cache.
-    
+
     Reads the cache file (if present), validates its structure, converts stored ISO timestamps to datetime objects, and retains only entries that have not expired according to COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS. Invalid or malformed entries are skipped and I/O or JSON errors are logged; the function sets the internal loaded flag when the cache is populated.
     """
     global _commit_timestamp_cache, _commit_cache_loaded
@@ -1485,7 +1484,7 @@ def _load_commit_cache() -> None:
 def _load_releases_cache() -> None:
     """
     Populate the in-memory releases cache from the on-disk cache file, respecting cache expiry.
-    
+
     Reads the releases cache file, validates and parses cached entries, converts stored timestamps to datetimes,
     and loads only entries that have not expired into the module-level releases cache. Marks the cache as loaded
     to avoid repeated loads and logs debug information on success or when the cache cannot be read or contains
@@ -1541,11 +1540,11 @@ def _load_releases_cache() -> None:
 def _save_releases_cache() -> None:
     """
     Persist the in-memory releases cache to the platform cache file.
-    
+
     Writes a JSON object mapping cache keys to records with two fields:
     - `releases`: the cached releases data
     - `cached_at`: ISO 8601 timestamp when the entry was cached
-    
+
     The write is performed atomically to avoid partial files; success or failure is logged at debug level.
     """
     global _releases_cache
@@ -1571,31 +1570,52 @@ def _save_releases_cache() -> None:
         logger.debug(f"Could not save releases cache: {e}")
 
 
-def clear_all_caches() -> None:
+def _clear_commit_cache() -> None:
     """
-    Clear in-memory and on-disk caches for commit timestamps and release data.
-    
-    This resets the internal caches and their "loaded" flags, then removes the persistent cache files from disk if present. Intended to force subsequent operations to refresh data from remote sources.
+    Clear the in-memory and on-disk commit timestamp cache.
+
+    Helper function that clears the commit timestamp cache from memory
+    and removes the persistent cache file from disk.
     """
-    global _commit_timestamp_cache, _releases_cache, _releases_cache_loaded, _commit_cache_loaded
+    global _commit_timestamp_cache, _commit_cache_loaded
 
     with _cache_lock:
         _commit_timestamp_cache.clear()
-        _releases_cache.clear()
-        _releases_cache_loaded = False
         _commit_cache_loaded = False
 
-    # Remove cache files
     try:
-        commit_cache_file = _get_commit_cache_file()
-        if os.path.exists(commit_cache_file):
-            os.remove(commit_cache_file)
+        cache_file = _get_commit_cache_file()
+        if os.path.exists(cache_file):
+            os.remove(cache_file)
+            logger.debug("Removed commit timestamp cache file")
+    except OSError as e:
+        logger.debug(f"Error clearing commit timestamp cache file: {e}")
+
+
+def clear_all_caches() -> None:
+    """
+    Clear in-memory and on-disk caches for commit timestamps and release data.
+
+    This resets the internal caches and their "loaded" flags, then removes the persistent cache files from disk if present. Intended to force subsequent operations to refresh data from remote sources.
+    """
+    global _releases_cache, _releases_cache_loaded
+
+    # Clear commit cache using helper
+    _clear_commit_cache()
+
+    # Clear releases cache
+    with _cache_lock:
+        _releases_cache.clear()
+        _releases_cache_loaded = False
+
+    # Remove releases cache file
+    try:
         releases_cache_file = _get_releases_cache_file()
         if os.path.exists(releases_cache_file):
             os.remove(releases_cache_file)
         logger.debug("Cleared all caches")
     except OSError as e:
-        logger.debug(f"Error clearing cache files: {e}")
+        logger.debug(f"Error clearing releases cache file: {e}")
 
 
 def _find_latest_remote_prerelease_dir(
@@ -1605,14 +1625,14 @@ def _find_latest_remote_prerelease_dir(
 ) -> Optional[str]:
     """
     Select the newest remote prerelease directory that matches an expected prerelease base version.
-    
+
     Prefers directories with Git commit timestamps (newest first) and falls back to lexicographic ordering of commit hashes when timestamps are unavailable.
-    
+
     Parameters:
         expected_version (str): Base prerelease version to match (e.g., "2.7.13").
         github_token (Optional[str]): GitHub API token to use when fetching commit timestamps; may be None to use no token or an environment-provided token.
         force_refresh (bool): When True, bypass cached commit timestamps and fetch fresh values.
-    
+
     Returns:
         Optional[str]: Name of the newest matching prerelease directory (for example "firmware-2.7.13-abcdef"), or None if no matching directory is found.
     """
@@ -1672,10 +1692,10 @@ def _find_latest_remote_prerelease_dir(
         def _safe_get_timestamp(commit_hash):
             """
             Return the commit timestamp for a Meshtastic firmware commit hash, or None when no hash is provided.
-            
+
             Parameters:
                 commit_hash (str): Commit SHA or identifier to look up; if falsy, no lookup is performed.
-            
+
             Returns:
                 datetime | None: The commit timestamp if found, `None` if `commit_hash` is falsy or the timestamp is unavailable.
             """
@@ -1703,10 +1723,10 @@ def _find_latest_remote_prerelease_dir(
         def sort_key(item):
             """
             Create a sort key for a tuple (dir_name, commit_hash, timestamp) that prefers items with timestamps and orders newest first.
-            
+
             Parameters:
                 item (tuple): A 3-tuple of (dir_name, commit_hash, timestamp) where `timestamp` is either a datetime or None.
-            
+
             Returns:
                 tuple: A two-element key (priority, value) where `priority` is 1 for items with a timestamp and 0 otherwise; `value` is the UNIX timestamp (float) for timestamped items or the commit hash string for items without a timestamp (empty string if commit_hash is None).
             """
@@ -1745,7 +1765,7 @@ def _download_prerelease_assets(
 ) -> Tuple[bool, List[str]]:
     """
     Download assets for a specific prerelease directory.
-    
+
     Parameters:
         remote_dir (str): Remote prerelease directory name to fetch assets from.
         prerelease_base_dir (str): Local base directory where the prerelease directory will be created or updated.
@@ -1753,7 +1773,7 @@ def _download_prerelease_assets(
         exclude_patterns_list (List[str]): Patterns used to exclude matching assets.
         device_manager: Optional device-pattern resolver used when matching device-specific assets.
         force_refresh (bool): If True, re-download files even when a valid local copy exists.
-    
+
     Returns:
         files_downloaded (bool): True if one or more files were downloaded, False otherwise.
         downloaded_files (List[str]): List of filenames that were downloaded.
@@ -1818,11 +1838,11 @@ def _cleanup_old_prerelease_dirs(
 ) -> None:
     """
     Remove prerelease subdirectories under prerelease_base_dir except for keep_dir.
-    
+
     Each directory in existing_dirs that does not equal keep_dir is removed using
     the module's safe removal routine to prevent directory-traversal or unsafe
     deletions. Successful removals are logged.
-    
+
     Parameters:
         prerelease_base_dir (str): Path to the directory containing prerelease subdirs.
         keep_dir (str): Name of the subdirectory to preserve.
@@ -1846,9 +1866,9 @@ def check_for_prereleases(
 ) -> Tuple[bool, List[str]]:
     """
     Check for newer prerelease firmware matching the expected prerelease version and download any assets that match the provided patterns.
-    
+
     Updates on-disk prerelease tracking and prunes older prerelease directories when appropriate.
-    
+
     Parameters:
         download_dir (str): Base download directory containing firmware/prerelease subdirectory.
         latest_release_tag (str): Latest official release tag (e.g., "2.7.6"); used to compute the expected prerelease version.
@@ -1857,7 +1877,7 @@ def check_for_prereleases(
         device_manager: Optional DeviceHardwareManager used for device-aware pattern matching.
         github_token (Optional[str]): GitHub API token to use when querying remote prerelease directories.
         force_refresh (bool): If True, force remote checks and update tracking even when cached or existing prerelease data exists.
-    
+
     Returns:
         Tuple[bool, List[str]]: `True` and a list containing the downloaded prerelease directory name if new prerelease assets were downloaded; `False` and a list of existing or inspected prerelease directory name(s) otherwise (empty list if none).
     """
@@ -1918,7 +1938,7 @@ def check_for_prereleases(
     update_prerelease_tracking(prerelease_base_dir, latest_release_tag, remote_dir)
 
     # Download assets for the selected prerelease
-    files_downloaded, downloaded_files = _download_prerelease_assets(
+    files_downloaded, _ = _download_prerelease_assets(
         remote_dir,
         prerelease_base_dir,
         selected_patterns,
@@ -1953,14 +1973,14 @@ def get_commit_timestamp(
 ) -> Optional[datetime]:
     """
     Retrieve the committer timestamp for a specific commit from the GitHub API.
-    
+
     Uses an internal timestamp cache to avoid repeated API calls; set `force_refresh` to bypass the cache and refetch. If a timestamp is obtained it is stored in the cache on disk.
-    
+
     Parameters:
         github_token (Optional[str]): Personal access token to use for the GitHub API; if omitted the function may use the `GITHUB_TOKEN` environment variable when `allow_env_token` is True.
         force_refresh (bool): If True, ignore any cached timestamp and fetch a fresh value from GitHub.
         allow_env_token (bool): If True, permit using the `GITHUB_TOKEN` environment variable when no `github_token` is provided.
-    
+
     Returns:
         datetime: Commit committer timestamp in UTC if found, `None` otherwise.
     """
@@ -2022,7 +2042,7 @@ def get_commit_timestamp(
 def _save_commit_cache() -> None:
     """
     Persist the in-memory commit timestamp cache to the configured cache file.
-    
+
     Writes the module-level _commit_timestamp_cache to disk using an atomic JSON write; timestamps are stored as ISO 8601 strings and failures are logged.
     """
     global _commit_timestamp_cache
@@ -2048,20 +2068,11 @@ def _save_commit_cache() -> None:
 def clear_commit_timestamp_cache() -> None:
     """
     Clear the commit timestamp cache.
-    
+
     Clears the in-memory commit timestamp cache, marks the cache as not loaded, and removes the on-disk commit cache file if it exists. The operation is performed while holding the module cache lock for thread safety; failures removing the file are logged.
     """
-    global _commit_timestamp_cache, _commit_cache_loaded
-    with _cache_lock:
-        _commit_timestamp_cache.clear()
-        _commit_cache_loaded = False
-    try:
-        cache_file = _get_commit_cache_file()
-        if os.path.exists(cache_file):
-            os.remove(cache_file)
-        logger.debug("Cleared commit timestamp cache")
-    except OSError as e:
-        logger.debug(f"Error clearing commit timestamp cache file: {e}")
+    _clear_commit_cache()
+    logger.debug("Cleared commit timestamp cache")
 
 
 def _send_ntfy_notification(
@@ -2072,7 +2083,7 @@ def _send_ntfy_notification(
 ) -> None:
     """
     Send a notification to an NTFY server topic.
-    
+
     If both ntfy_server and ntfy_topic are provided, posts the given message (and optional title) to the constructed NTFY URL. Logs a debug message on success and logs a warning if the HTTP request fails. If either ntfy_server or ntfy_topic is missing, the function does nothing.
     """
     if ntfy_server and ntfy_topic:
@@ -2107,20 +2118,20 @@ def _get_latest_releases_data(
 ) -> List[Dict[str, Any]]:
     """
     Fetches and returns recent releases from a GitHub releases API endpoint.
-    
+
     This function is cache-aware and will use a persisted cache unless `force_refresh` is set or the
-    cached entry has expired. It clamps `scan_count` to GitHub's per-page bounds (1–100), requests
+    cached entry has expired. It clamps `scan_count` to GitHub's per-page bounds (1-100), requests
     up to that many releases, and prefers releases sorted by `published_at` in descending order.
     On network or JSON decode errors an empty list is returned. If `published_at` is missing or
     invalid, the original (unsorted) list from the API is returned.
-    
+
     Parameters:
         url (str): GitHub API URL that returns a list of releases (JSON).
-        scan_count (int): Maximum number of releases to request and return (clamped to 1–100).
+        scan_count (int): Maximum number of releases to request and return (clamped to 1-100).
         github_token (Optional[str]): Optional GitHub API token for higher rate limits.
         allow_env_token (bool): Whether to allow using a token from the environment.
         force_refresh (bool): If True, bypass the cache and fetch fresh data from the API.
-    
+
     Returns:
         List[Dict[str, Any]]: Sorted list of release dictionaries (newest first). Returns an empty
         list on network or JSON parse errors. If sorting by `published_at` is not possible due to
@@ -2506,14 +2517,14 @@ def _process_apk_downloads(
 ) -> Tuple[List[str], List[str], List[Dict[str, str]], Optional[str]]:
     """
     Process Android APK releases: fetch release metadata, download selected APK assets, and report discovered and downloaded versions.
-    
+
     When APK saving is enabled and selected APK asset patterns are provided, this function fetches recent Android release metadata, determines the latest release tag, downloads APK assets that match the configured selection, and prunes based on the configured keep count.
-    
+
     Parameters:
         config (Dict[str, Any]): Configuration mapping. Uses keys: `SAVE_APKS`, `SELECTED_APK_ASSETS`, `ANDROID_VERSIONS_TO_KEEP`, and `GITHUB_TOKEN`.
         paths_and_urls (Dict[str, str]): Paths and endpoints. Uses keys: `"android_releases_url"`, `"latest_android_release_file"`, and `"apks_dir"`.
         force_refresh (bool): If True, bypass cached release data and fetch fresh metadata.
-    
+
     Returns:
         Tuple[List[str], List[str], List[Dict[str, str]], Optional[str]]:
         - downloaded_apk_versions: List of release versions successfully downloaded during this run.
@@ -3054,7 +3065,7 @@ def check_and_download(
     Side effects:
     - Creates per-release subdirectories and may write `latest_release_file` and release notes.
     - May remove corrupted ZIP files and delete older release directories.
-    - Honors a global Wi‑Fi gating flag: if downloads are skipped globally, the function will not perform downloads and instead returns newer release tags.
+    - Honors a global Wi-Fi gating flag: if downloads are skipped globally, the function will not perform downloads and instead returns newer release tags.
 
     Parameters:
     - releases: List of release dictionaries (expected newest-first order) as returned by the API.
@@ -3665,11 +3676,11 @@ def check_extraction_needed(
 def main(force_refresh: bool = False) -> None:
     """
     Run the Fetchtastic downloader workflow.
-    
-    Performs initial setup, optionally clears caches when force_refresh is True, enforces Wi‑Fi gating, processes firmware and APK downloads (including retries for failures), and finalizes by logging summary and sending notifications.
-    
+
+    Performs initial setup, optionally clears caches when force_refresh is True, enforces Wi-Fi gating, processes firmware and APK downloads (including retries for failures), and finalizes by logging summary and sending notifications.
+
     Parameters:
-    	force_refresh (bool): If True, clear all persistent caches and device hardware cache before fetching remote data.
+        force_refresh (bool): If True, clear all persistent caches and device hardware cache before fetching remote data.
     """
     start_time: float = time.time()
     logger.info("Starting Fetchtastic...")  # Changed to logger.info
