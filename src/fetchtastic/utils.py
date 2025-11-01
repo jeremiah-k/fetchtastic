@@ -151,6 +151,8 @@ def _load_rate_limit_cache() -> None:
     The cache file stores rate limit information across process restarts,
     avoiding unnecessary API calls that would consume rate limit quota.
     """
+    global _rate_limit_cache_loaded
+
     # Fast path without lock
     if _rate_limit_cache_loaded:
         return
