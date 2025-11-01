@@ -1748,6 +1748,10 @@ def _find_latest_remote_prerelease_dir(
         ) as executor:
             timestamps = list(executor.map(_safe_get_timestamp, commit_hashes))
 
+        # Save cache after all timestamps are fetched to avoid race conditions
+        if any(t is not None for t in timestamps):
+            _save_commit_cache()
+
         dirs_with_timestamps = list(
             zip(matching_prerelease_dirs, commit_hashes, timestamps, strict=True)
         )
@@ -2095,8 +2099,6 @@ def get_commit_timestamp(
                     timestamp,
                     datetime.now(timezone.utc),
                 )
-            # Save cache
-            _save_commit_cache()
             return timestamp
     except (requests.HTTPError, requests.RequestException) as e:
         # Network errors - these are expected and recoverable
