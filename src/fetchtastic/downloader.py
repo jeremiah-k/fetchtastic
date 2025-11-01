@@ -1517,6 +1517,17 @@ def _load_releases_cache() -> None:
         loaded: Dict[str, Tuple[List[Dict[str, Any]], datetime]] = {}
         for cache_key, cache_entry in cache_data.items():
             try:
+                # Validate cache entry structure
+                if (
+                    not isinstance(cache_entry, dict)
+                    or "releases" not in cache_entry
+                    or "cached_at" not in cache_entry
+                ):
+                    logger.debug(
+                        f"Skipping invalid cache entry for {cache_key}: incorrect structure"
+                    )
+                    continue
+
                 releases_data = cache_entry["releases"]
                 cached_at = datetime.fromisoformat(
                     cache_entry["cached_at"].replace("Z", "+00:00")
@@ -1567,15 +1578,14 @@ def _save_releases_cache() -> None:
         if _atomic_write_json(cache_file, cache_data):
             logger.debug(f"Saved {len(cache_data)} releases entries to cache")
         else:
-            logger.debug(f"Failed to save releases cache to {cache_file}")
+            logger.warning(f"Failed to save releases cache to {cache_file}")
 
     except (IOError, OSError) as e:
-        logger.debug(f"Could not save releases cache: {e}")
+        logger.warning(f"Could not save releases cache: {e}")
 
 
 def _clear_cache_generic(
     cache_dict: Dict[str, Any],
-    cache_loaded_ref: List[bool],
     cache_file_getter: Callable[[], str],
     cache_name: str,
     lock: Any = _cache_lock,
@@ -1585,15 +1595,12 @@ def _clear_cache_generic(
 
     Parameters:
         cache_dict: The cache dictionary to clear
-        cache_loaded_ref: List containing the loaded flag (to allow modification)
         cache_file_getter: Function that returns the cache file path
         cache_name: Name of the cache for logging purposes
         lock: Lock to use for thread safety (defaults to _cache_lock)
     """
     with lock:
         cache_dict.clear()
-        if cache_loaded_ref:
-            cache_loaded_ref[0] = False
 
     try:
         cache_file = cache_file_getter()
@@ -1613,18 +1620,14 @@ def _clear_commit_cache() -> None:
     """
     global _commit_timestamp_cache, _commit_cache_loaded
 
-    # Create reference to loaded flag for modification
-    loaded_ref = [_commit_cache_loaded]
-
     _clear_cache_generic(
         cache_dict=_commit_timestamp_cache,
-        cache_loaded_ref=loaded_ref,
         cache_file_getter=_get_commit_cache_file,
         cache_name="commit timestamp",
     )
 
-    # Update the global variable from the reference
-    _commit_cache_loaded = loaded_ref[0]
+    with _cache_lock:
+        _commit_cache_loaded = False
 
 
 def clear_all_caches() -> None:
@@ -1639,17 +1642,14 @@ def clear_all_caches() -> None:
     _clear_commit_cache()
 
     # Clear releases cache using generic helper
-    loaded_ref = [_releases_cache_loaded]
-
     _clear_cache_generic(
         cache_dict=_releases_cache,
-        cache_loaded_ref=loaded_ref,
         cache_file_getter=_get_releases_cache_file,
         cache_name="releases",
     )
 
-    # Update the global variable from the reference
-    _releases_cache_loaded = loaded_ref[0]
+    with _cache_lock:
+        _releases_cache_loaded = False
 
     logger.debug("Cleared all caches")
 
@@ -2133,10 +2133,10 @@ def _save_commit_cache() -> None:
         if _atomic_write_json(cache_file, cache_data):
             logger.debug(f"Saved {len(cache_data)} commit timestamps to cache")
         else:
-            logger.debug(f"Failed to save commit timestamp cache to {cache_file}")
+            logger.warning(f"Failed to save commit timestamp cache to {cache_file}")
 
     except (IOError, OSError) as e:
-        logger.debug(f"Could not save commit timestamp cache: {e}")
+        logger.warning(f"Could not save commit timestamp cache: {e}")
 
 
 def clear_commit_timestamp_cache() -> None:

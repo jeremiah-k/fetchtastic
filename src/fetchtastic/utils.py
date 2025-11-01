@@ -716,16 +716,14 @@ def download_file_with_retry(
                     method_whitelist=frozenset({"GET", "HEAD"}),  # urllib3 v1 parameter
                     raise_on_status=False,
                 )
-            except TypeError:
+            except TypeError as e:
                 # Very old urllib3 version - use minimal configuration
                 retry_strategy = Retry(
                     total=DEFAULT_CONNECT_RETRIES,
                     backoff_factor=DEFAULT_BACKOFF_FACTOR,
                     status_forcelist=[408, 429, 500, 502, 503, 504],
                 )
-                logger.debug(
-                    "Using minimal urllib3 Retry configuration (very old version)"
-                )
+                logger.debug(f"Using minimal urllib3 Retry configuration due to: {e}")
         adapter = HTTPAdapter(max_retries=retry_strategy)
         session.mount("https://", adapter)
         session.mount("http://", adapter)
