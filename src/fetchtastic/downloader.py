@@ -879,6 +879,10 @@ def _read_prerelease_tracking_data(tracking_file):
             _normalize_commit_identifier(commit, release_for_norm)
             for commit in commits_raw
         ]
+        # Return normalized release tag for consistency with JSON paths
+        current_release = (
+            release_for_norm if release_for_norm is not None else current_release
+        )
         last_updated = None
 
     return commits, current_release, last_updated
@@ -1583,7 +1587,7 @@ def check_for_prereleases(
     # When timestamps fail (e.g., API errors), we fall back to commit hash for deterministic ordering.
     # Note: All prereleases here have the same base version, so version comparison doesn't help distinguish recency.
     def sort_key(item):
-        dir_name, commit_hash, timestamp = item
+        _dir_name, commit_hash, timestamp = item
 
         if timestamp is not None:
             # Primary: items with timestamps, sorted by timestamp (newest first)
@@ -2968,10 +2972,7 @@ def check_and_download(
                     )
                     continue
                 # Honor exclude patterns at download-time as well
-                if any(
-                    fnmatch.fnmatch(file_name.lower(), ex.lower())
-                    for ex in exclude_patterns_list
-                ):
+                if _matches_exclude(file_name, exclude_patterns_list):
                     logger.debug(
                         "Skipping %s asset %s (matched exclude pattern)",
                         release_type,

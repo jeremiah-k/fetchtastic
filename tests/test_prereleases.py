@@ -7,11 +7,14 @@ and related functionality.
 
 import json
 import os
+import re
 import tempfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
+import requests
 
 from fetchtastic import downloader
 from fetchtastic.downloader import (
@@ -213,7 +216,7 @@ def test_check_for_prereleases_download_and_cleanup(
     assert versions == ["firmware-2.7.7.abcdef"]
     assert mock_dl.call_count == 1
     mock_fetch_contents.assert_called_once_with("firmware-2.7.7.abcdef")
-    assert not (prerelease_dir / "firmware-2.7.4.def456").exists()
+    assert not stale_dir.exists()  # Verify stale prerelease was cleaned up
 
 
 @patch("fetchtastic.downloader.menu_repo.fetch_repo_directories")
@@ -285,7 +288,6 @@ def test_prerelease_tracking_functionality(
     assert tracking_data["version"] == expected_clean_version
 
     # Add shape check for last_updated to validate ISO-8601 format
-    import re
 
     iso8601_pattern = (
         r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?([+-]\d{2}:\d{2}|Z)?$"
@@ -410,6 +412,10 @@ def test_prerelease_directory_cleanup(tmp_path, write_dummy_file):
                 info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
                 assert "2.7.7.789abc" in info.get("commits", [])
 
+    # Verify old directories were cleaned up
+    assert not old_dir1.exists(), "Old prerelease directory should be removed"
+    assert not old_dir2.exists(), "Old prerelease directory should be removed"
+
 
 def test_get_prerelease_tracking_info_error_handling():
     """Test error handling in get_prerelease_tracking_info."""
@@ -490,7 +496,6 @@ def test_get_commit_hash_from_dir():
 @pytest.mark.core_downloads
 def test_get_commit_timestamp_cache():
     """Test commit timestamp caching logic."""
-    from datetime import datetime, timedelta, timezone
 
     # Clear cache before test
     clear_commit_timestamp_cache()
@@ -555,9 +560,6 @@ def test_get_commit_timestamp_cache():
 @pytest.mark.core_downloads
 def test_get_commit_timestamp_error_handling():
     """Test error handling in get_commit_timestamp."""
-    from datetime import datetime
-
-    import requests
 
     clear_commit_timestamp_cache()
 
