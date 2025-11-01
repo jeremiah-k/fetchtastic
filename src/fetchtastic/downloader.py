@@ -1506,6 +1506,7 @@ def check_for_prereleases(
     latest_release_tag: str,
     selected_patterns: Optional[List[str]] = None,
     exclude_patterns: Optional[List[str]] = None,
+    device_manager=None,
     github_token: Optional[str] = None,
     force_refresh: bool = False,
 ) -> Tuple[bool, List[str]]:
@@ -1517,14 +1518,153 @@ def check_for_prereleases(
         latest_release_tag (str): Latest official release tag (e.g., "2.7.6")
         selected_patterns (Optional[List[str]]): Patterns to select for downloads
         exclude_patterns (Optional[List[str]]): Patterns to exclude from downloads
+        device_manager: Optional DeviceHardwareManager for device-aware pattern matching
         github_token (Optional[str]): GitHub API token
         force_refresh (bool): Whether to force refresh cache
 
     Returns:
         Tuple[bool, List[str]]: (success, list of downloaded files)
     """
-    # Implementation will be added
-    return False, []
+    global downloads_skipped
+
+    if downloads_skipped:
+        return False, []
+
+    if not selected_patterns:
+        logger.debug("No patterns selected for prerelease downloads")
+        return False, []
+
+    exclude_patterns_list = exclude_patterns or []
+
+    # Calculate expected prerelease version
+    expected_version = calculate_expected_prerelease_version(latest_release_tag)
+    if not expected_version:
+        logger.warning(
+            f"Could not calculate expected prerelease version from {latest_release_tag}"
+        )
+        return False, []
+
+    logger.debug(f"Expected prerelease version: {expected_version}")
+
+    # Set up prerelease directory
+    prerelease_base_dir = os.path.join(download_dir, "firmware", "prerelease")
+    if not os.path.exists(prerelease_base_dir):
+        try:
+            os.makedirs(prerelease_base_dir, exist_ok=True)
+        except OSError as e:
+            logger.error(f"Failed to create prerelease directory: {e}")
+            return False, []
+
+    # Check for existing prereleases
+    existing_dirs = _get_existing_prerelease_dirs(prerelease_base_dir)
+
+    # Find the newest matching prerelease directory
+    matching_dirs = [
+        d for d in existing_dirs if extract_version(d).startswith(expected_version)
+    ]
+
+    if matching_dirs:
+        # Sort by version to get the newest
+        matching_dirs.sort(key=lambda d: extract_version(d), reverse=True)
+        newest_dir = matching_dirs[0]
+        logger.debug(f"Found existing prerelease: {newest_dir}")
+    else:
+        newest_dir = None
+
+    # Fetch remote prerelease directory to check for newer files
+    try:
+        remote_dir = f"firmware/prerelease/firmware-{expected_version}"
+
+        remote_files = _iter_matching_prerelease_files(
+            remote_dir, selected_patterns, exclude_patterns_list, device_manager
+        )
+
+        if not remote_files:
+            logger.debug(
+                f"No matching prerelease files found in remote directory {remote_dir}"
+            )
+            return False, []
+
+        logger.debug(f"Found {len(remote_files)} matching prerelease files")
+
+        # Determine the prerelease directory name from the first file's parent path
+        # This assumes all files in the remote response come from the same prerelease version
+        prerelease_dir_name = f"firmware-{expected_version}"
+
+        # Extract commit hash if present in directory structure
+        # (menu_repo might return paths like "firmware/prerelease/firmware-2.7.7.abcdef/file.bin")
+        if remote_files:
+            # Try to extract full version including hash from first file's path
+            first_file_path = remote_files[0].get("download_url", "")
+            path_parts = first_file_path.split("/")
+            for part in path_parts:
+                if part.startswith("firmware-") and expected_version in part:
+                    prerelease_dir_name = part
+                    break
+
+        prerelease_dir = os.path.join(prerelease_base_dir, prerelease_dir_name)
+
+        # Create prerelease directory if it doesn't exist
+        if not os.path.exists(prerelease_dir):
+            try:
+                os.makedirs(prerelease_dir, exist_ok=True)
+                logger.info(f"Created prerelease directory: {prerelease_dir_name}")
+            except OSError as e:
+                logger.error(
+                    f"Failed to create prerelease directory {prerelease_dir}: {e}"
+                )
+                return False, []
+
+        # Download missing or corrupted files
+        files_downloaded = False
+        downloaded_files = []
+
+        for file_info in remote_files:
+            file_name = file_info["name"]
+            download_url = file_info["download_url"]
+            file_path = os.path.join(prerelease_dir, file_name)
+
+            # Check if file needs download (missing or failed integrity check)
+            if force_refresh or _prerelease_needs_download(file_path):
+                logger.info(f"Downloading prerelease file: {file_name}")
+                if download_file_with_retry(download_url, file_path):
+                    files_downloaded = True
+                    downloaded_files.append(file_name)
+                    logger.debug(f"Successfully downloaded: {file_name}")
+                else:
+                    logger.warning(f"Failed to download prerelease file: {file_name}")
+            else:
+                logger.debug(
+                    f"Prerelease file already exists and is valid: {file_name}"
+                )
+
+        # Update tracking information
+        if files_downloaded or force_refresh:
+            update_prerelease_tracking(
+                prerelease_base_dir, latest_release_tag, prerelease_dir_name
+            )
+
+        # Set executable permissions on shell scripts
+        set_permissions_on_sh_files(prerelease_dir)
+
+        # Clean up old prerelease directories (keep only the newest)
+        for old_dir in existing_dirs:
+            if old_dir != prerelease_dir_name:
+                old_path = os.path.join(prerelease_base_dir, old_dir)
+                if _safe_rmtree(old_path, prerelease_base_dir, old_dir):
+                    logger.info(f"Removed older prerelease: {old_dir}")
+
+        if files_downloaded:
+            return True, [prerelease_dir_name]
+        elif matching_dirs:
+            # Existing prerelease found but no new files downloaded
+            return False, [matching_dirs[0]]
+        else:
+            return False, []
+
+    except Exception as e:
+        logger.error(f"Error checking for prereleases: {e}", exc_info=True)
+        return False, []
 
 
 def get_commit_timestamp(

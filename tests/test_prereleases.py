@@ -180,11 +180,11 @@ def test_check_for_prereleases_download_and_cleanup(
     mock_fetch_contents.return_value = [
         {
             "name": "firmware-rak4631-2.7.7.abcdef.uf2",
-            "download_url": "https://example.invalid/rak4631.uf2",
+            "download_url": "https://example.invalid/firmware/prerelease/firmware-2.7.7.abcdef/firmware-rak4631-2.7.7.abcdef.uf2",
         },
         {
             "name": "firmware-heltec-v3-2.7.7.abcdef.zip",
-            "download_url": "https://example.invalid/heltec.zip",
+            "download_url": "https://example.invalid/firmware/prerelease/firmware-2.7.7.abcdef/firmware-heltec-v3-2.7.7.abcdef.zip",
         },
     ]
 
@@ -218,7 +218,7 @@ def test_check_for_prereleases_download_and_cleanup(
     assert downloaded is True
     assert versions == ["firmware-2.7.7.abcdef"]
     assert mock_dl.call_count == 1
-    mock_fetch_contents.assert_called_once_with("firmware-2.7.7.abcdef")
+    mock_fetch_contents.assert_called_once_with("firmware/prerelease/firmware-2.7.7")
     assert not stale_dir.exists()  # Verify stale prerelease was cleaned up
 
 
@@ -377,11 +377,10 @@ def test_prerelease_directory_cleanup(tmp_path, write_dummy_file):
             mock_dirs.return_value = ["firmware-2.7.7.789abc"]
 
             def _dir_aware_contents(dir_name: str):
-                base = dir_name.removeprefix("firmware-")
                 return [
                     {
-                        "name": f"firmware-rak4631-{base}.uf2",
-                        "download_url": f"https://example.invalid/{dir_name}.uf2",
+                        "name": "firmware-rak4631-2.7.7.789abc.uf2",
+                        "download_url": "https://example.invalid/firmware/prerelease/firmware-2.7.7.789abc/firmware-rak4631-2.7.7.789abc.uf2",
                     }
                 ]
 
@@ -411,9 +410,9 @@ def test_prerelease_directory_cleanup(tmp_path, write_dummy_file):
                     "firmware-2.7.7.789abc" in versions
                 )  # But directory is still tracked
 
-                # And tracking JSON should reflect that commit
-                info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
-                assert "2.7.7.789abc" in info.get("commits", [])
+            # And tracking JSON should reflect that commit
+            info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
+            assert "2.7.7.789abc" in info.get("commits", [])
 
     # Verify old directories were cleaned up
     assert not old_dir1.exists(), "Old prerelease directory should be removed"
