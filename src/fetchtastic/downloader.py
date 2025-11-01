@@ -1399,8 +1399,14 @@ def _load_commit_cache() -> None:
         # Convert string timestamps back to datetime objects (build locally)
         current_time = datetime.now(timezone.utc)
         loaded: Dict[str, Tuple[datetime, datetime]] = {}
-        for cache_key, (timestamp_str, cached_at_str) in cache_data.items():
+        for cache_key, cache_value in cache_data.items():
             try:
+                if not isinstance(cache_value, (list, tuple)) or len(cache_value) != 2:
+                    logger.debug(
+                        f"Skipping invalid cache entry for {cache_key}: incorrect structure"
+                    )
+                    continue
+                timestamp_str, cached_at_str = cache_value
                 timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
                 cached_at = datetime.fromisoformat(cached_at_str.replace("Z", "+00:00"))
 
@@ -1408,8 +1414,9 @@ def _load_commit_cache() -> None:
                 age = current_time - cached_at
                 if age.total_seconds() < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 60 * 60:
                     loaded[cache_key] = (timestamp, cached_at)
-            except (ValueError, TypeError):
+            except (ValueError, TypeError) as e:
                 # Skip invalid entries
+                logger.debug(f"Skipping invalid cache entry for {cache_key}: {e}")
                 continue
 
         with _cache_lock:
@@ -1776,6 +1783,7 @@ def get_commit_timestamp(
     commit_hash: str,
     github_token: Optional[str] = None,
     force_refresh: bool = False,
+    allow_env_token: bool = True,
 ) -> Optional[datetime]:
     """
     Get the timestamp for a specific commit from GitHub API.
@@ -1786,6 +1794,7 @@ def get_commit_timestamp(
         commit_hash (str): Commit hash
         github_token (Optional[str]): GitHub API token
         force_refresh (bool): Whether to force refresh cache
+        allow_env_token (bool): Whether to allow using GITHUB_TOKEN environment variable
 
     Returns:
         Optional[datetime]: Commit timestamp or None if not found
@@ -1794,11 +1803,9 @@ def get_commit_timestamp(
 
     cache_key = f"{owner}/{repo}/{commit_hash}"
 
-    # Load cache on first access
-    if not _commit_cache_loaded:
-        with _cache_lock:
-            need_load = not _commit_cache_loaded
-        if need_load:
+    # Load cache on first access (thread-safe)
+    with _cache_lock:
+        if not _commit_cache_loaded:
             _load_commit_cache()
 
     with _cache_lock:
@@ -1819,7 +1826,10 @@ def get_commit_timestamp(
     url = f"{GITHUB_API_BASE}/{owner}/{repo}/commits/{commit_hash}"
     try:
         response = make_github_api_request(
-            url, github_token=github_token, timeout=GITHUB_API_TIMEOUT
+            url,
+            github_token=github_token,
+            allow_env_token=allow_env_token,
+            timeout=GITHUB_API_TIMEOUT,
         )
         commit_data = response.json()
         timestamp_str = commit_data.get("commit", {}).get("committer", {}).get("date")
@@ -1956,10 +1966,8 @@ def _get_latest_releases_data(
     cache_key = f"{url}?per_page={scan_count}"
 
     # Load cache from file on first access (thread-safe)
-    if not _releases_cache_loaded:
-        with _cache_lock:
-            need_load = not _releases_cache_loaded
-        if need_load:
+    with _cache_lock:
+        if not _releases_cache_loaded:
             _load_releases_cache()
 
     with _cache_lock:
