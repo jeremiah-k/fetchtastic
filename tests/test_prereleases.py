@@ -392,11 +392,12 @@ def test_prerelease_directory_cleanup(tmp_path, write_dummy_file):
                 Returns:
                     list[dict]: A list with one asset mapping containing the keys `name`, `path`, and `download_url`. The `path` and `download_url` reflect a hierarchical prerelease location that includes `dir_name`.
                 """
+                asset_name = "firmware-rak4631-2.7.7.789abc.uf2"
                 return [
                     {
-                        "name": "firmware-rak4631-2.7.7.789abc.uf2",
-                        "path": "firmware-2.7.7.789abc/firmware-rak4631-2.7.7.789abc.uf2",
-                        "download_url": "https://example.invalid/firmware-2.7.7.789abc/firmware-rak4631-2.7.7.789abc.uf2",
+                        "name": asset_name,
+                        "path": f"{dir_name}/{asset_name}",
+                        "download_url": f"https://example.invalid/{dir_name}/{asset_name}",
                     }
                 ]
 
