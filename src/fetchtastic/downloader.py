@@ -1488,17 +1488,18 @@ def _save_releases_cache() -> None:
     cache_file = _get_releases_cache_file()
 
     try:
-        # Convert datetime objects to ISO strings for JSON serialization
-        cache_data = {}
-        for cache_key, (releases_data, cached_at) in _releases_cache.items():
-            cache_data[cache_key] = {
-                "releases": releases_data,
-                "cached_at": cached_at.isoformat(),
+        with _cache_lock:
+            cache_data = {
+                cache_key: {
+                    "releases": releases_data,
+                    "cached_at": cached_at.isoformat(),
+                }
+                for cache_key, (releases_data, cached_at) in _releases_cache.items()
             }
 
         # Use atomic write to prevent cache corruption
         if _atomic_write_json(cache_file, cache_data):
-            logger.debug(f"Saved {len(_releases_cache)} releases entries to cache")
+            logger.debug(f"Saved {len(cache_data)} releases entries to cache")
         else:
             logger.debug(f"Failed to save releases cache to {cache_file}")
 
@@ -1930,15 +1931,15 @@ def _save_commit_cache() -> None:
     cache_file = _get_commit_cache_file()
 
     try:
-        cache_data = {}
-        for cache_key, (timestamp, cached_at) in _commit_timestamp_cache.items():
-            cache_data[cache_key] = (timestamp.isoformat(), cached_at.isoformat())
+        with _cache_lock:
+            cache_data = {
+                cache_key: (timestamp.isoformat(), cached_at.isoformat())
+                for cache_key, (timestamp, cached_at) in _commit_timestamp_cache.items()
+            }
 
         # Use atomic write to prevent cache corruption
         if _atomic_write_json(cache_file, cache_data):
-            logger.debug(
-                f"Saved {len(_commit_timestamp_cache)} commit timestamps to cache"
-            )
+            logger.debug(f"Saved {len(cache_data)} commit timestamps to cache")
         else:
             logger.debug(f"Failed to save commit timestamp cache to {cache_file}")
 
