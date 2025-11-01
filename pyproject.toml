@@ -2,9 +2,6 @@
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
-[project]
-requires-python = ">=3.10"
-
 [tool.pytest.ini_options]
 minversion = "6.0"
 addopts = "-ra -q --strict-markers --cov=src/fetchtastic --cov-report=xml --cov-report=html --cov-report=term-missing --cov-branch"
