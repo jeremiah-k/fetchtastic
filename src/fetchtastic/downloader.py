@@ -1318,6 +1318,10 @@ _cache_lock = threading.Lock()  # Lock for thread-safe cache access
 # Cache file path for persistent storage
 _commit_cache_file = None
 
+# Global cache for releases data to avoid repeated API calls
+_releases_cache: Dict[str, Tuple[List[Dict[str, Any]], datetime]] = {}
+_releases_cache_file = None
+
 
 def _get_commit_cache_file() -> str:
     """Get the path to the commit timestamp cache file."""
@@ -1327,6 +1331,16 @@ def _get_commit_cache_file() -> str:
         os.makedirs(cache_dir, exist_ok=True)
         _commit_cache_file = os.path.join(cache_dir, "commit_timestamps.json")
     return _commit_cache_file
+
+
+def _get_releases_cache_file() -> str:
+    """Get the path to the releases cache file."""
+    global _releases_cache_file
+    if _releases_cache_file is None:
+        cache_dir = platformdirs.user_cache_dir("fetchtastic")
+        os.makedirs(cache_dir, exist_ok=True)
+        _releases_cache_file = os.path.join(cache_dir, "releases.json")
+    return _releases_cache_file
 
 
 def _load_commit_cache() -> None:
@@ -1368,6 +1382,49 @@ def _load_commit_cache() -> None:
         logger.debug(f"Could not load commit timestamp cache: {e}")
 
 
+def _load_releases_cache() -> None:
+    """Load releases cache from persistent storage."""
+    global _releases_cache
+    cache_file = _get_releases_cache_file()
+
+    try:
+        if not os.path.exists(cache_file):
+            return
+
+        with open(cache_file, "r", encoding="utf-8") as f:
+            cache_data = json.load(f)
+
+        # Validate cache structure
+        if not isinstance(cache_data, dict):
+            return
+
+        # Convert string timestamps back to datetime objects
+        current_time = datetime.now(timezone.utc)
+        for cache_key, (releases_data_str, cached_at_str) in cache_data.items():
+            try:
+                # Parse releases data (stored as JSON string)
+                releases_data = (
+                    json.loads(releases_data_str)
+                    if isinstance(releases_data_str, str)
+                    else releases_data_str
+                )
+                cached_at = datetime.fromisoformat(cached_at_str.replace("Z", "+00:00"))
+
+                # Check if entry is still valid (not expired) - use same expiry as commit timestamps
+                age = current_time - cached_at
+                if age.total_seconds() < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 3600:
+                    _releases_cache[cache_key] = (releases_data, cached_at)
+            except (ValueError, TypeError, json.JSONDecodeError) as e:
+                # Skip invalid entries
+                logger.debug(f"Skipping invalid cache entry for {cache_key}: {e}")
+                continue
+
+        logger.debug(f"Loaded {len(_releases_cache)} releases entries from cache")
+
+    except (IOError, json.JSONDecodeError) as e:
+        logger.debug(f"Could not load releases cache: {e}")
+
+
 def _save_commit_cache() -> None:
     """Save commit timestamp cache to persistent storage."""
     cache_file = _get_commit_cache_file()
@@ -1392,6 +1449,31 @@ def _save_commit_cache() -> None:
         logger.warning(f"Failed to save commit timestamp cache: {e}")
 
 
+def _save_releases_cache() -> None:
+    """Save releases cache to persistent storage."""
+    cache_file = _get_releases_cache_file()
+
+    try:
+        # Convert datetime objects to ISO strings while cache is locked
+        with _cache_lock:
+            cache_data = {
+                cache_key: (json.dumps(releases_data), cached_at.isoformat())
+                for cache_key, (releases_data, cached_at) in _releases_cache.items()
+                if cached_at is not None  # Only save entries with valid timestamps
+            }
+
+        # Write to temporary file first, then atomically replace
+        temp_file = f"{cache_file}.tmp"
+        with open(temp_file, "w", encoding="utf-8") as f:
+            json.dump(cache_data, f, indent=2)
+
+        os.replace(temp_file, cache_file)
+        logger.debug(f"Saved {len(_releases_cache)} releases entries to cache")
+
+    except IOError as e:
+        logger.warning(f"Failed to save releases cache: {e}")
+
+
 def clear_commit_timestamp_cache() -> None:
     """Clear the global commit timestamp cache. Useful for testing."""
     global _commit_timestamp_cache
@@ -1411,6 +1493,31 @@ def clear_commit_timestamp_cache() -> None:
 
     # Note: Token warning flag is now centralized in utils.py and will be cleared
     # when the application restarts, which is appropriate behavior.
+
+
+def clear_releases_cache() -> None:
+    """Clear the global releases cache. Useful for testing."""
+    global _releases_cache
+
+    # Clear cache under lock to avoid races with concurrent readers/writers
+    with _cache_lock:
+        _releases_cache.clear()
+
+    # Also clear the persistent cache file
+    try:
+        cache_file = _get_releases_cache_file()
+        if os.path.exists(cache_file):
+            os.remove(cache_file)
+            logger.debug("Removed releases cache file")
+    except IOError as e:
+        logger.warning(f"Failed to remove releases cache file: {e}")
+
+
+def clear_all_caches() -> None:
+    """Clear all caches (commit timestamps and releases). Useful for testing and cache reset."""
+    clear_commit_timestamp_cache()
+    clear_releases_cache()
+    logger.debug("Cleared all fetchtastic caches")
 
 
 def get_commit_timestamp(
@@ -1920,6 +2027,7 @@ def _get_latest_releases_data(
     scan_count: int = 10,
     github_token: Optional[str] = None,
     allow_env_token: bool = True,
+    force_refresh: bool = False,
 ) -> List[Dict[str, Any]]:
     """
     Return a list of most recent releases fetched from a GitHub releases API endpoint.
@@ -1929,16 +2037,51 @@ def _get_latest_releases_data(
     in descending order. Respects a short polite delay after the request and logs GitHub
     rate-limit remaining when available.
 
+    This function is now cache-aware and will cache releases data to avoid repeated API calls,
+    similar to the commit timestamp caching used in prerelease functionality.
+
     Parameters:
         url (str): GitHub API URL that returns a list of releases (JSON).
         scan_count (int): Maximum number of releases to return (clamped to GitHub's per_page bounds).
         github_token (str | None): Optional GitHub API token for higher rate limits.
+        allow_env_token (bool): Whether to allow using environment variable token.
+        force_refresh (bool): Whether to bypass cache and force fresh API request.
 
     Returns:
         List[Dict[str, Any]]: Sorted list of release dictionaries (newest first). Returns an empty
         list on network or JSON parse errors. If sorting by `published_at` is not possible due
         to missing or invalid keys, unsorted JSON list is returned.
     """
+    global _releases_cache
+
+    # Create cache key based on URL and scan count
+    cache_key = f"{url}?per_page={scan_count}"
+
+    # Load cache from file on first access (thread-safe)
+    with _cache_lock:
+        if not _releases_cache:
+            _load_releases_cache()
+
+        if force_refresh and cache_key in _releases_cache:
+            del _releases_cache[cache_key]
+        elif not force_refresh and cache_key in _releases_cache:
+            releases_data, cached_at = _releases_cache[cache_key]
+            age = datetime.now(timezone.utc) - cached_at
+            if age.total_seconds() < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 3600:
+                logger.debug(
+                    f"Using cached releases for {url} (cached {age.total_seconds():.0f}s ago)"
+                )
+                return releases_data
+            else:
+                # Expired cache entry
+                logger.debug(
+                    f"Cache expired for releases {url} (was {age.total_seconds():.0f}s ago, limit is {COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS}h)"
+                )
+                del _releases_cache[cache_key]
+
+        # Fetch from API after cache miss/expiry or forced refresh
+        logger.debug(f"Cache miss for releases {url} - fetching from API")
+
     try:
         # Add progress feedback
         url_l = url.lower()
@@ -1998,6 +2141,19 @@ def _get_latest_releases_data(
         return (
             releases  # Return unsorted or partially sorted if error occurs during sort
         )
+
+    # Cache the result (thread-safe)
+    with _cache_lock:
+        _releases_cache[cache_key] = (
+            sorted_releases[:scan_count],
+            datetime.now(timezone.utc),
+        )
+        logger.debug(
+            f"Cached {len(sorted_releases[:scan_count])} releases for {url} (fetched from API)"
+        )
+
+    # Save cache to persistent storage
+    _save_releases_cache()
 
     # Limit the number of releases to be scanned
     return sorted_releases[
@@ -2153,6 +2309,7 @@ def _process_firmware_downloads(
                 "FIRMWARE_VERSIONS_TO_KEEP", RELEASE_SCAN_COUNT
             ),  # Use RELEASE_SCAN_COUNT if versions_to_keep not in config
             config.get("GITHUB_TOKEN"),
+            force_refresh=force_refresh,
         )
 
         keep_count = config.get(
@@ -2301,6 +2458,7 @@ def _process_apk_downloads(
             paths_and_urls["android_releases_url"],
             config.get("ANDROID_VERSIONS_TO_KEEP", RELEASE_SCAN_COUNT),
             config.get("GITHUB_TOKEN"),
+            force_refresh=force_refresh,
         )
 
         keep_count_apk = config.get(
