@@ -651,12 +651,12 @@ def test_rate_limit_cache_file_operations():
         with patch("fetchtastic.utils.platformdirs.user_cache_dir") as mock_cache_dir:
             mock_cache_dir.return_value = temp_dir
 
-            # Reset global variable to force re-calculation
+            # Reset global variables to force re-calculation
             import fetchtastic.utils as utils_module
 
             utils_module._rate_limit_cache_file = None
+            utils_module._rate_limit_cache_loaded = False
 
-            # Test _get_rate_limit_cache_file creates correct path
             cache_file = utils._get_rate_limit_cache_file()
             expected_path = Path(temp_dir) / "rate_limits.json"
             assert cache_file == str(expected_path)
@@ -698,10 +698,11 @@ def test_rate_limit_cache_expiry():
         with patch("fetchtastic.utils.platformdirs.user_cache_dir") as mock_cache_dir:
             mock_cache_dir.return_value = temp_dir
 
-            # Reset global variable to force re-calculation
+            # Reset global variables to force re-calculation
             import fetchtastic.utils as utils_module
 
             utils_module._rate_limit_cache_file = None
+            utils_module._rate_limit_cache_loaded = False
 
             cache_file = utils._get_rate_limit_cache_file()
 
@@ -905,7 +906,8 @@ def test_make_github_api_request_cached_rate_limit():
     # Calculate the actual token hash that will be generated
     import hashlib
 
-    token_hash = hashlib.sha256("test_token".encode()).hexdigest()[:16]
+    fake_token = "ghp_" + "x" * 36
+    token_hash = hashlib.sha256(fake_token.encode()).hexdigest()[:16]
     utils._rate_limit_cache[token_hash] = (250, recent_time)
 
     # Mock response without rate limit headers
@@ -922,7 +924,7 @@ def test_make_github_api_request_cached_rate_limit():
         with patch("fetchtastic.log_utils.logger") as mock_logger:
             utils.make_github_api_request(
                 "https://api.github.com/repos/test/repo",
-                github_token="test_token",  # noqa: S106 - test-only token
+                github_token="ghp_" + "x" * 36,  # noqa: S105 - fake GitHub token format
             )
 
             # Should log cached rate limit estimate

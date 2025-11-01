@@ -245,7 +245,9 @@ def _update_rate_limit(token_hash: str, remaining: int) -> None:
 
     with _rate_limit_lock:
         _rate_limit_cache[token_hash] = (remaining, datetime.now(timezone.utc))
-        _save_rate_limit_cache()
+
+    # Save cache outside the lock to avoid deadlock
+    _save_rate_limit_cache()
 
 
 def _get_cached_rate_limit(token_hash: str) -> Optional[int]:
