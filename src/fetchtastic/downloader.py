@@ -1325,13 +1325,18 @@ _releases_cache: Dict[str, Tuple[List[Dict[str, Any]], datetime]] = {}
 _releases_cache_file = None
 
 
+def _ensure_cache_dir() -> str:
+    """Ensure the cache directory exists and return its path."""
+    cache_dir = platformdirs.user_cache_dir("fetchtastic")
+    os.makedirs(cache_dir, exist_ok=True)
+    return cache_dir
+
+
 def _get_commit_cache_file() -> str:
     """Get the path to the commit timestamp cache file."""
     global _commit_cache_file
     if _commit_cache_file is None:
-        cache_dir = platformdirs.user_cache_dir("fetchtastic")
-        os.makedirs(cache_dir, exist_ok=True)
-        _commit_cache_file = os.path.join(cache_dir, "commit_timestamps.json")
+        _commit_cache_file = os.path.join(_ensure_cache_dir(), "commit_timestamps.json")
     return _commit_cache_file
 
 
@@ -1339,9 +1344,7 @@ def _get_releases_cache_file() -> str:
     """Get the path to the releases cache file."""
     global _releases_cache_file
     if _releases_cache_file is None:
-        cache_dir = platformdirs.user_cache_dir("fetchtastic")
-        os.makedirs(cache_dir, exist_ok=True)
-        _releases_cache_file = os.path.join(cache_dir, "releases.json")
+        _releases_cache_file = os.path.join(_ensure_cache_dir(), "releases.json")
     return _releases_cache_file
 
 
@@ -1375,7 +1378,10 @@ def _load_commit_cache() -> None:
 
                     # Check if entry is still valid (not expired)
                     age = current_time - cached_at
-                    if age.total_seconds() < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 3600:
+                    if (
+                        age.total_seconds()
+                        < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 60 * 60
+                    ):
                         _commit_timestamp_cache[cache_key] = (timestamp, cached_at)
                 except (ValueError, TypeError):
                     # Skip invalid entries
@@ -1408,21 +1414,23 @@ def _load_releases_cache() -> None:
         # Convert string timestamps back to datetime objects
         current_time = datetime.now(timezone.utc)
         with _cache_lock:
-            for cache_key, (timestamp_str, cached_at_str) in cache_data.items():
+            for cache_key, cache_entry in cache_data.items():
                 try:
-                    timestamp = datetime.fromisoformat(
-                        timestamp_str.replace("Z", "+00:00")
-                    )
+                    releases_data = cache_entry["releases"]
                     cached_at = datetime.fromisoformat(
-                        cached_at_str.replace("Z", "+00:00")
+                        cache_entry["cached_at"].replace("Z", "+00:00")
                     )
 
-                    # Check if entry is still valid (not expired)
+                    # Check if entry is still valid (not expired) - use same expiry as commit timestamps
                     age = current_time - cached_at
-                    if age.total_seconds() < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 3600:
-                        _commit_timestamp_cache[cache_key] = (timestamp, cached_at)
-                except (ValueError, TypeError):
+                    if (
+                        age.total_seconds()
+                        < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 60 * 60
+                    ):
+                        _releases_cache[cache_key] = (releases_data, cached_at)
+                except (ValueError, TypeError, KeyError) as e:
                     # Skip invalid entries
+                    logger.debug(f"Skipping invalid cache entry for {cache_key}: {e}")
                     continue
 
         logger.debug(f"Loaded {len(_releases_cache)} releases entries from cache")
@@ -1463,9 +1471,11 @@ def _save_releases_cache() -> None:
         # Convert datetime objects to ISO strings while cache is locked
         with _cache_lock:
             cache_data = {
-                cache_key: (json.dumps(releases_data), cached_at.isoformat())
+                cache_key: {
+                    "releases": releases_data,
+                    "cached_at": cached_at.isoformat(),
+                }
                 for cache_key, (releases_data, cached_at) in _releases_cache.items()
-                if cached_at is not None  # Only save entries with valid timestamps
             }
 
         # Write to temporary file first, then atomically replace
@@ -1480,22 +1490,27 @@ def _save_releases_cache() -> None:
         logger.warning(f"Failed to save releases cache: {e}")
 
 
+def _clear_cache(cache_dict, cache_file_func) -> None:
+    """Generic function to clear a cache dictionary and its persistent file."""
+    # Clear cache under lock to avoid races with concurrent readers/writers
+    with _cache_lock:
+        cache_dict.clear()
+
+    # Also clear the persistent cache file
+    try:
+        cache_file = cache_file_func()
+        if os.path.exists(cache_file):
+            os.remove(cache_file)
+            logger.debug(f"Removed {os.path.basename(cache_file)}")
+    except IOError as e:
+        logger.warning(f"Failed to remove cache file: {e}")
+
+
 def clear_commit_timestamp_cache() -> None:
     """Clear the global commit timestamp cache. Useful for testing."""
     global _commit_timestamp_cache
 
-    # Clear cache under lock to avoid races with concurrent readers/writers
-    with _cache_lock:
-        _commit_timestamp_cache.clear()
-
-    # Also clear the persistent cache file
-    try:
-        cache_file = _get_commit_cache_file()
-        if os.path.exists(cache_file):
-            os.remove(cache_file)
-            logger.debug("Removed commit timestamp cache file")
-    except IOError as e:
-        logger.warning(f"Failed to remove commit timestamp cache file: {e}")
+    _clear_cache(_commit_timestamp_cache, _get_commit_cache_file)
 
     # Note: Token warning flag is now centralized in utils.py and will be cleared
     # when the application restarts, which is appropriate behavior.
@@ -1505,18 +1520,7 @@ def clear_releases_cache() -> None:
     """Clear the global releases cache. Useful for testing."""
     global _releases_cache
 
-    # Clear cache under lock to avoid races with concurrent readers/writers
-    with _cache_lock:
-        _releases_cache.clear()
-
-    # Also clear the persistent cache file
-    try:
-        cache_file = _get_releases_cache_file()
-        if os.path.exists(cache_file):
-            os.remove(cache_file)
-            logger.debug("Removed releases cache file")
-    except IOError as e:
-        logger.warning(f"Failed to remove releases cache file: {e}")
+    _clear_cache(_releases_cache, _get_releases_cache_file)
 
 
 def clear_all_caches() -> None:
@@ -3630,7 +3634,7 @@ def main(force_refresh: bool = False) -> None:
     # Clear caches if force refresh is requested
     if force_refresh:
         logger.info("Force refresh requested - clearing caches...")
-        clear_commit_timestamp_cache()
+        clear_all_caches()
         # Clear device hardware cache
         device_manager = DeviceHardwareManager()
         device_manager.clear_cache()
