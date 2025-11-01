@@ -2,13 +2,17 @@
 import gc  # For Windows file operation retries
 import hashlib
 import importlib.metadata
+import json
 import os
 import platform
 import re
+import threading
 import time
 import zipfile
-from typing import List, Optional  # Callable removed
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Tuple  # Callable removed
 
+import platformdirs
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry  # type: ignore
@@ -39,6 +43,15 @@ _PUNC_RX = re.compile(r"[^a-z0-9]+")
 # Cache for the User-Agent string to avoid repeated metadata lookups
 _USER_AGENT_CACHE = None
 
+# Thread-safe token warning tracking (centralized)
+_token_warning_shown = False
+_token_warning_lock = threading.Lock()
+
+# GitHub API rate limit tracking
+_rate_limit_cache: Dict[str, Tuple[int, datetime]] = {}
+_rate_limit_lock = threading.Lock()
+_rate_limit_cache_file = None
+
 
 def get_user_agent() -> str:
     """
@@ -65,6 +78,365 @@ def get_user_agent() -> str:
         _USER_AGENT_CACHE = f"fetchtastic/{app_version}"
 
     return _USER_AGENT_CACHE
+
+
+def get_effective_github_token(
+    github_token: Optional[str], allow_env_token: bool
+) -> Optional[str]:
+    """
+    Return the effective GitHub token from arguments or environment.
+
+    Parameters:
+        github_token (Optional[str]): GitHub token passed as argument
+        allow_env_token (bool): Whether to allow using environment variable token
+
+    Returns:
+        Optional[str]: The effective token to use, or None if no token available
+    """
+    candidate = (github_token or "").strip()
+    if candidate:
+        return candidate
+    if not allow_env_token:
+        return None
+    env_token = os.environ.get("GITHUB_TOKEN")
+    return env_token.strip() if env_token else None
+
+
+def _show_token_warning_if_needed(
+    effective_token: Optional[str], allow_env_token: bool
+) -> None:
+    """
+    Show thread-safe warning about missing GitHub token if needed.
+
+    This function centralizes the token warning logic to avoid duplication
+    across the codebase and ensures the warning is shown only once per session.
+
+    Args:
+        effective_token: The effective GitHub token (None if no token)
+        allow_env_token: Whether environment token usage is allowed
+    """
+    if not effective_token and allow_env_token:
+        global _token_warning_shown
+        with _token_warning_lock:
+            if not _token_warning_shown:
+                logger.warning(
+                    "No GITHUB_TOKEN found - using unauthenticated API requests (60/hour limit). "
+                    "Set GITHUB_TOKEN environment variable or run 'fetchtastic setup github' for higher limits (5000/hour)."
+                )
+                _token_warning_shown = True
+
+
+def _get_rate_limit_cache_file() -> str:
+    """Get the path to the rate limit cache file."""
+    global _rate_limit_cache_file
+    if _rate_limit_cache_file is None:
+        cache_dir = platformdirs.user_cache_dir("fetchtastic")
+        os.makedirs(cache_dir, exist_ok=True)
+        _rate_limit_cache_file = os.path.join(cache_dir, "rate_limits.json")
+    return _rate_limit_cache_file
+
+
+def _load_rate_limit_cache() -> None:
+    """Load rate limit cache from persistent storage."""
+    global _rate_limit_cache
+    cache_file = _get_rate_limit_cache_file()
+
+    try:
+        if not os.path.exists(cache_file):
+            return
+
+        with open(cache_file, "r", encoding="utf-8") as f:
+            cache_data = json.load(f)
+
+        # Validate cache structure
+        if not isinstance(cache_data, dict):
+            return
+
+        # Convert string timestamps back to datetime objects
+        current_time = datetime.now(timezone.utc)
+        for cache_key, (remaining_str, cached_at_str) in cache_data.items():
+            try:
+                remaining = int(remaining_str)
+                cached_at = datetime.fromisoformat(cached_at_str)
+
+                # Only keep cache entries that are less than 1 hour old
+                # GitHub rate limits reset every hour
+                if (current_time - cached_at).total_seconds() < 3600:
+                    _rate_limit_cache[cache_key] = (remaining, cached_at)
+            except (ValueError, TypeError):
+                continue
+
+    except (IOError, json.JSONDecodeError):
+        pass  # Silently ignore cache loading errors
+
+
+def _save_rate_limit_cache() -> None:
+    """Save rate limit cache to persistent storage."""
+    cache_file = _get_rate_limit_cache_file()
+
+    try:
+        # Convert datetime objects to ISO strings for JSON serialization
+        cache_data = {
+            cache_key: (remaining, cached_at.isoformat())
+            for cache_key, (remaining, cached_at) in _rate_limit_cache.items()
+        }
+
+        # Write to temporary file first, then atomically replace
+        temp_file = f"{cache_file}.tmp"
+        with open(temp_file, "w", encoding="utf-8") as f:
+            json.dump(cache_data, f, indent=2)
+
+        os.replace(temp_file, cache_file)
+
+    except IOError:
+        pass  # Silently ignore cache saving errors
+
+
+def _update_rate_limit(token_hash: str, remaining: int) -> None:
+    """Update the rate limit cache for a specific token."""
+    global _rate_limit_cache
+
+    with _rate_limit_lock:
+        _rate_limit_cache[token_hash] = (remaining, datetime.now(timezone.utc))
+        _save_rate_limit_cache()
+
+
+def _get_cached_rate_limit(token_hash: str) -> Optional[int]:
+    """Get cached rate limit for a specific token."""
+    global _rate_limit_cache
+
+    with _rate_limit_lock:
+        if token_hash in _rate_limit_cache:
+            remaining, cached_at = _rate_limit_cache[token_hash]
+            # Only return cached value if it's less than 5 minutes old
+            # This provides a balance between accuracy and performance
+            if (datetime.now(timezone.utc) - cached_at).total_seconds() < 300:
+                return remaining
+    return None
+
+
+def clear_rate_limit_cache() -> None:
+    """Clear the global rate limit cache. Useful for testing."""
+    global _rate_limit_cache
+
+    # Clear cache under lock to avoid races with concurrent readers/writers
+    with _rate_limit_lock:
+        _rate_limit_cache.clear()
+
+    # Also clear the persistent cache file
+    try:
+        cache_file = _get_rate_limit_cache_file()
+        if os.path.exists(cache_file):
+            os.remove(cache_file)
+            logger.debug("Removed rate limit cache file")
+    except IOError as e:
+        logger.warning(f"Failed to remove rate limit cache file: {e}")
+
+
+def make_github_api_request(
+    url: str,
+    github_token: Optional[str] = None,
+    allow_env_token: bool = True,
+    params: Optional[Dict[str, Any]] = None,
+    timeout: Optional[int] = None,
+    _is_retry: bool = False,
+    custom_403_message: Optional[str] = None,
+) -> requests.Response:
+    """
+    Make an authenticated GitHub API request with proper headers, rate limiting, and error handling.
+
+    This function handles:
+    - Setting proper GitHub API headers
+    - Authentication using provided token or environment variable
+    - Automatic retry without token on 401 error
+    - Rate limit warnings
+    - Polite delays after requests
+
+    Parameters:
+        url (str): GitHub API URL to request
+        github_token (Optional[str]): GitHub token for authentication
+        allow_env_token (bool): Whether to allow using environment variable token
+        params (Optional[Dict[str, Any]]): Query parameters for the request
+        timeout (Optional[int]): Request timeout in seconds
+        _is_retry (bool): Internal flag to prevent infinite recursion on retries.
+        custom_403_message (Optional[str]): Custom message for 403 errors, overrides default rate limit message
+
+    Returns:
+        requests.Response: The response object
+
+    Raises:
+        requests.HTTPError: For HTTP errors.
+        requests.RequestException: For other request-related errors.
+    """
+    from fetchtastic.constants import API_CALL_DELAY, GITHUB_API_TIMEOUT
+    from fetchtastic.log_utils import logger
+
+    # Prepare headers with optional authentication
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": get_user_agent(),
+    }
+
+    # Add authentication if token provided
+    effective_token = get_effective_github_token(github_token, allow_env_token)
+    if effective_token:
+        headers["Authorization"] = f"token {effective_token}"
+        logger.debug("Using GitHub token for API authentication")
+
+    # Show warning if no token available (centralized logic)
+    _show_token_warning_if_needed(effective_token, allow_env_token)
+
+    # Initialize rate limit cache if needed
+    if not _rate_limit_cache:
+        _load_rate_limit_cache()
+
+    # Create token hash for caching
+    token_hash = hashlib.sha256((effective_token or "no-token").encode()).hexdigest()[
+        :16
+    ]
+
+    try:
+        # Make the request
+        actual_timeout = timeout or GITHUB_API_TIMEOUT
+        response = requests.get(
+            url, timeout=actual_timeout, headers=headers, params=params
+        )
+        response.raise_for_status()
+    except requests.HTTPError as e:
+        if (
+            not _is_retry
+            and e.response is not None
+            and e.response.status_code == 401
+            and effective_token
+        ):
+            logger.warning(
+                f"GitHub token authentication failed for {url}. Retrying without authentication."
+            )
+            return make_github_api_request(
+                url,
+                github_token=None,
+                allow_env_token=False,  # Don't try env token on retry
+                params=params,
+                timeout=timeout,
+                _is_retry=True,
+                custom_403_message=custom_403_message,
+            )
+        elif e.response is not None and e.response.status_code == 403:
+            if custom_403_message:
+                logger.error(custom_403_message)
+            else:
+                logger.error(
+                    f"GitHub API rate limit exceeded for {url}. "
+                    f"Set GITHUB_TOKEN environment variable for higher rate limits."
+                )
+        raise
+
+    # Log API response info for debugging
+    content_length = response.headers.get("Content-Length")
+    if content_length is None:
+        # Try to get actual content length if header is missing
+        try:
+            content_length = str(len(response.content))
+        except (AttributeError, TypeError):
+            content_length = "unknown"
+    logger.debug(
+        f"GitHub API response: {response.status_code} for {url} ({content_length} bytes)"
+    )
+
+    # Small delay to be respectful to GitHub API
+    time.sleep(API_CALL_DELAY)
+
+    # Enhanced rate limit tracking and logging
+    try:
+        # Safely get headers with fallback for missing headers attribute (e.g., in tests)
+        headers = getattr(response, "headers", None)
+
+        if headers is None:
+            headers = {}
+        # CaseInsensitiveDict is not a dict subclass, so check for dict-like behavior
+        elif not hasattr(headers, "get"):
+            headers = {}
+
+        rl_header = headers.get("X-RateLimit-Remaining")
+        rl_reset = headers.get("X-RateLimit-Reset")
+
+        if rl_header is not None:
+            try:
+                # Handle both string values and potential Mock objects in tests
+                remaining = None
+                if isinstance(rl_header, str) and rl_header.isdigit():
+                    remaining = int(rl_header)
+                elif isinstance(rl_header, (int, float)):
+                    remaining = int(rl_header)
+                elif (
+                    not isinstance(rl_header, (str, int, float))
+                    and str(rl_header).isdigit()
+                ):
+                    # This handles cases where rl_header might be a Mock or other object
+                    remaining = int(str(rl_header))
+
+                if remaining is not None:
+                    # Update cache with new rate limit info
+                    _update_rate_limit(token_hash, remaining)
+
+                    # Get cached value for comparison
+                    cached_remaining = _get_cached_rate_limit(token_hash)
+
+                    # Log enhanced rate limit information
+                    if cached_remaining is not None and cached_remaining != remaining:
+                        logger.debug(
+                            f"GitHub API rate-limit remaining: {remaining} (was {cached_remaining})"
+                        )
+                    else:
+                        logger.debug(f"GitHub API rate-limit remaining: {remaining}")
+
+                    # Add rate limit estimation and warnings
+                    if remaining <= 10:
+                        logger.warning(
+                            f"GitHub API rate limit running low: {remaining} requests remaining"
+                        )
+                    elif remaining <= 50:
+                        logger.info(
+                            f"GitHub API rate limit: {remaining} requests remaining"
+                        )
+
+                    # Add reset time information if available
+                    if rl_reset:
+                        try:
+                            reset_time = datetime.fromtimestamp(
+                                int(rl_reset), timezone.utc
+                            )
+                            time_until_reset = reset_time - datetime.now(timezone.utc)
+                            if time_until_reset.total_seconds() > 0:
+                                minutes_until_reset = int(
+                                    time_until_reset.total_seconds() / 60
+                                )
+                                logger.debug(
+                                    f"GitHub API rate limit resets in ~{minutes_until_reset} minutes"
+                                )
+                        except (ValueError, OSError):
+                            pass
+                else:
+                    # Skip rate limit tracking for invalid values (including Mock objects)
+                    logger.debug(f"Invalid rate-limit header value: {rl_header}")
+
+            except ValueError:
+                logger.debug("Could not parse rate-limit header value")
+        else:
+            # No rate limit info available (might be a different endpoint)
+            cached_remaining = _get_cached_rate_limit(token_hash)
+            if cached_remaining is not None:
+                logger.debug(
+                    f"GitHub API rate-limit remaining: ~{cached_remaining} (cached estimate)"
+                )
+            else:
+                logger.debug("No rate limit information available")
+
+    except (KeyError, ValueError, AttributeError) as e:
+        logger.debug(f"Could not parse rate-limit headers: {e}")
+
+    return response
 
 
 def calculate_sha256(file_path: str) -> Optional[str]:
@@ -301,7 +673,7 @@ def download_file_with_retry(
                 )
                 return False
 
-    temp_path = f"{download_path}.tmp.{os.getpid()}.{int(time.time()*1000)}"
+    temp_path = f"{download_path}.tmp.{os.getpid()}.{int(time.time() * 1000)}"
     session = requests.Session()
     response = None  # ensure we can close the Response in finally
     try:
@@ -324,18 +696,28 @@ def download_file_with_retry(
                 raise_on_status=False,
                 respect_retry_after_header=True,
             )
-        except TypeError:
-            # urllib3 v1 fallback
-            retry_strategy = Retry(
-                total=DEFAULT_CONNECT_RETRIES,
-                connect=DEFAULT_CONNECT_RETRIES,
-                read=DEFAULT_CONNECT_RETRIES,
-                status=DEFAULT_CONNECT_RETRIES,
-                backoff_factor=DEFAULT_BACKOFF_FACTOR,
-                status_forcelist=[408, 429, 500, 502, 503, 504],
-                method_whitelist=frozenset({"GET", "HEAD"}),  # type: ignore[arg-type]
-                raise_on_status=False,
-            )
+        except TypeError as e:
+            # urllib3 v1 fallback - parameters may differ between versions
+            # Use method_whitelist for older urllib3 versions
+            try:
+                retry_strategy = Retry(
+                    total=DEFAULT_CONNECT_RETRIES,
+                    connect=DEFAULT_CONNECT_RETRIES,
+                    read=DEFAULT_CONNECT_RETRIES,
+                    status=DEFAULT_CONNECT_RETRIES,
+                    backoff_factor=DEFAULT_BACKOFF_FACTOR,
+                    status_forcelist=[408, 429, 500, 502, 503, 504],
+                    method_whitelist=frozenset({"GET", "HEAD"}),  # urllib3 v1 parameter
+                    raise_on_status=False,
+                )
+            except (TypeError, ValueError):
+                # If method_whitelist also fails, try minimal parameters
+                retry_strategy = Retry(
+                    total=DEFAULT_CONNECT_RETRIES,
+                    backoff_factor=DEFAULT_BACKOFF_FACTOR,
+                    status_forcelist=[408, 429, 500, 502, 503, 504],
+                )
+                logger.debug(f"Using minimal urllib3 Retry configuration due to: {e}")
         adapter = HTTPAdapter(max_retries=retry_strategy)
         session.mount("https://", adapter)
         session.mount("http://", adapter)
@@ -416,9 +798,10 @@ def download_file_with_retry(
             retry_delay = WINDOWS_INITIAL_RETRY_DELAY
             for i in range(WINDOWS_MAX_REPLACE_RETRIES):
                 try:
+                    # Force garbage collection to release file handles before attempting move
                     gc.collect()
                     logger.debug(
-                        f"Attempting to move temporary file {temp_path} to {download_path} (Windows attempt {i+1}/{WINDOWS_MAX_REPLACE_RETRIES})"
+                        f"Attempting to move temporary file {temp_path} to {download_path} (Windows attempt {i + 1}/{WINDOWS_MAX_REPLACE_RETRIES})"
                     )
                     os.replace(temp_path, download_path)
                     logger.debug(

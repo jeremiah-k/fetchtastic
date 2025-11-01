@@ -69,8 +69,8 @@ class TestLogUtils:
         handler = log_utils.logger.handlers[0]
         formatter = handler.formatter
 
-        # DEBUG formatter should include module info
-        assert "%(module)s.%(funcName)s:%(lineno)d" in formatter._fmt
+        # DEBUG formatter should be clean and simple
+        assert "%(message)s" in formatter._fmt
 
         # Set to INFO level
         log_utils.set_log_level("INFO")
@@ -152,7 +152,10 @@ class TestLogUtils:
         assert log_utils.LOGGER_NAME == "fetchtastic"
         assert log_utils.LOG_DATE_FORMAT == "%Y-%m-%d %H:%M:%S"
         assert "%(asctime)s - %(levelname)s - %(message)s" in log_utils.INFO_LOG_FORMAT
-        assert "%(module)s.%(funcName)s:%(lineno)d" in log_utils.DEBUG_LOG_FORMAT
+        assert (
+            "%(asctime)s - %(levelname)s - %(name)s: %(message)s"
+            == log_utils.DEBUG_LOG_FORMAT
+        )
 
     def test_logger_logging_methods(self):
         """Test that logger methods work correctly."""

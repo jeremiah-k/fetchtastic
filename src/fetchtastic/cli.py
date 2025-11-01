@@ -69,7 +69,15 @@ def main():
         )
 
     # Command to download firmware and APKs
-    subparsers.add_parser("download", help="Download firmware and APKs")
+    download_parser = subparsers.add_parser(
+        "download", help="Download firmware and APKs"
+    )
+    download_parser.add_argument(
+        "--force",
+        "-f",
+        action="store_true",
+        help="Force refresh by bypassing cache and rechecking all downloads",
+    )
 
     # Command to display NTFY topic
     subparsers.add_parser("topic", help="Display the current NTFY topic")
@@ -212,7 +220,7 @@ def main():
                 set_log_level(config["LOG_LEVEL"])
 
             # Run the downloader
-            downloader.main()
+            downloader.main(force_refresh=args.force)
     elif args.command == "topic":
         # Display the NTFY topic and prompt to copy to clipboard
         config = setup_config.load_config()

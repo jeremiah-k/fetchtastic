@@ -25,7 +25,7 @@ If you prefer to install manually or need more control over the process:
 ### Prerequisites
 
 - macOS 10.15 (Catalina) or later
-- Homebrew (recommended) or Python 3.8+
+- Homebrew (recommended) or Python 3.10+
 
 ### Step 1: Install Homebrew (if not already installed)
 
@@ -134,7 +134,7 @@ xcode-select --install
 
 ### Python Version Issues
 
-macOS comes with an older Python version. Make sure you're using Python 3.8+:
+macOS comes with an older Python version. Make sure you're using Python 3.10+:
 
 ```bash
 python3 --version
