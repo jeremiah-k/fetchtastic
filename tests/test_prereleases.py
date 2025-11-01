@@ -166,9 +166,9 @@ def test_cleanup_superseded_prereleases_handles_commit_suffix(tmp_path):
 @patch("fetchtastic.downloader.menu_repo.fetch_repo_directories")
 @patch("fetchtastic.downloader.menu_repo.fetch_directory_contents")
 @patch("fetchtastic.downloader.download_file_with_retry")
-@patch("requests.get")
+@patch("fetchtastic.downloader.make_github_api_request")
 def test_check_for_prereleases_download_and_cleanup(
-    mock_get, mock_dl, mock_fetch_contents, mock_fetch_dirs, tmp_path, write_dummy_file
+    mock_api, mock_dl, mock_fetch_contents, mock_fetch_dirs, tmp_path, write_dummy_file
 ):
     """Check that prerelease discovery downloads matching assets and cleans stale entries."""
     # Repo has a newer prerelease and some other dirs
@@ -205,9 +205,10 @@ def test_check_for_prereleases_download_and_cleanup(
     stray.write_text("stale")
 
     # Mock GitHub API response for commit timestamp
-    mock_get.side_effect = mock_github_commit_timestamp(
-        {"abcdef": "2025-01-20T12:00:00Z"}
-    )
+    resp = Mock()
+    resp.json.return_value = {"commit": {"committer": {"date": "2025-01-20T12:00:00Z"}}}
+    resp.raise_for_status.return_value = None
+    mock_api.return_value = resp
 
     latest_release_tag = "v2.7.6.111111"
     downloaded, versions = downloader.check_for_prereleases(
@@ -238,9 +239,9 @@ def test_check_for_prereleases_no_directories(mock_fetch_dirs, tmp_path):
 @patch("fetchtastic.downloader.menu_repo.fetch_repo_directories")
 @patch("fetchtastic.downloader.menu_repo.fetch_directory_contents")
 @patch("fetchtastic.downloader.download_file_with_retry")
-@patch("requests.get")
+@patch("fetchtastic.downloader.make_github_api_request")
 def test_prerelease_tracking_functionality(
-    mock_get, mock_dl, mock_fetch_contents, mock_fetch_dirs, tmp_path, write_dummy_file
+    mock_api, mock_dl, mock_fetch_contents, mock_fetch_dirs, tmp_path, write_dummy_file
 ):
     """Test that prerelease tracking file is created and updated correctly."""
     # Setup mock data
@@ -261,9 +262,10 @@ def test_prerelease_tracking_functionality(
     latest_release_tag = "v2.7.6.111111"
 
     # Mock GitHub API responses for commit timestamps
-    mock_get.side_effect = mock_github_commit_timestamp(
-        {"abcdef": "2025-01-20T12:00:00Z"}
-    )
+    resp = Mock()
+    resp.json.return_value = {"commit": {"committer": {"date": "2025-01-20T12:00:00Z"}}}
+    resp.raise_for_status.return_value = None
+    mock_api.return_value = resp
 
     # Run prerelease check
     downloaded, versions = downloader.check_for_prereleases(

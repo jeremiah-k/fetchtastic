@@ -39,9 +39,11 @@ from fetchtastic.constants import (
     EXECUTABLE_PERMISSIONS,
     FILE_TYPE_PREFIXES,
     FIRMWARE_DIR_PREFIX,
+    GITHUB_API_BASE,
     GITHUB_API_TIMEOUT,
     LATEST_ANDROID_RELEASE_FILE,
     LATEST_FIRMWARE_RELEASE_FILE,
+    MAX_CONCURRENT_TIMESTAMP_FETCHES,
     MESHTASTIC_ANDROID_RELEASES_URL,
     MESHTASTIC_FIRMWARE_RELEASES_URL,
     NTFY_REQUEST_TIMEOUT,
@@ -1590,7 +1592,7 @@ def check_for_prereleases(
         # Only look for prerelease directories matching the expected version
         matching_prerelease_dirs: List[str] = []
         for raw_dir_name in directories:
-            if not raw_dir_name.startswith("firmware-"):
+            if not raw_dir_name.startswith(FIRMWARE_DIR_PREFIX):
                 continue
 
             dir_name = _sanitize_path_component(raw_dir_name)
@@ -1645,7 +1647,9 @@ def check_for_prereleases(
 
         # Fetch timestamps concurrently to improve performance
         with ThreadPoolExecutor(
-            max_workers=max(1, min(4, len(commit_hashes)))
+            max_workers=max(
+                1, min(MAX_CONCURRENT_TIMESTAMP_FETCHES, len(commit_hashes))
+            )
         ) as executor:
             timestamps = list(executor.map(_safe_get_timestamp, commit_hashes))
 
@@ -1749,7 +1753,13 @@ def check_for_prereleases(
         else:
             return False, []
 
-    except Exception as e:
+    except (
+        requests.RequestException,
+        OSError,
+        ValueError,
+        KeyError,
+        json.JSONDecodeError,
+    ) as e:
         logger.error(f"Error checking for prereleases: {e}", exc_info=True)
         return False, []
 
@@ -1800,7 +1810,7 @@ def get_commit_timestamp(
                 del _commit_timestamp_cache[cache_key]
 
     # Fetch from API
-    url = f"https://api.github.com/repos/{owner}/{repo}/commits/{commit_hash}"
+    url = f"{GITHUB_API_BASE}/{owner}/{repo}/commits/{commit_hash}"
     try:
         response = make_github_api_request(
             url, github_token=github_token, timeout=GITHUB_API_TIMEOUT
