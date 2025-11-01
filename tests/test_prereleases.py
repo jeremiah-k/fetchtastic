@@ -19,8 +19,11 @@ import requests
 from fetchtastic import downloader
 from fetchtastic.downloader import (
     _commit_timestamp_cache,
+    _get_commit_cache_file,
     _get_commit_hash_from_dir,
+    _load_commit_cache,
     _normalize_version,
+    _save_commit_cache,
     clear_commit_timestamp_cache,
     get_commit_timestamp,
     get_prerelease_tracking_info,
@@ -555,6 +558,236 @@ def test_get_commit_timestamp_cache():
 
     # Clear cache after test
     clear_commit_timestamp_cache()
+
+
+@pytest.mark.core_downloads
+def test_persistent_commit_cache_file_operations():
+    """Test persistent commit cache file operations."""
+    import tempfile
+    from pathlib import Path
+
+    # Clear cache before test
+    clear_commit_timestamp_cache()
+
+    # Create a temporary directory for testing
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # Mock platformdirs to use our temp directory and reset global cache file variable
+        with patch(
+            "fetchtastic.downloader.platformdirs.user_cache_dir"
+        ) as mock_cache_dir:
+            mock_cache_dir.return_value = temp_dir
+
+            # Reset the global variable to force re-calculation
+            import fetchtastic.downloader as downloader_module
+
+            downloader_module._commit_cache_file = None
+
+            # Test _get_commit_cache_file creates correct path
+            cache_file = _get_commit_cache_file()
+            expected_path = Path(temp_dir) / "commit_timestamps.json"
+            assert cache_file == str(expected_path)
+
+            # Test cache file doesn't exist initially
+            assert not os.path.exists(cache_file)
+
+            # Add some data to in-memory cache
+            test_timestamp = datetime(2025, 1, 20, 12, 0, 0, tzinfo=timezone.utc)
+            test_key = "owner/repo/abc123"
+            _commit_timestamp_cache[test_key] = (
+                test_timestamp,
+                datetime.now(timezone.utc),
+            )
+
+            # Test _save_commit_cache creates file
+            _save_commit_cache()
+            assert os.path.exists(cache_file)
+
+            # Verify file contents
+            with open(cache_file, "r", encoding="utf-8") as f:
+                saved_data = json.load(f)
+            assert test_key in saved_data
+            assert len(saved_data[test_key]) == 2  # timestamp and cached_at
+
+            # Clear in-memory cache
+            _commit_timestamp_cache.clear()
+            assert len(_commit_timestamp_cache) == 0
+
+            # Test _load_commit_cache restores data
+            _load_commit_cache()
+            assert len(_commit_timestamp_cache) == 1
+            assert test_key in _commit_timestamp_cache
+            loaded_timestamp, loaded_cached_at = _commit_timestamp_cache[test_key]
+            assert loaded_timestamp == test_timestamp
+            assert isinstance(loaded_cached_at, datetime)
+
+
+@pytest.mark.core_downloads
+def test_persistent_commit_cache_expiry():
+    """Test that expired cache entries are not loaded."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        with patch(
+            "fetchtastic.downloader.platformdirs.user_cache_dir"
+        ) as mock_cache_dir:
+            mock_cache_dir.return_value = temp_dir
+
+            # Clear global cache first
+            clear_commit_timestamp_cache()
+
+            # Reset global variable to force re-calculation
+            import fetchtastic.downloader as downloader_module
+
+            downloader_module._commit_cache_file = None
+
+            cache_file = _get_commit_cache_file()
+
+            # Create cache data with expired entry
+            old_timestamp = datetime.now(timezone.utc) - timedelta(hours=25)  # Expired
+            old_cached_at = datetime.now(timezone.utc) - timedelta(hours=24)  # Expired
+
+            cache_data = {
+                "owner/repo/expired": [
+                    old_timestamp.isoformat(),
+                    old_cached_at.isoformat(),
+                ],
+                "owner/repo/valid": [
+                    datetime.now(timezone.utc).isoformat(),
+                    datetime.now(timezone.utc).isoformat(),
+                ],
+            }
+
+            with open(cache_file, "w", encoding="utf-8") as f:
+                json.dump(cache_data, f)
+
+            # Load cache - should only load valid entries
+            _load_commit_cache()
+
+            # Should only have the valid entry
+            assert len(_commit_timestamp_cache) == 1
+            assert "owner/repo/valid" in _commit_timestamp_cache
+            assert "owner/repo/expired" not in _commit_timestamp_cache
+
+
+@pytest.mark.core_downloads
+def test_persistent_commit_cache_error_handling():
+    """Test error handling for corrupted cache files."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        with patch(
+            "fetchtastic.downloader.platformdirs.user_cache_dir"
+        ) as mock_cache_dir:
+            mock_cache_dir.return_value = temp_dir
+
+            # Clear global cache first
+            clear_commit_timestamp_cache()
+
+            # Reset global variable to force re-calculation
+            import fetchtastic.downloader as downloader_module
+
+            downloader_module._commit_cache_file = None
+
+            cache_file = _get_commit_cache_file()
+
+            # Test with invalid JSON
+            with open(cache_file, "w", encoding="utf-8") as f:
+                f.write("invalid json content")
+
+            # Should not raise exception, just log debug message
+            _load_commit_cache()
+            assert len(_commit_timestamp_cache) == 0
+
+            # Test with invalid structure (not a dict)
+            with open(cache_file, "w", encoding="utf-8") as f:
+                json.dump(["not", "a", "dict"], f)
+
+            _load_commit_cache()
+            assert len(_commit_timestamp_cache) == 0
+
+            # Test with invalid timestamp format
+            invalid_data = {
+                "owner/repo/invalid": ["not-a-timestamp", "2025-01-20T12:00:00Z"]
+            }
+            with open(cache_file, "w", encoding="utf-8") as f:
+                json.dump(invalid_data, f)
+
+            _load_commit_cache()
+            assert len(_commit_timestamp_cache) == 0
+
+
+@pytest.mark.core_downloads
+def test_clear_commit_timestamp_cache_persistent():
+    """Test that clear_commit_timestamp_cache also removes persistent cache file."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        with patch(
+            "fetchtastic.downloader.platformdirs.user_cache_dir"
+        ) as mock_cache_dir:
+            mock_cache_dir.return_value = temp_dir
+
+            # Reset global variable to force re-calculation
+            import fetchtastic.downloader as downloader_module
+
+            downloader_module._commit_cache_file = None
+
+            cache_file = _get_commit_cache_file()
+
+            # Create cache file
+            _commit_timestamp_cache["test/key"] = (
+                datetime.now(timezone.utc),
+                datetime.now(timezone.utc),
+            )
+            _save_commit_cache()
+            assert os.path.exists(cache_file)
+
+            # Clear cache - should remove file
+            clear_commit_timestamp_cache()
+            assert not os.path.exists(cache_file)
+            assert len(_commit_timestamp_cache) == 0
+
+
+@pytest.mark.core_downloads
+def test_get_commit_timestamp_loads_persistent_cache():
+    """Test that get_commit_timestamp loads persistent cache on first access."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        with patch(
+            "fetchtastic.downloader.platformdirs.user_cache_dir"
+        ) as mock_cache_dir:
+            mock_cache_dir.return_value = temp_dir
+
+            # Reset global variable to force re-calculation
+            import fetchtastic.downloader as downloader_module
+
+            downloader_module._commit_cache_file = None
+
+            cache_file = _get_commit_cache_file()
+
+            # Pre-populate cache file
+            test_timestamp = datetime(2025, 1, 20, 12, 0, 0, tzinfo=timezone.utc)
+            cached_at = datetime.now(timezone.utc) - timedelta(minutes=30)  # Recent
+
+            cache_data = {
+                "owner/repo/preloaded": [
+                    test_timestamp.isoformat(),
+                    cached_at.isoformat(),
+                ]
+            }
+
+            with open(cache_file, "w", encoding="utf-8") as f:
+                json.dump(cache_data, f)
+
+            # Clear in-memory cache
+            _commit_timestamp_cache.clear()
+
+            # Call get_commit_timestamp - should load from persistent cache
+            result = get_commit_timestamp("owner", "repo", "preloaded")
+
+            assert result == test_timestamp
+            assert "owner/repo/preloaded" in _commit_timestamp_cache
 
 
 @pytest.mark.core_downloads

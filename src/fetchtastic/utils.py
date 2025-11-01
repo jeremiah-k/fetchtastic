@@ -223,6 +223,15 @@ def clear_rate_limit_cache() -> None:
     with _rate_limit_lock:
         _rate_limit_cache.clear()
 
+    # Also clear the persistent cache file
+    try:
+        cache_file = _get_rate_limit_cache_file()
+        if os.path.exists(cache_file):
+            os.remove(cache_file)
+            logger.debug("Removed rate limit cache file")
+    except IOError as e:
+        logger.warning(f"Failed to remove rate limit cache file: {e}")
+
 
 def make_github_api_request(
     url: str,

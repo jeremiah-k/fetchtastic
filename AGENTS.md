@@ -69,7 +69,7 @@ python -m pytest tests/test_cli.py
 python -m pytest tests/test_cli.py::test_function_name
 
 # Run recently modified tests (example)
-python -m pytest tests/test_setup_config.py tests/test_log_utils_level.py tests/test_downloader.py
+python -m pytest tests/test_setup_config.py tests/test_log_utils_level.py tests/test_prereleases.py
 ```
 
 ### Coverage Reports

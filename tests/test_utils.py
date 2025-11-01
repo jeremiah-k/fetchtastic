@@ -1,5 +1,6 @@
 import hashlib
 import importlib.metadata
+import json
 import os
 import zipfile
 from unittest.mock import MagicMock, patch
@@ -633,3 +634,388 @@ def test_get_user_agent_caching(mocker):
     user_agent2 = utils.get_user_agent()
     assert user_agent2 == "fetchtastic/1.2.3"
     assert mock_version.call_count == 1  # Should not be called again
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
+def test_rate_limit_cache_file_operations():
+    """Test rate limit cache file operations."""
+    import tempfile
+    from pathlib import Path
+
+    # Clear cache before test
+    utils.clear_rate_limit_cache()
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # Mock platformdirs to use our temp directory
+        with patch("fetchtastic.utils.platformdirs.user_cache_dir") as mock_cache_dir:
+            mock_cache_dir.return_value = temp_dir
+
+            # Reset global variable to force re-calculation
+            import fetchtastic.utils as utils_module
+
+            utils_module._rate_limit_cache_file = None
+
+            # Test _get_rate_limit_cache_file creates correct path
+            cache_file = utils._get_rate_limit_cache_file()
+            expected_path = Path(temp_dir) / "rate_limits.json"
+            assert cache_file == str(expected_path)
+
+            # Test cache file doesn't exist initially
+            assert not os.path.exists(cache_file)
+
+            # Test _update_rate_limit creates file
+            utils._update_rate_limit("test_token_hash", 100)
+            assert os.path.exists(cache_file)
+
+            # Verify file contents
+            with open(cache_file, "r", encoding="utf-8") as f:
+                saved_data = json.load(f)
+            assert "test_token_hash" in saved_data
+            assert saved_data["test_token_hash"][0] == 100  # remaining count
+
+            # Clear in-memory cache
+            utils._rate_limit_cache.clear()
+            assert len(utils._rate_limit_cache) == 0
+
+            # Test _load_rate_limit_cache restores data
+            utils._load_rate_limit_cache()
+            assert len(utils._rate_limit_cache) == 1
+            assert "test_token_hash" in utils._rate_limit_cache
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
+def test_rate_limit_cache_expiry():
+    """Test that expired rate limit entries are not loaded."""
+    import tempfile
+    from datetime import datetime, timedelta, timezone
+
+    # Clear cache before test
+    utils.clear_rate_limit_cache()
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        with patch("fetchtastic.utils.platformdirs.user_cache_dir") as mock_cache_dir:
+            mock_cache_dir.return_value = temp_dir
+
+            # Reset global variable to force re-calculation
+            import fetchtastic.utils as utils_module
+
+            utils_module._rate_limit_cache_file = None
+
+            cache_file = utils._get_rate_limit_cache_file()
+
+            # Create cache data with expired entry (older than 1 hour)
+            old_time = datetime.now(timezone.utc) - timedelta(hours=2)  # Expired
+            recent_time = datetime.now(timezone.utc) - timedelta(minutes=30)  # Valid
+
+            cache_data = {
+                "expired_token": [50, old_time.isoformat()],
+                "valid_token": [75, recent_time.isoformat()],
+            }
+
+            with open(cache_file, "w", encoding="utf-8") as f:
+                json.dump(cache_data, f)
+
+            # Load cache - should only load valid entries
+            utils._load_rate_limit_cache()
+
+            # Should only have valid entry
+            assert len(utils._rate_limit_cache) == 1
+            assert "valid_token" in utils._rate_limit_cache
+            assert "expired_token" not in utils._rate_limit_cache
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
+def test_rate_limit_cache_error_handling():
+    """Test error handling for corrupted rate limit cache files."""
+    import tempfile
+
+    # Clear cache before test
+    utils.clear_rate_limit_cache()
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        with patch("fetchtastic.utils.platformdirs.user_cache_dir") as mock_cache_dir:
+            mock_cache_dir.return_value = temp_dir
+
+            # Reset global variable to force re-calculation
+            import fetchtastic.utils as utils_module
+
+            utils_module._rate_limit_cache_file = None
+
+            cache_file = utils._get_rate_limit_cache_file()
+
+            # Test with invalid JSON
+            with open(cache_file, "w", encoding="utf-8") as f:
+                f.write("invalid json content")
+
+            # Should not raise exception
+            utils._load_rate_limit_cache()
+            assert len(utils._rate_limit_cache) == 0
+
+            # Test with invalid structure (not a dict)
+            with open(cache_file, "w", encoding="utf-8") as f:
+                json.dump(["not", "a", "dict"], f)
+
+            utils._load_rate_limit_cache()
+            assert len(utils._rate_limit_cache) == 0
+
+            # Test with invalid data format
+            invalid_data = {"invalid_token": ["not-a-number", "2025-01-20T12:00:00Z"]}
+            with open(cache_file, "w", encoding="utf-8") as f:
+                json.dump(invalid_data, f)
+
+            utils._load_rate_limit_cache()
+            assert len(utils._rate_limit_cache) == 0
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
+def test_get_cached_rate_limit():
+    """Test _get_cached_rate_limit with different scenarios."""
+    from datetime import datetime, timedelta, timezone
+
+    # Clear cache
+    utils.clear_rate_limit_cache()
+
+    # Test with empty cache
+    result = utils._get_cached_rate_limit("nonexistent_token")
+    assert result is None
+
+    # Test with valid cache entry
+    recent_time = datetime.now(timezone.utc) - timedelta(minutes=2)  # Recent (< 5 min)
+    utils._rate_limit_cache["valid_token"] = (42, recent_time)
+
+    result = utils._get_cached_rate_limit("valid_token")
+    assert result == 42
+
+    # Test with expired cache entry (older than 5 minutes)
+    old_time = datetime.now(timezone.utc) - timedelta(minutes=10)  # Old (> 5 min)
+    utils._rate_limit_cache["expired_token"] = (25, old_time)
+
+    result = utils._get_cached_rate_limit("expired_token")
+    assert result is None
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
+def test_clear_rate_limit_cache():
+    """Test clear_rate_limit_cache functionality."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        with patch("fetchtastic.utils.platformdirs.user_cache_dir") as mock_cache_dir:
+            mock_cache_dir.return_value = temp_dir
+
+            # Clear cache first
+            utils.clear_rate_limit_cache()
+
+            # Reset global variable to force re-calculation
+            import fetchtastic.utils as utils_module
+
+            utils_module._rate_limit_cache_file = None
+
+            cache_file = utils._get_rate_limit_cache_file()
+
+            # Create cache file and in-memory data
+            utils._update_rate_limit("test_token", 100)
+            assert os.path.exists(cache_file)
+            assert len(utils._rate_limit_cache) == 1
+
+            # Clear cache
+            utils.clear_rate_limit_cache()
+
+            # Should clear both in-memory and persistent cache
+            assert len(utils._rate_limit_cache) == 0
+            assert not os.path.exists(cache_file)
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
+def test_make_github_api_request_rate_limit_tracking():
+    """Test that make_github_api_request tracks rate limits properly."""
+    from datetime import datetime, timezone
+
+    # Clear cache before test
+    utils.clear_rate_limit_cache()
+
+    # Mock response with rate limit headers
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.headers = {
+        "X-RateLimit-Remaining": "4999",
+        "X-RateLimit-Reset": str(int((datetime.now(timezone.utc).timestamp() + 3600))),
+    }
+    mock_response.raise_for_status.return_value = None
+
+    # Mock requests.get directly instead of Session
+    with patch("fetchtastic.utils.requests.get") as mock_get:
+        mock_get.return_value = mock_response
+
+        # Make API request - use a valid URL pattern that won't trigger 404
+        with patch("fetchtastic.utils.logger"):  # Suppress logging during test
+            result = utils.make_github_api_request(
+                "https://api.github.com/repos/test/repo"
+            )
+
+        assert result == mock_response
+
+        # Check that rate limit was cached
+        # Note: We can't easily check the exact token hash without importing internal functions
+        # But we can verify that the cache was populated
+        assert len(utils._rate_limit_cache) > 0
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
+def test_make_github_api_request_rate_limit_warnings():
+    """Test rate limit warning functionality."""
+    # Mock response with low rate limit
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.headers = {"X-RateLimit-Remaining": "5"}  # Low rate limit
+    mock_response.raise_for_status.return_value = None
+
+    # Mock requests.get directly instead of Session
+    with patch("fetchtastic.utils.requests.get") as mock_get:
+        mock_get.return_value = mock_response
+
+        # Make API request - should generate warning
+        with patch("fetchtastic.log_utils.logger") as mock_logger:
+            result = utils.make_github_api_request(
+                "https://api.github.com/repos/test/repo"
+            )
+
+            # Should have logged a warning about low rate limit
+            mock_logger.warning.assert_called()
+            warning_call = mock_logger.warning.call_args[0][0]
+            assert "rate limit running low" in warning_call.lower()
+            assert "5" in warning_call
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
+def test_make_github_api_request_cached_rate_limit():
+    """Test that cached rate limits are used when headers are missing."""
+    from datetime import datetime, timedelta, timezone
+
+    # Clear cache and pre-populate with cached data
+    utils.clear_rate_limit_cache()
+
+    recent_time = datetime.now(timezone.utc) - timedelta(minutes=2)
+    # Calculate the actual token hash that will be generated
+    import hashlib
+
+    token_hash = hashlib.sha256("test_token".encode()).hexdigest()[:16]
+    utils._rate_limit_cache[token_hash] = (250, recent_time)
+
+    # Mock response without rate limit headers
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.headers = {}  # No rate limit headers
+    mock_response.raise_for_status.return_value = None
+
+    # Mock requests.get directly instead of Session
+    with patch("fetchtastic.utils.requests.get") as mock_get:
+        mock_get.return_value = mock_response
+
+        # Make API request with known token
+        with patch("fetchtastic.log_utils.logger") as mock_logger:
+            result = utils.make_github_api_request(
+                "https://api.github.com/repos/test/repo", github_token="test_token"
+            )
+
+            # Should log cached rate limit estimate
+            mock_logger.debug.assert_called()
+            debug_calls = [call[0][0] for call in mock_logger.debug.call_args_list]
+            cached_log = any("cached estimate" in call.lower() for call in debug_calls)
+            assert cached_log
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
+def test_cache_thread_safety():
+    """Test that cache operations are thread-safe."""
+    import threading
+    import time
+    from datetime import datetime, timezone
+
+    # Clear caches before test
+    utils.clear_rate_limit_cache()
+    from fetchtastic.downloader import clear_commit_timestamp_cache
+
+    clear_commit_timestamp_cache()
+
+    # Test rate limit cache thread safety
+    def update_rate_limit_worker(token_hash, value):
+        for _ in range(10):
+            utils._update_rate_limit(token_hash, value)
+            time.sleep(0.001)  # Small delay to increase chance of race conditions
+
+    def read_rate_limit_worker(token_hash):
+        results = []
+        for _ in range(10):
+            result = utils._get_cached_rate_limit(token_hash)
+            results.append(result)
+            time.sleep(0.001)
+        return results
+
+    # Start multiple threads updating and reading rate limit cache
+    threads = []
+    for i in range(5):
+        t1 = threading.Thread(
+            target=update_rate_limit_worker, args=(f"token_{i}", 100 + i)
+        )
+        t2 = threading.Thread(target=read_rate_limit_worker, args=(f"token_{i}",))
+        threads.extend([t1, t2])
+
+    # Start all threads
+    for thread in threads:
+        thread.start()
+
+    # Wait for all threads to complete
+    for thread in threads:
+        thread.join()
+
+    # Verify cache is in a consistent state
+    assert len(utils._rate_limit_cache) == 5  # Should have 5 unique tokens
+    for i in range(5):
+        token_hash = f"token_{i}"
+        assert token_hash in utils._rate_limit_cache
+        remaining, cached_at = utils._rate_limit_cache[token_hash]
+        assert remaining == 100 + i
+        assert isinstance(cached_at, datetime)
+
+    # Test commit timestamp cache thread safety
+    from fetchtastic.downloader import _cache_lock, _commit_timestamp_cache
+
+    def commit_cache_worker(key_suffix):
+        for i in range(5):
+            key = f"owner/repo/commit_{key_suffix}_{i}"
+            timestamp = datetime.now(timezone.utc)
+            with _cache_lock:
+                _commit_timestamp_cache[key] = (timestamp, datetime.now(timezone.utc))
+            time.sleep(0.001)
+
+    # Start multiple threads updating commit cache
+    commit_threads = []
+    for i in range(3):
+        t = threading.Thread(target=commit_cache_worker, args=(i,))
+        commit_threads.append(t)
+
+    for thread in commit_threads:
+        thread.start()
+
+    for thread in commit_threads:
+        thread.join()
+
+    # Verify all entries were added without corruption
+    expected_entries = 15  # 3 threads * 5 entries each
+    assert len(_commit_timestamp_cache) == expected_entries
+
+    # Verify cache structure is valid
+    for key, (timestamp, cached_at) in _commit_timestamp_cache.items():
+        assert isinstance(timestamp, datetime)
+        assert isinstance(cached_at, datetime)
+        assert "/" in key  # Valid cache key format
