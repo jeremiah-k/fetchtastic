@@ -1188,6 +1188,7 @@ def _iter_matching_prerelease_files(
         List[Dict[str, str]]: List of dicts each containing:
             - "name": sanitized filename safe as a single path component
             - "download_url": URL string for downloading the asset
+            - "path": repository-relative path of the asset
     """
 
     files = menu_repo.fetch_directory_contents(dir_name) or []
@@ -1219,7 +1220,13 @@ def _iter_matching_prerelease_files(
             )
             continue
 
-        matching.append({"name": safe_file_name, "download_url": download_url})
+        matching.append(
+            {
+                "name": safe_file_name,
+                "download_url": download_url,
+                "path": entry.get("path", ""),
+            }
+        )
 
     return matching
 
@@ -1296,9 +1303,10 @@ def _get_commit_hash_from_dir(dir_name: str) -> Optional[str]:
         commit_hash (Optional[str]): Lowercase commit hash when present, otherwise None.
     """
     version_part = extract_version(dir_name)  # Removes "firmware-" prefix
-    # Use regex to find a hex string of 4-40 characters, which is more robust
+    # Use regex to find a hex string of 4-40 characters, which is more robust.
+    # This pattern looks for a dot or dash, then the hash, followed by another separator or end of string.
     commit_match = re.search(
-        r"\.([a-f0-9]{4,40})(?:[.-]|$)", version_part, re.IGNORECASE
+        r"[.-]([a-f0-9]{4,40})(?:[.-]|$)", version_part, re.IGNORECASE
     )
     if commit_match:
         return commit_match.group(1).lower()
@@ -1586,15 +1594,15 @@ def check_for_prereleases(
 
         logger.debug(f"Found {len(remote_files)} matching prerelease files")
 
-        # Determine the prerelease directory name from the first file's parent path
+        # Determine the prerelease directory name from the first file's path
         # This assumes all files in the remote response come from the same prerelease version
         prerelease_dir_name = f"firmware-{expected_version}"
 
         # Extract commit hash if present in directory structure
-        # (menu_repo might return paths like "firmware/prerelease/firmware-2.7.7.abcdef/file.bin")
+        # (menu_repo returns paths like "firmware/prerelease/firmware-2.7.7.abcdef/file.bin")
         if remote_files:
             # Try to extract full version including hash from first file's path
-            first_file_path = remote_files[0].get("download_url", "")
+            first_file_path = remote_files[0].get("path", "")
             path_parts = first_file_path.split("/")
             for part in path_parts:
                 if part.startswith("firmware-") and expected_version in part:

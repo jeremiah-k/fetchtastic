@@ -180,10 +180,12 @@ def test_check_for_prereleases_download_and_cleanup(
     mock_fetch_contents.return_value = [
         {
             "name": "firmware-rak4631-2.7.7.abcdef.uf2",
+            "path": "firmware/prerelease/firmware-2.7.7.abcdef/firmware-rak4631-2.7.7.abcdef.uf2",
             "download_url": "https://example.invalid/firmware/prerelease/firmware-2.7.7.abcdef/firmware-rak4631-2.7.7.abcdef.uf2",
         },
         {
             "name": "firmware-heltec-v3-2.7.7.abcdef.zip",
+            "path": "firmware/prerelease/firmware-2.7.7.abcdef/firmware-heltec-v3-2.7.7.abcdef.zip",
             "download_url": "https://example.invalid/firmware/prerelease/firmware-2.7.7.abcdef/firmware-heltec-v3-2.7.7.abcdef.zip",
         },
     ]
