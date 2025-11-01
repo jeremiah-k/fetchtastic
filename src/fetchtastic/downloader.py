@@ -1469,10 +1469,11 @@ def _save_releases_cache() -> None:
                 "cached_at": cached_at.isoformat(),
             }
 
-        with open(cache_file, "w", encoding="utf-8") as f:
-            json.dump(cache_data, f, indent=2)
-
-        logger.debug(f"Saved {len(_releases_cache)} releases entries to cache")
+        # Use atomic write to prevent cache corruption
+        if _atomic_write_json(cache_file, cache_data):
+            logger.debug(f"Saved {len(_releases_cache)} releases entries to cache")
+        else:
+            logger.debug(f"Failed to save releases cache to {cache_file}")
 
     except (IOError, OSError) as e:
         logger.debug(f"Could not save releases cache: {e}")
@@ -1482,9 +1483,10 @@ def clear_all_caches() -> None:
     """Clear all caches (commit timestamps and releases)."""
     global _commit_timestamp_cache, _releases_cache, _releases_cache_loaded
 
-    _commit_timestamp_cache.clear()
-    _releases_cache.clear()
-    _releases_cache_loaded = False
+    with _cache_lock:
+        _commit_timestamp_cache.clear()
+        _releases_cache.clear()
+        _releases_cache_loaded = False
 
     # Remove cache files
     try:
@@ -1609,10 +1611,13 @@ def _save_commit_cache() -> None:
         for cache_key, (timestamp, cached_at) in _commit_timestamp_cache.items():
             cache_data[cache_key] = (timestamp.isoformat(), cached_at.isoformat())
 
-        with open(cache_file, "w", encoding="utf-8") as f:
-            json.dump(cache_data, f, indent=2)
-
-        logger.debug(f"Saved {len(_commit_timestamp_cache)} commit timestamps to cache")
+        # Use atomic write to prevent cache corruption
+        if _atomic_write_json(cache_file, cache_data):
+            logger.debug(
+                f"Saved {len(_commit_timestamp_cache)} commit timestamps to cache"
+            )
+        else:
+            logger.debug(f"Failed to save commit timestamp cache to {cache_file}")
 
     except (IOError, OSError) as e:
         logger.debug(f"Could not save commit timestamp cache: {e}")
@@ -1621,7 +1626,8 @@ def _save_commit_cache() -> None:
 def clear_commit_timestamp_cache() -> None:
     """Clear the commit timestamp cache."""
     global _commit_timestamp_cache
-    _commit_timestamp_cache.clear()
+    with _cache_lock:
+        _commit_timestamp_cache.clear()
     try:
         cache_file = _get_commit_cache_file()
         if os.path.exists(cache_file):
