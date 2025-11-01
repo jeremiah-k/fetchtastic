@@ -1346,6 +1346,7 @@ _commit_cache_file = None
 # Global cache for releases data to avoid repeated API calls
 _releases_cache: Dict[str, Tuple[List[Dict[str, Any]], datetime]] = {}
 _releases_cache_file = None
+_releases_cache_loaded = False
 
 # Global flag to track if downloads were skipped due to Wi-Fi requirements
 downloads_skipped = False
@@ -1390,8 +1391,9 @@ def _load_commit_cache() -> None:
         if not isinstance(cache_data, dict):
             return
 
-        # Convert string timestamps back to datetime objects
+        # Convert string timestamps back to datetime objects (build locally)
         current_time = datetime.now(timezone.utc)
+        loaded: Dict[str, Tuple[datetime, datetime]] = {}
         for cache_key, (timestamp_str, cached_at_str) in cache_data.items():
             try:
                 timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
@@ -1400,14 +1402,14 @@ def _load_commit_cache() -> None:
                 # Check if entry is still valid (not expired)
                 age = current_time - cached_at
                 if age.total_seconds() < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 60 * 60:
-                    _commit_timestamp_cache[cache_key] = (timestamp, cached_at)
+                    loaded[cache_key] = (timestamp, cached_at)
             except (ValueError, TypeError):
                 # Skip invalid entries
                 continue
 
-        logger.debug(
-            f"Loaded {len(_commit_timestamp_cache)} commit timestamps from cache"
-        )
+        with _cache_lock:
+            _commit_timestamp_cache.update(loaded)
+        logger.debug(f"Loaded {len(loaded)} commit timestamps from cache")
 
     except (IOError, json.JSONDecodeError) as e:
         logger.debug(f"Could not load commit timestamp cache: {e}")
@@ -1429,40 +1431,29 @@ def _load_releases_cache() -> None:
         if not isinstance(cache_data, dict):
             return
 
-        # Convert string timestamps back to datetime objects
+        # Convert string timestamps back to datetime objects (build locally)
         current_time = datetime.now(timezone.utc)
+        loaded: Dict[str, Tuple[List[Dict[str, Any]], datetime]] = {}
         for cache_key, cache_entry in cache_data.items():
             try:
-                if isinstance(cache_entry, dict):
-                    # New format
-                    releases_data = cache_entry["releases"]
-                    cached_at = datetime.fromisoformat(
-                        cache_entry["cached_at"].replace("Z", "+00:00")
-                    )
-                elif isinstance(cache_entry, (list, tuple)) and len(cache_entry) == 2:
-                    # Old format: (json_str, iso_str)
-                    releases_data_str, cached_at_str = cache_entry
-                    releases_data = (
-                        json.loads(releases_data_str)
-                        if isinstance(releases_data_str, str)
-                        else releases_data_str
-                    )
-                    cached_at = datetime.fromisoformat(
-                        cached_at_str.replace("Z", "+00:00")
-                    )
-                else:
-                    raise ValueError("Invalid cache entry format")
+                releases_data = cache_entry["releases"]
+                cached_at = datetime.fromisoformat(
+                    cache_entry["cached_at"].replace("Z", "+00:00")
+                )
 
-                # Check if entry is still valid (not expired)
+                # Check if entry is still valid (not expired) - use same expiry as commit timestamps
                 age = current_time - cached_at
-                if age.total_seconds() < RELEASES_CACHE_EXPIRY_HOURS * 60 * 60:
-                    _releases_cache[cache_key] = (releases_data, cached_at)
-            except (ValueError, TypeError, json.JSONDecodeError) as e:
+                if age.total_seconds() < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 60 * 60:
+                    loaded[cache_key] = (releases_data, cached_at)
+            except (ValueError, TypeError, KeyError) as e:
                 # Skip invalid entries
                 logger.debug(f"Skipping invalid cache entry for {cache_key}: {e}")
                 continue
 
-        logger.debug(f"Loaded {len(_releases_cache)} releases entries from cache")
+        with _cache_lock:
+            _releases_cache.update(loaded)
+            _releases_cache_loaded = True
+        logger.debug(f"Loaded {len(loaded)} releases entries from cache")
 
     except (IOError, json.JSONDecodeError) as e:
         logger.debug(f"Could not load releases cache: {e}")
@@ -1493,10 +1484,11 @@ def _save_releases_cache() -> None:
 
 def clear_all_caches() -> None:
     """Clear all caches (commit timestamps and releases)."""
-    global _commit_timestamp_cache, _releases_cache
+    global _commit_timestamp_cache, _releases_cache, _releases_cache_loaded
 
     _commit_timestamp_cache.clear()
     _releases_cache.clear()
+    _releases_cache_loaded = False
 
     # Remove cache files
     try:
@@ -1718,9 +1710,11 @@ def _get_latest_releases_data(
 
     # Load cache from file on first access (thread-safe)
     with _cache_lock:
-        need_load = not _releases_cache
-    if need_load:
-        _load_releases_cache()
+        if not _releases_cache_loaded:
+            # Release lock while doing I/O; the loader will re-acquire to publish.
+            pass
+    if not _releases_cache_loaded:
+        _load_releases_cache()  # publishes under lock per loader fix
 
     with _cache_lock:
         if force_refresh and cache_key in _releases_cache:

@@ -922,7 +922,7 @@ def test_make_github_api_request_cached_rate_limit():
         with patch("fetchtastic.log_utils.logger") as mock_logger:
             utils.make_github_api_request(
                 "https://api.github.com/repos/test/repo",
-                github_token="test_token",  # noqa: B106
+                github_token="test_token",  # noqa: S106 - test-only token
             )
 
             # Should log cached rate limit estimate

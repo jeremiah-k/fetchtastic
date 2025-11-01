@@ -155,8 +155,9 @@ def _load_rate_limit_cache() -> None:
         if not isinstance(cache_data, dict):
             return
 
-        # Convert string timestamps back to datetime objects
+        # Convert string timestamps back to datetime objects (build locally)
         current_time = datetime.now(timezone.utc)
+        loaded: Dict[str, Tuple[int, datetime]] = {}
         for cache_key, cache_value in cache_data.items():
             try:
                 # Validate value structure
@@ -170,15 +171,17 @@ def _load_rate_limit_cache() -> None:
                 # Only keep cache entries that are less than 1 hour old
                 # GitHub rate limits reset every hour
                 if (current_time - cached_at).total_seconds() < 3600:
-                    _rate_limit_cache[cache_key] = (remaining, cached_at)
+                    loaded[cache_key] = (remaining, cached_at)
             except (ValueError, TypeError):
                 continue
 
     except (IOError, json.JSONDecodeError):
         pass  # Silently ignore cache loading errors
 
-    # Mark cache as loaded even if loading failed
-    _rate_limit_cache_loaded = True
+    # Publish loaded entries and mark loaded atomically
+    with _rate_limit_lock:
+        _rate_limit_cache.update(loaded)
+        _rate_limit_cache_loaded = True
 
 
 def _parse_rate_limit_header(header_value: Any) -> Optional[int]:
@@ -313,8 +316,10 @@ def make_github_api_request(
     # Initialize rate limit cache if needed
     global _rate_limit_cache_loaded
     with _rate_limit_lock:
-        need_load = not _rate_limit_cache_loaded
-    if need_load:
+        if not _rate_limit_cache_loaded:
+            # Release lock while doing I/O; the loader will re-acquire to publish.
+            pass
+    if not _rate_limit_cache_loaded:
         _load_rate_limit_cache()
 
     # Create token hash for caching

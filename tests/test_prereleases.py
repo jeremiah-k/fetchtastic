@@ -797,11 +797,8 @@ def test_get_commit_timestamp_error_handling():
     clear_commit_timestamp_cache()
 
     # Test HTTP error
-    mock_response = Mock()
-    mock_response.raise_for_status.side_effect = requests.HTTPError("404 Not Found")
-    mock_response.status_code = 404
-
-    with patch("fetchtastic.downloader.requests.get", return_value=mock_response):
+    http_err = requests.HTTPError("404 Not Found")
+    with patch("fetchtastic.downloader.make_github_api_request", side_effect=http_err):
         result = get_commit_timestamp("meshtastic", "firmware", "badcommit")
         assert result is None
 
@@ -812,7 +809,9 @@ def test_get_commit_timestamp_error_handling():
     mock_response.status_code = 200
     mock_response.ok = True
 
-    with patch("fetchtastic.downloader.requests.get", return_value=mock_response):
+    with patch(
+        "fetchtastic.downloader.make_github_api_request", return_value=mock_response
+    ):
         result = get_commit_timestamp("meshtastic", "firmware", "badcommit")
         assert result is None
 
@@ -823,7 +822,9 @@ def test_get_commit_timestamp_error_handling():
     mock_response.status_code = 200
     mock_response.ok = True
 
-    with patch("fetchtastic.downloader.requests.get", return_value=mock_response):
+    with patch(
+        "fetchtastic.downloader.make_github_api_request", return_value=mock_response
+    ):
         result = get_commit_timestamp("meshtastic", "firmware", "badcommit")
         assert result is None
 
@@ -838,7 +839,9 @@ def test_get_commit_timestamp_error_handling():
     mock_response.status_code = 200
     mock_response.ok = True
 
-    with patch("fetchtastic.downloader.requests.get", return_value=mock_response):
+    with patch(
+        "fetchtastic.downloader.make_github_api_request", return_value=mock_response
+    ):
         # First call should make API request
         result1 = get_commit_timestamp("meshtastic", "firmware", "abcdef123")
         assert result1 is not None
@@ -852,7 +855,9 @@ def test_get_commit_timestamp_error_handling():
         # (This is hard to test directly with the current setup, but cache should work)
 
     # Test cache expiry with force_refresh
-    with patch("fetchtastic.downloader.requests.get", return_value=mock_response):
+    with patch(
+        "fetchtastic.downloader.make_github_api_request", return_value=mock_response
+    ):
         result3 = get_commit_timestamp(
             "meshtastic", "firmware", "abcdef123", force_refresh=True
         )
