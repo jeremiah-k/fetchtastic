@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import IO, TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
 
+import platformdirs
 import requests
 from packaging.version import InvalidVersion, Version
 from packaging.version import parse as parse_version
@@ -1303,6 +1304,81 @@ def calculate_expected_prerelease_version(latest_version: str) -> str:
 _commit_timestamp_cache: Dict[str, Tuple[datetime, datetime]] = {}
 _cache_lock = threading.Lock()  # Lock for thread-safe cache access
 
+# Cache file path for persistent storage
+_commit_cache_file = None
+
+
+def _get_commit_cache_file() -> str:
+    """Get the path to the commit timestamp cache file."""
+    global _commit_cache_file
+    if _commit_cache_file is None:
+        cache_dir = platformdirs.user_cache_dir("fetchtastic")
+        os.makedirs(cache_dir, exist_ok=True)
+        _commit_cache_file = os.path.join(cache_dir, "commit_timestamps.json")
+    return _commit_cache_file
+
+
+def _load_commit_cache() -> None:
+    """Load commit timestamp cache from persistent storage."""
+    global _commit_timestamp_cache
+    cache_file = _get_commit_cache_file()
+
+    try:
+        if not os.path.exists(cache_file):
+            return
+
+        with open(cache_file, "r", encoding="utf-8") as f:
+            cache_data = json.load(f)
+
+        # Validate cache structure
+        if not isinstance(cache_data, dict):
+            return
+
+        # Convert string timestamps back to datetime objects
+        current_time = datetime.now(timezone.utc)
+        for cache_key, (timestamp_str, cached_at_str) in cache_data.items():
+            try:
+                timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
+                cached_at = datetime.fromisoformat(cached_at_str.replace("Z", "+00:00"))
+
+                # Check if entry is still valid (not expired)
+                age = current_time - cached_at
+                if age.total_seconds() < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 3600:
+                    _commit_timestamp_cache[cache_key] = (timestamp, cached_at)
+            except (ValueError, TypeError):
+                # Skip invalid entries
+                continue
+
+        logger.debug(
+            f"Loaded {len(_commit_timestamp_cache)} commit timestamps from cache"
+        )
+
+    except (IOError, json.JSONDecodeError) as e:
+        logger.debug(f"Could not load commit timestamp cache: {e}")
+
+
+def _save_commit_cache() -> None:
+    """Save commit timestamp cache to persistent storage."""
+    cache_file = _get_commit_cache_file()
+
+    try:
+        # Convert datetime objects to ISO strings for JSON serialization
+        cache_data = {
+            cache_key: (timestamp.isoformat(), cached_at.isoformat())
+            for cache_key, (timestamp, cached_at) in _commit_timestamp_cache.items()
+        }
+
+        # Write to temporary file first, then atomically replace
+        temp_file = f"{cache_file}.tmp"
+        with open(temp_file, "w", encoding="utf-8") as f:
+            json.dump(cache_data, f, indent=2)
+
+        os.replace(temp_file, cache_file)
+        logger.debug(f"Saved {len(_commit_timestamp_cache)} commit timestamps to cache")
+
+    except IOError as e:
+        logger.warning(f"Failed to save commit timestamp cache: {e}")
+
 
 def clear_commit_timestamp_cache() -> None:
     """Clear the global commit timestamp cache. Useful for testing."""
@@ -1311,6 +1387,15 @@ def clear_commit_timestamp_cache() -> None:
     # Clear cache under lock to avoid races with concurrent readers/writers
     with _cache_lock:
         _commit_timestamp_cache.clear()
+
+    # Also clear the persistent cache file
+    try:
+        cache_file = _get_commit_cache_file()
+        if os.path.exists(cache_file):
+            os.remove(cache_file)
+            logger.debug("Removed commit timestamp cache file")
+    except IOError as e:
+        logger.warning(f"Failed to remove commit timestamp cache file: {e}")
 
     # Note: Token warning flag is now centralized in utils.py and will be cleared
     # when the application restarts, which is appropriate behavior.
@@ -1338,6 +1423,10 @@ def get_commit_timestamp(
 
     # Create cache key
     cache_key = f"{repo_owner}/{repo_name}/{commit_hash}"
+
+    # Load cache from file on first access
+    if not _commit_timestamp_cache:
+        _load_commit_cache()
 
     with _cache_lock:
         if force_refresh and cache_key in _commit_timestamp_cache:
@@ -1384,6 +1473,9 @@ def get_commit_timestamp(
             logger.debug(
                 f"Cached timestamp for commit {commit_hash} (fetched from API)"
             )
+
+            # Save cache to persistent storage
+            _save_commit_cache()
 
             return timestamp
         else:

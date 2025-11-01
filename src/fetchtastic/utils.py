@@ -207,7 +207,13 @@ def make_github_api_request(
         raise
 
     # Log API response info for debugging
-    content_length = response.headers.get("Content-Length", "unknown")
+    content_length = response.headers.get("Content-Length")
+    if content_length is None:
+        # Try to get actual content length if header is missing
+        try:
+            content_length = str(len(response.content))
+        except Exception:
+            content_length = "unknown"
     logger.debug(
         f"GitHub API response: {response.status_code} for {url} ({content_length} bytes)"
     )
