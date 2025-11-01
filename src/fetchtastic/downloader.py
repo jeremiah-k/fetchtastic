@@ -10,8 +10,6 @@ import tempfile
 import threading
 import time
 import zipfile
-from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import IO, TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
 
@@ -40,11 +38,9 @@ from fetchtastic.constants import (
     EXECUTABLE_PERMISSIONS,
     FILE_TYPE_PREFIXES,
     FIRMWARE_DIR_PREFIX,
-    GITHUB_API_BASE,
     GITHUB_API_TIMEOUT,
     LATEST_ANDROID_RELEASE_FILE,
     LATEST_FIRMWARE_RELEASE_FILE,
-    MAX_CONCURRENT_TIMESTAMP_FETCHES,
     MESHTASTIC_ANDROID_RELEASES_URL,
     MESHTASTIC_FIRMWARE_RELEASES_URL,
     NTFY_REQUEST_TIMEOUT,
