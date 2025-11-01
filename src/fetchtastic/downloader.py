@@ -1523,6 +1523,8 @@ def _load_releases_cache() -> None:
 
     try:
         if not os.path.exists(cache_file):
+            with _cache_lock:
+                _releases_cache_loaded = True
             return
 
         with open(cache_file, "r", encoding="utf-8") as f:
@@ -1530,6 +1532,8 @@ def _load_releases_cache() -> None:
 
         # Validate cache structure
         if not isinstance(cache_data, dict):
+            with _cache_lock:
+                _releases_cache_loaded = True
             return
 
         # Convert string timestamps back to datetime objects (build locally)
@@ -1908,15 +1912,17 @@ def _download_prerelease_assets(
 
         # Check if file needs download (missing or failed integrity check)
         if force_refresh or _prerelease_needs_download(file_path):
-            logger.info(f"Downloading prerelease file: {file_name}")
+            logger.info(f"Downloading prerelease file: {relative_path}")
             if download_file_with_retry(download_url, file_path):
                 files_downloaded = True
-                downloaded_files.append(file_name)
-                logger.debug(f"Successfully downloaded: {file_name}")
+                downloaded_files.append(relative_path)
+                logger.debug(f"Successfully downloaded: {relative_path}")
             else:
-                logger.warning(f"Failed to download prerelease file: {file_name}")
+                logger.warning(f"Failed to download prerelease file: {relative_path}")
         else:
-            logger.debug(f"Prerelease file already exists and is valid: {file_name}")
+            logger.debug(
+                f"Prerelease file already exists and is valid: {relative_path}"
+            )
 
     # Set executable permissions on shell scripts
     set_permissions_on_sh_files(prerelease_dir)
@@ -2229,7 +2235,8 @@ def _get_latest_releases_data(
     """
     global _releases_cache
 
-    # Create cache key based on URL and scan count
+    # Clamp per-page to GitHub's bounds and build cache key
+    scan_count = max(1, min(100, scan_count))
     cache_key = f"{url}?per_page={scan_count}"
 
     # Load cache from file on first access
@@ -2267,8 +2274,7 @@ def _get_latest_releases_data(
         else:
             logger.info("Fetching releases from GitHub...")
 
-        # Clamp scan_count to GitHub's per_page bounds
-        scan_count = max(1, min(100, scan_count))
+        # scan_count already clamped above
         response: requests.Response = make_github_api_request(
             url,
             github_token=github_token,

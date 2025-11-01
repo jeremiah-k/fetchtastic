@@ -58,6 +58,9 @@ _rate_limit_cache_loaded = False
 # Track last cache save time for throttling (5 second minimum interval)
 _last_cache_save_time = 0.0
 
+# Minimum seconds between disk writes for rate-limit cache
+RATE_LIMIT_CACHE_SAVE_INTERVAL = 5.0
+
 
 def get_user_agent() -> str:
     """
@@ -265,10 +268,11 @@ def _update_rate_limit(token_hash: str, remaining: int) -> None:
         should_save = False
         if token_hash in _rate_limit_cache:
             old_remaining, _ = _rate_limit_cache[token_hash]
-            # Save if remaining decreased or it's been more than 5 seconds
+            # Save if remaining decreased or it's been more than RATE_LIMIT_CACHE_SAVE_INTERVAL seconds
             if (
                 remaining < old_remaining
-                or (current_time - _last_cache_save_time) >= 5.0
+                or (current_time - _last_cache_save_time)
+                >= RATE_LIMIT_CACHE_SAVE_INTERVAL
             ):
                 should_save = True
         else:
@@ -410,7 +414,8 @@ def make_github_api_request(
             )
         elif e.response is not None and e.response.status_code == 403:
             rate_limit_remaining = e.response.headers.get("X-RateLimit-Remaining")
-            if rate_limit_remaining == "0":
+            remaining_val = _parse_rate_limit_header(rate_limit_remaining)
+            if remaining_val == 0:
                 reset_time = e.response.headers.get("X-RateLimit-Reset")
                 reset_time_str = (
                     datetime.fromtimestamp(int(reset_time), timezone.utc).strftime(
@@ -610,7 +615,9 @@ def verify_file_integrity(file_path: str) -> bool:
         if current_hash:
             save_file_hash(file_path, current_hash)
             logger.debug(f"Generated initial hash for {os.path.basename(file_path)}")
-        return True  # Assume valid for new files
+            return True
+        # Could not read file to create initial hash; treat as invalid to trigger remediation
+        return False
 
     current_hash = calculate_sha256(file_path)
     if not current_hash:
