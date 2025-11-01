@@ -2045,8 +2045,23 @@ def check_for_prereleases(
     if files_downloaded or force_refresh:
         update_prerelease_tracking(prerelease_base_dir, latest_release_tag, remote_dir)
 
-    # Clean up old prerelease directories
-    _cleanup_old_prerelease_dirs(prerelease_base_dir, remote_dir, existing_dirs)
+    # Only clean up old prerelease directories if we successfully downloaded files
+    # or if the remote_dir already existed locally (to prevent deleting last good prerelease)
+    should_cleanup = False
+    if files_downloaded:
+        # Successful download - safe to cleanup old directories
+        should_cleanup = True
+    elif remote_dir in existing_dirs:
+        # Remote directory already exists locally - safe to cleanup others
+        should_cleanup = True
+    else:
+        # Download failed and remote_dir doesn't exist locally - don't cleanup to preserve last good prerelease
+        logger.debug(
+            f"Skipping prerelease cleanup: download failed for {remote_dir} and it doesn't exist locally"
+        )
+
+    if should_cleanup:
+        _cleanup_old_prerelease_dirs(prerelease_base_dir, remote_dir, existing_dirs)
 
     if files_downloaded:
         return True, [remote_dir]
