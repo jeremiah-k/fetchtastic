@@ -13,12 +13,8 @@ def get_batch_file_path(filename):
     Returns:
         str: The path to the batch file
     """
-    try:
-        # For Python 3.9+
-        return str(importlib.resources.files("fetchtastic.tools").joinpath(filename))
-    except AttributeError:
-        # Fallback for older Python versions
-        return str(pathlib.Path(__file__).parent / filename)
+    # For Python 3.10+
+    return str(importlib.resources.files("fetchtastic.tools").joinpath(filename))
 
 
 def get_install_script_path(platform):
@@ -31,9 +27,5 @@ def get_install_script_path(platform):
         str: The path to the installation script
     """
     filename = f"fetchtastic-setup.{'bat' if platform == 'windows' else 'sh'}"
-    try:
-        # For Python 3.9+
-        return str(importlib.resources.files("fetchtastic.tools").joinpath(filename))
-    except AttributeError:
-        # Fallback for older Python versions
-        return str(pathlib.Path(__file__).parent / filename)
+    # For Python 3.10+
+    return str(importlib.resources.files("fetchtastic.tools").joinpath(filename))
