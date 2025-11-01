@@ -314,7 +314,6 @@ def make_github_api_request(
     global _rate_limit_cache_loaded
     if not _rate_limit_cache_loaded:
         _load_rate_limit_cache()
-        _rate_limit_cache_loaded = True
 
     # Create token hash for caching
     token_hash = hashlib.sha256((effective_token or "no-token").encode()).hexdigest()[
