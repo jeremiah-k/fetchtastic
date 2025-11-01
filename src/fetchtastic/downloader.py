@@ -1379,7 +1379,7 @@ def _get_releases_cache_file() -> str:
 
 def _load_commit_cache() -> None:
     """Load commit timestamp cache from persistent storage."""
-    global _commit_timestamp_cache
+    global _commit_timestamp_cache, _commit_cache_loaded
     cache_file = _get_commit_cache_file()
 
     try:
@@ -1420,7 +1420,7 @@ def _load_commit_cache() -> None:
 
 def _load_releases_cache() -> None:
     """Load releases cache from persistent storage."""
-    global _releases_cache
+    global _releases_cache, _releases_cache_loaded
     cache_file = _get_releases_cache_file()
 
     try:
@@ -1488,12 +1488,13 @@ def _save_releases_cache() -> None:
 
 def clear_all_caches() -> None:
     """Clear all caches (commit timestamps and releases)."""
-    global _commit_timestamp_cache, _releases_cache, _releases_cache_loaded
+    global _commit_timestamp_cache, _releases_cache, _releases_cache_loaded, _commit_cache_loaded
 
     with _cache_lock:
         _commit_timestamp_cache.clear()
         _releases_cache.clear()
         _releases_cache_loaded = False
+        _commit_cache_loaded = False
 
     # Remove cache files
     try:
@@ -1701,8 +1702,9 @@ def get_commit_timestamp(
     # Load cache on first access
     if not _commit_cache_loaded:
         with _cache_lock:
-            if not _commit_cache_loaded:
-                _load_commit_cache()
+            need_load = not _commit_cache_loaded
+        if need_load:
+            _load_commit_cache()
 
     with _cache_lock:
         if force_refresh and cache_key in _commit_timestamp_cache:
@@ -1772,9 +1774,10 @@ def _save_commit_cache() -> None:
 
 def clear_commit_timestamp_cache() -> None:
     """Clear the commit timestamp cache."""
-    global _commit_timestamp_cache
+    global _commit_timestamp_cache, _commit_cache_loaded
     with _cache_lock:
         _commit_timestamp_cache.clear()
+        _commit_cache_loaded = False
     try:
         cache_file = _get_commit_cache_file()
         if os.path.exists(cache_file):
@@ -1860,8 +1863,9 @@ def _get_latest_releases_data(
     # Load cache from file on first access (thread-safe)
     if not _releases_cache_loaded:
         with _cache_lock:
-            if not _releases_cache_loaded:
-                _load_releases_cache()
+            need_load = not _releases_cache_loaded
+        if need_load:
+            _load_releases_cache()
 
     with _cache_lock:
         if force_refresh and cache_key in _releases_cache:

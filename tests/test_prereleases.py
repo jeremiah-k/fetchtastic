@@ -382,6 +382,7 @@ def test_prerelease_directory_cleanup(tmp_path, write_dummy_file):
                 return [
                     {
                         "name": "firmware-rak4631-2.7.7.789abc.uf2",
+                        "path": "firmware/prerelease/firmware-2.7.7.789abc/firmware-rak4631-2.7.7.789abc.uf2",
                         "download_url": "https://example.invalid/firmware/prerelease/firmware-2.7.7.789abc/firmware-rak4631-2.7.7.789abc.uf2",
                     }
                 ]
