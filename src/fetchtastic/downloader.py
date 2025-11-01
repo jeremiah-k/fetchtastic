@@ -1405,25 +1405,21 @@ def _load_releases_cache() -> None:
 
         # Convert string timestamps back to datetime objects
         current_time = datetime.now(timezone.utc)
-        with _cache_lock:
-            for cache_key, cache_entry in cache_data.items():
-                try:
-                    releases_data = cache_entry["releases"]
-                    cached_at = datetime.fromisoformat(
-                        cache_entry["cached_at"].replace("Z", "+00:00")
-                    )
+        for cache_key, cache_entry in cache_data.items():
+            try:
+                releases_data = cache_entry["releases"]
+                cached_at = datetime.fromisoformat(
+                    cache_entry["cached_at"].replace("Z", "+00:00")
+                )
 
-                    # Check if entry is still valid (not expired) - use same expiry as commit timestamps
-                    age = current_time - cached_at
-                    if (
-                        age.total_seconds()
-                        < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 60 * 60
-                    ):
-                        _releases_cache[cache_key] = (releases_data, cached_at)
-                except (ValueError, TypeError, KeyError) as e:
-                    # Skip invalid entries
-                    logger.debug(f"Skipping invalid cache entry for {cache_key}: {e}")
-                    continue
+                # Check if entry is still valid (not expired) - use same expiry as commit timestamps
+                age = current_time - cached_at
+                if age.total_seconds() < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 60 * 60:
+                    _releases_cache[cache_key] = (releases_data, cached_at)
+            except (ValueError, TypeError, KeyError) as e:
+                # Skip invalid entries
+                logger.debug(f"Skipping invalid cache entry for {cache_key}: {e}")
+                continue
 
         logger.debug(f"Loaded {len(_releases_cache)} releases entries from cache")
 
@@ -2065,15 +2061,17 @@ def _get_latest_releases_data(
 
     # Load cache from file on first access (thread-safe)
     with _cache_lock:
-        if not _releases_cache:
-            _load_releases_cache()
+        need_load = not _releases_cache
+    if need_load:
+        _load_releases_cache()
 
+    with _cache_lock:
         if force_refresh and cache_key in _releases_cache:
             del _releases_cache[cache_key]
         elif not force_refresh and cache_key in _releases_cache:
             releases_data, cached_at = _releases_cache[cache_key]
             age = datetime.now(timezone.utc) - cached_at
-            if age.total_seconds() < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 3600:
+            if age.total_seconds() < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 60 * 60:
                 logger.debug(
                     f"Using cached releases for {url} (cached {age.total_seconds():.0f}s ago)"
                 )
@@ -2085,8 +2083,8 @@ def _get_latest_releases_data(
                 )
                 del _releases_cache[cache_key]
 
-        # Fetch from API after cache miss/expiry or forced refresh
-        logger.debug(f"Cache miss for releases {url} - fetching from API")
+    # Fetch from API after cache miss/expiry or forced refresh
+    logger.debug(f"Cache miss for releases {url} - fetching from API")
 
     try:
         # Add progress feedback

@@ -312,7 +312,9 @@ def make_github_api_request(
 
     # Initialize rate limit cache if needed
     global _rate_limit_cache_loaded
-    if not _rate_limit_cache_loaded:
+    with _rate_limit_lock:
+        need_load = not _rate_limit_cache_loaded
+    if need_load:
         _load_rate_limit_cache()
 
     # Create token hash for caching
