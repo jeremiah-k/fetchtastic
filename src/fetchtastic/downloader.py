@@ -1436,11 +1436,11 @@ def get_commit_timestamp(
     # Create cache key
     cache_key = f"{repo_owner}/{repo_name}/{commit_hash}"
 
-    # Load cache from file on first access
-    if not _commit_timestamp_cache:
-        _load_commit_cache()
-
+    # Load cache from file on first access (thread-safe)
     with _cache_lock:
+        if not _commit_timestamp_cache:
+            _load_commit_cache()
+
         if force_refresh and cache_key in _commit_timestamp_cache:
             del _commit_timestamp_cache[cache_key]
         elif not force_refresh and cache_key in _commit_timestamp_cache:

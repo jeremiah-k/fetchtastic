@@ -883,9 +883,7 @@ def test_make_github_api_request_rate_limit_warnings():
 
         # Make API request - should generate warning
         with patch("fetchtastic.log_utils.logger") as mock_logger:
-            result = utils.make_github_api_request(
-                "https://api.github.com/repos/test/repo"
-            )
+            utils.make_github_api_request("https://api.github.com/repos/test/repo")
 
             # Should have logged a warning about low rate limit
             mock_logger.warning.assert_called()
@@ -922,7 +920,7 @@ def test_make_github_api_request_cached_rate_limit():
 
         # Make API request with known token
         with patch("fetchtastic.log_utils.logger") as mock_logger:
-            result = utils.make_github_api_request(
+            utils.make_github_api_request(
                 "https://api.github.com/repos/test/repo", github_token="test_token"
             )
 
