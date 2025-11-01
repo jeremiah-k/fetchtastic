@@ -2,14 +2,17 @@
 import gc  # For Windows file operation retries
 import hashlib
 import importlib.metadata
+import json
 import os
 import platform
 import re
 import threading
 import time
 import zipfile
-from typing import Any, Dict, List, Optional  # Callable removed
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Tuple  # Callable removed
 
+import platformdirs
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry  # type: ignore
@@ -43,6 +46,11 @@ _USER_AGENT_CACHE = None
 # Thread-safe token warning tracking (centralized)
 _token_warning_shown = False
 _token_warning_lock = threading.Lock()
+
+# GitHub API rate limit tracking
+_rate_limit_cache: Dict[str, Tuple[int, datetime]] = {}
+_rate_limit_lock = threading.Lock()
+_rate_limit_cache_file = None
 
 
 def get_user_agent() -> str:
@@ -118,6 +126,104 @@ def _show_token_warning_if_needed(
                 _token_warning_shown = True
 
 
+def _get_rate_limit_cache_file() -> str:
+    """Get the path to the rate limit cache file."""
+    global _rate_limit_cache_file
+    if _rate_limit_cache_file is None:
+        cache_dir = platformdirs.user_cache_dir("fetchtastic")
+        os.makedirs(cache_dir, exist_ok=True)
+        _rate_limit_cache_file = os.path.join(cache_dir, "rate_limits.json")
+    return _rate_limit_cache_file
+
+
+def _load_rate_limit_cache() -> None:
+    """Load rate limit cache from persistent storage."""
+    global _rate_limit_cache
+    cache_file = _get_rate_limit_cache_file()
+
+    try:
+        if not os.path.exists(cache_file):
+            return
+
+        with open(cache_file, "r", encoding="utf-8") as f:
+            cache_data = json.load(f)
+
+        # Validate cache structure
+        if not isinstance(cache_data, dict):
+            return
+
+        # Convert string timestamps back to datetime objects
+        current_time = datetime.now(timezone.utc)
+        for cache_key, (remaining_str, cached_at_str) in cache_data.items():
+            try:
+                remaining = int(remaining_str)
+                cached_at = datetime.fromisoformat(cached_at_str)
+
+                # Only keep cache entries that are less than 1 hour old
+                # GitHub rate limits reset every hour
+                if (current_time - cached_at).total_seconds() < 3600:
+                    _rate_limit_cache[cache_key] = (remaining, cached_at)
+            except (ValueError, TypeError):
+                continue
+
+    except (IOError, json.JSONDecodeError):
+        pass  # Silently ignore cache loading errors
+
+
+def _save_rate_limit_cache() -> None:
+    """Save rate limit cache to persistent storage."""
+    cache_file = _get_rate_limit_cache_file()
+
+    try:
+        # Convert datetime objects to ISO strings for JSON serialization
+        cache_data = {
+            cache_key: (remaining, cached_at.isoformat())
+            for cache_key, (remaining, cached_at) in _rate_limit_cache.items()
+        }
+
+        # Write to temporary file first, then atomically replace
+        temp_file = f"{cache_file}.tmp"
+        with open(temp_file, "w", encoding="utf-8") as f:
+            json.dump(cache_data, f, indent=2)
+
+        os.replace(temp_file, cache_file)
+
+    except IOError:
+        pass  # Silently ignore cache saving errors
+
+
+def _update_rate_limit(token_hash: str, remaining: int) -> None:
+    """Update the rate limit cache for a specific token."""
+    global _rate_limit_cache
+
+    with _rate_limit_lock:
+        _rate_limit_cache[token_hash] = (remaining, datetime.now(timezone.utc))
+        _save_rate_limit_cache()
+
+
+def _get_cached_rate_limit(token_hash: str) -> Optional[int]:
+    """Get cached rate limit for a specific token."""
+    global _rate_limit_cache
+
+    with _rate_limit_lock:
+        if token_hash in _rate_limit_cache:
+            remaining, cached_at = _rate_limit_cache[token_hash]
+            # Only return cached value if it's less than 5 minutes old
+            # This provides a balance between accuracy and performance
+            if (datetime.now(timezone.utc) - cached_at).total_seconds() < 300:
+                return remaining
+    return None
+
+
+def clear_rate_limit_cache() -> None:
+    """Clear the global rate limit cache. Useful for testing."""
+    global _rate_limit_cache
+
+    # Clear cache under lock to avoid races with concurrent readers/writers
+    with _rate_limit_lock:
+        _rate_limit_cache.clear()
+
+
 def make_github_api_request(
     url: str,
     github_token: Optional[str] = None,
@@ -172,6 +278,15 @@ def make_github_api_request(
     # Show warning if no token available (centralized logic)
     _show_token_warning_if_needed(effective_token, allow_env_token)
 
+    # Initialize rate limit cache if needed
+    if not _rate_limit_cache:
+        _load_rate_limit_cache()
+
+    # Create token hash for caching
+    token_hash = hashlib.sha256((effective_token or "no-token").encode()).hexdigest()[
+        :16
+    ]
+
     try:
         # Make the request
         actual_timeout = timeout or GITHUB_API_TIMEOUT
@@ -223,13 +338,94 @@ def make_github_api_request(
     # Small delay to be respectful to GitHub API
     time.sleep(API_CALL_DELAY)
 
-    # Log rate limit info if available
+    # Enhanced rate limit tracking and logging
     try:
-        rl = response.headers.get("X-RateLimit-Remaining")
-        if rl is not None:
-            logger.debug(f"GitHub API rate-limit remaining: {rl}")
+        # Safely get headers with fallback for missing headers attribute (e.g., in tests)
+        headers = getattr(response, "headers", None)
+
+        if headers is None:
+            headers = {}
+        # CaseInsensitiveDict is not a dict subclass, so check for dict-like behavior
+        elif not hasattr(headers, "get"):
+            headers = {}
+
+        rl_header = headers.get("X-RateLimit-Remaining")
+        rl_reset = headers.get("X-RateLimit-Reset")
+
+        if rl_header is not None:
+            try:
+                # Handle both string values and potential Mock objects in tests
+                remaining = None
+                if isinstance(rl_header, str) and rl_header.isdigit():
+                    remaining = int(rl_header)
+                elif isinstance(rl_header, (int, float)):
+                    remaining = int(rl_header)
+                elif (
+                    not isinstance(rl_header, (str, int, float))
+                    and str(rl_header).isdigit()
+                ):
+                    # This handles cases where rl_header might be a Mock or other object
+                    remaining = int(str(rl_header))
+
+                if remaining is not None:
+                    # Update cache with new rate limit info
+                    _update_rate_limit(token_hash, remaining)
+
+                    # Get cached value for comparison
+                    cached_remaining = _get_cached_rate_limit(token_hash)
+
+                    # Log enhanced rate limit information
+                    if cached_remaining is not None and cached_remaining != remaining:
+                        logger.debug(
+                            f"GitHub API rate-limit remaining: {remaining} (was {cached_remaining})"
+                        )
+                    else:
+                        logger.debug(f"GitHub API rate-limit remaining: {remaining}")
+
+                    # Add rate limit estimation and warnings
+                    if remaining <= 10:
+                        logger.warning(
+                            f"GitHub API rate limit running low: {remaining} requests remaining"
+                        )
+                    elif remaining <= 50:
+                        logger.info(
+                            f"GitHub API rate limit: {remaining} requests remaining"
+                        )
+
+                    # Add reset time information if available
+                    if rl_reset:
+                        try:
+                            reset_time = datetime.fromtimestamp(
+                                int(rl_reset), timezone.utc
+                            )
+                            time_until_reset = reset_time - datetime.now(timezone.utc)
+                            if time_until_reset.total_seconds() > 0:
+                                minutes_until_reset = int(
+                                    time_until_reset.total_seconds() / 60
+                                )
+                                logger.debug(
+                                    f"GitHub API rate limit resets in ~{minutes_until_reset} minutes"
+                                )
+                        except (ValueError, OSError):
+                            pass
+                else:
+                    # Skip rate limit tracking for invalid values (including Mock objects)
+                    logger.debug(f"Invalid rate-limit header value: {rl_header}")
+
+            except ValueError:
+                logger.debug("Could not parse rate-limit header value")
+        else:
+            # No rate limit info available (might be a different endpoint)
+            cached_remaining = _get_cached_rate_limit(token_hash)
+            if cached_remaining is not None:
+                logger.debug(
+                    f"GitHub API rate-limit remaining: ~{cached_remaining} (cached estimate)"
+                )
+            else:
+                logger.debug("No rate limit information available")
+
     except (KeyError, ValueError, AttributeError) as e:
-        logger.debug(f"Could not parse rate-limit header: {e}")
+        logger.debug(f"Could not parse rate-limit headers: {e}")
 
     return response
 
