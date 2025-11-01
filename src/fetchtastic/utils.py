@@ -52,6 +52,9 @@ _rate_limit_cache: Dict[str, Tuple[int, datetime]] = {}
 _rate_limit_lock = threading.Lock()
 _rate_limit_cache_file = None
 
+# Track whether rate limit cache has been loaded
+_rate_limit_cache_loaded = False
+
 
 def get_user_agent() -> str:
     """
@@ -138,7 +141,7 @@ def _get_rate_limit_cache_file() -> str:
 
 def _load_rate_limit_cache() -> None:
     """Load rate limit cache from persistent storage."""
-    global _rate_limit_cache
+    global _rate_limit_cache, _rate_limit_cache_loaded
     cache_file = _get_rate_limit_cache_file()
 
     try:
@@ -154,8 +157,13 @@ def _load_rate_limit_cache() -> None:
 
         # Convert string timestamps back to datetime objects
         current_time = datetime.now(timezone.utc)
-        for cache_key, (remaining_str, cached_at_str) in cache_data.items():
+        for cache_key, cache_value in cache_data.items():
             try:
+                # Validate value structure
+                if not isinstance(cache_value, (list, tuple)) or len(cache_value) != 2:
+                    continue
+
+                remaining_str, cached_at_str = cache_value
                 remaining = int(remaining_str)
                 cached_at = datetime.fromisoformat(cached_at_str)
 
@@ -168,6 +176,21 @@ def _load_rate_limit_cache() -> None:
 
     except (IOError, json.JSONDecodeError):
         pass  # Silently ignore cache loading errors
+
+    # Mark cache as loaded even if loading failed
+    _rate_limit_cache_loaded = True
+
+
+def _parse_rate_limit_header(header_value: Any) -> Optional[int]:
+    """Parse rate limit header value to integer, returning None if invalid."""
+    try:
+        if isinstance(header_value, str) and header_value.isdigit():
+            return int(header_value)
+        elif isinstance(header_value, (int, float)):
+            return int(header_value)
+    except (ValueError, TypeError):
+        pass
+    return None
 
 
 def _save_rate_limit_cache() -> None:
@@ -288,8 +311,10 @@ def make_github_api_request(
     _show_token_warning_if_needed(effective_token, allow_env_token)
 
     # Initialize rate limit cache if needed
-    if not _rate_limit_cache:
+    global _rate_limit_cache_loaded
+    if not _rate_limit_cache_loaded:
         _load_rate_limit_cache()
+        _rate_limit_cache_loaded = True
 
     # Create token hash for caching
     token_hash = hashlib.sha256((effective_token or "no-token").encode()).hexdigest()[
@@ -362,67 +387,49 @@ def make_github_api_request(
         rl_reset = headers.get("X-RateLimit-Reset")
 
         if rl_header is not None:
-            try:
-                # Handle both string values and potential Mock objects in tests
-                remaining = None
-                if isinstance(rl_header, str) and rl_header.isdigit():
-                    remaining = int(rl_header)
-                elif isinstance(rl_header, (int, float)):
-                    remaining = int(rl_header)
-                elif (
-                    not isinstance(rl_header, (str, int, float))
-                    and str(rl_header).isdigit()
-                ):
-                    # This handles cases where rl_header might be a Mock or other object
-                    remaining = int(str(rl_header))
+            remaining = _parse_rate_limit_header(rl_header)
+            if remaining is not None:
+                # Update cache with new rate limit info
+                _update_rate_limit(token_hash, remaining)
 
-                if remaining is not None:
-                    # Update cache with new rate limit info
-                    _update_rate_limit(token_hash, remaining)
+                # Get cached value for comparison
+                cached_remaining = _get_cached_rate_limit(token_hash)
 
-                    # Get cached value for comparison
-                    cached_remaining = _get_cached_rate_limit(token_hash)
+                # Log enhanced rate limit information
+                if cached_remaining is not None and cached_remaining != remaining:
+                    logger.debug(
+                        f"GitHub API rate-limit remaining: {remaining} (was {cached_remaining})"
+                    )
+                else:
+                    logger.debug(f"GitHub API rate-limit remaining: {remaining}")
 
-                    # Log enhanced rate limit information
-                    if cached_remaining is not None and cached_remaining != remaining:
-                        logger.debug(
-                            f"GitHub API rate-limit remaining: {remaining} (was {cached_remaining})"
-                        )
-                    else:
-                        logger.debug(f"GitHub API rate-limit remaining: {remaining}")
+                # Add rate limit estimation and warnings
+                if remaining <= 10:
+                    logger.warning(
+                        f"GitHub API rate limit running low: {remaining} requests remaining"
+                    )
+                elif remaining <= 50:
+                    logger.info(
+                        f"GitHub API rate limit: {remaining} requests remaining"
+                    )
 
-                    # Add rate limit estimation and warnings
-                    if remaining <= 10:
-                        logger.warning(
-                            f"GitHub API rate limit running low: {remaining} requests remaining"
-                        )
-                    elif remaining <= 50:
-                        logger.info(
-                            f"GitHub API rate limit: {remaining} requests remaining"
-                        )
-
-                    # Add reset time information if available
-                    if rl_reset:
-                        try:
-                            reset_time = datetime.fromtimestamp(
-                                int(rl_reset), timezone.utc
+                # Add reset time information if available
+                if rl_reset:
+                    try:
+                        reset_time = datetime.fromtimestamp(int(rl_reset), timezone.utc)
+                        time_until_reset = reset_time - datetime.now(timezone.utc)
+                        if time_until_reset.total_seconds() > 0:
+                            minutes_until_reset = int(
+                                time_until_reset.total_seconds() / 60
                             )
-                            time_until_reset = reset_time - datetime.now(timezone.utc)
-                            if time_until_reset.total_seconds() > 0:
-                                minutes_until_reset = int(
-                                    time_until_reset.total_seconds() / 60
-                                )
-                                logger.debug(
-                                    f"GitHub API rate limit resets in ~{minutes_until_reset} minutes"
-                                )
-                        except (ValueError, OSError):
-                            pass
+                            logger.debug(
+                                f"GitHub API rate limit resets in ~{minutes_until_reset} minutes"
+                            )
+                    except (ValueError, OSError):
+                        pass
                 else:
                     # Skip rate limit tracking for invalid values (including Mock objects)
                     logger.debug(f"Invalid rate-limit header value: {rl_header}")
-
-            except ValueError:
-                logger.debug("Could not parse rate-limit header value")
         else:
             # No rate limit info available (might be a different endpoint)
             cached_remaining = _get_cached_rate_limit(token_hash)
@@ -710,14 +717,16 @@ def download_file_with_retry(
                     method_whitelist=frozenset({"GET", "HEAD"}),  # urllib3 v1 parameter
                     raise_on_status=False,
                 )
-            except (TypeError, ValueError):
-                # If method_whitelist also fails, try minimal parameters
+            except TypeError:
+                # Very old urllib3 version - use minimal configuration
                 retry_strategy = Retry(
                     total=DEFAULT_CONNECT_RETRIES,
                     backoff_factor=DEFAULT_BACKOFF_FACTOR,
                     status_forcelist=[408, 429, 500, 502, 503, 504],
                 )
-                logger.debug(f"Using minimal urllib3 Retry configuration due to: {e}")
+                logger.debug(
+                    "Using minimal urllib3 Retry configuration (very old version)"
+                )
         adapter = HTTPAdapter(max_retries=retry_strategy)
         session.mount("https://", adapter)
         session.mount("http://", adapter)

@@ -356,9 +356,7 @@ def cleanup_superseded_prereleases(
                 )
                 continue
 
-            dir_version = dir_name[
-                len(FIRMWARE_DIR_PREFIX) :
-            ]  # Remove 'firmware-' prefix
+            dir_version = extract_version(dir_name)
 
             # Validate version format before processing (hash part is optional)
             if not re.match(VERSION_REGEX_PATTERN, dir_version):
@@ -798,6 +796,8 @@ def _parse_new_json_format(
                 f"Invalid commit entry in tracking file: expected str, got {type(commit)}. Skipping."
             )
 
+    # Ensure uniqueness while preserving order
+    commits = list(dict.fromkeys(commits))
     last_updated = tracking_data.get("last_updated") or tracking_data.get("timestamp")
     return commits, current_release, last_updated
 
@@ -831,6 +831,8 @@ def _parse_legacy_json_format(
         if normalized:
             commits.append(normalized)
 
+    # Ensure uniqueness while preserving order
+    commits = list(dict.fromkeys(commits))
     last_updated = tracking_data.get("last_updated") or tracking_data.get("timestamp")
     return commits, current_release, last_updated
 
@@ -1361,18 +1363,23 @@ def _load_commit_cache() -> None:
 
         # Convert string timestamps back to datetime objects
         current_time = datetime.now(timezone.utc)
-        for cache_key, (timestamp_str, cached_at_str) in cache_data.items():
-            try:
-                timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
-                cached_at = datetime.fromisoformat(cached_at_str.replace("Z", "+00:00"))
+        with _cache_lock:
+            for cache_key, (timestamp_str, cached_at_str) in cache_data.items():
+                try:
+                    timestamp = datetime.fromisoformat(
+                        timestamp_str.replace("Z", "+00:00")
+                    )
+                    cached_at = datetime.fromisoformat(
+                        cached_at_str.replace("Z", "+00:00")
+                    )
 
-                # Check if entry is still valid (not expired)
-                age = current_time - cached_at
-                if age.total_seconds() < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 3600:
-                    _commit_timestamp_cache[cache_key] = (timestamp, cached_at)
-            except (ValueError, TypeError):
-                # Skip invalid entries
-                continue
+                    # Check if entry is still valid (not expired)
+                    age = current_time - cached_at
+                    if age.total_seconds() < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 3600:
+                        _commit_timestamp_cache[cache_key] = (timestamp, cached_at)
+                except (ValueError, TypeError):
+                    # Skip invalid entries
+                    continue
 
         logger.debug(
             f"Loaded {len(_commit_timestamp_cache)} commit timestamps from cache"
@@ -1400,24 +1407,23 @@ def _load_releases_cache() -> None:
 
         # Convert string timestamps back to datetime objects
         current_time = datetime.now(timezone.utc)
-        for cache_key, (releases_data_str, cached_at_str) in cache_data.items():
-            try:
-                # Parse releases data (stored as JSON string)
-                releases_data = (
-                    json.loads(releases_data_str)
-                    if isinstance(releases_data_str, str)
-                    else releases_data_str
-                )
-                cached_at = datetime.fromisoformat(cached_at_str.replace("Z", "+00:00"))
+        with _cache_lock:
+            for cache_key, (timestamp_str, cached_at_str) in cache_data.items():
+                try:
+                    timestamp = datetime.fromisoformat(
+                        timestamp_str.replace("Z", "+00:00")
+                    )
+                    cached_at = datetime.fromisoformat(
+                        cached_at_str.replace("Z", "+00:00")
+                    )
 
-                # Check if entry is still valid (not expired) - use same expiry as commit timestamps
-                age = current_time - cached_at
-                if age.total_seconds() < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 3600:
-                    _releases_cache[cache_key] = (releases_data, cached_at)
-            except (ValueError, TypeError, json.JSONDecodeError) as e:
-                # Skip invalid entries
-                logger.debug(f"Skipping invalid cache entry for {cache_key}: {e}")
-                continue
+                    # Check if entry is still valid (not expired)
+                    age = current_time - cached_at
+                    if age.total_seconds() < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 3600:
+                        _commit_timestamp_cache[cache_key] = (timestamp, cached_at)
+                except (ValueError, TypeError):
+                    # Skip invalid entries
+                    continue
 
         logger.debug(f"Loaded {len(_releases_cache)} releases entries from cache")
 
@@ -1529,24 +1535,28 @@ def get_commit_timestamp(
     allow_env_token: bool = True,
 ) -> Optional[datetime]:
     """
-    Retrieve the committer timestamp for a commit in a GitHub repository.
+    Retrieve committer timestamp for a commit in a GitHub repository.
 
     Parameters:
         repo_owner (str): GitHub repository owner or organization.
         repo_name (str): Repository name.
         commit_hash (str): Full SHA or abbreviated commit hash.
+        github_token (Optional[str]): GitHub API token for authentication.
+        force_refresh (bool): If True, bypass cache and fetch fresh data.
+        allow_env_token (bool): If True, allow using token from environment.
 
     Returns:
-        datetime: Committer timestamp as an aware UTC `datetime`, or `None` if the timestamp is unavailable or the request fails.
+        datetime: Committer timestamp as an aware UTC `datetime`, or `None` if timestamp is unavailable or request fails.
     """
 
     # Create cache key
     cache_key = f"{repo_owner}/{repo_name}/{commit_hash}"
 
-    # Load cache from file on first access (thread-safe)
+    # Load cache from file on first access (guarded)
     with _cache_lock:
-        if not _commit_timestamp_cache:
-            _load_commit_cache()
+        need_load = not _commit_timestamp_cache
+    if need_load:
+        _load_commit_cache()
 
         if force_refresh and cache_key in _commit_timestamp_cache:
             del _commit_timestamp_cache[cache_key]
@@ -1658,6 +1668,7 @@ def check_for_prereleases(
         exclude_patterns (Iterable[str] | None): Optional patterns to exclude assets from selection.
         device_manager: Optional device manager used for device-specific pattern matching (omitted from detailed docs as a common service).
         github_token (str | None): Optional GitHub API token for higher rate limits.
+        force_refresh (bool): If True, bypass cache and fetch fresh data.
 
     Returns:
         tuple[bool, list[str]]: (downloaded, versions)
@@ -1802,7 +1813,7 @@ def check_for_prereleases(
 
         if timestamp is not None:
             # Primary: items with timestamps, sorted by timestamp (newest first)
-            return (1, timestamp.timestamp())
+            return (1, timestamp.timestamp(), commit_hash or "")
         else:
             # Fallback: items without timestamps, sorted by commit hash (lexicographically descending)
             # Commit hashes are random, but this provides a deterministic fallback ordering
@@ -2277,6 +2288,11 @@ def _process_firmware_downloads(
     EXTRACT_PATTERNS (dual purpose: file extraction AND prerelease file selection), AUTO_EXTRACT,
     EXCLUDE_PATTERNS, CHECK_PRERELEASES.
 
+    Parameters:
+        config (Dict[str, Any]): Configuration dictionary containing download settings.
+        paths_and_urls (Dict[str, str]): Mapping of path identifiers to URLs.
+        force_refresh (bool): If True, bypass cache and fetch fresh data.
+
     Returns a tuple of:
     - downloaded firmware versions (List[str]) — includes strings like "pre-release X.Y.Z" for prereleases,
     - newly detected release versions that were not previously recorded (List[str]),
@@ -2437,6 +2453,7 @@ def _process_apk_downloads(
     Expected keys used from inputs:
     - config: SAVE_APKS, SELECTED_APK_ASSETS, ANDROID_VERSIONS_TO_KEEP (optional).
     - paths_and_urls: "android_releases_url", "latest_android_release_file", "apks_dir".
+    - force_refresh (bool): If True, bypass cache and fetch fresh data.
 
     Returns:
     A tuple (downloaded_apk_versions, new_apk_versions, failed_downloads, latest_apk_version):
@@ -2990,6 +3007,7 @@ def check_and_download(
     - selected_patterns: Optional list of asset name patterns to include; if omitted all assets are considered.
     - auto_extract: When True and `release_type == "Firmware"`, perform extraction of matching ZIP contents.
     - exclude_patterns: Optional list of patterns; matching filenames are excluded from download and extraction.
+    - force_refresh: If True, bypass cache and fetch fresh data.
 
     Returns:
     Tuple(downloaded_versions, new_versions_available, failed_downloads_details)

@@ -514,7 +514,7 @@ def test_get_commit_timestamp_cache():
     mock_response.headers = {"X-RateLimit-Remaining": "4999"}
 
     with patch(
-        "fetchtastic.downloader.requests.get", return_value=mock_response
+        "fetchtastic.downloader.make_github_api_request", return_value=mock_response
     ) as mock_get:
         # First call should make API request and cache result
         result1 = get_commit_timestamp("meshtastic", "firmware", "abcdef123")
@@ -536,7 +536,7 @@ def test_get_commit_timestamp_cache():
 
     # Test force_refresh bypasses cache
     with patch(
-        "fetchtastic.downloader.requests.get", return_value=mock_response
+        "fetchtastic.downloader.make_github_api_request", return_value=mock_response
     ) as mock_get:
         result3 = get_commit_timestamp(
             "meshtastic", "firmware", "abcdef123", force_refresh=True
@@ -550,7 +550,7 @@ def test_get_commit_timestamp_cache():
     _commit_timestamp_cache[cache_key] = (result1, old_timestamp)
 
     with patch(
-        "fetchtastic.downloader.requests.get", return_value=mock_response
+        "fetchtastic.downloader.make_github_api_request", return_value=mock_response
     ) as mock_get:
         result4 = get_commit_timestamp("meshtastic", "firmware", "abcdef123")
         assert result4 == result1
