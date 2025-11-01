@@ -1407,16 +1407,31 @@ def _load_releases_cache() -> None:
         current_time = datetime.now(timezone.utc)
         for cache_key, cache_entry in cache_data.items():
             try:
-                releases_data = cache_entry["releases"]
-                cached_at = datetime.fromisoformat(
-                    cache_entry["cached_at"].replace("Z", "+00:00")
-                )
+                if isinstance(cache_entry, dict):
+                    # New format
+                    releases_data = cache_entry["releases"]
+                    cached_at = datetime.fromisoformat(
+                        cache_entry["cached_at"].replace("Z", "+00:00")
+                    )
+                elif isinstance(cache_entry, (list, tuple)) and len(cache_entry) == 2:
+                    # Old format: (json_str, iso_str)
+                    releases_data_str, cached_at_str = cache_entry
+                    releases_data = (
+                        json.loads(releases_data_str)
+                        if isinstance(releases_data_str, str)
+                        else releases_data_str
+                    )
+                    cached_at = datetime.fromisoformat(
+                        cached_at_str.replace("Z", "+00:00")
+                    )
+                else:
+                    raise ValueError("Invalid cache entry format")
 
                 # Check if entry is still valid (not expired) - use same expiry as commit timestamps
                 age = current_time - cached_at
                 if age.total_seconds() < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 60 * 60:
                     _releases_cache[cache_key] = (releases_data, cached_at)
-            except (ValueError, TypeError, KeyError) as e:
+            except (ValueError, TypeError, KeyError, json.JSONDecodeError) as e:
                 # Skip invalid entries
                 logger.debug(f"Skipping invalid cache entry for {cache_key}: {e}")
                 continue
