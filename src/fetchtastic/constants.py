@@ -89,8 +89,9 @@ LOG_LEVEL_ENV_VAR = "FETCHTASTIC_LOG_LEVEL"
 DEVICE_HARDWARE_API_URL = "https://api.meshtastic.org/resource/deviceHardware"
 DEVICE_HARDWARE_CACHE_HOURS = 24
 
-# Commit timestamp cache configuration
+# Cache configuration
 COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS = 24
+RELEASES_CACHE_EXPIRY_HOURS = 1 / 60  # 1 minute
 
 # Concurrent operations limits
 MAX_CONCURRENT_TIMESTAMP_FETCHES = 5

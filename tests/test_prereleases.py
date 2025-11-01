@@ -42,7 +42,9 @@ def _deny_network():
 
     with patch("fetchtastic.downloader.requests.get", _no_net):
         with patch("fetchtastic.downloader.requests.post", _no_net):
-            yield
+            with patch("fetchtastic.utils.requests.get", _no_net):
+                with patch("fetchtastic.utils.requests.post", _no_net):
+                    yield
 
 
 def mock_github_commit_timestamp(commit_timestamps):
@@ -166,9 +168,9 @@ def test_cleanup_superseded_prereleases_handles_commit_suffix(tmp_path):
 @patch("fetchtastic.downloader.menu_repo.fetch_repo_directories")
 @patch("fetchtastic.downloader.menu_repo.fetch_directory_contents")
 @patch("fetchtastic.downloader.download_file_with_retry")
-@patch("requests.get")
+@patch("fetchtastic.downloader.make_github_api_request")
 def test_check_for_prereleases_download_and_cleanup(
-    mock_get, mock_dl, mock_fetch_contents, mock_fetch_dirs, tmp_path, write_dummy_file
+    mock_api, mock_dl, mock_fetch_contents, mock_fetch_dirs, tmp_path, write_dummy_file
 ):
     """Check that prerelease discovery downloads matching assets and cleans stale entries."""
     # Repo has a newer prerelease and some other dirs
@@ -180,11 +182,13 @@ def test_check_for_prereleases_download_and_cleanup(
     mock_fetch_contents.return_value = [
         {
             "name": "firmware-rak4631-2.7.7.abcdef.uf2",
-            "download_url": "https://example.invalid/rak4631.uf2",
+            "path": "firmware-2.7.7.abcdef/firmware-rak4631-2.7.7.abcdef.uf2",
+            "download_url": "https://example.invalid/firmware-2.7.7.abcdef/firmware-rak4631-2.7.7.abcdef.uf2",
         },
         {
             "name": "firmware-heltec-v3-2.7.7.abcdef.zip",
-            "download_url": "https://example.invalid/heltec.zip",
+            "path": "firmware-2.7.7.abcdef/firmware-heltec-v3-2.7.7.abcdef.zip",
+            "download_url": "https://example.invalid/firmware-2.7.7.abcdef/firmware-heltec-v3-2.7.7.abcdef.zip",
         },
     ]
 
@@ -203,9 +207,10 @@ def test_check_for_prereleases_download_and_cleanup(
     stray.write_text("stale")
 
     # Mock GitHub API response for commit timestamp
-    mock_get.side_effect = mock_github_commit_timestamp(
-        {"abcdef": "2025-01-20T12:00:00Z"}
-    )
+    resp = Mock()
+    resp.json.return_value = {"commit": {"committer": {"date": "2025-01-20T12:00:00Z"}}}
+    resp.raise_for_status.return_value = None
+    mock_api.return_value = resp
 
     latest_release_tag = "v2.7.6.111111"
     downloaded, versions = downloader.check_for_prereleases(
@@ -236,9 +241,9 @@ def test_check_for_prereleases_no_directories(mock_fetch_dirs, tmp_path):
 @patch("fetchtastic.downloader.menu_repo.fetch_repo_directories")
 @patch("fetchtastic.downloader.menu_repo.fetch_directory_contents")
 @patch("fetchtastic.downloader.download_file_with_retry")
-@patch("requests.get")
+@patch("fetchtastic.downloader.make_github_api_request")
 def test_prerelease_tracking_functionality(
-    mock_get, mock_dl, mock_fetch_contents, mock_fetch_dirs, tmp_path, write_dummy_file
+    mock_api, mock_dl, mock_fetch_contents, mock_fetch_dirs, tmp_path, write_dummy_file
 ):
     """Test that prerelease tracking file is created and updated correctly."""
     # Setup mock data
@@ -259,9 +264,10 @@ def test_prerelease_tracking_functionality(
     latest_release_tag = "v2.7.6.111111"
 
     # Mock GitHub API responses for commit timestamps
-    mock_get.side_effect = mock_github_commit_timestamp(
-        {"abcdef": "2025-01-20T12:00:00Z"}
-    )
+    resp = Mock()
+    resp.json.return_value = {"commit": {"committer": {"date": "2025-01-20T12:00:00Z"}}}
+    resp.raise_for_status.return_value = None
+    mock_api.return_value = resp
 
     # Run prerelease check
     downloaded, versions = downloader.check_for_prereleases(
@@ -377,11 +383,20 @@ def test_prerelease_directory_cleanup(tmp_path, write_dummy_file):
             mock_dirs.return_value = ["firmware-2.7.7.789abc"]
 
             def _dir_aware_contents(dir_name: str):
-                base = dir_name.removeprefix("firmware-")
+                """
+                Return a mock directory listing containing a single prerelease firmware asset whose path and download_url incorporate the provided directory name.
+
+                Parameters:
+                    dir_name (str): Directory name used as the prerelease directory component in the returned asset's `path` and `download_url`.
+
+                Returns:
+                    list[dict]: A list with one asset mapping containing the keys `name`, `path`, and `download_url`. The `path` and `download_url` reflect a hierarchical prerelease location that includes `dir_name`.
+                """
                 return [
                     {
-                        "name": f"firmware-rak4631-{base}.uf2",
-                        "download_url": f"https://example.invalid/{dir_name}.uf2",
+                        "name": "firmware-rak4631-2.7.7.789abc.uf2",
+                        "path": "firmware-2.7.7.789abc/firmware-rak4631-2.7.7.789abc.uf2",
+                        "download_url": "https://example.invalid/firmware-2.7.7.789abc/firmware-rak4631-2.7.7.789abc.uf2",
                     }
                 ]
 
@@ -392,8 +407,10 @@ def test_prerelease_directory_cleanup(tmp_path, write_dummy_file):
                     dest, b"new data"
                 )
 
-                with patch("fetchtastic.downloader.requests.get") as mock_get:
-                    mock_get.side_effect = mock_github_commit_timestamp(
+                with patch(
+                    "fetchtastic.downloader.make_github_api_request"
+                ) as mock_api:
+                    mock_api.side_effect = mock_github_commit_timestamp(
                         {"789abc": "2025-01-20T12:00:00Z"}
                     )
 
@@ -411,9 +428,9 @@ def test_prerelease_directory_cleanup(tmp_path, write_dummy_file):
                     "firmware-2.7.7.789abc" in versions
                 )  # But directory is still tracked
 
-                # And tracking JSON should reflect that commit
-                info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
-                assert "2.7.7.789abc" in info.get("commits", [])
+            # And tracking JSON should reflect that commit
+            info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
+            assert "2.7.7.789abc" in info.get("commits", [])
 
     # Verify old directories were cleaned up
     assert not old_dir1.exists(), "Old prerelease directory should be removed"
@@ -514,7 +531,7 @@ def test_get_commit_timestamp_cache():
     mock_response.headers = {"X-RateLimit-Remaining": "4999"}
 
     with patch(
-        "fetchtastic.downloader.requests.get", return_value=mock_response
+        "fetchtastic.downloader.make_github_api_request", return_value=mock_response
     ) as mock_get:
         # First call should make API request and cache result
         result1 = get_commit_timestamp("meshtastic", "firmware", "abcdef123")
@@ -536,7 +553,7 @@ def test_get_commit_timestamp_cache():
 
     # Test force_refresh bypasses cache
     with patch(
-        "fetchtastic.downloader.requests.get", return_value=mock_response
+        "fetchtastic.downloader.make_github_api_request", return_value=mock_response
     ) as mock_get:
         result3 = get_commit_timestamp(
             "meshtastic", "firmware", "abcdef123", force_refresh=True
@@ -550,7 +567,7 @@ def test_get_commit_timestamp_cache():
     _commit_timestamp_cache[cache_key] = (result1, old_timestamp)
 
     with patch(
-        "fetchtastic.downloader.requests.get", return_value=mock_response
+        "fetchtastic.downloader.make_github_api_request", return_value=mock_response
     ) as mock_get:
         result4 = get_commit_timestamp("meshtastic", "firmware", "abcdef123")
         assert result4 == result1
@@ -797,11 +814,8 @@ def test_get_commit_timestamp_error_handling():
     clear_commit_timestamp_cache()
 
     # Test HTTP error
-    mock_response = Mock()
-    mock_response.raise_for_status.side_effect = requests.HTTPError("404 Not Found")
-    mock_response.status_code = 404
-
-    with patch("fetchtastic.downloader.requests.get", return_value=mock_response):
+    http_err = requests.HTTPError("404 Not Found")
+    with patch("fetchtastic.downloader.make_github_api_request", side_effect=http_err):
         result = get_commit_timestamp("meshtastic", "firmware", "badcommit")
         assert result is None
 
@@ -812,7 +826,9 @@ def test_get_commit_timestamp_error_handling():
     mock_response.status_code = 200
     mock_response.ok = True
 
-    with patch("fetchtastic.downloader.requests.get", return_value=mock_response):
+    with patch(
+        "fetchtastic.downloader.make_github_api_request", return_value=mock_response
+    ):
         result = get_commit_timestamp("meshtastic", "firmware", "badcommit")
         assert result is None
 
@@ -823,7 +839,9 @@ def test_get_commit_timestamp_error_handling():
     mock_response.status_code = 200
     mock_response.ok = True
 
-    with patch("fetchtastic.downloader.requests.get", return_value=mock_response):
+    with patch(
+        "fetchtastic.downloader.make_github_api_request", return_value=mock_response
+    ):
         result = get_commit_timestamp("meshtastic", "firmware", "badcommit")
         assert result is None
 
@@ -838,7 +856,9 @@ def test_get_commit_timestamp_error_handling():
     mock_response.status_code = 200
     mock_response.ok = True
 
-    with patch("fetchtastic.downloader.requests.get", return_value=mock_response):
+    with patch(
+        "fetchtastic.downloader.make_github_api_request", return_value=mock_response
+    ):
         # First call should make API request
         result1 = get_commit_timestamp("meshtastic", "firmware", "abcdef123")
         assert result1 is not None
@@ -852,7 +872,9 @@ def test_get_commit_timestamp_error_handling():
         # (This is hard to test directly with the current setup, but cache should work)
 
     # Test cache expiry with force_refresh
-    with patch("fetchtastic.downloader.requests.get", return_value=mock_response):
+    with patch(
+        "fetchtastic.downloader.make_github_api_request", return_value=mock_response
+    ):
         result3 = get_commit_timestamp(
             "meshtastic", "firmware", "abcdef123", force_refresh=True
         )
