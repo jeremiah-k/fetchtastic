@@ -1852,30 +1852,25 @@ def _download_prerelease_assets(
         download_url = file_info["download_url"]
 
         # Use hierarchical path if available, otherwise just filename
-        if "path" in file_info and file_info["path"]:
-            # Remove remote_dir prefix from path to get relative path within prerelease dir
-            relative_path = file_info["path"].removeprefix(f"{remote_dir}/")
-            file_path = os.path.join(prerelease_dir, relative_path)
+        asset_path = file_info.get("path")
+        if asset_path:
+            parts = asset_path.split(f"{remote_dir}/", 1)
+            relative_path = (
+                parts[1] if len(parts) == 2 else os.path.basename(asset_path)
+            )
+            file_path = os.path.normpath(os.path.join(prerelease_dir, relative_path))
         else:
             relative_path = file_name
-            file_path = os.path.join(prerelease_dir, file_name)
+            file_path = os.path.normpath(os.path.join(prerelease_dir, file_name))
 
-        # Security: Prevent path traversal. Ensure the final path is within the base directory.
-        # Check for both Unix and Windows path traversal patterns
-        if (
-            "../" in relative_path
-            or "..\\" in relative_path
-            or relative_path.startswith("/")
-            or relative_path.startswith("\\")
-        ):
-            logger.warning(
-                f"Skipping asset with unsafe path that escapes base directory: {file_path}"
-            )
-            continue
-
-        # Additional check using realpath to catch edge cases
+        # Security: Prevent path traversal using robust path validation
         real_prerelease_dir = os.path.realpath(prerelease_dir)
-        if not os.path.realpath(file_path).startswith(real_prerelease_dir):
+        real_target = os.path.realpath(file_path)
+        try:
+            common_base = os.path.commonpath([real_prerelease_dir, real_target])
+        except ValueError:
+            common_base = None
+        if common_base != real_prerelease_dir:
             logger.warning(
                 f"Skipping asset with unsafe path that escapes base directory: {file_path}"
             )
@@ -2063,9 +2058,11 @@ def get_commit_timestamp(
 
     cache_key = f"{owner}/{repo}/{commit_hash}"
 
-    # Load cache on first access
+    # Load cache on first access (double-checked pattern)
     if not _commit_cache_loaded:
-        _load_commit_cache()
+        with _cache_lock:
+            if not _commit_cache_loaded:
+                _load_commit_cache()
 
     with _cache_lock:
         if force_refresh and cache_key in _commit_timestamp_cache:
@@ -2216,9 +2213,11 @@ def _get_latest_releases_data(
     # Create cache key based on URL and scan count
     cache_key = f"{url}?per_page={scan_count}"
 
-    # Load cache from file on first access
+    # Load cache from file on first access (double-checked pattern)
     if not _releases_cache_loaded:
-        _load_releases_cache()
+        with _cache_lock:
+            if not _releases_cache_loaded:
+                _load_releases_cache()
 
     with _cache_lock:
         if force_refresh and cache_key in _releases_cache:

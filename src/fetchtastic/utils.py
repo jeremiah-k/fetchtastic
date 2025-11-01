@@ -337,10 +337,12 @@ def make_github_api_request(
     # Show warning if no token available (centralized logic)
     _show_token_warning_if_needed(effective_token, allow_env_token)
 
-    # Initialize rate limit cache if needed
+    # Initialize rate limit cache if needed (double-checked pattern)
     global _rate_limit_cache_loaded
     if not _rate_limit_cache_loaded:
-        _load_rate_limit_cache()
+        with _rate_limit_lock:
+            if not _rate_limit_cache_loaded:
+                _load_rate_limit_cache()
 
     # Create token hash for caching
     token_hash = hashlib.sha256((effective_token or "no-token").encode()).hexdigest()[
@@ -406,16 +408,15 @@ def make_github_api_request(
         if rl_header is not None:
             remaining = _parse_rate_limit_header(rl_header)
             if remaining is not None:
+                # Get previous cached value before updating
+                prev_remaining = _get_cached_rate_limit(token_hash)
                 # Update cache with new rate limit info
                 _update_rate_limit(token_hash, remaining)
 
-                # Get cached value for comparison
-                cached_remaining = _get_cached_rate_limit(token_hash)
-
                 # Log enhanced rate limit information
-                if cached_remaining is not None and cached_remaining != remaining:
+                if prev_remaining is not None and prev_remaining != remaining:
                     logger.debug(
-                        f"GitHub API rate-limit remaining: {remaining} (was {cached_remaining})"
+                        f"GitHub API rate-limit remaining: {remaining} (was {prev_remaining})"
                     )
                 else:
                     logger.debug(f"GitHub API rate-limit remaining: {remaining}")
