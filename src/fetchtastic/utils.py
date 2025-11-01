@@ -58,17 +58,10 @@ _rate_limit_cache_loaded = False
 
 def get_user_agent() -> str:
     """
-    Get the dynamic User-Agent string for HTTP requests.
-
-    Returns a User-Agent string in the format "fetchtastic/{version}" where version
-    is dynamically retrieved from the package metadata. Falls back to "unknown" if
-    the version cannot be determined (e.g., in development environments).
-
-    The result is cached to avoid repeated metadata lookups since the version
-    won't change during runtime.
-
+    Return the User-Agent string used for HTTP requests.
+    
     Returns:
-        str: User-Agent string in format "fetchtastic/{version}"
+        str: The string "fetchtastic/{version}", where {version} is the package version or "unknown" if the version cannot be determined.
     """
     global _USER_AGENT_CACHE
 
@@ -140,7 +133,11 @@ def _get_rate_limit_cache_file() -> str:
 
 
 def _load_rate_limit_cache() -> None:
-    """Load rate limit cache from persistent storage."""
+    """
+    Load persisted GitHub rate-limit entries into the in-memory cache.
+    
+    This function reads a cached JSON file of rate-limit entries, validates its structure, converts stored ISO timestamps back to datetimes, and retains only entries updated within the last hour. Loaded entries are merged into the module-level rate-limit cache and the cache is marked as loaded. The operation is thread-safe and idempotent (subsequent calls are no-ops). IO or JSON parse errors are silently ignored.
+    """
     global _rate_limit_cache, _rate_limit_cache_loaded
 
     with _rate_limit_lock:
@@ -190,7 +187,18 @@ def _load_rate_limit_cache() -> None:
 
 
 def _parse_rate_limit_header(header_value: Any) -> Optional[int]:
-    """Parse rate limit header value to integer, returning None if invalid."""
+    """
+    Parse an HTTP rate-limit header value into an integer remaining count.
+    
+    Accepts numeric strings, integers, or floats and returns their integer representation.
+    Non-numeric or otherwise unparsable values return `None`.
+    
+    Parameters:
+        header_value (Any): The raw header value to parse (commonly a str, int, or float).
+    
+    Returns:
+        Optional[int]: The parsed integer value if successful, `None` otherwise.
+    """
     try:
         if isinstance(header_value, str) and header_value.isdigit():
             return int(header_value)
@@ -202,7 +210,14 @@ def _parse_rate_limit_header(header_value: Any) -> Optional[int]:
 
 
 def _save_rate_limit_cache() -> None:
-    """Save rate limit cache to persistent storage."""
+    """
+    Persist the in-memory rate-limit cache to the on-disk cache file.
+    
+    Writes the current in-memory rate-limit entries to the cache file returned by
+    `_get_rate_limit_cache_file`. Timestamps are serialized as ISO 8601 strings and
+    the file is written atomically (temporary file then replace). I/O errors during
+    save are silently ignored.
+    """
     cache_file = _get_rate_limit_cache_file()
 
     try:
@@ -575,30 +590,12 @@ def download_file_with_retry(
     # log_message_func: Callable[[str], None] # Removed
 ) -> bool:
     """
-    Download a file from a URL with retries, integrity checks, and platform-specific atomic replacement.
-
-    Performs these behaviors:
-    - Uses a requests.Session with a robust Retry policy for network resilience.
-    - If download_path already exists:
-      - For ZIP files (by ZIP_EXTENSION), validates with zipfile.testzip() and then with the stored SHA-256 hash; if valid, skips download and returns True. Corrupted or mismatched files are removed before attempting a re-download.
-      - For non-ZIP files, skips download if a non-empty file passes SHA-256 verification; empty or invalid files are removed before re-download.
-    - Streams the HTTP response to a temporary file (download_path + ".tmp"), writing in chunks and validating ZIP integrity for downloaded archives.
-    - Replaces the target file atomically using os.replace:
-      - On Windows, retries replacements (with exponential backoff) to work around transient PermissionError conditions.
-      - On non-Windows platforms, attempts a single replace.
-    - After a successful replace, computes and saves a SHA-256 hash alongside the file (via a .sha256 file).
-    - Cleans up temporary files and removes partially downloaded or corrupted files on error.
-
-    Return value:
-        True if the file was successfully downloaded or an existing file was present and verified; False on any failure.
-
-    Side effects:
-    - Creates, replaces, and removes files at download_path and download_path + ".tmp".
-    - Writes a companion SHA-256 file next to the downloaded file when a hash can be computed.
-    - Logs progress, validation results, and errors via the module logger.
-
-    Errors and exceptions:
-    - Network, IO, ZIP validation, and unexpected exceptions are caught internally; the function returns False on failure rather than propagating exceptions.
+    Download a file from `url` to `download_path`, ensuring integrity and performing atomic replacement.
+    
+    Performs integrity checks (SHA-256 sidecar and ZIP validation for archives), skips download when an existing file is verified, streams content to a temporary file with retry-capable HTTP requests, and replaces the target file atomically (with Windows-specific retries for transient access errors). On successful install, saves a companion `.sha256` hash file next to the downloaded file. Cleans up temporary and partially downloaded files on failure.
+    
+    Returns:
+        True if the file is present and verified or was downloaded and installed successfully, `False` on any failure.
     """
     # Note: Session is created after pre-checks and closed in finally
 

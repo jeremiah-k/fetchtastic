@@ -5,26 +5,28 @@ import pathlib
 
 
 def get_batch_file_path(filename):
-    """Get the path to a batch file in the tools directory.
-
-    Args:
-        filename: The name of the batch file
-
+    """
+    Return the filesystem path to a batch file stored in the `fetchtastic.tools` package resources.
+    
+    Parameters:
+        filename (str): Name of the batch file within the package resources.
+    
     Returns:
-        str: The path to the batch file
+        str: Filesystem path to the requested batch file.
     """
     # For Python 3.10+
     return str(importlib.resources.files("fetchtastic.tools").joinpath(filename))
 
 
 def get_install_script_path(platform):
-    """Get the path to the installation script for the specified platform.
-
-    Args:
-        platform: The platform name ('windows', 'unix')
-
+    """
+    Get the filesystem path to the Fetchtastic installation script for the given platform.
+    
+    Parameters:
+        platform (str): Platform name; use 'windows' to select the Windows batch installer, any other value selects the Unix shell installer.
+    
     Returns:
-        str: The path to the installation script
+        str: Filesystem path to the selected installation script.
     """
     filename = f"fetchtastic-setup.{'bat' if platform == 'windows' else 'sh'}"
     # For Python 3.10+
