@@ -703,7 +703,7 @@ def download_file_with_retry(
                 raise_on_status=False,
                 respect_retry_after_header=True,
             )
-        except TypeError as e:
+        except TypeError:
             # urllib3 v1 fallback - parameters may differ between versions
             # Use method_whitelist for older urllib3 versions
             try:
