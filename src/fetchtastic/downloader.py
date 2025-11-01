@@ -1248,12 +1248,15 @@ def _iter_matching_prerelease_files(
             )
             continue
 
-        matching.append(
-            {
-                "name": safe_file_name,
-                "download_url": download_url,
-            }
-        )
+        record = {
+            "name": safe_file_name,
+            "download_url": download_url,
+        }
+        # Preserve repository-relative path if provided by menu_repo
+        asset_path = entry.get("path")
+        if asset_path:
+            record["path"] = asset_path
+        matching.append(record)
 
     return matching
 
@@ -1657,10 +1660,7 @@ def _find_latest_remote_prerelease_dir(
                 continue
 
             dir_version = extract_version(dir_name)
-            if not re.match(
-                r"^\d+\.\d+\.\d+(?:\.[a-f0-9]+)?(?:[-\.]?(?:rc|dev|b|beta|alpha)\d+)?(?:\+[0-9A-Za-z]+)?$",
-                dir_version,
-            ):
+            if not re.match(VERSION_REGEX_PATTERN, dir_version):
                 logger.debug(
                     "Repository prerelease directory %s uses a non-standard version format; skipping",
                     dir_name,
@@ -1933,9 +1933,6 @@ def check_for_prereleases(
     )
     if not remote_dir:
         return False, []
-
-    # Update tracking with the remote directory
-    update_prerelease_tracking(prerelease_base_dir, latest_release_tag, remote_dir)
 
     # Download assets for the selected prerelease
     files_downloaded, _ = _download_prerelease_assets(

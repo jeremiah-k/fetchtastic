@@ -243,10 +243,10 @@ def _update_rate_limit(token_hash: str, remaining: int) -> None:
     """Update the rate limit cache for a specific token."""
     global _rate_limit_cache
 
+    now = datetime.now(timezone.utc)
     with _rate_limit_lock:
-        _rate_limit_cache[token_hash] = (remaining, datetime.now(timezone.utc))
-
-    # Save cache outside the lock to avoid deadlock
+        _rate_limit_cache[token_hash] = (remaining, now)
+    # Persist outside the lock to avoid re-entrancy deadlock
     _save_rate_limit_cache()
 
 
@@ -266,11 +266,12 @@ def _get_cached_rate_limit(token_hash: str) -> Optional[int]:
 
 def clear_rate_limit_cache() -> None:
     """Clear the global rate limit cache. Useful for testing."""
-    global _rate_limit_cache
+    global _rate_limit_cache, _rate_limit_cache_loaded
 
     # Clear cache under lock to avoid races with concurrent readers/writers
     with _rate_limit_lock:
         _rate_limit_cache.clear()
+        _rate_limit_cache_loaded = False
 
     # Also clear the persistent cache file
     try:
@@ -383,13 +384,7 @@ def make_github_api_request(
         raise
 
     # Log API response info for debugging
-    content_length = response.headers.get("Content-Length")
-    if content_length is None:
-        # Try to get actual content length if header is missing
-        try:
-            content_length = str(len(response.content))
-        except (AttributeError, TypeError):
-            content_length = "unknown"
+    content_length = response.headers.get("Content-Length", "unknown")
     logger.debug(
         f"GitHub API response: {response.status_code} for {url} ({content_length} bytes)"
     )
