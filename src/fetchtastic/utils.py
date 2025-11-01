@@ -140,67 +140,69 @@ def _get_rate_limit_cache_file() -> str:
 
 def _load_rate_limit_cache() -> None:
     """
-    Load rate limit cache from disk with thread-safe double-checked locking.
+    Load rate limit cache from disk with atomic double-checked locking.
 
-    This function implements a lazy loading pattern where the cache is loaded
-    from disk only once per application lifetime. Multiple threads can safely
-    call this function concurrently without causing duplicate loads.
+    This function implements a performance-optimized cache loading pattern that:
+    1. Performs a fast check without lock to avoid contention
+    2. Uses guarded double-checking with minimal lock time
+    3. Loads cache data outside the critical section
+    4. Publishes loaded data atomically under lock
+
+    The cache file stores rate limit information across process restarts,
+    avoiding unnecessary API calls that would consume rate limit quota.
     """
-    global _rate_limit_cache, _rate_limit_cache_loaded
-
-    # First check without lock for performance
+    # Fast path without lock
     if _rate_limit_cache_loaded:
         return
 
-    # Double-checked locking pattern
+    # Guarded re-check with minimal lock time
     with _rate_limit_lock:
         if _rate_limit_cache_loaded:
             return
 
-        cache_file = _get_rate_limit_cache_file()
-
-        loaded: Dict[str, Tuple[int, datetime]] = {}
-        try:
-            if not os.path.exists(cache_file):
-                _rate_limit_cache_loaded = True
-                return
-
+    # Load cache data outside the lock to avoid holding it during I/O
+    cache_file = _get_rate_limit_cache_file()
+    loaded: Dict[str, Tuple[int, datetime]] = {}
+    try:
+        if not os.path.exists(cache_file):
+            loaded = {}  # No file; treat as empty
+        else:
             with open(cache_file, "r", encoding="utf-8") as f:
                 cache_data = json.load(f)
-
             # Validate cache structure
             if not isinstance(cache_data, dict):
-                _rate_limit_cache_loaded = True
-                return
+                loaded = {}  # Invalid structure; treat as empty
+            else:
+                # Convert string timestamps back to datetime objects (build locally)
+                current_time = datetime.now(timezone.utc)
+                for cache_key, cache_value in cache_data.items():
+                    try:
+                        # Validate value structure
+                        if (
+                            not isinstance(cache_value, (list, tuple))
+                            or len(cache_value) != 2
+                        ):
+                            continue
 
-            # Convert string timestamps back to datetime objects (build locally)
-            current_time = datetime.now(timezone.utc)
-            for cache_key, cache_value in cache_data.items():
-                try:
-                    # Validate value structure
-                    if (
-                        not isinstance(cache_value, (list, tuple))
-                        or len(cache_value) != 2
-                    ):
+                        remaining_str, cached_at_str = cache_value
+                        remaining = int(remaining_str)
+                        cached_at = datetime.fromisoformat(cached_at_str)
+
+                        # Only keep cache entries that are less than 1 hour old
+                        # GitHub rate limits reset every hour
+                        if (current_time - cached_at).total_seconds() < 3600:
+                            loaded[cache_key] = (remaining, cached_at)
+                    except (ValueError, TypeError):
                         continue
+    except (IOError, json.JSONDecodeError):
+        pass  # Silently ignore cache loading errors
+        loaded = {}
 
-                    remaining_str, cached_at_str = cache_value
-                    remaining = int(remaining_str)
-                    cached_at = datetime.fromisoformat(cached_at_str)
-
-                    # Only keep cache entries that are less than 1 hour old
-                    # GitHub rate limits reset every hour
-                    if (current_time - cached_at).total_seconds() < 3600:
-                        loaded[cache_key] = (remaining, cached_at)
-                except (ValueError, TypeError):
-                    continue
-
-        except (IOError, json.JSONDecodeError):
-            pass  # Silently ignore cache loading errors
-
-        # Publish loaded entries and mark loaded atomically
-        _rate_limit_cache.update(loaded)
-        _rate_limit_cache_loaded = True
+    # Publish under lock, double-check flag
+    with _rate_limit_lock:
+        if not _rate_limit_cache_loaded:
+            _rate_limit_cache.update(loaded)
+            _rate_limit_cache_loaded = True
 
 
 def _parse_rate_limit_header(header_value: Any) -> Optional[int]:
@@ -777,7 +779,22 @@ def download_file_with_retry(
                     backoff_factor=DEFAULT_BACKOFF_FACTOR,
                     status_forcelist=[408, 429, 500, 502, 503, 504],
                 )
-                logger.debug(f"Using minimal urllib3 Retry configuration due to: {e}")
+                logger.warning(
+                    "Using minimal urllib3 retry configuration due to compatibility issues: %s",
+                    e,
+                    exc_info=True,
+                )
+            except TypeError as e:
+                # Very old urllib3 version - use minimal configuration
+                retry_strategy = Retry(
+                    total=DEFAULT_CONNECT_RETRIES,
+                    backoff_factor=DEFAULT_BACKOFF_FACTOR,
+                    status_forcelist=[408, 429, 500, 502, 503, 504],
+                )
+                logger.debug(
+                    f"Using minimal urllib3 Retry configuration due to: {e}",
+                    exc_info=True,
+                )
         adapter = HTTPAdapter(max_retries=retry_strategy)
         session.mount("https://", adapter)
         session.mount("http://", adapter)

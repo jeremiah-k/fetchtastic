@@ -1429,76 +1429,74 @@ def _get_releases_cache_file() -> str:
 
 def _load_commit_cache() -> None:
     """
-    Load cached commit timestamps from disk into the in-memory commit timestamp cache.
+    Populate the in-memory commit timestamp cache from the on-disk cache file, respecting cache expiry.
 
-    Reads the cache file (if present), validates its structure, converts stored ISO timestamps to datetime objects, and retains only entries that have not expired according to COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS. Invalid or malformed entries are skipped and I/O or JSON errors are logged; the function sets the internal loaded flag when the cache is populated.
+    Reads the commit cache file, validates and parses cached entries, converts stored timestamps to datetimes,
+    and loads only entries that have not expired into the module-level commit timestamp cache. Marks the cache as loaded
+    to avoid repeated loads and logs debug information on success or when the cache cannot be read or contains
+    invalid entries.
     """
-    global _commit_timestamp_cache, _commit_cache_loaded
+    global _commit_cache_loaded
 
-    # First check without lock for performance
+    # Fast path without lock
     if _commit_cache_loaded:
         return
 
-    # Double-checked locking pattern
+    # Double-checked locking pattern with minimal lock time
     with _cache_lock:
         if _commit_cache_loaded:
             return
 
-        cache_file = _get_commit_cache_file()
+    # Load cache data outside the lock to avoid holding it during I/O
+    cache_file = _get_commit_cache_file()
+    loaded: Dict[str, Tuple[datetime, datetime]] = {}
 
-        try:
-            if not os.path.exists(cache_file):
+    try:
+        if not os.path.exists(cache_file):
+            with _cache_lock:
                 _commit_cache_loaded = True
-                return
+            return
 
-            with open(cache_file, "r", encoding="utf-8") as f:
-                cache_data = json.load(f)
+        with open(cache_file, "r", encoding="utf-8") as f:
+            cache_data = json.load(f)
 
-            # Validate cache structure
-            if not isinstance(cache_data, dict):
+        # Validate cache structure
+        if not isinstance(cache_data, dict):
+            with _cache_lock:
                 _commit_cache_loaded = True
-                return
+            return
 
-            # Convert string timestamps back to datetime objects (build locally)
-            current_time = datetime.now(timezone.utc)
-            loaded: Dict[str, Tuple[datetime, datetime]] = {}
-            for cache_key, cache_value in cache_data.items():
-                try:
-                    if (
-                        not isinstance(cache_value, (list, tuple))
-                        or len(cache_value) != 2
-                    ):
-                        logger.debug(
-                            f"Skipping invalid cache entry for {cache_key}: incorrect structure"
-                        )
-                        continue
-                    timestamp_str, cached_at_str = cache_value
-                    timestamp = datetime.fromisoformat(
-                        timestamp_str.replace("Z", "+00:00")
+        # Convert string timestamps back to datetime objects (build locally)
+        current_time = datetime.now(timezone.utc)
+        for cache_key, cache_value in cache_data.items():
+            try:
+                if not isinstance(cache_value, (list, tuple)) or len(cache_value) != 2:
+                    logger.debug(
+                        f"Skipping invalid cache entry for {cache_key}: incorrect structure"
                     )
-                    cached_at = datetime.fromisoformat(
-                        cached_at_str.replace("Z", "+00:00")
-                    )
-
-                    # Check if entry is still valid (not expired)
-                    age = current_time - cached_at
-                    if (
-                        age.total_seconds()
-                        < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 60 * 60
-                    ):
-                        loaded[cache_key] = (timestamp, cached_at)
-                except (ValueError, TypeError) as e:
-                    # Skip invalid entries
-                    logger.debug(f"Skipping invalid cache entry for {cache_key}: {e}")
                     continue
+                timestamp_str, cached_at_str = cache_value
+                timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
+                cached_at = datetime.fromisoformat(cached_at_str.replace("Z", "+00:00"))
 
-            # Update cache and mark loaded atomically
+                # Check if entry is still valid (not expired)
+                age = current_time - cached_at
+                if age.total_seconds() < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 60 * 60:
+                    loaded[cache_key] = (timestamp, cached_at)
+            except (ValueError, TypeError) as e:
+                # Skip invalid entries
+                logger.debug(f"Skipping invalid cache entry for {cache_key}: {e}")
+                continue
+
+        # Update cache and mark loaded atomically under lock
+        with _cache_lock:
             _commit_timestamp_cache.update(loaded)
             _commit_cache_loaded = True
-            logger.debug(f"Loaded {len(loaded)} commit timestamps from cache")
+        logger.debug(f"Loaded {len(loaded)} commit timestamps from cache")
 
-        except (IOError, json.JSONDecodeError) as e:
-            logger.debug(f"Could not load commit timestamp cache: {e}")
+    except (IOError, json.JSONDecodeError) as e:
+        logger.debug(f"Could not load commit timestamp cache: {e}")
+        with _cache_lock:
             _commit_cache_loaded = (
                 True  # Mark as loaded even on error to prevent retries
             )
@@ -1807,7 +1805,7 @@ def _find_latest_remote_prerelease_dir(
 
     except (requests.RequestException, OSError) as e:
         # Network/IO errors - these are expected and recoverable
-        logger.error(f"Network/IO error finding remote prerelease directories: {e}")
+        logger.warning(f"Network/IO error finding remote prerelease directories: {e}")
         return None
     except (ValueError, KeyError, json.JSONDecodeError) as e:
         # Parsing/logic errors - these indicate bugs or API changes
