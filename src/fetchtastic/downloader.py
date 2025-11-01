@@ -3327,11 +3327,14 @@ def check_and_download(
                             raw_release_tag,
                         )
                     else:
-                        with open(
-                            release_notes_file, "w", encoding="utf-8"
-                        ) as notes_file:
-                            notes_file.write(release_notes_content)
-                        logger.debug(f"Saved release notes to {release_notes_file}")
+                        if _atomic_write_text(
+                            release_notes_file, release_notes_content
+                        ):
+                            logger.debug(f"Saved release notes to {release_notes_file}")
+                        else:
+                            logger.warning(
+                                f"Could not atomically write release notes to {release_notes_file}"
+                            )
                 except IOError as e:
                     logger.warning(
                         f"Error writing release notes to {release_notes_file}: {e}"

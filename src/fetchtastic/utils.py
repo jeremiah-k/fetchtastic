@@ -6,6 +6,7 @@ import json
 import os
 import platform
 import re
+import tempfile
 import threading
 import time
 import zipfile
@@ -249,12 +250,20 @@ def _save_rate_limit_cache() -> None:
                 for cache_key, (remaining, cached_at) in _rate_limit_cache.items()
             }
 
-        # Write to temporary file first, then atomically replace
-        temp_file = f"{cache_file}.tmp"
-        with open(temp_file, "w", encoding="utf-8") as f:
-            json.dump(cache_data, f, indent=2)
-
-        os.replace(temp_file, cache_file)
+        # Write to a unique temporary file first, then atomically replace
+        fd, temp_file = tempfile.mkstemp(
+            dir=os.path.dirname(cache_file), prefix="tmp-", suffix=".json"
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(cache_data, f, indent=2)
+            os.replace(temp_file, cache_file)
+        finally:
+            if os.path.exists(temp_file):
+                try:
+                    os.remove(temp_file)
+                except OSError:
+                    pass
 
     except IOError:
         pass  # Silently ignore cache saving errors
@@ -764,6 +773,7 @@ def download_file_with_retry(
             # urllib3 v1 fallback - parameters may differ between versions
             # Use method_whitelist for older urllib3 versions
             try:
+                # urllib3 v1 signature: use method_whitelist
                 retry_strategy = Retry(
                     total=DEFAULT_CONNECT_RETRIES,
                     connect=DEFAULT_CONNECT_RETRIES,
@@ -771,7 +781,7 @@ def download_file_with_retry(
                     status=DEFAULT_CONNECT_RETRIES,
                     backoff_factor=DEFAULT_BACKOFF_FACTOR,
                     status_forcelist=[408, 429, 500, 502, 503, 504],
-                    allowed_methods=frozenset({"GET", "HEAD"}),  # urllib3 v2+ parameter
+                    method_whitelist=frozenset({"GET", "HEAD"}),
                     raise_on_status=False,
                 )
             except TypeError as e:
