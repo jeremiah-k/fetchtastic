@@ -483,18 +483,31 @@ def download_file_with_retry(
                 raise_on_status=False,
                 respect_retry_after_header=True,
             )
-        except TypeError:
-            # urllib3 v1 fallback
-            retry_strategy = Retry(
-                total=DEFAULT_CONNECT_RETRIES,
-                connect=DEFAULT_CONNECT_RETRIES,
-                read=DEFAULT_CONNECT_RETRIES,
-                status=DEFAULT_CONNECT_RETRIES,
-                backoff_factor=DEFAULT_BACKOFF_FACTOR,
-                status_forcelist=[408, 429, 500, 502, 503, 504],
-                allowed_methods=frozenset({"GET", "HEAD"}),  # type: ignore[arg-type]
-                raise_on_status=False,
-            )
+        except TypeError as e:
+            # urllib3 v1 fallback - parameters may differ between versions
+            # Try with list instead of frozenset for allowed_methods (type compatibility)
+            try:
+                retry_strategy = Retry(
+                    total=DEFAULT_CONNECT_RETRIES,
+                    connect=DEFAULT_CONNECT_RETRIES,
+                    read=DEFAULT_CONNECT_RETRIES,
+                    status=DEFAULT_CONNECT_RETRIES,
+                    backoff_factor=DEFAULT_BACKOFF_FACTOR,
+                    status_forcelist=[408, 429, 500, 502, 503, 504],
+                    allowed_methods=[
+                        "GET",
+                        "HEAD",
+                    ],  # urllib3 v1 may expect list instead of frozenset
+                    raise_on_status=False,
+                )
+            except (TypeError, ValueError):
+                # If allowed_methods also fails, try minimal parameters
+                retry_strategy = Retry(
+                    total=DEFAULT_CONNECT_RETRIES,
+                    backoff_factor=DEFAULT_BACKOFF_FACTOR,
+                    status_forcelist=[408, 429, 500, 502, 503, 504],
+                )
+                logger.debug(f"Using minimal urllib3 Retry configuration due to: {e}")
         adapter = HTTPAdapter(max_retries=retry_strategy)
         session.mount("https://", adapter)
         session.mount("http://", adapter)
