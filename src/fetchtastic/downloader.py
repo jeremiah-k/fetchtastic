@@ -2058,11 +2058,9 @@ def get_commit_timestamp(
 
     cache_key = f"{owner}/{repo}/{commit_hash}"
 
-    # Load cache on first access (double-checked pattern)
+    # Load cache on first access
     if not _commit_cache_loaded:
-        with _cache_lock:
-            if not _commit_cache_loaded:
-                _load_commit_cache()
+        _load_commit_cache()
 
     with _cache_lock:
         if force_refresh and cache_key in _commit_timestamp_cache:
@@ -2213,11 +2211,9 @@ def _get_latest_releases_data(
     # Create cache key based on URL and scan count
     cache_key = f"{url}?per_page={scan_count}"
 
-    # Load cache from file on first access (double-checked pattern)
+    # Load cache from file on first access
     if not _releases_cache_loaded:
-        with _cache_lock:
-            if not _releases_cache_loaded:
-                _load_releases_cache()
+        _load_releases_cache()
 
     with _cache_lock:
         if force_refresh and cache_key in _releases_cache:

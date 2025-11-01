@@ -337,12 +337,10 @@ def make_github_api_request(
     # Show warning if no token available (centralized logic)
     _show_token_warning_if_needed(effective_token, allow_env_token)
 
-    # Initialize rate limit cache if needed (double-checked pattern)
+    # Initialize rate limit cache if needed
     global _rate_limit_cache_loaded
     if not _rate_limit_cache_loaded:
-        with _rate_limit_lock:
-            if not _rate_limit_cache_loaded:
-                _load_rate_limit_cache()
+        _load_rate_limit_cache()
 
     # Create token hash for caching
     token_hash = hashlib.sha256((effective_token or "no-token").encode()).hexdigest()[
