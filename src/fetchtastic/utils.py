@@ -771,7 +771,7 @@ def download_file_with_retry(
                     status=DEFAULT_CONNECT_RETRIES,
                     backoff_factor=DEFAULT_BACKOFF_FACTOR,
                     status_forcelist=[408, 429, 500, 502, 503, 504],
-                    method_whitelist=frozenset({"GET", "HEAD"}),  # urllib3 v1 parameter
+                    allowed_methods=frozenset({"GET", "HEAD"}),  # urllib3 v2+ parameter
                     raise_on_status=False,
                 )
             except TypeError as e:
@@ -784,17 +784,6 @@ def download_file_with_retry(
                 logger.warning(
                     "Using minimal urllib3 retry configuration due to compatibility issues: %s",
                     e,
-                    exc_info=True,
-                )
-            except TypeError as e:
-                # Very old urllib3 version - use minimal configuration
-                retry_strategy = Retry(
-                    total=DEFAULT_CONNECT_RETRIES,
-                    backoff_factor=DEFAULT_BACKOFF_FACTOR,
-                    status_forcelist=[408, 429, 500, 502, 503, 504],
-                )
-                logger.debug(
-                    f"Using minimal urllib3 Retry configuration due to: {e}",
                     exc_info=True,
                 )
         adapter = HTTPAdapter(max_retries=retry_strategy)
