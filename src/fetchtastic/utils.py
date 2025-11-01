@@ -384,18 +384,7 @@ def make_github_api_request(
         raise
 
     # Log API response info for debugging
-    # GitHub API typically uses chunked transfer encoding with gzip compression,
-    # so Content-Length is usually not available. Provide more useful info instead.
-    if "Content-Length" in response.headers:
-        content_length = response.headers["Content-Length"]
-        size_info = f"{content_length} bytes"
-    else:
-        # Use other available headers to provide useful size information
-        encoding = response.headers.get("Content-Encoding", "unknown")
-        transfer = response.headers.get("Transfer-Encoding", "unknown")
-        size_info = f"{encoding}/{transfer} (no Content-Length)"
-
-    logger.debug(f"GitHub API response: {response.status_code} for {url} ({size_info})")
+    logger.debug(f"GitHub API response: {response.status_code} for {url}")
 
     # Small delay to be respectful to GitHub API
     time.sleep(API_CALL_DELAY)
