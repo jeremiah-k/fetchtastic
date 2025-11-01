@@ -1811,7 +1811,24 @@ def _download_prerelease_assets(
     for file_info in remote_files:
         file_name = file_info["name"]
         download_url = file_info["download_url"]
-        file_path = os.path.join(prerelease_dir, file_name)
+
+        # Use hierarchical path if available, otherwise just filename
+        if "path" in file_info and file_info["path"]:
+            # Remove remote_dir prefix from path to get relative path within prerelease dir
+            relative_path = file_info["path"].removeprefix(f"{remote_dir}/")
+            file_path = os.path.join(prerelease_dir, relative_path)
+        else:
+            file_path = os.path.join(prerelease_dir, file_name)
+
+        # Ensure parent directory exists for hierarchical paths
+        parent_dir = os.path.dirname(file_path)
+        if parent_dir and not os.path.exists(parent_dir):
+            try:
+                os.makedirs(parent_dir, exist_ok=True)
+                logger.debug(f"Created parent directory: {parent_dir}")
+            except OSError as e:
+                logger.error(f"Failed to create parent directory {parent_dir}: {e}")
+                continue
 
         # Check if file needs download (missing or failed integrity check)
         if force_refresh or _prerelease_needs_download(file_path):
