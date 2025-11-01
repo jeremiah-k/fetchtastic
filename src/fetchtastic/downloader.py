@@ -1558,25 +1558,25 @@ def get_commit_timestamp(
     if need_load:
         _load_commit_cache()
 
-        if force_refresh and cache_key in _commit_timestamp_cache:
+    if force_refresh and cache_key in _commit_timestamp_cache:
+        del _commit_timestamp_cache[cache_key]
+    elif not force_refresh and cache_key in _commit_timestamp_cache:
+        timestamp, cached_at = _commit_timestamp_cache[cache_key]
+        age = datetime.now(timezone.utc) - cached_at
+        if age.total_seconds() < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 3600:
+            logger.debug(
+                f"Using cached timestamp for commit {commit_hash} (cached {age.total_seconds():.0f}s ago)"
+            )
+            return timestamp
+        else:
+            # Expired cache entry
+            logger.debug(
+                f"Cache expired for commit {commit_hash} (was {age.total_seconds():.0f}s ago, limit is {COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS}h)"
+            )
             del _commit_timestamp_cache[cache_key]
-        elif not force_refresh and cache_key in _commit_timestamp_cache:
-            timestamp, cached_at = _commit_timestamp_cache[cache_key]
-            age = datetime.now(timezone.utc) - cached_at
-            if age.total_seconds() < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 3600:
-                logger.debug(
-                    f"Using cached timestamp for commit {commit_hash} (cached {age.total_seconds():.0f}s ago)"
-                )
-                return timestamp
-            else:
-                # Expired cache entry
-                logger.debug(
-                    f"Cache expired for commit {commit_hash} (was {age.total_seconds():.0f}s ago, limit is {COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS}h)"
-                )
-                del _commit_timestamp_cache[cache_key]
 
-        # Fetch from API after cache miss/expiry or forced refresh
-        logger.debug(f"Cache miss for commit {commit_hash} - fetching from API")
+    # Fetch from API after cache miss/expiry or forced refresh
+    logger.debug(f"Cache miss for commit {commit_hash} - fetching from API")
 
     try:
         api_url = f"{GITHUB_API_BASE}/{repo_owner}/{repo_name}/commits/{commit_hash}"
