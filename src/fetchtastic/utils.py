@@ -85,11 +85,13 @@ def get_effective_github_token(
     Returns:
         Optional[str]: The effective token to use, or None if no token available
     """
-    return (
-        github_token
-        if github_token is not None
-        else (os.environ.get("GITHUB_TOKEN") if allow_env_token else None)
-    )
+    candidate = (github_token or "").strip()
+    if candidate:
+        return candidate
+    if not allow_env_token:
+        return None
+    env_token = os.environ.get("GITHUB_TOKEN")
+    return env_token.strip() if env_token else None
 
 
 def _show_token_warning_if_needed(

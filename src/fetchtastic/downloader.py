@@ -814,10 +814,20 @@ def _parse_legacy_json_format(
     current_release = _ensure_v_prefix_if_missing(tracking_data.get("release"))
     commits_raw = tracking_data.get("commits", [])
 
-    # Normalize commits to version+hash format for consistency
-    commits = []
+    # Normalize commits to version+hash; pair bare hashes with expected next patch base
+    commits: list[str] = []
+    expected_base_v: Optional[str] = None
+    if current_release:
+        expected = calculate_expected_prerelease_version(current_release)
+        if expected:
+            expected_base_v = f"v{expected}"
     for commit in commits_raw or []:
-        normalized = _normalize_commit_identifier(commit.lower(), current_release)
+        c = commit.lower()
+        # If it's a bare hash, use expected next patch base; otherwise use saved release
+        base_for_norm = (
+            expected_base_v if re.fullmatch(r"[a-f0-9]{6,40}", c) else current_release
+        )
+        normalized = _normalize_commit_identifier(c, base_for_norm)
         if normalized:
             commits.append(normalized)
 
@@ -1004,6 +1014,7 @@ def _update_tracking_with_newest_prerelease(
             FIRMWARE_DIR_PREFIX
         ).lower()
     else:
+        logger.debug("Ignoring non-firmware prerelease dir: %s", newest_prerelease_dir)
         new_prerelease_id = None
 
     if not new_prerelease_id:
