@@ -1366,26 +1366,18 @@ def _load_commit_cache() -> None:
 
         # Convert string timestamps back to datetime objects
         current_time = datetime.now(timezone.utc)
-        with _cache_lock:
-            for cache_key, (timestamp_str, cached_at_str) in cache_data.items():
-                try:
-                    timestamp = datetime.fromisoformat(
-                        timestamp_str.replace("Z", "+00:00")
-                    )
-                    cached_at = datetime.fromisoformat(
-                        cached_at_str.replace("Z", "+00:00")
-                    )
+        for cache_key, (timestamp_str, cached_at_str) in cache_data.items():
+            try:
+                timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
+                cached_at = datetime.fromisoformat(cached_at_str.replace("Z", "+00:00"))
 
-                    # Check if entry is still valid (not expired)
-                    age = current_time - cached_at
-                    if (
-                        age.total_seconds()
-                        < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 60 * 60
-                    ):
-                        _commit_timestamp_cache[cache_key] = (timestamp, cached_at)
-                except (ValueError, TypeError):
-                    # Skip invalid entries
-                    continue
+                # Check if entry is still valid (not expired)
+                age = current_time - cached_at
+                if age.total_seconds() < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 60 * 60:
+                    _commit_timestamp_cache[cache_key] = (timestamp, cached_at)
+            except (ValueError, TypeError):
+                # Skip invalid entries
+                continue
 
         logger.debug(
             f"Loaded {len(_commit_timestamp_cache)} commit timestamps from cache"
@@ -1558,11 +1550,9 @@ def get_commit_timestamp(
 
     # Load cache from file on first access (guarded)
     with _cache_lock:
-        need_load = not _commit_timestamp_cache
-    if need_load:
-        _load_commit_cache()
+        if not _commit_timestamp_cache:
+            _load_commit_cache()
 
-    with _cache_lock:
         if force_refresh and cache_key in _commit_timestamp_cache:
             del _commit_timestamp_cache[cache_key]
         elif not force_refresh and cache_key in _commit_timestamp_cache:
