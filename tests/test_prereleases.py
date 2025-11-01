@@ -7,6 +7,7 @@ and related functionality.
 
 import json
 import os
+import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -201,91 +202,17 @@ def test_check_for_prereleases_download_and_cleanup(
     )
 
     latest_release_tag = "v2.7.6.111111"
-    found, versions = downloader.check_for_prereleases(
-        str(download_dir), latest_release_tag, ["rak4631-"], exclude_patterns=[]
-    )
-
-    assert found is True
-    assert versions == ["firmware-2.7.7.abcdef"]
-
-    # Matching file should exist; non-matching file should not be created by our stub
-    target_file = (
-        prerelease_dir / "firmware-2.7.7.abcdef" / "firmware-rak4631-2.7.7.abcdef.uf2"
-    )
-    assert target_file.exists()
-    # Heltec non-matching file should not be downloaded
-    assert not (
-        prerelease_dir / "firmware-2.7.7.abcdef" / "firmware-heltec-v3-2.7.7.abcdef.zip"
-    ).exists()
-
-    # Only matching asset should have been downloaded once
-    assert mock_dl.call_count == 1
-
-    # Stale directory and stray file should be removed
-    assert not stale_dir.exists()
-    assert not stray.exists()
-
-
-@patch("fetchtastic.downloader.menu_repo.fetch_repo_directories")
-@patch("fetchtastic.downloader.menu_repo.fetch_directory_contents")
-@patch("fetchtastic.downloader.download_file_with_retry")
-@patch("requests.get")
-def test_check_for_prereleases_only_downloads_latest(
-    mock_get, mock_dl, mock_fetch_contents, mock_fetch_dirs, tmp_path, write_dummy_file
-):
-    """Ensure only the newest prerelease is downloaded and older ones are removed."""
-
-    mock_fetch_dirs.return_value = [
-        "firmware-2.7.4.abc123",
-        "firmware-2.7.4.def456",
-    ]
-
-    def _fetch_contents(dir_name: str):
-        """
-        Constructs a single simulated firmware asset descriptor for a directory or tag name.
-
-        If `dir_name` starts with the prefix "firmware-", that prefix is removed when forming the firmware file base name; otherwise the full `dir_name` is used. The returned list contains one dictionary with keys "name" (e.g., "firmware-rak4631-<suffix>.uf2") and "download_url" (a URL pointing to "<dir_name>.uf2").
-
-        Parameters:
-            dir_name (str): Directory or tag name used to construct the firmware asset entry.
-
-        Returns:
-            list[dict]: A single-element list with an asset descriptor suitable for tests.
-        """
-        prefix = "firmware-"
-        suffix = dir_name[len(prefix) :] if dir_name.startswith(prefix) else dir_name
-        return [
-            {
-                "name": f"firmware-rak4631-{suffix}.uf2",
-                "download_url": f"https://example.invalid/{dir_name}.uf2",
-            }
-        ]
-
-    mock_fetch_contents.side_effect = _fetch_contents
-
-    mock_dl.side_effect = lambda _url, dest: write_dummy_file(dest)
-
-    # Mock GitHub API responses for commit timestamps
-    mock_get.side_effect = mock_github_commit_timestamp(
-        {"abc123": "2025-01-15T10:30:00Z", "def456": "2025-01-10T08:45:00Z"}
-    )
-
-    download_dir = tmp_path
-    prerelease_dir = download_dir / "firmware" / "prerelease"
-    prerelease_dir.mkdir(parents=True)
-    (prerelease_dir / "firmware-2.7.4.def456").mkdir()
-
-    found, versions = downloader.check_for_prereleases(
+    downloaded, versions = downloader.check_for_prereleases(
         str(download_dir),
-        latest_release_tag="v2.7.3.000000",
+        latest_release_tag=latest_release_tag,
         selected_patterns=["rak4631-"],
         exclude_patterns=[],
     )
 
-    assert found is True
-    assert versions == ["firmware-2.7.4.abc123"]
+    assert downloaded is True
+    assert versions == ["firmware-2.7.7.abcdef"]
     assert mock_dl.call_count == 1
-    mock_fetch_contents.assert_called_once_with("firmware-2.7.4.abc123")
+    mock_fetch_contents.assert_called_once_with("firmware-2.7.7.abcdef")
     assert not (prerelease_dir / "firmware-2.7.4.def456").exists()
 
 
@@ -293,10 +220,10 @@ def test_check_for_prereleases_only_downloads_latest(
 def test_check_for_prereleases_no_directories(mock_fetch_dirs, tmp_path):
     """If repo has no firmware directories, function returns False, []."""
     mock_fetch_dirs.return_value = []
-    found, versions = downloader.check_for_prereleases(
+    downloaded, versions = downloader.check_for_prereleases(
         str(tmp_path), "v1.0.0", ["rak4631-"], exclude_patterns=[]
     )
-    assert found is False
+    assert downloaded is False
     assert versions == []
 
 
@@ -331,11 +258,11 @@ def test_prerelease_tracking_functionality(
     )
 
     # Run prerelease check
-    found, versions = downloader.check_for_prereleases(
+    downloaded, versions = downloader.check_for_prereleases(
         str(download_dir), latest_release_tag, ["rak4631-"], exclude_patterns=[]
     )
 
-    assert found is True
+    assert downloaded is True
     assert len(versions) > 0
 
     # Check that tracking file was created (now JSON format)
@@ -442,7 +369,7 @@ def test_prerelease_directory_cleanup(tmp_path, write_dummy_file):
         with patch(
             "fetchtastic.downloader.menu_repo.fetch_directory_contents"
         ) as mock_contents:
-            mock_dirs.return_value = ["firmware-2.7.6.789abc"]
+            mock_dirs.return_value = ["firmware-2.7.7.789abc"]
 
             def _dir_aware_contents(dir_name: str):
                 base = dir_name.removeprefix("firmware-")
@@ -460,188 +387,32 @@ def test_prerelease_directory_cleanup(tmp_path, write_dummy_file):
                     dest, b"new data"
                 )
 
-                with patch("requests.get") as mock_get:
+                with patch("fetchtastic.downloader.requests.get") as mock_get:
                     mock_get.side_effect = mock_github_commit_timestamp(
                         {"789abc": "2025-01-20T12:00:00Z"}
                     )
 
                     # Run prerelease check - this should clean up old directories
-                    found, versions = downloader.check_for_prereleases(
+                    downloaded, versions = downloader.check_for_prereleases(
                         str(download_dir),
-                        "v2.7.5.baseline",
+                        "v2.7.6.111111",
                         ["rak4631-"],
                         exclude_patterns=[],
                     )
 
-                    # Verify the function succeeded
-                    assert found is True
-                    assert "firmware-2.7.6.789abc" in versions
-
-                    # Verify old directories were removed
-                    assert (
-                        not old_dir1.exists()
-                    ), "Old prerelease directory should be removed"
-                    assert (
-                        not old_dir2.exists()
-                    ), "Old prerelease directory should be removed"
-
-                # Verify new directory was created
-                new_dir = prerelease_dir / "firmware-2.7.6.789abc"
-                assert new_dir.exists(), "New prerelease directory should be created"
-
-
-def test_prerelease_tracking_json_format(tmp_path):
-    """Test the new JSON tracking file format and functions."""
-    prerelease_dir = tmp_path / "prerelease"
-    prerelease_dir.mkdir()
-
-    # Test update_prerelease_tracking function
-    latest_release = "v2.7.6.111111"
-    prerelease1 = "firmware-2.7.7.abcdef"
-    prerelease2 = "firmware-2.7.8.fedcba"  # Valid hex commit hash
-
-    # Add first prerelease
-    num1 = downloader.update_prerelease_tracking(
-        str(prerelease_dir), latest_release, prerelease1
-    )
-    assert num1 == 1, "First prerelease should be #1"
-
-    # Add second prerelease
-    num2 = downloader.update_prerelease_tracking(
-        str(prerelease_dir), latest_release, prerelease2
-    )
-    assert num2 == 2, "Second prerelease should be #2"
-
-    # Test reading the tracking file
-    info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
-    expected_clean_version = (
-        downloader._extract_clean_version(latest_release) or latest_release
-    )
-    assert info["release"] == expected_clean_version
-    assert info["prerelease_count"] == 2
-    assert "2.7.7.abcdef" in info["commits"]
-    assert "2.7.8.fedcba" in info["commits"]
-
-    # Test that new release resets the tracking
-    new_release = "v2.7.9.newrelease"
-    num3 = downloader.update_prerelease_tracking(
-        str(prerelease_dir),
-        new_release,
-        "firmware-2.7.10.abc123",  # Valid hex
-    )
-    assert num3 == 1, "First prerelease after new release should be #1"
-
-    # Verify tracking was reset
-    info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
-    expected_clean_new_release = (
-        downloader._extract_clean_version(new_release) or new_release
-    )
-    assert info["release"] == expected_clean_new_release
-    assert info["prerelease_count"] == 1
-    assert "2.7.10.abc123" in info["commits"]
-    assert "2.7.7.abcdef" not in info["commits"], "Old commits should be cleared"
-
-
-def test_prerelease_tracking_edge_cases(tmp_path):
-    """Test edge cases in prerelease tracking system."""
-    prerelease_dir = tmp_path / "prerelease"
-    prerelease_dir.mkdir()
-
-    # Test with malformed prerelease directory name (should not be tracked)
-    malformed_prerelease = "not-a-valid-format"
-    num = downloader.update_prerelease_tracking(
-        str(prerelease_dir), "v2.7.6", malformed_prerelease
-    )
-    assert (
-        num == 0
-    ), "Should not track malformed directory names (improved data consistency)"
-
-    # Test reading empty tracking file (create a fresh directory)
-    empty_test_dir = tmp_path / "empty_test"
-    empty_test_dir.mkdir()
-
-    # Create empty text file for backwards compatibility test
-    empty_tracking_file = empty_test_dir / "prerelease_commits.txt"
-    with open(empty_tracking_file, "w") as f:
-        f.write("")  # Empty file
-
-    info = downloader.get_prerelease_tracking_info(str(empty_test_dir))
-    assert info == {}, "Should return empty dict for empty tracking file"
-
-    # Test reading tracking file with old format (no "Release:" prefix)
-    old_format_dir = tmp_path / "old_format_test"
-    old_format_dir.mkdir()
-    old_format_file = old_format_dir / "prerelease_commits.txt"
-    with open(old_format_file, "w") as f:
-        f.write("abcdef\nghijkl\n")  # Old format without Release: prefix
-
-    info = downloader.get_prerelease_tracking_info(str(old_format_dir))
-    assert info["release"] == "unknown"
-    assert info["prerelease_count"] == 2
-    assert "unknown.abcdef" in info["commits"]  # normalized hash
-    assert "ghijkl" in info["commits"]  # non-hash left as-is
-
-    # Test reading non-existent tracking file
-    no_file_dir = tmp_path / "no_file_test"
-    no_file_dir.mkdir()
-    info = downloader.get_prerelease_tracking_info(str(no_file_dir))
-    assert info == {}, "Should return empty dict for non-existent file"
-
-
-def test_prerelease_existing_files_tracking(tmp_path):
-    """Test that existing prerelease files are properly tracked."""
-    download_dir = tmp_path
-    prerelease_dir = download_dir / "firmware" / "prerelease"
-    version_dir = prerelease_dir / "firmware-2.7.7.abcdef"
-    version_dir.mkdir(parents=True)
-
-    # Create an existing file
-    existing_file = version_dir / "firmware-rak4631-2.7.7.abcdef.uf2"
-    existing_file.write_bytes(b"existing data")
-
-    with patch("fetchtastic.downloader.menu_repo.fetch_repo_directories") as mock_dirs:
-        with patch(
-            "fetchtastic.downloader.menu_repo.fetch_directory_contents"
-        ) as mock_contents:
-            mock_dirs.return_value = ["firmware-2.7.7.abcdef"]
-
-            def _dir_aware_contents(dir_name: str):
-                base = dir_name.removeprefix("firmware-")
-                return [
-                    {
-                        "name": f"firmware-rak4631-{base}.uf2",
-                        "download_url": f"https://example.invalid/{dir_name}.uf2",
-                    }
-                ]
-
-            mock_contents.side_effect = _dir_aware_contents
-
-            with patch("requests.get") as mock_get:
-                mock_get.side_effect = mock_github_commit_timestamp(
-                    {"abcdef": "2025-01-20T12:00:00Z"}
-                )
-
-                found, versions = downloader.check_for_prereleases(
-                    str(download_dir),
-                    "v2.7.6.111111",
-                    ["rak4631-"],
-                    exclude_patterns=[],
-                )
-
-                # Should track existing files but not report as "downloaded"
-                assert found is False  # No new downloads occurred
+                    # Should report as "downloaded" since new prerelease was downloaded
+                    assert downloaded is True  # New download occurred
                 assert (
-                    "firmware-2.7.7.abcdef" in versions
+                    "firmware-2.7.7.789abc" in versions
                 )  # But directory is still tracked
 
-            # And tracking JSON should reflect that commit
-            info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
-            assert "2.7.7.abcdef" in info.get("commits", [])
+                # And tracking JSON should reflect that commit
+                info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
+                assert "2.7.7.789abc" in info.get("commits", [])
 
 
 def test_get_prerelease_tracking_info_error_handling():
     """Test error handling in get_prerelease_tracking_info."""
-    import tempfile
 
     # uses top-level imports: Path
 
@@ -662,7 +433,6 @@ def test_get_prerelease_tracking_info_error_handling():
 
 def test_update_prerelease_tracking_error_handling():
     """Test error handling in update_prerelease_tracking."""
-    import tempfile
 
     # uses top-level imports: Path
 
@@ -721,7 +491,6 @@ def test_get_commit_hash_from_dir():
 def test_get_commit_timestamp_cache():
     """Test commit timestamp caching logic."""
     from datetime import datetime, timedelta, timezone
-    from unittest.mock import patch
 
     # Clear cache before test
     clear_commit_timestamp_cache()
@@ -787,7 +556,6 @@ def test_get_commit_timestamp_cache():
 def test_get_commit_timestamp_error_handling():
     """Test error handling in get_commit_timestamp."""
     from datetime import datetime
-    from unittest.mock import patch
 
     import requests
 

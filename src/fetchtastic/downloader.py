@@ -690,6 +690,12 @@ def _ensure_v_prefix_if_missing(version: Optional[str]) -> Optional[str]:
     return version
 
 
+def _matches_exclude(name: str, patterns: List[str]) -> bool:
+    """Case-insensitive fnmatch against any exclude pattern."""
+    name_l = name.lower()
+    return any(fnmatch.fnmatch(name_l, p.lower()) for p in patterns)
+
+
 def _normalize_commit_identifier(commit_id: str, release_version: Optional[str]) -> str:
     """
     Normalize a commit identifier to version+hash format for consistency.
@@ -766,7 +772,7 @@ def _parse_new_json_format(
     # Check if commits list exists, otherwise use single hash
     commits_raw = tracking_data.get("commits")
     if commits_raw is None and hash_val:
-        expected = calculate_expected_prerelease_version(current_release)
+        expected = calculate_expected_prerelease_version(current_release or "")
         if expected:
             commits_raw = [f"{expected}.{hash_val}"]
         else:
@@ -862,11 +868,15 @@ def _read_prerelease_tracking_data(tracking_file):
     if not read_from_json_success:
         # Fallback to legacy text format if JSON read failed or file didn't exist
         commits_raw, current_release = _read_text_tracking_file(tracking_file)
-        if current_release and current_release != "unknown":
-            current_release = _ensure_v_prefix_if_missing(current_release)
+        # Only normalize the release tag when it's meaningful; otherwise treat as missing
+        release_for_norm = (
+            _ensure_v_prefix_if_missing(current_release)
+            if (current_release and current_release != "unknown")
+            else None
+        )
         # Normalize commits to version+hash format for consistency
         commits = [
-            _normalize_commit_identifier(commit, current_release)
+            _normalize_commit_identifier(commit, release_for_norm)
             for commit in commits_raw
         ]
         last_updated = None
@@ -1187,10 +1197,7 @@ def _iter_matching_prerelease_files(
         if not matches_extract_patterns(file_name, selected_patterns, device_manager):
             continue
 
-        if any(
-            fnmatch.fnmatch(file_name.lower(), pattern.lower())
-            for pattern in exclude_patterns_list
-        ):
+        if _matches_exclude(file_name, exclude_patterns_list):
             logger.debug(
                 "Skipping pre-release file %s (matched exclude pattern)",
                 file_name,
@@ -1548,10 +1555,9 @@ def check_for_prereleases(
 
     # Sort by commit timestamp to get the newest
     # Get timestamps for each directory
-    commit_hashes = []
-    for dir_name in matching_prerelease_dirs:
-        commit_hash = _get_commit_hash_from_dir(dir_name)
-        commit_hashes.append(commit_hash)
+    commit_hashes: List[Optional[str]] = [
+        _get_commit_hash_from_dir(d) for d in matching_prerelease_dirs
+    ]
 
     def _safe_get_timestamp(commit_hash):
         return (
@@ -1568,15 +1574,16 @@ def check_for_prereleases(
     ) as executor:
         timestamps = list(executor.map(_safe_get_timestamp, commit_hashes))
 
-    dirs_with_timestamps = list(zip(matching_prerelease_dirs, timestamps, strict=True))
+    dirs_with_timestamps = list(
+        zip(matching_prerelease_dirs, commit_hashes, timestamps, strict=True)
+    )
 
     # Sort prereleases by recency: timestamped items first (by timestamp), then non-timestamped (by commit hash)
     # This ensures that when timestamps are available, we use them for accurate recency.
     # When timestamps fail (e.g., API errors), we fall back to commit hash for deterministic ordering.
     # Note: All prereleases here have the same base version, so version comparison doesn't help distinguish recency.
     def sort_key(item):
-        dir_name, timestamp = item
-        commit_hash = _get_commit_hash_from_dir(dir_name)
+        dir_name, commit_hash, timestamp = item
 
         if timestamp is not None:
             # Primary: items with timestamps, sorted by timestamp (newest first)
@@ -1589,7 +1596,7 @@ def check_for_prereleases(
     dirs_with_timestamps.sort(key=sort_key, reverse=True)
 
     # Take newest one
-    target_prereleases = [dir_name for dir_name, _ in dirs_with_timestamps[:1]]
+    target_prereleases = [dir_name for dir_name, _hash, _ts in dirs_with_timestamps[:1]]
 
     # Resolve once for containment checks
     real_prerelease_base = os.path.realpath(prerelease_dir)
@@ -1863,11 +1870,16 @@ def _get_latest_releases_data(
     # Sort releases by published date, descending order
     try:
         sorted_releases: List[Dict[str, Any]] = sorted(
-            releases, key=lambda r: r["published_at"], reverse=True
+            releases,
+            key=lambda r: datetime.fromisoformat(
+                str(r["published_at"]).replace("Z", "+00:00")
+            ),
+            reverse=True,
         )
     except (
         TypeError,
         KeyError,
+        ValueError,
     ) as e:  # Handle cases where 'published_at' might be missing or not comparable
         logger.warning(
             f"Error sorting releases, 'published_at' key might be missing or invalid: {e}"
@@ -2442,10 +2454,7 @@ def extract_files(
                 base_name: str = os.path.basename(file_name)
                 if not base_name:
                     continue
-                if any(
-                    fnmatch.fnmatch(base_name.lower(), exclude.lower())
-                    for exclude in exclude_patterns
-                ):
+                if _matches_exclude(base_name, exclude_patterns):
                     continue
 
                 # Use the same back-compat matcher used for selection (modern + legacy normalization)
@@ -2601,10 +2610,7 @@ def _is_release_complete(
             continue
 
         # Skip files that match exclude patterns
-        if any(
-            fnmatch.fnmatch(file_name.lower(), exclude.lower())
-            for exclude in exclude_patterns
-        ):
+        if _matches_exclude(file_name, exclude_patterns):
             continue
 
         expected_assets.append(file_name)
@@ -3268,10 +3274,7 @@ def check_extraction_needed(
                 base_name: str = os.path.basename(file_name)
                 if not base_name:
                     continue
-                if any(
-                    fnmatch.fnmatch(base_name.lower(), exclude.lower())
-                    for exclude in exclude_patterns
-                ):
+                if _matches_exclude(base_name, exclude_patterns):
                     continue
                 if matches_selected_patterns(base_name, patterns):
                     # Preserve path for existence checks
