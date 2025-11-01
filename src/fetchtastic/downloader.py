@@ -1435,53 +1435,73 @@ def _load_commit_cache() -> None:
     """
     global _commit_timestamp_cache, _commit_cache_loaded
 
+    # First check without lock for performance
+    if _commit_cache_loaded:
+        return
+
+    # Double-checked locking pattern
     with _cache_lock:
         if _commit_cache_loaded:
             return
 
-    cache_file = _get_commit_cache_file()
+        cache_file = _get_commit_cache_file()
 
-    try:
-        if not os.path.exists(cache_file):
-            return
+        try:
+            if not os.path.exists(cache_file):
+                _commit_cache_loaded = True
+                return
 
-        with open(cache_file, "r", encoding="utf-8") as f:
-            cache_data = json.load(f)
+            with open(cache_file, "r", encoding="utf-8") as f:
+                cache_data = json.load(f)
 
-        # Validate cache structure
-        if not isinstance(cache_data, dict):
-            return
+            # Validate cache structure
+            if not isinstance(cache_data, dict):
+                _commit_cache_loaded = True
+                return
 
-        # Convert string timestamps back to datetime objects (build locally)
-        current_time = datetime.now(timezone.utc)
-        loaded: Dict[str, Tuple[datetime, datetime]] = {}
-        for cache_key, cache_value in cache_data.items():
-            try:
-                if not isinstance(cache_value, (list, tuple)) or len(cache_value) != 2:
-                    logger.debug(
-                        f"Skipping invalid cache entry for {cache_key}: incorrect structure"
+            # Convert string timestamps back to datetime objects (build locally)
+            current_time = datetime.now(timezone.utc)
+            loaded: Dict[str, Tuple[datetime, datetime]] = {}
+            for cache_key, cache_value in cache_data.items():
+                try:
+                    if (
+                        not isinstance(cache_value, (list, tuple))
+                        or len(cache_value) != 2
+                    ):
+                        logger.debug(
+                            f"Skipping invalid cache entry for {cache_key}: incorrect structure"
+                        )
+                        continue
+                    timestamp_str, cached_at_str = cache_value
+                    timestamp = datetime.fromisoformat(
+                        timestamp_str.replace("Z", "+00:00")
                     )
+                    cached_at = datetime.fromisoformat(
+                        cached_at_str.replace("Z", "+00:00")
+                    )
+
+                    # Check if entry is still valid (not expired)
+                    age = current_time - cached_at
+                    if (
+                        age.total_seconds()
+                        < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 60 * 60
+                    ):
+                        loaded[cache_key] = (timestamp, cached_at)
+                except (ValueError, TypeError) as e:
+                    # Skip invalid entries
+                    logger.debug(f"Skipping invalid cache entry for {cache_key}: {e}")
                     continue
-                timestamp_str, cached_at_str = cache_value
-                timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
-                cached_at = datetime.fromisoformat(cached_at_str.replace("Z", "+00:00"))
 
-                # Check if entry is still valid (not expired)
-                age = current_time - cached_at
-                if age.total_seconds() < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 60 * 60:
-                    loaded[cache_key] = (timestamp, cached_at)
-            except (ValueError, TypeError) as e:
-                # Skip invalid entries
-                logger.debug(f"Skipping invalid cache entry for {cache_key}: {e}")
-                continue
-
-        with _cache_lock:
+            # Update cache and mark loaded atomically
             _commit_timestamp_cache.update(loaded)
             _commit_cache_loaded = True
-        logger.debug(f"Loaded {len(loaded)} commit timestamps from cache")
+            logger.debug(f"Loaded {len(loaded)} commit timestamps from cache")
 
-    except (IOError, json.JSONDecodeError) as e:
-        logger.debug(f"Could not load commit timestamp cache: {e}")
+        except (IOError, json.JSONDecodeError) as e:
+            logger.debug(f"Could not load commit timestamp cache: {e}")
+            _commit_cache_loaded = (
+                True  # Mark as loaded even on error to prevent retries
+            )
 
 
 def _load_releases_cache() -> None:
@@ -2005,7 +2025,7 @@ def check_for_prereleases(
         expected_version, github_token, force_refresh
     )
     if not remote_dir:
-        return False, []
+        return (False, [newest_dir]) if newest_dir else (False, [])
 
     # Download assets for the selected prerelease
     files_downloaded, _ = _download_prerelease_assets(
@@ -2058,9 +2078,8 @@ def get_commit_timestamp(
 
     cache_key = f"{owner}/{repo}/{commit_hash}"
 
-    # Load cache on first access
-    if not _commit_cache_loaded:
-        _load_commit_cache()
+    # Load cache on first access (double-checked locking handled in _load_commit_cache)
+    _load_commit_cache()
 
     with _cache_lock:
         if force_refresh and cache_key in _commit_timestamp_cache:
@@ -2094,6 +2113,8 @@ def get_commit_timestamp(
                     timestamp,
                     datetime.now(timezone.utc),
                 )
+            # Persist cache for ad-hoc callers to improve durability
+            _save_commit_cache()
             return timestamp
     except (requests.HTTPError, requests.RequestException) as e:
         # Network errors - these are expected and recoverable
@@ -2825,10 +2846,11 @@ def safe_extract_path(extract_dir: str, file_path: str) -> str:
     prospective_path: str = os.path.join(abs_extract_dir, file_path)
     safe_path: str = os.path.normpath(prospective_path)
 
-    if (
-        not safe_path.startswith(abs_extract_dir + os.sep)
-        and safe_path != abs_extract_dir
-    ):
+    try:
+        common = os.path.commonpath([abs_extract_dir, safe_path])
+    except ValueError:
+        common = None
+    if common != abs_extract_dir:
         if safe_path == abs_extract_dir and (file_path == "" or file_path == "."):
             pass
         else:

@@ -55,6 +55,9 @@ _rate_limit_cache_file = None
 # Track whether rate limit cache has been loaded
 _rate_limit_cache_loaded = False
 
+# Track last cache save time for throttling (5 second minimum interval)
+_last_cache_save_time = 0.0
+
 
 def get_user_agent() -> str:
     """
@@ -134,54 +137,65 @@ def _get_rate_limit_cache_file() -> str:
 
 def _load_rate_limit_cache() -> None:
     """
-    Load persisted GitHub rate-limit entries into the in-memory cache.
+    Load rate limit cache from disk with thread-safe double-checked locking.
 
-    This function reads a cached JSON file of rate-limit entries, validates its structure, converts stored ISO timestamps back to datetimes, and retains only entries updated within the last hour. Loaded entries are merged into the module-level rate-limit cache and the cache is marked as loaded. The operation is thread-safe and idempotent (subsequent calls are no-ops). IO or JSON parse errors are silently ignored.
+    This function implements a lazy loading pattern where the cache is loaded
+    from disk only once per application lifetime. Multiple threads can safely
+    call this function concurrently without causing duplicate loads.
     """
     global _rate_limit_cache, _rate_limit_cache_loaded
 
+    # First check without lock for performance
+    if _rate_limit_cache_loaded:
+        return
+
+    # Double-checked locking pattern
     with _rate_limit_lock:
         if _rate_limit_cache_loaded:
             return
 
-    cache_file = _get_rate_limit_cache_file()
+        cache_file = _get_rate_limit_cache_file()
 
-    loaded: Dict[str, Tuple[int, datetime]] = {}
-    try:
-        if not os.path.exists(cache_file):
-            return
+        loaded: Dict[str, Tuple[int, datetime]] = {}
+        try:
+            if not os.path.exists(cache_file):
+                _rate_limit_cache_loaded = True
+                return
 
-        with open(cache_file, "r", encoding="utf-8") as f:
-            cache_data = json.load(f)
+            with open(cache_file, "r", encoding="utf-8") as f:
+                cache_data = json.load(f)
 
-        # Validate cache structure
-        if not isinstance(cache_data, dict):
-            return
+            # Validate cache structure
+            if not isinstance(cache_data, dict):
+                _rate_limit_cache_loaded = True
+                return
 
-        # Convert string timestamps back to datetime objects (build locally)
-        current_time = datetime.now(timezone.utc)
-        for cache_key, cache_value in cache_data.items():
-            try:
-                # Validate value structure
-                if not isinstance(cache_value, (list, tuple)) or len(cache_value) != 2:
+            # Convert string timestamps back to datetime objects (build locally)
+            current_time = datetime.now(timezone.utc)
+            for cache_key, cache_value in cache_data.items():
+                try:
+                    # Validate value structure
+                    if (
+                        not isinstance(cache_value, (list, tuple))
+                        or len(cache_value) != 2
+                    ):
+                        continue
+
+                    remaining_str, cached_at_str = cache_value
+                    remaining = int(remaining_str)
+                    cached_at = datetime.fromisoformat(cached_at_str)
+
+                    # Only keep cache entries that are less than 1 hour old
+                    # GitHub rate limits reset every hour
+                    if (current_time - cached_at).total_seconds() < 3600:
+                        loaded[cache_key] = (remaining, cached_at)
+                except (ValueError, TypeError):
                     continue
 
-                remaining_str, cached_at_str = cache_value
-                remaining = int(remaining_str)
-                cached_at = datetime.fromisoformat(cached_at_str)
+        except (IOError, json.JSONDecodeError):
+            pass  # Silently ignore cache loading errors
 
-                # Only keep cache entries that are less than 1 hour old
-                # GitHub rate limits reset every hour
-                if (current_time - cached_at).total_seconds() < 3600:
-                    loaded[cache_key] = (remaining, cached_at)
-            except (ValueError, TypeError):
-                continue
-
-    except (IOError, json.JSONDecodeError):
-        pass  # Silently ignore cache loading errors
-
-    # Publish loaded entries and mark loaded atomically
-    with _rate_limit_lock:
+        # Publish loaded entries and mark loaded atomically
         _rate_limit_cache.update(loaded)
         _rate_limit_cache_loaded = True
 
@@ -241,13 +255,34 @@ def _save_rate_limit_cache() -> None:
 
 def _update_rate_limit(token_hash: str, remaining: int) -> None:
     """Update the rate limit cache for a specific token."""
-    global _rate_limit_cache
+    global _rate_limit_cache, _last_cache_save_time
 
     now = datetime.now(timezone.utc)
+    current_time = now.timestamp()
+
     with _rate_limit_lock:
+        # Check if remaining decreased and at least 5 seconds have passed
+        should_save = False
+        if token_hash in _rate_limit_cache:
+            old_remaining, _ = _rate_limit_cache[token_hash]
+            # Save if remaining decreased or it's been more than 5 seconds
+            if (
+                remaining < old_remaining
+                or (current_time - _last_cache_save_time) >= 5.0
+            ):
+                should_save = True
+        else:
+            # Always save on first entry
+            should_save = True
+
         _rate_limit_cache[token_hash] = (remaining, now)
+
+        if should_save:
+            _last_cache_save_time = current_time
+
     # Persist outside the lock to avoid re-entrancy deadlock
-    _save_rate_limit_cache()
+    if should_save:
+        _save_rate_limit_cache()
 
 
 def _get_cached_rate_limit(token_hash: str) -> Optional[int]:
@@ -374,20 +409,33 @@ def make_github_api_request(
                 custom_403_message=custom_403_message,
             )
         elif e.response is not None and e.response.status_code == 403:
-            if custom_403_message:
-                logger.error(custom_403_message)
-            else:
-                logger.error(
-                    f"GitHub API rate limit exceeded for {url}. "
+            rate_limit_remaining = e.response.headers.get("X-RateLimit-Remaining")
+            if rate_limit_remaining == "0":
+                reset_time = e.response.headers.get("X-RateLimit-Reset")
+                reset_time_str = (
+                    datetime.fromtimestamp(int(reset_time), timezone.utc).strftime(
+                        "%Y-%m-%d %H:%M:%S UTC"
+                    )
+                    if reset_time
+                    else "unknown"
+                )
+                error_msg = (
+                    custom_403_message
+                    or f"GitHub API rate limit exceeded. Resets at {reset_time_str}. "
                     f"Set GITHUB_TOKEN environment variable for higher rate limits."
                 )
-        raise
+            else:
+                error_msg = custom_403_message or "GitHub API access forbidden"
+            logger.error(error_msg)
+            raise requests.HTTPError(error_msg, response=e.response) from None
+        else:
+            raise
+    finally:
+        # Small delay to be respectful to GitHub API, even on errors
+        time.sleep(API_CALL_DELAY)
 
     # Log API response info for debugging
     logger.debug(f"GitHub API response: {response.status_code} for {url}")
-
-    # Small delay to be respectful to GitHub API
-    time.sleep(API_CALL_DELAY)
 
     # Enhanced rate limit tracking and logging
     try:
