@@ -27,6 +27,8 @@ def fetch_firmware_assets():
 
     try:
         releases = response.json()
+        if isinstance(releases, list):
+            logger.debug(f"Fetched {len(releases)} firmware releases from GitHub API")
     except json.JSONDecodeError as e:
         logger.error(f"Failed to decode JSON from GitHub API: {e}")
         return []

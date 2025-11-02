@@ -25,6 +25,8 @@ def fetch_apk_assets():
 
     try:
         releases = response.json()
+        if isinstance(releases, list):
+            logger.debug(f"Fetched {len(releases)} Android releases from GitHub API")
     except json.JSONDecodeError as e:
         logger.error(f"Failed to decode JSON from GitHub API: {e}")
         return []

@@ -114,14 +114,16 @@ def fetch_repo_contents(path="", allow_env_token=True, github_token=None):
             timeout=GITHUB_API_TIMEOUT,
         )
         contents = response.json()
+        if isinstance(contents, list):
+            logger.debug(f"Fetched {len(contents)} items from repository contents")
 
         return _process_repo_contents(contents)
 
     except requests.HTTPError as e:
-        logger.error(f"HTTP error fetching repository contents from GitHub API: {e}")
+        logger.warning(f"HTTP error fetching repository contents from GitHub API: {e}")
         return []
     except requests.RequestException as e:
-        logger.error(f"Error fetching repository contents from GitHub API: {e}")
+        logger.warning(f"Error fetching repository contents from GitHub API: {e}")
         return []
     except (ValueError, KeyError) as e:
         logger.error(f"Error parsing repository contents response: {e}")

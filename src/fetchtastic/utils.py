@@ -382,6 +382,8 @@ def make_github_api_request(
     if effective_token:
         headers["Authorization"] = f"token {effective_token}"
         logger.debug("Using GitHub token for API authentication")
+    else:
+        logger.debug("No GitHub token available - using unauthenticated API requests")
 
     # Show warning if no token available (centralized logic)
     _show_token_warning_if_needed(effective_token)

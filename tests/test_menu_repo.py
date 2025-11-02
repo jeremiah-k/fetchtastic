@@ -157,9 +157,9 @@ def test_fetch_repo_contents_request_exception(mocker):
     items = menu_repo.fetch_repo_contents()
 
     assert items == []
-    mock_logger.error.assert_called_once()
+    mock_logger.warning.assert_called_once()
     assert "Error fetching repository contents from GitHub API" in str(
-        mock_logger.error.call_args
+        mock_logger.warning.call_args
     )
 
 

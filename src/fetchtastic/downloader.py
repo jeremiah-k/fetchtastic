@@ -2118,6 +2118,10 @@ def get_commit_timestamp(
 
     # Fetch from API
     url = f"{GITHUB_API_BASE}/{owner}/{repo}/commits/{commit_hash}"
+    logger.debug(f"Cache miss for commit timestamp {commit_hash} - fetching from API")
+    logger.debug(
+        f"Fetching commit timestamp for {owner}/{repo}@{commit_hash[:8]} from GitHub..."
+    )
     try:
         response = make_github_api_request(
             url,
@@ -2129,6 +2133,7 @@ def get_commit_timestamp(
         timestamp_str = commit_data.get("commit", {}).get("committer", {}).get("date")
         if timestamp_str:
             timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
+            logger.debug(f"Successfully fetched commit timestamp for {commit_hash[:8]}")
             with _cache_lock:
                 _commit_timestamp_cache[cache_key] = (
                     timestamp,
@@ -2322,10 +2327,10 @@ def _get_latest_releases_data(
         logger.debug(f"Fetched {len(releases)} releases from GitHub API")
 
     except requests.HTTPError as e:
-        logger.error(f"HTTP error fetching releases data from {url}: {e}")
+        logger.warning(f"HTTP error fetching releases data from {url}: {e}")
         return []  # Return empty list on error
     except requests.exceptions.RequestException as e:
-        logger.error(f"Failed to fetch releases data from {url}: {e}")
+        logger.warning(f"Failed to fetch releases data from {url}: {e}")
         return []  # Return empty list on error
     except (ValueError, json.JSONDecodeError) as e:
         logger.error(f"Failed to decode JSON response from {url}: {e}")
