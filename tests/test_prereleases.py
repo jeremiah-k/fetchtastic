@@ -377,10 +377,8 @@ def test_prerelease_directory_cleanup(tmp_path, write_dummy_file):
     assert old_dir2.exists()
 
     # Mock the repo to return a newer prerelease with same version but new hash
-    with patch("fetchtastic.downloader.menu_repo.fetch_repo_directories") as mock_dirs:
-        with patch(
-            "fetchtastic.downloader.menu_repo.fetch_directory_contents"
-        ) as mock_contents:
+    with patch("fetchtastic.menu_repo.fetch_repo_directories") as mock_dirs:
+        with patch("fetchtastic.menu_repo.fetch_directory_contents") as mock_contents:
             mock_dirs.return_value = ["firmware-2.7.7.789abc"]
 
             def _dir_aware_contents(dir_name: str):
