@@ -338,7 +338,7 @@ def test_cli_setup_command_with_update_available(mocker):
     """Test the 'setup' command when an update is available."""
     mocker.patch("sys.argv", ["fetchtastic", "setup"])
     mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
-    mock_get_upgrade_command = mocker.patch(
+    mocker.patch(
         "fetchtastic.cli.get_upgrade_command",
         return_value="pip install --upgrade fetchtastic",
     )

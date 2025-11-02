@@ -541,6 +541,18 @@ def run_clean():
 
             # Only remove managed directories and their contents
             if is_managed_dir and os.path.isdir(item_path):
+                if os.path.islink(item_path):
+                    # Treat symlinks to directories as files to avoid following them
+                    try:
+                        os.remove(item_path)
+                        print(MSG_REMOVED_MANAGED_FILE.format(path=item_path))
+                    except Exception as e:
+                        print(
+                            MSG_FAILED_DELETE_MANAGED_FILE.format(
+                                path=item_path, error=e
+                            )
+                        )
+                    continue
                 try:
                     shutil.rmtree(item_path)
                     print(MSG_REMOVED_MANAGED_DIR.format(path=item_path))

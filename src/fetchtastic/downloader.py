@@ -2160,7 +2160,6 @@ def get_commit_timestamp(
                 )
             # Persist cache for ad-hoc callers to improve durability
             _save_commit_cache()
-
             return timestamp
     except (requests.HTTPError, requests.RequestException) as e:
         # Network errors - these are expected and recoverable
@@ -2285,6 +2284,16 @@ def _get_latest_releases_data(
     if not _releases_cache_loaded:
         _load_releases_cache()
 
+    # Determine effective release type for logging
+    effective_release_type = release_type
+    if not effective_release_type:
+        # Fallback to URL parsing for backward compatibility
+        url_l = url.lower()
+        if "firmware" in url_l:
+            effective_release_type = "firmware"
+        elif "android" in url_l:
+            effective_release_type = "Android APK"
+
     with _cache_lock:
         if force_refresh and cache_key in _releases_cache:
             del _releases_cache[cache_key]
@@ -2293,15 +2302,6 @@ def _get_latest_releases_data(
             age = datetime.now(timezone.utc) - cached_at
             if age.total_seconds() < RELEASES_CACHE_EXPIRY_HOURS * 60 * 60:
                 track_api_cache_hit()
-                effective_release_type = release_type
-                if not effective_release_type:
-                    # Fallback to URL parsing for backward compatibility
-                    url_l = url.lower()
-                    if "firmware" in url_l:
-                        effective_release_type = "firmware"
-                    elif "android" in url_l:
-                        effective_release_type = "Android APK"
-
                 if effective_release_type:
                     logger.info(f"Using cached {effective_release_type} releases data")
                 else:
@@ -2323,15 +2323,6 @@ def _get_latest_releases_data(
 
     try:
         # Add progress feedback
-        effective_release_type = release_type
-        if not effective_release_type:
-            # Fallback to URL parsing for backward compatibility
-            url_l = url.lower()
-            if "firmware" in url_l:
-                effective_release_type = "firmware"
-            elif "android" in url_l:
-                effective_release_type = "Android APK"
-
         if effective_release_type:
             logger.info(f"Fetching {effective_release_type} releases from GitHub...")
         else:
