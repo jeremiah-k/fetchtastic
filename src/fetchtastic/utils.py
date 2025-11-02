@@ -1,4 +1,9 @@
 # src/fetchtastic/utils.py
+#
+# IMPORTANT: This module requires urllib3>=2.0.0
+# urllib3 v1.x was deprecated on 2023-12-18 and is no longer supported.
+# Users must upgrade to continue receiving security updates and bug fixes.
+# Migration guide: https://urllib3.readthedocs.io/en/latest/v2-migration.html
 import gc  # For Windows file operation retries
 import hashlib
 import importlib.metadata
@@ -17,6 +22,24 @@ import platformdirs
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry  # type: ignore
+
+# Verify urllib3 version compatibility
+# We require urllib3>=2.0 as v1.x is deprecated (EOL 2023-12-18)
+# See: https://urllib3.readthedocs.io/en/latest/v2-migration.html
+try:
+    from urllib3.util.retry import Retry
+
+    # Test for v2+ specific parameter: 'allowed_methods' (renamed from 'method_whitelist' in v1.x)
+    # This will raise TypeError on urllib3 v1.x because the parameter doesn't exist
+    test_retry = Retry(allowed_methods=["GET"])  # v2+ only parameter
+    del test_retry  # Clean up test object
+except (ImportError, TypeError) as e:
+    raise ImportError(
+        "urllib3>=2.0.0 is required but not available. Please upgrade:\n"
+        "  pip install --upgrade 'urllib3>=2.0.0'\n"
+        "urllib3 v1.x was deprecated on 2023-12-18 and no longer receives security updates.\n"
+        f"Technical details: {e}"
+    )
 
 # Import constants from constants module
 from fetchtastic.constants import (
@@ -755,47 +778,34 @@ def download_file_with_retry(
             f"Attempting to download file from URL: {url} to temp path: {temp_path}"
         )
         start_time = time.time()
-        # Using type: ignore for Retry as it might not be perfectly typed by stubs,
-        # but the parameters are standard for urllib3.
-        try:
-            retry_strategy: Retry = Retry(
-                total=DEFAULT_CONNECT_RETRIES,
-                connect=DEFAULT_CONNECT_RETRIES,
-                read=DEFAULT_CONNECT_RETRIES,
-                status=DEFAULT_CONNECT_RETRIES,
-                backoff_factor=DEFAULT_BACKOFF_FACTOR,
-                status_forcelist=[408, 429, 500, 502, 503, 504],
-                allowed_methods=frozenset({"GET", "HEAD"}),
-                raise_on_status=False,
-                respect_retry_after_header=True,
-            )
-        except TypeError:
-            # urllib3 v1 fallback - parameters may differ between versions
-            # Use method_whitelist for older urllib3 versions
-            try:
-                # urllib3 v1 signature: use method_whitelist
-                retry_strategy = Retry(
-                    total=DEFAULT_CONNECT_RETRIES,
-                    connect=DEFAULT_CONNECT_RETRIES,
-                    read=DEFAULT_CONNECT_RETRIES,
-                    status=DEFAULT_CONNECT_RETRIES,
-                    backoff_factor=DEFAULT_BACKOFF_FACTOR,
-                    status_forcelist=[408, 429, 500, 502, 503, 504],
-                    method_whitelist=frozenset({"GET", "HEAD"}),
-                    raise_on_status=False,
-                )
-            except TypeError as e:
-                # Very old urllib3 version - use minimal configuration
-                retry_strategy = Retry(
-                    total=DEFAULT_CONNECT_RETRIES,
-                    backoff_factor=DEFAULT_BACKOFF_FACTOR,
-                    status_forcelist=[408, 429, 500, 502, 503, 504],
-                )
-                logger.warning(
-                    "Using minimal urllib3 retry configuration due to compatibility issues: %s",
-                    e,
-                    exc_info=True,
-                )
+        # urllib3 v2+ retry strategy configuration
+        #
+        # IMPORTANT: We only support urllib3 v2.0+ (released 2023-12-18)
+        # The v1.x series is deprecated and no longer receives security updates.
+        # Users must upgrade to urllib3>=2.0 to use this application.
+        #
+        # Breaking changes from v1 to v2:
+        # - 'method_whitelist' parameter renamed to 'allowed_methods'
+        # - 'raise_on_status' default changed from False to True
+        # - Improved retry logic and security fixes
+        #
+        # If this fails, the user needs to upgrade urllib3:
+        #   pip install --upgrade "urllib3>=2.0"
+        #
+        # See: https://urllib3.readthedocs.io/en/latest/v2-migration.html
+        retry_strategy: Retry = Retry(
+            total=DEFAULT_CONNECT_RETRIES,  # Total number of retry attempts
+            connect=DEFAULT_CONNECT_RETRIES,  # Retries for connection errors
+            read=DEFAULT_CONNECT_RETRIES,  # Retries for read timeouts
+            status=DEFAULT_CONNECT_RETRIES,  # Retries for bad status codes
+            backoff_factor=DEFAULT_BACKOFF_FACTOR,  # Exponential backoff multiplier
+            status_forcelist=[408, 429, 500, 502, 503, 504],  # HTTP codes to retry on
+            allowed_methods=frozenset(
+                {"GET", "HEAD"}
+            ),  # HTTP methods to retry (v2+ only)
+            raise_on_status=False,  # Don't raise on bad status (handle in caller)
+            respect_retry_after_header=True,  # Honor Retry-After headers
+        )
         adapter = HTTPAdapter(max_retries=retry_strategy)
         session.mount("https://", adapter)
         session.mount("http://", adapter)
