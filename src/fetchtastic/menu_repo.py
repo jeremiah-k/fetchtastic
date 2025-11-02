@@ -117,6 +117,12 @@ def fetch_repo_contents(path="", allow_env_token=True, github_token=None):
         if isinstance(contents, list):
             logger.debug(f"Fetched {len(contents)} items from repository")
 
+        if not isinstance(contents, list):
+            logger.warning(
+                f"Expected a list of repository contents from GitHub API, but got {type(contents).__name__}. Assuming empty directory."
+            )
+            return []
+
         return _process_repo_contents(contents)
 
     except requests.HTTPError as e:
