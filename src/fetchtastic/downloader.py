@@ -47,6 +47,7 @@ from fetchtastic.constants import (
     MESHTASTIC_ANDROID_RELEASES_URL,
     MESHTASTIC_FIRMWARE_RELEASES_URL,
     NTFY_REQUEST_TIMEOUT,
+    PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
     RELEASE_SCAN_COUNT,
     RELEASES_CACHE_EXPIRY_HOURS,
     SHELL_SCRIPT_EXTENSION,
@@ -1397,6 +1398,12 @@ _releases_cache: Dict[str, Tuple[List[Dict[str, Any]], datetime]] = {}
 _releases_cache_file = None
 _releases_cache_loaded = False
 
+# Global cache for prerelease directory listings
+_prerelease_dir_cache: Dict[str, Tuple[List[str], datetime]] = {}
+_prerelease_dir_cache_file: Optional[str] = None
+_prerelease_dir_cache_loaded = False
+_PRERELEASE_DIR_CACHE_ROOT_KEY = "__root__"
+
 # Global flag to track if downloads were skipped due to Wi-Fi requirements
 downloads_skipped = False
 
@@ -1439,6 +1446,191 @@ def _get_releases_cache_file() -> str:
     if _releases_cache_file is None:
         _releases_cache_file = os.path.join(_ensure_cache_dir(), "releases.json")
     return _releases_cache_file
+
+
+def _get_prerelease_dir_cache_file() -> str:
+    """
+    Return the filesystem path of the persistent prerelease directory cache file.
+
+    Returns:
+        str: Path to the prerelease directories cache JSON file.
+    """
+    global _prerelease_dir_cache_file
+    if _prerelease_dir_cache_file is None:
+        _prerelease_dir_cache_file = os.path.join(
+            _ensure_cache_dir(), "prerelease_dirs.json"
+        )
+    return _prerelease_dir_cache_file
+
+
+def _load_prerelease_dir_cache() -> None:
+    """
+    Populate the in-memory prerelease directory cache from disk, respecting expiry.
+    """
+    global _prerelease_dir_cache_loaded
+
+    with _cache_lock:
+        if _prerelease_dir_cache_loaded:
+            return
+
+    cache_file = _get_prerelease_dir_cache_file()
+
+    try:
+        if not os.path.exists(cache_file):
+            with _cache_lock:
+                _prerelease_dir_cache_loaded = True
+            return
+
+        with open(cache_file, "r", encoding="utf-8") as f:
+            cache_data = json.load(f)
+
+        if not isinstance(cache_data, dict):
+            with _cache_lock:
+                _prerelease_dir_cache_loaded = True
+            return
+
+        current_time = datetime.now(timezone.utc)
+        loaded: Dict[str, Tuple[List[str], datetime]] = {}
+
+        for cache_key, cache_entry in cache_data.items():
+            try:
+                if (
+                    not isinstance(cache_entry, dict)
+                    or "directories" not in cache_entry
+                    or "cached_at" not in cache_entry
+                ):
+                    logger.debug(
+                        "Skipping invalid prerelease cache entry for %s: incorrect structure",
+                        cache_key,
+                    )
+                    continue
+
+                directories = cache_entry["directories"]
+                cached_at = datetime.fromisoformat(
+                    cache_entry["cached_at"].replace("Z", "+00:00")
+                )
+
+                if not isinstance(directories, list):
+                    logger.debug(
+                        "Skipping prerelease cache entry for %s: directories not a list",
+                        cache_key,
+                    )
+                    continue
+
+                age = current_time - cached_at
+                if age.total_seconds() < PRERELEASE_DIR_CACHE_EXPIRY_SECONDS:
+                    loaded[cache_key] = (list(directories), cached_at)
+            except (ValueError, TypeError, KeyError) as e:
+                logger.debug(
+                    "Skipping invalid prerelease cache entry for %s: %s",
+                    cache_key,
+                    e,
+                )
+                continue
+
+        with _cache_lock:
+            _prerelease_dir_cache.update(loaded)
+            _prerelease_dir_cache_loaded = True
+
+        if loaded:
+            logger.debug(
+                "Loaded %d prerelease directory cache entries from disk", len(loaded)
+            )
+
+    except (IOError, json.JSONDecodeError) as e:
+        logger.debug(f"Could not load prerelease directory cache: {e}")
+
+
+def _save_prerelease_dir_cache() -> None:
+    """
+    Persist the in-memory prerelease directory cache to disk.
+    """
+    cache_file = _get_prerelease_dir_cache_file()
+
+    try:
+        with _cache_lock:
+            cache_data = {
+                cache_key: {
+                    "directories": directories,
+                    "cached_at": cached_at.isoformat(),
+                }
+                for cache_key, (directories, cached_at) in _prerelease_dir_cache.items()
+            }
+
+        if _atomic_write_json(cache_file, cache_data):
+            logger.debug(
+                "Saved %d prerelease directory cache entries to disk",
+                len(cache_data),
+            )
+        else:
+            logger.warning(
+                "Failed to save prerelease directory cache to %s", cache_file
+            )
+
+    except (IOError, OSError) as e:
+        logger.warning(f"Could not save prerelease directory cache: {e}")
+
+
+def _clear_prerelease_cache() -> None:
+    """
+    Clear the in-memory and on-disk prerelease directory cache.
+    """
+    global _prerelease_dir_cache_loaded
+
+    _clear_cache_generic(
+        cache_dict=_prerelease_dir_cache,
+        cache_file_getter=_get_prerelease_dir_cache_file,
+        cache_name="prerelease directory",
+    )
+
+    with _cache_lock:
+        _prerelease_dir_cache_loaded = False
+
+
+def _fetch_prerelease_directories(force_refresh: bool = False) -> List[str]:
+    """
+    Return prerelease directories from cache when fresh, otherwise fetch from GitHub.
+
+    Parameters:
+        force_refresh (bool): When True, bypass the cached directories and refetch.
+
+    Returns:
+        List[str]: List of directory names from the meshtastic.github.io repository root.
+    """
+    cache_key = _PRERELEASE_DIR_CACHE_ROOT_KEY
+
+    _load_prerelease_dir_cache()
+
+    now = datetime.now(timezone.utc)
+
+    with _cache_lock:
+        if not force_refresh and cache_key in _prerelease_dir_cache:
+            directories, cached_at = _prerelease_dir_cache[cache_key]
+            age = now - cached_at
+            if age.total_seconds() < PRERELEASE_DIR_CACHE_EXPIRY_SECONDS:
+                track_api_cache_hit()
+                logger.debug(
+                    "Using cached prerelease directories (cached %.0fs ago)",
+                    age.total_seconds(),
+                )
+                return list(directories)
+
+            logger.debug(
+                "Prerelease directory cache expired (age %.0fs, limit %ds) - refreshing",
+                age.total_seconds(),
+                PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
+            )
+            del _prerelease_dir_cache[cache_key]
+
+    logger.debug("Cache miss for prerelease directories - fetching from GitHub API")
+    directories = menu_repo.fetch_repo_directories()
+    updated_at = datetime.now(timezone.utc)
+
+    with _cache_lock:
+        _prerelease_dir_cache[cache_key] = (list(directories), updated_at)
+
+    _save_prerelease_dir_cache()
+    return list(directories)
 
 
 def _load_commit_cache() -> None:
@@ -1674,6 +1866,9 @@ def clear_all_caches() -> None:
     # Clear commit cache using helper
     _clear_commit_cache()
 
+    # Clear prerelease directory cache
+    _clear_prerelease_cache()
+
     # Clear releases cache using generic helper
     _clear_cache_generic(
         cache_dict=_releases_cache,
@@ -1706,7 +1901,7 @@ def _find_latest_remote_prerelease_dir(
         Optional[str]: Name of the newest matching prerelease directory (for example "firmware-2.7.13-abcdef"), or None if no matching directory is found.
     """
     try:
-        directories = menu_repo.fetch_repo_directories()
+        directories = _fetch_prerelease_directories(force_refresh=force_refresh)
         if not directories:
             logger.info("No firmware directories found in the repository.")
             return None
