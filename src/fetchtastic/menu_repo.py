@@ -81,21 +81,17 @@ def _process_repo_contents(contents):
 
 def fetch_repo_contents(path="", allow_env_token=True, github_token=None):
     """
-    Fetch contents (directories and files) from Meshtastic GitHub Pages repository.
-
-    Given an optional repository-relative path (no leading or trailing slashes required), queries GitHub Contents API for that path and returns a list of items describing directories and files found. Hidden and common infrastructure directories (e.g., .git, node_modules) and common repo-level files (e.g., README.md, LICENSE) are excluded. Returned directory entries have keys: "name", "path", "type" == "dir". File entries have keys: "name", "path", "type" == "file", and "download_url".
-
-    Sorting:
-    - Directories are returned before files.
-    - Directories whose names start with "firmware-" are listed first (sorted descending by name), then other directories sorted ascending.
-    - Files are sorted ascending by name.
-
+    Retrieve and process directory and file entries from the Meshtastic GitHub Pages repository for a given repository-relative path.
+    
+    Given an optional path (leading/trailing slashes are ignored), queries the GitHub Contents API and returns a sorted list of item dictionaries describing directories and files in that path. Directory items include "name", "path", and "type" == "dir". File items include "name", "path", "type" == "file", and "download_url". Common repository infrastructure directories and files are excluded.
+    
     Parameters:
-        path (str): Optional repository-relative path to list (leading/trailing slashes will be trimmed). Use an empty string to list repository root.
-        allow_env_token (bool): Whether to allow using GITHUB_TOKEN from environment for authentication.
-
+        path (str): Repository-relative path to list; use an empty string for the repository root.
+        allow_env_token (bool): Whether to permit using the GITHUB_TOKEN environment variable for authentication.
+        github_token (str | None): Optional explicit GitHub token to use; if provided it overrides environment-based token usage.
+    
     Returns:
-        list: A list of dictionaries representing directories and files. Returns an empty list on network, parsing, or unexpected errors.
+        list: A list of dictionaries representing directories and files (directories appear before files). Returns an empty list on network, parsing, or other unexpected errors.
     """
     # GitHub API URL for repository contents
     base_url = MESHTASTIC_GITHUB_IO_CONTENTS_URL

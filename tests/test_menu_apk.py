@@ -8,9 +8,18 @@ from fetchtastic import menu_apk
 @pytest.fixture
 def mock_apk_assets():
     """
-    Return a list of dictionaries simulating release assets.
-
-    Each dict contains a "name" key. The list includes three APK filenames and one non-APK file to emulate mixed release assets for tests.
+    Provide a list of dictionaries representing release assets for tests.
+    
+    Each dictionary contains a "name" key with a filename. The returned list includes three APK filenames and one non-APK file to exercise asset filtering in tests.
+    
+    Returns:
+        assets (list[dict]): List of asset dictionaries, e.g.:
+            [
+                {"name": "meshtastic-app-release-2.7.4.apk"},
+                {"name": "meshtastic-app-debug-2.7.4.apk"},
+                {"name": "nRF_Connect_Device_Manager-release-2.7.4.apk"},
+                {"name": "some-other-file.txt"},
+            ]
     """
     return [
         {"name": "meshtastic-app-release-2.7.4.apk"},
@@ -23,9 +32,10 @@ def mock_apk_assets():
 @pytest.fixture
 def mock_apk_assets_mixed_case():
     """
-    Return a list of dictionaries simulating release assets with mixed case extensions.
-
-    Tests case-insensitive APK extension matching.
+    Provide mock release assets including APK filenames with mixed-case extensions for testing.
+    
+    Returns:
+        list[dict]: A list of asset dictionaries with a 'name' key. Includes APK filenames with lowercase, uppercase, and mixed-case extensions, plus a non-APK file.
     """
     return [
         {"name": "meshtastic-app-release-2.7.4.apk"},
