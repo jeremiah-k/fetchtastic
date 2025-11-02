@@ -129,10 +129,10 @@ def test_run_menu_exception_handling(mocker):
 
 def test_fetch_firmware_assets_debug_logging(mocker, mock_firmware_assets):
     """Test debug logging in fetch_firmware_assets."""
-    mock_get = mocker.patch("requests.get")
+    mock_api_request = mocker.patch("fetchtastic.menu_firmware.make_github_api_request")
     mock_response = mocker.MagicMock()
     mock_response.json.return_value = [{"assets": mock_firmware_assets}]
-    mock_get.return_value = mock_response
+    mock_api_request.return_value = mock_response
     mock_logger = mocker.patch("fetchtastic.menu_firmware.logger")
 
     assets = menu_firmware.fetch_firmware_assets()
@@ -140,3 +140,18 @@ def test_fetch_firmware_assets_debug_logging(mocker, mock_firmware_assets):
     # Should log debug message about fetched releases
     mock_logger.debug.assert_called_with("Fetched 1 firmware releases from GitHub API")
     assert len(assets) == 4
+
+
+def test_fetch_firmware_assets_debug_logging_no_list_response(mocker):
+    """Test debug logging in fetch_firmware_assets when response is not a list."""
+    mock_api_request = mocker.patch("fetchtastic.menu_firmware.make_github_api_request")
+    mock_response = mocker.MagicMock()
+    mock_response.json.return_value = {"not": "a list"}
+    mock_api_request.return_value = mock_response
+    mock_logger = mocker.patch("fetchtastic.menu_firmware.logger")
+
+    assets = menu_firmware.fetch_firmware_assets()
+
+    # Should not log debug message since response is not a list
+    mock_logger.debug.assert_not_called()
+    assert assets == []

@@ -334,6 +334,36 @@ def test_cli_setup_command_with_duplicate_sections(mocker):
     mock_setup_run.assert_called_once_with(sections=["firmware", "android"])
 
 
+def test_cli_setup_command_with_update_available(mocker):
+    """Test the 'setup' command when an update is available."""
+    mocker.patch("sys.argv", ["fetchtastic", "setup"])
+    mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
+    mock_get_upgrade_command = mocker.patch(
+        "fetchtastic.cli.get_upgrade_command",
+        return_value="pip install --upgrade fetchtastic",
+    )
+    mock_logger = mocker.patch("fetchtastic.cli.logger")
+
+    # Mock version info to indicate update is available
+    mocker.patch(
+        "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.1.0", True)
+    )
+
+    cli.main()
+
+    # Should run setup
+    mock_setup_run.assert_called_once_with(sections=None)
+
+    # Should log update information
+    mock_logger.info.assert_any_call("\nUpdate Available")
+    mock_logger.info.assert_any_call(
+        "A newer version (v1.1.0) of Fetchtastic is available!"
+    )
+    mock_logger.info.assert_any_call(
+        "Run 'pip install --upgrade fetchtastic' to upgrade."
+    )
+
+
 def test_cli_clean_command(mocker):
     """Test the 'clean' command dispatch."""
     mocker.patch("sys.argv", ["fetchtastic", "clean"])

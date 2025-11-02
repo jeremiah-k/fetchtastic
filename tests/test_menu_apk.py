@@ -158,10 +158,10 @@ def test_run_menu_exception_handling(mocker):
 
 def test_fetch_apk_assets_debug_logging(mocker, mock_apk_assets):
     """Test debug logging in fetch_apk_assets."""
-    mock_get = mocker.patch("requests.get")
+    mock_api_request = mocker.patch("fetchtastic.menu_apk.make_github_api_request")
     mock_response = mocker.MagicMock()
     mock_response.json.return_value = [{"assets": mock_apk_assets}]
-    mock_get.return_value = mock_response
+    mock_api_request.return_value = mock_response
     mock_logger = mocker.patch("fetchtastic.menu_apk.logger")
 
     assets = menu_apk.fetch_apk_assets()
@@ -169,3 +169,18 @@ def test_fetch_apk_assets_debug_logging(mocker, mock_apk_assets):
     # Should log debug message about fetched releases
     mock_logger.debug.assert_called_with("Fetched 1 Android releases from GitHub API")
     assert len(assets) == 3
+
+
+def test_fetch_apk_assets_debug_logging_no_list_response(mocker):
+    """Test debug logging in fetch_apk_assets when response is not a list."""
+    mock_api_request = mocker.patch("fetchtastic.menu_apk.make_github_api_request")
+    mock_response = mocker.MagicMock()
+    mock_response.json.return_value = {"not": "a list"}
+    mock_api_request.return_value = mock_response
+    mock_logger = mocker.patch("fetchtastic.menu_apk.logger")
+
+    assets = menu_apk.fetch_apk_assets()
+
+    # Should not log debug message since response is not a list
+    mock_logger.debug.assert_not_called()
+    assert assets == []

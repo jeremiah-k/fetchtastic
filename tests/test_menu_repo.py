@@ -382,9 +382,25 @@ def test_fetch_repo_contents_debug_logging(mocker, mock_repo_contents):
     items = menu_repo.fetch_repo_contents()
 
     # Should log debug message about fetched items
-    expected = f"Fetched {len(mock_repo_contents)} items from repository"
-    mock_logger.debug.assert_called_with(expected)
+    mock_logger.debug.assert_called_with(
+        f"Fetched {len(mock_repo_contents)} items from repository"
+    )
     assert len(items) == 4  # Filtered items
+
+
+def test_fetch_repo_contents_debug_logging_no_list_response(mocker):
+    """Test debug logging in fetch_repo_contents when response is not a list."""
+    mock_get = mocker.patch("fetchtastic.menu_repo.make_github_api_request")
+    mock_response = mocker.MagicMock()
+    mock_response.json.return_value = {"not": "a list"}
+    mock_get.return_value = mock_response
+    mock_logger = mocker.patch("fetchtastic.menu_repo.logger")
+
+    items = menu_repo.fetch_repo_contents()
+
+    # Should not log debug message since response is not a list
+    mock_logger.debug.assert_not_called()
+    assert items == []
 
 
 def test_fetch_repo_contents_http_error(mocker):
