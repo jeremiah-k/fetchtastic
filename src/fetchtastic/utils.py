@@ -410,7 +410,7 @@ def get_rate_limit_info(token_hash: str) -> Optional[Tuple[int, datetime]]:
     """
     Retrieve cached GitHub API rate-limit remaining count and reset time for a token hash.
 
-    @returns
+    Returns:
         (remaining, reset_timestamp) as (int, datetime) if a cached entry exists for the given token hash, `None` otherwise.
     """
     global _rate_limit_cache

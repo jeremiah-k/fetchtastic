@@ -1075,8 +1075,9 @@ def test_format_api_summary():
     assert "1 cache hits, 1 cache misses (50.0% hit rate)" in result
 
     # Test with rate limit info (past reset time)
-    past_time = datetime.now(timezone.utc).replace(second=0, microsecond=0)
-    past_time = past_time.replace(minute=past_time.minute - 5)
+    past_time = datetime.now(timezone.utc).replace(second=0, microsecond=0) - timedelta(
+        minutes=5
+    )
     summary = {
         "total_requests": 1,
         "auth_used": False,

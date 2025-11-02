@@ -35,7 +35,6 @@ def fetch_firmware_assets():
     latest_release = releases[0] or {}
     assets = latest_release.get("assets") or []
     # Sorted alphabetically, tolerate missing names
-    # Sorted alphabetically, tolerate missing names (original behavior)
     asset_names = sorted(
         [(asset.get("name") or "") for asset in assets if (asset.get("name") or "")]
     )
