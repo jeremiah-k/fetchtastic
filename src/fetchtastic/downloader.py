@@ -152,12 +152,38 @@ def _normalize_version(
                     exc_info=True,
                 )
 
+        # Try hash suffix with dash first (e.g., "1.2.3-abc123")
+        m_hash_dash = re.match(
+            r"^(\d+(?:\.\d+)*)-([A-Za-z0-9][A-Za-z0-9.-]*)$", trimmed
+        )
+        if m_hash_dash:
+            try:
+                parsed_version = parse_version(
+                    f"{m_hash_dash.group(1)}+{m_hash_dash.group(2)}"
+                )
+                return (
+                    f"v{str(parsed_version)}" if has_v_prefix else str(parsed_version)
+                )
+            except InvalidVersion:
+                logger.debug(
+                    "Could not parse '%s' as a version with a local version identifier.",
+                    trimmed,
+                    exc_info=True,
+                )
+
+        # Fall back to original hash suffix with dot (e.g., "1.2.3.abc123")
         m_hash = HASH_SUFFIX_VERSION_RX.match(trimmed)
         if m_hash:
             try:
                 parsed_version = parse_version(f"{m_hash.group(1)}+{m_hash.group(2)}")
                 return (
                     f"v{str(parsed_version)}" if has_v_prefix else str(parsed_version)
+                )
+            except InvalidVersion:
+                logger.debug(
+                    "Could not parse '%s' as a version with a local version identifier.",
+                    trimmed,
+                    exc_info=True,
                 )
             except InvalidVersion:
                 logger.debug(

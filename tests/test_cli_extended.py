@@ -52,7 +52,8 @@ class TestCLIHelpFunctionality:
 
         mock_parser_print_help = mocker.patch("argparse.ArgumentParser.print_help")
 
-        cli.main()
+        with pytest.raises(SystemExit):
+            cli.main()
 
         mock_parser_print_help.assert_called_once()
 
@@ -158,7 +159,8 @@ class TestCLICleanFunctionality:
         mocker.patch("sys.argv", ["fetchtastic", "clean"])
         mock_run_clean = mocker.patch("fetchtastic.cli.run_clean")
 
-        cli.main()
+        with pytest.raises(SystemExit):
+            cli.main()
 
         mock_run_clean.assert_called_once()
 
@@ -289,7 +291,8 @@ class TestCLIPlatformSpecific:
         mocker.patch("fetchtastic.setup_config.CONFIG_FILE", "/fake/config.yaml")
         mock_logger = mocker.patch("fetchtastic.cli.logger")
 
-        cli.main()
+        with pytest.raises(SystemExit):
+            cli.main()
 
         mock_logger.info.assert_any_call("Windows integrations updated successfully!")
 
