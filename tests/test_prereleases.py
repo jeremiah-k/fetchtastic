@@ -874,6 +874,70 @@ def test_prerelease_directory_cache_behaviour(tmp_path):
 
 
 @pytest.mark.core_downloads
+def test_prerelease_commit_cache_save_only_on_new_entries():
+    """Ensure commit cache is only persisted when new timestamps are fetched."""
+    cache_key = "meshtastic/firmware/abcdef12"
+    cached_timestamp = datetime(2025, 1, 20, 12, 0, 0, tzinfo=timezone.utc)
+    cached_at = datetime.now(timezone.utc) - timedelta(minutes=5)
+
+    original_cache_loaded = downloader._commit_cache_loaded
+
+    try:
+        with downloader._cache_lock:
+            downloader._commit_timestamp_cache[cache_key] = (
+                cached_timestamp,
+                cached_at,
+            )
+            downloader._commit_cache_loaded = True
+
+        with patch(
+            "fetchtastic.downloader._fetch_prerelease_directories",
+            return_value=["firmware-2.7.13.abcdef12"],
+        ):
+            with patch(
+                "fetchtastic.downloader.get_commit_timestamp",
+                return_value=cached_timestamp,
+            ) as mock_get_timestamp, patch(
+                "fetchtastic.downloader._save_commit_cache"
+            ) as mock_save_cache:
+                result = downloader._find_latest_remote_prerelease_dir("2.7.13")
+                assert result == "firmware-2.7.13.abcdef12"
+                mock_get_timestamp.assert_called_once()
+                mock_save_cache.assert_not_called()
+
+        # Clear cache to simulate missing entry and ensure save is triggered
+        with downloader._cache_lock:
+            downloader._commit_timestamp_cache.pop(cache_key, None)
+
+        def _populate_cache(*_args, **_kwargs):
+            with downloader._cache_lock:
+                downloader._commit_timestamp_cache[cache_key] = (
+                    cached_timestamp,
+                    datetime.now(timezone.utc),
+                )
+            return cached_timestamp
+
+        with patch(
+            "fetchtastic.downloader._fetch_prerelease_directories",
+            return_value=["firmware-2.7.13.abcdef12"],
+        ):
+            with patch(
+                "fetchtastic.downloader.get_commit_timestamp",
+                side_effect=_populate_cache,
+            ) as mock_get_timestamp, patch(
+                "fetchtastic.downloader._save_commit_cache"
+            ) as mock_save_cache:
+                result = downloader._find_latest_remote_prerelease_dir("2.7.13")
+                assert result == "firmware-2.7.13.abcdef12"
+                mock_get_timestamp.assert_called_once()
+                mock_save_cache.assert_called_once()
+    finally:
+        with downloader._cache_lock:
+            downloader._commit_timestamp_cache.pop(cache_key, None)
+        downloader._commit_cache_loaded = original_cache_loaded
+
+
+@pytest.mark.core_downloads
 def test_get_commit_timestamp_error_handling():
     """Test error handling in get_commit_timestamp."""
 

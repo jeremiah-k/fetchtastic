@@ -1950,23 +1950,36 @@ def _find_latest_remote_prerelease_dir(
             _get_commit_hash_from_dir(d) for d in matching_prerelease_dirs
         ]
 
-        def _safe_get_timestamp(commit_hash):
+        def _safe_get_timestamp(
+            commit_hash: Optional[str],
+        ) -> Tuple[Optional[datetime], bool]:
             """
-            Return the commit timestamp for a Meshtastic firmware commit hash, or None when no hash is provided.
+            Return the commit timestamp for a Meshtastic firmware commit hash along with whether it was freshly fetched.
 
             Parameters:
-                commit_hash (str): Commit SHA or identifier to look up; if falsy, no lookup is performed.
+                commit_hash (str | None): Commit SHA or identifier to look up; if falsy, no lookup is performed.
 
             Returns:
-                datetime | None: The commit timestamp if found, `None` if `commit_hash` is falsy or the timestamp is unavailable.
+                tuple: (timestamp, fetched_new) where `timestamp` is the commit datetime or None and `fetched_new`
+                indicates whether a fresh API fetch populated the cache.
             """
-            return (
-                get_commit_timestamp(
-                    "meshtastic", "firmware", commit_hash, github_token, force_refresh
-                )
-                if commit_hash
-                else None
+            if not commit_hash:
+                return None, False
+
+            cache_key = f"meshtastic/firmware/{commit_hash}"
+            with _cache_lock:
+                had_entry = cache_key in _commit_timestamp_cache
+
+            timestamp = get_commit_timestamp(
+                "meshtastic", "firmware", commit_hash, github_token, force_refresh
             )
+
+            fetched_new = False
+            if timestamp is not None:
+                with _cache_lock:
+                    fetched_new = cache_key in _commit_timestamp_cache and not had_entry
+
+            return timestamp, fetched_new
 
         # Fetch timestamps concurrently to improve performance
         with ThreadPoolExecutor(
@@ -1974,10 +1987,13 @@ def _find_latest_remote_prerelease_dir(
                 1, min(MAX_CONCURRENT_TIMESTAMP_FETCHES, len(commit_hashes))
             )
         ) as executor:
-            timestamps = list(executor.map(_safe_get_timestamp, commit_hashes))
+            timestamp_results = list(executor.map(_safe_get_timestamp, commit_hashes))
+
+        timestamps = [result[0] for result in timestamp_results]
+        fetched_any_new = any(result[1] for result in timestamp_results)
 
         # Save cache after all timestamps are fetched to avoid race conditions
-        if any(t is not None for t in timestamps):
+        if fetched_any_new:
             _save_commit_cache()
 
         dirs_with_timestamps = list(
