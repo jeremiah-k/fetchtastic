@@ -837,7 +837,8 @@ def test_clipboard_prompt_eoferror_handling(mocker, capsys):
     )
 
     # Run the command
-    cli.main()
+    with pytest.raises(SystemExit):
+        cli.main()
 
     # Should default to "y" and copy to clipboard
     mock_copy.assert_called_once_with("https://ntfy.sh/test-topic-123")
@@ -859,7 +860,8 @@ def test_clipboard_prompt_yes_variations(mocker, capsys):
 
     # Test "yes" response
     mocker.patch("builtins.input", return_value="yes")
-    cli.main()
+    with pytest.raises(SystemExit):
+        cli.main()
     mock_copy.assert_called_with("https://ntfy.sh/test-topic-123")
 
     # Reset mock
