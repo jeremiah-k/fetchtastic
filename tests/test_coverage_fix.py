@@ -112,6 +112,34 @@ def test_cache_logging_lines_coverage(populated_releases_cache):
 
         assert result2 == test_data
 
+        # Test fallback URL parsing when release_type is None
+        result3 = _get_latest_releases_data(
+            "https://api.github.com/repos/meshtastic/firmware/releases",
+            5,
+            None,
+            True,
+            force_refresh=False,
+            release_type=None,  # Test fallback logic
+        )
+        assert result3 == test_data
+
+        # Test fallback URL parsing for generic URL (no firmware/android)
+        generic_cache_key = "https://api.github.com/repos/meshtastic/some-other-repo/releases?per_page=5"
+        downloader_module._releases_cache[generic_cache_key] = (
+            test_data,
+            datetime.now(timezone.utc),
+        )
+
+        result4 = _get_latest_releases_data(
+            "https://api.github.com/repos/meshtastic/some-other-repo/releases",
+            5,
+            None,
+            True,
+            force_refresh=False,
+            release_type=None,  # Test fallback logic for generic case
+        )
+        assert result4 == test_data
+
 
 def test_api_fetch_logging_lines_coverage():
     """Test to cover API fetch logging lines (2283-2364)."""
