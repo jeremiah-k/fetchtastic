@@ -4077,8 +4077,10 @@ def _format_api_summary(summary: Dict[str, Any]) -> str:
     if total_cache_lookups > 0:
         cache_hit_rate = (summary["cache_hits"] / total_cache_lookups) * 100
         log_parts.append(
-            f"{summary['cache_hits']} cache hits, {summary['cache_misses']} cache misses "
-            f"({cache_hit_rate:.1f}% hit rate)"
+            "cache lookups: "
+            f"{summary['cache_hits']} hits (skipped), "
+            f"{summary['cache_misses']} misses (fetched) "
+            f"[{cache_hit_rate:.1f}% hit rate]"
         )
 
     # Add rate limit info if available
