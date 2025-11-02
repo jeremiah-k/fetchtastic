@@ -166,8 +166,8 @@ def test_cleanup_superseded_prereleases_handles_commit_suffix(tmp_path):
     assert future_dir.exists()
 
 
-@patch("fetchtastic.downloader.menu_repo.fetch_repo_directories")
-@patch("fetchtastic.downloader.menu_repo.fetch_directory_contents")
+@patch("fetchtastic.menu_repo.fetch_repo_directories")
+@patch("fetchtastic.menu_repo.fetch_directory_contents")
 @patch("fetchtastic.downloader.download_file_with_retry")
 @patch("fetchtastic.downloader.make_github_api_request")
 def test_check_for_prereleases_download_and_cleanup(
