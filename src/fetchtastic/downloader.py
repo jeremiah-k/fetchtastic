@@ -1510,10 +1510,7 @@ def _load_commit_cache() -> None:
 
     except (IOError, json.JSONDecodeError) as e:
         logger.debug(f"Could not load commit timestamp cache: {e}")
-        with _cache_lock:
-            _commit_cache_loaded = (
-                True  # Mark as loaded even on error to prevent retries
-            )
+        # Don't mark as loaded to allow retry on subsequent API calls
 
 
 def _load_releases_cache() -> None:
