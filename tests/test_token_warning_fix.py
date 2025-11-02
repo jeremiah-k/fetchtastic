@@ -4,11 +4,7 @@ Tests for token warning and logging behavior fixes.
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 # Import the modules to ensure they're loaded for coverage
-import fetchtastic.downloader
-import fetchtastic.utils
 from fetchtastic.downloader import _get_latest_releases_data, main
 from fetchtastic.utils import _show_token_warning_if_needed
 
@@ -93,7 +89,7 @@ class TestTokenWarningLogic:
             utils._token_warning_shown = False
 
             # Call with no token - should show warning
-            _show_token_warning_if_needed(None, True)
+            _show_token_warning_if_needed(None)
 
             # Verify warning was logged
             mock_logger.warning.assert_called_once()
@@ -107,7 +103,7 @@ class TestTokenWarningLogic:
             utils._token_warning_shown = False
 
             # Call with no token and allow_env_token=False - should still show warning
-            _show_token_warning_if_needed(None, False)
+            _show_token_warning_if_needed(None)
 
             # Verify warning was logged
             mock_logger.warning.assert_called_once()
@@ -120,7 +116,7 @@ class TestTokenWarningLogic:
             utils._token_warning_shown = False
 
             # Call with token - should not show warning
-            _show_token_warning_if_needed("fake_token", True)
+            _show_token_warning_if_needed("fake_token")
 
             # Verify warning was not logged
             mock_logger.warning.assert_not_called()
@@ -133,11 +129,11 @@ class TestTokenWarningLogic:
             utils._token_warning_shown = False
 
             # First call - should show warning
-            _show_token_warning_if_needed(None, True)
+            _show_token_warning_if_needed(None)
             first_call_count = mock_logger.warning.call_count
 
             # Second call - should not show warning again
-            _show_token_warning_if_needed(None, False)
+            _show_token_warning_if_needed(None)
             second_call_count = mock_logger.warning.call_count
 
             # Verify warning was called only once

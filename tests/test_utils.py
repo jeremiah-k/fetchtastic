@@ -426,8 +426,6 @@ def test_legacy_strip_version_numbers():
 
 @pytest.mark.core_downloads
 @pytest.mark.unit
-@patch("fetchtastic.utils.requests.Session")
-@patch("fetchtastic.utils.Retry")
 def test_matches_selected_patterns_keyword_heuristic():
     """Test that keyword-based heuristic enables sanitized matching for known problematic patterns."""
     from fetchtastic.utils import matches_selected_patterns

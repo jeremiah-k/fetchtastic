@@ -4,23 +4,18 @@ Direct tests for coverage of specific lines.
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 # Import to ensure coverage tracking
-import fetchtastic.downloader
 
 
 def test_token_warning_lines_coverage():
     """Direct test to cover token warning lines in main function."""
     with patch("fetchtastic.downloader._initial_setup_and_config") as mock_setup:
-        with patch("fetchtastic.downloader._check_wifi_connection") as mock_wifi:
+        with patch("fetchtastic.downloader._check_wifi_connection") as _:
             with patch(
                 "fetchtastic.downloader._process_firmware_downloads"
             ) as mock_firmware:
                 with patch("fetchtastic.downloader._process_apk_downloads") as mock_apk:
-                    with patch(
-                        "fetchtastic.downloader._finalize_and_notify"
-                    ) as mock_finalize:
+                    with patch("fetchtastic.downloader._finalize_and_notify") as _:
 
                         # Mock setup to return valid config
                         mock_setup.return_value = (
@@ -63,7 +58,7 @@ def test_cache_logging_lines_coverage():
         datetime.now(timezone.utc),
     )
 
-    with patch("fetchtastic.downloader.make_github_api_request") as mock_request:
+    with patch("fetchtastic.downloader.make_github_api_request") as _:
         from fetchtastic.downloader import _get_latest_releases_data
 
         # This call should hit cache logging lines (2267-2276)
@@ -141,14 +136,12 @@ def test_api_fetch_logging_lines_coverage():
 def test_main_function_full_coverage():
     """Test to cover remaining main function lines."""
     with patch("fetchtastic.downloader._initial_setup_and_config") as mock_setup:
-        with patch("fetchtastic.downloader._check_wifi_connection") as mock_wifi:
+        with patch("fetchtastic.downloader._check_wifi_connection") as _:
             with patch(
                 "fetchtastic.downloader._process_firmware_downloads"
             ) as mock_firmware:
                 with patch("fetchtastic.downloader._process_apk_downloads") as mock_apk:
-                    with patch(
-                        "fetchtastic.downloader._finalize_and_notify"
-                    ) as mock_finalize:
+                    with patch("fetchtastic.downloader._finalize_and_notify") as _:
                         with patch(
                             "fetchtastic.downloader.clear_all_caches"
                         ) as mock_clear:

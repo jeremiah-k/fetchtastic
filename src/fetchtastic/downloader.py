@@ -58,9 +58,7 @@ from fetchtastic.log_utils import logger
 from fetchtastic.setup_config import display_version_info, get_upgrade_command
 from fetchtastic.utils import (
     _show_token_warning_if_needed,
-    calculate_sha256,
     download_file_with_retry,
-    extract_base_name,
     get_effective_github_token,
     get_hash_file_path,
     make_github_api_request,
@@ -3825,7 +3823,7 @@ def main(force_refresh: bool = False) -> None:
 
     # Show token warning consistently at the start before any API calls
     effective_token = get_effective_github_token(config.get("GITHUB_TOKEN"), True)
-    _show_token_warning_if_needed(effective_token, True)
+    _show_token_warning_if_needed(effective_token)
 
     # Clear caches if force refresh is requested
     if force_refresh:

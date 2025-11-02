@@ -105,9 +105,7 @@ def get_effective_github_token(
     return env_token.strip() if env_token else None
 
 
-def _show_token_warning_if_needed(
-    effective_token: Optional[str], allow_env_token: bool
-) -> None:
+def _show_token_warning_if_needed(effective_token: Optional[str]) -> None:
     """
     Show thread-safe warning about missing GitHub token if needed.
 
@@ -116,7 +114,6 @@ def _show_token_warning_if_needed(
 
     Args:
         effective_token: The effective GitHub token (None if no token)
-        allow_env_token: Whether environment token usage is allowed
     """
     if not effective_token:
         global _token_warning_shown
@@ -387,7 +384,7 @@ def make_github_api_request(
         logger.debug("Using GitHub token for API authentication")
 
     # Show warning if no token available (centralized logic)
-    _show_token_warning_if_needed(effective_token, allow_env_token)
+    _show_token_warning_if_needed(effective_token)
 
     # Initialize rate limit cache if needed
     global _rate_limit_cache_loaded
