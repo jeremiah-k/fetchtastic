@@ -59,10 +59,13 @@ from fetchtastic.setup_config import display_version_info, get_upgrade_command
 from fetchtastic.utils import (
     _show_token_warning_if_needed,
     download_file_with_retry,
+    get_api_request_summary,
     get_effective_github_token,
     get_hash_file_path,
     make_github_api_request,
     matches_selected_patterns,
+    track_api_cache_hit,
+    track_api_cache_miss,
     verify_file_integrity,
 )
 
@@ -2112,8 +2115,6 @@ def get_commit_timestamp(
                 logger.debug(
                     f"Using cached commit timestamp for {commit_hash} (cached {age.total_seconds():.0f}s ago)"
                 )
-                from fetchtastic.utils import track_api_cache_hit
-
                 track_api_cache_hit()
                 return timestamp
             else:
@@ -2122,8 +2123,6 @@ def get_commit_timestamp(
     # Fetch from API
     url = f"{GITHUB_API_BASE}/{owner}/{repo}/commits/{commit_hash}"
     logger.debug(f"Cache miss for commit timestamp {commit_hash} - fetching from API")
-    from fetchtastic.utils import track_api_cache_miss
-
     track_api_cache_miss()
     logger.debug(
         f"Fetching commit timestamp for {owner}/{repo}@{commit_hash[:8]} from GitHub..."
@@ -2278,8 +2277,6 @@ def _get_latest_releases_data(
             releases_data, cached_at = _releases_cache[cache_key]
             age = datetime.now(timezone.utc) - cached_at
             if age.total_seconds() < RELEASES_CACHE_EXPIRY_HOURS * 60 * 60:
-                from fetchtastic.utils import track_api_cache_hit
-
                 track_api_cache_hit()
                 effective_release_type = release_type
                 if not effective_release_type:
@@ -2307,8 +2304,6 @@ def _get_latest_releases_data(
 
     # Fetch from API after cache miss/expiry or forced refresh
     logger.debug(f"Cache miss for releases {url} - fetching from API")
-    from fetchtastic.utils import track_api_cache_miss
-
     track_api_cache_miss()
 
     try:
@@ -3920,8 +3915,6 @@ def main(force_refresh: bool = False) -> None:
     )
 
     # Log API request summary
-    from fetchtastic.utils import get_api_request_summary
-
     summary = get_api_request_summary()
     auth_status = "🔐 authenticated" if summary["auth_used"] else "🌐 unauthenticated"
 
@@ -3932,9 +3925,12 @@ def main(force_refresh: bool = False) -> None:
             if (summary["cache_hits"] + summary["cache_misses"]) > 0
             else 0
         )
-        logger.info(
-            f"📊 API Summary: {summary['total_requests']} requests made ({auth_status}), {summary['cache_hits']} cache hits, {summary['cache_misses']} cache misses ({cache_hit_rate:.1f}% hit rate)"
+        log_message = (
+            f"📊 API Summary: {summary['total_requests']} requests made ({auth_status}), "
+            f"{summary['cache_hits']} cache hits, {summary['cache_misses']} cache misses "
+            f"({cache_hit_rate:.1f}% hit rate)"
         )
+        logger.info(log_message)
     else:
         logger.info(
             f"📊 API Summary: No API requests made (all data served from cache)"

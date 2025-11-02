@@ -37,9 +37,9 @@ def fetch_apk_assets():
     assets = latest_release.get("assets", []) or []
     asset_names = sorted(
         [
-            (asset.get("name") or "")
+            (asset_name or "")
             for asset in assets
-            if asset.get("name") and (asset.get("name") or "").endswith(".apk")
+            if (asset_name := asset.get("name")) and asset_name.endswith(".apk")
         ]
     )
 

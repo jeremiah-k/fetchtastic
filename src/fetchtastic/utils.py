@@ -119,7 +119,8 @@ def get_api_request_summary() -> Dict[str, Any]:
 
 def reset_api_tracking() -> None:
     """Reset API request tracking (useful for testing)."""
-    global _api_request_count, _api_cache_hits, _api_cache_misses, _api_auth_used, _api_first_auth_logged, _api_first_unauth_logged
+    global _api_request_count, _api_cache_hits, _api_cache_misses, _api_auth_used
+    global _api_first_auth_logged, _api_first_unauth_logged
     with _api_tracking_lock:
         _api_request_count = 0
         _api_cache_hits = 0
@@ -498,7 +499,8 @@ def make_github_api_request(
         time.sleep(API_CALL_DELAY)
 
     # Track API request statistics and log first requests
-    global _api_request_count, _api_auth_used, _api_first_auth_logged, _api_first_unauth_logged
+    global _api_request_count, _api_auth_used
+    global _api_first_auth_logged, _api_first_unauth_logged
     with _api_tracking_lock:
         _api_request_count += 1
         is_authenticated = bool(effective_token)
