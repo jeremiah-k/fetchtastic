@@ -146,7 +146,7 @@ def test_api_fetch_logging_lines_coverage():
     import fetchtastic.downloader as downloader_module
 
     # Store original state to prevent test pollution
-    original_cache = getattr(downloader_module, "_releases_cache", {})
+    original_cache = getattr(downloader_module, "_releases_cache", {}).copy()
     original_cache_loaded = getattr(downloader_module, "_releases_cache_loaded", False)
 
     try:

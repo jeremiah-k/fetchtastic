@@ -2266,17 +2266,19 @@ def _get_latest_releases_data(
             releases_data, cached_at = _releases_cache[cache_key]
             age = datetime.now(timezone.utc) - cached_at
             if age.total_seconds() < RELEASES_CACHE_EXPIRY_HOURS * 60 * 60:
-                if release_type:
-                    logger.info(f"Using cached {release_type} releases data")
-                else:
+                effective_release_type = release_type
+                if not effective_release_type:
                     # Fallback to URL parsing for backward compatibility
                     url_l = url.lower()
                     if "firmware" in url_l:
-                        logger.info("Using cached firmware releases data")
+                        effective_release_type = "firmware"
                     elif "android" in url_l:
-                        logger.info("Using cached Android APK releases data")
-                    else:
-                        logger.info("Using cached releases data")
+                        effective_release_type = "Android APK"
+
+                if effective_release_type:
+                    logger.info(f"Using cached {effective_release_type} releases data")
+                else:
+                    logger.info("Using cached releases data")
                 logger.debug(
                     f"Using cached releases for {url} (cached {age.total_seconds():.0f}s ago)"
                 )
