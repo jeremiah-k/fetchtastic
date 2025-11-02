@@ -39,6 +39,21 @@ FIRMWARE_DIR_PREFIX = "firmware-"
 LATEST_ANDROID_RELEASE_FILE = "latest_android_release.txt"
 LATEST_FIRMWARE_RELEASE_FILE = "latest_firmware_release.txt"
 
+# Directories that Fetchtastic manages and can safely clean
+MANAGED_DIRECTORIES = [
+    REPO_DOWNLOADS_DIR,
+    PRERELEASE_DIR,
+    FIRMWARE_DIR_PREFIX,  # This is a prefix, handled specially in clean logic
+]
+
+# Files that Fetchtastic manages and can safely clean
+MANAGED_FILES = [
+    LATEST_ANDROID_RELEASE_FILE,
+    LATEST_FIRMWARE_RELEASE_FILE,
+    "fetchtastic.yaml",
+    "fetchtastic_yaml.lnk",  # Windows shortcut
+]
+
 # Default configuration values
 DEFAULT_FIRMWARE_VERSIONS_TO_KEEP = 2
 DEFAULT_ANDROID_VERSIONS_TO_KEEP = 2

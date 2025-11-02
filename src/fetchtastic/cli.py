@@ -10,6 +10,11 @@ from typing import List
 import platformdirs
 
 from fetchtastic import downloader, repo_downloader, setup_config
+from fetchtastic.constants import (
+    FIRMWARE_DIR_PREFIX,
+    MANAGED_DIRECTORIES,
+    MANAGED_FILES,
+)
 from fetchtastic.log_utils import logger, set_log_level
 from fetchtastic.setup_config import (
     copy_to_clipboard_func,
@@ -516,21 +521,50 @@ def run_clean():
                 except Exception as e:
                     print(f"Failed to remove configuration shortcut. Reason: {e}")
 
-    # Remove contents of download directory
+    # Remove only managed directories from download directory
     download_dir = setup_config.BASE_DIR
     if os.path.exists(download_dir):
         for item in os.listdir(download_dir):
             item_path = os.path.join(download_dir, item)
-            try:
-                if os.path.isfile(item_path) or os.path.islink(item_path):
-                    os.remove(item_path)
-                    print(f"Removed file: {item_path}")
-                elif os.path.isdir(item_path):
+            item_name = item
+
+            # Check if this is a managed directory
+            is_managed_dir = False
+            is_managed_file = False
+
+            # Direct match for managed directories
+            if item_name in MANAGED_DIRECTORIES:
+                is_managed_dir = True
+            # Check for firmware directories (prefix match)
+            elif item_name.startswith(FIRMWARE_DIR_PREFIX):
+                is_managed_dir = True
+            # Check for managed files
+            elif item_name in MANAGED_FILES:
+                is_managed_file = True
+
+            # Only remove managed directories and their contents
+            if is_managed_dir and os.path.isdir(item_path):
+                try:
                     shutil.rmtree(item_path)
-                    print(f"Removed directory: {item_path}")
-            except Exception as e:
-                print(f"Failed to delete {item_path}. Reason: {e}")
-        print(f"Cleaned contents of download directory: {download_dir}")
+                    print(f"Removed managed directory: {item_path}")
+                except Exception as e:
+                    print(
+                        f"Failed to delete managed directory {item_path}. Reason: {e}"
+                    )
+            # Remove managed files
+            elif is_managed_file and (
+                os.path.isfile(item_path) or os.path.islink(item_path)
+            ):
+                try:
+                    os.remove(item_path)
+                    print(f"Removed managed file: {item_path}")
+                except Exception as e:
+                    print(f"Failed to delete managed file {item_path}. Reason: {e}")
+
+        print(f"Cleaned managed directories from: {download_dir}")
+        print(
+            "Note: Only Fetchtastic-managed directories were removed. Other files were preserved."
+        )
 
     # Remove cron job entries (non-Windows platforms)
     if platform.system() != "Windows":

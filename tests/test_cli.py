@@ -357,7 +357,8 @@ def test_cli_clean_command(mocker):
 @patch(
     "fetchtastic.setup_config.OLD_CONFIG_FILE", "/tmp/old_config/fetchtastic.yaml"
 )  # nosec B108
-@patch("fetchtastic.setup_config.BASE_DIR", "/tmp/meshtastic")  # nosec B108
+@patch("fetchtastic.setup_config.BASE_DIR", "/tmp/test_base_dir")  # nosec B108
+@patch("fetchtastic.setup_config.CONFIG_DIR", "/tmp/config/fetchtastic")  # nosec B108
 @patch("os.path.isdir")
 def test_run_clean(
     mock_isdir,
@@ -387,10 +388,10 @@ def test_run_clean(
     mock_os_remove.assert_any_call("/tmp/config/fetchtastic.yaml")  # nosec B108
     mock_os_remove.assert_any_call("/tmp/old_config/fetchtastic.yaml")  # nosec B108
 
-    # Check that download directory is cleaned
-    mock_rmtree.assert_any_call(
-        os.path.join("/tmp/meshtastic", "some_dir")  # nosec B108
-    )
+    # Check that only managed directories are cleaned
+    # Since "some_dir" is not in MANAGED_DIRECTORIES, it should not be removed
+    # The only rmtree call should be for the batch directory (Windows cleanup)
+    mock_rmtree.assert_called_once_with("/tmp/config/fetchtastic/batch")
 
     # Check that cron jobs are removed
     mock_subprocess_run.assert_any_call(
