@@ -1054,6 +1054,17 @@ def test_format_api_summary():
     expected = "📊 API Summary: 3 HTTP requests (🌐 unauthenticated), 2 cache hits, 1 cache misses (66.7% hit rate)"
     assert result == expected
 
+    # Test request with no cache hits (should not show cache stats)
+    summary = {
+        "total_requests": 4,
+        "auth_used": False,
+        "cache_hits": 0,
+        "cache_misses": 4,
+    }
+    result = _format_api_summary(summary)
+    expected = "📊 API Summary: 4 HTTP requests (🌐 unauthenticated)"
+    assert result == expected
+
     # Test with rate limit info (future reset time)
     future_time = datetime.now(timezone.utc).replace(
         second=0, microsecond=0

@@ -614,12 +614,7 @@ def make_github_api_request(
                 _update_rate_limit(token_hash, remaining, reset_timestamp)
 
                 # Log enhanced rate limit information
-                if prev_remaining is not None and prev_remaining != remaining:
-                    logger.debug(
-                        f"GitHub API rate-limit remaining: {remaining} (was {prev_remaining})"
-                    )
-                else:
-                    logger.debug(f"GitHub API rate-limit remaining: {remaining}")
+                logger.debug(f"GitHub API rate-limit remaining: {remaining}")
 
                 # Add rate limit estimation and warnings
                 if remaining <= 10:

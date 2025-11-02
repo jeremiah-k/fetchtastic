@@ -3877,9 +3877,9 @@ def _format_api_summary(summary: Dict[str, Any]) -> str:
         f"📊 API Summary: {summary['total_requests']} HTTP requests ({auth_status})"
     ]
 
-    # Add cache statistics if there were cache lookups
-    total_cache_lookups = summary["cache_hits"] + summary["cache_misses"]
-    if total_cache_lookups > 0:
+    # Add cache statistics only if there were actual cache hits
+    if summary["cache_hits"] > 0:
+        total_cache_lookups = summary["cache_hits"] + summary["cache_misses"]
         cache_hit_rate = (summary["cache_hits"] / total_cache_lookups) * 100
         log_parts.append(
             f"{summary['cache_hits']} cache hits, {summary['cache_misses']} cache misses "
