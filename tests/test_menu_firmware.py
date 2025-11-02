@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from fetchtastic import menu_firmware
@@ -83,5 +85,43 @@ def test_run_menu(mocker):
 
     # 2. User selects nothing
     mock_select.return_value = None
+    result = menu_firmware.run_menu()
+    assert result is None
+
+
+def test_fetch_firmware_assets_error_handling(mocker):
+    """Test error handling in fetch_firmware_assets."""
+    # Test JSON decode error
+    mock_get = mocker.patch("requests.get")
+    mock_response = mocker.MagicMock()
+    mock_response.json.side_effect = json.JSONDecodeError("Invalid JSON", "", 0)
+    mock_get.return_value = mock_response
+
+    assets = menu_firmware.fetch_firmware_assets()
+    assert assets == []
+
+    # Test non-list response
+    mock_response.json.return_value = {"not": "a list"}
+    mock_get.return_value = mock_response
+
+    assets = menu_firmware.fetch_firmware_assets()
+    assert assets == []
+
+    # Test empty releases list
+    mock_response.json.return_value = []
+    mock_get.return_value = mock_response
+
+    assets = menu_firmware.fetch_firmware_assets()
+    assert assets == []
+
+
+def test_run_menu_exception_handling(mocker):
+    """Test exception handling in run_menu."""
+    # Test exception during fetch
+    mock_fetch = mocker.patch(
+        "fetchtastic.menu_firmware.fetch_firmware_assets",
+        side_effect=Exception("Network error"),
+    )
+
     result = menu_firmware.run_menu()
     assert result is None

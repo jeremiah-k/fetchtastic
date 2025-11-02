@@ -370,3 +370,66 @@ def test_run_menu_complex_path_navigation(mocker):
 
     result = menu_repo.run_menu()
     assert result is None
+
+
+def test_fetch_repo_contents_debug_logging(mocker, mock_repo_contents):
+    """Test debug logging in fetch_repo_contents."""
+    mock_get = mocker.patch("fetchtastic.menu_repo.make_github_api_request")
+    mock_response = mocker.MagicMock()
+    mock_response.json.return_value = mock_repo_contents
+    mock_get.return_value = mock_response
+    mock_logger = mocker.patch("fetchtastic.menu_repo.logger")
+
+    items = menu_repo.fetch_repo_contents()
+
+    # Should log debug message about fetched items
+    mock_logger.debug.assert_called_with("Fetched 7 items from repository")
+    assert len(items) == 4  # Filtered items
+
+
+def test_fetch_repo_contents_http_error(mocker):
+    """Test HTTP error handling in fetch_repo_contents."""
+    mock_get = mocker.patch("fetchtastic.menu_repo.make_github_api_request")
+    mock_get.side_effect = requests.HTTPError("404 Not Found")
+    mock_logger = mocker.patch("fetchtastic.menu_repo.logger")
+
+    items = menu_repo.fetch_repo_contents()
+
+    assert items == []
+    mock_logger.warning.assert_called_once()
+
+
+def test_run_menu_select_item_none(mocker):
+    """Test run_menu when select_item returns None."""
+    mock_items = [{"name": "dir1", "type": "dir", "path": "dir1"}]
+    mocker.patch("fetchtastic.menu_repo.fetch_repo_contents", return_value=mock_items)
+    mocker.patch("fetchtastic.menu_repo.select_item", return_value=None)
+
+    result = menu_repo.run_menu()
+
+    assert result is None
+
+
+def test_process_repo_contents_invalid_version():
+    """Test _process_repo_contents with invalid version in firmware directory name."""
+    # Create mock data with invalid version directory
+    contents = [
+        {
+            "name": "firmware-invalid-version",
+            "path": "firmware-invalid-version",
+            "type": "dir",
+        },
+        {
+            "name": "firmware-2.7.4.c1f4f79",
+            "path": "firmware-2.7.4.c1f4f79",
+            "type": "dir",
+        },
+    ]
+
+    items = menu_repo._process_repo_contents(contents)
+
+    # Should still process both items
+    assert len(items) == 2
+    # Both get version "0", sorted by name descending: 'i' > '2' so invalid comes first
+    assert items[0]["name"] == "firmware-invalid-version"
+    assert items[1]["name"] == "firmware-2.7.4.c1f4f79"
