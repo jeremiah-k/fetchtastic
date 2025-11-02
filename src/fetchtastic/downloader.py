@@ -104,9 +104,9 @@ VERSION_BASE_RX = re.compile(r"^(\d+(?:\.\d+)*)")
 
 def _normalize_version(
     version: Optional[str],
-) -> Optional[str]:
+) -> Optional[Union[Version, Any]]:  # Use Any when LegacyVersion not available
     """
-    Normalize a version string into a canonical string format.
+    Normalize a version string into a packaging `Version`/`LegacyVersion` object when possible.
 
     Attempts to coerce common repository-style forms into PEP 440-compatible versions:
     strips a leading "v", recognizes common prerelease markers (e.g. "alpha"/"beta" and numeric fragments),
@@ -117,7 +117,7 @@ def _normalize_version(
         version (Optional[str]): A raw version string (may include leading "v", prerelease words, or hash suffixes).
 
     Returns:
-        Optional[str]: A normalized version string with "v" prefix if parsing succeeds, otherwise `None`.
+        Optional[Union[Version, LegacyVersion]]: Parsed packaging version when parsing succeeds, otherwise `None`.
     """
     if version is None:
         return None
@@ -126,14 +126,11 @@ def _normalize_version(
     if not trimmed:
         return None
 
-    # Preserve the original "v" prefix for the final output
-    has_v_prefix = trimmed.lower().startswith("v")
-    if has_v_prefix:
+    if trimmed.lower().startswith("v"):
         trimmed = trimmed[1:]
 
     try:
-        parsed_version = parse_version(trimmed)
-        return f"v{str(parsed_version)}" if has_v_prefix else str(parsed_version)
+        return parse_version(trimmed)
     except InvalidVersion:
         m_pr = PRERELEASE_VERSION_RX.match(trimmed)
         if m_pr:
@@ -141,10 +138,7 @@ def _normalize_version(
             kind = {"alpha": "a", "beta": "b"}.get(pr_kind_lower, pr_kind_lower)
             num = m_pr.group(3) or "0"
             try:
-                parsed_version = parse_version(f"{m_pr.group(1)}{kind}{num}")
-                return (
-                    f"v{str(parsed_version)}" if has_v_prefix else str(parsed_version)
-                )
+                return parse_version(f"{m_pr.group(1)}{kind}{num}")
             except InvalidVersion:
                 logger.debug(
                     "Could not parse '%s' as a standard prerelease version.",
@@ -158,12 +152,7 @@ def _normalize_version(
         )
         if m_hash_dash:
             try:
-                parsed_version = parse_version(
-                    f"{m_hash_dash.group(1)}+{m_hash_dash.group(2)}"
-                )
-                return (
-                    f"v{str(parsed_version)}" if has_v_prefix else str(parsed_version)
-                )
+                return parse_version(f"{m_hash_dash.group(1)}+{m_hash_dash.group(2)}")
             except InvalidVersion:
                 logger.debug(
                     "Could not parse '%s' as a version with a local version identifier.",
@@ -175,16 +164,7 @@ def _normalize_version(
         m_hash = HASH_SUFFIX_VERSION_RX.match(trimmed)
         if m_hash:
             try:
-                parsed_version = parse_version(f"{m_hash.group(1)}+{m_hash.group(2)}")
-                return (
-                    f"v{str(parsed_version)}" if has_v_prefix else str(parsed_version)
-                )
-            except InvalidVersion:
-                logger.debug(
-                    "Could not parse '%s' as a version with a local version identifier.",
-                    trimmed,
-                    exc_info=True,
-                )
+                return parse_version(f"{m_hash.group(1)}+{m_hash.group(2)}")
             except InvalidVersion:
                 logger.debug(
                     "Could not parse '%s' as a version with a local version identifier.",

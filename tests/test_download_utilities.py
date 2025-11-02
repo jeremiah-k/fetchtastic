@@ -30,17 +30,20 @@ class TestVersionUtilities:
     def test_normalize_version_with_v_prefix(self):
         """Test version normalization with v prefix."""
         result = downloader._normalize_version("v1.2.3")
-        assert result == "v1.2.3"
+        assert result is not None
+        assert str(result) == "1.2.3"
 
     def test_normalize_version_without_v_prefix(self):
         """Test version normalization without v prefix."""
         result = downloader._normalize_version("1.2.3")
-        assert result == "1.2.3"
+        assert result is not None
+        assert str(result) == "1.2.3"
 
     def test_normalize_version_with_hash(self):
         """Test version normalization with commit hash."""
         result = downloader._normalize_version("v1.2.3-abc123")
-        assert result == "v1.2.3+abc123"
+        assert result is not None
+        assert str(result) == "1.2.3+abc123"
 
     def test_normalize_version_none(self):
         """Test version normalization with None."""
