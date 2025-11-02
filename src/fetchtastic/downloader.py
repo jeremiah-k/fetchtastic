@@ -4100,17 +4100,21 @@ def _format_api_summary(summary: Dict[str, Any]) -> str:
         )
 
     # Add rate limit info if available
-    if "rate_limit_remaining" in summary and "rate_limit_reset" in summary:
-        remaining = summary["rate_limit_remaining"]
-        reset_time = summary["rate_limit_reset"]
-        time_until_reset = reset_time - datetime.now(timezone.utc)
+    remaining = summary.get("rate_limit_remaining")
+    reset_time = summary.get("rate_limit_reset")
 
-        if time_until_reset.total_seconds() > 0:
-            minutes_until_reset = int(time_until_reset.total_seconds() / 60)
-            log_parts.append(
-                f"{remaining} requests remaining (resets in {minutes_until_reset} min)"
-            )
+    if remaining is not None:
+        if isinstance(reset_time, datetime):
+            time_until_reset = reset_time - datetime.now(timezone.utc)
+            if time_until_reset.total_seconds() > 0:
+                minutes_until_reset = int(time_until_reset.total_seconds() / 60)
+                log_parts.append(
+                    f"{remaining} requests remaining (resets in {minutes_until_reset} min)"
+                )
+            else:
+                log_parts.append(f"{remaining} requests remaining")
         else:
+            # reset_time is None or not a datetime, just show remaining
             log_parts.append(f"{remaining} requests remaining")
 
     return ", ".join(log_parts)
