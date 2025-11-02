@@ -2313,13 +2313,6 @@ def _get_latest_releases_data(
 
     try:
         # Add progress feedback
-        url_l = url.lower()
-        if "firmware" in url_l:
-            logger.info("Fetching firmware releases from GitHub...")
-        elif "android" in url_l:
-            logger.info("Fetching Android APK releases from GitHub...")
-        else:
-            logger.info("Fetching releases from GitHub...")
 
         # scan_count already clamped above
         response: requests.Response = make_github_api_request(
