@@ -154,3 +154,18 @@ def test_run_menu_exception_handling(mocker):
 
     result = menu_apk.run_menu()
     assert result is None
+
+
+def test_fetch_apk_assets_debug_logging(mocker, mock_apk_assets):
+    """Test debug logging in fetch_apk_assets."""
+    mock_get = mocker.patch("requests.get")
+    mock_response = mocker.MagicMock()
+    mock_response.json.return_value = [{"assets": mock_apk_assets}]
+    mock_get.return_value = mock_response
+    mock_logger = mocker.patch("fetchtastic.menu_apk.logger")
+
+    assets = menu_apk.fetch_apk_assets()
+
+    # Should log debug message about fetched releases
+    mock_logger.debug.assert_called_with("Fetched 1 Android releases from GitHub API")
+    assert len(assets) == 3

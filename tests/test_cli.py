@@ -374,7 +374,7 @@ def test_run_clean(
     """Test the run_clean function."""
     # Simulate existing files and directories
     mock_os_path_exists.return_value = True
-    mock_listdir.return_value = ["some_dir"]
+    mock_listdir.return_value = ["some_dir", "repo-dls", "firmware-2.7.4"]
     mock_isdir.return_value = True
     mock_subprocess_run.return_value.stdout = "# fetchtastic cron job"
     mock_subprocess_run.return_value.returncode = 0
@@ -389,9 +389,14 @@ def test_run_clean(
     mock_os_remove.assert_any_call("/tmp/old_config/fetchtastic.yaml")  # nosec B108
 
     # Check that only managed directories are cleaned
-    # Since "some_dir" is not in MANAGED_DIRECTORIES, it should not be removed
-    # The only rmtree call should be for the batch directory (Windows cleanup)
-    mock_rmtree.assert_called_once_with("/tmp/config/fetchtastic/batch")
+    # "repo-dls" is in MANAGED_DIRECTORIES, "firmware-2.7.4" starts with FIRMWARE_DIR_PREFIX
+    # "some_dir" is not managed, so should not be removed
+    # Also removes batch directory from config dir
+    mock_rmtree.assert_any_call("/tmp/config/fetchtastic/batch")
+    mock_rmtree.assert_any_call("/tmp/test_base_dir/repo-dls")
+    mock_rmtree.assert_any_call("/tmp/test_base_dir/firmware-2.7.4")
+    # Should not remove "some_dir"
+    assert mock_rmtree.call_count == 3
 
     # Check that cron jobs are removed
     mock_subprocess_run.assert_any_call(
