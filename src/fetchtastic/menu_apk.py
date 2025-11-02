@@ -39,9 +39,10 @@ def fetch_apk_assets():
         [
             (asset.get("name") or "")
             for asset in assets
-            if str(asset.get("name") or "").lower().endswith(APK_EXTENSION.lower())
+            if asset.get("name") and (asset.get("name") or "").endswith(".apk")
         ]
-    )  # Sorted alphabetically
+    )
+
     return asset_names
 
 

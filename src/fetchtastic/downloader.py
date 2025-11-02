@@ -2112,6 +2112,9 @@ def get_commit_timestamp(
                 logger.debug(
                     f"Using cached commit timestamp for {commit_hash} (cached {age.total_seconds():.0f}s ago)"
                 )
+                from fetchtastic.utils import track_api_cache_hit
+
+                track_api_cache_hit()
                 return timestamp
             else:
                 del _commit_timestamp_cache[cache_key]
@@ -2119,6 +2122,9 @@ def get_commit_timestamp(
     # Fetch from API
     url = f"{GITHUB_API_BASE}/{owner}/{repo}/commits/{commit_hash}"
     logger.debug(f"Cache miss for commit timestamp {commit_hash} - fetching from API")
+    from fetchtastic.utils import track_api_cache_miss
+
+    track_api_cache_miss()
     logger.debug(
         f"Fetching commit timestamp for {owner}/{repo}@{commit_hash[:8]} from GitHub..."
     )
@@ -2141,6 +2147,7 @@ def get_commit_timestamp(
                 )
             # Persist cache for ad-hoc callers to improve durability
             _save_commit_cache()
+
             return timestamp
     except (requests.HTTPError, requests.RequestException) as e:
         # Network errors - these are expected and recoverable
@@ -2271,6 +2278,9 @@ def _get_latest_releases_data(
             releases_data, cached_at = _releases_cache[cache_key]
             age = datetime.now(timezone.utc) - cached_at
             if age.total_seconds() < RELEASES_CACHE_EXPIRY_HOURS * 60 * 60:
+                from fetchtastic.utils import track_api_cache_hit
+
+                track_api_cache_hit()
                 effective_release_type = release_type
                 if not effective_release_type:
                     # Fallback to URL parsing for backward compatibility
@@ -2297,6 +2307,9 @@ def _get_latest_releases_data(
 
     # Fetch from API after cache miss/expiry or forced refresh
     logger.debug(f"Cache miss for releases {url} - fetching from API")
+    from fetchtastic.utils import track_api_cache_miss
+
+    track_api_cache_miss()
 
     try:
         # Add progress feedback
@@ -2370,7 +2383,7 @@ def _get_latest_releases_data(
     # Save cache to persistent storage
     _save_releases_cache()
 
-    # Limit the number of releases to be scanned
+    # Limit number of releases to be scanned
     return sorted_releases[
         :scan_count
     ]  # scan_count is a parameter, no constant needed here.
@@ -3912,6 +3925,27 @@ def main(force_refresh: bool = False) -> None:
         latest_firmware_version,
         latest_apk_version,
     )
+
+    # Log API request summary
+    from fetchtastic.utils import get_api_request_summary
+
+    summary = get_api_request_summary()
+    auth_status = "🔐 authenticated" if summary["auth_used"] else "🌐 unauthenticated"
+
+    if summary["total_requests"] > 0:
+        cache_hit_rate = (
+            (summary["cache_hits"] / (summary["cache_hits"] + summary["cache_misses"]))
+            * 100
+            if (summary["cache_hits"] + summary["cache_misses"]) > 0
+            else 0
+        )
+        logger.info(
+            f"📊 API Summary: {summary['total_requests']} requests made ({auth_status}), {summary['cache_hits']} cache hits, {summary['cache_misses']} cache misses ({cache_hit_rate:.1f}% hit rate)"
+        )
+    else:
+        logger.info(
+            f"📊 API Summary: No API requests made (all data served from cache)"
+        )
 
 
 if __name__ == "__main__":

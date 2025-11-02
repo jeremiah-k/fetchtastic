@@ -62,6 +62,13 @@ _last_cache_save_time = 0.0
 # Minimum seconds between disk writes for rate-limit cache
 RATE_LIMIT_CACHE_SAVE_INTERVAL = 5.0
 
+# API request tracking for session summary
+_api_request_count = 0
+_api_cache_hits = 0
+_api_cache_misses = 0
+_api_auth_used = False
+_api_tracking_lock = threading.Lock()
+
 
 def get_user_agent() -> str:
     """
@@ -83,8 +90,78 @@ def get_user_agent() -> str:
     return _USER_AGENT_CACHE
 
 
+def track_api_cache_hit() -> None:
+    """Track a cache hit for API requests."""
+    global _api_cache_hits
+    with _api_tracking_lock:
+        _api_cache_hits += 1
+
+
+def track_api_cache_miss() -> None:
+    """Track a cache miss for API requests."""
+    global _api_cache_misses
+    with _api_tracking_lock:
+        _api_cache_misses += 1
+
+
+def get_api_request_summary() -> Dict[str, Any]:
+    """Get comprehensive API request summary for the session."""
+    with _api_tracking_lock:
+        return {
+            "total_requests": _api_request_count,
+            "cache_hits": _api_cache_hits,
+            "cache_misses": _api_cache_misses,
+            "auth_used": _api_auth_used,
+        }
+
+
+def reset_api_tracking() -> None:
+    """Reset API request tracking (useful for testing)."""
+    global _api_request_count, _api_cache_hits, _api_cache_misses, _api_auth_used
+    with _api_tracking_lock:
+        _api_request_count = 0
+        _api_cache_hits = 0
+        _api_cache_misses = 0
+        _api_auth_used = False
+
+
+def track_api_cache_hit() -> None:
+    """Track a cache hit for API requests."""
+    global _api_cache_hits
+    with _api_tracking_lock:
+        _api_cache_hits += 1
+
+
+def track_api_cache_miss() -> None:
+    """Track a cache miss for API requests."""
+    global _api_cache_misses
+    with _api_tracking_lock:
+        _api_cache_misses += 1
+
+
+def get_api_request_summary() -> Dict[str, Any]:
+    """Get comprehensive API request summary for the session."""
+    with _api_tracking_lock:
+        return {
+            "total_requests": _api_request_count,
+            "cache_hits": _api_cache_hits,
+            "cache_misses": _api_cache_misses,
+            "auth_used": _api_auth_used,
+        }
+
+
+def reset_api_tracking() -> None:
+    """Reset API request tracking (useful for testing)."""
+    global _api_request_count, _api_cache_hits, _api_cache_misses, _api_auth_used
+    with _api_tracking_lock:
+        _api_request_count = 0
+        _api_cache_hits = 0
+        _api_cache_misses = 0
+        _api_auth_used = False
+
+
 def get_effective_github_token(
-    github_token: Optional[str], allow_env_token: bool
+    github_token: Optional[str], allow_env_token: bool = True
 ) -> Optional[str]:
     """
     Return the effective GitHub token from arguments or environment.
@@ -453,6 +530,13 @@ def make_github_api_request(
 
     # Log API response info for debugging
     logger.debug(f"GitHub API response: {response.status_code} for {url}")
+
+    # Track API request statistics
+    global _api_request_count, _api_auth_used
+    with _api_tracking_lock:
+        _api_request_count += 1
+        if effective_token:
+            _api_auth_used = True
 
     # Enhanced rate limit tracking and logging
     try:

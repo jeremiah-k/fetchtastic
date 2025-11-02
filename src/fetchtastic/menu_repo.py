@@ -115,7 +115,7 @@ def fetch_repo_contents(path="", allow_env_token=True, github_token=None):
         )
         contents = response.json()
         if isinstance(contents, list):
-            logger.debug(f"Fetched {len(contents)} items from repository contents")
+            logger.debug(f"Fetched {len(contents)} items from repository")
 
         return _process_repo_contents(contents)
 
