@@ -438,15 +438,17 @@ def test_run_clean(
     # "repo-dls" is in MANAGED_DIRECTORIES, "firmware-2.7.4" starts with FIRMWARE_DIR_PREFIX
     # "some_dir" is not managed, so should not be removed
     # Also removes batch directory from config dir
-    mock_rmtree.assert_any_call("/tmp/config/fetchtastic/batch")
-    mock_rmtree.assert_any_call("/tmp/test_base_dir/repo-dls")
-    mock_rmtree.assert_any_call("/tmp/test_base_dir/firmware-2.7.4")
+    mock_rmtree.assert_any_call("/tmp/config/fetchtastic/batch")  # nosec B108
+    mock_rmtree.assert_any_call("/tmp/test_base_dir/repo-dls")  # nosec B108
+    mock_rmtree.assert_any_call("/tmp/test_base_dir/firmware-2.7.4")  # nosec B108
     # Should not remove "some_dir"
     assert mock_rmtree.call_count == 3
 
     # Check that managed files are removed but unmanaged files are not
     # "latest_android_release.txt" is in MANAGED_FILES, so should be removed
-    mock_os_remove.assert_any_call("/tmp/test_base_dir/latest_android_release.txt")
+    mock_os_remove.assert_any_call(
+        "/tmp/test_base_dir/latest_android_release.txt"
+    )  # nosec B108
     # "unmanaged.txt" is not managed, so should not be removed
     # Total removes: 2 config files + 1 managed file + boot script + log file = 5
     assert mock_os_remove.call_count == 5

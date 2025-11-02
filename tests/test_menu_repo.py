@@ -414,7 +414,7 @@ def test_fetch_repo_contents_http_error(mocker):
     assert items == []
     mock_logger.warning.assert_called_once()
     args, _ = mock_logger.warning.call_args
-    assert "Error fetching repository contents from GitHub API" in args[0]
+    assert "HTTP error fetching repository contents from GitHub API" in args[0]
 
 
 def test_run_menu_select_item_none(mocker):
