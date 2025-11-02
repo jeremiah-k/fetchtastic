@@ -1054,7 +1054,7 @@ def test_format_api_summary():
     expected = "📊 API Summary: 3 HTTP requests (🌐 unauthenticated), 2 cache hits, 1 cache misses (66.7% hit rate)"
     assert result == expected
 
-    # Test request with no cache hits (should not show cache stats)
+    # Test request with no cache hits (should still show cache stats)
     summary = {
         "total_requests": 4,
         "auth_used": False,
@@ -1062,7 +1062,7 @@ def test_format_api_summary():
         "cache_misses": 4,
     }
     result = _format_api_summary(summary)
-    expected = "📊 API Summary: 4 HTTP requests (🌐 unauthenticated)"
+    expected = "📊 API Summary: 4 HTTP requests (🌐 unauthenticated), 0 cache hits, 4 cache misses (0.0% hit rate)"
     assert result == expected
 
     # Test with rate limit info (future reset time)
