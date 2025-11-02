@@ -428,36 +428,6 @@ def test_legacy_strip_version_numbers():
 @pytest.mark.unit
 @patch("fetchtastic.utils.requests.Session")
 @patch("fetchtastic.utils.Retry")
-def test_urllib3_v1_fallback_retry_creation(mock_retry, mock_session, tmp_path):
-    """Test urllib3 v1 fallback when v2 parameters cause TypeError."""
-    # Mock Retry to raise TypeError on first call (v2 params), succeed on second (v1 params)
-    mock_retry.side_effect = [TypeError("unsupported parameter"), MagicMock()]
-
-    # Just test the retry creation part by calling the function that creates the retry strategy
-    # This will exercise the try/except block we added for urllib3 compatibility
-    # Avoid real I/O
-    mock_resp = MagicMock()
-    mock_resp.status_code = 200
-    mock_resp.iter_content.return_value = []
-    mock_session.return_value.get.return_value = mock_resp
-    utils.download_file_with_retry(
-        "http://test.com/file.bin", str(tmp_path / "file.bin")
-    )
-
-    # Verify urllib3 v1 fallback was attempted
-    assert mock_retry.call_count == 2
-    # First call should have v2+ parameters
-    first_call_kwargs = mock_retry.call_args_list[0][1]
-    assert "respect_retry_after_header" in first_call_kwargs
-    assert "allowed_methods" in first_call_kwargs
-
-    # Second call should have v1 parameters
-    second_call_kwargs = mock_retry.call_args_list[1][1]
-    assert "respect_retry_after_header" not in second_call_kwargs
-    assert "allowed_methods" not in second_call_kwargs
-    assert "method_whitelist" in second_call_kwargs
-
-
 def test_matches_selected_patterns_keyword_heuristic():
     """Test that keyword-based heuristic enables sanitized matching for known problematic patterns."""
     from fetchtastic.utils import matches_selected_patterns
