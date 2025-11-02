@@ -608,8 +608,6 @@ def make_github_api_request(
                     except (ValueError, TypeError):
                         pass  # Keep None if parsing fails
 
-                # Get previous cached value before updating
-                _get_cached_rate_limit(token_hash)
                 # Update cache with new rate limit info
                 _update_rate_limit(token_hash, remaining, reset_timestamp)
 
