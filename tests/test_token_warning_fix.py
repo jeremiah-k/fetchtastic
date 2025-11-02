@@ -18,7 +18,7 @@ class TestTokenWarningFix:
     @patch("fetchtastic.downloader._process_apk_downloads")
     @patch("fetchtastic.downloader._finalize_and_notify")
     def test_main_shows_token_warning_consistently(
-        self, mock_finalize, mock_apk, mock_firmware, mock_wifi, mock_setup
+        self, _mock_finalize, mock_apk, mock_firmware, _mock_wifi, mock_setup
     ):
         """Test that main() shows token warning at start consistently."""
         # Mock setup to return valid config
