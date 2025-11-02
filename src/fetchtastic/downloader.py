@@ -3949,17 +3949,17 @@ def main(force_refresh: bool = False) -> None:
     auth_status = "🔐 authenticated" if summary["auth_used"] else "🌐 unauthenticated"
 
     if summary["total_requests"] > 0:
-        total_cache_lookups = summary["cache_hits"] + summary["cache_misses"]
-        cache_hit_rate = (
-            (summary["cache_hits"] / total_cache_lookups * 100)
-            if total_cache_lookups > 0
-            else 0
-        )
         log_message = (
-            f"📊 API Summary: {summary['total_requests']} requests made ({auth_status}), "
-            f"{summary['cache_hits']} cache hits, {summary['cache_misses']} cache misses "
-            f"({cache_hit_rate:.1f}% hit rate)"
+            f"📊 API Summary: {summary['total_requests']} requests made ({auth_status})"
         )
+        total_cache_lookups = summary["cache_hits"] + summary["cache_misses"]
+
+        if total_cache_lookups > 0:
+            cache_hit_rate = summary["cache_hits"] / total_cache_lookups * 100
+            log_message += (
+                f", {summary['cache_hits']} cache hits, {summary['cache_misses']} cache misses "
+                f"({cache_hit_rate:.1f}% hit rate)"
+            )
 
         # Add rate limit info if available
         if "rate_limit_remaining" in summary and "rate_limit_reset" in summary:
