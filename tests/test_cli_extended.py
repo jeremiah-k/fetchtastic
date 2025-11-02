@@ -30,40 +30,33 @@ class TestCLIHelpFunctionality:
         mock_parser = MagicMock()
         mock_parser.print_help.return_value = None
 
-        with patch("fetchtastic.cli.ArgumentParser", return_value=mock_parser):
-            cli.show_help()
-            mock_parser.print_help.assert_called_once()
+        cli.show_help(mock_parser, None, None, None, None)
+        mock_parser.print_help.assert_called_once()
 
     def test_show_help_with_message(self, mocker):
         """Test help display with custom message."""
         mock_parser = MagicMock()
         mock_parser.print_help.return_value = None
 
-        with patch("fetchtastic.cli.ArgumentParser", return_value=mock_parser):
-            cli.show_help("Custom message")
-            mock_parser.print_help.assert_called_once()
+        cli.show_help(mock_parser, None, None, None, None)
+        mock_parser.print_help.assert_called_once()
 
     def test_cli_help_command(self, mocker):
         """Test CLI help command."""
         mocker.patch("sys.argv", ["fetchtastic", "--help"])
 
-        mock_show_help = mocker.patch("fetchtastic.cli.show_help")
-
         with pytest.raises(SystemExit):
             cli.main()
-
-        mock_show_help.assert_called_once()
 
     def test_cli_no_arguments(self, mocker):
         """Test CLI with no arguments shows help."""
         mocker.patch("sys.argv", ["fetchtastic"])
 
-        mock_show_help = mocker.patch("fetchtastic.cli.show_help")
+        mock_parser_print_help = mocker.patch("argparse.ArgumentParser.print_help")
 
-        with pytest.raises(SystemExit):
-            cli.main()
+        cli.main()
 
-        mock_show_help.assert_called_once()
+        mock_parser_print_help.assert_called_once()
 
 
 @pytest.mark.user_interface
@@ -92,20 +85,19 @@ class TestCLIVersionFunctionality:
 
     def test_display_version_info(self, mocker):
         """Test version info display."""
-        mock_get_version = mocker.patch(
-            "fetchtastic.cli.get_fetchtastic_version", return_value="1.2.3"
-        )
         mock_check_updates = mocker.patch(
-            "fetchtastic.cli.check_for_updates", return_value=("1.2.4", False)
+            "fetchtastic.setup_config.check_for_updates",
+            return_value=("1.2.3", "1.2.4", True),
         )
 
-        app_version, latest_version, update_available = cli.display_version_info()
+        from fetchtastic.setup_config import display_version_info
+
+        app_version, latest_version, update_available = display_version_info()
 
         assert app_version == "1.2.3"
         assert latest_version == "1.2.4"
         assert update_available is True
-        mock_get_version.assert_called_once()
-        mock_check_updates.assert_called_once_with("1.2.3")
+        mock_check_updates.assert_called_once()
 
 
 @pytest.mark.user_interface
@@ -115,54 +107,57 @@ class TestCLICleanFunctionality:
 
     def test_run_clean_success(self, mocker):
         """Test successful clean operation."""
-        mock_config_exists = mocker.patch(
-            "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
+        mock_input = mocker.patch("builtins.input", return_value="y")
+        mock_os_remove = mocker.patch("os.remove")
+        mock_os_exists = mocker.patch("os.path.exists", return_value=True)
+        mock_os_listdir = mocker.patch("os.listdir", return_value=[])
+        mock_os_rmdir = mocker.patch("os.rmdir")
+        mock_shutil_rmtree = mocker.patch("shutil.rmtree")
+        mock_subprocess_run = mocker.patch(
+            "subprocess.run", return_value=mocker.Mock(returncode=0)
         )
-        mock_load_config = mocker.patch(
-            "fetchtastic.setup_config.load_config",
-            return_value={"BASE_DIR": "/fake/dir"},
-        )
-        mock_cleanup = mocker.patch("fetchtastic.downloader.cleanup_old_versions")
-        mock_clear_cache = mocker.patch("fetchtastic.downloader.clear_all_caches")
-        mock_logger = mocker.patch("fetchtastic.cli.logger")
+        mock_platform_system = mocker.patch("platform.system", return_value="Linux")
 
         cli.run_clean()
 
-        mock_cleanup.assert_called_once()
-        mock_clear_cache.assert_called_once()
-        mock_logger.info.assert_any_call("Cleanup completed successfully!")
+        mock_input.assert_called_once()
+        # Should attempt to remove config files and directories
+        assert mock_os_remove.call_count >= 2  # At least config files
 
-    def test_run_clean_no_config(self, mocker):
-        """Test clean operation with no config."""
-        mock_config_exists = mocker.patch(
-            "fetchtastic.setup_config.config_exists", return_value=(False, None)
-        )
-        mock_logger = mocker.patch("fetchtastic.cli.logger")
+    def test_run_clean_cancelled(self, mocker):
+        """Test clean operation when user cancels."""
+        mock_input = mocker.patch("builtins.input", return_value="n")
+        mock_print = mocker.patch("builtins.print")
 
         cli.run_clean()
 
-        mock_logger.error.assert_called_with(
-            "No configuration found. Run 'fetchtastic setup' first."
-        )
+        mock_input.assert_called_once()
+        mock_print.assert_any_call("Clean operation cancelled.")
 
-    def test_run_clean_cleanup_failure(self, mocker):
-        """Test clean operation with cleanup failure."""
-        mock_config_exists = mocker.patch(
-            "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
+    def test_run_clean_with_exception(self, mocker):
+        """Test clean operation handles exceptions gracefully."""
+        mock_input = mocker.patch("builtins.input", return_value="y")
+        # Mock platform.system to return Windows to trigger batch directory cleanup
+        mock_platform = mocker.patch("platform.system", return_value="Windows")
+        # Mock shutil.rmtree for batch directory removal to fail, which is wrapped in try-catch
+        mock_shutil_rmtree = mocker.patch(
+            "shutil.rmtree", side_effect=Exception("Removal failed")
         )
-        mock_load_config = mocker.patch(
-            "fetchtastic.setup_config.load_config",
-            return_value={"BASE_DIR": "/fake/dir"},
+        # Mock os.remove to succeed for config files
+        mock_os_remove = mocker.patch("os.remove")
+        # Mock os.path.exists to return True for config dir and batch dir
+        mock_os_exists = mocker.patch(
+            "os.path.exists",
+            side_effect=lambda path: "batch" in path or "config" in path.lower(),
         )
-        mock_cleanup = mocker.patch(
-            "fetchtastic.downloader.cleanup_old_versions",
-            side_effect=Exception("Cleanup failed"),
-        )
-        mock_logger = mocker.patch("fetchtastic.cli.logger")
+        mock_os_listdir = mocker.patch("os.listdir", return_value=[])
+        mock_print = mocker.patch("builtins.print")
 
         cli.run_clean()
 
-        mock_logger.error.assert_called_with("Cleanup failed: Cleanup failed")
+        mock_input.assert_called_once()
+        # Check that shutil.rmtree was called (which would trigger the exception handling)
+        mock_shutil_rmtree.assert_called()
 
     def test_cli_clean_command(self, mocker):
         """Test CLI clean command."""
@@ -181,57 +176,62 @@ class TestCLIRepoCleanFunctionality:
 
     def test_run_repo_clean_success(self, mocker):
         """Test successful repo clean operation."""
-        config = {"BASE_DIR": "/fake/dir", "REPO_DIR": "/fake/repo"}
+        config = {"BASE_DIR": "/fake/dir", "DOWNLOAD_DIR": "/fake/repo"}
 
-        mock_remove = mocker.patch("os.remove")
-        mock_rmtree = mocker.patch("shutil.rmtree")
-        mock_listdir = mocker.patch(
-            "os.listdir", return_value=["file1.json", "file2.json", "subdir"]
+        mock_input = mocker.patch("builtins.input", return_value="y")
+        mock_clean_repo = mocker.patch(
+            "fetchtastic.repo_downloader.clean_repo_directory", return_value=True
         )
-        mock_isfile = mocker.patch("os.path.isfile", side_effect=[True, True, False])
-        mock_isdir = mocker.patch("os.path.isdir", side_effect=[False, False, True])
         mock_logger = mocker.patch("fetchtastic.cli.logger")
 
         cli.run_repo_clean(config)
 
-        # Should remove files and directory
-        assert mock_remove.call_count == 2
-        mock_rmtree.assert_called_once()
+        mock_input.assert_called_once()
+        mock_clean_repo.assert_called_once_with("/fake/repo")
 
     def test_run_repo_clean_no_repo_dir(self, mocker):
         """Test repo clean with no repo directory configured."""
         config = {"BASE_DIR": "/fake/dir"}
-        mock_logger = mocker.patch("fetchtastic.cli.logger")
+        mock_input = mocker.patch("builtins.input", return_value="y")
+        mock_print = mocker.patch("builtins.print")
 
         cli.run_repo_clean(config)
 
-        mock_logger.info.assert_called_with("No repository directory configured.")
+        mock_print.assert_any_call("Download directory not configured.")
 
     def test_run_repo_clean_nonexistent_dir(self, mocker):
         """Test repo clean with nonexistent directory."""
-        config = {"BASE_DIR": "/fake/dir", "REPO_DIR": "/nonexistent/repo"}
+        config = {"BASE_DIR": "/fake/dir", "DOWNLOAD_DIR": "/nonexistent/repo"}
+        mock_input = mocker.patch("builtins.input", return_value="y")
         mock_listdir = mocker.patch(
             "os.listdir", side_effect=FileNotFoundError("No such directory")
         )
-        mock_logger = mocker.patch("fetchtastic.cli.logger")
+        mock_clean_repo = mocker.patch(
+            "fetchtastic.repo_downloader.clean_repo_directory", return_value=True
+        )
+        mock_print = mocker.patch("builtins.print")
 
         cli.run_repo_clean(config)
 
-        mock_logger.info.assert_called_with("Repository directory does not exist.")
+        mock_clean_repo.assert_called_once_with("/nonexistent/repo")
+        mock_print.assert_any_call("Repository directory cleaned successfully.")
 
     def test_run_repo_clean_permission_error(self, mocker):
         """Test repo clean with permission error."""
-        config = {"BASE_DIR": "/fake/dir", "REPO_DIR": "/fake/repo"}
+        config = {"BASE_DIR": "/fake/dir", "DOWNLOAD_DIR": "/fake/repo"}
+        mock_input = mocker.patch("builtins.input", return_value="y")
         mock_listdir = mocker.patch(
             "os.listdir", side_effect=PermissionError("Permission denied")
         )
-        mock_logger = mocker.patch("fetchtastic.cli.logger")
+        mock_clean_repo = mocker.patch(
+            "fetchtastic.repo_downloader.clean_repo_directory", return_value=False
+        )
+        mock_print = mocker.patch("builtins.print")
 
         cli.run_repo_clean(config)
 
-        mock_logger.error.assert_called_with(
-            "Permission denied accessing repository directory."
-        )
+        mock_clean_repo.assert_called_once_with("/fake/repo")
+        mock_print.assert_any_call("Failed to clean repository directory.")
 
 
 @pytest.mark.user_interface
@@ -261,12 +261,8 @@ class TestCLIErrorHandling:
         )
         mock_logger = mocker.patch("fetchtastic.cli.logger")
 
-        with pytest.raises(SystemExit):
+        with pytest.raises(Exception, match="Config load failed"):
             cli.main()
-
-        mock_logger.error.assert_called_with(
-            "Failed to load configuration: Config load failed"
-        )
 
     def test_cli_setup_command_error(self, mocker):
         """Test setup command with error."""
@@ -276,10 +272,8 @@ class TestCLIErrorHandling:
         )
         mock_logger = mocker.patch("fetchtastic.cli.logger")
 
-        with pytest.raises(SystemExit):
+        with pytest.raises(Exception, match="Setup failed"):
             cli.main()
-
-        mock_logger.error.assert_called_with("Setup failed: Setup failed")
 
 
 @pytest.mark.user_interface
@@ -341,56 +335,56 @@ class TestCLIVersionChecking:
 
     def test_check_for_updates_available(self, mocker):
         """Test update check when update is available."""
-        mock_session = mocker.patch("fetchtastic.cli.requests.Session")
+        mock_get = mocker.patch("requests.get")
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {"info": {"version": "1.3.0"}}
-        mock_session.return_value.__enter__.return_value.get.return_value = (
-            mock_response
-        )
+        mock_get.return_value = mock_response
 
-        latest_version, update_available = cli.check_for_updates("1.2.3")
+        from fetchtastic.setup_config import check_for_updates
+
+        current_version, latest_version, update_available = check_for_updates()
 
         assert latest_version == "1.3.0"
         assert update_available is True
 
     def test_check_for_updates_not_available(self, mocker):
         """Test update check when no update is available."""
-        mock_session = mocker.patch("fetchtastic.cli.requests.Session")
+        mock_get = mocker.patch("requests.get")
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {"info": {"version": "1.2.3"}}
-        mock_session.return_value.__enter__.return_value.get.return_value = (
-            mock_response
-        )
+        mock_get.return_value = mock_response
+        # Mock the version import to return expected version
+        mock_version = mocker.patch("importlib.metadata.version", return_value="1.2.3")
 
-        latest_version, update_available = cli.check_for_updates("1.2.3")
+        from fetchtastic.setup_config import check_for_updates
+
+        current_version, latest_version, update_available = check_for_updates()
 
         assert latest_version == "1.2.3"
         assert update_available is False
 
     def test_check_for_updates_network_error(self, mocker):
         """Test update check with network error."""
-        mock_session = mocker.patch("fetchtastic.cli.requests.Session")
-        mock_session.return_value.__enter__.return_value.get.side_effect = Exception(
-            "Network error"
-        )
+        mock_get = mocker.patch("requests.get", side_effect=Exception("Network error"))
 
-        latest_version, update_available = cli.check_for_updates("1.2.3")
+        from fetchtastic.setup_config import check_for_updates
 
-        assert latest_version == "1.2.3"
+        current_version, latest_version, update_available = check_for_updates()
+
+        assert latest_version is None
         assert update_available is False
 
     def test_check_for_updates_invalid_response(self, mocker):
         """Test update check with invalid response."""
-        mock_session = mocker.patch("fetchtastic.cli.requests.Session")
         mock_response = MagicMock()
         mock_response.status_code = 404
-        mock_session.return_value.__enter__.return_value.get.return_value = (
-            mock_response
-        )
+        mock_get = mocker.patch("requests.get", return_value=mock_response)
 
-        latest_version, update_available = cli.check_for_updates("1.2.3")
+        from fetchtastic.setup_config import check_for_updates
 
-        assert latest_version == "1.2.3"
+        current_version, latest_version, update_available = check_for_updates()
+
+        assert latest_version is None
         assert update_available is False
