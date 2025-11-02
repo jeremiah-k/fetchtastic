@@ -153,8 +153,10 @@ def main():
                     logger.error(
                         "No configuration found. Run 'fetchtastic setup' first."
                     )
+                sys.exit(0)
             else:
                 logger.info("Integration updates are only available on Windows.")
+                sys.exit(0)
         else:
             # Run the full setup process (optionally limited to specific sections)
             combined_sections: List[str] = (args.section or []) + (args.sections or [])
@@ -321,6 +323,7 @@ def main():
                     f"A newer version (v{latest_version}) of Fetchtastic is available!"
                 )
                 logger.info(f"Run '{upgrade_cmd}' to upgrade.")
+            sys.exit(0)
         elif args.repo_command == "clean":
             # Clean the repository directory
             run_repo_clean(config)
