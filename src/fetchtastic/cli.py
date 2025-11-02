@@ -5,6 +5,7 @@ import os
 import platform
 import shutil
 import subprocess
+import sys
 from typing import List
 
 import platformdirs
@@ -172,20 +173,22 @@ def main():
 
             setup_config.run_setup(sections=combined_sections or None)
 
-        # Remind about updates at the end if available
-        if update_available:
-            upgrade_cmd = get_upgrade_command()
-            logger.info("\nUpdate Available")
-            logger.info(
-                f"A newer version (v{latest_version}) of Fetchtastic is available!"
-            )
-            logger.info(f"Run '{upgrade_cmd}' to upgrade.")
+            # Remind about updates at the end if available
+            if update_available:
+                upgrade_cmd = get_upgrade_command()
+                logger.info("\nUpdate Available")
+                logger.info(
+                    f"A newer version (v{latest_version}) of Fetchtastic is available!"
+                )
+                logger.info(f"Run '{upgrade_cmd}' to upgrade.")
+            sys.exit(0)
     elif args.command == "download":
         # Check if configuration exists
         exists, config_path = setup_config.config_exists()
         if not exists:
             logger.info("No configuration found. Running setup.")
             setup_config.run_setup()
+            sys.exit(0)
         else:
             # Check if config is in old location and needs migration
             if config_path == setup_config.OLD_CONFIG_FILE and not os.path.exists(
@@ -221,6 +224,7 @@ def main():
 
             # Run the downloader
             downloader.main(force_refresh=args.force)
+            sys.exit(0)
     elif args.command == "topic":
         # Display the NTFY topic and prompt to copy to clipboard
         config = setup_config.load_config()
@@ -258,9 +262,11 @@ def main():
             print(
                 "Notifications are not set up. Run 'fetchtastic setup' to configure notifications."
             )
+        sys.exit(0)
     elif args.command == "clean":
         # Run the clean process
         run_clean()
+        sys.exit(0)
     elif args.command == "version":
         # Get version information
         current_version, latest_version, update_available = display_version_info()
@@ -271,6 +277,7 @@ def main():
             upgrade_cmd = get_upgrade_command()
             logger.info(f"A newer version (v{latest_version}) is available!")
             logger.info(f"Run '{upgrade_cmd}' to upgrade.")
+        sys.exit(0)
     elif args.command == "help":
         # Handle help command
         help_command = args.help_command
@@ -283,6 +290,7 @@ def main():
             help_subcommand,
             subparsers,
         )
+        sys.exit(0)
     elif args.command == "repo":
         # Display version information
         current_version, latest_version, update_available = display_version_info()
@@ -292,13 +300,14 @@ def main():
         if not exists:
             print("No configuration found. Running setup.")
             setup_config.run_setup()
+            sys.exit(0)
 
         config = setup_config.load_config()
         if not config:
             logger.error(
                 "Configuration not found. Please run 'fetchtastic setup' first."
             )
-            return
+            sys.exit(1)
 
         if args.repo_command == "browse":
             # Run the repository downloader
@@ -324,14 +333,18 @@ def main():
                     f"A newer version (v{latest_version}) of Fetchtastic is available!"
                 )
                 logger.info(f"Run '{upgrade_cmd}' to upgrade.")
+            sys.exit(0)
         else:
             # No repo subcommand provided
             repo_parser.print_help()
+            sys.exit(0)
     elif args.command is None:
         # No command provided
         parser.print_help()
+        sys.exit(0)
     else:
         parser.print_help()
+        sys.exit(0)
 
 
 def show_help(

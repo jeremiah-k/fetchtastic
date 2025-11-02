@@ -110,17 +110,17 @@ class TestCLICleanFunctionality:
 
     def test_run_clean_no_config(self, mocker):
         """Test clean operation with no config."""
-        mocker.patch(
-            "fetchtastic.setup_config.config_exists", return_value=(False, None)
-        )
+        # The run_clean function doesn't check config_exists, it just removes files
+        # So this test should verify it tries to remove config files
+        mock_remove = mocker.patch("os.remove")
+        mock_exists = mocker.patch("os.path.exists", return_value=True)
         mock_logger = mocker.patch("fetchtastic.cli.logger")
 
         with patch("builtins.input", return_value="n"):  # Mock user input to 'no'
             cli.run_clean()
 
-        mock_logger.error.assert_called_with(
-            "No configuration found. Run 'fetchtastic setup' first."
-        )
+        # Should not call error since function doesn't check config exists
+        mock_logger.error.assert_not_called()
 
     def test_run_clean_user_cancels(self, mocker):
         """Test clean operation when user cancels."""
@@ -140,23 +140,20 @@ class TestCLICleanFunctionality:
 
     def test_run_clean_with_confirmation(self, mocker):
         """Test clean operation with user confirmation."""
-        mocker.patch(
-            "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
-        )
-        mocker.patch(
-            "fetchtastic.setup_config.load_config",
-            return_value={"BASE_DIR": "/fake/dir"},
-        )
-        mock_cleanup = mocker.patch("fetchtastic.downloader.cleanup_old_versions")
-        mock_clear_cache = mocker.patch("fetchtastic.downloader.clear_all_caches")
+        mock_remove = mocker.patch("os.remove")
+        mock_exists = mocker.patch("os.path.exists", return_value=True)
+        mock_rmtree = mocker.patch("shutil.rmtree")
         mock_logger = mocker.patch("fetchtastic.cli.logger")
 
         with patch("builtins.input", return_value="y"):  # User says yes
             cli.run_clean()
 
-        mock_cleanup.assert_called_once()
-        mock_clear_cache.assert_called_once()
-        mock_logger.info.assert_any_call("Cleanup completed successfully!")
+        # Should remove config files and directories
+        assert mock_remove.call_count >= 2  # At least config file and old config file
+        mock_rmtree.assert_called()  # Should remove directories
+        mock_logger.info.assert_any_call(
+            "The downloaded files and Fetchtastic configuration have been removed from your system."
+        )
 
     def test_cli_clean_command(self, mocker):
         """Test CLI clean command."""

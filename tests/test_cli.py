@@ -20,14 +20,16 @@ def test_cli_download_command(mocker):
     # Mock the migration logic to avoid its side effects
     mocker.patch("fetchtastic.setup_config.prompt_for_migration")
     mocker.patch("fetchtastic.setup_config.migrate_config")
-    cli.main()
+    with pytest.raises(SystemExit):
+        cli.main()
     mock_downloader_main.assert_called_once()
     mock_setup_run.assert_not_called()
 
     # 2. Test when config does not exist
     mock_downloader_main.reset_mock()
     mocker.patch("fetchtastic.setup_config.config_exists", return_value=(False, None))
-    cli.main()
+    with pytest.raises(SystemExit):
+        cli.main()
     mock_setup_run.assert_called_once()
     mock_downloader_main.assert_not_called()
 
@@ -45,7 +47,8 @@ def test_cli_download_with_migration(mocker):
     mocker.patch("os.path.exists", return_value=False)
     mocker.patch("fetchtastic.setup_config.load_config", return_value={"key": "val"})
 
-    cli.main()
+    with pytest.raises(SystemExit):
+        cli.main()
     mock_downloader_main.assert_called_once()
 
 
@@ -65,7 +68,8 @@ def test_cli_setup_command_windows_integration_update(mocker):
     mocker.patch("fetchtastic.setup_config.CONFIG_FILE", "/fake/config.yaml")
 
     mock_logger = mocker.patch("fetchtastic.cli.logger")
-    cli.main()
+    with pytest.raises(SystemExit):
+        cli.main()
     mock_load_config.assert_called_once()
     mock_create_shortcuts.assert_called_once_with("/fake/config.yaml", "/fake/dir")
 
@@ -82,7 +86,8 @@ def test_cli_setup_command_windows_integration_update_no_config(mocker):
     )
 
     mock_logger = mocker.patch("fetchtastic.cli.logger")
-    cli.main()
+    with pytest.raises(SystemExit):
+        cli.main()
 
     # Should log error message about no configuration
     mock_logger.error.assert_called_with(
@@ -106,7 +111,8 @@ def test_cli_setup_command_windows_integration_update_failed(mocker):
     mocker.patch("fetchtastic.setup_config.CONFIG_FILE", "/fake/config.yaml")
 
     mock_logger = mocker.patch("fetchtastic.cli.logger")
-    cli.main()
+    with pytest.raises(SystemExit):
+        cli.main()
     mock_logger.error.assert_any_call("Failed to update Windows integrations.")
 
 
@@ -145,7 +151,8 @@ def test_cli_repo_command_success(mocker, command):
         "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.0.0", False)
     )
 
-    cli.main()
+    with pytest.raises(SystemExit):
+        cli.main()
     mock_load_config.assert_called_once()
     mock_action.assert_called_once_with({"key": "val"})
 
@@ -163,7 +170,8 @@ def test_cli_repo_browse_command_no_config(mocker):
         "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.0.0", False)
     )
 
-    cli.main()
+    with pytest.raises(SystemExit):
+        cli.main()
     mock_run_setup.assert_called_once()
     mock_load_config.assert_called_once()
     mock_repo_main.assert_called_once_with({"key": "val"})
@@ -181,7 +189,8 @@ def test_cli_repo_browse_command_config_load_failed(mocker):
     )
 
     mock_logger = mocker.patch("fetchtastic.cli.logger")
-    cli.main()
+    with pytest.raises(SystemExit):
+        cli.main()
     mock_logger.error.assert_any_call(
         "Configuration not found. Please run 'fetchtastic setup' first."
     )
@@ -210,7 +219,8 @@ def test_cli_repo_command_with_update_available(mocker, command):
     )
 
     mock_logger = mocker.patch("fetchtastic.cli.logger")
-    cli.main()
+    with pytest.raises(SystemExit):
+        cli.main()
 
     # Should log update available messages
     mock_logger.info.assert_any_call("\nUpdate Available")
@@ -233,7 +243,8 @@ def test_cli_repo_command_no_subcommand(mocker, capfd):
         "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.0.0", False)
     )
 
-    cli.main()
+    with pytest.raises(SystemExit):
+        cli.main()
     captured = capfd.readouterr()
 
     # Should show help output when no subcommand is provided
@@ -249,7 +260,8 @@ def test_cli_no_command_help(mocker, capfd):
     mocker.patch("sys.argv", ["fetchtastic"])
 
     # CLI shows help and exits normally, doesn't raise SystemExit
-    cli.main()
+    with pytest.raises(SystemExit):
+        cli.main()
 
     captured = capfd.readouterr()
     assert "usage:" in captured.out
@@ -264,7 +276,8 @@ def test_cli_setup_command(mocker):
         "fetchtastic.cli.display_version_info", return_value=("1.0", "1.0", False)
     )
 
-    cli.main()
+    with pytest.raises(SystemExit):
+        cli.main()
     mock_setup_run.assert_called_once_with(sections=None)
 
 
@@ -279,7 +292,8 @@ def test_cli_setup_command_with_sections(mocker):
         "fetchtastic.cli.display_version_info", return_value=("1.0", "1.0", False)
     )
 
-    cli.main()
+    with pytest.raises(SystemExit):
+        cli.main()
     mock_setup_run.assert_called_once_with(sections=["firmware", "android"])
 
 
@@ -291,7 +305,8 @@ def test_cli_setup_command_with_positional_sections(mocker):
         "fetchtastic.cli.display_version_info", return_value=("1.0", "1.0", False)
     )
 
-    cli.main()
+    with pytest.raises(SystemExit):
+        cli.main()
     mock_setup_run.assert_called_once_with(sections=["firmware", "android"])
 
 
@@ -328,7 +343,8 @@ def test_cli_setup_command_with_duplicate_sections(mocker):
         "fetchtastic.cli.display_version_info", return_value=("1.0", "1.0", False)
     )
 
-    cli.main()
+    with pytest.raises(SystemExit):
+        cli.main()
 
     # Should deduplicate while preserving order: firmware, android
     mock_setup_run.assert_called_once_with(sections=["firmware", "android"])
@@ -339,7 +355,8 @@ def test_cli_clean_command(mocker):
     mocker.patch("sys.argv", ["fetchtastic", "clean"])
     # Mock the function in the cli module itself
     mock_run_clean = mocker.patch("fetchtastic.cli.run_clean")
-    cli.main()
+    with pytest.raises(SystemExit):
+        cli.main()
     mock_run_clean.assert_called_once()
 
 
@@ -408,7 +425,8 @@ def test_cli_version_command(mocker):
     mock_version_info = mocker.patch(
         "fetchtastic.cli.display_version_info", return_value=("1.2.3", "1.2.3", False)
     )
-    cli.main()
+    with pytest.raises(SystemExit):
+        cli.main()
     mock_version_info.assert_called_once()
 
 
@@ -418,7 +436,8 @@ def test_cli_no_command(mocker):
     # The ArgumentParser instance is local to cli.main, so we patch the class
     mock_print_help = mocker.patch("argparse.ArgumentParser.print_help")
 
-    cli.main()
+    with pytest.raises(SystemExit):
+        cli.main()
 
     # Assert that print_help was called on an instance of the parser
     mock_print_help.assert_called_once()

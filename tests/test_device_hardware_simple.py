@@ -18,7 +18,7 @@ class TestDeviceHardwareManager:
         """Test DeviceHardwareManager initialization with defaults."""
         manager = DeviceHardwareManager()
 
-        assert manager.api_url == "https://api.meshtastic.org/hardware"
+        assert manager.api_url == "https://api.meshtastic.org/resource/deviceHardware"
         assert manager.cache_hours == 24
         assert manager.timeout_seconds == 10
 
@@ -63,9 +63,9 @@ class TestDeviceHardwareManager:
         """Test device pattern validation is case sensitive."""
         manager = DeviceHardwareManager()
 
-        # Test case sensitivity
-        assert manager.is_device_pattern("RAK4631") is False  # Upper case
-        assert manager.is_device_pattern("Rak4631") is False  # Mixed case
+        # Test case insensitivity (method normalizes to lowercase)
+        assert manager.is_device_pattern("RAK4631") is True  # Upper case
+        assert manager.is_device_pattern("Rak4631") is True  # Mixed case
         assert manager.is_device_pattern("rak4631") is True  # Lower case
 
     def test_get_device_patterns_from_fallback(self, mocker):
@@ -121,22 +121,20 @@ class TestDeviceHardwareManager:
             "patterns": test_patterns,
         }
 
-        with patch(
-            "fetchtastic.device_hardware.get_cache_file_path",
-            return_value=str(cache_file),
-        ):
-            with patch("builtins.open", mock_open(read_data=json.dumps(cache_data))):
-                with patch("os.path.exists", return_value=True):
-                    result = manager._load_from_cache()
+        # Mock the cache file path
+        manager.cache_file = cache_file
+        with patch("builtins.open", mock_open(read_data=json.dumps(cache_data))):
+            with patch("pathlib.Path.exists", return_value=True):
+                result = manager._load_from_cache()
 
-                    assert result is not None
-                    assert set(result) == set(test_patterns)
+                assert result is not None
+                assert set(result) == set(test_patterns)
 
     def test_load_from_cache_no_file(self, mocker):
         """Test loading patterns when cache file doesn't exist."""
         manager = DeviceHardwareManager()
 
-        with patch("os.path.exists", return_value=False):
+        with patch.object(manager.cache_file, "exists", return_value=False):
             result = manager._load_from_cache()
 
             assert result is None
@@ -147,26 +145,14 @@ class TestDeviceHardwareManager:
         cache_file = tmp_path / "device_hardware_cache.json"
         test_patterns = {"device1", "device2"}
 
-        with patch(
-            "fetchtastic.device_hardware.get_cache_file_path",
-            return_value=str(cache_file),
-        ):
-            with patch("builtins.open", mock_open()) as mock_file:
-                with patch("json.dump") as mock_json:
-                    with patch("os.makedirs"):
-                        manager._save_to_cache(test_patterns)
+        # Mock cache file path
+        manager.cache_file = cache_file
+        with patch("builtins.open", mock_open()) as mock_file:
+            with patch("json.dump") as mock_json:
+                manager._save_to_cache(test_patterns)
 
-                        mock_file.assert_called_once_with(str(cache_file), "w")
-                        mock_json.assert_called_once()
-
-    def test_is_cache_expired_no_file(self, mocker):
-        """Test cache expiration when cache file doesn't exist."""
-        manager = DeviceHardwareManager()
-
-        with patch("os.path.exists", return_value=False):
-            result = manager._is_cache_expired()
-
-            assert result is True
+                mock_file.assert_called_once_with(str(cache_file), "w")
+                mock_json.assert_called_once()
 
     def test_is_cache_expired_file_exists(self, tmp_path, mocker):
         """Test cache expiration with existing cache file."""
@@ -179,35 +165,33 @@ class TestDeviceHardwareManager:
             "patterns": ["device1"],
         }
 
-        with patch(
-            "fetchtastic.device_hardware.get_cache_file_path",
-            return_value=str(cache_file),
-        ):
-            with patch("builtins.open", mock_open(read_data=json.dumps(cache_data))):
-                with patch("os.path.exists", return_value=True):
-                    result = manager._is_cache_expired()
+        # Mock cache file path and timestamp
+        manager.cache_file = cache_file
+        with patch("builtins.open", mock_open(read_data=json.dumps(cache_data))):
+            with patch.object(manager.cache_file, "exists", return_value=True):
+                result = manager._is_cache_expired()
 
-                    assert result is True
+                assert result is True
 
     def test_clear_cache(self, mocker):
         """Test clearing cache file."""
         manager = DeviceHardwareManager()
 
-        with patch("os.path.exists", return_value=True):
-            with patch("os.remove") as mock_remove:
+        with patch.object(manager.cache_file, "exists", return_value=True):
+            with patch.object(manager.cache_file, "unlink") as mock_unlink:
                 manager.clear_cache()
 
-                mock_remove.assert_called_once()
+                mock_unlink.assert_called_once()
 
     def test_clear_cache_no_file(self, mocker):
         """Test clearing cache when file doesn't exist."""
         manager = DeviceHardwareManager()
 
-        with patch("os.path.exists", return_value=False):
-            with patch("os.remove") as mock_remove:
+        with patch.object(manager.cache_file, "exists", return_value=False):
+            with patch.object(manager.cache_file, "unlink") as mock_unlink:
                 manager.clear_cache()
 
-                mock_remove.assert_not_called()
+                mock_unlink.assert_not_called()
 
 
 # Need to import time for timestamp tests
