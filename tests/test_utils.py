@@ -1040,7 +1040,7 @@ def test_format_api_summary():
         "cache_misses": 0,
     }
     result = _format_api_summary(summary)
-    expected = "📊 API Summary: 5 HTTP requests (🔐 authenticated)"
+    expected = "📊 API Summary: 5 GitHub API requests (🔐 authenticated)"
     assert result == expected
 
     # Test basic unauthenticated request with cache statistics
@@ -1051,7 +1051,7 @@ def test_format_api_summary():
         "cache_misses": 1,
     }
     result = _format_api_summary(summary)
-    expected = "📊 API Summary: 3 HTTP requests (🌐 unauthenticated), 2 cache hits, 1 cache misses (66.7% hit rate)"
+    expected = "📊 API Summary: 3 GitHub API requests (🌐 unauthenticated), 2 cache hits, 1 cache misses (66.7% hit rate)"
     assert result == expected
 
     # Test request with no cache hits (should still show cache stats)
@@ -1062,7 +1062,7 @@ def test_format_api_summary():
         "cache_misses": 4,
     }
     result = _format_api_summary(summary)
-    expected = "📊 API Summary: 4 HTTP requests (🌐 unauthenticated), 0 cache hits, 4 cache misses (0.0% hit rate)"
+    expected = "📊 API Summary: 4 GitHub API requests (🌐 unauthenticated), 0 cache hits, 4 cache misses (0.0% hit rate)"
     assert result == expected
 
     # Test with rate limit info (future reset time)
@@ -1081,7 +1081,7 @@ def test_format_api_summary():
     # Should contain rate limit info with minutes
     assert "4500 requests remaining (resets in" in result
     assert "min)" in result
-    assert "📊 API Summary: 2 HTTP requests (🔐 authenticated)" in result
+    assert "📊 API Summary: 2 GitHub API requests (🔐 authenticated)" in result
     assert "1 cache hits, 1 cache misses (50.0% hit rate)" in result
 
     # Test with rate limit info (past reset time)
@@ -1097,9 +1097,7 @@ def test_format_api_summary():
         "rate_limit_reset": past_time,
     }
     result = _format_api_summary(summary)
-    expected = (
-        "📊 API Summary: 1 HTTP requests (🌐 unauthenticated), 4999 requests remaining"
-    )
+    expected = "📊 API Summary: 1 GitHub API requests (🌐 unauthenticated), 4999 requests remaining"
     assert result == expected
 
 

@@ -3874,7 +3874,7 @@ def _format_api_summary(summary: Dict[str, Any]) -> str:
     """
     auth_status = "🔐 authenticated" if summary["auth_used"] else "🌐 unauthenticated"
     log_parts = [
-        f"📊 API Summary: {summary['total_requests']} HTTP requests ({auth_status})"
+        f"📊 API Summary: {summary['total_requests']} GitHub API requests ({auth_status})"
     ]
 
     # Add cache statistics if there were any cache operations
