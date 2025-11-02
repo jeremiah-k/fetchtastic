@@ -38,7 +38,7 @@ def fetch_apk_assets():
         [
             (asset_name or "")
             for asset in assets
-            if (asset_name := asset.get("name")) and asset_name.endswith(".apk")
+            if (asset_name := asset.get("name")) and asset_name.lower().endswith(".apk")
         ]
     )
 

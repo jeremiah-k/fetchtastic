@@ -20,6 +20,21 @@ def mock_apk_assets():
     ]
 
 
+@pytest.fixture
+def mock_apk_assets_mixed_case():
+    """
+    Return a list of dictionaries simulating release assets with mixed case extensions.
+
+    Tests case-insensitive APK extension matching.
+    """
+    return [
+        {"name": "meshtastic-app-release-2.7.4.apk"},
+        {"name": "meshtastic-app-debug-2.7.4.APK"},  # Uppercase extension
+        {"name": "meshtastic-app-beta-2.7.4.Apk"},  # Mixed case extension
+        {"name": "some-other-file.txt"},
+    ]
+
+
 def test_fetch_apk_assets(mocker, mock_apk_assets):
     """Test fetching APK assets from GitHub."""
     mock_get = mocker.patch("requests.get")
@@ -36,6 +51,22 @@ def test_fetch_apk_assets(mocker, mock_apk_assets):
     assert "nRF_Connect_Device_Manager-release-2.7.4.apk" in assets
     # Check sorting
     assert assets[0] == "meshtastic-app-debug-2.7.4.apk"
+
+
+def test_fetch_apk_assets_case_insensitive(mocker, mock_apk_assets_mixed_case):
+    """Test fetching APK assets with case-insensitive extension matching."""
+    mock_get = mocker.patch("requests.get")
+    mock_response = mocker.MagicMock()
+    mock_response.json.return_value = [{"assets": mock_apk_assets_mixed_case}]
+    mock_get.return_value = mock_response
+
+    assets = menu_apk.fetch_apk_assets()
+
+    assert len(assets) == 3
+    assert "meshtastic-app-release-2.7.4.apk" in assets
+    assert "meshtastic-app-debug-2.7.4.APK" in assets
+    assert "meshtastic-app-beta-2.7.4.Apk" in assets
+    assert "some-other-file.txt" not in assets
 
 
 @pytest.mark.parametrize(
