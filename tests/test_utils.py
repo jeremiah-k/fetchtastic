@@ -9,6 +9,7 @@ import pytest
 import requests
 
 from fetchtastic import utils
+from fetchtastic.downloader import _format_api_summary
 
 
 @pytest.fixture
@@ -1023,6 +1024,70 @@ def test_api_tracking_functions():
     assert summary["total_requests"] == 0
     assert summary["cache_hits"] == 0
     assert summary["cache_misses"] == 0
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
+def test_format_api_summary():
+    """Test _format_api_summary function."""
+    from datetime import datetime, timezone
+
+    # Test basic authenticated request with no cache lookups
+    summary = {
+        "total_requests": 5,
+        "auth_used": True,
+        "cache_hits": 0,
+        "cache_misses": 0,
+    }
+    result = _format_api_summary(summary)
+    expected = "📊 API Summary: 5 requests made (🔐 authenticated)"
+    assert result == expected
+
+    # Test basic unauthenticated request with cache statistics
+    summary = {
+        "total_requests": 3,
+        "auth_used": False,
+        "cache_hits": 2,
+        "cache_misses": 1,
+    }
+    result = _format_api_summary(summary)
+    expected = "📊 API Summary: 3 requests made (🌐 unauthenticated), 2 cache hits, 1 cache misses (66.7% hit rate)"
+    assert result == expected
+
+    # Test with rate limit info (future reset time)
+    future_time = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+    future_time = future_time.replace(minute=future_time.minute + 5)
+    summary = {
+        "total_requests": 2,
+        "auth_used": True,
+        "cache_hits": 1,
+        "cache_misses": 1,
+        "rate_limit_remaining": 4500,
+        "rate_limit_reset": future_time,
+    }
+    result = _format_api_summary(summary)
+    # Should contain rate limit info with minutes
+    assert "4500 requests remaining (resets in" in result
+    assert "min)" in result
+    assert "📊 API Summary: 2 requests made (🔐 authenticated)" in result
+    assert "1 cache hits, 1 cache misses (50.0% hit rate)" in result
+
+    # Test with rate limit info (past reset time)
+    past_time = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+    past_time = past_time.replace(minute=past_time.minute - 5)
+    summary = {
+        "total_requests": 1,
+        "auth_used": False,
+        "cache_hits": 0,
+        "cache_misses": 0,
+        "rate_limit_remaining": 4999,
+        "rate_limit_reset": past_time,
+    }
+    result = _format_api_summary(summary)
+    expected = (
+        "📊 API Summary: 1 requests made (🌐 unauthenticated), 4999 requests remaining"
+    )
+    assert result == expected
 
 
 @pytest.mark.core_downloads

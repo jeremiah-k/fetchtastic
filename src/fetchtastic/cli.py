@@ -535,7 +535,7 @@ def run_clean():
         try:
             os.remove(item_path)
             logger.info(MSG_REMOVED_MANAGED_FILE.format(path=item_path))
-        except Exception as e:
+        except OSError as e:
             logger.error(MSG_FAILED_DELETE_MANAGED_FILE.format(path=item_path, error=e))
 
     if os.path.exists(download_dir):
@@ -557,7 +557,7 @@ def run_clean():
                 try:
                     shutil.rmtree(item_path)
                     logger.info(MSG_REMOVED_MANAGED_DIR.format(path=item_path))
-                except Exception as e:
+                except OSError as e:
                     logger.error(
                         MSG_FAILED_DELETE_MANAGED_DIR.format(path=item_path, error=e)
                     )

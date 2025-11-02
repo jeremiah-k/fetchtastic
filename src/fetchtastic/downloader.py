@@ -3838,6 +3838,39 @@ def check_extraction_needed(
         return True  # Default to needing extraction on unknown error
 
 
+def _format_api_summary(summary: Dict[str, Any]) -> str:
+    """Format API request summary for logging."""
+    auth_status = "🔐 authenticated" if summary["auth_used"] else "🌐 unauthenticated"
+    log_parts = [
+        f"📊 API Summary: {summary['total_requests']} requests made ({auth_status})"
+    ]
+
+    # Add cache statistics if there were cache lookups
+    total_cache_lookups = summary["cache_hits"] + summary["cache_misses"]
+    if total_cache_lookups > 0:
+        cache_hit_rate = (summary["cache_hits"] / total_cache_lookups) * 100
+        log_parts.append(
+            f"{summary['cache_hits']} cache hits, {summary['cache_misses']} cache misses "
+            f"({cache_hit_rate:.1f}% hit rate)"
+        )
+
+    # Add rate limit info if available
+    if "rate_limit_remaining" in summary and "rate_limit_reset" in summary:
+        remaining = summary["rate_limit_remaining"]
+        reset_time = summary["rate_limit_reset"]
+        time_until_reset = reset_time - datetime.now(timezone.utc)
+
+        if time_until_reset.total_seconds() > 0:
+            minutes_until_reset = int(time_until_reset.total_seconds() / 60)
+            log_parts.append(
+                f"{remaining} requests remaining (resets in {minutes_until_reset} min)"
+            )
+        else:
+            log_parts.append(f"{remaining} requests remaining")
+
+    return ", ".join(log_parts)
+
+
 def main(force_refresh: bool = False) -> None:
     """
     Run the Fetchtastic downloader workflow.
@@ -3946,33 +3979,8 @@ def main(force_refresh: bool = False) -> None:
 
     # Log API request summary
     summary = get_api_request_summary()
-    auth_status = "🔐 authenticated" if summary["auth_used"] else "🌐 unauthenticated"
-
     if summary["total_requests"] > 0:
-        log_message = (
-            f"📊 API Summary: {summary['total_requests']} requests made ({auth_status})"
-        )
-        total_cache_lookups = summary["cache_hits"] + summary["cache_misses"]
-
-        if total_cache_lookups > 0:
-            cache_hit_rate = summary["cache_hits"] / total_cache_lookups * 100
-            log_message += (
-                f", {summary['cache_hits']} cache hits, {summary['cache_misses']} cache misses "
-                f"({cache_hit_rate:.1f}% hit rate)"
-            )
-
-        # Add rate limit info if available
-        if "rate_limit_remaining" in summary and "rate_limit_reset" in summary:
-            remaining = summary["rate_limit_remaining"]
-            reset_time = summary["rate_limit_reset"]
-            now = datetime.now(timezone.utc)
-            time_until_reset = reset_time - now
-            if time_until_reset.total_seconds() > 0:
-                minutes_until_reset = int(time_until_reset.total_seconds() / 60)
-                log_message += f", {remaining} requests remaining (resets in {minutes_until_reset} min)"
-            else:
-                log_message += f", {remaining} requests remaining"
-        logger.info(log_message)
+        logger.info(_format_api_summary(summary))
     else:
         logger.info("📊 API Summary: No API requests made (all data served from cache)")
 
