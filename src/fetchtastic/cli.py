@@ -15,6 +15,7 @@ from fetchtastic.constants import (
     MANAGED_DIRECTORIES,
     MANAGED_FILES,
     MSG_CLEANED_MANAGED_DIRS,
+    MSG_FAILED_DELETE_MANAGED_DIR,
     MSG_FAILED_DELETE_MANAGED_FILE,
     MSG_PRESERVE_OTHER_FILES,
     MSG_REMOVED_MANAGED_DIR,
@@ -544,9 +545,7 @@ def run_clean():
                     shutil.rmtree(item_path)
                     print(MSG_REMOVED_MANAGED_DIR.format(path=item_path))
                 except Exception as e:
-                    print(
-                        f"Failed to delete managed directory {item_path}. Reason: {e}"
-                    )
+                    print(MSG_FAILED_DELETE_MANAGED_DIR.format(path=item_path, error=e))
             # Remove managed files
             elif is_managed_file and (
                 os.path.isfile(item_path) or os.path.islink(item_path)

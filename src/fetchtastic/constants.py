@@ -65,6 +65,9 @@ EXECUTABLE_PERMISSIONS = 0o755
 MSG_REMOVED_MANAGED_DIR = "Removed managed directory: {path}"
 MSG_REMOVED_MANAGED_FILE = "Removed managed file: {path}"
 MSG_FAILED_DELETE_MANAGED_FILE = "Failed to delete managed file {path}. Reason: {error}"
+MSG_FAILED_DELETE_MANAGED_DIR = (
+    "Failed to delete managed directory {path}. Reason: {error}"
+)
 MSG_CLEANED_MANAGED_DIRS = "Cleaned managed directories from: {path}"
 MSG_PRESERVE_OTHER_FILES = "Note: Only Fetchtastic-managed directories were removed. Other files were preserved."
 

@@ -389,9 +389,11 @@ def test_cli_clean_command(mocker):
 )  # nosec B108
 @patch("fetchtastic.setup_config.BASE_DIR", "/tmp/test_base_dir")  # nosec B108
 @patch("fetchtastic.setup_config.CONFIG_DIR", "/tmp/config/fetchtastic")  # nosec B108
+@patch("os.path.isfile")
 @patch("os.path.isdir")
 def test_run_clean(
     mock_isdir,
+    mock_isfile,
     mock_platform_system,
     mock_subprocess_run,
     mock_rmdir,
@@ -404,8 +406,22 @@ def test_run_clean(
     """Test the run_clean function."""
     # Simulate existing files and directories
     mock_os_path_exists.return_value = True
-    mock_listdir.return_value = ["some_dir", "repo-dls", "firmware-2.7.4"]
-    mock_isdir.return_value = True
+    mock_listdir.return_value = [
+        "some_dir",  # unmanaged dir
+        "repo-dls",  # managed dir
+        "firmware-2.7.4",  # managed dir (starts with FIRMWARE_DIR_PREFIX)
+        "latest_android_release.txt",  # managed file
+        "unmanaged.txt",  # unmanaged file
+    ]
+
+    def isdir_side_effect(path):
+        return os.path.basename(path) in ["some_dir", "repo-dls", "firmware-2.7.4"]
+
+    def isfile_side_effect(path):
+        return os.path.basename(path) in ["latest_android_release.txt", "unmanaged.txt"]
+
+    mock_isdir.side_effect = isdir_side_effect
+    mock_isfile.side_effect = isfile_side_effect
     mock_subprocess_run.return_value.stdout = "# fetchtastic cron job"
     mock_subprocess_run.return_value.returncode = 0
     with patch("subprocess.Popen") as mock_popen:
@@ -427,6 +443,13 @@ def test_run_clean(
     mock_rmtree.assert_any_call("/tmp/test_base_dir/firmware-2.7.4")
     # Should not remove "some_dir"
     assert mock_rmtree.call_count == 3
+
+    # Check that managed files are removed but unmanaged files are not
+    # "latest_android_release.txt" is in MANAGED_FILES, so should be removed
+    mock_os_remove.assert_any_call("/tmp/test_base_dir/latest_android_release.txt")
+    # "unmanaged.txt" is not managed, so should not be removed
+    # Total removes: 2 config files + 1 managed file + boot script + log file = 5
+    assert mock_os_remove.call_count == 5
 
     # Check that cron jobs are removed
     mock_subprocess_run.assert_any_call(

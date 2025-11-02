@@ -2323,8 +2323,17 @@ def _get_latest_releases_data(
 
     try:
         # Add progress feedback
-        if release_type:
-            logger.info(f"Fetching {release_type} releases from GitHub...")
+        effective_release_type = release_type
+        if not effective_release_type:
+            # Fallback to URL parsing for backward compatibility
+            url_l = url.lower()
+            if "firmware" in url_l:
+                effective_release_type = "firmware"
+            elif "android" in url_l:
+                effective_release_type = "Android APK"
+
+        if effective_release_type:
+            logger.info(f"Fetching {effective_release_type} releases from GitHub...")
         else:
             # Fallback for generic case
             logger.info("Fetching releases from GitHub...")
@@ -3950,10 +3959,10 @@ def main(force_refresh: bool = False) -> None:
     auth_status = "🔐 authenticated" if summary["auth_used"] else "🌐 unauthenticated"
 
     if summary["total_requests"] > 0:
+        total_cache_lookups = summary["cache_hits"] + summary["cache_misses"]
         cache_hit_rate = (
-            (summary["cache_hits"] / (summary["cache_hits"] + summary["cache_misses"]))
-            * 100
-            if (summary["cache_hits"] + summary["cache_misses"]) > 0
+            (summary["cache_hits"] / total_cache_lookups * 100)
+            if total_cache_lookups > 0
             else 0
         )
         log_message = (
