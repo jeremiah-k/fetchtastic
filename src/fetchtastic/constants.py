@@ -35,6 +35,7 @@ WINDOWS_INITIAL_RETRY_DELAY = 1.0  # seconds
 # File and directory names
 REPO_DOWNLOADS_DIR = "repo-dls"
 PRERELEASE_DIR = "prerelease"
+FIRMWARE_DIR_PREFIX = "firmware-"
 LATEST_ANDROID_RELEASE_FILE = "latest_android_release.txt"
 LATEST_FIRMWARE_RELEASE_FILE = "latest_firmware_release.txt"
 
@@ -53,7 +54,7 @@ EXECUTABLE_PERMISSIONS = 0o755
 LOGGER_NAME = "fetchtastic"
 LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 INFO_LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
-DEBUG_LOG_FORMAT = "%(asctime)s - %(levelname)s - %(name)s - %(module)s.%(funcName)s:%(lineno)d - %(message)s"
+DEBUG_LOG_FORMAT = "%(asctime)s - %(levelname)s - %(name)s: %(message)s"
 LOG_FILE_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
 LOG_FILE_BACKUP_COUNT = 5
 
@@ -87,6 +88,13 @@ LOG_LEVEL_ENV_VAR = "FETCHTASTIC_LOG_LEVEL"
 # Device Hardware API Configuration
 DEVICE_HARDWARE_API_URL = "https://api.meshtastic.org/resource/deviceHardware"
 DEVICE_HARDWARE_CACHE_HOURS = 24
+
+# Cache configuration
+COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS = 24
+RELEASES_CACHE_EXPIRY_HOURS = 1 / 60  # 1 minute
+
+# Concurrent operations limits
+MAX_CONCURRENT_TIMESTAMP_FETCHES = 5
 
 # File Type Patterns (non-device-specific patterns)
 FILE_TYPE_PREFIXES = {

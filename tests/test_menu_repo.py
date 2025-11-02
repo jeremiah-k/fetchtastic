@@ -129,16 +129,23 @@ def test_select_files(mocker):
 
 def test_fetch_repo_contents_with_path(mocker, mock_repo_contents):
     """Test fetching repository contents with a specific path."""
-    mock_get = mocker.patch("requests.get")
+    mock_get = mocker.patch("fetchtastic.menu_repo.make_github_api_request")
     mock_response = mocker.MagicMock()
     mock_response.json.return_value = mock_repo_contents
     mock_get.return_value = mock_response
 
     menu_repo.fetch_repo_contents("firmware-2.7.4.c1f4f79")
 
-    # Verify the URL was constructed correctly
+    # Verify the URL was constructed correctly with proper parameters
     expected_url = "https://api.github.com/repos/meshtastic/meshtastic.github.io/contents/firmware-2.7.4.c1f4f79"
-    mock_get.assert_called_once_with(expected_url, timeout=10)
+    from fetchtastic.constants import GITHUB_API_TIMEOUT
+
+    mock_get.assert_called_once_with(
+        expected_url,
+        github_token=None,
+        allow_env_token=True,  # Warning logic now centralized in make_github_api_request
+        timeout=GITHUB_API_TIMEOUT,
+    )
 
 
 def test_fetch_repo_contents_request_exception(mocker):

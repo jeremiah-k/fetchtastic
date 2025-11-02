@@ -1,18 +1,15 @@
 # src/fetchtastic/menu_apk.py
 
-import time
+import json
 
-import requests
 from pick import pick
 
 from fetchtastic.constants import (
-    API_CALL_DELAY,
     APK_EXTENSION,
-    GITHUB_API_TIMEOUT,
     MESHTASTIC_ANDROID_RELEASES_URL,
 )
 from fetchtastic.log_utils import logger
-from fetchtastic.utils import extract_base_name
+from fetchtastic.utils import extract_base_name, make_github_api_request
 
 
 def fetch_apk_assets():
@@ -24,13 +21,13 @@ def fetch_apk_assets():
     Returns:
         list[str]: Alphabetically sorted APK asset filenames from the latest release. May be empty if no releases or matching assets are found.
     """
-    response = requests.get(MESHTASTIC_ANDROID_RELEASES_URL, timeout=GITHUB_API_TIMEOUT)
-    response.raise_for_status()
+    response = make_github_api_request(MESHTASTIC_ANDROID_RELEASES_URL)
 
-    # Small delay to be respectful to GitHub API
-    time.sleep(API_CALL_DELAY)
-
-    releases = response.json()
+    try:
+        releases = response.json()
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to decode JSON from GitHub API: {e}")
+        return []
     if not isinstance(releases, list) or not releases:
         logger.warning("No Android releases found from GitHub API.")
         return []

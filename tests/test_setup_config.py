@@ -1,3 +1,4 @@
+import copy
 import importlib
 import os
 import subprocess
@@ -575,6 +576,7 @@ def test_run_setup_first_run_linux_simple(
         "n",  # No cron job
         "n",  # No reboot cron job
         "n",  # No NTFY notifications
+        "n",  # No GitHub token setup
         "n",  # Don't perform first run now
     ]
     mock_input.side_effect = user_inputs
@@ -654,6 +656,7 @@ def test_run_setup_first_run_windows(
         "n",  # No pre-releases
         "y",  # create startup shortcut
         "n",  # No NTFY notifications
+        "n",  # No GitHub token setup
         "",  # press enter to close
     ]
     mock_input.side_effect = user_inputs
@@ -668,6 +671,15 @@ def test_run_setup_first_run_windows(
         mock_create_config_shortcut.assert_called_once()
         mock_create_startup_shortcut.assert_called_once()
         mock_downloader_main.assert_not_called()
+
+        mock_yaml_dump.assert_called()
+        saved_config = mock_yaml_dump.call_args[0][0]
+
+        # Assert token is not set on Windows flow
+        assert (
+            "GITHUB_TOKEN" not in saved_config
+            or saved_config.get("GITHUB_TOKEN") is None
+        )
 
 
 @pytest.mark.configuration
@@ -734,6 +746,7 @@ def test_run_setup_first_run_termux(  # noqa: ARG001
         "y",  # cron job
         "y",  # boot script
         "n",  # No NTFY notifications
+        "n",  # No GitHub token setup
         "n",  # Don't perform first run now
     ]
     mock_input.side_effect = user_inputs
@@ -829,6 +842,7 @@ def test_run_setup_existing_config(
         "new-topic",  # new topic
         "n",  # no copy
         "n",  # no notify on download only
+        "n",  # No GitHub token setup
         "n",  # Don't perform first run now
     ]
     mock_input.side_effect = user_inputs
@@ -944,12 +958,20 @@ def test_run_setup_partial_firmware_section(
     mock_menu_firmware.assert_called_once()
     mock_menu_apk.assert_not_called()
 
-    saved_configs = [args[0][0] for args in mock_yaml_dump.call_args_list]
+    saved_configs = [
+        copy.deepcopy(args[0][0]) for args in mock_yaml_dump.call_args_list
+    ]
     assert any(cfg.get("FIRMWARE_VERSIONS_TO_KEEP") == 4 for cfg in saved_configs)
     assert any(cfg.get("CHECK_PRERELEASES") is True for cfg in saved_configs)
 
     mock_setup_cron_job.assert_not_called()
     mock_setup_reboot_cron_job.assert_not_called()
+
+    # Verify GitHub token is not persisted when user declines
+    assert (
+        "GITHUB_TOKEN" not in saved_configs[-1]
+        or saved_configs[-1].get("GITHUB_TOKEN") is None
+    )
     mock_remove_cron_job.assert_not_called()
     mock_remove_reboot_cron_job.assert_not_called()
 
@@ -972,9 +994,10 @@ def test_section_shortcuts_mapping():
     assert SECTION_SHORTCUTS["f"] == "firmware"
     assert SECTION_SHORTCUTS["n"] == "notifications"
     assert SECTION_SHORTCUTS["m"] == "automation"
+    assert SECTION_SHORTCUTS["g"] == "github"
 
     # Test that all expected shortcuts exist
-    expected_shortcuts = {"b", "a", "f", "n", "m"}
+    expected_shortcuts = {"b", "a", "f", "n", "m", "g"}
     assert set(SECTION_SHORTCUTS.keys()) == expected_shortcuts
 
 
@@ -984,7 +1007,14 @@ def test_setup_section_choices():
     """Test that SETUP_SECTION_CHOICES contains expected sections."""
     from fetchtastic.setup_config import SETUP_SECTION_CHOICES
 
-    expected_sections = {"base", "android", "firmware", "notifications", "automation"}
+    expected_sections = {
+        "base",
+        "android",
+        "firmware",
+        "notifications",
+        "automation",
+        "github",
+    }
     assert SETUP_SECTION_CHOICES == expected_sections
 
 
@@ -1416,6 +1446,78 @@ def test_non_windows_platform_no_modules(mocker, reload_setup_config_module):
 
 @pytest.mark.configuration
 @pytest.mark.unit
+def test_setup_github_no_token(capsys, monkeypatch):
+    """Test _setup_github when no token is configured and user declines."""
+    from fetchtastic.setup_config import _setup_github
+
+    config = {}
+
+    # Mock input to decline setting up token
+    monkeypatch.setattr("builtins.input", lambda _: "n")
+
+    result = _setup_github(config)
+
+    assert result is config  # Should return the same config dict
+    captured = capsys.readouterr()
+    assert "GitHub API requests have different rate limits:" in captured.out
+    assert "60 requests per hour" in captured.out
+    assert "5,000 requests per hour" in captured.out
+    assert "83x more!" not in captured.out  # Ensure promotional text is removed
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_github_existing_token_keep(capsys, monkeypatch):
+    """Test _setup_github when token exists and user keeps it."""
+    from fetchtastic.setup_config import _setup_github
+
+    config = {
+        "GITHUB_TOKEN": "fake_existing_token_12345678901234567890"
+    }  # nosec S105 (test-only)
+
+    # Mock input to keep existing token
+    monkeypatch.setattr("builtins.input", lambda _: "n")
+
+    result = _setup_github(config)
+
+    assert result is config
+    assert result["GITHUB_TOKEN"] == "fake_existing_token_12345678901234567890"
+    captured = capsys.readouterr()
+    assert "Current status: Token configured" in captured.out
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_github_set_new_token(capsys, monkeypatch):
+    """Test _setup_github when user sets a new token."""
+    from fetchtastic.setup_config import _setup_github
+
+    config = {}
+
+    # Mock inputs: yes to setup, enter valid token
+    inputs = [
+        "y",
+        "ghp_fake_token_for_testing_123456789012345678901234",
+    ]  # nosec S105 (test-only)
+    input_iter = iter(inputs)
+    monkeypatch.setattr("builtins.input", lambda _: next(input_iter))
+    monkeypatch.setattr(
+        "getpass.getpass",
+        lambda _: "ghp_fake_token_for_testing_123456789012345678901234",  # nosec S105 (test-only)
+    )
+
+    result = _setup_github(config)
+
+    assert result is config
+    assert (
+        result["GITHUB_TOKEN"] == "ghp_fake_token_for_testing_123456789012345678901234"
+    )
+    captured = capsys.readouterr()
+    assert "GitHub API requests have different rate limits:" in captured.out
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
 def test_get_prerelease_patterns_selected_assets_none():
     """Test _get_prerelease_patterns with SELECTED_PRERELEASE_ASSETS set to None."""
     from fetchtastic.downloader import _get_prerelease_patterns
@@ -1482,43 +1584,3 @@ def test_get_prerelease_patterns_precedence():
 
         assert result == ["new-pattern"]
         mock_logger.warning.assert_not_called()  # No deprecation warning when using new key
-
-
-@pytest.mark.configuration
-@pytest.mark.unit
-def test_extract_commit_from_dir_name_valid():
-    """Test _extract_commit_from_dir_name with valid directory names."""
-    from fetchtastic.downloader import _extract_commit_from_dir_name
-
-    test_cases = [
-        ("firmware-2.7.7.abcdef", "abcdef"),
-        ("firmware-2.8.0.123456", "123456"),
-        ("firmware-2.9.0-rc1.fedcba", "fedcba"),
-        ("FIRMWARE-2.7.8.ABCDEF", "abcdef"),  # Case normalization
-    ]
-
-    for dir_name, expected in test_cases:
-        result = _extract_commit_from_dir_name(dir_name)
-        assert result == expected, f"Failed for {dir_name}"
-
-
-@pytest.mark.configuration
-@pytest.mark.unit
-def test_extract_commit_from_dir_name_invalid():
-    """Test _extract_commit_from_dir_name with invalid directory names."""
-    from fetchtastic.downloader import _extract_commit_from_dir_name
-
-    invalid_cases = [
-        "firmware-unknown",
-        "not-a-firmware-dir",
-        "firmware-2.7.8",  # No commit hash
-        "random-directory",
-    ]
-
-    with patch("fetchtastic.downloader.logger") as mock_logger:
-        for dir_name in invalid_cases:
-            result = _extract_commit_from_dir_name(dir_name)
-            assert result is None, f"Should return None for {dir_name}"
-
-        # Should have logged debug messages for each invalid case
-        assert mock_logger.debug.call_count == len(invalid_cases)

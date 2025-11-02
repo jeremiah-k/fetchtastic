@@ -35,9 +35,9 @@ def set_log_level(level_name: str) -> None:
       - For INFO and above:
         - RichHandler: message-only formatter ("%(message)s").
         - Non-Rich handlers: INFO_LOG_FORMAT with LOG_DATE_FORMAT.
-      - For levels below INFO:
-        - RichHandler: message plus source info ("%(message)s (%(name)s - %(module)s.%(funcName)s:%(lineno)d)").
-        - Non-Rich handlers: DEBUG_LOG_FORMAT with LOG_DATE_FORMAT.
+       - For levels below INFO:
+         - RichHandler: message-only formatter for cleaner console output.
+         - Non-Rich handlers: DEBUG_LOG_FORMAT with LOG_DATE_FORMAT.
     - Emits a log at the configured level confirming the new level when successful.
 
     Parameters:
@@ -62,9 +62,7 @@ def set_log_level(level_name: str) -> None:
                 formatter = logging.Formatter(INFO_LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
         else:
             if isinstance(handler, RichHandler):
-                formatter = logging.Formatter(
-                    "%(message)s (%(name)s - %(module)s.%(funcName)s:%(lineno)d)"
-                )
+                formatter = logging.Formatter("%(message)s")
             else:
                 formatter = logging.Formatter(DEBUG_LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
 
@@ -159,9 +157,7 @@ def _initialize_logger() -> None:
     if initial_level >= logging.INFO:
         console_formatter = logging.Formatter("%(message)s")
     else:
-        console_formatter = logging.Formatter(
-            "%(message)s (%(name)s - %(module)s.%(funcName)s:%(lineno)d)"
-        )
+        console_formatter = logging.Formatter("%(message)s")
 
     console_handler.setFormatter(console_formatter)
     logger.addHandler(console_handler)
