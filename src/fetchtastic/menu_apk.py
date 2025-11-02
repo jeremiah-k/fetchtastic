@@ -5,6 +5,7 @@ import json
 from pick import pick
 
 from fetchtastic.constants import (
+    APK_EXTENSION,
     MESHTASTIC_ANDROID_RELEASES_URL,
 )
 from fetchtastic.log_utils import logger
@@ -38,7 +39,8 @@ def fetch_apk_assets():
         [
             (asset.get("name") or "")
             for asset in assets
-            if asset.get("name") and (asset.get("name") or "").endswith(".apk")
+            if asset.get("name")
+            and (asset.get("name") or "").lower().endswith(APK_EXTENSION.lower())
         ]
     )
 

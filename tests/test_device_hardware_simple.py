@@ -192,6 +192,3 @@ class TestDeviceHardwareManager:
                 manager.clear_cache()
 
                 mock_unlink.assert_not_called()
-
-
-# Need to import time for timestamp tests

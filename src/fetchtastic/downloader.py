@@ -104,9 +104,9 @@ VERSION_BASE_RX = re.compile(r"^(\d+(?:\.\d+)*)")
 
 def _normalize_version(
     version: Optional[str],
-) -> Optional[Union[Version, Any]]:  # Use Any when LegacyVersion not available
+) -> Optional[str]:
     """
-    Normalize a version string into a packaging `Version` object when possible.
+    Normalize a version string into a canonical string format.
 
     Attempts to coerce common repository-style forms into PEP 440-compatible versions:
     strips a leading "v", recognizes common prerelease markers (e.g. "alpha"/"beta" and numeric fragments),
@@ -117,7 +117,7 @@ def _normalize_version(
         version (Optional[str]): A raw version string (may include leading "v", prerelease words, or hash suffixes).
 
     Returns:
-        Optional[Union[Version, LegacyVersion]]: A parsed `Version` / `LegacyVersion` if parsing succeeds, otherwise `None`.
+        Optional[str]: A normalized version string with "v" prefix if parsing succeeds, otherwise `None`.
     """
     if version is None:
         return None
@@ -126,11 +126,14 @@ def _normalize_version(
     if not trimmed:
         return None
 
-    if trimmed.lower().startswith("v"):
+    # Preserve the original "v" prefix for the final output
+    has_v_prefix = trimmed.lower().startswith("v")
+    if has_v_prefix:
         trimmed = trimmed[1:]
 
     try:
-        return parse_version(trimmed)
+        parsed_version = parse_version(trimmed)
+        return f"v{str(parsed_version)}" if has_v_prefix else str(parsed_version)
     except InvalidVersion:
         m_pr = PRERELEASE_VERSION_RX.match(trimmed)
         if m_pr:
@@ -138,7 +141,10 @@ def _normalize_version(
             kind = {"alpha": "a", "beta": "b"}.get(pr_kind_lower, pr_kind_lower)
             num = m_pr.group(3) or "0"
             try:
-                return parse_version(f"{m_pr.group(1)}{kind}{num}")
+                parsed_version = parse_version(f"{m_pr.group(1)}{kind}{num}")
+                return (
+                    f"v{str(parsed_version)}" if has_v_prefix else str(parsed_version)
+                )
             except InvalidVersion:
                 logger.debug(
                     "Could not parse '%s' as a standard prerelease version.",
@@ -149,7 +155,10 @@ def _normalize_version(
         m_hash = HASH_SUFFIX_VERSION_RX.match(trimmed)
         if m_hash:
             try:
-                return parse_version(f"{m_hash.group(1)}+{m_hash.group(2)}")
+                parsed_version = parse_version(f"{m_hash.group(1)}+{m_hash.group(2)}")
+                return (
+                    f"v{str(parsed_version)}" if has_v_prefix else str(parsed_version)
+                )
             except InvalidVersion:
                 logger.debug(
                     "Could not parse '%s' as a version with a local version identifier.",
@@ -452,37 +461,82 @@ def cleanup_superseded_prereleases(
 
 
 def _atomic_write(
-    file_path: str, writer_func: Callable[[IO[str]], None], suffix: str
+    file_path: str,
+    content: Union[bytes, str, Callable[[IO[str]], None]],
+    suffix: Optional[str] = None,
 ) -> bool:
     """
-    Write text to a file atomically by writing to a temporary file in the same directory and replacing the target on success.
+    Write content to a file atomically by writing to a temporary file in the same directory and replacing the target on success.
+
+    This function provides backward-compatible overloads:
+    1. If content is bytes: writes binary data with a default ".tmp" suffix
+    2. If content is str: writes text data with a default ".txt" suffix
+    3. If content is callable: uses the new API with required suffix parameter
 
     Parameters:
         file_path (str): Destination path to write.
-        writer_func (Callable[[IO[str]], None]): Callable that receives an open text file-like object (UTF-8) and writes the desired content to it.
-        suffix (str): Suffix to use for the temporary file (for example, ".json" or ".txt").
+        content (Union[bytes, str, Callable]): Content to write or writer function.
+        suffix (Optional[str]): Suffix for temporary file (required when using callable, auto-detected for bytes/str).
 
     Returns:
         bool: `True` if the content was written and the temporary file atomically replaced the target; `False` otherwise.
     """
-    try:
-        temp_fd, temp_path = tempfile.mkstemp(
-            dir=os.path.dirname(file_path), prefix="tmp-", suffix=suffix
-        )
-    except OSError as e:
-        logger.error(f"Could not create temporary file for {file_path}: {e}")
-        return False
-    try:
-        with os.fdopen(temp_fd, "w", encoding="utf-8") as temp_f:
-            writer_func(temp_f)
-        os.replace(temp_path, file_path)
-    except (IOError, UnicodeEncodeError, OSError) as e:
-        logger.error(f"Could not write to {file_path}: {e}")
-        return False
-    finally:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-    return True
+    # Handle backward-compatible overloads
+    if isinstance(content, bytes):
+        # Binary content overload
+        try:
+            temp_fd, temp_path = tempfile.mkstemp(
+                dir=os.path.dirname(file_path), prefix="tmp-", suffix=suffix or ".tmp"
+            )
+        except OSError as e:
+            logger.error(f"Could not create temporary file for {file_path}: {e}")
+            return False
+        try:
+            with os.fdopen(temp_fd, "wb") as temp_f:
+                temp_f.write(content)
+            os.replace(temp_path, file_path)
+        except (IOError, OSError) as e:
+            logger.error(f"Could not write to {file_path}: {e}")
+            return False
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+        return True
+
+    elif isinstance(content, str):
+        # Text content overload
+        def _write_text(f: IO[str]) -> None:
+            f.write(content)
+
+        return _atomic_write(file_path, _write_text, suffix or ".txt")
+
+    elif callable(content):
+        # New API with writer function
+        if suffix is None:
+            raise ValueError("suffix parameter is required when using writer_func")
+        writer_func = content
+
+        try:
+            temp_fd, temp_path = tempfile.mkstemp(
+                dir=os.path.dirname(file_path), prefix="tmp-", suffix=suffix
+            )
+        except OSError as e:
+            logger.error(f"Could not create temporary file for {file_path}: {e}")
+            return False
+        try:
+            with os.fdopen(temp_fd, "w", encoding="utf-8") as temp_f:
+                writer_func(temp_f)
+            os.replace(temp_path, file_path)
+        except (IOError, UnicodeEncodeError, OSError) as e:
+            logger.error(f"Could not write to {file_path}: {e}")
+            return False
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+        return True
+
+    else:
+        raise TypeError("content must be bytes, str, or callable")
 
 
 def _atomic_write_text(file_path: str, content: str) -> bool:

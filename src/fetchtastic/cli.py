@@ -10,6 +10,9 @@ from typing import List
 
 import platformdirs
 
+# Export ArgumentParser for test patching
+ArgumentParser = argparse.ArgumentParser
+
 from fetchtastic import downloader, repo_downloader, setup_config
 from fetchtastic.log_utils import logger, set_log_level
 from fetchtastic.setup_config import (
