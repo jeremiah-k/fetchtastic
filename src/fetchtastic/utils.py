@@ -125,41 +125,6 @@ def reset_api_tracking() -> None:
         _api_auth_used = False
 
 
-def track_api_cache_hit() -> None:
-    """Track a cache hit for API requests."""
-    global _api_cache_hits
-    with _api_tracking_lock:
-        _api_cache_hits += 1
-
-
-def track_api_cache_miss() -> None:
-    """Track a cache miss for API requests."""
-    global _api_cache_misses
-    with _api_tracking_lock:
-        _api_cache_misses += 1
-
-
-def get_api_request_summary() -> Dict[str, Any]:
-    """Get comprehensive API request summary for the session."""
-    with _api_tracking_lock:
-        return {
-            "total_requests": _api_request_count,
-            "cache_hits": _api_cache_hits,
-            "cache_misses": _api_cache_misses,
-            "auth_used": _api_auth_used,
-        }
-
-
-def reset_api_tracking() -> None:
-    """Reset API request tracking (useful for testing)."""
-    global _api_request_count, _api_cache_hits, _api_cache_misses, _api_auth_used
-    with _api_tracking_lock:
-        _api_request_count = 0
-        _api_cache_hits = 0
-        _api_cache_misses = 0
-        _api_auth_used = False
-
-
 def get_effective_github_token(
     github_token: Optional[str], allow_env_token: bool = True
 ) -> Optional[str]:
