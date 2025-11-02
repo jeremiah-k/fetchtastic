@@ -9,7 +9,7 @@ from fetchtastic.constants import (
     MESHTASTIC_GITHUB_IO_CONTENTS_URL,
 )
 from fetchtastic.log_utils import logger
-from fetchtastic.utils import make_github_api_request
+from fetchtastic.utils import make_github_api_request, track_api_cache_miss
 
 # Module-level constants for repository content filtering
 EXCLUDED_DIRS = [".git", ".github", "node_modules", "__pycache__", ".vscode"]
@@ -109,6 +109,7 @@ def fetch_repo_contents(path="", allow_env_token=True, github_token=None):
             allow_env_token=allow_env_token,
             timeout=GITHUB_API_TIMEOUT,
         )
+        track_api_cache_miss()  # Track this as a cache miss since we're bypassing cache
         contents = response.json()
         if isinstance(contents, list):
             logger.debug(f"Fetched {len(contents)} items from repository")

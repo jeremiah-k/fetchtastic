@@ -9,7 +9,11 @@ from fetchtastic.constants import (
     MESHTASTIC_ANDROID_RELEASES_URL,
 )
 from fetchtastic.log_utils import logger
-from fetchtastic.utils import extract_base_name, make_github_api_request
+from fetchtastic.utils import (
+    extract_base_name,
+    make_github_api_request,
+    track_api_cache_miss,
+)
 
 
 def fetch_apk_assets():
@@ -20,6 +24,7 @@ def fetch_apk_assets():
         list[str]: Alphabetically sorted APK asset filenames from the latest release. Empty list if no releases or matching assets are found.
     """
     response = make_github_api_request(MESHTASTIC_ANDROID_RELEASES_URL)
+    track_api_cache_miss()  # Track this as a cache miss since we're bypassing cache
 
     try:
         releases = response.json()
