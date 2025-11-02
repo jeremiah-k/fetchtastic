@@ -988,3 +988,173 @@ def test_cache_thread_safety():
         assert isinstance(timestamp, datetime)
         assert isinstance(cached_at, datetime)
         assert "/" in key  # Valid cache key format
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
+def test_api_tracking_functions():
+    """Test API tracking functions."""
+    # Reset tracking first
+    utils.reset_api_tracking()
+
+    # Test initial state
+    summary = utils.get_api_request_summary()
+    assert summary["total_requests"] == 0
+    assert summary["cache_hits"] == 0
+    assert summary["cache_misses"] == 0
+
+    # Test cache hit tracking
+    utils.track_api_cache_hit()
+    summary = utils.get_api_request_summary()
+    assert summary["total_requests"] == 0  # total_requests incremented separately
+    assert summary["cache_hits"] == 1
+    assert summary["cache_misses"] == 0
+
+    # Test cache miss tracking
+    utils.track_api_cache_miss()
+    summary = utils.get_api_request_summary()
+    assert summary["total_requests"] == 0
+    assert summary["cache_hits"] == 1
+    assert summary["cache_misses"] == 1
+
+    # Test reset
+    utils.reset_api_tracking()
+    summary = utils.get_api_request_summary()
+    assert summary["total_requests"] == 0
+    assert summary["cache_hits"] == 0
+    assert summary["cache_misses"] == 0
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
+def test_parse_rate_limit_header():
+    """Test _parse_rate_limit_header function."""
+    # Test valid integer string
+    assert utils._parse_rate_limit_header("5000") == 5000
+
+    # Test valid integer
+    assert utils._parse_rate_limit_header(5000) == 5000
+
+    # Test invalid string
+    assert utils._parse_rate_limit_header("invalid") is None
+
+    # Test None
+    assert utils._parse_rate_limit_header(None) is None
+
+    # Test empty string
+    assert utils._parse_rate_limit_header("") is None
+
+    # Test negative number
+    assert utils._parse_rate_limit_header("-1") is None
+
+    # Test float
+    assert utils._parse_rate_limit_header(5000.5) == 5000
+
+    # Test zero
+    assert utils._parse_rate_limit_header("0") == 0
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
+def test_get_effective_github_token():
+    """Test get_effective_github_token function."""
+    # Test with explicit token
+    result = utils.get_effective_github_token("explicit_token")
+    assert result == "explicit_token"
+
+    # Test with None (should return None)
+    with patch.dict(os.environ, {}, clear=True):
+        result = utils.get_effective_github_token(None)
+        assert result is None
+
+    # Test with GITHUB_TOKEN environment variable
+    with patch.dict(os.environ, {"GITHUB_TOKEN": "env_token"}):
+        result = utils.get_effective_github_token(None)
+        assert result == "env_token"
+
+    # Test explicit token takes precedence over env
+    with patch.dict(os.environ, {"GITHUB_TOKEN": "env_token"}):
+        result = utils.get_effective_github_token("explicit_token")
+        assert result == "explicit_token"
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
+def test_download_file_with_retry_additional_error_cases(tmp_path):
+    """Test additional error cases in download_file_with_retry."""
+    download_path = tmp_path / "test_file.txt"
+
+    # Test with invalid URL
+    result = utils.download_file_with_retry("not-a-url", str(download_path))
+    assert result is False
+
+    # Test with empty URL
+    result = utils.download_file_with_retry("", str(download_path))
+    assert result is False
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
+def test_verify_file_integrity_additional_cases(tmp_path):
+    """Test additional cases for verify_file_integrity."""
+    # Test with directory (should return False)
+    dir_path = tmp_path / "test_dir"
+    dir_path.mkdir()
+    result = utils.verify_file_integrity(str(dir_path))
+    assert result is False
+
+    # Test with file that has no hash but exists (should create hash and return True)
+    file_path = tmp_path / "new_file.txt"
+    file_path.write_text("new content")
+    result = utils.verify_file_integrity(str(file_path))
+    assert result is True
+    # Hash file should be created
+    hash_path = utils.get_hash_file_path(str(file_path))
+    assert os.path.exists(hash_path)
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
+def test_extract_base_name_additional_cases():
+    """Test extract_base_name with additional edge cases."""
+    # Test with multiple version patterns
+    assert utils.extract_base_name("app-1.2.3-beta-rc1.apk") == "app-rc1.apk"
+
+    # Test with no extension
+    assert utils.extract_base_name("tool-1.0.0") == "tool"
+
+    # Test with complex version
+    assert (
+        utils.extract_base_name("package-2.7.13.abcdef123_amd64.deb")
+        == "package_amd64.deb"
+    )
+
+    # Test with no version separators
+    assert utils.extract_base_name("simplefile.txt") == "simplefile.txt"
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
+def test_matches_selected_patterns_edge_cases():
+    """Test matches_selected_patterns with edge cases."""
+    # Test with empty patterns (should match all)
+    assert utils.matches_selected_patterns("anyfile.bin", []) is True
+
+    # Test with None patterns
+    assert utils.matches_selected_patterns("anyfile.bin", None) is True
+
+    # Test case sensitivity
+    assert (
+        utils.matches_selected_patterns("Firmware-Rak4631-1.0.0.uf2", ["rak4631-"])
+        is True
+    )
+    assert (
+        utils.matches_selected_patterns("firmware-rak4631-1.0.0.uf2", ["RAK4631-"])
+        is True
+    )
+
+    # Test with special characters in patterns
+    assert (
+        utils.matches_selected_patterns("file-with-dashes.bin", ["file-with-dashes"])
+        is True
+    )

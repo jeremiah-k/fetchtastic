@@ -844,6 +844,13 @@ def _parse_legacy_json_format(
     current_release = _ensure_v_prefix_if_missing(tracking_data.get("release"))
     commits_raw = tracking_data.get("commits", [])
 
+    # Validate commits_raw is a list to prevent data corruption
+    if not isinstance(commits_raw, list):
+        logger.warning(
+            f"Invalid commits format in legacy tracking file: expected list, got {type(commits_raw)}. Resetting commits."
+        )
+        commits_raw = []
+
     # Normalize commits to version+hash; pair bare hashes with expected next patch base
     commits: list[str] = []
     expected_base_v: Optional[str] = None

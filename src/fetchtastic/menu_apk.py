@@ -5,7 +5,6 @@ import json
 from pick import pick
 
 from fetchtastic.constants import (
-    APK_EXTENSION,
     MESHTASTIC_ANDROID_RELEASES_URL,
 )
 from fetchtastic.log_utils import logger
