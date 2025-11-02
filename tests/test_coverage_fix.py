@@ -58,8 +58,8 @@ def test_token_warning_lines_coverage():
         )
 
         # Mock download processing to return empty results
-        mock_firmware.return_value = ([], [], [], None)
-        mock_apk.return_value = ([], [], [], None)
+        mock_firmware.return_value = ([], [], [], None, None)
+        mock_apk.return_value = ([], [], [], None, None)
 
         # Import and call main function directly
         from fetchtastic.downloader import main
@@ -218,8 +218,8 @@ def test_main_function_full_coverage():
         )
 
         # Mock download processing to return empty results
-        mock_firmware.return_value = ([], [], [], None)
-        mock_apk.return_value = ([], [], [], None)
+        mock_firmware.return_value = ([], [], [], None, None)
+        mock_apk.return_value = ([], [], [], None, None)
 
         from fetchtastic.downloader import main
 

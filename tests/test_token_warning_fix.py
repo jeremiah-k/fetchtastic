@@ -33,8 +33,8 @@ class TestTokenWarningFix:
         )
 
         # Mock download processing
-        mock_firmware.return_value = ([], [], [], None)
-        mock_apk.return_value = ([], [], [], None)
+        mock_firmware.return_value = ([], [], [], None, None)
+        mock_apk.return_value = ([], [], [], None, None)
 
         # Run main function - this will execute lines 3827-3828
         main(force_refresh=False)

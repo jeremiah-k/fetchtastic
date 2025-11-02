@@ -674,13 +674,13 @@ def test_rate_limit_cache_expiry():
 
             cache_file = utils._get_rate_limit_cache_file()
 
-            # Create cache data with expired entry (older than 1 hour)
-            old_time = datetime.now(timezone.utc) - timedelta(hours=2)  # Expired
-            recent_time = datetime.now(timezone.utc) - timedelta(minutes=30)  # Valid
+            # Create cache data with expired entry (reset time in past)
+            expired_reset = datetime.now(timezone.utc) - timedelta(hours=2)  # Expired
+            valid_reset = datetime.now(timezone.utc) + timedelta(hours=1)  # Valid
 
             cache_data = {
-                "expired_token": [50, old_time.isoformat()],
-                "valid_token": [75, recent_time.isoformat()],
+                "expired_token": [50, expired_reset.isoformat()],
+                "valid_token": [75, valid_reset.isoformat()],
             }
 
             with open(cache_file, "w", encoding="utf-8") as f:
@@ -752,16 +752,16 @@ def test_get_cached_rate_limit():
     result = utils._get_cached_rate_limit("nonexistent_token")
     assert result is None
 
-    # Test with valid cache entry
-    recent_time = datetime.now(timezone.utc) - timedelta(minutes=2)  # Recent (< 5 min)
-    utils._rate_limit_cache["valid_token"] = (42, recent_time)
+    # Test with valid cache entry (reset in future)
+    future_reset = datetime.now(timezone.utc) + timedelta(hours=1)
+    utils._rate_limit_cache["valid_token"] = (42, future_reset)
 
     result = utils._get_cached_rate_limit("valid_token")
     assert result == 42
 
-    # Test with expired cache entry (older than 5 minutes)
-    old_time = datetime.now(timezone.utc) - timedelta(minutes=10)  # Old (> 5 min)
-    utils._rate_limit_cache["expired_token"] = (25, old_time)
+    # Test with expired cache entry (reset in past)
+    past_reset = datetime.now(timezone.utc) - timedelta(hours=1)
+    utils._rate_limit_cache["expired_token"] = (25, past_reset)
 
     result = utils._get_cached_rate_limit("expired_token")
     assert result is None
@@ -870,13 +870,13 @@ def test_make_github_api_request_cached_rate_limit():
     # Clear cache and pre-populate with cached data
     utils.clear_rate_limit_cache()
 
-    recent_time = datetime.now(timezone.utc) - timedelta(minutes=2)
+    future_reset = datetime.now(timezone.utc) + timedelta(hours=1)
     # Calculate the actual token hash that will be generated
     import hashlib
 
     fake_token = "ghp_" + "x" * 36
     token_hash = hashlib.sha256(fake_token.encode()).hexdigest()[:16]
-    utils._rate_limit_cache[token_hash] = (250, recent_time)
+    utils._rate_limit_cache[token_hash] = (250, future_reset)
 
     # Mock response without rate limit headers
     mock_response = MagicMock()

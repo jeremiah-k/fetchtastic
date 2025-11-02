@@ -1204,6 +1204,7 @@ def get_prerelease_tracking_info(prerelease_dir):
         "commits": commits,
         "prerelease_count": len(commits),
         "last_updated": last_updated,
+        "latest_prerelease": commits[-1] if commits else None,
     }
 
 
@@ -2497,7 +2498,7 @@ def _check_wifi_connection(config: Dict[str, Any]) -> None:
 
 def _process_firmware_downloads(
     config: Dict[str, Any], paths_and_urls: Dict[str, str], force_refresh: bool = False
-) -> Tuple[List[str], List[str], List[Dict[str, str]], Optional[str]]:
+) -> Tuple[List[str], List[str], List[Dict[str, str]], Optional[str], Optional[str]]:
     """
     Process firmware release downloads and optional prerelease handling.
 
@@ -2521,7 +2522,8 @@ def _process_firmware_downloads(
     - downloaded firmware versions (List[str]) — includes strings like "pre-release X.Y.Z" for prereleases,
     - newly detected release versions that were not previously recorded (List[str]),
     - list of dictionaries with details for failed downloads (List[Dict[str, str]]),
-    - the latest firmware release tag string or None if no releases were found.
+    - the latest firmware release tag string or None if no releases were found,
+    - the latest prerelease version string or None if no prereleases are tracked.
     """
     global downloads_skipped
 
@@ -2539,6 +2541,7 @@ def _process_firmware_downloads(
     new_firmware_versions: List[str] = []
     all_failed_firmware_downloads: List[Dict[str, str]] = []
     latest_firmware_version: Optional[str] = None
+    latest_prerelease_version: Optional[str] = None
 
     if config.get("SAVE_FIRMWARE", False) and config.get(
         "SELECTED_FIRMWARE_ASSETS", []
@@ -2647,6 +2650,7 @@ def _process_firmware_downloads(
                 if tracking_info:
                     count = tracking_info.get("prerelease_count", 0)
                     base_version = tracking_info.get("release", "unknown")
+                    latest_prerelease_version = tracking_info.get("latest_prerelease")
                     # Only show count if there are actually prerelease directories present
                     if count > 0 and _get_existing_prerelease_dirs(prerelease_dir):
                         logger.info(f"Total prereleases since {base_version}: {count}")
@@ -2660,12 +2664,13 @@ def _process_firmware_downloads(
         new_firmware_versions,
         all_failed_firmware_downloads,
         latest_firmware_version,
+        latest_prerelease_version,
     )
 
 
 def _process_apk_downloads(
     config: Dict[str, Any], paths_and_urls: Dict[str, str], force_refresh: bool = False
-) -> Tuple[List[str], List[str], List[Dict[str, str]], Optional[str]]:
+) -> Tuple[List[str], List[str], List[Dict[str, str]], Optional[str], Optional[str]]:
     """
     Process Android APK releases: fetch release metadata, download selected APK assets, and report discovered and downloaded versions.
 
@@ -2677,11 +2682,12 @@ def _process_apk_downloads(
         force_refresh (bool): If True, bypass cached release data and fetch fresh metadata.
 
     Returns:
-        Tuple[List[str], List[str], List[Dict[str, str]], Optional[str]]:
+        Tuple[List[str], List[str], List[Dict[str, str]], Optional[str], Optional[str]]:
         - downloaded_apk_versions: List of release versions successfully downloaded during this run.
         - new_apk_versions: List of newly discovered release versions (may include versions not downloaded).
         - failed_downloads: List of dicts describing each failed asset download (details vary by failure).
         - latest_apk_version: Tag/name of the most recent release found, or `None` if no releases were available.
+        - latest_prerelease_version: Always None for APKs (prereleases not supported).
     """
     global downloads_skipped
     downloaded_apks: List[str] = []
@@ -2745,6 +2751,7 @@ def _process_apk_downloads(
         new_apk_versions,
         all_failed_apk_downloads,
         latest_apk_version,
+        None,  # No prereleases for APKs
     )
 
 
@@ -2760,6 +2767,7 @@ def _finalize_and_notify(
     update_available: bool,
     latest_firmware_version: Optional[str] = None,
     latest_apk_version: Optional[str] = None,
+    latest_prerelease_version: Optional[str] = None,
 ) -> None:
     """
     Finalize processing: log a concise summary, display/app-update messaging, and send NTFY notifications about download results.
@@ -2787,6 +2795,8 @@ def _finalize_and_notify(
         logger.info(f"Latest firmware: {latest_firmware_version}")
     if latest_apk_version:
         logger.info(f"Latest APK: {latest_apk_version}")
+    if latest_prerelease_version:
+        logger.info(f"Latest prerelease: {latest_prerelease_version}")
 
     if update_available and latest_version:
         upgrade_cmd: str = get_upgrade_command()
@@ -3883,8 +3893,9 @@ def main(force_refresh: bool = False) -> None:
         new_firmware_versions,
         failed_firmware_list,
         latest_firmware_version,
+        latest_prerelease_version,
     ) = _process_firmware_downloads(config, paths_and_urls, force_refresh)
-    downloaded_apks, new_apk_versions, failed_apk_list, latest_apk_version = (
+    downloaded_apks, new_apk_versions, failed_apk_list, latest_apk_version, _ = (
         _process_apk_downloads(config, paths_and_urls, force_refresh)
     )
 
@@ -3931,6 +3942,7 @@ def main(force_refresh: bool = False) -> None:
         update_available,
         latest_firmware_version,
         latest_apk_version,
+        latest_prerelease_version,
     )
 
     # Log API request summary
@@ -3949,6 +3961,18 @@ def main(force_refresh: bool = False) -> None:
             f"{summary['cache_hits']} cache hits, {summary['cache_misses']} cache misses "
             f"({cache_hit_rate:.1f}% hit rate)"
         )
+
+        # Add rate limit info if available
+        if "rate_limit_remaining" in summary and "rate_limit_reset" in summary:
+            remaining = summary["rate_limit_remaining"]
+            reset_time = summary["rate_limit_reset"]
+            now = datetime.now(timezone.utc)
+            time_until_reset = reset_time - now
+            if time_until_reset.total_seconds() > 0:
+                minutes_until_reset = int(time_until_reset.total_seconds() / 60)
+                log_message += f", {remaining} requests remaining (resets in {minutes_until_reset} min)"
+            else:
+                log_message += f", {remaining} requests remaining"
         logger.info(log_message)
     else:
         logger.info("📊 API Summary: No API requests made (all data served from cache)")

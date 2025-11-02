@@ -10,7 +10,7 @@ import tempfile
 import threading
 import time
 import zipfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple  # Callable removed
 
 import platformdirs
@@ -49,9 +49,10 @@ _token_warning_shown = False
 _token_warning_lock = threading.Lock()
 
 # GitHub API rate limit tracking
-_rate_limit_cache: Dict[str, Tuple[int, datetime]] = {}
+_rate_limit_cache: Dict[str, Tuple[int, datetime]] = {}  # remaining, reset_timestamp
 _rate_limit_lock = threading.Lock()
 _rate_limit_cache_file = None
+_last_rate_limit_token_hash: Optional[str] = None
 
 # Track whether rate limit cache has been loaded
 _rate_limit_cache_loaded = False
@@ -109,12 +110,23 @@ def track_api_cache_miss() -> None:
 def get_api_request_summary() -> Dict[str, Any]:
     """Get comprehensive API request summary for the session."""
     with _api_tracking_lock:
-        return {
+        summary = {
             "total_requests": _api_request_count,
             "cache_hits": _api_cache_hits,
             "cache_misses": _api_cache_misses,
             "auth_used": _api_auth_used,
         }
+
+    # Add rate limit info if available
+    global _last_rate_limit_token_hash
+    if _last_rate_limit_token_hash:
+        rate_limit_info = get_rate_limit_info(_last_rate_limit_token_hash)
+        if rate_limit_info:
+            remaining, reset_timestamp = rate_limit_info
+            summary["rate_limit_remaining"] = remaining
+            summary["rate_limit_reset"] = reset_timestamp
+
+    return summary
 
 
 def reset_api_tracking() -> None:
@@ -231,14 +243,13 @@ def _load_rate_limit_cache() -> None:
                         ):
                             continue
 
-                        remaining_str, cached_at_str = cache_value
+                        remaining_str, reset_timestamp_str = cache_value
                         remaining = int(remaining_str)
-                        cached_at = datetime.fromisoformat(cached_at_str)
+                        reset_timestamp = datetime.fromisoformat(reset_timestamp_str)
 
-                        # Only keep cache entries that are less than 1 hour old
-                        # GitHub rate limits reset every hour
-                        if (current_time - cached_at).total_seconds() < 3600:
-                            loaded[cache_key] = (remaining, cached_at)
+                        # Only keep cache entries where reset is in the future
+                        if reset_timestamp > current_time:
+                            loaded[cache_key] = (remaining, reset_timestamp)
                     except (ValueError, TypeError):
                         continue
     except (IOError, json.JSONDecodeError):
@@ -290,8 +301,8 @@ def _save_rate_limit_cache() -> None:
         # Snapshot under lock, then write outside to minimize contention
         with _rate_limit_lock:
             cache_data = {
-                cache_key: (remaining, cached_at.isoformat())
-                for cache_key, (remaining, cached_at) in _rate_limit_cache.items()
+                cache_key: (remaining, reset_timestamp.isoformat())
+                for cache_key, (remaining, reset_timestamp) in _rate_limit_cache.items()
             }
 
         # Write to a unique temporary file first, then atomically replace
@@ -313,12 +324,20 @@ def _save_rate_limit_cache() -> None:
         pass  # Silently ignore cache saving errors
 
 
-def _update_rate_limit(token_hash: str, remaining: int) -> None:
+def _update_rate_limit(
+    token_hash: str, remaining: int, reset_timestamp: Optional[datetime] = None
+) -> None:
     """Update the rate limit cache for a specific token."""
     global _rate_limit_cache, _last_cache_save_time
 
     now = datetime.now(timezone.utc)
     current_time = now.timestamp()
+
+    # Ensure reset_timestamp is set
+    if reset_timestamp is None:
+        reset_timestamp = now + timedelta(hours=1)
+
+    assert reset_timestamp is not None  # For type checker
 
     with _rate_limit_lock:
         # Check if remaining decreased and at least 5 seconds have passed
@@ -336,7 +355,7 @@ def _update_rate_limit(token_hash: str, remaining: int) -> None:
             # Always save on first entry
             should_save = True
 
-        _rate_limit_cache[token_hash] = (remaining, now)
+        _rate_limit_cache[token_hash] = (remaining, reset_timestamp)
 
         if should_save:
             _last_cache_save_time = current_time
@@ -347,16 +366,24 @@ def _update_rate_limit(token_hash: str, remaining: int) -> None:
 
 
 def _get_cached_rate_limit(token_hash: str) -> Optional[int]:
-    """Get cached rate limit for a specific token."""
+    """Get cached rate limit remaining for a specific token if reset is in future."""
     global _rate_limit_cache
 
     with _rate_limit_lock:
         if token_hash in _rate_limit_cache:
-            remaining, cached_at = _rate_limit_cache[token_hash]
-            # Only return cached value if it's less than 5 minutes old
-            # This provides a balance between accuracy and performance
-            if (datetime.now(timezone.utc) - cached_at).total_seconds() < 300:
+            remaining, reset_timestamp = _rate_limit_cache[token_hash]
+            if reset_timestamp > datetime.now(timezone.utc):
                 return remaining
+    return None
+
+
+def get_rate_limit_info(token_hash: str) -> Optional[Tuple[int, datetime]]:
+    """Get cached rate limit info (remaining, reset_timestamp) for a specific token."""
+    global _rate_limit_cache
+
+    with _rate_limit_lock:
+        if token_hash in _rate_limit_cache:
+            return _rate_limit_cache[token_hash]
     return None
 
 
@@ -444,6 +471,8 @@ def make_github_api_request(
     token_hash = hashlib.sha256((effective_token or "no-token").encode()).hexdigest()[
         :16
     ]
+    global _last_rate_limit_token_hash
+    _last_rate_limit_token_hash = token_hash
 
     try:
         # Make the request
@@ -531,10 +560,20 @@ def make_github_api_request(
         if rl_header is not None:
             remaining = _parse_rate_limit_header(rl_header)
             if remaining is not None:
+                # Parse reset timestamp
+                reset_timestamp = None
+                if rl_reset is not None:
+                    try:
+                        reset_timestamp = datetime.fromtimestamp(
+                            int(rl_reset), timezone.utc
+                        )
+                    except (ValueError, TypeError):
+                        pass  # Keep None if parsing fails
+
                 # Get previous cached value before updating
                 prev_remaining = _get_cached_rate_limit(token_hash)
                 # Update cache with new rate limit info
-                _update_rate_limit(token_hash, remaining)
+                _update_rate_limit(token_hash, remaining, reset_timestamp)
 
                 # Log enhanced rate limit information
                 if prev_remaining is not None and prev_remaining != remaining:
