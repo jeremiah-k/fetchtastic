@@ -3936,9 +3936,7 @@ def main(force_refresh: bool = False) -> None:
             f"📊 API Summary: {summary['total_requests']} requests made ({auth_status}), {summary['cache_hits']} cache hits, {summary['cache_misses']} cache misses ({cache_hit_rate:.1f}% hit rate)"
         )
     else:
-        logger.info(
-            f"📊 API Summary: No API requests made (all data served from cache)"
-        )
+        logger.info("📊 API Summary: No API requests made (all data served from cache)")
 
 
 if __name__ == "__main__":

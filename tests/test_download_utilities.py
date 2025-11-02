@@ -15,9 +15,7 @@ Tests include:
 
 import json
 import os
-import tempfile
-from pathlib import Path
-from unittest.mock import MagicMock, mock_open, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -279,7 +277,7 @@ class TestCacheManagement:
             mock_cache_dir.exists.return_value = False
             mock_cache_dir.mkdir.return_value = None
 
-            result = downloader._ensure_cache_dir()
+            downloader._ensure_cache_dir()
 
             mock_cache_dir.mkdir.assert_called_once_with(parents=True, exist_ok=True)
 

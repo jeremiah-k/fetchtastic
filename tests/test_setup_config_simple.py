@@ -10,6 +10,7 @@ import subprocess
 from unittest.mock import MagicMock, patch
 
 import pytest
+import yaml
 
 from fetchtastic import setup_config
 
@@ -244,7 +245,7 @@ class TestConfigurationLoading:
                 "fetchtastic.setup_config.OLD_CONFIG_FILE", "/nonexistent/old.yaml"
             ):
                 # Should raise an exception for invalid YAML
-                with pytest.raises(Exception):
+                with pytest.raises((yaml.YAMLError, FileNotFoundError)):
                     setup_config.load_config()
 
 

@@ -10,7 +10,6 @@ This module contains tests for:
 """
 
 import threading
-from unittest.mock import patch
 
 import pytest
 

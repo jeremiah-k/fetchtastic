@@ -5,12 +5,8 @@ Simple tests for device_hardware module functions.
 """
 
 import json
-import os
 import time
-from pathlib import Path
-from unittest.mock import MagicMock, mock_open, patch
-
-import pytest
+from unittest.mock import mock_open, patch
 
 from fetchtastic.device_hardware import DeviceHardwareManager
 
@@ -215,4 +211,3 @@ class TestDeviceHardwareManager:
 
 
 # Need to import time for timestamp tests
-import time

@@ -10,7 +10,7 @@ Tests include:
 - Basic command structure
 """
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -33,9 +33,7 @@ class TestCLIVersionFunctionality:
 
     def test_get_fetchtastic_version_import_error(self, mocker):
         """Test version retrieval when importlib.metadata.version fails."""
-        mock_version = mocker.patch(
-            "importlib.metadata.version", side_effect=Exception("Not found")
-        )
+        mocker.patch("importlib.metadata.version", side_effect=Exception("Not found"))
 
         result = cli.get_fetchtastic_version()
 
@@ -81,7 +79,7 @@ class TestCLIErrorHandling:
     def test_cli_invalid_command_shows_help(self, mocker):
         """Test that invalid command shows help and exits."""
         mocker.patch("sys.argv", ["fetchtastic", "invalid-command"])
-        mock_logger = mocker.patch("fetchtastic.cli.logger")
+        mocker.patch("fetchtastic.cli.logger")
 
         with pytest.raises(SystemExit):
             cli.main()
@@ -112,7 +110,7 @@ class TestCLICleanFunctionality:
 
     def test_run_clean_no_config(self, mocker):
         """Test clean operation with no config."""
-        mock_config_exists = mocker.patch(
+        mocker.patch(
             "fetchtastic.setup_config.config_exists", return_value=(False, None)
         )
         mock_logger = mocker.patch("fetchtastic.cli.logger")
@@ -126,14 +124,14 @@ class TestCLICleanFunctionality:
 
     def test_run_clean_user_cancels(self, mocker):
         """Test clean operation when user cancels."""
-        mock_config_exists = mocker.patch(
+        mocker.patch(
             "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
         )
-        mock_load_config = mocker.patch(
+        mocker.patch(
             "fetchtastic.setup_config.load_config",
             return_value={"BASE_DIR": "/fake/dir"},
         )
-        mock_logger = mocker.patch("fetchtastic.cli.logger")
+        mocker.patch("fetchtastic.cli.logger")
 
         with patch("builtins.input", return_value="n"):  # User says no
             with patch("builtins.print") as mock_print:
@@ -142,10 +140,10 @@ class TestCLICleanFunctionality:
 
     def test_run_clean_with_confirmation(self, mocker):
         """Test clean operation with user confirmation."""
-        mock_config_exists = mocker.patch(
+        mocker.patch(
             "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
         )
-        mock_load_config = mocker.patch(
+        mocker.patch(
             "fetchtastic.setup_config.load_config",
             return_value={"BASE_DIR": "/fake/dir"},
         )
@@ -210,7 +208,7 @@ class TestCLIRepoCleanFunctionality:
     def test_run_repo_clean_failure(self, mocker):
         """Test repo clean with operation failure."""
         config = {"BASE_DIR": "/fake/dir", "DOWNLOAD_DIR": "/fake/download"}
-        mock_clean = mocker.patch(
+        mocker.patch(
             "fetchtastic.repo_downloader.clean_repo_directory", return_value=False
         )
 
@@ -248,7 +246,7 @@ class TestCLISetupFunctionality:
     def test_cli_setup_command_error(self, mocker):
         """Test setup command with error."""
         mocker.patch("sys.argv", ["fetchtastic", "setup"])
-        mock_run_setup = mocker.patch(
+        mocker.patch(
             "fetchtastic.setup_config.run_setup", side_effect=Exception("Setup failed")
         )
         mock_logger = mocker.patch("fetchtastic.cli.logger")
@@ -285,7 +283,7 @@ class TestCLIDownloadFunctionality:
         mocker.patch(
             "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
         )
-        mock_load_config = mocker.patch(
+        mocker.patch(
             "fetchtastic.setup_config.load_config", return_value={"key": "val"}
         )
         mock_downloader_main = mocker.patch("fetchtastic.downloader.main")
@@ -309,7 +307,7 @@ class TestCLIRepoFunctionality:
         mocker.patch(
             "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
         )
-        mock_load_config = mocker.patch(
+        mocker.patch(
             "fetchtastic.setup_config.load_config", return_value={"key": "val"}
         )
         mock_repo_main = mocker.patch("fetchtastic.repo_downloader.main")
@@ -325,7 +323,7 @@ class TestCLIRepoFunctionality:
         mocker.patch(
             "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
         )
-        mock_load_config = mocker.patch(
+        mocker.patch(
             "fetchtastic.setup_config.load_config", return_value={"key": "val"}
         )
         mock_run_repo_clean = mocker.patch("fetchtastic.cli.run_repo_clean")
@@ -347,7 +345,7 @@ class TestCLITopicFunctionality:
         mocker.patch(
             "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
         )
-        mock_load_config = mocker.patch(
+        mocker.patch(
             "fetchtastic.setup_config.load_config",
             return_value={"NTFY_TOPIC": "test-topic"},
         )
@@ -364,7 +362,7 @@ class TestCLITopicFunctionality:
         mocker.patch(
             "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
         )
-        mock_load_config = mocker.patch(
+        mocker.patch(
             "fetchtastic.setup_config.load_config", return_value={}
         )  # No NTFY_TOPIC
         mock_logger = mocker.patch("fetchtastic.cli.logger")
