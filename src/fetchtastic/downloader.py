@@ -2322,6 +2322,11 @@ def _get_latest_releases_data(
 
     try:
         # Add progress feedback
+        if release_type:
+            logger.info(f"Fetching {release_type} releases from GitHub...")
+        else:
+            # Fallback for generic case
+            logger.info("Fetching releases from GitHub...")
 
         # scan_count already clamped above
         response: requests.Response = make_github_api_request(

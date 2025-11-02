@@ -101,6 +101,7 @@ CONFIG_FILE_NAME = "fetchtastic.yaml"
 MESHTASTIC_DIR_NAME = "Meshtastic"
 
 # Files that Fetchtastic manages and can safely clean
+# Note: CONFIG_FILE_NAME is included for safety, though it's typically in CONFIG_DIR
 MANAGED_FILES = (
     LATEST_ANDROID_RELEASE_FILE,
     LATEST_FIRMWARE_RELEASE_FILE,

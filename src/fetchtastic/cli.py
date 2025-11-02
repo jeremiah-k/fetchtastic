@@ -531,13 +531,12 @@ def run_clean():
     if os.path.exists(download_dir):
         for item in os.listdir(download_dir):
             item_path = os.path.join(download_dir, item)
-            item_name = item
 
             # Check if this is a managed directory or file
-            is_managed_dir = item_name in MANAGED_DIRECTORIES or item_name.startswith(
+            is_managed_dir = item in MANAGED_DIRECTORIES or item.startswith(
                 FIRMWARE_DIR_PREFIX
             )
-            is_managed_file = item_name in MANAGED_FILES
+            is_managed_file = item in MANAGED_FILES
 
             # Only remove managed directories and their contents
             if is_managed_dir and os.path.isdir(item_path):
