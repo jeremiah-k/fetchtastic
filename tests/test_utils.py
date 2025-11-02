@@ -3,6 +3,7 @@ import importlib.metadata
 import json
 import os
 import zipfile
+from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -1055,8 +1056,9 @@ def test_format_api_summary():
     assert result == expected
 
     # Test with rate limit info (future reset time)
-    future_time = datetime.now(timezone.utc).replace(second=0, microsecond=0)
-    future_time = future_time.replace(minute=future_time.minute + 5)
+    future_time = datetime.now(timezone.utc).replace(
+        second=0, microsecond=0
+    ) + timedelta(minutes=5)
     summary = {
         "total_requests": 2,
         "auth_used": True,
