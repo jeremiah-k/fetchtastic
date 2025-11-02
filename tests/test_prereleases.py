@@ -376,6 +376,9 @@ def test_prerelease_directory_cleanup(tmp_path, write_dummy_file):
     assert old_dir1.exists()
     assert old_dir2.exists()
 
+    # Clear any cached prerelease directories to ensure fresh mock data
+    downloader._clear_prerelease_cache()
+
     # Mock the repo to return a newer prerelease with same version but new hash
     with patch("fetchtastic.menu_repo.fetch_repo_directories") as mock_dirs:
         with patch("fetchtastic.menu_repo.fetch_directory_contents") as mock_contents:
