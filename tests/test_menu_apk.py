@@ -9,9 +9,9 @@ from fetchtastic import menu_apk
 def mock_apk_assets():
     """
     Provide a list of dictionaries representing release assets for tests.
-    
+
     Each dictionary contains a "name" key with a filename. The returned list includes three APK filenames and one non-APK file to exercise asset filtering in tests.
-    
+
     Returns:
         assets (list[dict]): List of asset dictionaries, e.g.:
             [
@@ -33,7 +33,7 @@ def mock_apk_assets():
 def mock_apk_assets_mixed_case():
     """
     Provide mock release assets including APK filenames with mixed-case extensions for testing.
-    
+
     Returns:
         list[dict]: A list of asset dictionaries with a 'name' key. Includes APK filenames with lowercase, uppercase, and mixed-case extensions, plus a non-APK file.
     """

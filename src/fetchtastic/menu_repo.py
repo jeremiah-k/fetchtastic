@@ -82,14 +82,14 @@ def _process_repo_contents(contents):
 def fetch_repo_contents(path="", allow_env_token=True, github_token=None):
     """
     Retrieve and process directory and file entries from the Meshtastic GitHub Pages repository for a given repository-relative path.
-    
+
     Given an optional path (leading/trailing slashes are ignored), queries the GitHub Contents API and returns a sorted list of item dictionaries describing directories and files in that path. Directory items include "name", "path", and "type" == "dir". File items include "name", "path", "type" == "file", and "download_url". Common repository infrastructure directories and files are excluded.
-    
+
     Parameters:
         path (str): Repository-relative path to list; use an empty string for the repository root.
         allow_env_token (bool): Whether to permit using the GITHUB_TOKEN environment variable for authentication.
         github_token (str | None): Optional explicit GitHub token to use; if provided it overrides environment-based token usage.
-    
+
     Returns:
         list: A list of dictionaries representing directories and files (directories appear before files). Returns an empty list on network, parsing, or other unexpected errors.
     """

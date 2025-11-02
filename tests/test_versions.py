@@ -253,10 +253,10 @@ def test_cleanup_old_versions(tmp_path):
     def mock_safe_rmtree(_path, _base_dir, version):
         """
         Record a version as removed (test mock).
-        
+
         Parameters:
             version (str): Version identifier to mark as removed; appended to the `removed` list.
-        
+
         Returns:
             bool: `True` indicating the removal was simulated successfully.
         """

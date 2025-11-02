@@ -988,7 +988,7 @@ def test_atomic_write_error_handling(tmp_path):
     def writer(f):
         """
         Write the literal string "test" to the given file-like object.
-        
+
         Parameters:
             f: A writable file-like object with a `write(str)` method; the string "test" will be written to it.
         """
@@ -1017,7 +1017,7 @@ def test_atomic_write_permission_error(tmp_path):
         def writer(f):
             """
             Write the literal string "test" to the provided writable file-like object.
-            
+
             Parameters:
                 f: A writable file-like object with a `write(str)` method.
             """
@@ -1160,7 +1160,7 @@ def test_calculate_expected_prerelease_version_edge_cases():
 def test_cache_functions_error_handling(tmp_path):
     """
     Ensure loader functions tolerate corrupted cache files without raising exceptions.
-    
+
     Writes invalid JSON to the commit and releases cache files and verifies that
     fetchtastic.downloader._load_commit_cache and _load_releases_cache handle the
     malformed data safely (do not propagate exceptions).

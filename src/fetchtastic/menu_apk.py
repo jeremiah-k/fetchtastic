@@ -14,7 +14,7 @@ from fetchtastic.utils import extract_base_name, make_github_api_request
 def fetch_apk_assets():
     """
     Retrieve APK filenames from the latest Meshtastic Android release on GitHub.
-    
+
     Returns:
         list[str]: Alphabetically sorted APK asset filenames from the latest release. Empty list if no releases or matching assets are found.
     """

@@ -144,7 +144,7 @@ def test_cache_logging_lines_coverage(populated_releases_cache):
 def test_api_fetch_logging_lines_coverage():
     """
     Exercise the API-fetch code path in _get_latest_releases_data and verify it returns parsed release data for firmware and Android release URLs.
-    
+
     This test clears the module's releases cache to force an API request, patches make_github_api_request to return a mocked JSON payload, calls _get_latest_releases_data for both firmware and Android endpoints with force_refresh=True, and asserts the returned data matches the mocked response. The test restores the original cache state afterwards to avoid polluting global state.
     """
     import fetchtastic.downloader as downloader_module
@@ -197,7 +197,7 @@ def test_api_fetch_logging_lines_coverage():
 def test_main_function_full_coverage():
     """
     Exercise downloader.main to cover cache-clearing and device manager cleanup paths.
-    
+
     Verifies that clear_all_caches is invoked once and that DeviceHardwareManager is instantiated and its clear_cache method is called once.
     """
     with patch("fetchtastic.downloader._initial_setup_and_config") as mock_setup, patch(

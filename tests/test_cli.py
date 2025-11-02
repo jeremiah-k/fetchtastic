@@ -417,10 +417,10 @@ def test_run_clean(
     def isdir_side_effect(path):
         """
         Indicates whether a filesystem path should be treated as a directory for test side effects.
-        
+
         Parameters:
             path (str): The filesystem path to evaluate.
-        
+
         Returns:
             bool: `True` if the path's basename is one of "some_dir", "repo-dls", or "firmware-2.7.4", `False` otherwise.
         """
@@ -429,10 +429,10 @@ def test_run_clean(
     def isfile_side_effect(path):
         """
         Determine whether the provided filesystem path should be treated as a file for test side effects.
-        
+
         Parameters:
             path (str): The filesystem path to examine.
-        
+
         Returns:
             True if the path's basename is "latest_android_release.txt" or "unmanaged.txt", False otherwise.
         """
