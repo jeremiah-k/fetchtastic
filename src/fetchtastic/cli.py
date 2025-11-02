@@ -14,6 +14,11 @@ from fetchtastic.constants import (
     FIRMWARE_DIR_PREFIX,
     MANAGED_DIRECTORIES,
     MANAGED_FILES,
+    MSG_CLEANED_MANAGED_DIRS,
+    MSG_FAILED_DELETE_MANAGED_FILE,
+    MSG_PRESERVE_OTHER_FILES,
+    MSG_REMOVED_MANAGED_DIR,
+    MSG_REMOVED_MANAGED_FILE,
 )
 from fetchtastic.log_utils import logger, set_log_level
 from fetchtastic.setup_config import (
@@ -538,7 +543,7 @@ def run_clean():
             if is_managed_dir and os.path.isdir(item_path):
                 try:
                     shutil.rmtree(item_path)
-                    print(f"Removed managed directory: {item_path}")
+                    print(MSG_REMOVED_MANAGED_DIR.format(path=item_path))
                 except Exception as e:
                     print(
                         f"Failed to delete managed directory {item_path}. Reason: {e}"
@@ -549,14 +554,14 @@ def run_clean():
             ):
                 try:
                     os.remove(item_path)
-                    print(f"Removed managed file: {item_path}")
+                    print(MSG_REMOVED_MANAGED_FILE.format(path=item_path))
                 except Exception as e:
-                    print(f"Failed to delete managed file {item_path}. Reason: {e}")
+                    print(
+                        MSG_FAILED_DELETE_MANAGED_FILE.format(path=item_path, error=e)
+                    )
 
-        print(f"Cleaned managed directories from: {download_dir}")
-        print(
-            "Note: Only Fetchtastic-managed directories were removed. Other files were preserved."
-        )
+        print(MSG_CLEANED_MANAGED_DIRS.format(path=download_dir))
+        print(MSG_PRESERVE_OTHER_FILES)
 
     # Remove cron job entries (non-Windows platforms)
     if platform.system() != "Windows":
