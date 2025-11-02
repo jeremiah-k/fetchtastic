@@ -57,7 +57,11 @@ from fetchtastic.device_hardware import DeviceHardwareManager
 from fetchtastic.log_utils import logger
 from fetchtastic.setup_config import display_version_info, get_upgrade_command
 from fetchtastic.utils import (
+    _show_token_warning_if_needed,
+    calculate_sha256,
     download_file_with_retry,
+    extract_base_name,
+    get_effective_github_token,
     get_hash_file_path,
     make_github_api_request,
     matches_selected_patterns,
@@ -2263,6 +2267,13 @@ def _get_latest_releases_data(
             releases_data, cached_at = _releases_cache[cache_key]
             age = datetime.now(timezone.utc) - cached_at
             if age.total_seconds() < RELEASES_CACHE_EXPIRY_HOURS * 60 * 60:
+                url_l = url.lower()
+                if "firmware" in url_l:
+                    logger.info("Using cached firmware releases data")
+                elif "android" in url_l:
+                    logger.info("Using cached Android APK releases data")
+                else:
+                    logger.info("Using cached releases data")
                 logger.debug(
                     f"Using cached releases for {url} (cached {age.total_seconds():.0f}s ago)"
                 )
@@ -3811,6 +3822,10 @@ def main(force_refresh: bool = False) -> None:
     if not config or not paths_and_urls:  # Check if setup failed
         logger.error("Initial setup failed. Exiting.")  # Changed to logger.error
         return
+
+    # Show token warning consistently at the start before any API calls
+    effective_token = get_effective_github_token(config.get("GITHUB_TOKEN"), True)
+    _show_token_warning_if_needed(effective_token, True)
 
     # Clear caches if force refresh is requested
     if force_refresh:

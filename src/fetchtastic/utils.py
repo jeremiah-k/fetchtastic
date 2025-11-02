@@ -118,7 +118,7 @@ def _show_token_warning_if_needed(
         effective_token: The effective GitHub token (None if no token)
         allow_env_token: Whether environment token usage is allowed
     """
-    if not effective_token and allow_env_token:
+    if not effective_token:
         global _token_warning_shown
         with _token_warning_lock:
             if not _token_warning_shown:
