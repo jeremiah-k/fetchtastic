@@ -2226,6 +2226,7 @@ def _get_latest_releases_data(
     github_token: Optional[str] = None,
     allow_env_token: bool = True,
     force_refresh: bool = False,
+    release_type: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
     Fetches and returns recent releases from a GitHub releases API endpoint.
@@ -2265,13 +2266,17 @@ def _get_latest_releases_data(
             releases_data, cached_at = _releases_cache[cache_key]
             age = datetime.now(timezone.utc) - cached_at
             if age.total_seconds() < RELEASES_CACHE_EXPIRY_HOURS * 60 * 60:
-                url_l = url.lower()
-                if "firmware" in url_l:
-                    logger.info("Using cached firmware releases data")
-                elif "android" in url_l:
-                    logger.info("Using cached Android APK releases data")
+                if release_type:
+                    logger.info(f"Using cached {release_type} releases data")
                 else:
-                    logger.info("Using cached releases data")
+                    # Fallback to URL parsing for backward compatibility
+                    url_l = url.lower()
+                    if "firmware" in url_l:
+                        logger.info("Using cached firmware releases data")
+                    elif "android" in url_l:
+                        logger.info("Using cached Android APK releases data")
+                    else:
+                        logger.info("Using cached releases data")
                 logger.debug(
                     f"Using cached releases for {url} (cached {age.total_seconds():.0f}s ago)"
                 )
@@ -2518,6 +2523,7 @@ def _process_firmware_downloads(
             ),  # Use RELEASE_SCAN_COUNT if versions_to_keep not in config
             config.get("GITHUB_TOKEN"),
             force_refresh=force_refresh,
+            release_type="firmware",
         )
 
         keep_count = config.get(
@@ -2664,6 +2670,7 @@ def _process_apk_downloads(
             config.get("ANDROID_VERSIONS_TO_KEEP", RELEASE_SCAN_COUNT),
             config.get("GITHUB_TOKEN"),
             force_refresh=force_refresh,
+            release_type="Android APK",
         )
 
         keep_count_apk = config.get(

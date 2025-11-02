@@ -4,7 +4,36 @@ Direct tests for coverage of specific lines.
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 # Import to ensure coverage tracking
+
+
+@pytest.fixture
+def populated_releases_cache():
+    """Fixture to populate releases cache for testing."""
+    from datetime import datetime, timezone
+
+    import fetchtastic.downloader as downloader_module
+
+    # Save original state
+    original_cache = downloader_module._releases_cache.copy()
+    original_loaded = downloader_module._releases_cache_loaded
+
+    # Set up test state
+    downloader_module._releases_cache_loaded = True
+    cache_key = "https://api.github.com/repos/meshtastic/firmware/releases?per_page=5"
+    test_data = [{"tag_name": "v2.7.8"}]
+    downloader_module._releases_cache[cache_key] = (
+        test_data,
+        datetime.now(timezone.utc),
+    )
+
+    yield test_data, cache_key
+
+    # Restore original state
+    downloader_module._releases_cache = original_cache
+    downloader_module._releases_cache_loaded = original_loaded
 
 
 def test_token_warning_lines_coverage():
@@ -39,24 +68,13 @@ def test_token_warning_lines_coverage():
                         main(force_refresh=False)
 
 
-def test_cache_logging_lines_coverage():
+def test_cache_logging_lines_coverage(populated_releases_cache):
     """Direct test to cover cache logging lines."""
-    # Import module to access its globals
     from datetime import datetime, timezone
 
     import fetchtastic.downloader as downloader_module
 
-    # Reset cache state and populate with fresh data
-    downloader_module._releases_cache = {}
-    downloader_module._releases_cache_loaded = True
-
-    # Manually populate cache to simulate previous successful fetch
-    cache_key = "https://api.github.com/repos/meshtastic/firmware/releases?per_page=5"
-    test_data = [{"tag_name": "v2.7.8"}]
-    downloader_module._releases_cache[cache_key] = (
-        test_data,
-        datetime.now(timezone.utc),
-    )
+    test_data, cache_key = populated_releases_cache
 
     with patch("fetchtastic.downloader.make_github_api_request") as _:
         from fetchtastic.downloader import _get_latest_releases_data
@@ -68,6 +86,7 @@ def test_cache_logging_lines_coverage():
             None,
             True,
             force_refresh=False,  # Important: not force refresh
+            release_type="firmware",  # Test new release_type parameter
         )
 
         # Verify call completed successfully and returned cached data
@@ -88,6 +107,7 @@ def test_cache_logging_lines_coverage():
             None,
             True,
             force_refresh=False,
+            release_type="Android APK",  # Test new release_type parameter
         )
 
         assert result2 == test_data
