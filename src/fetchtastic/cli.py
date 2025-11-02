@@ -529,6 +529,15 @@ def run_clean():
 
     # Remove only managed directories from download directory
     download_dir = setup_config.BASE_DIR
+
+    def _remove_managed_file(item_path: str) -> None:
+        """Remove a managed file and log the outcome."""
+        try:
+            os.remove(item_path)
+            print(MSG_REMOVED_MANAGED_FILE.format(path=item_path))
+        except Exception as e:
+            print(MSG_FAILED_DELETE_MANAGED_FILE.format(path=item_path, error=e))
+
     if os.path.exists(download_dir):
         for item in os.listdir(download_dir):
             item_path = os.path.join(download_dir, item)
@@ -543,15 +552,7 @@ def run_clean():
             if is_managed_dir and os.path.isdir(item_path):
                 if os.path.islink(item_path):
                     # Treat symlinks to directories as files to avoid following them
-                    try:
-                        os.remove(item_path)
-                        print(MSG_REMOVED_MANAGED_FILE.format(path=item_path))
-                    except Exception as e:
-                        print(
-                            MSG_FAILED_DELETE_MANAGED_FILE.format(
-                                path=item_path, error=e
-                            )
-                        )
+                    _remove_managed_file(item_path)
                     continue
                 try:
                     shutil.rmtree(item_path)
@@ -562,13 +563,7 @@ def run_clean():
             elif is_managed_file and (
                 os.path.isfile(item_path) or os.path.islink(item_path)
             ):
-                try:
-                    os.remove(item_path)
-                    print(MSG_REMOVED_MANAGED_FILE.format(path=item_path))
-                except Exception as e:
-                    print(
-                        MSG_FAILED_DELETE_MANAGED_FILE.format(path=item_path, error=e)
-                    )
+                _remove_managed_file(item_path)
 
         print(MSG_CLEANED_MANAGED_DIRS.format(path=download_dir))
         print(MSG_PRESERVE_OTHER_FILES)

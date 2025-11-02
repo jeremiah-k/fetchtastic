@@ -2136,10 +2136,9 @@ def get_commit_timestamp(
 
     # Fetch from API
     url = f"{GITHUB_API_BASE}/{owner}/{repo}/commits/{commit_hash}"
-    logger.debug(f"Cache miss for commit timestamp {commit_hash} - fetching from API")
     track_api_cache_miss()
     logger.debug(
-        f"Fetching commit timestamp for {owner}/{repo}@{commit_hash[:8]} from GitHub..."
+        f"Cache miss for commit timestamp {owner}/{repo}@{commit_hash[:8]} - fetching from GitHub API"
     )
     try:
         response = make_github_api_request(
