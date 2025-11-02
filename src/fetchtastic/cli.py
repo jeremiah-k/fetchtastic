@@ -534,9 +534,9 @@ def run_clean():
         """Remove a managed file and log the outcome."""
         try:
             os.remove(item_path)
-            print(MSG_REMOVED_MANAGED_FILE.format(path=item_path))
+            logger.info(MSG_REMOVED_MANAGED_FILE.format(path=item_path))
         except Exception as e:
-            print(MSG_FAILED_DELETE_MANAGED_FILE.format(path=item_path, error=e))
+            logger.error(MSG_FAILED_DELETE_MANAGED_FILE.format(path=item_path, error=e))
 
     if os.path.exists(download_dir):
         for item in os.listdir(download_dir):
@@ -556,17 +556,19 @@ def run_clean():
                     continue
                 try:
                     shutil.rmtree(item_path)
-                    print(MSG_REMOVED_MANAGED_DIR.format(path=item_path))
+                    logger.info(MSG_REMOVED_MANAGED_DIR.format(path=item_path))
                 except Exception as e:
-                    print(MSG_FAILED_DELETE_MANAGED_DIR.format(path=item_path, error=e))
+                    logger.error(
+                        MSG_FAILED_DELETE_MANAGED_DIR.format(path=item_path, error=e)
+                    )
             # Remove managed files
             elif is_managed_file and (
                 os.path.isfile(item_path) or os.path.islink(item_path)
             ):
                 _remove_managed_file(item_path)
 
-        print(MSG_CLEANED_MANAGED_DIRS.format(path=download_dir))
-        print(MSG_PRESERVE_OTHER_FILES)
+        logger.info(MSG_CLEANED_MANAGED_DIRS.format(path=download_dir))
+        logger.info(MSG_PRESERVE_OTHER_FILES)
 
     # Remove cron job entries (non-Windows platforms)
     if platform.system() != "Windows":

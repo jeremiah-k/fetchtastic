@@ -847,7 +847,7 @@ def _parse_legacy_json_format(
     # Validate commits_raw is a list to prevent data corruption
     if not isinstance(commits_raw, list):
         logger.warning(
-            f"Invalid commits format in legacy tracking file: expected list, got {type(commits_raw)}. Resetting commits."
+            f"Invalid commits format in legacy tracking file: expected list, got {type(commits_raw).__name__}. Resetting commits."
         )
         commits_raw = []
 
