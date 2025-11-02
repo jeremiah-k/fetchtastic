@@ -74,7 +74,7 @@ def test_cache_logging_lines_coverage(populated_releases_cache):
 
     import fetchtastic.downloader as downloader_module
 
-    test_data, cache_key = populated_releases_cache
+    test_data, _ = populated_releases_cache
 
     with patch("fetchtastic.downloader.make_github_api_request") as _:
         from fetchtastic.downloader import _get_latest_releases_data
