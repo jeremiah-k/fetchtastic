@@ -6,8 +6,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-# Import to ensure coverage tracking
-
 
 @pytest.fixture
 def populated_releases_cache():
@@ -38,34 +36,36 @@ def populated_releases_cache():
 
 def test_token_warning_lines_coverage():
     """Direct test to cover token warning lines in main function."""
-    with patch("fetchtastic.downloader._initial_setup_and_config") as mock_setup:
-        with patch("fetchtastic.downloader._check_wifi_connection") as _:
-            with patch(
-                "fetchtastic.downloader._process_firmware_downloads"
-            ) as mock_firmware:
-                with patch("fetchtastic.downloader._process_apk_downloads") as mock_apk:
-                    with patch("fetchtastic.downloader._finalize_and_notify") as _:
+    with patch("fetchtastic.downloader._initial_setup_and_config") as mock_setup, patch(
+        "fetchtastic.downloader._check_wifi_connection"
+    ) as _, patch(
+        "fetchtastic.downloader._process_firmware_downloads"
+    ) as mock_firmware, patch(
+        "fetchtastic.downloader._process_apk_downloads"
+    ) as mock_apk, patch(
+        "fetchtastic.downloader._finalize_and_notify"
+    ) as _:
 
-                        # Mock setup to return valid config
-                        mock_setup.return_value = (
-                            {"GITHUB_TOKEN": None},  # config
-                            "v0.8.0",  # current_version
-                            "v0.8.0",  # latest_version
-                            False,  # update_available
-                            {
-                                "firmware_releases_url": "https://api.github.com/repos/meshtastic/firmware/releases"
-                            },
-                        )
+        # Mock setup to return valid config
+        mock_setup.return_value = (
+            {"GITHUB_TOKEN": None},  # config
+            "v0.8.0",  # current_version
+            "v0.8.0",  # latest_version
+            False,  # update_available
+            {
+                "firmware_releases_url": "https://api.github.com/repos/meshtastic/firmware/releases"
+            },
+        )
 
-                        # Mock download processing to return empty results
-                        mock_firmware.return_value = ([], [], [], None)
-                        mock_apk.return_value = ([], [], [], None)
+        # Mock download processing to return empty results
+        mock_firmware.return_value = ([], [], [], None)
+        mock_apk.return_value = ([], [], [], None)
 
-                        # Import and call main function directly
-                        from fetchtastic.downloader import main
+        # Import and call main function directly
+        from fetchtastic.downloader import main
 
-                        # This should execute lines 3827-3828
-                        main(force_refresh=False)
+        # This should execute token warning behavior
+        main(force_refresh=False)
 
 
 def test_cache_logging_lines_coverage(populated_releases_cache):
@@ -79,7 +79,7 @@ def test_cache_logging_lines_coverage(populated_releases_cache):
     with patch("fetchtastic.downloader.make_github_api_request") as _:
         from fetchtastic.downloader import _get_latest_releases_data
 
-        # This call should hit cache logging lines (2267-2276)
+        # This call should hit cache logging lines
         result = _get_latest_releases_data(
             "https://api.github.com/repos/meshtastic/firmware/releases",
             5,
@@ -142,84 +142,93 @@ def test_cache_logging_lines_coverage(populated_releases_cache):
 
 
 def test_api_fetch_logging_lines_coverage():
-    """Test to cover API fetch logging lines (2283-2364)."""
+    """Test to cover API fetch logging lines."""
     import fetchtastic.downloader as downloader_module
 
-    # Reset cache to ensure API fetch path
-    downloader_module._releases_cache = {}
-    downloader_module._releases_cache_loaded = True
+    # Store original state to prevent test pollution
+    original_cache = getattr(downloader_module, "_releases_cache", {})
+    original_cache_loaded = getattr(downloader_module, "_releases_cache_loaded", False)
 
-    with patch("fetchtastic.downloader.make_github_api_request") as mock_request:
-        # Mock successful API response
-        mock_response = MagicMock()
-        mock_response.json.return_value = [{"tag_name": "v2.7.8"}]
-        mock_request.return_value = mock_response
+    try:
+        # Reset cache to ensure API fetch path
+        downloader_module._releases_cache = {}
+        downloader_module._releases_cache_loaded = True
 
-        from fetchtastic.downloader import _get_latest_releases_data
+        with patch("fetchtastic.downloader.make_github_api_request") as mock_request:
+            # Mock successful API response
+            mock_response = MagicMock()
+            mock_response.json.return_value = [{"tag_name": "v2.7.8"}]
+            mock_request.return_value = mock_response
 
-        # This call should go through API fetch path and hit logging lines
-        result = _get_latest_releases_data(
-            "https://api.github.com/repos/meshtastic/firmware/releases",
-            5,
-            None,
-            True,
-            force_refresh=True,  # Force API fetch
-        )
+            from fetchtastic.downloader import _get_latest_releases_data
 
-        # Verify call completed successfully
-        assert result == [{"tag_name": "v2.7.8"}]
+            # This call should go through API fetch path and hit logging lines
+            result = _get_latest_releases_data(
+                "https://api.github.com/repos/meshtastic/firmware/releases",
+                5,
+                None,
+                True,
+                force_refresh=True,  # Force API fetch
+            )
 
-        # Test Android URL logging too
-        result2 = _get_latest_releases_data(
-            "https://api.github.com/repos/meshtastic/android/releases",
-            5,
-            None,
-            True,
-            force_refresh=True,
-        )
+            # Verify call completed successfully
+            assert result == [{"tag_name": "v2.7.8"}]
 
-        assert result2 == [{"tag_name": "v2.7.8"}]
+            # Test Android URL logging too
+            result2 = _get_latest_releases_data(
+                "https://api.github.com/repos/meshtastic/android/releases",
+                5,
+                None,
+                True,
+                force_refresh=True,
+            )
+
+            assert result2 == [{"tag_name": "v2.7.8"}]
+    finally:
+        # Restore original state to prevent test pollution
+        downloader_module._releases_cache = original_cache
+        downloader_module._releases_cache_loaded = original_cache_loaded
 
 
 def test_main_function_full_coverage():
     """Test to cover remaining main function lines."""
-    with patch("fetchtastic.downloader._initial_setup_and_config") as mock_setup:
-        with patch("fetchtastic.downloader._check_wifi_connection") as _:
-            with patch(
-                "fetchtastic.downloader._process_firmware_downloads"
-            ) as mock_firmware:
-                with patch("fetchtastic.downloader._process_apk_downloads") as mock_apk:
-                    with patch("fetchtastic.downloader._finalize_and_notify") as _:
-                        with patch(
-                            "fetchtastic.downloader.clear_all_caches"
-                        ) as mock_clear:
-                            with patch(
-                                "fetchtastic.downloader.DeviceHardwareManager"
-                            ) as mock_device_mgr:
+    with patch("fetchtastic.downloader._initial_setup_and_config") as mock_setup, patch(
+        "fetchtastic.downloader._check_wifi_connection"
+    ) as _, patch(
+        "fetchtastic.downloader._process_firmware_downloads"
+    ) as mock_firmware, patch(
+        "fetchtastic.downloader._process_apk_downloads"
+    ) as mock_apk, patch(
+        "fetchtastic.downloader._finalize_and_notify"
+    ) as _, patch(
+        "fetchtastic.downloader.clear_all_caches"
+    ) as mock_clear, patch(
+        "fetchtastic.downloader.DeviceHardwareManager"
+    ) as mock_device_mgr:
 
-                                # Mock setup to return valid config
-                                mock_setup.return_value = (
-                                    {"GITHUB_TOKEN": "fake_token"},  # config with token
-                                    "v0.8.0",  # current_version
-                                    "v0.8.0",  # latest_version
-                                    False,  # update_available
-                                    {
-                                        "firmware_releases_url": "https://api.github.com/repos/meshtastic/firmware/releases"
-                                    },
-                                )
+        # Mock setup to return valid config
+        mock_setup.return_value = (
+            {"GITHUB_TOKEN": "fake_token"},  # config with token
+            "v0.8.0",  # current_version
+            "v0.8.0",  # latest_version
+            False,  # update_available
+            {
+                "firmware_releases_url": "https://api.github.com/repos/meshtastic/firmware/releases"
+            },
+        )
 
-                                # Mock download processing to return empty results
-                                mock_firmware.return_value = ([], [], [], None)
-                                mock_apk.return_value = ([], [], [], None)
+        # Mock download processing to return empty results
+        mock_firmware.return_value = ([], [], [], None)
+        mock_apk.return_value = ([], [], [], None)
 
-                                from fetchtastic.downloader import main
+        from fetchtastic.downloader import main
 
-                                # Test with force_refresh=True to hit cache clearing lines
-                                main(force_refresh=True)
+        # Test with force_refresh=True to hit cache clearing lines
+        main(force_refresh=True)
 
-                                # Verify cache clearing was called
-                                mock_clear.assert_called_once()
+        # Verify cache clearing was called
+        mock_clear.assert_called_once()
 
-                                # Verify device manager was instantiated and cache cleared
-                                mock_device_mgr.assert_called()
-                                mock_device_mgr.return_value.clear_cache.assert_called_once()
+        # Verify device manager was instantiated and cache cleared
+        mock_device_mgr.assert_called()
+        mock_device_mgr.return_value.clear_cache.assert_called_once()
