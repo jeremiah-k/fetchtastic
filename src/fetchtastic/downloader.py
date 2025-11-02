@@ -1183,16 +1183,17 @@ def matches_extract_patterns(filename, extract_patterns, device_manager=None):
 
 def get_prerelease_tracking_info(prerelease_dir):
     """
-    Return summarized prerelease tracking data read from prerelease_tracking.json.
-
-    Reads tracking data from prerelease_tracking.json in the given directory and returns a dictionary summarizing the tracked release and prerelease commits; returns an empty dict when no tracking data exists.
-
+    Return a summary of prerelease tracking data found in prerelease_tracking.json within the given directory.
+    
+    Reads prerelease tracking data and returns a dictionary with the tracked official release, ordered prerelease commit identifiers, a count, and the last-updated timestamp. If no tracking data is present, returns an empty dict.
+    
     Returns:
-        dict: Summary of tracking data with keys:
-            - "release" (str | None): Latest official release tag, or None if not present.
-            - "commits" (list[str]): List of tracked prerelease IDs (may be empty).
+        dict: Summary with keys:
+            - "release" (str | None): Latest official release tag, or None.
+            - "commits" (list[str]): Ordered list of tracked prerelease identifiers (may be empty).
             - "prerelease_count" (int): Number of tracked prerelease commits.
             - "last_updated" (str | None): ISO 8601 timestamp of the last update, or None.
+            - "latest_prerelease" (str | None): Most recent prerelease identifier from `commits`, or None.
     """
     tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
     commits, release, last_updated = _read_prerelease_tracking_data(tracking_file)
@@ -2100,15 +2101,18 @@ def get_commit_timestamp(
     allow_env_token: bool = True,
 ) -> Optional[datetime]:
     """
-    Retrieve the committer timestamp for a specific commit from the GitHub API.
-
-    Uses an internal timestamp cache to avoid repeated API calls; set `force_refresh` to bypass the cache and refetch. If a timestamp is obtained it is stored in the cache on disk.
-
+    Get the committer timestamp for a specific commit from GitHub.
+    
+    Uses an internal timestamp cache (persisted to disk) to avoid repeated API calls; set `force_refresh` to bypass the cache and refetch.
+    
     Parameters:
+        owner (str): Repository owner or organization name.
+        repo (str): Repository name.
+        commit_hash (str): Commit SHA to look up.
         github_token (Optional[str]): Personal access token to use for the GitHub API; if omitted the function may use the `GITHUB_TOKEN` environment variable when `allow_env_token` is True.
         force_refresh (bool): If True, ignore any cached timestamp and fetch a fresh value from GitHub.
         allow_env_token (bool): If True, permit using the `GITHUB_TOKEN` environment variable when no `github_token` is provided.
-
+    
     Returns:
         datetime: Commit committer timestamp in UTC if found, `None` otherwise.
     """
@@ -2671,22 +2675,22 @@ def _process_apk_downloads(
     config: Dict[str, Any], paths_and_urls: Dict[str, str], force_refresh: bool = False
 ) -> Tuple[List[str], List[str], List[Dict[str, str]], Optional[str], Optional[str]]:
     """
-    Process Android APK releases: fetch release metadata, download selected APK assets, and report discovered and downloaded versions.
-
-    When APK saving is enabled and selected APK asset patterns are provided, this function fetches recent Android release metadata, determines the latest release tag, downloads APK assets that match the configured selection, and prunes based on the configured keep count.
-
+    Download and prune Android APK releases according to configuration.
+    
+    When APK saving is enabled and selected APK asset patterns are provided, fetch recent Android release metadata, download matching APK assets into the configured directory, and remove old releases according to the configured retention count.
+    
     Parameters:
         config (Dict[str, Any]): Configuration mapping. Uses keys: `SAVE_APKS`, `SELECTED_APK_ASSETS`, `ANDROID_VERSIONS_TO_KEEP`, and `GITHUB_TOKEN`.
         paths_and_urls (Dict[str, str]): Paths and endpoints. Uses keys: `"android_releases_url"`, `"latest_android_release_file"`, and `"apks_dir"`.
         force_refresh (bool): If True, bypass cached release data and fetch fresh metadata.
-
+    
     Returns:
         Tuple[List[str], List[str], List[Dict[str, str]], Optional[str], Optional[str]]:
         - downloaded_apk_versions: List of release versions successfully downloaded during this run.
-        - new_apk_versions: List of newly discovered release versions (may include versions not downloaded).
-        - failed_downloads: List of dicts describing each failed asset download (details vary by failure).
-        - latest_apk_version: Tag/name of the most recent release found, or `None` if no releases were available.
-        - latest_prerelease_version: Always None for APKs (prereleases not supported).
+        - new_apk_versions: List of discovered release versions (may include versions not downloaded).
+        - failed_downloads: List of dicts describing each failed asset download.
+        - latest_apk_version: Tag or name of the most recent release found, or `None` if none available.
+        - latest_prerelease_version: Always `None` for APKs (prereleases not used).
     """
     global downloads_skipped
     downloaded_apks: List[str] = []
@@ -2769,14 +2773,25 @@ def _finalize_and_notify(
     latest_prerelease_version: Optional[str] = None,
 ) -> None:
     """
-    Finalize processing: log a concise summary, display/app-update messaging, and send NTFY notifications about download results.
-
-    Computes total runtime from start_time, logs the number of downloaded firmware/APK files and the latest firmware/APK versions when available, and logs an upgrade command if update_available is True. Sends a notification via _send_ntfy_notification based on three states:
-    - downloads_skipped (global): reports available new versions but indicates downloads were skipped,
-    - downloaded items present: reports the downloaded firmware/APK versions,
-    - no downloads and not skipped: reports that assets are up to date (suppressed when config['NOTIFY_ON_DOWNLOAD_ONLY'] is True).
-
-    Reads notification settings from config keys "NTFY_SERVER", "NTFY_TOPIC", and "NOTIFY_ON_DOWNLOAD_ONLY". Side effects: logging and conditional network notifications.
+    Finalize the run by logging a concise summary, showing upgrade guidance if applicable, and sending NTFY notifications about download results.
+    
+    Parameters:
+        start_time (float): Monotonic epoch timestamp when processing began; used to compute total runtime.
+        config (Dict[str, Any]): Configuration mapping. Relevant keys read: "NTFY_SERVER", "NTFY_TOPIC", and "NOTIFY_ON_DOWNLOAD_ONLY".
+        downloaded_firmwares (List[str]): List of firmware versions that were downloaded during this run.
+        downloaded_apks (List[str]): List of APK versions that were downloaded during this run.
+        new_firmware_versions (List[str]): List of available firmware versions that were detected but not downloaded.
+        new_apk_versions (List[str]): List of available APK versions that were detected but not downloaded.
+        current_version (Optional[str]): Currently running Fetchtastic version, if known.
+        latest_version (Optional[str]): Latest released Fetchtastic version, if known.
+        update_available (bool): True when a newer Fetchtastic release is available and an upgrade message should be shown.
+        latest_firmware_version (Optional[str]): Canonical latest firmware version discovered, if available.
+        latest_apk_version (Optional[str]): Canonical latest APK version discovered, if available.
+        latest_prerelease_version (Optional[str]): Latest prerelease identifier discovered, if available.
+    
+    Side effects:
+        - Logs summary and upgrade guidance to the configured logger.
+        - May send notifications to an NTFY server/topic when configured.
     """
     global downloads_skipped
     end_time: float = time.time()
@@ -3763,16 +3778,22 @@ def check_extraction_needed(
     zip_path: str, extract_dir: str, patterns: List[str], exclude_patterns: List[str]
 ) -> bool:
     """
-    Return whether a ZIP archive contains any files matching `patterns` that are not yet present in `extract_dir`.
-
-    Checks archive entries (skipping directories) and filters out entries whose base filename matches any pattern in `exclude_patterns`. Matching against `patterns` uses the module's back-compat matcher (matches_selected_patterns). If `patterns` is empty this function returns False.
-
+    Determine whether a ZIP archive contains any files that match the given patterns and are not already present in the extraction directory.
+    
+    Checks archive members (skipping directories), ignores entries whose base filename matches any pattern in `exclude_patterns`, and matches remaining base filenames against `patterns`. If `patterns` is empty, the function returns False.
+    
+    Parameters:
+        zip_path (str): Path to the ZIP archive to inspect.
+        extract_dir (str): Target extraction directory used to check for existing files.
+        patterns (List[str]): Inclusion patterns to match against each member's base filename.
+        exclude_patterns (List[str]): Exclusion patterns; matching base filenames are ignored.
+    
     Returns:
-        bool: True if at least one matched file in the ZIP is missing from `extract_dir` (extraction needed); False otherwise.
-
+        bool: `true` if at least one matched file in the ZIP is missing from `extract_dir` (extraction needed), `false` otherwise.
+    
     Notes:
-    - If the ZIP is corrupted (zipfile.BadZipFile) the function will attempt to remove the ZIP file and returns False.
-    - On IO/OSError or other unexpected exceptions the function conservatively returns True (assume extraction is needed).
+        - If the ZIP is corrupted (`zipfile.BadZipFile`), the function attempts to remove the ZIP file and returns `false`.
+        - If an IO/OSError or another unexpected exception occurs while inspecting the ZIP, the function conservatively returns `true` (assumes extraction is needed).
     """
     # Preserve historical behavior: empty list of patterns means "do not extract".
     if not patterns:
@@ -3839,7 +3860,21 @@ def check_extraction_needed(
 
 
 def _format_api_summary(summary: Dict[str, Any]) -> str:
-    """Format API request summary for logging."""
+    """
+    Format API request statistics into a concise, human-readable string for logging.
+    
+    Parameters:
+        summary (dict): A mapping with API telemetry values. Recognized keys:
+            - "auth_used" (bool): Whether authenticated requests were used.
+            - "total_requests" (int): Total number of API requests performed.
+            - "cache_hits" (int): Number of cache hits.
+            - "cache_misses" (int): Number of cache misses.
+            - "rate_limit_remaining" (int, optional): Remaining requests before rate limit.
+            - "rate_limit_reset" (datetime.datetime, optional): UTC datetime when the rate limit resets.
+    
+    Returns:
+        str: A single-line summary string describing requests made, cache hit/miss counts and rate limit status.
+    """
     auth_status = "🔐 authenticated" if summary["auth_used"] else "🌐 unauthenticated"
     log_parts = [
         f"📊 API Summary: {summary['total_requests']} requests made ({auth_status})"

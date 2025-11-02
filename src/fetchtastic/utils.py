@@ -75,10 +75,10 @@ _api_tracking_lock = threading.Lock()
 
 def get_user_agent() -> str:
     """
-    Return the User-Agent string used for HTTP requests.
-
+    Get the User-Agent string used for HTTP requests.
+    
     Returns:
-        str: The string "fetchtastic/{version}", where {version} is the package version or "unknown" if the version cannot be determined.
+        The string `fetchtastic/{version}`, where `{version}` is the installed package version or `unknown` if the version cannot be determined.
     """
     global _USER_AGENT_CACHE
 
@@ -108,7 +108,20 @@ def track_api_cache_miss() -> None:
 
 
 def get_api_request_summary() -> Dict[str, Any]:
-    """Get comprehensive API request summary for the session."""
+    """
+    Builds a session-wide summary of API request and cache statistics.
+    
+    The returned dictionary contains aggregate request counters and authentication usage, and may include cached rate-limit details if available for the last used token.
+    
+    Returns:
+        summary (dict): Keys include:
+            - "total_requests" (int): Total number of API requests made this session.
+            - "cache_hits" (int): Number of API cache hits.
+            - "cache_misses" (int): Number of API cache misses.
+            - "auth_used" (bool): Whether any request used authentication.
+            - "rate_limit_remaining" (int, optional): Cached remaining requests for the last token, present when available.
+            - "rate_limit_reset" (datetime.datetime, optional): Reset timestamp for the cached rate limit, present when available.
+    """
     with _api_tracking_lock:
         summary = {
             "total_requests": _api_request_count,
@@ -130,7 +143,13 @@ def get_api_request_summary() -> Dict[str, Any]:
 
 
 def reset_api_tracking() -> None:
-    """Reset API request tracking (useful for testing)."""
+    """
+    Reset session-wide API request tracking counters and flags.
+    
+    Resets the request count, cache hit and miss counters, the authentication-used flag,
+    and the first-authenticated/first-unauthenticated logged flags while holding the
+    module's tracking lock to ensure thread-safety.
+    """
     global _api_request_count, _api_cache_hits, _api_cache_misses, _api_auth_used
     global _api_first_auth_logged, _api_first_unauth_logged
     with _api_tracking_lock:
@@ -146,14 +165,14 @@ def get_effective_github_token(
     github_token: Optional[str], allow_env_token: bool = True
 ) -> Optional[str]:
     """
-    Return the effective GitHub token from arguments or environment.
-
+    Determine the GitHub token to use, preferring the explicit argument over the environment.
+    
     Parameters:
-        github_token (Optional[str]): GitHub token passed as argument
-        allow_env_token (bool): Whether to allow using environment variable token
-
+        github_token (Optional[str]): Explicit token to use; leading and trailing whitespace are ignored.
+        allow_env_token (bool): If True, fall back to the `GITHUB_TOKEN` environment variable when no explicit token is provided.
+    
     Returns:
-        Optional[str]: The effective token to use, or None if no token available
+        Optional[str]: The chosen token with surrounding whitespace removed, or `None` if no token is available.
     """
     candidate = (github_token or "").strip()
     if candidate:
@@ -166,13 +185,12 @@ def get_effective_github_token(
 
 def _show_token_warning_if_needed(effective_token: Optional[str]) -> None:
     """
-    Show thread-safe warning about missing GitHub token if needed.
-
-    This function centralizes the token warning logic to avoid duplication
-    across the codebase and ensures the warning is shown only once per session.
-
-    Args:
-        effective_token: The effective GitHub token (None if no token)
+    Log a one-time warning when no GitHub token is available.
+    
+    This function is thread-safe and ensures the warning is emitted at most once per session/process.
+    
+    Parameters:
+        effective_token: The resolved GitHub token, or `None` if no token is available.
     """
     if not effective_token:
         global _token_warning_shown
@@ -197,16 +215,9 @@ def _get_rate_limit_cache_file() -> str:
 
 def _load_rate_limit_cache() -> None:
     """
-    Load rate limit cache from disk with atomic double-checked locking.
-
-    This function implements a performance-optimized cache loading pattern that:
-    1. Performs a fast check without lock to avoid contention
-    2. Uses guarded double-checking with minimal lock time
-    3. Loads cache data outside the critical section
-    4. Publishes loaded data atomically under lock
-
-    The cache file stores rate limit information across process restarts,
-    avoiding unnecessary API calls that would consume rate limit quota.
+    Load persisted rate-limit entries from disk into the in-memory cache if they have not already been loaded.
+    
+    Reads the on-disk rate-limit cache, validates its structure, converts stored reset timestamps to datetimes, and retains only entries whose reset time is in the future. Malformed entries, missing files, and I/O or JSON errors are ignored; the function publishes the validated entries into the module cache under a lock to ensure thread-safe one-time initialization.
     """
     global _rate_limit_cache_loaded
 
@@ -289,11 +300,8 @@ def _parse_rate_limit_header(header_value: Any) -> Optional[int]:
 def _save_rate_limit_cache() -> None:
     """
     Persist the in-memory rate-limit cache to the on-disk cache file.
-
-    Writes the current in-memory rate-limit entries to the cache file returned by
-    `_get_rate_limit_cache_file`. Timestamps are serialized as ISO 8601 strings and
-    the file is written atomically (temporary file then replace). I/O errors during
-    save are silently ignored.
+    
+    Serializes cached entries (timestamps as ISO 8601 strings) and writes them atomically via a temporary file replacement. I/O errors during the save are ignored.
     """
     cache_file = _get_rate_limit_cache_file()
 
@@ -327,7 +335,20 @@ def _save_rate_limit_cache() -> None:
 def _update_rate_limit(
     token_hash: str, remaining: int, reset_timestamp: Optional[datetime] = None
 ) -> None:
-    """Update the rate limit cache for a specific token."""
+    """
+    Update cached rate-limit information for a specific token and optionally persist the cache to disk.
+    
+    Parameters:
+        token_hash (str): Short hash identifying the token whose rate-limit is being updated.
+        remaining (int): Number of remaining requests reported for the token.
+        reset_timestamp (Optional[datetime]): Time when the rate limit resets; if omitted, defaults to one hour from now (timezone-aware).
+    
+    Details:
+        - Stores (remaining, reset_timestamp) in the in-memory rate-limit cache.
+        - Triggers persistence to the on-disk cache if this is a new entry, if `remaining` decreased compared to the cached value, or if the configured save interval has elapsed.
+        - Updates the session's last-cache-save timestamp when persisting.
+        - Persistence is performed outside the internal lock to avoid deadlocks.
+    """
     global _rate_limit_cache, _last_cache_save_time
 
     now = datetime.now(timezone.utc)
@@ -366,7 +387,15 @@ def _update_rate_limit(
 
 
 def _get_cached_rate_limit(token_hash: str) -> Optional[int]:
-    """Get cached rate limit remaining for a specific token if reset is in future."""
+    """
+    Retrieve the cached remaining GitHub API requests for a token when its reset time is in the future.
+    
+    Parameters:
+        token_hash (str): The cache key derived from a GitHub token.
+    
+    Returns:
+        int | None: The cached remaining request count for the token, or `None` if no valid cached entry exists or the reset time has passed.
+    """
     global _rate_limit_cache
 
     with _rate_limit_lock:
@@ -378,7 +407,12 @@ def _get_cached_rate_limit(token_hash: str) -> Optional[int]:
 
 
 def get_rate_limit_info(token_hash: str) -> Optional[Tuple[int, datetime]]:
-    """Get cached rate limit info (remaining, reset_timestamp) for a specific token."""
+    """
+    Retrieve cached GitHub API rate-limit remaining count and reset time for a token hash.
+    
+    @returns
+        (remaining, reset_timestamp) as (int, datetime) if a cached entry exists for the given token hash, `None` otherwise.
+    """
     global _rate_limit_cache
 
     with _rate_limit_lock:
@@ -388,7 +422,11 @@ def get_rate_limit_info(token_hash: str) -> Optional[Tuple[int, datetime]]:
 
 
 def clear_rate_limit_cache() -> None:
-    """Clear the global rate limit cache. Useful for testing."""
+    """
+    Clear the in-memory and on-disk rate-limit cache.
+    
+    Clears the process-global rate-limit cache under the internal lock and marks it as not loaded. Also attempts to remove the persisted cache file next to the user cache directory; I/O errors during file removal are logged and ignored.
+    """
     global _rate_limit_cache, _rate_limit_cache_loaded
 
     # Clear cache under lock to avoid races with concurrent readers/writers
@@ -750,12 +788,12 @@ def download_file_with_retry(
     # log_message_func: Callable[[str], None] # Removed
 ) -> bool:
     """
-    Download a file from `url` to `download_path`, ensuring integrity and performing atomic replacement.
-
-    Performs integrity checks (SHA-256 sidecar and ZIP validation for archives), skips download when an existing file is verified, streams content to a temporary file with retry-capable HTTP requests, and replaces the target file atomically (with Windows-specific retries for transient access errors). On successful install, saves a companion `.sha256` hash file next to the downloaded file. Cleans up temporary and partially downloaded files on failure.
-
+    Download a URL to disk and ensure the file is intact and atomically installed.
+    
+    Performs integrity verification (SHA-256 sidecar and ZIP validation for archives), skips downloading when an existing file is already verified, streams the remote content to a temporary file with retry-capable HTTP requests, and atomically replaces the target file on success (with additional retries on Windows to handle transient access errors). Temporary and partially downloaded files are removed on failure; a companion `.sha256` sidecar is written after successful installation.
+    
     Returns:
-        True if the file is present and verified or was downloaded and installed successfully, `False` on any failure.
+        `true` if the file is present and verified or was downloaded and installed successfully, `false` otherwise.
     """
     # Note: Session is created after pre-checks and closed in finally
 

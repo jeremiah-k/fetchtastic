@@ -407,22 +407,9 @@ def show_help(
 
 def run_clean():
     """
-    Permanently removes Fetchtastic configuration, downloaded files, and related system integrations.
-
-    This is a destructive operation that:
-    - Prompts the user for confirmation (defaults to "no") before proceeding.
-    - Deletes current and legacy configuration files and attempts to remove the configuration directory (and a "batch" subdirectory) if empty.
-    - On Windows, attempts to remove Start Menu shortcuts, a startup shortcut, and a configuration shortcut when Windows-specific modules are available.
-    - Deletes only Fetchtastic-managed directories (matching MANAGED_DIRECTORIES or FIRMWARE_DIR_PREFIX) and files (matching MANAGED_FILES) inside the configured download/base directory, preserving other user files.
-    - On non-Windows systems, removes Fetchtastic-related crontab entries if present.
-    - Removes a Termux boot script (~/.termux/boot/fetchtastic.sh) if present.
-    - Removes the Fetchtastic log file in the user log directory.
-
-    Side effects:
-    - Irreversibly deletes files and may modify the user's crontab and Start Menu/startup items.
-    - The function prints progress and error messages to stdout.
-
-    Use with caution; run only when you intend to fully remove Fetchtastic data and integrations.
+    Remove Fetchtastic configuration, managed downloads, and system integrations.
+    
+    Prompts for confirmation before proceeding. Deletes current and legacy config files and their config directory when empty; removes only Fetchtastic-managed directories (matching configured MANAGED_DIRECTORIES or FIRMWARE_DIR_PREFIX) and managed files (matching MANAGED_FILES) inside the configured download/base directory while preserving other user files; removes platform-specific integrations such as Windows Start Menu/startup shortcuts, non-Windows crontab entries that reference Fetchtastic, a Termux boot script (~/.termux/boot/fetchtastic.sh), and the Fetchtastic log file. This operation is irreversible and will modify or remove files and system entries.
     """
     print(
         "This will remove Fetchtastic configuration files, downloaded files, and cron job entries."
@@ -531,7 +518,12 @@ def run_clean():
     download_dir = setup_config.BASE_DIR
 
     def _remove_managed_file(item_path: str) -> None:
-        """Remove a managed file and log the outcome."""
+        """
+        Remove a managed file at the given path and log whether the removal succeeded.
+        
+        Parameters:
+            item_path (str): Filesystem path of the managed file to remove.
+        """
         try:
             os.remove(item_path)
             logger.info(MSG_REMOVED_MANAGED_FILE.format(path=item_path))

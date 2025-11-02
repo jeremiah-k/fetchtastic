@@ -11,17 +11,14 @@ from fetchtastic.utils import extract_base_name, make_github_api_request
 
 def fetch_firmware_assets():
     """
-    Return a sorted list of firmware asset filenames from the latest Meshtastic GitHub release.
-
-    Makes an HTTP GET request to MESHTASTIC_FIRMWARE_RELEASES_URL (with timeout GITHUB_API_TIMEOUT),
-    pauses for API_CALL_DELAY after the request, then parses the JSON and returns the asset names
-    from the first release entry, sorted alphabetically.
-
+    Retrieve firmware asset filenames from the latest Meshtastic GitHub release.
+    
+    Parses the releases returned by the Meshtastic GitHub API and returns the asset filenames
+    from the most recent release, sorted alphabetically. If the API response is not a non-empty
+    list or the JSON cannot be decoded, an empty list is returned.
+    
     Returns:
-        list[str]: Sorted asset filenames present in the latest release.
-
-    Raises:
-        requests.HTTPError: If the HTTP request returns a non-2xx status (raised by make_github_api_request()).
+        list[str]: Sorted asset filenames from the latest release; empty list if no release data is available.
     """
     response = make_github_api_request(MESHTASTIC_FIRMWARE_RELEASES_URL)
 

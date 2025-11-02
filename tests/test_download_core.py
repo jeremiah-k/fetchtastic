@@ -986,6 +986,12 @@ def test_atomic_write_error_handling(tmp_path):
 
     # Should handle OSError when creating temp file in non-existent directory
     def writer(f):
+        """
+        Write the literal string "test" to the given file-like object.
+        
+        Parameters:
+            f: A writable file-like object with a `write(str)` method; the string "test" will be written to it.
+        """
         f.write("test")
 
     result = _atomic_write(str(file_path), writer, ".txt")
@@ -1009,6 +1015,12 @@ def test_atomic_write_permission_error(tmp_path):
         file_path = readonly_dir / "test.txt"
 
         def writer(f):
+            """
+            Write the literal string "test" to the provided writable file-like object.
+            
+            Parameters:
+                f: A writable file-like object with a `write(str)` method.
+            """
             f.write("test")
 
         result = _atomic_write(str(file_path), writer, ".txt")
@@ -1146,7 +1158,13 @@ def test_calculate_expected_prerelease_version_edge_cases():
 
 @pytest.mark.core_downloads
 def test_cache_functions_error_handling(tmp_path):
-    """Test cache functions with error handling."""
+    """
+    Ensure loader functions tolerate corrupted cache files without raising exceptions.
+    
+    Writes invalid JSON to the commit and releases cache files and verifies that
+    fetchtastic.downloader._load_commit_cache and _load_releases_cache handle the
+    malformed data safely (do not propagate exceptions).
+    """
     from fetchtastic.downloader import _load_commit_cache, _load_releases_cache
 
     # Test _load_commit_cache with corrupted file
