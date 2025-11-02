@@ -174,6 +174,9 @@ def test_check_for_prereleases_download_and_cleanup(
     mock_api, mock_dl, mock_fetch_contents, mock_fetch_dirs, tmp_path, write_dummy_file
 ):
     """Check that prerelease discovery downloads matching assets and cleans stale entries."""
+    # Clear any cached prerelease directories to ensure fresh mock data
+    downloader._clear_prerelease_cache()
+
     # Repo has a newer prerelease and some other dirs
     mock_fetch_dirs.return_value = [
         "firmware-2.7.7.abcdef",
