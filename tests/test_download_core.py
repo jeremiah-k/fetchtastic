@@ -1095,7 +1095,7 @@ def test_read_text_tracking_file_edge_cases(tmp_path):
 
 
 @pytest.mark.core_downloads
-def test_parse_json_formats_error_handling(tmp_path):
+def test_parse_json_formats_error_handling():
     """Test JSON parsing functions with error handling."""
     from fetchtastic.downloader import _parse_legacy_json_format, _parse_new_json_format
 

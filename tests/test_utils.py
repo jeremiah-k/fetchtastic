@@ -3,7 +3,6 @@ import importlib.metadata
 import json
 import os
 import zipfile
-from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -1031,7 +1030,7 @@ def test_api_tracking_functions():
 @pytest.mark.unit
 def test_format_api_summary():
     """Test _format_api_summary function."""
-    from datetime import datetime, timezone
+    from datetime import datetime, timedelta, timezone
 
     # Test basic authenticated request with no cache lookups
     summary = {
