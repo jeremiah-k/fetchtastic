@@ -158,9 +158,8 @@ def test_fetch_repo_contents_request_exception(mocker):
 
     assert items == []
     mock_logger.warning.assert_called_once()
-    assert "Error fetching repository contents from GitHub API" in str(
-        mock_logger.warning.call_args
-    )
+    args, _ = mock_logger.warning.call_args
+    assert "Error fetching repository contents from GitHub API" in args[0]
 
 
 def test_fetch_repo_contents_json_error(mocker):
@@ -383,7 +382,8 @@ def test_fetch_repo_contents_debug_logging(mocker, mock_repo_contents):
     items = menu_repo.fetch_repo_contents()
 
     # Should log debug message about fetched items
-    mock_logger.debug.assert_called_with("Fetched 7 items from repository")
+    expected = f"Fetched {len(mock_repo_contents)} items from repository"
+    mock_logger.debug.assert_called_with(expected)
     assert len(items) == 4  # Filtered items
 
 

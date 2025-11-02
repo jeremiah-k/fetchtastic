@@ -407,7 +407,7 @@ def run_clean():
     - Prompts the user for confirmation (defaults to "no") before proceeding.
     - Deletes current and legacy configuration files and attempts to remove the configuration directory (and a "batch" subdirectory) if empty.
     - On Windows, attempts to remove Start Menu shortcuts, a startup shortcut, and a configuration shortcut when Windows-specific modules are available.
-    - Deletes all files, symlinks, and subdirectories inside the configured download/base directory.
+    - Deletes only Fetchtastic-managed directories (matching MANAGED_DIRECTORIES or FIRMWARE_DIR_PREFIX) and files (matching MANAGED_FILES) inside the configured download/base directory, preserving other user files.
     - On non-Windows systems, removes Fetchtastic-related crontab entries if present.
     - Removes a Termux boot script (~/.termux/boot/fetchtastic.sh) if present.
     - Removes the Fetchtastic log file in the user log directory.
@@ -528,19 +528,11 @@ def run_clean():
             item_path = os.path.join(download_dir, item)
             item_name = item
 
-            # Check if this is a managed directory
-            is_managed_dir = False
-            is_managed_file = False
-
-            # Direct match for managed directories
-            if item_name in MANAGED_DIRECTORIES:
-                is_managed_dir = True
-            # Check for firmware directories (prefix match)
-            elif item_name.startswith(FIRMWARE_DIR_PREFIX):
-                is_managed_dir = True
-            # Check for managed files
-            elif item_name in MANAGED_FILES:
-                is_managed_file = True
+            # Check if this is a managed directory or file
+            is_managed_dir = item_name in MANAGED_DIRECTORIES or item_name.startswith(
+                FIRMWARE_DIR_PREFIX
+            )
+            is_managed_file = item_name in MANAGED_FILES
 
             # Only remove managed directories and their contents
             if is_managed_dir and os.path.isdir(item_path):

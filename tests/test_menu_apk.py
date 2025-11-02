@@ -148,7 +148,7 @@ def test_fetch_apk_assets_error_handling(mocker):
 def test_run_menu_exception_handling(mocker):
     """Test exception handling in run_menu."""
     # Test exception during fetch
-    mock_fetch = mocker.patch(
+    mocker.patch(
         "fetchtastic.menu_apk.fetch_apk_assets", side_effect=Exception("Network error")
     )
 
