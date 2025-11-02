@@ -250,7 +250,7 @@ def test_cleanup_old_versions(tmp_path):
     # Mock _safe_rmtree to track calls
     removed = []
 
-    def mock_safe_rmtree(path, base_dir, version):
+    def mock_safe_rmtree(_path, _base_dir, version):
         removed.append(version)
         return True
 

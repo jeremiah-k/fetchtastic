@@ -2029,8 +2029,14 @@ def check_for_prereleases(
     ]
 
     if matching_dirs:
-        # Sort by version to get the newest
-        matching_dirs.sort(key=lambda d: extract_version(d), reverse=True)
+        # Sort by numeric version tuple first, fall back to string for tie-break
+        matching_dirs.sort(
+            key=lambda d: (
+                _get_release_tuple(extract_version(d)) or (),
+                extract_version(d),
+            ),
+            reverse=True,
+        )
         newest_dir = matching_dirs[0]
         logger.debug(f"Found existing prerelease: {newest_dir}")
     else:

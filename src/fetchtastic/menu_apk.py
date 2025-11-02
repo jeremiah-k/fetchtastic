@@ -15,7 +15,7 @@ def fetch_apk_assets():
     """
     Fetch APK asset filenames from the latest Meshtastic Android release on GitHub.
 
-    Performs an HTTP GET to MESHTASTIC_ANDROID_RELEASES_URL with timeout GITHUB_API_TIMEOUT and raises an HTTPError on non-OK responses. After the request it waits API_CALL_DELAY seconds. Expects the API JSON to be a non-empty list of releases and treats the first element as the latest release; if the response is not a list or is empty, returns an empty list. Extracts asset names from the latest release whose names end with APK_EXTENSION (case-insensitive), defaulting missing names to the empty string, sorts them alphabetically, and returns the sorted list of names.
+    Performs an HTTP GET to MESHTASTIC_ANDROID_RELEASES_URL with timeout GITHUB_API_TIMEOUT and raises an HTTPError on non-OK responses. After the request it waits API_CALL_DELAY seconds. Expects the API JSON to be a non-empty list of releases and treats the first element as the latest release; if the response is not a list or is empty, returns an empty list.     Extracts asset names from the latest release whose names end with ".apk" (case-insensitive), defaulting missing names to the empty string, sorts them alphabetically, and returns the sorted list of names.
 
     Returns:
         list[str]: Alphabetically sorted APK asset filenames from the latest release. May be empty if no releases or matching assets are found.
@@ -36,7 +36,7 @@ def fetch_apk_assets():
     assets = latest_release.get("assets", []) or []
     asset_names = sorted(
         [
-            (asset_name or "")
+            asset_name
             for asset in assets
             if (asset_name := asset.get("name")) and asset_name.lower().endswith(".apk")
         ]

@@ -1092,7 +1092,7 @@ def test_parse_json_formats_error_handling(tmp_path):
         "version": "v1.0.0",
         "commits": "not_a_list",
     }  # commits should be list
-    commits, release, last_updated = _parse_new_json_format(invalid_data)
+    commits, release, _last_updated = _parse_new_json_format(invalid_data)
     assert commits == []  # Should reset to empty list
     assert release == "v1.0.0"
 
@@ -1101,19 +1101,19 @@ def test_parse_json_formats_error_handling(tmp_path):
         "version": "v1.0.0",
         "commits": ["valid", 123, None],
     }  # mixed types
-    commits, release, last_updated = _parse_new_json_format(invalid_data2)
+    commits, release, _last_updated = _parse_new_json_format(invalid_data2)
     assert commits == ["valid"]  # Should filter out invalid entries
     assert release == "v1.0.0"
 
     # Test _parse_legacy_json_format with missing keys
     legacy_data = {}  # Empty dict
-    commits, release, last_updated = _parse_legacy_json_format(legacy_data)
+    commits, release, _last_updated = _parse_legacy_json_format(legacy_data)
     assert commits == []
     assert release is None
 
     # Test with invalid commits type
     legacy_data2 = {"release": "v1.0.0", "commits": "not_a_list"}
-    commits, release, last_updated = _parse_legacy_json_format(legacy_data2)
+    commits, release, _last_updated = _parse_legacy_json_format(legacy_data2)
     assert commits == []  # Should handle gracefully
     assert release == "v1.0.0"
 
