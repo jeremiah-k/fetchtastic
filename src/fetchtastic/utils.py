@@ -497,26 +497,22 @@ def make_github_api_request(
     finally:
         # Small delay to be respectful to GitHub API, even on errors
         time.sleep(API_CALL_DELAY)
-
-    # Track API request statistics and log first requests
-    global _api_request_count, _api_auth_used
-    global _api_first_auth_logged, _api_first_unauth_logged
-    with _api_tracking_lock:
-        _api_request_count += 1
-        is_authenticated = bool(effective_token)
-        if is_authenticated:
-            _api_auth_used = True
-            # Log first authenticated request
-            if not _api_first_auth_logged:
-                logger.info(f"🔐 Making first authenticated GitHub API request")
-                _api_first_auth_logged = True
-        else:
-            # Log first unauthenticated request
-            if not _api_first_unauth_logged:
-                logger.info(
-                    f"🌐 Making first unauthenticated GitHub API request (60/hour limit)"
-                )
-                _api_first_unauth_logged = True
+        # Track API request statistics and log first requests
+        global _api_request_count, _api_auth_used
+        global _api_first_auth_logged, _api_first_unauth_logged
+        with _api_tracking_lock:
+            _api_request_count += 1
+            if effective_token:
+                _api_auth_used = True
+                if not _api_first_auth_logged:
+                    logger.info("🔐 Making first authenticated GitHub API request")
+                    _api_first_auth_logged = True
+            else:
+                if not _api_first_unauth_logged:
+                    logger.info(
+                        "🌐 Making first unauthenticated GitHub API request (60/hour limit)"
+                    )
+                    _api_first_unauth_logged = True
 
     # Enhanced rate limit tracking and logging
     try:

@@ -2254,6 +2254,7 @@ def _get_latest_releases_data(
         github_token (Optional[str]): Optional GitHub API token for higher rate limits.
         allow_env_token (bool): Whether to allow using a token from the environment.
         force_refresh (bool): If True, bypass the cache and fetch fresh data from the API.
+        release_type (Optional[str]): Human-readable release type (e.g., "firmware", "Android APK") for logging purposes. If None, falls back to URL-based detection.
 
     Returns:
         List[Dict[str, Any]]: Sorted list of release dictionaries (newest first). Returns an empty
@@ -3932,9 +3933,7 @@ def main(force_refresh: bool = False) -> None:
         )
         logger.info(log_message)
     else:
-        logger.info(
-            f"📊 API Summary: No API requests made (all data served from cache)"
-        )
+        logger.info("📊 API Summary: No API requests made (all data served from cache)")
 
 
 if __name__ == "__main__":
