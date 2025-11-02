@@ -3874,7 +3874,7 @@ def _format_api_summary(summary: Dict[str, Any]) -> str:
     """
     auth_status = "🔐 authenticated" if summary["auth_used"] else "🌐 unauthenticated"
     log_parts = [
-        f"📊 API Summary: {summary['total_requests']} requests made ({auth_status})"
+        f"📊 API Summary: {summary['total_requests']} HTTP requests ({auth_status})"
     ]
 
     # Add cache statistics if there were cache lookups
@@ -3883,7 +3883,7 @@ def _format_api_summary(summary: Dict[str, Any]) -> str:
         cache_hit_rate = (summary["cache_hits"] / total_cache_lookups) * 100
         log_parts.append(
             f"{summary['cache_hits']} cache hits, {summary['cache_misses']} cache misses "
-            f"({cache_hit_rate:.1f}% hit rate, {total_cache_lookups} total lookups)"
+            f"({cache_hit_rate:.1f}% hit rate)"
         )
 
     # Add rate limit info if available
