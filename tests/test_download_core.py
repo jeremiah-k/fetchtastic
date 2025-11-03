@@ -914,3 +914,339 @@ class TestDownloadCoreIntegration:
             # Should have one failure
             assert len(failed) == 1
             assert failed[0]["release_tag"] == "v1.1.0"
+
+
+@pytest.mark.core_downloads
+def test_compare_file_hashes(tmp_path):
+    """Test file hash comparison functionality."""
+    from fetchtastic.downloader import compare_file_hashes
+
+    # Create test files
+    file1 = tmp_path / "file1.txt"
+    file2 = tmp_path / "file2.txt"
+    file3 = tmp_path / "file3.txt"
+
+    content1 = b"test content 1"
+    content2 = b"test content 2"
+
+    file1.write_bytes(content1)
+    file2.write_bytes(content1)  # Same content as file1
+    file3.write_bytes(content2)  # Different content
+
+    # Same content should return True
+    assert compare_file_hashes(str(file1), str(file2)) is True
+
+    # Different content should return False
+    assert compare_file_hashes(str(file1), str(file3)) is False
+
+    # Non-existent file should return False
+    assert compare_file_hashes(str(file1), str(tmp_path / "nonexistent.txt")) is False
+    assert compare_file_hashes(str(tmp_path / "nonexistent.txt"), str(file1)) is False
+
+    # Both non-existent should return False
+    assert (
+        compare_file_hashes(
+            str(tmp_path / "nonexistent1.txt"), str(tmp_path / "nonexistent2.txt")
+        )
+        is False
+    )
+
+
+@pytest.mark.core_downloads
+def test_compare_file_hashes_permission_error(tmp_path):
+    """Test compare_file_hashes with permission errors."""
+    from fetchtastic.downloader import compare_file_hashes
+
+    # Create a file and make it unreadable
+    file1 = tmp_path / "readable.txt"
+    file2 = tmp_path / "unreadable.txt"
+
+    file1.write_bytes(b"content")
+    file2.write_bytes(b"content")
+
+    # Make file2 unreadable (if possible)
+    if os.name != "nt":  # Skip on Windows where chmod might not work
+        file2.chmod(0o000)
+        try:
+            # Should return False due to permission error
+            result = compare_file_hashes(str(file1), str(file2))
+            assert result is False
+        finally:
+            file2.chmod(0o644)  # Restore permissions for cleanup
+
+
+@pytest.mark.core_downloads
+def test_atomic_write_error_handling(tmp_path):
+    """Test _atomic_write error handling."""
+    from fetchtastic.downloader import _atomic_write
+
+    # Test with non-existent directory
+    nonexistent_dir = tmp_path / "nonexistent" / "deep" / "path"
+    file_path = nonexistent_dir / "test.txt"
+
+    # Should handle OSError when creating temp file in non-existent directory
+    def writer(f):
+        """
+        Write the literal string "test" to the given file-like object.
+
+        Parameters:
+            f: A writable file-like object with a `write(str)` method; the string "test" will be written to it.
+        """
+        f.write("test")
+
+    result = _atomic_write(str(file_path), writer, ".txt")
+    assert result is False
+
+
+@pytest.mark.core_downloads
+def test_atomic_write_permission_error(tmp_path):
+    """Test _atomic_write with permission errors."""
+    from fetchtastic.downloader import _atomic_write
+
+    if os.name == "nt":
+        pytest.skip("Permission bits unreliable on Windows")
+
+    # Create a read-only directory
+    readonly_dir = tmp_path / "readonly"
+    readonly_dir.mkdir()
+    readonly_dir.chmod(0o444)
+
+    try:
+        file_path = readonly_dir / "test.txt"
+
+        def writer(f):
+            """
+            Write the literal string "test" to the provided writable file-like object.
+
+            Parameters:
+                f: A writable file-like object with a `write(str)` method.
+            """
+            f.write("test")
+
+        result = _atomic_write(str(file_path), writer, ".txt")
+        assert result is False
+    finally:
+        readonly_dir.chmod(0o755)  # Restore for cleanup
+
+
+@pytest.mark.core_downloads
+def test_safe_rmtree_additional_edge_cases(tmp_path):
+    """Test _safe_rmtree with additional edge cases."""
+    from fetchtastic.downloader import _safe_rmtree
+
+    # Test with file instead of directory
+    test_file = tmp_path / "test_file.txt"
+    test_file.write_text("content")
+
+    result = _safe_rmtree(str(test_file), str(tmp_path), "test_file.txt")
+    assert result is True
+    assert not test_file.exists()
+
+    # Test with nested path traversal attempt (should fail safely)
+    # Create a safe directory structure
+    safe_dir = tmp_path / "safe"
+    safe_dir.mkdir()
+
+    # Try to remove a path that resolves outside (this should fail)
+    # Since we're in a test environment, create a path that would resolve outside if not checked
+    outside_attempt = tmp_path / ".." / "outside"
+    # This should not exist, but _safe_rmtree should handle it
+    result = _safe_rmtree(str(outside_attempt), str(tmp_path), "outside")
+    assert result is False  # Should fail because path doesn't exist or resolves outside
+
+
+@pytest.mark.core_downloads
+def test_read_text_tracking_file_edge_cases(tmp_path):
+    """Test _read_text_tracking_file with edge cases."""
+    from fetchtastic.downloader import _read_text_tracking_file
+
+    # Create a tracking file
+    tracking_file = tmp_path / "prerelease_tracking.json"
+    text_file = tmp_path / "prerelease_commits.txt"
+
+    # Test with missing text file
+    commits, release = _read_text_tracking_file(str(tracking_file))
+    assert commits == []
+    assert release is None
+
+    # Test with empty text file
+    text_file.write_text("")
+    commits, release = _read_text_tracking_file(str(tracking_file))
+    assert commits == []
+    assert release is None
+
+    # Test with legacy format (no "Release:" line)
+    text_file.write_text("commit1\ncommit2\n")
+    commits, release = _read_text_tracking_file(str(tracking_file))
+    assert commits == ["commit1", "commit2"]
+    assert release == "unknown"
+
+    # Test with modern format
+    text_file.write_text("Release: v1.0.0\ncommit1\ncommit2\n")
+    commits, release = _read_text_tracking_file(str(tracking_file))
+    assert commits == ["commit1", "commit2"]
+    assert release == "v1.0.0"
+
+    # Test with Unicode decode error
+    text_file.write_bytes(b"\xff\xfe\x00\x00")  # Invalid UTF-8
+    commits, release = _read_text_tracking_file(str(tracking_file))
+    assert commits == []
+    assert release is None
+
+
+@pytest.mark.core_downloads
+def test_parse_json_formats_error_handling():
+    """Test JSON parsing functions with error handling."""
+    from fetchtastic.downloader import _parse_legacy_json_format, _parse_new_json_format
+
+    # Test _parse_new_json_format with invalid data
+    invalid_data = {
+        "version": "v1.0.0",
+        "commits": "not_a_list",
+    }  # commits should be list
+    commits, release, _last_updated = _parse_new_json_format(invalid_data)
+    assert commits == []  # Should reset to empty list
+    assert release == "v1.0.0"
+
+    # Test with non-string commits
+    invalid_data2 = {
+        "version": "v1.0.0",
+        "commits": ["valid", 123, None],
+    }  # mixed types
+    commits, release, _last_updated = _parse_new_json_format(invalid_data2)
+    assert commits == ["valid"]  # Should filter out invalid entries
+    assert release == "v1.0.0"
+
+    # Test _parse_legacy_json_format with missing keys
+    legacy_data = {}  # Empty dict
+    commits, release, _last_updated = _parse_legacy_json_format(legacy_data)
+    assert commits == []
+    assert release is None
+
+    # Test with invalid commits type
+    legacy_data2 = {"release": "v1.0.0", "commits": "not_a_list"}
+    commits, release, _last_updated = _parse_legacy_json_format(legacy_data2)
+    assert commits == []  # Should handle gracefully
+    assert release == "v1.0.0"
+
+
+@pytest.mark.core_downloads
+def test_calculate_expected_prerelease_version_edge_cases():
+    """Test calculate_expected_prerelease_version with edge cases."""
+    from fetchtastic.downloader import calculate_expected_prerelease_version
+
+    # Test with empty string
+    result = calculate_expected_prerelease_version("")
+    assert result == ""
+
+    # Test with invalid version
+    result = calculate_expected_prerelease_version("invalid")
+    assert result == ""
+
+    # Test with version missing minor/patch
+    result = calculate_expected_prerelease_version("v1")
+    assert result == ""
+
+    # Test with valid version
+    result = calculate_expected_prerelease_version("v1.2.3")
+    assert result == "1.2.4"
+
+    # Test without v prefix
+    result = calculate_expected_prerelease_version("1.2.3")
+    assert result == "1.2.4"
+
+
+@pytest.mark.core_downloads
+def test_cache_functions_error_handling(tmp_path):
+    """
+    Ensure loader functions tolerate corrupted cache files without raising exceptions.
+
+    Writes invalid JSON to the commit and releases cache files and verifies that
+    fetchtastic.downloader._load_commit_cache and _load_releases_cache handle the
+    malformed data safely (do not propagate exceptions).
+    """
+    from fetchtastic.downloader import _load_commit_cache, _load_releases_cache
+
+    # Test _load_commit_cache with corrupted file
+    cache_file = tmp_path / "commit_timestamps.json"
+    cache_file.write_text("invalid json")
+
+    # Mock the global cache file path
+    with patch(
+        "fetchtastic.downloader._get_commit_cache_file", return_value=str(cache_file)
+    ):
+        # Should not raise exception
+        _load_commit_cache()
+
+    # Test _load_releases_cache with corrupted file
+    releases_cache_file = tmp_path / "releases.json"
+    releases_cache_file.write_text("invalid json")
+
+    with patch(
+        "fetchtastic.downloader._get_releases_cache_file",
+        return_value=str(releases_cache_file),
+    ):
+        # Should not raise exception
+        _load_releases_cache()
+
+
+@pytest.mark.core_downloads
+def test_extract_version_edge_cases():
+    """Test extract_version with edge cases."""
+    from fetchtastic.downloader import extract_version
+
+    # Test normal case
+    assert extract_version("firmware-1.2.3") == "1.2.3"
+
+    # Test without firmware prefix
+    assert extract_version("1.2.3") == "1.2.3"
+
+    # Test with hash
+    assert extract_version("firmware-1.2.3.abc123") == "1.2.3.abc123"
+
+    # Test empty string
+    assert extract_version("") == ""
+
+
+@pytest.mark.core_downloads
+def test_get_commit_hash_from_dir_edge_cases():
+    """Test _get_commit_hash_from_dir with edge cases."""
+    from fetchtastic.downloader import _get_commit_hash_from_dir
+
+    # Test valid cases
+    assert _get_commit_hash_from_dir("firmware-1.2.3.abc123") == "abc123"
+    assert _get_commit_hash_from_dir("firmware-1.2.3.ABCDEF") == "abcdef"
+
+    # Test too short hash
+    assert _get_commit_hash_from_dir("firmware-1.2.3.ab") is None
+
+    # Test too long hash
+    long_hash = "a" * 41
+    assert _get_commit_hash_from_dir(f"firmware-1.2.3.{long_hash}") is None
+
+    # Test no hash
+    assert _get_commit_hash_from_dir("firmware-1.2.3") is None
+
+    # Test invalid format
+    assert _get_commit_hash_from_dir("invalid") is None
+
+
+@pytest.mark.core_downloads
+def test_normalize_commit_identifier_edge_cases():
+    """Test _normalize_commit_identifier with edge cases."""
+    from fetchtastic.downloader import _normalize_commit_identifier
+
+    # Test already normalized
+    assert _normalize_commit_identifier("1.2.3.abc123", "v1.2.3") == "1.2.3.abc123"
+
+    # Test bare hash with release version
+    assert _normalize_commit_identifier("abc123", "v1.2.3") == "1.2.3.abc123"
+
+    # Test bare hash without release version
+    assert _normalize_commit_identifier("abc123", None) == "abc123"
+
+    # Test invalid hash
+    assert _normalize_commit_identifier("invalid", "v1.2.3") == "invalid"
+
+    # Test case normalization
+    assert _normalize_commit_identifier("ABC123", "v1.2.3") == "1.2.3.abc123"

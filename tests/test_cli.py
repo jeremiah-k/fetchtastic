@@ -334,6 +334,37 @@ def test_cli_setup_command_with_duplicate_sections(mocker):
     mock_setup_run.assert_called_once_with(sections=["firmware", "android"])
 
 
+def test_cli_setup_command_with_update_available(mocker):
+    """Test the 'setup' command when an update is available."""
+    mocker.patch("sys.argv", ["fetchtastic", "setup"])
+    mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
+    mock_logger = mocker.patch("fetchtastic.cli.logger")
+
+    # Mock version info to indicate update is available
+    mocker.patch(
+        "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.1.0", True)
+    )
+    # Mock upgrade command to return expected value
+    mocker.patch(
+        "fetchtastic.cli.get_upgrade_command",
+        return_value="pip install --upgrade fetchtastic",
+    )
+
+    cli.main()
+
+    # Should run setup
+    mock_setup_run.assert_called_once_with(sections=None)
+
+    # Should log update information
+    mock_logger.info.assert_any_call("\nUpdate Available")
+    mock_logger.info.assert_any_call(
+        "A newer version (v1.1.0) of Fetchtastic is available!"
+    )
+    mock_logger.info.assert_any_call(
+        "Run 'pip install --upgrade fetchtastic' to upgrade."
+    )
+
+
 def test_cli_clean_command(mocker):
     """Test the 'clean' command dispatch."""
     mocker.patch("sys.argv", ["fetchtastic", "clean"])
@@ -357,10 +388,13 @@ def test_cli_clean_command(mocker):
 @patch(
     "fetchtastic.setup_config.OLD_CONFIG_FILE", "/tmp/old_config/fetchtastic.yaml"
 )  # nosec B108
-@patch("fetchtastic.setup_config.BASE_DIR", "/tmp/meshtastic")  # nosec B108
+@patch("fetchtastic.setup_config.BASE_DIR", "/tmp/test_base_dir")  # nosec B108
+@patch("fetchtastic.setup_config.CONFIG_DIR", "/tmp/config/fetchtastic")  # nosec B108
+@patch("os.path.isfile")
 @patch("os.path.isdir")
 def test_run_clean(
     mock_isdir,
+    mock_isfile,
     mock_platform_system,
     mock_subprocess_run,
     mock_rmdir,
@@ -373,8 +407,40 @@ def test_run_clean(
     """Test the run_clean function."""
     # Simulate existing files and directories
     mock_os_path_exists.return_value = True
-    mock_listdir.return_value = ["some_dir"]
-    mock_isdir.return_value = True
+    mock_listdir.return_value = [
+        "some_dir",  # unmanaged dir
+        "repo-dls",  # managed dir
+        "firmware-2.7.4",  # managed dir (starts with FIRMWARE_DIR_PREFIX)
+        "latest_android_release.txt",  # managed file
+        "unmanaged.txt",  # unmanaged file
+    ]
+
+    def isdir_side_effect(path):
+        """
+        Indicates whether a filesystem path should be treated as a directory for test side effects.
+
+        Parameters:
+            path (str): The filesystem path to evaluate.
+
+        Returns:
+            bool: `True` if the path's basename is one of "some_dir", "repo-dls", or "firmware-2.7.4", `False` otherwise.
+        """
+        return os.path.basename(path) in ["some_dir", "repo-dls", "firmware-2.7.4"]
+
+    def isfile_side_effect(path):
+        """
+        Determine whether the provided filesystem path should be treated as a file for test side effects.
+
+        Parameters:
+            path (str): The filesystem path to examine.
+
+        Returns:
+            True if the path's basename is "latest_android_release.txt" or "unmanaged.txt", False otherwise.
+        """
+        return os.path.basename(path) in ["latest_android_release.txt", "unmanaged.txt"]
+
+    mock_isdir.side_effect = isdir_side_effect
+    mock_isfile.side_effect = isfile_side_effect
     mock_subprocess_run.return_value.stdout = "# fetchtastic cron job"
     mock_subprocess_run.return_value.returncode = 0
     with patch("subprocess.Popen") as mock_popen:
@@ -387,10 +453,24 @@ def test_run_clean(
     mock_os_remove.assert_any_call("/tmp/config/fetchtastic.yaml")  # nosec B108
     mock_os_remove.assert_any_call("/tmp/old_config/fetchtastic.yaml")  # nosec B108
 
-    # Check that download directory is cleaned
-    mock_rmtree.assert_any_call(
-        os.path.join("/tmp/meshtastic", "some_dir")  # nosec B108
-    )
+    # Check that only managed directories are cleaned
+    # "repo-dls" is in MANAGED_DIRECTORIES, "firmware-2.7.4" starts with FIRMWARE_DIR_PREFIX
+    # "some_dir" is not managed, so should not be removed
+    # Also removes batch directory from config dir
+    mock_rmtree.assert_any_call("/tmp/config/fetchtastic/batch")  # nosec B108
+    mock_rmtree.assert_any_call("/tmp/test_base_dir/repo-dls")  # nosec B108
+    mock_rmtree.assert_any_call("/tmp/test_base_dir/firmware-2.7.4")  # nosec B108
+    # Should not remove "some_dir"
+    assert mock_rmtree.call_count == 3
+
+    # Check that managed files are removed but unmanaged files are not
+    # "latest_android_release.txt" is in MANAGED_FILES, so should be removed
+    mock_os_remove.assert_any_call(
+        "/tmp/test_base_dir/latest_android_release.txt"
+    )  # nosec B108
+    # "unmanaged.txt" is not managed, so should not be removed
+    # Total removes: 2 config files + 1 managed file + boot script + log file = 5
+    assert mock_os_remove.call_count == 5
 
     # Check that cron jobs are removed
     mock_subprocess_run.assert_any_call(

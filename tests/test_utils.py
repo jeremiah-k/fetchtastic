@@ -9,6 +9,7 @@ import pytest
 import requests
 
 from fetchtastic import utils
+from fetchtastic.downloader import _format_api_summary
 
 
 @pytest.fixture
@@ -426,38 +427,6 @@ def test_legacy_strip_version_numbers():
 
 @pytest.mark.core_downloads
 @pytest.mark.unit
-@patch("fetchtastic.utils.requests.Session")
-@patch("fetchtastic.utils.Retry")
-def test_urllib3_v1_fallback_retry_creation(mock_retry, mock_session, tmp_path):
-    """Test urllib3 v1 fallback when v2 parameters cause TypeError."""
-    # Mock Retry to raise TypeError on first call (v2 params), succeed on second (v1 params)
-    mock_retry.side_effect = [TypeError("unsupported parameter"), MagicMock()]
-
-    # Just test the retry creation part by calling the function that creates the retry strategy
-    # This will exercise the try/except block we added for urllib3 compatibility
-    # Avoid real I/O
-    mock_resp = MagicMock()
-    mock_resp.status_code = 200
-    mock_resp.iter_content.return_value = []
-    mock_session.return_value.get.return_value = mock_resp
-    utils.download_file_with_retry(
-        "http://test.com/file.bin", str(tmp_path / "file.bin")
-    )
-
-    # Verify urllib3 v1 fallback was attempted
-    assert mock_retry.call_count == 2
-    # First call should have v2+ parameters
-    first_call_kwargs = mock_retry.call_args_list[0][1]
-    assert "respect_retry_after_header" in first_call_kwargs
-    assert "allowed_methods" in first_call_kwargs
-
-    # Second call should have v1 parameters
-    second_call_kwargs = mock_retry.call_args_list[1][1]
-    assert "respect_retry_after_header" not in second_call_kwargs
-    assert "allowed_methods" not in second_call_kwargs
-    assert "method_whitelist" in second_call_kwargs
-
-
 def test_matches_selected_patterns_keyword_heuristic():
     """Test that keyword-based heuristic enables sanitized matching for known problematic patterns."""
     from fetchtastic.utils import matches_selected_patterns
@@ -706,13 +675,13 @@ def test_rate_limit_cache_expiry():
 
             cache_file = utils._get_rate_limit_cache_file()
 
-            # Create cache data with expired entry (older than 1 hour)
-            old_time = datetime.now(timezone.utc) - timedelta(hours=2)  # Expired
-            recent_time = datetime.now(timezone.utc) - timedelta(minutes=30)  # Valid
+            # Create cache data with expired entry (reset time in past)
+            expired_reset = datetime.now(timezone.utc) - timedelta(hours=2)  # Expired
+            valid_reset = datetime.now(timezone.utc) + timedelta(hours=1)  # Valid
 
             cache_data = {
-                "expired_token": [50, old_time.isoformat()],
-                "valid_token": [75, recent_time.isoformat()],
+                "expired_token": [50, expired_reset.isoformat()],
+                "valid_token": [75, valid_reset.isoformat()],
             }
 
             with open(cache_file, "w", encoding="utf-8") as f:
@@ -784,16 +753,16 @@ def test_get_cached_rate_limit():
     result = utils._get_cached_rate_limit("nonexistent_token")
     assert result is None
 
-    # Test with valid cache entry
-    recent_time = datetime.now(timezone.utc) - timedelta(minutes=2)  # Recent (< 5 min)
-    utils._rate_limit_cache["valid_token"] = (42, recent_time)
+    # Test with valid cache entry (reset in future)
+    future_reset = datetime.now(timezone.utc) + timedelta(hours=1)
+    utils._rate_limit_cache["valid_token"] = (42, future_reset)
 
     result = utils._get_cached_rate_limit("valid_token")
     assert result == 42
 
-    # Test with expired cache entry (older than 5 minutes)
-    old_time = datetime.now(timezone.utc) - timedelta(minutes=10)  # Old (> 5 min)
-    utils._rate_limit_cache["expired_token"] = (25, old_time)
+    # Test with expired cache entry (reset in past)
+    past_reset = datetime.now(timezone.utc) - timedelta(hours=1)
+    utils._rate_limit_cache["expired_token"] = (25, past_reset)
 
     result = utils._get_cached_rate_limit("expired_token")
     assert result is None
@@ -902,13 +871,13 @@ def test_make_github_api_request_cached_rate_limit():
     # Clear cache and pre-populate with cached data
     utils.clear_rate_limit_cache()
 
-    recent_time = datetime.now(timezone.utc) - timedelta(minutes=2)
+    future_reset = datetime.now(timezone.utc) + timedelta(hours=1)
     # Calculate the actual token hash that will be generated
     import hashlib
 
     fake_token = "ghp_" + "x" * 36
     token_hash = hashlib.sha256(fake_token.encode()).hexdigest()[:16]
-    utils._rate_limit_cache[token_hash] = (250, recent_time)
+    utils._rate_limit_cache[token_hash] = (250, future_reset)
 
     # Mock response without rate limit headers
     mock_response = MagicMock()
@@ -1020,3 +989,265 @@ def test_cache_thread_safety():
         assert isinstance(timestamp, datetime)
         assert isinstance(cached_at, datetime)
         assert "/" in key  # Valid cache key format
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
+def test_api_tracking_functions():
+    """Test API tracking functions."""
+    # Reset tracking first
+    utils.reset_api_tracking()
+
+    # Test initial state
+    summary = utils.get_api_request_summary()
+    assert summary["total_requests"] == 0
+    assert summary["cache_hits"] == 0
+    assert summary["cache_misses"] == 0
+
+    # Test cache hit tracking
+    utils.track_api_cache_hit()
+    summary = utils.get_api_request_summary()
+    assert summary["total_requests"] == 0  # total_requests incremented separately
+    assert summary["cache_hits"] == 1
+    assert summary["cache_misses"] == 0
+
+    # Test cache miss tracking
+    utils.track_api_cache_miss()
+    summary = utils.get_api_request_summary()
+    assert summary["total_requests"] == 0
+    assert summary["cache_hits"] == 1
+    assert summary["cache_misses"] == 1
+
+    # Test reset
+    utils.reset_api_tracking()
+    summary = utils.get_api_request_summary()
+    assert summary["total_requests"] == 0
+    assert summary["cache_hits"] == 0
+    assert summary["cache_misses"] == 0
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
+def test_format_api_summary():
+    """Test _format_api_summary function."""
+    from datetime import datetime, timedelta, timezone
+
+    # Test basic authenticated request with no cache lookups
+    summary = {
+        "total_requests": 5,
+        "auth_used": True,
+        "cache_hits": 0,
+        "cache_misses": 0,
+    }
+    result = _format_api_summary(summary)
+    # Check key components rather than exact string match
+    assert "📊 GitHub API Summary:" in result
+    assert "5 API requests" in result
+    assert "🔐 authenticated" in result
+
+    # Test basic unauthenticated request with cache statistics
+    summary = {
+        "total_requests": 3,
+        "auth_used": False,
+        "cache_hits": 2,
+        "cache_misses": 1,
+    }
+    result = _format_api_summary(summary)
+    # Check key components rather than exact string match
+    assert "📊 GitHub API Summary:" in result
+    assert "3 API requests" in result
+    assert "🌐 unauthenticated" in result
+    assert "3 cache lookups" in result
+    assert "2 hits (skipped), 1 miss (fetched)" in result
+    assert "66.7% hit rate" in result
+
+    # Test request with no cache hits (should still show cache stats)
+    summary = {
+        "total_requests": 4,
+        "auth_used": False,
+        "cache_hits": 0,
+        "cache_misses": 4,
+    }
+    result = _format_api_summary(summary)
+    # Check key components rather than exact string match
+    assert "📊 GitHub API Summary:" in result
+    assert "4 API requests" in result
+    assert "🌐 unauthenticated" in result
+    assert "4 cache lookups" in result
+    assert "0 hits (skipped), 4 misses (fetched)" in result
+    assert "0.0% hit rate" in result
+
+    # Test with rate limit info (future reset time)
+    future_time = datetime.now(timezone.utc).replace(
+        second=0, microsecond=0
+    ) + timedelta(minutes=5)
+    summary = {
+        "total_requests": 2,
+        "auth_used": True,
+        "cache_hits": 1,
+        "cache_misses": 1,
+        "rate_limit_remaining": 4500,
+        "rate_limit_reset": future_time,
+    }
+    result = _format_api_summary(summary)
+    # Should contain rate limit info with minutes
+    assert "4500 requests remaining (resets in" in result
+    assert "min)" in result
+    assert "📊 GitHub API Summary: 2 API requests (🔐 authenticated)" in result
+    assert (
+        "2 cache lookups → 1 hit (skipped), 1 miss (fetched) [50.0% hit rate]" in result
+    )
+
+    # Test with rate limit info (past reset time)
+    past_time = datetime.now(timezone.utc).replace(second=0, microsecond=0) - timedelta(
+        minutes=5
+    )
+    summary = {
+        "total_requests": 1,
+        "auth_used": False,
+        "cache_hits": 0,
+        "cache_misses": 0,
+        "rate_limit_remaining": 4999,
+        "rate_limit_reset": past_time,
+    }
+    result = _format_api_summary(summary)
+    # Check key components rather than exact string match
+    assert "📊 GitHub API Summary:" in result
+    assert "1 API request" in result
+    assert "🌐 unauthenticated" in result
+    assert "4999 requests remaining" in result
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
+def test_parse_rate_limit_header():
+    """Test _parse_rate_limit_header function."""
+    # Test valid integer string
+    assert utils._parse_rate_limit_header("5000") == 5000
+
+    # Test valid integer
+    assert utils._parse_rate_limit_header(5000) == 5000
+
+    # Test invalid string
+    assert utils._parse_rate_limit_header("invalid") is None
+
+    # Test None
+    assert utils._parse_rate_limit_header(None) is None
+
+    # Test empty string
+    assert utils._parse_rate_limit_header("") is None
+
+    # Test negative number
+    assert utils._parse_rate_limit_header("-1") is None
+
+    # Test float
+    assert utils._parse_rate_limit_header(5000.5) == 5000
+
+    # Test zero
+    assert utils._parse_rate_limit_header("0") == 0
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
+def test_get_effective_github_token():
+    """Test get_effective_github_token function."""
+    # Test with explicit token
+    result = utils.get_effective_github_token("explicit_token")
+    assert result == "explicit_token"
+
+    # Test with None (should return None)
+    with patch.dict(os.environ, {}, clear=True):
+        result = utils.get_effective_github_token(None)
+        assert result is None
+
+    # Test with GITHUB_TOKEN environment variable
+    with patch.dict(os.environ, {"GITHUB_TOKEN": "env_token"}):
+        result = utils.get_effective_github_token(None)
+        assert result == "env_token"
+
+    # Test explicit token takes precedence over env
+    with patch.dict(os.environ, {"GITHUB_TOKEN": "env_token"}):
+        result = utils.get_effective_github_token("explicit_token")
+        assert result == "explicit_token"
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
+def test_download_file_with_retry_additional_error_cases(tmp_path):
+    """Test additional error cases in download_file_with_retry."""
+    download_path = tmp_path / "test_file.txt"
+
+    # Test with invalid URL
+    result = utils.download_file_with_retry("not-a-url", str(download_path))
+    assert result is False
+
+    # Test with empty URL
+    result = utils.download_file_with_retry("", str(download_path))
+    assert result is False
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
+def test_verify_file_integrity_additional_cases(tmp_path):
+    """Test additional cases for verify_file_integrity."""
+    # Test with directory (should return False)
+    dir_path = tmp_path / "test_dir"
+    dir_path.mkdir()
+    result = utils.verify_file_integrity(str(dir_path))
+    assert result is False
+
+    # Test with file that has no hash but exists (should create hash and return True)
+    file_path = tmp_path / "new_file.txt"
+    file_path.write_text("new content")
+    result = utils.verify_file_integrity(str(file_path))
+    assert result is True
+    # Hash file should be created
+    hash_path = utils.get_hash_file_path(str(file_path))
+    assert os.path.exists(hash_path)
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
+def test_extract_base_name_additional_cases():
+    """Test extract_base_name with additional edge cases."""
+    # Test with multiple version patterns
+    assert utils.extract_base_name("app-1.2.3-beta-rc1.apk") == "app-rc1.apk"
+
+    # Test with no extension
+    assert utils.extract_base_name("tool-1.0.0") == "tool"
+
+    # Test with complex version
+    assert (
+        utils.extract_base_name("package-2.7.13.abcdef123_amd64.deb")
+        == "package_amd64.deb"
+    )
+
+    # Test with no version separators
+    assert utils.extract_base_name("simplefile.txt") == "simplefile.txt"
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
+def test_matches_selected_patterns_edge_cases():
+    """Test matches_selected_patterns with edge cases."""
+    # Test with empty patterns (should match all)
+    assert utils.matches_selected_patterns("anyfile.bin", []) is True
+
+    # Test with None patterns
+    assert utils.matches_selected_patterns("anyfile.bin", None) is True
+
+    # Test case sensitivity
+    assert (
+        utils.matches_selected_patterns("Firmware-Rak4631-1.0.0.uf2", ["rak4631-"])
+        is True
+    )
+    assert (
+        utils.matches_selected_patterns("firmware-rak4631-1.0.0.uf2", ["RAK4631-"])
+        is True
+    )
+
+    # Test with special characters in patterns
+    assert (
+        utils.matches_selected_patterns("file-with-dashes.bin", ["file-with-dashes"])
+        is True
+    )

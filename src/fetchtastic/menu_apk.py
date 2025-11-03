@@ -9,22 +9,25 @@ from fetchtastic.constants import (
     MESHTASTIC_ANDROID_RELEASES_URL,
 )
 from fetchtastic.log_utils import logger
-from fetchtastic.utils import extract_base_name, make_github_api_request
+from fetchtastic.utils import (
+    extract_base_name,
+    make_github_api_request,
+)
 
 
 def fetch_apk_assets():
     """
-    Fetch APK asset filenames from the latest Meshtastic Android release on GitHub.
-
-    Performs an HTTP GET to MESHTASTIC_ANDROID_RELEASES_URL with timeout GITHUB_API_TIMEOUT and raises an HTTPError on non-OK responses. After the request it waits API_CALL_DELAY seconds. Expects the API JSON to be a non-empty list of releases and treats the first element as the latest release; if the response is not a list or is empty, returns an empty list. Extracts asset names from the latest release whose names end with APK_EXTENSION (case-insensitive), defaulting missing names to the empty string, sorts them alphabetically, and returns the sorted list of names.
+    Retrieve APK filenames from the latest Meshtastic Android release on GitHub.
 
     Returns:
-        list[str]: Alphabetically sorted APK asset filenames from the latest release. May be empty if no releases or matching assets are found.
+        list[str]: Alphabetically sorted APK asset filenames from the latest release. Empty list if no releases or matching assets are found.
     """
     response = make_github_api_request(MESHTASTIC_ANDROID_RELEASES_URL)
 
     try:
         releases = response.json()
+        if isinstance(releases, list):
+            logger.debug(f"Fetched {len(releases)} Android releases from GitHub API")
     except json.JSONDecodeError as e:
         logger.error(f"Failed to decode JSON from GitHub API: {e}")
         return []
@@ -35,11 +38,13 @@ def fetch_apk_assets():
     assets = latest_release.get("assets", []) or []
     asset_names = sorted(
         [
-            (asset.get("name") or "")
+            asset_name
             for asset in assets
-            if str(asset.get("name") or "").lower().endswith(APK_EXTENSION.lower())
+            if (asset_name := asset.get("name"))
+            and asset_name.lower().endswith(APK_EXTENSION)
         ]
-    )  # Sorted alphabetically
+    )
+
     return asset_names
 
 

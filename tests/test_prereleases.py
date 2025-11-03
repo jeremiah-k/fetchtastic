@@ -17,6 +17,7 @@ import pytest
 import requests
 
 from fetchtastic import downloader
+from fetchtastic.constants import PRERELEASE_DIR_CACHE_EXPIRY_SECONDS
 from fetchtastic.downloader import (
     _commit_timestamp_cache,
     _get_commit_cache_file,
@@ -165,14 +166,17 @@ def test_cleanup_superseded_prereleases_handles_commit_suffix(tmp_path):
     assert future_dir.exists()
 
 
-@patch("fetchtastic.downloader.menu_repo.fetch_repo_directories")
-@patch("fetchtastic.downloader.menu_repo.fetch_directory_contents")
+@patch("fetchtastic.menu_repo.fetch_repo_directories")
+@patch("fetchtastic.menu_repo.fetch_directory_contents")
 @patch("fetchtastic.downloader.download_file_with_retry")
 @patch("fetchtastic.downloader.make_github_api_request")
 def test_check_for_prereleases_download_and_cleanup(
     mock_api, mock_dl, mock_fetch_contents, mock_fetch_dirs, tmp_path, write_dummy_file
 ):
     """Check that prerelease discovery downloads matching assets and cleans stale entries."""
+    # Clear any cached prerelease directories to ensure fresh mock data
+    downloader._clear_prerelease_cache()
+
     # Repo has a newer prerelease and some other dirs
     mock_fetch_dirs.return_value = [
         "firmware-2.7.7.abcdef",
@@ -375,11 +379,12 @@ def test_prerelease_directory_cleanup(tmp_path, write_dummy_file):
     assert old_dir1.exists()
     assert old_dir2.exists()
 
+    # Clear any cached prerelease directories to ensure fresh mock data
+    downloader._clear_prerelease_cache()
+
     # Mock the repo to return a newer prerelease with same version but new hash
-    with patch("fetchtastic.downloader.menu_repo.fetch_repo_directories") as mock_dirs:
-        with patch(
-            "fetchtastic.downloader.menu_repo.fetch_directory_contents"
-        ) as mock_contents:
+    with patch("fetchtastic.menu_repo.fetch_repo_directories") as mock_dirs:
+        with patch("fetchtastic.menu_repo.fetch_directory_contents") as mock_contents:
             mock_dirs.return_value = ["firmware-2.7.7.789abc"]
 
             def _dir_aware_contents(dir_name: str):
@@ -806,6 +811,134 @@ def test_get_commit_timestamp_loads_persistent_cache():
 
             assert result == test_timestamp
             assert "owner/repo/preloaded" in _commit_timestamp_cache
+
+
+@pytest.mark.core_downloads
+def test_prerelease_directory_cache_behaviour(tmp_path):
+    """Ensure prerelease directory caching honours expiry and force refresh."""
+    cache_root = tmp_path / "cache"
+    cache_root.mkdir()
+
+    original_cache = {
+        key: (list(directories), cached_at)
+        for key, (directories, cached_at) in downloader._prerelease_dir_cache.items()
+    }
+    original_file = downloader._prerelease_dir_cache_file
+    original_loaded = downloader._prerelease_dir_cache_loaded
+
+    try:
+        downloader._prerelease_dir_cache.clear()
+        downloader._prerelease_dir_cache_file = None
+        downloader._prerelease_dir_cache_loaded = False
+
+        with patch(
+            "fetchtastic.downloader.platformdirs.user_cache_dir",
+            return_value=str(cache_root),
+        ):
+            with patch(
+                "fetchtastic.downloader.menu_repo.fetch_repo_directories",
+                side_effect=[
+                    ["firmware-1.0.0.aaaa"],
+                    ["firmware-1.0.0.bbbb"],
+                    ["firmware-1.0.0.cccc"],
+                ],
+            ) as mock_fetch_dirs:
+                dirs_first = downloader._fetch_prerelease_directories()
+                assert dirs_first == ["firmware-1.0.0.aaaa"]
+                assert mock_fetch_dirs.call_count == 1
+
+                dirs_cached = downloader._fetch_prerelease_directories()
+                assert dirs_cached == ["firmware-1.0.0.aaaa"]
+                assert mock_fetch_dirs.call_count == 1
+
+                dirs_force = downloader._fetch_prerelease_directories(
+                    force_refresh=True
+                )
+                assert dirs_force == ["firmware-1.0.0.bbbb"]
+                assert mock_fetch_dirs.call_count == 2
+
+                cache_key = downloader._PRERELEASE_DIR_CACHE_ROOT_KEY
+                with downloader._cache_lock:
+                    cached_dirs, cached_at = downloader._prerelease_dir_cache[cache_key]
+                    downloader._prerelease_dir_cache[cache_key] = (
+                        cached_dirs,
+                        cached_at
+                        - timedelta(seconds=PRERELEASE_DIR_CACHE_EXPIRY_SECONDS + 5),
+                    )
+
+                dirs_expired = downloader._fetch_prerelease_directories()
+                assert dirs_expired == ["firmware-1.0.0.cccc"]
+                assert mock_fetch_dirs.call_count == 3
+
+    finally:
+        downloader._prerelease_dir_cache.clear()
+        downloader._prerelease_dir_cache.update(original_cache)
+        downloader._prerelease_dir_cache_file = original_file
+        downloader._prerelease_dir_cache_loaded = original_loaded
+
+
+@pytest.mark.core_downloads
+def test_prerelease_commit_cache_save_only_on_new_entries():
+    """Ensure commit cache is only persisted when new timestamps are fetched."""
+    cache_key = "meshtastic/firmware/abcdef12"
+    cached_timestamp = datetime(2025, 1, 20, 12, 0, 0, tzinfo=timezone.utc)
+    cached_at = datetime.now(timezone.utc) - timedelta(minutes=5)
+
+    original_cache_loaded = downloader._commit_cache_loaded
+
+    try:
+        with downloader._cache_lock:
+            downloader._commit_timestamp_cache[cache_key] = (
+                cached_timestamp,
+                cached_at,
+            )
+            downloader._commit_cache_loaded = True
+
+        with patch(
+            "fetchtastic.downloader._fetch_prerelease_directories",
+            return_value=["firmware-2.7.13.abcdef12"],
+        ):
+            with patch(
+                "fetchtastic.downloader.get_commit_timestamp",
+                return_value=cached_timestamp,
+            ) as mock_get_timestamp, patch(
+                "fetchtastic.downloader._save_commit_cache"
+            ) as mock_save_cache:
+                result = downloader._find_latest_remote_prerelease_dir("2.7.13")
+                assert result == "firmware-2.7.13.abcdef12"
+                mock_get_timestamp.assert_called_once()
+                mock_save_cache.assert_not_called()
+
+        # Clear cache to simulate missing entry and ensure save is triggered
+        with downloader._cache_lock:
+            downloader._commit_timestamp_cache.pop(cache_key, None)
+
+        def _populate_cache(*_args, **_kwargs):
+            with downloader._cache_lock:
+                downloader._commit_timestamp_cache[cache_key] = (
+                    cached_timestamp,
+                    datetime.now(timezone.utc),
+                )
+            return cached_timestamp
+
+        with patch(
+            "fetchtastic.downloader._fetch_prerelease_directories",
+            return_value=["firmware-2.7.13.abcdef12"],
+        ):
+            with patch(
+                "fetchtastic.downloader.get_commit_timestamp",
+                side_effect=_populate_cache,
+            ) as mock_get_timestamp, patch(
+                "fetchtastic.downloader._save_commit_cache"
+            ) as mock_save_cache:
+                result = downloader._find_latest_remote_prerelease_dir("2.7.13")
+                assert result == "firmware-2.7.13.abcdef12"
+                mock_get_timestamp.assert_called_once()
+                mock_save_cache.assert_called_once()
+    finally:
+        with downloader._cache_lock:
+            downloader._commit_timestamp_cache.pop(cache_key, None)
+        downloader._commit_cache_loaded = original_cache_loaded
 
 
 @pytest.mark.core_downloads

@@ -10,6 +10,17 @@ from typing import List
 import platformdirs
 
 from fetchtastic import downloader, repo_downloader, setup_config
+from fetchtastic.constants import (
+    FIRMWARE_DIR_PREFIX,
+    MANAGED_DIRECTORIES,
+    MANAGED_FILES,
+    MSG_CLEANED_MANAGED_DIRS,
+    MSG_FAILED_DELETE_MANAGED_DIR,
+    MSG_FAILED_DELETE_MANAGED_FILE,
+    MSG_PRESERVE_OTHER_FILES,
+    MSG_REMOVED_MANAGED_DIR,
+    MSG_REMOVED_MANAGED_FILE,
+)
 from fetchtastic.log_utils import logger, set_log_level
 from fetchtastic.setup_config import (
     copy_to_clipboard_func,
@@ -396,22 +407,19 @@ def show_help(
 
 def run_clean():
     """
-    Permanently removes Fetchtastic configuration, downloaded files, and related system integrations.
+    Remove Fetchtastic configuration, managed downloads, and system integrations.
 
-    This is a destructive operation that:
-    - Prompts the user for confirmation (defaults to "no") before proceeding.
-    - Deletes current and legacy configuration files and attempts to remove the configuration directory (and a "batch" subdirectory) if empty.
-    - On Windows, attempts to remove Start Menu shortcuts, a startup shortcut, and a configuration shortcut when Windows-specific modules are available.
-    - Deletes all files, symlinks, and subdirectories inside the configured download/base directory.
-    - On non-Windows systems, removes Fetchtastic-related crontab entries if present.
-    - Removes a Termux boot script (~/.termux/boot/fetchtastic.sh) if present.
-    - Removes the Fetchtastic log file in the user log directory.
+    Prompts for confirmation before proceeding. This operation is irreversible and will
+    modify or remove files and system entries.
 
-    Side effects:
-    - Irreversibly deletes files and may modify the user's crontab and Start Menu/startup items.
-    - The function prints progress and error messages to stdout.
-
-    Use with caution; run only when you intend to fully remove Fetchtastic data and integrations.
+    Deletes:
+    - Current and legacy config files and their config directory when empty
+    - Only Fetchtastic-managed directories (matching configured MANAGED_DIRECTORIES
+      or FIRMWARE_DIR_PREFIX) and managed files (matching MANAGED_FILES) inside the
+      configured download/base directory while preserving other user files
+    - Platform-specific integrations such as Windows Start Menu/startup shortcuts,
+      non-Windows crontab entries that reference Fetchtastic, a Termux boot script
+      (~/.termux/boot/fetchtastic.sh), and the Fetchtastic log file
     """
     print(
         "This will remove Fetchtastic configuration files, downloaded files, and cron job entries."
@@ -516,21 +524,53 @@ def run_clean():
                 except Exception as e:
                     print(f"Failed to remove configuration shortcut. Reason: {e}")
 
-    # Remove contents of download directory
+    # Remove only managed directories from download directory
     download_dir = setup_config.BASE_DIR
+
+    def _remove_managed_file(item_path: str) -> None:
+        """
+        Remove a managed file at the given path and log whether the removal succeeded.
+
+        Parameters:
+            item_path (str): Filesystem path of the managed file to remove.
+        """
+        try:
+            os.remove(item_path)
+            logger.info(MSG_REMOVED_MANAGED_FILE.format(path=item_path))
+        except OSError as e:
+            logger.error(MSG_FAILED_DELETE_MANAGED_FILE.format(path=item_path, error=e))
+
     if os.path.exists(download_dir):
         for item in os.listdir(download_dir):
             item_path = os.path.join(download_dir, item)
-            try:
-                if os.path.isfile(item_path) or os.path.islink(item_path):
-                    os.remove(item_path)
-                    print(f"Removed file: {item_path}")
-                elif os.path.isdir(item_path):
+
+            # Check if this is a managed directory or file
+            is_managed_dir = item in MANAGED_DIRECTORIES or item.startswith(
+                FIRMWARE_DIR_PREFIX
+            )
+            is_managed_file = item in MANAGED_FILES
+
+            # First, handle symlinks to avoid traversal and ensure they are removed if managed.
+            if os.path.islink(item_path):
+                if is_managed_dir or is_managed_file:
+                    _remove_managed_file(item_path)
+                continue
+
+            # Handle actual directories
+            if is_managed_dir and os.path.isdir(item_path):
+                try:
                     shutil.rmtree(item_path)
-                    print(f"Removed directory: {item_path}")
-            except Exception as e:
-                print(f"Failed to delete {item_path}. Reason: {e}")
-        print(f"Cleaned contents of download directory: {download_dir}")
+                    logger.info(MSG_REMOVED_MANAGED_DIR.format(path=item_path))
+                except OSError as e:
+                    logger.error(
+                        MSG_FAILED_DELETE_MANAGED_DIR.format(path=item_path, error=e)
+                    )
+            # Handle actual files
+            elif is_managed_file and os.path.isfile(item_path):
+                _remove_managed_file(item_path)
+
+        logger.info(MSG_CLEANED_MANAGED_DIRS.format(path=download_dir))
+        logger.info(MSG_PRESERVE_OTHER_FILES)
 
     # Remove cron job entries (non-Windows platforms)
     if platform.system() != "Windows":

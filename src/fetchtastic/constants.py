@@ -36,8 +36,19 @@ WINDOWS_INITIAL_RETRY_DELAY = 1.0  # seconds
 REPO_DOWNLOADS_DIR = "repo-dls"
 PRERELEASE_DIR = "prerelease"
 FIRMWARE_DIR_PREFIX = "firmware-"
+FIRMWARE_DIR_NAME = "firmware"
+APKS_DIR_NAME = "apks"
 LATEST_ANDROID_RELEASE_FILE = "latest_android_release.txt"
 LATEST_FIRMWARE_RELEASE_FILE = "latest_firmware_release.txt"
+WINDOWS_SHORTCUT_FILE = "fetchtastic_yaml.lnk"
+
+# Directories that Fetchtastic manages and can safely clean
+MANAGED_DIRECTORIES = (
+    REPO_DOWNLOADS_DIR,
+    PRERELEASE_DIR,
+    FIRMWARE_DIR_NAME,
+    APKS_DIR_NAME,
+)
 
 # Default configuration values
 DEFAULT_FIRMWARE_VERSIONS_TO_KEEP = 2
@@ -49,6 +60,16 @@ APK_EXTENSION = ".apk"
 ZIP_EXTENSION = ".zip"
 SHELL_SCRIPT_EXTENSION = ".sh"
 EXECUTABLE_PERMISSIONS = 0o755
+
+# Clean operation messages
+MSG_REMOVED_MANAGED_DIR = "Removed managed directory: {path}"
+MSG_REMOVED_MANAGED_FILE = "Removed managed file: {path}"
+MSG_FAILED_DELETE_MANAGED_FILE = "Failed to delete managed file {path}. Reason: {error}"
+MSG_FAILED_DELETE_MANAGED_DIR = (
+    "Failed to delete managed directory {path}. Reason: {error}"
+)
+MSG_CLEANED_MANAGED_DIRS = "Cleaned managed directories from: {path}"
+MSG_PRESERVE_OTHER_FILES = "Note: Only Fetchtastic-managed directories were removed. Other files were preserved."
 
 # Logging configuration
 LOGGER_NAME = "fetchtastic"
@@ -82,6 +103,15 @@ DEFAULT_EXTRACTION_PATTERNS = [
 CONFIG_FILE_NAME = "fetchtastic.yaml"
 MESHTASTIC_DIR_NAME = "Meshtastic"
 
+# Files that Fetchtastic manages and can safely clean
+# Note: CONFIG_FILE_NAME is included for safety, though it's typically in CONFIG_DIR
+MANAGED_FILES = (
+    LATEST_ANDROID_RELEASE_FILE,
+    LATEST_FIRMWARE_RELEASE_FILE,
+    CONFIG_FILE_NAME,
+    WINDOWS_SHORTCUT_FILE,
+)
+
 # Environment variable names
 LOG_LEVEL_ENV_VAR = "FETCHTASTIC_LOG_LEVEL"
 
@@ -92,6 +122,7 @@ DEVICE_HARDWARE_CACHE_HOURS = 24
 # Cache configuration
 COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS = 24
 RELEASES_CACHE_EXPIRY_HOURS = 1 / 60  # 1 minute
+PRERELEASE_DIR_CACHE_EXPIRY_SECONDS = 60  # 1 minute
 
 # Concurrent operations limits
 MAX_CONCURRENT_TIMESTAMP_FETCHES = 5

@@ -10,7 +10,7 @@ import tempfile
 import threading
 import time
 import zipfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple  # Callable removed
 
 import platformdirs
@@ -49,9 +49,10 @@ _token_warning_shown = False
 _token_warning_lock = threading.Lock()
 
 # GitHub API rate limit tracking
-_rate_limit_cache: Dict[str, Tuple[int, datetime]] = {}
+_rate_limit_cache: Dict[str, Tuple[int, datetime]] = {}  # remaining, reset_timestamp
 _rate_limit_lock = threading.Lock()
 _rate_limit_cache_file = None
+_last_rate_limit_token_hash: Optional[str] = None
 
 # Track whether rate limit cache has been loaded
 _rate_limit_cache_loaded = False
@@ -62,13 +63,22 @@ _last_cache_save_time = 0.0
 # Minimum seconds between disk writes for rate-limit cache
 RATE_LIMIT_CACHE_SAVE_INTERVAL = 5.0
 
+# API request tracking for session summary
+_api_request_count = 0
+_api_cache_hits = 0
+_api_cache_misses = 0
+_api_auth_used = False
+_api_first_auth_logged = False
+_api_first_unauth_logged = False
+_api_tracking_lock = threading.Lock()
+
 
 def get_user_agent() -> str:
     """
-    Return the User-Agent string used for HTTP requests.
+    Get the User-Agent string used for HTTP requests.
 
     Returns:
-        str: The string "fetchtastic/{version}", where {version} is the package version or "unknown" if the version cannot be determined.
+        The string `fetchtastic/{version}`, where `{version}` is the installed package version or `unknown` if the version cannot be determined.
     """
     global _USER_AGENT_CACHE
 
@@ -83,18 +93,87 @@ def get_user_agent() -> str:
     return _USER_AGENT_CACHE
 
 
-def get_effective_github_token(
-    github_token: Optional[str], allow_env_token: bool
-) -> Optional[str]:
-    """
-    Return the effective GitHub token from arguments or environment.
+def track_api_cache_hit() -> None:
+    """Track a cache hit for API requests."""
+    global _api_cache_hits
+    with _api_tracking_lock:
+        _api_cache_hits += 1
 
-    Parameters:
-        github_token (Optional[str]): GitHub token passed as argument
-        allow_env_token (bool): Whether to allow using environment variable token
+
+def track_api_cache_miss() -> None:
+    """Track a cache miss for API requests."""
+    global _api_cache_misses
+    with _api_tracking_lock:
+        _api_cache_misses += 1
+
+
+def get_api_request_summary() -> Dict[str, Any]:
+    """
+    Builds a session-wide summary of API request and cache statistics.
+
+    The returned dictionary contains aggregate request counters and authentication usage for the current session only,
+    and may include cached rate-limit details if available for the last used token.
 
     Returns:
-        Optional[str]: The effective token to use, or None if no token available
+        summary (dict): Keys include:
+            - "total_requests" (int): Total number of API requests made this session.
+            - "cache_hits" (int): Number of API cache hits during this session.
+            - "cache_misses" (int): Number of API cache misses during this session.
+            - "auth_used" (bool): Whether any request used authentication during this session.
+            - "rate_limit_remaining" (int, optional): Remaining requests for the last token (includes consumption from previous sessions).
+            - "rate_limit_reset" (datetime.datetime, optional): Reset timestamp for the cached rate limit, present when available.
+    """
+    with _api_tracking_lock:
+        summary = {
+            "total_requests": _api_request_count,
+            "cache_hits": _api_cache_hits,
+            "cache_misses": _api_cache_misses,
+            "auth_used": _api_auth_used,
+        }
+
+    # Add rate limit info if available
+    global _last_rate_limit_token_hash
+    if _last_rate_limit_token_hash:
+        rate_limit_info = get_rate_limit_info(_last_rate_limit_token_hash)
+        if rate_limit_info:
+            remaining, reset_timestamp = rate_limit_info
+            summary["rate_limit_remaining"] = remaining
+            summary["rate_limit_reset"] = reset_timestamp
+
+    return summary
+
+
+def reset_api_tracking() -> None:
+    """
+    Reset session-wide API request tracking counters and flags.
+
+    Resets the request count, cache hit and miss counters, the authentication-used flag,
+    and the first-authenticated/first-unauthenticated logged flags while holding the
+    module's tracking lock to ensure thread-safety.
+    """
+    global _api_request_count, _api_cache_hits, _api_cache_misses, _api_auth_used
+    global _api_first_auth_logged, _api_first_unauth_logged
+    with _api_tracking_lock:
+        _api_request_count = 0
+        _api_cache_hits = 0
+        _api_cache_misses = 0
+        _api_auth_used = False
+        _api_first_auth_logged = False
+        _api_first_unauth_logged = False
+
+
+def get_effective_github_token(
+    github_token: Optional[str], allow_env_token: bool = True
+) -> Optional[str]:
+    """
+    Determine the GitHub token to use, preferring the explicit argument over the environment.
+
+    Parameters:
+        github_token (Optional[str]): Explicit token to use; leading and trailing whitespace are ignored.
+        allow_env_token (bool): If True, fall back to the `GITHUB_TOKEN` environment variable when no explicit token is provided.
+
+    Returns:
+        Optional[str]: The chosen token with surrounding whitespace removed, or `None` if no token is available.
     """
     candidate = (github_token or "").strip()
     if candidate:
@@ -105,20 +184,16 @@ def get_effective_github_token(
     return env_token.strip() if env_token else None
 
 
-def _show_token_warning_if_needed(
-    effective_token: Optional[str], allow_env_token: bool
-) -> None:
+def _show_token_warning_if_needed(effective_token: Optional[str]) -> None:
     """
-    Show thread-safe warning about missing GitHub token if needed.
+    Log a one-time warning when no GitHub token is available.
 
-    This function centralizes the token warning logic to avoid duplication
-    across the codebase and ensures the warning is shown only once per session.
+    This function is thread-safe and ensures the warning is emitted at most once per session/process.
 
-    Args:
-        effective_token: The effective GitHub token (None if no token)
-        allow_env_token: Whether environment token usage is allowed
+    Parameters:
+        effective_token: The resolved GitHub token, or `None` if no token is available.
     """
-    if not effective_token and allow_env_token:
+    if not effective_token:
         global _token_warning_shown
         with _token_warning_lock:
             if not _token_warning_shown:
@@ -141,16 +216,9 @@ def _get_rate_limit_cache_file() -> str:
 
 def _load_rate_limit_cache() -> None:
     """
-    Load rate limit cache from disk with atomic double-checked locking.
+    Load persisted rate-limit entries from disk into the in-memory cache if they have not already been loaded.
 
-    This function implements a performance-optimized cache loading pattern that:
-    1. Performs a fast check without lock to avoid contention
-    2. Uses guarded double-checking with minimal lock time
-    3. Loads cache data outside the critical section
-    4. Publishes loaded data atomically under lock
-
-    The cache file stores rate limit information across process restarts,
-    avoiding unnecessary API calls that would consume rate limit quota.
+    Reads the on-disk rate-limit cache, validates its structure, converts stored reset timestamps to datetimes, and retains only entries whose reset time is in the future. Malformed entries, missing files, and I/O or JSON errors are ignored; the function publishes the validated entries into the module cache under a lock to ensure thread-safe one-time initialization.
     """
     global _rate_limit_cache_loaded
 
@@ -187,14 +255,13 @@ def _load_rate_limit_cache() -> None:
                         ):
                             continue
 
-                        remaining_str, cached_at_str = cache_value
+                        remaining_str, reset_timestamp_str = cache_value
                         remaining = int(remaining_str)
-                        cached_at = datetime.fromisoformat(cached_at_str)
+                        reset_timestamp = datetime.fromisoformat(reset_timestamp_str)
 
-                        # Only keep cache entries that are less than 1 hour old
-                        # GitHub rate limits reset every hour
-                        if (current_time - cached_at).total_seconds() < 3600:
-                            loaded[cache_key] = (remaining, cached_at)
+                        # Only keep cache entries where reset is in the future
+                        if reset_timestamp > current_time:
+                            loaded[cache_key] = (remaining, reset_timestamp)
                     except (ValueError, TypeError):
                         continue
     except (IOError, json.JSONDecodeError):
@@ -235,10 +302,7 @@ def _save_rate_limit_cache() -> None:
     """
     Persist the in-memory rate-limit cache to the on-disk cache file.
 
-    Writes the current in-memory rate-limit entries to the cache file returned by
-    `_get_rate_limit_cache_file`. Timestamps are serialized as ISO 8601 strings and
-    the file is written atomically (temporary file then replace). I/O errors during
-    save are silently ignored.
+    Serializes cached entries (timestamps as ISO 8601 strings) and writes them atomically via a temporary file replacement. I/O errors during the save are ignored.
     """
     cache_file = _get_rate_limit_cache_file()
 
@@ -246,8 +310,8 @@ def _save_rate_limit_cache() -> None:
         # Snapshot under lock, then write outside to minimize contention
         with _rate_limit_lock:
             cache_data = {
-                cache_key: (remaining, cached_at.isoformat())
-                for cache_key, (remaining, cached_at) in _rate_limit_cache.items()
+                cache_key: (remaining, reset_timestamp.isoformat())
+                for cache_key, (remaining, reset_timestamp) in _rate_limit_cache.items()
             }
 
         # Write to a unique temporary file first, then atomically replace
@@ -269,12 +333,33 @@ def _save_rate_limit_cache() -> None:
         pass  # Silently ignore cache saving errors
 
 
-def _update_rate_limit(token_hash: str, remaining: int) -> None:
-    """Update the rate limit cache for a specific token."""
+def _update_rate_limit(
+    token_hash: str, remaining: int, reset_timestamp: Optional[datetime] = None
+) -> None:
+    """
+    Update cached rate-limit information for a specific token and optionally persist the cache to disk.
+
+    Parameters:
+        token_hash (str): Short hash identifying the token whose rate-limit is being updated.
+        remaining (int): Number of remaining requests reported for the token.
+        reset_timestamp (Optional[datetime]): Time when the rate limit resets; if omitted, defaults to one hour from now (timezone-aware).
+
+    Details:
+        - Stores (remaining, reset_timestamp) in the in-memory rate-limit cache.
+        - Triggers persistence to the on-disk cache if this is a new entry, if `remaining` decreased compared to the cached value, or if the configured save interval has elapsed.
+        - Updates the session's last-cache-save timestamp when persisting.
+        - Persistence is performed outside the internal lock to avoid deadlocks.
+    """
     global _rate_limit_cache, _last_cache_save_time
 
     now = datetime.now(timezone.utc)
     current_time = now.timestamp()
+
+    # Ensure reset_timestamp is set
+    if reset_timestamp is None:
+        reset_timestamp = now + timedelta(hours=1)
+
+    assert reset_timestamp is not None  # For type checker
 
     with _rate_limit_lock:
         # Check if remaining decreased and at least 5 seconds have passed
@@ -292,7 +377,7 @@ def _update_rate_limit(token_hash: str, remaining: int) -> None:
             # Always save on first entry
             should_save = True
 
-        _rate_limit_cache[token_hash] = (remaining, now)
+        _rate_limit_cache[token_hash] = (remaining, reset_timestamp)
 
         if should_save:
             _last_cache_save_time = current_time
@@ -303,21 +388,46 @@ def _update_rate_limit(token_hash: str, remaining: int) -> None:
 
 
 def _get_cached_rate_limit(token_hash: str) -> Optional[int]:
-    """Get cached rate limit for a specific token."""
+    """
+    Retrieve the cached remaining GitHub API requests for a token when its reset time is in the future.
+
+    Parameters:
+        token_hash (str): The cache key derived from a GitHub token.
+
+    Returns:
+        int | None: The cached remaining request count for the token, or `None` if no valid cached entry exists or the reset time has passed.
+    """
     global _rate_limit_cache
 
     with _rate_limit_lock:
         if token_hash in _rate_limit_cache:
-            remaining, cached_at = _rate_limit_cache[token_hash]
-            # Only return cached value if it's less than 5 minutes old
-            # This provides a balance between accuracy and performance
-            if (datetime.now(timezone.utc) - cached_at).total_seconds() < 300:
+            remaining, reset_timestamp = _rate_limit_cache[token_hash]
+            if reset_timestamp > datetime.now(timezone.utc):
                 return remaining
     return None
 
 
+def get_rate_limit_info(token_hash: str) -> Optional[Tuple[int, datetime]]:
+    """
+    Retrieve cached GitHub API rate-limit remaining count and reset time for a token hash.
+
+    Returns:
+        (remaining, reset_timestamp) as (int, datetime) if a cached entry exists for the given token hash, `None` otherwise.
+    """
+    global _rate_limit_cache
+
+    with _rate_limit_lock:
+        if token_hash in _rate_limit_cache:
+            return _rate_limit_cache[token_hash]
+    return None
+
+
 def clear_rate_limit_cache() -> None:
-    """Clear the global rate limit cache. Useful for testing."""
+    """
+    Clear the in-memory and on-disk rate-limit cache.
+
+    Clears the process-global rate-limit cache under the internal lock and marks it as not loaded. Also attempts to remove the persisted cache file next to the user cache directory; I/O errors during file removal are logged and ignored.
+    """
     global _rate_limit_cache, _rate_limit_cache_loaded
 
     # Clear cache under lock to avoid races with concurrent readers/writers
@@ -385,9 +495,11 @@ def make_github_api_request(
     if effective_token:
         headers["Authorization"] = f"token {effective_token}"
         logger.debug("Using GitHub token for API authentication")
+    else:
+        logger.debug("No GitHub token available - using unauthenticated API requests")
 
     # Show warning if no token available (centralized logic)
-    _show_token_warning_if_needed(effective_token, allow_env_token)
+    _show_token_warning_if_needed(effective_token)
 
     # Initialize rate limit cache if needed
     global _rate_limit_cache_loaded
@@ -398,6 +510,8 @@ def make_github_api_request(
     token_hash = hashlib.sha256((effective_token or "no-token").encode()).hexdigest()[
         :16
     ]
+    global _last_rate_limit_token_hash
+    _last_rate_limit_token_hash = token_hash
 
     try:
         # Make the request
@@ -451,9 +565,23 @@ def make_github_api_request(
     finally:
         # Small delay to be respectful to GitHub API, even on errors
         time.sleep(API_CALL_DELAY)
-
-    # Log API response info for debugging
-    logger.debug(f"GitHub API response: {response.status_code} for {url}")
+        # Track API request statistics and log first requests
+        global _api_request_count, _api_auth_used
+        global _api_first_auth_logged, _api_first_unauth_logged
+        with _api_tracking_lock:
+            _api_request_count += 1
+            # API request counter increment
+            if effective_token:
+                _api_auth_used = True
+                if not _api_first_auth_logged:
+                    logger.info("🔐 Making first authenticated GitHub API request")
+                    _api_first_auth_logged = True
+            else:
+                if not _api_first_unauth_logged:
+                    logger.info(
+                        "🌐 Making first unauthenticated GitHub API request (60/hour limit)"
+                    )
+                    _api_first_unauth_logged = True
 
     # Enhanced rate limit tracking and logging
     try:
@@ -472,18 +600,21 @@ def make_github_api_request(
         if rl_header is not None:
             remaining = _parse_rate_limit_header(rl_header)
             if remaining is not None:
-                # Get previous cached value before updating
-                prev_remaining = _get_cached_rate_limit(token_hash)
+                # Parse reset timestamp
+                reset_timestamp = None
+                if rl_reset is not None:
+                    try:
+                        reset_timestamp = datetime.fromtimestamp(
+                            int(rl_reset), timezone.utc
+                        )
+                    except (ValueError, TypeError):
+                        pass  # Keep None if parsing fails
+
                 # Update cache with new rate limit info
-                _update_rate_limit(token_hash, remaining)
+                _update_rate_limit(token_hash, remaining, reset_timestamp)
 
                 # Log enhanced rate limit information
-                if prev_remaining is not None and prev_remaining != remaining:
-                    logger.debug(
-                        f"GitHub API rate-limit remaining: {remaining} (was {prev_remaining})"
-                    )
-                else:
-                    logger.debug(f"GitHub API rate-limit remaining: {remaining}")
+                logger.debug(f"GitHub API rate-limit remaining: {remaining}")
 
                 # Add rate limit estimation and warnings
                 if remaining <= 10:
@@ -620,6 +751,10 @@ def verify_file_integrity(file_path: str) -> bool:
     """Verify file integrity using stored hash."""
     if not os.path.exists(file_path):
         return False
+    # Do not attempt to hash directories
+    if os.path.isdir(file_path):
+        logger.debug("verify_file_integrity called on a directory: %s", file_path)
+        return False
 
     stored_hash = load_file_hash(file_path)
     if not stored_hash:
@@ -652,12 +787,12 @@ def download_file_with_retry(
     # log_message_func: Callable[[str], None] # Removed
 ) -> bool:
     """
-    Download a file from `url` to `download_path`, ensuring integrity and performing atomic replacement.
+    Download a URL to disk and ensure the file is intact and atomically installed.
 
-    Performs integrity checks (SHA-256 sidecar and ZIP validation for archives), skips download when an existing file is verified, streams content to a temporary file with retry-capable HTTP requests, and replaces the target file atomically (with Windows-specific retries for transient access errors). On successful install, saves a companion `.sha256` hash file next to the downloaded file. Cleans up temporary and partially downloaded files on failure.
+    Performs integrity verification (SHA-256 sidecar and ZIP validation for archives), skips downloading when an existing file is already verified, streams the remote content to a temporary file with retry-capable HTTP requests, and atomically replaces the target file on success (with additional retries on Windows to handle transient access errors). Temporary and partially downloaded files are removed on failure; a companion `.sha256` sidecar is written after successful installation.
 
     Returns:
-        True if the file is present and verified or was downloaded and installed successfully, `False` on any failure.
+        `true` if the file is present and verified or was downloaded and installed successfully, `false` otherwise.
     """
     # Note: Session is created after pre-checks and closed in finally
 
@@ -755,47 +890,17 @@ def download_file_with_retry(
             f"Attempting to download file from URL: {url} to temp path: {temp_path}"
         )
         start_time = time.time()
-        # Using type: ignore for Retry as it might not be perfectly typed by stubs,
-        # but the parameters are standard for urllib3.
-        try:
-            retry_strategy: Retry = Retry(
-                total=DEFAULT_CONNECT_RETRIES,
-                connect=DEFAULT_CONNECT_RETRIES,
-                read=DEFAULT_CONNECT_RETRIES,
-                status=DEFAULT_CONNECT_RETRIES,
-                backoff_factor=DEFAULT_BACKOFF_FACTOR,
-                status_forcelist=[408, 429, 500, 502, 503, 504],
-                allowed_methods=frozenset({"GET", "HEAD"}),
-                raise_on_status=False,
-                respect_retry_after_header=True,
-            )
-        except TypeError:
-            # urllib3 v1 fallback - parameters may differ between versions
-            # Use method_whitelist for older urllib3 versions
-            try:
-                # urllib3 v1 signature: use method_whitelist
-                retry_strategy = Retry(
-                    total=DEFAULT_CONNECT_RETRIES,
-                    connect=DEFAULT_CONNECT_RETRIES,
-                    read=DEFAULT_CONNECT_RETRIES,
-                    status=DEFAULT_CONNECT_RETRIES,
-                    backoff_factor=DEFAULT_BACKOFF_FACTOR,
-                    status_forcelist=[408, 429, 500, 502, 503, 504],
-                    method_whitelist=frozenset({"GET", "HEAD"}),
-                    raise_on_status=False,
-                )
-            except TypeError as e:
-                # Very old urllib3 version - use minimal configuration
-                retry_strategy = Retry(
-                    total=DEFAULT_CONNECT_RETRIES,
-                    backoff_factor=DEFAULT_BACKOFF_FACTOR,
-                    status_forcelist=[408, 429, 500, 502, 503, 504],
-                )
-                logger.warning(
-                    "Using minimal urllib3 retry configuration due to compatibility issues: %s",
-                    e,
-                    exc_info=True,
-                )
+        retry_strategy: Retry = Retry(
+            total=DEFAULT_CONNECT_RETRIES,
+            connect=DEFAULT_CONNECT_RETRIES,
+            read=DEFAULT_CONNECT_RETRIES,
+            status=DEFAULT_CONNECT_RETRIES,
+            backoff_factor=DEFAULT_BACKOFF_FACTOR,
+            status_forcelist=[408, 429, 500, 502, 503, 504],
+            allowed_methods=frozenset({"GET", "HEAD"}),
+            raise_on_status=False,
+            respect_retry_after_header=True,
+        )
         adapter = HTTPAdapter(max_retries=retry_strategy)
         session.mount("https://", adapter)
         session.mount("http://", adapter)
