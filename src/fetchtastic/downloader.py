@@ -4084,18 +4084,21 @@ def _format_api_summary(summary: Dict[str, Any]) -> str:
         str: A single-line summary string describing requests made, cache hit/miss counts and rate limit status.
     """
     auth_status = "🔐 authenticated" if summary["auth_used"] else "🌐 unauthenticated"
+    requests_str = "request" if summary["total_requests"] == 1 else "requests"
     log_parts = [
-        f"📊 API Summary: {summary['total_requests']} GitHub API requests ({auth_status})"
+        f"📊 API Summary: {summary['total_requests']} GitHub API {requests_str} ({auth_status})"
     ]
 
     # Add cache statistics if there were any cache operations
     total_cache_lookups = summary["cache_hits"] + summary["cache_misses"]
     if total_cache_lookups > 0:
         cache_hit_rate = (summary["cache_hits"] / total_cache_lookups) * 100
+        hits_str = "hit" if summary["cache_hits"] == 1 else "hits"
+        misses_str = "miss" if summary["cache_misses"] == 1 else "misses"
         log_parts.append(
             f"{total_cache_lookups} cache lookups → "
-            f"{summary['cache_hits']} hits (skipped), "
-            f"{summary['cache_misses']} misses (fetched) "
+            f"{summary['cache_hits']} {hits_str} (skipped), "
+            f"{summary['cache_misses']} {misses_str} (fetched) "
             f"[{cache_hit_rate:.1f}% hit rate]"
         )
 
@@ -4104,18 +4107,19 @@ def _format_api_summary(summary: Dict[str, Any]) -> str:
     reset_time = summary.get("rate_limit_reset")
 
     if remaining is not None:
+        remaining_str = "request" if remaining == 1 else "requests"
         if isinstance(reset_time, datetime):
             time_until_reset = reset_time - datetime.now(timezone.utc)
             if time_until_reset.total_seconds() > 0:
                 minutes_until_reset = int(time_until_reset.total_seconds() / 60)
                 log_parts.append(
-                    f"{remaining} requests remaining (resets in {minutes_until_reset} min)"
+                    f"{remaining} {remaining_str} remaining (resets in {minutes_until_reset} min)"
                 )
             else:
-                log_parts.append(f"{remaining} requests remaining")
+                log_parts.append(f"{remaining} {remaining_str} remaining")
         else:
             # reset_time is None or not a datetime, just show remaining
-            log_parts.append(f"{remaining} requests remaining")
+            log_parts.append(f"{remaining} {remaining_str} remaining")
 
     return ", ".join(log_parts)
 
