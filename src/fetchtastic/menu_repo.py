@@ -106,8 +106,7 @@ def fetch_repo_contents(path="", allow_env_token=True, github_token=None):
         api_url = base_url
 
     try:
-        # Track this as a cache miss since we're not checking cache first
-        track_api_cache_miss()
+        # Note: cache miss tracking is handled by the caller
         response = make_github_api_request(
             api_url,
             github_token=github_token,
