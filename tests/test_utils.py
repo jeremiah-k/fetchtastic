@@ -1040,7 +1040,7 @@ def test_format_api_summary():
         "cache_misses": 0,
     }
     result = _format_api_summary(summary)
-    expected = "📊 API Summary: 5 GitHub API requests (🔐 authenticated)"
+    expected = "📊 GitHub API Summary: 5 API requests (🔐 authenticated)"
     assert result == expected
 
     # Test basic unauthenticated request with cache statistics
@@ -1052,7 +1052,7 @@ def test_format_api_summary():
     }
     result = _format_api_summary(summary)
     expected = (
-        "📊 API Summary: 3 GitHub API requests (🌐 unauthenticated), 3 cache lookups → "
+        "📊 GitHub API Summary: 3 API requests (🌐 unauthenticated), 3 cache lookups → "
         "2 hits (skipped), 1 miss (fetched) [66.7% hit rate]"
     )
     assert result == expected
@@ -1066,7 +1066,7 @@ def test_format_api_summary():
     }
     result = _format_api_summary(summary)
     expected = (
-        "📊 API Summary: 4 GitHub API requests (🌐 unauthenticated), 4 cache lookups → "
+        "📊 GitHub API Summary: 4 API requests (🌐 unauthenticated), 4 cache lookups → "
         "0 hits (skipped), 4 misses (fetched) [0.0% hit rate]"
     )
     assert result == expected
@@ -1087,7 +1087,7 @@ def test_format_api_summary():
     # Should contain rate limit info with minutes
     assert "4500 requests remaining (resets in" in result
     assert "min)" in result
-    assert "📊 API Summary: 2 GitHub API requests (🔐 authenticated)" in result
+    assert "📊 GitHub API Summary: 2 API requests (🔐 authenticated)" in result
     assert (
         "2 cache lookups → 1 hit (skipped), 1 miss (fetched) [50.0% hit rate]" in result
     )
@@ -1105,7 +1105,7 @@ def test_format_api_summary():
         "rate_limit_reset": past_time,
     }
     result = _format_api_summary(summary)
-    expected = "📊 API Summary: 1 GitHub API request (🌐 unauthenticated), 4999 requests remaining"
+    expected = "📊 GitHub API Summary: 1 API request (🌐 unauthenticated), 4999 requests remaining"
     assert result == expected
 
 

@@ -111,15 +111,16 @@ def get_api_request_summary() -> Dict[str, Any]:
     """
     Builds a session-wide summary of API request and cache statistics.
 
-    The returned dictionary contains aggregate request counters and authentication usage, and may include cached rate-limit details if available for the last used token.
+    The returned dictionary contains aggregate request counters and authentication usage for the current session only,
+    and may include cached rate-limit details if available for the last used token.
 
     Returns:
         summary (dict): Keys include:
             - "total_requests" (int): Total number of API requests made this session.
-            - "cache_hits" (int): Number of API cache hits.
-            - "cache_misses" (int): Number of API cache misses.
-            - "auth_used" (bool): Whether any request used authentication.
-            - "rate_limit_remaining" (int, optional): Cached remaining requests for the last token, present when available.
+            - "cache_hits" (int): Number of API cache hits during this session.
+            - "cache_misses" (int): Number of API cache misses during this session.
+            - "auth_used" (bool): Whether any request used authentication during this session.
+            - "rate_limit_remaining" (int, optional): Remaining requests for the last token (includes consumption from previous sessions).
             - "rate_limit_reset" (datetime.datetime, optional): Reset timestamp for the cached rate limit, present when available.
     """
     with _api_tracking_lock:
@@ -569,6 +570,7 @@ def make_github_api_request(
         global _api_first_auth_logged, _api_first_unauth_logged
         with _api_tracking_lock:
             _api_request_count += 1
+            # API request counter increment
             if effective_token:
                 _api_auth_used = True
                 if not _api_first_auth_logged:

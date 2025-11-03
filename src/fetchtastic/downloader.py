@@ -4072,21 +4072,22 @@ def _format_api_summary(summary: Dict[str, Any]) -> str:
     Format API request statistics into a concise, human-readable string for logging.
 
     Parameters:
-        summary (dict): A mapping with API telemetry values. Recognized keys:
+    summary (dict): A mapping with API telemetry values. Recognized keys:
             - "auth_used" (bool): Whether authenticated requests were used.
-            - "total_requests" (int): Total number of API requests performed.
+            - "total_requests" (int): Total number of GitHub API requests performed.
             - "cache_hits" (int): Number of cache hits.
             - "cache_misses" (int): Number of cache misses.
             - "rate_limit_remaining" (int, optional): Remaining requests before rate limit.
             - "rate_limit_reset" (datetime.datetime, optional): UTC datetime when the rate limit resets.
 
     Returns:
-        str: A single-line summary string describing requests made, cache hit/miss counts and rate limit status.
+        str: A single-line summary string describing GitHub API requests made, cache hit/miss counts and rate limit status.
+        Note: This tracks GitHub API calls only, not file downloads from release assets.
     """
     auth_status = "🔐 authenticated" if summary["auth_used"] else "🌐 unauthenticated"
     requests_str = "request" if summary["total_requests"] == 1 else "requests"
     log_parts = [
-        f"📊 API Summary: {summary['total_requests']} GitHub API {requests_str} ({auth_status})"
+        f"📊 GitHub API Summary: {summary['total_requests']} API {requests_str} ({auth_status})"
     ]
 
     # Add cache statistics if there were any cache operations
@@ -4235,7 +4236,9 @@ def main(force_refresh: bool = False) -> None:
     if summary["total_requests"] > 0:
         logger.info(_format_api_summary(summary))
     else:
-        logger.info("📊 API Summary: No API requests made (all data served from cache)")
+        logger.info(
+            "📊 GitHub API Summary: No API requests made (all data served from cache)"
+        )
 
 
 if __name__ == "__main__":
