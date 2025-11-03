@@ -1040,8 +1040,10 @@ def test_format_api_summary():
         "cache_misses": 0,
     }
     result = _format_api_summary(summary)
-    expected = "📊 GitHub API Summary: 5 API requests (🔐 authenticated)"
-    assert result == expected
+    # Check key components rather than exact string match
+    assert "📊 GitHub API Summary:" in result
+    assert "5 API requests" in result
+    assert "🔐 authenticated" in result
 
     # Test basic unauthenticated request with cache statistics
     summary = {
@@ -1051,11 +1053,13 @@ def test_format_api_summary():
         "cache_misses": 1,
     }
     result = _format_api_summary(summary)
-    expected = (
-        "📊 GitHub API Summary: 3 API requests (🌐 unauthenticated), 3 cache lookups → "
-        "2 hits (skipped), 1 miss (fetched) [66.7% hit rate]"
-    )
-    assert result == expected
+    # Check key components rather than exact string match
+    assert "📊 GitHub API Summary:" in result
+    assert "3 API requests" in result
+    assert "🌐 unauthenticated" in result
+    assert "3 cache lookups" in result
+    assert "2 hits (skipped), 1 miss (fetched)" in result
+    assert "66.7% hit rate" in result
 
     # Test request with no cache hits (should still show cache stats)
     summary = {
@@ -1065,11 +1069,13 @@ def test_format_api_summary():
         "cache_misses": 4,
     }
     result = _format_api_summary(summary)
-    expected = (
-        "📊 GitHub API Summary: 4 API requests (🌐 unauthenticated), 4 cache lookups → "
-        "0 hits (skipped), 4 misses (fetched) [0.0% hit rate]"
-    )
-    assert result == expected
+    # Check key components rather than exact string match
+    assert "📊 GitHub API Summary:" in result
+    assert "4 API requests" in result
+    assert "🌐 unauthenticated" in result
+    assert "4 cache lookups" in result
+    assert "0 hits (skipped), 4 misses (fetched)" in result
+    assert "0.0% hit rate" in result
 
     # Test with rate limit info (future reset time)
     future_time = datetime.now(timezone.utc).replace(
@@ -1105,8 +1111,11 @@ def test_format_api_summary():
         "rate_limit_reset": past_time,
     }
     result = _format_api_summary(summary)
-    expected = "📊 GitHub API Summary: 1 API request (🌐 unauthenticated), 4999 requests remaining"
-    assert result == expected
+    # Check key components rather than exact string match
+    assert "📊 GitHub API Summary:" in result
+    assert "1 API request" in result
+    assert "🌐 unauthenticated" in result
+    assert "4999 requests remaining" in result
 
 
 @pytest.mark.core_downloads

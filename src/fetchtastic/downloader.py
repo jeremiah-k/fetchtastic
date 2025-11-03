@@ -1623,6 +1623,7 @@ def _fetch_prerelease_directories(force_refresh: bool = False) -> List[str]:
             del _prerelease_dir_cache[cache_key]
 
     logger.debug("Cache miss for prerelease directories - fetching from GitHub API")
+    track_api_cache_miss()
     directories = menu_repo.fetch_repo_directories()
     updated_at = datetime.now(timezone.utc)
 

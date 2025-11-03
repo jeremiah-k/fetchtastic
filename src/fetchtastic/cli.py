@@ -409,7 +409,17 @@ def run_clean():
     """
     Remove Fetchtastic configuration, managed downloads, and system integrations.
 
-    Prompts for confirmation before proceeding. Deletes current and legacy config files and their config directory when empty; removes only Fetchtastic-managed directories (matching configured MANAGED_DIRECTORIES or FIRMWARE_DIR_PREFIX) and managed files (matching MANAGED_FILES) inside the configured download/base directory while preserving other user files; removes platform-specific integrations such as Windows Start Menu/startup shortcuts, non-Windows crontab entries that reference Fetchtastic, a Termux boot script (~/.termux/boot/fetchtastic.sh), and the Fetchtastic log file. This operation is irreversible and will modify or remove files and system entries.
+    Prompts for confirmation before proceeding. This operation is irreversible and will
+    modify or remove files and system entries.
+
+    Deletes:
+    - Current and legacy config files and their config directory when empty
+    - Only Fetchtastic-managed directories (matching configured MANAGED_DIRECTORIES
+      or FIRMWARE_DIR_PREFIX) and managed files (matching MANAGED_FILES) inside the
+      configured download/base directory while preserving other user files
+    - Platform-specific integrations such as Windows Start Menu/startup shortcuts,
+      non-Windows crontab entries that reference Fetchtastic, a Termux boot script
+      (~/.termux/boot/fetchtastic.sh), and the Fetchtastic log file
     """
     print(
         "This will remove Fetchtastic configuration files, downloaded files, and cron job entries."

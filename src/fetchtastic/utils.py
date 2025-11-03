@@ -751,6 +751,10 @@ def verify_file_integrity(file_path: str) -> bool:
     """Verify file integrity using stored hash."""
     if not os.path.exists(file_path):
         return False
+    # Do not attempt to hash directories
+    if os.path.isdir(file_path):
+        logger.debug("verify_file_integrity called on a directory: %s", file_path)
+        return False
 
     stored_hash = load_file_hash(file_path)
     if not stored_hash:
