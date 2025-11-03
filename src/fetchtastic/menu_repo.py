@@ -11,7 +11,6 @@ from fetchtastic.constants import (
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import (
     make_github_api_request,
-    track_api_cache_miss,
 )
 
 # Module-level constants for repository content filtering
