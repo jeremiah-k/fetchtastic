@@ -130,7 +130,7 @@ def fetch_repo_contents(path="", allow_env_token=True, github_token=None):
         logger.warning(f"HTTP error fetching repository contents from GitHub API: {e}")
         return []
     except requests.RequestException as e:
-        logger.warning(f"Error fetching repository contents from GitHub API: {e}")
+        logger.warning(f"Could not fetch repository contents from GitHub API: {e}")
         return []
     except (ValueError, KeyError) as e:
         logger.error(f"Error parsing repository contents response: {e}")
