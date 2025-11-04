@@ -730,6 +730,197 @@ def _migrate_legacy_text_tracking_file(prerelease_dir: str) -> bool:
         return False
 
 
+def _migrate_legacy_release_file(
+    legacy_file: str, json_file: str, file_type: str
+) -> bool:
+    """
+    Migrate legacy text-format release tracking file to new JSON format.
+
+    Converts simple text files containing just a version tag to JSON format
+    with structured metadata.
+
+    Parameters:
+        legacy_file (str): Path to the legacy text file.
+        json_file (str): Path to the target JSON file.
+        file_type (str): Type of file for logging (e.g., "Android", "Firmware").
+
+    Returns:
+        bool: True if migration succeeded or file was already migrated, False otherwise.
+    """
+    if not os.path.exists(legacy_file):
+        # No legacy file to migrate
+        return False
+
+    if os.path.exists(json_file):
+        # JSON file already exists, assume migration already done
+        logger.debug(
+            f"{file_type} release tracking already in JSON format: {json_file}"
+        )
+        # Remove legacy file if JSON exists
+        try:
+            os.remove(legacy_file)
+            logger.debug(
+                f"Removed legacy {file_type.lower()} release file: {legacy_file}"
+            )
+            return True
+        except OSError as e:
+            logger.warning(
+                f"Could not remove legacy {file_type.lower()} release file {legacy_file}: {e}"
+            )
+            return False
+
+    try:
+        with open(legacy_file, "r", encoding="utf-8") as f:
+            version_tag = f.read().strip()
+
+        if not version_tag:
+            # Empty file, just remove it
+            os.remove(legacy_file)
+            logger.debug(
+                f"Removed empty legacy {file_type.lower()} release file: {legacy_file}"
+            )
+            return True
+
+        # Create new JSON format data
+        migration_data = {
+            "latest_version": version_tag,
+            "last_updated": datetime.now(timezone.utc).isoformat(),
+            "file_type": file_type.lower(),
+        }
+
+        # Write to new JSON format
+        def write_json_data(f):
+            json.dump(migration_data, f, indent=2)
+
+        if _atomic_write(json_file, write_json_data, ".json"):
+            # Successfully wrote JSON, now remove old text file
+            os.remove(legacy_file)
+            logger.info(
+                f"Migrated legacy {file_type.lower()} release tracking from text to JSON format: {legacy_file} → {json_file}"
+            )
+            return True
+        else:
+            logger.warning(
+                f"Failed to write migrated {file_type.lower()} release JSON data, keeping old text file"
+            )
+            return False
+
+    except (IOError, UnicodeDecodeError, OSError) as e:
+        logger.warning(
+            f"Failed to migrate legacy {file_type.lower()} release file {legacy_file}: {e}"
+        )
+        return False
+
+
+def _migrate_all_legacy_tracking_files(download_dir: str) -> None:
+    """
+    Migrate all legacy text-based tracking files to JSON format.
+
+    This function handles the migration of:
+    - prerelease_commits.txt → prerelease_tracking.json
+    - latest_android_release.txt → latest_android_release.json
+    - latest_firmware_release.txt → latest_firmware_release.json
+
+    Parameters:
+        download_dir (str): Base download directory.
+    """
+    # Migrate prerelease tracking
+    prerelease_dir = os.path.join(download_dir, "firmware", "prerelease")
+    if os.path.exists(prerelease_dir):
+        _migrate_legacy_text_tracking_file(prerelease_dir)
+
+    # Migrate latest Android release tracking
+    apks_dir = os.path.join(download_dir, "apks")
+    android_legacy_file = os.path.join(apks_dir, LATEST_ANDROID_RELEASE_FILE)
+    android_json_file = os.path.join(apks_dir, "latest_android_release.json")
+    if os.path.exists(apks_dir):
+        _migrate_legacy_release_file(android_legacy_file, android_json_file, "Android")
+
+    # Migrate latest firmware release tracking
+    firmware_dir = os.path.join(download_dir, "firmware")
+    firmware_legacy_file = os.path.join(firmware_dir, LATEST_FIRMWARE_RELEASE_FILE)
+    firmware_json_file = os.path.join(firmware_dir, "latest_firmware_release.json")
+    if os.path.exists(firmware_dir):
+        _migrate_legacy_release_file(
+            firmware_legacy_file, firmware_json_file, "Firmware"
+        )
+
+
+def _read_latest_release_tag(legacy_file: str, json_file: str) -> Optional[str]:
+    """
+    Read the latest release tag from either legacy text or JSON format.
+
+    Parameters:
+        legacy_file (str): Path to the legacy text file.
+        json_file (str): Path to the JSON file.
+
+    Returns:
+        Optional[str]: The release tag, or None if neither file exists or is invalid.
+    """
+    # Try JSON format first (newer)
+    if os.path.exists(json_file):
+        try:
+            with open(json_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                version = data.get("latest_version")
+                return version if version else None
+        except (IOError, json.JSONDecodeError, KeyError) as e:
+            logger.debug(f"Could not read release tag from JSON file {json_file}: {e}")
+
+    # Fall back to legacy text format
+    if os.path.exists(legacy_file):
+        try:
+            with open(legacy_file, "r", encoding="utf-8") as f:
+                version_tag = f.read().strip()
+                return version_tag if version_tag else None
+        except (IOError, UnicodeDecodeError) as e:
+            logger.debug(
+                f"Could not read release tag from legacy file {legacy_file}: {e}"
+            )
+
+    return None
+
+
+def _write_latest_release_tag(
+    legacy_file: str, json_file: str, version_tag: str
+) -> bool:
+    """
+    Write the latest release tag in JSON format.
+
+    Parameters:
+        legacy_file (str): Path to the legacy text file.
+        json_file (str): Path to the JSON file.
+        version_tag (str): The version tag to write.
+
+    Returns:
+        bool: True if write succeeded, False otherwise.
+    """
+    migration_data = {
+        "latest_version": version_tag,
+        "last_updated": datetime.now(timezone.utc).isoformat(),
+    }
+
+    def write_json_data(f):
+        json.dump(migration_data, f, indent=2)
+
+    if _atomic_write(json_file, write_json_data, ".json"):
+        # Remove legacy file if it exists
+        if os.path.exists(legacy_file):
+            try:
+                os.remove(legacy_file)
+                logger.debug(
+                    f"Removed legacy release file after JSON write: {legacy_file}"
+                )
+            except OSError as e:
+                logger.warning(
+                    f"Could not remove legacy release file {legacy_file}: {e}"
+                )
+        return True
+    else:
+        # Fallback to legacy format if JSON write fails
+        return _atomic_write_text(legacy_file, version_tag)
+
+
 def _ensure_v_prefix_if_missing(version: Optional[str]) -> Optional[str]:
     """Add 'v' prefix to version if missing (case-insensitive)."""
     if version is None:
@@ -2784,6 +2975,9 @@ def _process_firmware_downloads(
     latest_firmware_version: Optional[str] = None
     latest_prerelease_version: Optional[str] = None
 
+    # Migrate all legacy tracking files to JSON format
+    _migrate_all_legacy_tracking_files(paths_and_urls["download_dir"])
+
     if config.get("SAVE_FIRMWARE", False) and config.get(
         "SELECTED_FIRMWARE_ASSETS", []
     ):
@@ -2836,10 +3030,14 @@ def _process_firmware_downloads(
         if fw_downloaded:
             logger.info(f"Downloaded Firmware versions: {', '.join(fw_downloaded)}")
 
-        latest_release_tag: Optional[str] = None
-        if os.path.exists(paths_and_urls["latest_firmware_release_file"]):
-            with open(paths_and_urls["latest_firmware_release_file"], "r") as f:
-                latest_release_tag = f.read().strip()
+        # Read latest release tag (supports both legacy and JSON formats)
+        firmware_json_file = os.path.join(
+            os.path.dirname(paths_and_urls["latest_firmware_release_file"]),
+            "latest_firmware_release.json",
+        )
+        latest_release_tag = _read_latest_release_tag(
+            paths_and_urls["latest_firmware_release_file"], firmware_json_file
+        )
 
         if latest_release_tag:
             cleaned_up: bool = cleanup_superseded_prereleases(
@@ -2937,6 +3135,9 @@ def _process_apk_downloads(
         []
     )  # Initialize all_failed_apk_downloads
     latest_apk_version: Optional[str] = None
+
+    # Migrate all legacy tracking files to JSON format
+    _migrate_all_legacy_tracking_files(paths_and_urls["download_dir"])
 
     if config.get("SAVE_APKS", False) and config.get("SELECTED_APK_ASSETS", []):
         latest_android_releases: List[Dict[str, Any]] = _get_latest_releases_data(
@@ -3512,21 +3713,20 @@ def check_and_download(
 
     real_download_base = os.path.realpath(download_dir_path)
 
-    saved_release_tag: Optional[str] = None
-    if os.path.exists(latest_release_file):
-        try:
-            with open(latest_release_file, "r") as f:
-                saved_release_tag = _sanitize_path_component(f.read())
-                if saved_release_tag is None:
-                    logger.warning(
-                        "Ignoring unsafe contents in latest release file %s",
-                        latest_release_file,
-                    )
-        except IOError as e:
-            logger.warning(
-                f"Error reading latest release file {latest_release_file}: {e}"
-            )
-            # Potentially critical, could lead to re-downloading, but proceed for now.
+    # Read saved release tag (supports both legacy and JSON formats)
+    json_file = os.path.join(
+        os.path.dirname(latest_release_file),
+        f"latest_{release_type.lower()}_release.json",
+    )
+    saved_raw_tag = _read_latest_release_tag(latest_release_file, json_file)
+    saved_release_tag = (
+        _sanitize_path_component(saved_raw_tag) if saved_raw_tag else None
+    )
+    if saved_raw_tag is not None and saved_release_tag is None:
+        logger.warning(
+            "Ignoring unsafe contents in latest release file %s",
+            latest_release_file,
+        )
 
     releases_to_download: List[Dict[str, Any]] = releases[:versions_to_keep]
 
@@ -3591,7 +3791,13 @@ def check_and_download(
                     release_tag != saved_release_tag
                     and release_data == releases_to_download[0]
                 ):
-                    if not _atomic_write_text(latest_release_file, release_tag):
+                    json_file = os.path.join(
+                        os.path.dirname(latest_release_file),
+                        f"latest_{release_type.lower()}_release.json",
+                    )
+                    if not _write_latest_release_tag(
+                        latest_release_file, json_file, release_tag
+                    ):
                         logger.warning(
                             f"Error updating latest release file: {latest_release_file}"
                         )
@@ -3892,7 +4098,13 @@ def check_and_download(
                     # Consider the latest release processed even without downloads to avoid re-scanning
                     try:
                         if idx == 1:
-                            if _atomic_write_text(latest_release_file, release_tag):
+                            json_file = os.path.join(
+                                os.path.dirname(latest_release_file),
+                                f"latest_{release_type.lower()}_release.json",
+                            )
+                            if _write_latest_release_tag(
+                                latest_release_file, json_file, release_tag
+                            ):
                                 saved_release_tag = release_tag
                                 logger.debug(
                                     f"Updated latest release tag to {release_tag} (no matching assets)"
@@ -3930,7 +4142,13 @@ def check_and_download(
                 latest_release_tag_val is not None
                 and latest_release_tag_val != saved_release_tag
             ):
-                if not _atomic_write_text(latest_release_file, latest_release_tag_val):
+                json_file = os.path.join(
+                    os.path.dirname(latest_release_file),
+                    f"latest_{release_type.lower()}_release.json",
+                )
+                if not _write_latest_release_tag(
+                    latest_release_file, json_file, latest_release_tag_val
+                ):
                     logger.warning(
                         f"Error writing latest release tag to {latest_release_file}"
                     )
