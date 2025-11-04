@@ -434,9 +434,9 @@ def test_check_and_download_corrupted_existing_zip_records_failure(tmp_path):
         # Mock download failure to test error handling
         """
         Simulates a download operation that always fails.
-        
+
         Used in tests to force a download failure for exercising error handling.
-        
+
         Returns:
             False: Indicates the download did not succeed.
         """
@@ -1424,4 +1424,733 @@ def test_write_latest_release_tag(tmp_path):
     # Test write failure
     with patch("fetchtastic.downloader._atomic_write_json", return_value=False):
         result = _write_latest_release_tag(str(json_file), "v3.1.0", "Test")
+        assert result is False
+
+
+@pytest.mark.core_downloads
+def test_ensure_cache_dir(tmp_path):
+    """Test _ensure_cache_dir creates and returns cache directory path."""
+    from unittest.mock import patch
+
+    from fetchtastic.downloader import _ensure_cache_dir
+
+    with patch("platformdirs.user_cache_dir") as mock_user_cache_dir:
+        mock_user_cache_dir.return_value = str(tmp_path / "test_cache")
+
+        cache_dir = _ensure_cache_dir()
+
+        assert cache_dir == str(tmp_path / "test_cache")
+        assert os.path.exists(cache_dir)
+        mock_user_cache_dir.assert_called_once_with("fetchtastic")
+
+
+@pytest.mark.core_downloads
+def test_atomic_write_json_success(tmp_path):
+    """Test _atomic_write_json successful write."""
+    import json
+
+    from fetchtastic.downloader import _atomic_write_json
+
+    test_file = tmp_path / "test_output.json"
+    test_data = {"key": "value", "number": 42}
+
+    result = _atomic_write_json(str(test_file), test_data)
+
+    assert result is True
+    assert test_file.exists()
+
+    with open(test_file, "r") as f:
+        loaded_data = json.load(f)
+
+    assert loaded_data == test_data
+
+
+@pytest.mark.core_downloads
+def test_atomic_write_json_failure(tmp_path):
+    """Test _atomic_write_json handles write failures."""
+    from unittest.mock import patch
+
+    from fetchtastic.downloader import _atomic_write_json
+
+    test_file = tmp_path / "test_output.json"
+    test_data = {"key": "value"}
+
+    with patch("fetchtastic.downloader._atomic_write", return_value=False):
+        result = _atomic_write_json(str(test_file), test_data)
+        assert result is False
+
+
+@pytest.mark.core_downloads
+def test_load_json_cache_with_expiry_no_file(tmp_path):
+    """Test _load_json_cache_with_expiry with non-existent file."""
+    from fetchtastic.downloader import _load_json_cache_with_expiry
+
+    non_existent_file = str(tmp_path / "non_existent.json")
+
+    def dummy_validator(entry):
+        return True
+
+    def dummy_processor(entry, cached_at):
+        return entry
+
+    result = _load_json_cache_with_expiry(
+        cache_file_path=non_existent_file,
+        expiry_hours=1.0,
+        cache_entry_validator=dummy_validator,
+        entry_processor=dummy_processor,
+        cache_name="test cache",
+    )
+
+    assert result == {}
+
+
+@pytest.mark.core_downloads
+def test_load_json_cache_with_expiry_invalid_json(tmp_path):
+    """Test _load_json_cache_with_expiry with invalid JSON."""
+    from fetchtastic.downloader import _load_json_cache_with_expiry
+
+    invalid_json_file = tmp_path / "invalid.json"
+    invalid_json_file.write_text("{ invalid json content")
+
+    def dummy_validator(entry):
+        return True
+
+    def dummy_processor(entry, cached_at):
+        return entry
+
+    result = _load_json_cache_with_expiry(
+        cache_file_path=str(invalid_json_file),
+        expiry_hours=1.0,
+        cache_entry_validator=dummy_validator,
+        entry_processor=dummy_processor,
+        cache_name="test cache",
+    )
+
+    assert result == {}
+
+
+@pytest.mark.core_downloads
+def test_load_json_cache_with_expiry_wrong_type(tmp_path):
+    """Test _load_json_cache_with_expiry with non-dict JSON."""
+    from fetchtastic.downloader import _load_json_cache_with_expiry
+
+    wrong_type_file = tmp_path / "wrong_type.json"
+    wrong_type_file.write_text('["not", "a", "dict"]')
+
+    def dummy_validator(entry):
+        return True
+
+    def dummy_processor(entry, cached_at):
+        return entry
+
+    result = _load_json_cache_with_expiry(
+        cache_file_path=str(wrong_type_file),
+        expiry_hours=1.0,
+        cache_entry_validator=dummy_validator,
+        entry_processor=dummy_processor,
+        cache_name="test cache",
+    )
+
+    assert result == {}
+
+
+@pytest.mark.core_downloads
+def test_load_json_cache_with_expiry_expired_entries(tmp_path):
+    """Test _load_json_cache_with_expiry filters out expired entries."""
+    import json
+    from datetime import datetime, timedelta, timezone
+
+    from fetchtastic.downloader import _load_json_cache_with_expiry
+
+    cache_file = tmp_path / "test_cache.json"
+    past_time = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+
+    cache_data = {
+        "valid_entry": {
+            "data": "valid",
+            "cached_at": datetime.now(timezone.utc).isoformat(),
+        },
+        "expired_entry": {"data": "expired", "cached_at": past_time},
+    }
+
+    cache_file.write_text(json.dumps(cache_data))
+
+    def dummy_validator(entry):
+        return "cached_at" in entry and "data" in entry
+
+    def dummy_processor(entry, cached_at):
+        return entry["data"]
+
+    result = _load_json_cache_with_expiry(
+        cache_file_path=str(cache_file),
+        expiry_hours=1.0,
+        cache_entry_validator=dummy_validator,
+        entry_processor=dummy_processor,
+        cache_name="test cache",
+    )
+
+    assert result == {"valid_entry": "valid"}
+    assert "expired_entry" not in result
+
+
+@pytest.mark.core_downloads
+def test_sanitize_path_component_valid_inputs():
+    """Test _sanitize_path_component with valid inputs."""
+    from fetchtastic.downloader import _sanitize_path_component
+
+    # Test normal strings
+    assert _sanitize_path_component("valid-name") == "valid-name"
+    assert _sanitize_path_component("valid_name") == "valid_name"
+    assert _sanitize_path_component("name123") == "name123"
+
+    # Test with whitespace
+    assert _sanitize_path_component("  trimmed  ") == "trimmed"
+
+    # Test None
+    assert _sanitize_path_component(None) is None
+
+
+@pytest.mark.core_downloads
+def test_sanitize_path_component_invalid_inputs():
+    """Test _sanitize_path_component with invalid inputs."""
+    from fetchtastic.downloader import _sanitize_path_component
+
+    # Test empty string
+    assert _sanitize_path_component("") is None
+    assert _sanitize_path_component("   ") is None
+
+    # Test dangerous paths
+    assert _sanitize_path_component(".") is None
+    assert _sanitize_path_component("..") is None
+    assert _sanitize_path_component("../dangerous") is None
+    assert _sanitize_path_component("path/with/slashes") is None
+
+
+@pytest.mark.core_downloads
+def test_normalize_version_prerelease_parsing(tmp_path):
+    """Test _normalize_version handles prerelease versions correctly."""
+    from fetchtastic.downloader import _normalize_version
+
+    # Test alpha prereleases
+    result = _normalize_version("v1.0.0-alpha")
+    assert result is not None
+    assert hasattr(result, "is_prerelease")
+    assert result.is_prerelease is True
+
+    # Test beta prereleases
+    result = _normalize_version("v2.1.0-beta")
+    assert result is not None
+    assert result.is_prerelease is True
+
+    # Test with numbers
+    result = _normalize_version("v1.0.0-alpha2")
+    assert result is not None
+    assert result.is_prerelease is True
+
+
+@pytest.mark.core_downloads
+def test_normalize_version_hash_suffix(tmp_path):
+    """Test _normalize_version handles hash suffix versions."""
+    from fetchtastic.downloader import _normalize_version
+
+    # Test hash suffix
+    result = _normalize_version("v1.0.0+abc123")
+    assert result is not None
+    assert hasattr(result, "local")
+    assert str(result.local) == "abc123"
+
+
+@pytest.mark.core_downloads
+def test_normalize_version_invalid_prerelease(tmp_path):
+    """Test _normalize_version handles invalid prerelease versions."""
+    from fetchtastic.downloader import _normalize_version
+
+    # Test invalid prerelease that should fall back to natural sort
+    result = _normalize_version("v1.0.0-invalid")
+    # Should not crash and should return some version object
+    assert result is not None
+
+
+@pytest.mark.core_downloads
+def test_cleanup_superseded_prereleases_unsafe_tag(tmp_path):
+    """Test cleanup_superseded_prereleases with unsafe tag."""
+    from fetchtastic.downloader import cleanup_superseded_prereleases
+
+    # Create directory structure
+    firmware_dir = tmp_path / "firmware"
+    firmware_dir.mkdir()
+    prerelease_dir = firmware_dir / "prerelease"
+    prerelease_dir.mkdir()
+
+    # Test with unsafe tag (contains path traversal)
+    result = cleanup_superseded_prereleases(str(tmp_path), "../../../unsafe")
+
+    # Should return False and not crash
+    assert result is False
+
+
+@pytest.mark.core_downloads
+def test_cleanup_superseded_prereleases_prerelease_as_latest(tmp_path):
+    """Test cleanup when latest release is itself a prerelease."""
+    from fetchtastic.downloader import cleanup_superseded_prereleases
+
+    # Create directory structure
+    firmware_dir = tmp_path / "firmware"
+    firmware_dir.mkdir()
+    prerelease_dir = firmware_dir / "prerelease"
+    prerelease_dir.mkdir()
+
+    # Test with prerelease as latest - should not clean up
+    result = cleanup_superseded_prereleases(str(tmp_path), "v1.0.0-alpha")
+
+    # Should return False since latest is prerelease
+    assert result is False
+
+
+@pytest.mark.core_downloads
+def test_get_commit_cache_file():
+    """Test _get_commit_cache_file returns correct path."""
+    from unittest.mock import patch
+
+    from fetchtastic.downloader import _get_commit_cache_file
+
+    with patch("fetchtastic.downloader._ensure_cache_dir", return_value="/test/cache"):
+        result = _get_commit_cache_file()
+        assert result == "/test/cache/commit_timestamps.json"
+
+
+@pytest.mark.core_downloads
+def test_get_prerelease_dir_cache_file():
+    """Test _get_prerelease_dir_cache_file returns correct path."""
+    from unittest.mock import patch
+
+    from fetchtastic.downloader import _get_prerelease_dir_cache_file
+
+    with patch("fetchtastic.downloader._ensure_cache_dir", return_value="/test/cache"):
+        result = _get_prerelease_dir_cache_file()
+        assert result == "/test/cache/prerelease_dirs.json"
+
+
+@pytest.mark.core_downloads
+def test_get_release_tuple_valid_versions():
+    """Test _get_release_tuple with valid version strings."""
+    from fetchtastic.downloader import _get_release_tuple
+
+    # Test normal version
+    result = _get_release_tuple("v1.2.3")
+    assert result == (1, 2, 3)
+
+    # Test without v prefix
+    result = _get_release_tuple("2.0.0")
+    assert result == (2, 0, 0)
+
+
+@pytest.mark.core_downloads
+def test_get_release_tuple_invalid_versions():
+    """Test _get_release_tuple with invalid version strings."""
+    from fetchtastic.downloader import _get_release_tuple
+
+    # Test non-numeric version
+    result = _get_release_tuple("not.a.version")
+    assert result is None
+
+    # Test empty string
+    result = _get_release_tuple("")
+    assert result is None
+
+
+@pytest.mark.core_downloads
+def test_ensure_v_prefix_if_missing():
+    """Test _ensure_v_prefix_if_missing adds v prefix correctly."""
+    from fetchtastic.downloader import _ensure_v_prefix_if_missing
+
+    # Test without prefix
+    assert _ensure_v_prefix_if_missing("1.0.0") == "v1.0.0"
+    assert _ensure_v_prefix_if_missing("2.1.3") == "v2.1.3"
+
+    # Test with prefix already present
+    assert _ensure_v_prefix_if_missing("v1.0.0") == "v1.0.0"
+    assert _ensure_v_prefix_if_missing("V2.0.0") == "V2.0.0"  # Should preserve case
+
+    # Test None
+    assert _ensure_v_prefix_if_missing(None) is None
+
+    # Test empty string
+    assert _ensure_v_prefix_if_missing("") == ""
+    assert _ensure_v_prefix_if_missing("   ") == ""
+
+
+@pytest.mark.core_downloads
+def test_load_prerelease_dir_cache_double_checked_locking():
+    """Test _load_prerelease_dir_cache uses double-checked locking."""
+    from unittest.mock import patch
+
+    from fetchtastic.downloader import _load_prerelease_dir_cache
+
+    # Mock cache as already loaded
+    with patch("fetchtastic.downloader._prerelease_dir_cache_loaded", True):
+        with patch("fetchtastic.downloader._load_json_cache_with_expiry") as mock_load:
+            _load_prerelease_dir_cache()
+
+            # Should not call load since cache is already loaded
+            mock_load.assert_not_called()
+
+
+@pytest.mark.core_downloads
+def test_save_prerelease_dir_cache():
+    """Test _save_prerelease_dir_cache saves cache correctly."""
+    from datetime import datetime
+    from unittest.mock import patch
+
+    from fetchtastic.downloader import _save_prerelease_dir_cache
+
+    with patch("fetchtastic.downloader._ensure_cache_dir", return_value="/test/cache"):
+        with patch(
+            "fetchtastic.downloader._atomic_write_json", return_value=True
+        ) as mock_write:
+            # Mock the cache as a dict with correct structure: Dict[str, Tuple[List[str], datetime]]
+            with patch(
+                "fetchtastic.downloader._prerelease_dir_cache",
+                {"test": (["dir1"], datetime(2023, 1, 1))},
+            ):
+                _save_prerelease_dir_cache()
+
+                # Should call atomic write with correct data
+                mock_write.assert_called_once()
+                call_args = mock_write.call_args[0]
+                assert call_args[0] == "/test/cache/prerelease_dirs.json"
+                assert isinstance(call_args[1], dict)
+                assert "test" in call_args[1]
+                assert call_args[1]["test"]["directories"] == ["dir1"]
+                assert call_args[1]["test"]["cached_at"] == "2023-01-01T00:00:00"
+
+
+@pytest.mark.core_downloads
+def test_get_json_release_basename():
+    """Test _get_json_release_basename returns correct filenames."""
+    from fetchtastic.downloader import _get_json_release_basename
+
+    # Test firmware
+    result = _get_json_release_basename("Firmware")
+    assert result == "latest_firmware_release.json"
+
+    # Test Android APK
+    result = _get_json_release_basename("Android APK")
+    assert result == "latest_android_release.json"
+
+
+@pytest.mark.core_downloads
+def test_get_existing_prerelease_dirs(tmp_path):
+    """Test _get_existing_prerelease_dirs finds valid directories."""
+    from fetchtastic.downloader import _get_existing_prerelease_dirs
+
+    # Create directory structure
+    prerelease_dir = tmp_path / "prerelease"
+    prerelease_dir.mkdir()
+
+    # Create valid firmware directories
+    (prerelease_dir / "firmware-v1.0.0").mkdir()
+    (prerelease_dir / "firmware-v2.0.0").mkdir()
+    (prerelease_dir / "firmware-v1.0.0+abc123").mkdir()  # hash suffix is also valid
+
+    # Create invalid directories (should be ignored)
+    (prerelease_dir / "invalid").mkdir()
+
+    result = _get_existing_prerelease_dirs(str(prerelease_dir))
+
+    # Should return all firmware directories (those starting with "firmware-")
+    assert len(result) == 3
+    assert any("firmware-v1.0.0" in path for path in result)
+    assert any("firmware-v2.0.0" in path for path in result)
+    assert any("firmware-v1.0.0+abc123" in path for path in result)
+    assert not any("invalid" in path for path in result)
+
+
+@pytest.mark.core_downloads
+def test_get_commit_hash_from_dir():
+    """Test _get_commit_hash_from_dir extracts hash correctly."""
+    from fetchtastic.downloader import _get_commit_hash_from_dir
+
+    # Test with hash suffix after dash
+    result = _get_commit_hash_from_dir("firmware-v1.0.0-abc123def")
+    assert result == "abc123def"
+
+    # Test with hash suffix after dot
+    result = _get_commit_hash_from_dir("firmware-v1.0.0.abc123def")
+    assert result == "abc123def"
+
+    # Test with no hash
+    result = _get_commit_hash_from_dir("firmware-v1.0.0")
+    assert result is None
+
+    # Test with plus sign (should not match based on regex)
+    result = _get_commit_hash_from_dir("firmware-v1.0.0+abc123def")
+    assert result is None
+
+    # Test without hash suffix
+    result = _get_commit_hash_from_dir("firmware-v1.0.0")
+    assert result is None
+
+    # Test with empty hash after plus (should not match)
+    result = _get_commit_hash_from_dir("firmware-v1.0.0+")
+    assert result is None
+
+
+@pytest.mark.core_downloads
+def test_atomic_write_operations(tmp_path):
+    """Test _atomic_write function handles file operations correctly."""
+    from fetchtastic.downloader import _atomic_write
+
+    test_file = tmp_path / "test_atomic.txt"
+
+    # Test successful write
+    def write_content(f):
+        f.write("test content")
+
+    result = _atomic_write(str(test_file), write_content, suffix=".tmp")
+
+    assert result is True
+    assert test_file.exists()
+    assert test_file.read_text() == "test content"
+
+
+@pytest.mark.core_downloads
+def test_read_latest_release_tag_file_not_found(tmp_path):
+    """Test _read_latest_release_tag with non-existent file."""
+    from fetchtastic.downloader import _read_latest_release_tag
+
+    non_existent_file = tmp_path / "non_existent.json"
+    result = _read_latest_release_tag(str(non_existent_file))
+    assert result is None
+
+
+@pytest.mark.core_downloads
+def test_clear_cache_generic():
+    """Test _clear_cache_generic function."""
+    from unittest.mock import MagicMock, patch
+
+    from fetchtastic.downloader import _clear_cache_generic
+
+    # Mock cache dict and file getter
+    mock_cache = {"key1": "value1", "key2": "value2"}
+    mock_file_getter = MagicMock(return_value="/test/cache.json")
+
+    with patch("os.path.exists", return_value=True), patch("os.remove") as mock_remove:
+        _clear_cache_generic(mock_cache, mock_file_getter, "test cache")
+
+        # Should clear the cache dict
+        assert len(mock_cache) == 0
+
+        # Should call os.remove to delete the cache file
+        mock_remove.assert_called_once_with("/test/cache.json")
+
+
+@pytest.mark.core_downloads
+def test_extract_version():
+    """Test extract_version function."""
+    from fetchtastic.downloader import extract_version
+
+    # Test with firmware prefix
+    assert extract_version("firmware-v1.0.0") == "v1.0.0"
+    assert extract_version("firmware-v2.1.0-beta") == "v2.1.0-beta"
+
+    # Test without prefix
+    assert extract_version("v1.0.0") == "v1.0.0"
+    assert extract_version("some-other-text") == "some-other-text"
+
+
+@pytest.mark.core_downloads
+def test_remove_firmware_prefix_logic():
+    """Test the logic of removing firmware prefix using extract_version."""
+    from fetchtastic.downloader import FIRMWARE_DIR_PREFIX, extract_version
+
+    # Test that extract_version removes the firmware prefix
+    assert extract_version("firmware-v1.0.0") == "v1.0.0"
+    assert extract_version(f"{FIRMWARE_DIR_PREFIX}something") == "something"
+    assert extract_version("v1.0.0") == "v1.0.0"  # No prefix to remove
+
+
+@pytest.mark.core_downloads
+def test_calculate_expected_prerelease_version():
+    """Test calculate_expected_prerelease_version function."""
+    from fetchtastic.downloader import calculate_expected_prerelease_version
+
+    # Test normal version increment
+    assert calculate_expected_prerelease_version("v1.0.0") == "1.0.1"
+    assert calculate_expected_prerelease_version("v2.5.3") == "2.5.4"
+    assert calculate_expected_prerelease_version("1.0.0") == "1.0.1"
+
+    # Test with missing patch version
+    assert calculate_expected_prerelease_version("v1.0") == "1.0.1"
+
+    # Test with invalid versions
+    assert calculate_expected_prerelease_version("invalid") == ""
+    assert calculate_expected_prerelease_version("") == ""
+
+
+@pytest.mark.core_downloads
+def test_read_latest_release_tag_invalid_json(tmp_path):
+    """Test _read_latest_release_tag with invalid JSON."""
+    from fetchtastic.downloader import _read_latest_release_tag
+
+    invalid_json_file = tmp_path / "invalid.json"
+    invalid_json_file.write_text("{ invalid json content")
+
+    result = _read_latest_release_tag(str(invalid_json_file))
+
+    assert result is None
+
+
+@pytest.mark.core_downloads
+def test_read_latest_release_tag_missing_version_key(tmp_path):
+    """Test _read_latest_release_tag with missing latest_version key."""
+    from fetchtastic.downloader import _read_latest_release_tag
+
+    incomplete_json_file = tmp_path / "incomplete.json"
+    incomplete_json_file.write_text('{"other_key": "value"}')
+
+    result = _read_latest_release_tag(str(incomplete_json_file))
+
+    assert result is None
+
+
+@pytest.mark.core_downloads
+def test_normalize_commit_identifier():
+    """Test _normalize_commit_identifier function."""
+    from fetchtastic.downloader import _normalize_commit_identifier
+
+    # Test with version and commit (hash only)
+    result = _normalize_commit_identifier("abc123", "v1.0.0")
+    assert result == "1.0.0.abc123"
+
+    # Test with None version
+    result = _normalize_commit_identifier("abc123", None)
+    assert result == "abc123"
+
+    # Test with empty version
+    result = _normalize_commit_identifier("abc123", "")
+    assert result == "abc123"
+
+    # Test with already normalized version+hash
+    result = _normalize_commit_identifier("1.0.0.abc123", "v1.0.0")
+    assert result == "1.0.0.abc123"
+
+
+@pytest.mark.core_downloads
+def test_extract_clean_version():
+    """Test _extract_clean_version function."""
+    from fetchtastic.downloader import _extract_clean_version
+
+    # Test with version and dot hash
+    result = _extract_clean_version("v1.0.0.abc123")
+    assert result == "v1.0.0"
+
+    # Test with version and more parts
+    result = _extract_clean_version("v1.0.0.abc123.extra")
+    assert result == "v1.0.0"
+
+    # Test with clean version
+    result = _extract_clean_version("v1.0.0")
+    assert result == "v1.0.0"
+
+    # Test with None
+    result = _extract_clean_version(None)
+    assert result is None
+
+
+@pytest.mark.core_downloads
+def test_matches_exclude():
+    """Test _matches_exclude function."""
+    from fetchtastic.downloader import _matches_exclude
+
+    # Test with matching patterns
+    assert _matches_exclude("test.txt", ["*.txt"]) is True
+    assert _matches_exclude("file.md", ["*.md", "*.txt"]) is True
+
+    # Test with no matching patterns
+    assert _matches_exclude("test.txt", ["*.md", "*.pdf"]) is False
+
+    # Test with empty patterns
+    assert _matches_exclude("test.txt", []) is False
+
+
+@pytest.mark.core_downloads
+def test_strip_unwanted_chars():
+    """Test strip_unwanted_chars function."""
+    from fetchtastic.downloader import strip_unwanted_chars
+
+    # Test with non-ASCII characters (should be removed)
+    assert strip_unwanted_chars("hello🌟world") == "helloworld"
+    assert strip_unwanted_chars("café") == "caf"
+    assert strip_unwanted_chars("text with émojis 🚀") == "text with mojis "
+
+    # Test with clean ASCII text (should remain unchanged)
+    assert strip_unwanted_chars("clean text") == "clean text"
+    assert strip_unwanted_chars("") == ""
+
+
+@pytest.mark.core_downloads
+def test_is_release_complete(tmp_path):
+    """Test _is_release_complete function."""
+    from fetchtastic.downloader import _is_release_complete
+
+    # Create a test directory with files
+    test_dir = tmp_path / "release"
+    test_dir.mkdir()
+    (test_dir / "file1.txt").write_text("content1")
+    (test_dir / "file2.txt").write_text("content2")
+
+    # Test complete release
+    complete_release = {
+        "name": "Test Release",
+        "tag_name": "v1.0.0",
+        "assets": [{"name": "file1.txt"}, {"name": "file2.txt"}],
+    }
+    assert _is_release_complete(complete_release, str(test_dir), None, []) is True
+
+    # Test incomplete release (missing assets)
+    incomplete_release = {
+        "name": "Test Release",
+        "tag_name": "v1.0.0",
+        "assets": [{"name": "file1.txt"}, {"name": "missing.txt"}],
+    }
+    assert _is_release_complete(incomplete_release, str(test_dir), None, []) is False
+
+    # Test incomplete release (no assets)
+    incomplete_release2 = {"name": "Test Release", "tag_name": "v1.0.0", "assets": []}
+    assert _is_release_complete(incomplete_release2, str(test_dir), None, []) is False
+
+    # Test incomplete release (missing assets key)
+    incomplete_release3 = {"name": "Test Release", "tag_name": "v1.0.0"}
+    assert _is_release_complete(incomplete_release3, str(test_dir), None, []) is False
+
+
+@pytest.mark.core_downloads
+def test_safe_rmtree():
+    """Test _safe_rmtree function."""
+    from unittest.mock import patch
+
+    from fetchtastic.downloader import _safe_rmtree
+
+    with patch("os.path.realpath") as mock_realpath, patch(
+        "os.path.commonpath", return_value="/base"
+    ), patch("os.path.isdir", return_value=True), patch("shutil.rmtree") as mock_rmtree:
+
+        # Setup mock to return same path for both calls
+        mock_realpath.side_effect = lambda x: x
+
+        # Test successful removal
+        result = _safe_rmtree("/test/path", "/base", "test_item")
+        assert result is True
+        mock_rmtree.assert_called_once_with("/test/path")
+
+    with patch("os.path.realpath") as mock_realpath, patch(
+        "os.path.commonpath", side_effect=ValueError("Paths don't have the same drive")
+    ):
+
+        # Setup mock to return different paths (security check failure)
+        mock_realpath.side_effect = ["/base", "/malicious/path"]
+
+        # Test security check failure
+        result = _safe_rmtree("/test/path", "/base", "test_item")
         assert result is False

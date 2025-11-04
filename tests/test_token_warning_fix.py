@@ -22,7 +22,7 @@ class TestTokenWarningFix:
     ):
         """
         Ensure the application's main entrypoint logs the token-warning path on startup and completes without raising an error.
-        
+
         Sets up fixtures so _initial_setup_and_config reports no GITHUB_TOKEN and provides a download_dir (using tmp_path), stubs download processing to empty results, then calls main(force_refresh=False) to exercise the token-warning behavior during startup. The test passes if main runs to completion without exceptions and the code paths that emit the token warning are executed.
         """
         # Mock setup to return valid config

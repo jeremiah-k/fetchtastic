@@ -568,14 +568,14 @@ def _sanitize_path_component(component: Optional[str]) -> Optional[str]:
 def _safe_rmtree(path_to_remove: str, base_dir: str, item_name: str) -> bool:
     """
     Remove a file or directory only if it safely resides under a permitted base directory.
-    
+
     If `path_to_remove` is a symlink it is unlinked; otherwise the path is resolved to its real path and removed only when that resolved path is located under `base_dir`. `item_name` is used for log messages.
-    
+
     Parameters:
         path_to_remove (str): The filesystem path to remove.
         base_dir (str): The allowed base directory; removal is skipped if the resolved path is outside this directory.
         item_name (str): Human-readable name for logging.
-    
+
     Returns:
         bool: `True` if the path was removed successfully; `False` on error or if the resolved path is outside `base_dir`.
     """
@@ -614,11 +614,11 @@ def _safe_rmtree(path_to_remove: str, base_dir: str, item_name: str) -> bool:
 def compare_file_hashes(file1, file2):
     """
     Determine whether two files have identical SHA-256 hashes.
-    
+
     Parameters:
         file1 (str): Path to the first file to compare.
         file2 (str): Path to the second file to compare.
-    
+
     Returns:
         `true` if both files are readable and their SHA-256 digests match, `false` otherwise.
     """
@@ -662,12 +662,12 @@ def compare_file_hashes(file1, file2):
 def _read_latest_release_tag(json_file: str) -> Optional[str]:
     """
     Return the latest release tag stored in a JSON file.
-    
+
     Expects the file to contain a top-level `latest_version` key.
-    
+
     Parameters:
         json_file (str): Path to the JSON file.
-    
+
     Returns:
         Optional[str]: The `latest_version` value if present and valid, `None` if the file is missing, unreadable, malformed, or the key is absent.
     """
@@ -689,15 +689,15 @@ def _write_latest_release_tag(
 ) -> bool:
     """
     Persist the latest release tag and related metadata to a JSON file for the given release type.
-    
+
     Parameters:
         json_file (str): Filesystem path where the JSON will be written.
         version_tag (str): Release tag to record (e.g., "v1.2.3").
         release_type (str): Human-readable release category (e.g., "Firmware", "Android APK"); used to derive a file_type slug.
-    
+
     Returns:
         bool: `True` if the JSON was written successfully, `False` otherwise.
-    
+
     Notes:
         The written JSON contains `latest_version`, `file_type` (derived slug), and `last_updated` as an ISO 8601 UTC timestamp.
     """
@@ -725,10 +725,10 @@ def _write_latest_release_tag(
 def _ensure_v_prefix_if_missing(version: Optional[str]) -> Optional[str]:
     """
     Ensure a version string begins with a leading "v".
-    
+
     Parameters:
         version (Optional[str]): Version string to normalize; leading/trailing whitespace is stripped. If `None`, no normalization is performed.
-    
+
     Returns:
         Optional[str]: `None` if `version` is `None`; otherwise the input string with a leading "v" added if it did not already start with "v" or "V".
     """
@@ -743,11 +743,11 @@ def _ensure_v_prefix_if_missing(version: Optional[str]) -> Optional[str]:
 def _matches_exclude(name: str, patterns: List[str]) -> bool:
     """
     Check whether a filename matches any exclude pattern using case-insensitive glob matching.
-    
+
     Parameters:
         name (str): The filename or path component to test.
         patterns (List[str]): Glob-style exclude patterns to match against (case-insensitive).
-    
+
     Returns:
         `true` if `name` matches any pattern in `patterns`, `false` otherwise.
     """
@@ -758,12 +758,12 @@ def _matches_exclude(name: str, patterns: List[str]) -> bool:
 def _get_json_release_basename(release_type: str) -> str:
     """
     Return the JSON basename used to record the latest release for the given release type.
-    
+
     Parameters:
-    	release_type (str): Human-readable release type (for example "Android APK" or "Firmware").
-    
+        release_type (str): Human-readable release type (for example "Android APK" or "Firmware").
+
     Returns:
-    	str: The filename basename to use (e.g., `LATEST_ANDROID_RELEASE_JSON_FILE`, `LATEST_FIRMWARE_RELEASE_JSON_FILE`, or `"latest_release.json"`).
+        str: The filename basename to use (e.g., `LATEST_ANDROID_RELEASE_JSON_FILE`, `LATEST_FIRMWARE_RELEASE_JSON_FILE`, or `"latest_release.json"`).
     """
     release_type_lower = release_type.lower()
     if "android" in release_type_lower:
@@ -776,13 +776,13 @@ def _get_json_release_basename(release_type: str) -> str:
 def _normalize_commit_identifier(commit_id: str, release_version: Optional[str]) -> str:
     """
     Normalize a commit identifier into a version-plus-hash form.
-    
+
     If `commit_id` already contains a numeric version followed by a hex hash (e.g., "2.7.13.abcdef"), it is returned unchanged. If `commit_id` is a hex hash only, `release_version` (when provided) is used to derive a numeric version (leading "v" is removed) and the result is returned as "MAJOR.MINOR.PATCH.hash". Otherwise the original `commit_id` is returned unchanged.
-    
+
     Parameters:
         commit_id: Commit identifier (hash-only or version+hash).
         release_version: Optional release tag (e.g., "v2.7.13") used to infer the version for hash-only identifiers.
-    
+
     Returns:
         A normalized commit identifier in `MAJOR.MINOR.PATCH.hash` form when possible; otherwise the original `commit_id`.
     """
@@ -956,9 +956,9 @@ def _parse_legacy_json_format(
 def _read_prerelease_tracking_data(tracking_file):
     """
     Read prerelease tracking data from a JSON file and normalize it to the internal tuple form.
-    
+
     Supports the current JSON schema (keys like "version" with either "hash" or "commits", optional "last_updated" or "timestamp") and a legacy JSON schema (keys like "release" and "commits"). Legacy plain-text tracking files are not supported.
-    
+
     Returns:
         tuple: (commits, current_release, last_updated)
             commits (list[str]): Ordered list of prerelease identifiers (may be empty).
@@ -998,11 +998,11 @@ def _read_prerelease_tracking_data(tracking_file):
 def _get_existing_prerelease_dirs(prerelease_dir: str) -> list[str]:
     """
     List safe prerelease directory names directly under the given prerelease directory.
-    
+
     Symlinks are ignored to avoid traversing outside the managed prerelease tree; entries are validated and sanitized before being returned.
-    
+
     Returns:
-    	list[str]: Sanitized names of direct subdirectories that start with `FIRMWARE_DIR_PREFIX`. Returns an empty list if the directory does not exist, contains no valid prerelease dirs, or on scan error.
+        list[str]: Sanitized names of direct subdirectories that start with `FIRMWARE_DIR_PREFIX`. Returns an empty list if the directory does not exist, contains no valid prerelease dirs, or on scan error.
     """
 
     if not os.path.exists(prerelease_dir):
@@ -1032,15 +1032,15 @@ def _get_existing_prerelease_dirs(prerelease_dir: str) -> list[str]:
 def _get_prerelease_patterns(config: dict) -> list[str]:
     """
     Get the file-selection patterns used to identify prerelease assets.
-    
+
     Prefers the `SELECTED_PRERELEASE_ASSETS` key in `config`; if absent, falls back to the legacy
     `EXTRACT_PATTERNS` key and emits a deprecation warning. Always returns a list (empty if no
     patterns are configured).
-    
+
     Parameters:
         config (dict): Configuration mapping that may contain `SELECTED_PRERELEASE_ASSETS` or the
             legacy `EXTRACT_PATTERNS` key.
-    
+
     Returns:
         list[str]: The list of prerelease asset selection patterns.
     """
@@ -1062,11 +1062,11 @@ def _get_prerelease_patterns(config: dict) -> list[str]:
 def update_prerelease_tracking(latest_release_tag, current_prerelease):
     """
     Record a single prerelease commit in prerelease_tracking.json for the current prerelease directory.
-    
+
     Parameters:
         latest_release_tag (str): Latest official release tag used to determine whether existing prerelease tracking should be reset.
         current_prerelease (str): Name of the current prerelease directory (from which the prerelease commit is extracted).
-    
+
     Returns:
         int: Number of prerelease commits persisted to disk; `0` if no update was written.
     """
@@ -1081,13 +1081,13 @@ def _update_tracking_with_newest_prerelease(
 ) -> Optional[int]:
     """
     Record the newest prerelease identifier in prerelease_tracking.json and persist an updated commits list.
-    
+
     Resets tracked prerelease IDs when the official release tag changes and ignores non-firmware or invalid prerelease directory names.
-    
+
     Parameters:
         latest_release_tag (str): Current official release tag used to determine whether tracking should be reset.
         newest_prerelease_dir (str): Name of the newest prerelease directory (expected to start with the firmware prefix); entries without a commit or with an invalid name are ignored.
-    
+
     Returns:
         Optional[int]: Total number of tracked prerelease commits after the update;
             `0` if `newest_prerelease_dir` is empty or invalid;
@@ -1236,9 +1236,9 @@ def matches_extract_patterns(filename, extract_patterns, device_manager=None):
 def get_prerelease_tracking_info():
     """
     Summarize prerelease tracking data stored in the cache's prerelease_tracking.json.
-    
+
     Reads prerelease tracking data and returns a dictionary containing the tracked official release tag, the ordered list of tracked prerelease identifiers, the number of tracked prereleases, and the last-updated timestamp. If no tracking data is present, an empty dict is returned.
-    
+
     Returns:
         dict: Summary with keys:
             - "release" (str | None): Latest official release tag, or None.
@@ -1503,7 +1503,7 @@ def _get_releases_cache_file() -> str:
 def _get_prerelease_dir_cache_file() -> str:
     """
     Get the filesystem path for the persistent prerelease directory cache JSON file.
-    
+
     Returns:
         str: Path to the prerelease directories cache JSON file.
     """
@@ -1524,14 +1524,14 @@ def _load_json_cache_with_expiry(
 ) -> Dict[str, Any]:
     """
     Load a JSON cache file and return entries that have not expired.
-    
+
     Parameters:
         cache_file_path (str): Filesystem path to the JSON cache file.
         expiry_hours (float): Maximum age in hours for an entry to be considered valid.
         cache_entry_validator (Callable[[Dict[str, Any]], bool]): Predicate that returns `True` for entries that have the expected structure.
         entry_processor (Callable[[Dict[str, Any], datetime], Any]): Function that converts a raw cache entry and its `cached_at` timestamp into the value to be returned for that key.
         cache_name (str): Human-readable name used in debug logs.
-    
+
     Returns:
         Dict[str, Any]: Mapping of cache keys to processed entries for those entries present in the file, valid according to `cache_entry_validator`, and younger than `expiry_hours`.
     """
@@ -1586,7 +1586,7 @@ def _load_json_cache_with_expiry(
 def _load_prerelease_dir_cache() -> None:
     """
     Load the on-disk prerelease directory cache into the in-memory cache, honoring expiry and validation.
-    
+
     Populates the module-level prerelease directory cache from the persistent cache file if it has not already been loaded. Validates cached entries, applies expiry rules, and performs the update in a thread-safe manner so concurrent callers are safe.
     """
     global _prerelease_dir_cache, _prerelease_dir_cache_loaded
@@ -1598,12 +1598,12 @@ def _load_prerelease_dir_cache() -> None:
     def validate_prerelease_entry(cache_entry: Dict[str, Any]) -> bool:
         """
         Determine whether the given object matches the expected prerelease directory cache entry schema.
-        
+
         Parameters:
             cache_entry (dict): Candidate cache entry; expected to be a mapping that includes the keys
                 `"directories"` (list or mapping of cached prerelease directory names) and
                 `"cached_at"` (timestamp string or numeric epoch when the cache was created).
-        
+
         Returns:
             True if `cache_entry` is a dict containing both `"directories"` and `"cached_at"` keys, False otherwise.
         """
@@ -1618,14 +1618,14 @@ def _load_prerelease_dir_cache() -> None:
     ) -> Tuple[List[str], datetime]:
         """
         Validate and extract the prerelease directory list from a cache entry.
-        
+
         Parameters:
             cache_entry (Dict[str, Any]): Cache record expected to contain a "directories" key with a list of prerelease directory names.
             cached_at (datetime): Timestamp when the cache entry was recorded.
-        
+
         Returns:
             Tuple[List[str], datetime]: A tuple of the directories list and the original cached_at timestamp.
-        
+
         Raises:
             ValueError: If the "directories" value is not a list.
         """
@@ -1652,7 +1652,7 @@ def _load_prerelease_dir_cache() -> None:
 def _save_prerelease_dir_cache() -> None:
     """
     Persist the in-memory prerelease directory cache to disk.
-    
+
     Writes the current in-memory prerelease directory entries to the configured cache file; cached timestamps are serialized in ISO 8601 format. Logs success or failure but does not raise on I/O errors.
     """
     cache_file = _get_prerelease_dir_cache_file()
@@ -1747,7 +1747,7 @@ def _fetch_prerelease_directories(force_refresh: bool = False) -> List[str]:
 def _load_commit_cache() -> None:
     """
     Load non-expired commit timestamps from the on-disk cache into the in-memory commit timestamp cache.
-    
+
     Reads the commit cache JSON file (a mapping of commit id -> [timestamp, cached_at]), parses ISO-8601 timestamps, skips entries that are malformed or whose cached_at is older than COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS, and updates the module-level _commit_timestamp_cache. Marks the cache as loaded to prevent repeated loads and logs debug messages when entries are skipped or the cache cannot be read.
     """
     global _commit_timestamp_cache, _commit_cache_loaded
@@ -1755,12 +1755,12 @@ def _load_commit_cache() -> None:
     def validate_commit_entry(cache_entry: Any) -> bool:
         """
         Validate that a cache entry is a two-item sequence.
-        
+
         Parameters:
-        	cache_entry (Any): Value to validate.
-        
+                cache_entry (Any): Value to validate.
+
         Returns:
-        	True if `cache_entry` is a `list` or `tuple` with exactly two items, False otherwise.
+                True if `cache_entry` is a `list` or `tuple` with exactly two items, False otherwise.
         """
         return isinstance(cache_entry, (list, tuple)) and len(cache_entry) == 2
 
@@ -1769,11 +1769,11 @@ def _load_commit_cache() -> None:
     ) -> Tuple[datetime, datetime]:
         """
         Parse the commit timestamp from a cached entry and return it alongside the cache time.
-        
+
         Parameters:
             cache_entry (Any): Sequence-like cached entry whose first element is an ISO 8601 timestamp string (may end with "Z" for UTC).
             cached_at (datetime): The time the entry was cached.
-        
+
         Returns:
             Tuple[datetime, datetime]: A tuple (commit_timestamp, cached_at) where `commit_timestamp` is the parsed timestamp (with "Z" interpreted as UTC) and `cached_at` is returned unchanged.
         """
@@ -1856,10 +1856,10 @@ def _load_releases_cache() -> None:
         def validate_releases_entry(cache_entry: Dict[str, Any]) -> bool:
             """
             Validate that a cache entry has the expected structure for stored releases.
-            
+
             Parameters:
                 cache_entry (dict): Candidate cache object to check.
-            
+
             Returns:
                 True if `cache_entry` is a dict containing the keys `"releases"` and `"cached_at"`, False otherwise.
             """
@@ -1874,11 +1874,11 @@ def _load_releases_cache() -> None:
         ) -> Tuple[List[Dict[str, Any]], datetime]:
             """
             Extract the stored releases list and its original cache timestamp from a cache entry.
-            
+
             Parameters:
                 cache_entry (Dict[str, Any]): A cache record expected to contain a "releases" key with a list of release dictionaries.
                 cached_at (datetime): The timestamp when the cache entry was created or saved.
-            
+
             Returns:
                 Tuple[List[Dict[str, Any]], datetime]: A tuple containing the releases list and the original `cached_at` timestamp.
             """
@@ -1938,11 +1938,11 @@ def _clear_cache_generic(
 ) -> None:
     """
     Clear an in-memory cache and remove its on-disk file if present.
-    
+
     Clears the provided cache dictionary while holding the given lock, then attempts
     to remove the corresponding cache file returned by `cache_file_getter`. Any
     OS-level errors when removing the file are caught and logged at debug level.
-    
+
     Parameters:
         cache_dict (Dict[str, Any]): In-memory cache to be cleared.
         cache_file_getter (Callable[[], str]): Callable that returns the path to the on-disk cache file.
@@ -1964,7 +1964,7 @@ def _clear_cache_generic(
 def _clear_commit_cache() -> None:
     """
     Clear the in-memory and on-disk commit timestamp cache.
-    
+
     Also resets the internal loaded flag so the commit cache will be reloaded on next access.
     """
     global _commit_timestamp_cache, _commit_cache_loaded
@@ -2836,9 +2836,9 @@ def _process_firmware_downloads(
 ) -> Tuple[List[str], List[str], List[Dict[str, str]], Optional[str], Optional[str]]:
     """
     Process firmware releases: download selected assets, update tracking, and optionally discover/download prerelease firmware.
-    
+
     Downloads missing firmware assets matching configured selection and exclusion patterns, updates the latest-release tracking JSON, enforces retention (FIRMWARE_VERSIONS_TO_KEEP), and when configured checks for matching prerelease firmware and updates prerelease tracking. Side effects include writing files into the configured download directories and updating tracking JSON files.
-    
+
     Returns:
         Tuple containing, in order:
         - downloaded firmware versions (List[str]): names of firmware versions that were newly downloaded; prereleases are prefixed with "pre-release ".
@@ -3426,13 +3426,13 @@ def _is_release_complete(
 ) -> bool:
     """
     Check whether a local release directory contains all expected assets that match the include/exclude patterns and pass basic integrity and size checks.
-    
+
     Parameters:
         release_data (Dict[str, Any]): Release metadata containing an "assets" list; each asset should include "name" and may include "size" for expected file size checks.
         release_dir (str): Path to the local directory holding downloaded release assets.
         selected_patterns (Optional[List[str]]): Inclusion patterns used to select which assets are considered expected; when provided, only assets matching these are considered.
         exclude_patterns (List[str]): fnmatch-style patterns; any asset matching one of these is ignored.
-    
+
     Returns:
         bool: `True` if all expected assets are present and pass integrity/size checks, `False` otherwise.
     """
@@ -4072,7 +4072,7 @@ def check_and_download(
 def set_permissions_on_sh_files(directory: str) -> None:
     """
     Set executable permissions on files ending with the shell script extension under a directory.
-    
+
     Recursively walks `directory` and makes files whose names end with `SHELL_SCRIPT_EXTENSION` (case-insensitive) executable using `EXECUTABLE_PERMISSIONS`. IO and permission errors are logged and do not propagate.
     """
     root: str
@@ -4245,9 +4245,9 @@ def _cleanup_legacy_files(
 ) -> None:
     """
     Remove legacy tracking and release files left in download directories after JSON-based tracking is used.
-    
+
     Deletes legacy prerelease tracking text files from the prerelease directory and legacy latest-release files from the firmware and apks download subdirectories. No on-disk migration is performed; missing paths are ignored and failures are logged as warnings.
-    
+
     Parameters:
         config (Dict[str, Any]): Configuration mapping; may provide "PRERELEASE_DIR" to locate prerelease files.
         paths_and_urls (Dict[str, str]): Mapping that must include "download_dir" to locate firmware and apks directories.
@@ -4311,11 +4311,11 @@ def _cleanup_legacy_files(
 def main(force_refresh: bool = False) -> None:
     """
     Run the Fetchtastic downloader workflow.
-    
+
     Performs startup and configuration, optionally clears caches and device hardware cache when requested, enforces Wi‑Fi gating, processes firmware and APK downloads (with a single retry pass for failures), cleans legacy files, finalizes logging and notifications, and records an API usage summary.
-    
+
     Parameters:
-    	force_refresh (bool): When True, clear all persistent caches and the device hardware cache before fetching remote data.
+        force_refresh (bool): When True, clear all persistent caches and the device hardware cache before fetching remote data.
     """
     start_time: float = time.time()
     logger.info("Starting Fetchtastic...")  # Changed to logger.info

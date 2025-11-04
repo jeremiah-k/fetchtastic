@@ -269,9 +269,9 @@ def test_error_message_handling(caplog):
 def test_user_facing_status_messages(tmp_path, caplog):
     """
     Verify that check_and_download reports no new downloads when the local release matches the latest release.
-    
+
     Creates a release directory and a valid ZIP file whose size matches the declared asset size, writes a compatibility `latest_firmware_release.json` indicating the latest version, patches the download function to succeed, and asserts that no downloads, new_versions, or failures are reported.
-    
+
     """
     caplog.set_level("INFO", logger="fetchtastic")
 
