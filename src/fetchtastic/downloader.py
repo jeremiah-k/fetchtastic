@@ -688,18 +688,12 @@ def _write_latest_release_tag(
     Returns:
         bool: True if write succeeded, False otherwise.
     """
-    try:
-        data = {
-            "latest_version": version_tag,
-            "file_type": release_type.lower(),
-            "last_updated": datetime.now(timezone.utc).isoformat(),
-        }
-        return _atomic_write_json(json_file, data)
-    except Exception as e:
-        logger.error(
-            "Failed to write latest release tag to JSON file %s: %s", json_file, e
-        )
-        return False
+    data = {
+        "latest_version": version_tag,
+        "file_type": release_type.lower(),
+        "last_updated": datetime.now(timezone.utc).isoformat(),
+    }
+    return _atomic_write_json(json_file, data)
 
 
 def _ensure_v_prefix_if_missing(version: Optional[str]) -> Optional[str]:
@@ -1545,30 +1539,36 @@ def _load_prerelease_dir_cache() -> None:
     """
     global _prerelease_dir_cache, _prerelease_dir_cache_loaded
 
-    def validate_prerelease_entry(cache_entry: Dict[str, Any]) -> bool:
-        return (
-            isinstance(cache_entry, dict)
-            and "directories" in cache_entry
-            and "cached_at" in cache_entry
-        )
-
-    def process_prerelease_entry(
-        cache_entry: Dict[str, Any], cached_at: datetime
-    ) -> Tuple[List[str], datetime]:
-        directories = cache_entry["directories"]
-        if not isinstance(directories, list):
-            raise ValueError("directories is not a list")
-        return (directories, cached_at)
-
-    loaded_data = _load_json_cache_with_expiry(
-        cache_file_path=_get_prerelease_dir_cache_file(),
-        expiry_hours=PRERELEASE_DIR_CACHE_EXPIRY_SECONDS / 3600,
-        cache_entry_validator=validate_prerelease_entry,
-        entry_processor=process_prerelease_entry,
-        cache_name="prerelease directory",
-    )
+    if _prerelease_dir_cache_loaded:
+        return
 
     with _cache_lock:
+        if _prerelease_dir_cache_loaded:
+            return
+
+        def validate_prerelease_entry(cache_entry: Dict[str, Any]) -> bool:
+            return (
+                isinstance(cache_entry, dict)
+                and "directories" in cache_entry
+                and "cached_at" in cache_entry
+            )
+
+        def process_prerelease_entry(
+            cache_entry: Dict[str, Any], cached_at: datetime
+        ) -> Tuple[List[str], datetime]:
+            directories = cache_entry["directories"]
+            if not isinstance(directories, list):
+                raise ValueError("directories is not a list")
+            return (directories, cached_at)
+
+        loaded_data = _load_json_cache_with_expiry(
+            cache_file_path=_get_prerelease_dir_cache_file(),
+            expiry_hours=PRERELEASE_DIR_CACHE_EXPIRY_SECONDS / 3600,
+            cache_entry_validator=validate_prerelease_entry,
+            entry_processor=process_prerelease_entry,
+            cache_name="prerelease directory",
+        )
+
         _prerelease_dir_cache.update(loaded_data)
         _prerelease_dir_cache_loaded = True
 
@@ -1752,28 +1752,34 @@ def _load_releases_cache() -> None:
     """
     global _releases_cache, _releases_cache_loaded
 
-    def validate_releases_entry(cache_entry: Dict[str, Any]) -> bool:
-        return (
-            isinstance(cache_entry, dict)
-            and "releases" in cache_entry
-            and "cached_at" in cache_entry
-        )
-
-    def process_releases_entry(
-        cache_entry: Dict[str, Any], cached_at: datetime
-    ) -> Tuple[List[Dict[str, Any]], datetime]:
-        releases_data = cache_entry["releases"]
-        return (releases_data, cached_at)
-
-    loaded_data = _load_json_cache_with_expiry(
-        cache_file_path=_get_releases_cache_file(),
-        expiry_hours=RELEASES_CACHE_EXPIRY_HOURS,
-        cache_entry_validator=validate_releases_entry,
-        entry_processor=process_releases_entry,
-        cache_name="releases",
-    )
+    if _releases_cache_loaded:
+        return
 
     with _cache_lock:
+        if _releases_cache_loaded:
+            return
+
+        def validate_releases_entry(cache_entry: Dict[str, Any]) -> bool:
+            return (
+                isinstance(cache_entry, dict)
+                and "releases" in cache_entry
+                and "cached_at" in cache_entry
+            )
+
+        def process_releases_entry(
+            cache_entry: Dict[str, Any], cached_at: datetime
+        ) -> Tuple[List[Dict[str, Any]], datetime]:
+            releases_data = cache_entry["releases"]
+            return (releases_data, cached_at)
+
+        loaded_data = _load_json_cache_with_expiry(
+            cache_file_path=_get_releases_cache_file(),
+            expiry_hours=RELEASES_CACHE_EXPIRY_HOURS,
+            cache_entry_validator=validate_releases_entry,
+            entry_processor=process_releases_entry,
+            cache_name="releases",
+        )
+
         _releases_cache.update(loaded_data)
         _releases_cache_loaded = True
 
@@ -4204,7 +4210,7 @@ def _cleanup_legacy_files(
                         e,
                     )
 
-    except Exception as e:
+    except OSError as e:
         logger.warning("Error removing legacy files: %s", e)
 
 
