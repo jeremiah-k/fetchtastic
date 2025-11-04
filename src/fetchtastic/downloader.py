@@ -44,7 +44,6 @@ from fetchtastic.constants import (
     LATEST_ANDROID_RELEASE_FILE,
     LATEST_FIRMWARE_RELEASE_FILE,
     MAX_CONCURRENT_TIMESTAMP_FETCHES,
-    MAX_LEGACY_FILE_AGE_DAYS,
     MESHTASTIC_ANDROID_RELEASES_URL,
     MESHTASTIC_FIRMWARE_RELEASES_URL,
     NTFY_REQUEST_TIMEOUT,
@@ -347,9 +346,6 @@ def cleanup_superseded_prereleases(
     if not os.path.exists(prerelease_dir):
         return False
 
-    # Migrate any legacy text tracking files before cleanup
-    _migrate_legacy_text_tracking_file(prerelease_dir)
-
     # Check for matching pre-release directories
     cleaned_up = False
     for raw_dir_name in os.listdir(prerelease_dir):
@@ -650,64 +646,6 @@ def compare_file_hashes(file1, file2):
 
     return hash1 == hash2
 
-
-def _is_legacy_file_too_old(file_path: str) -> bool:
-    """
-    Check if a legacy tracking file is too old to be worth migrating.
-
-    Parameters:
-        file_path (str): Path to the legacy file.
-
-    Returns:
-        bool: True if file is older than MAX_LEGACY_FILE_AGE_DAYS, False otherwise.
-    """
-    try:
-        file_mtime = os.path.getmtime(file_path)
-        file_age = time.time() - file_mtime
-        max_age_seconds = MAX_LEGACY_FILE_AGE_DAYS * 24 * 60 * 60
-        return file_age > max_age_seconds
-    except OSError:
-        # If we can't get file age, assume it's not too old
-        return False
-
-
-def _migrate_legacy_text_tracking_file(prerelease_dir: str) -> bool:
-    """
-    Migrate legacy text-format prerelease tracking data to new JSON format and remove the old file.
-
-    This function should be called during startup to convert any remaining old text files
-    to the new JSON format, then clean up the old files.
-
-    Parameters:
-        prerelease_dir (str): Directory containing prerelease tracking files.
-
-    Returns:
-        bool: True if migration was attempted (regardless of success), False if no old file found.
-    """
-    text_file = os.path.join(prerelease_dir, "prerelease_commits.txt")
-    json_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
-
-    if not os.path.exists(text_file):
-        return False
-
-    # Check if legacy file is too old to be worth migrating
-    if _is_legacy_file_too_old(text_file):
-        logger.info(
-            "Removing outdated legacy prerelease tracking file (older than %d days): %s",
-            MAX_LEGACY_FILE_AGE_DAYS,
-            text_file,
-        )
-        try:
-            os.remove(text_file)
-            return True
-        except OSError as e:
-            logger.warning(
-                "Could not remove outdated legacy prerelease tracking file %s: %s",
-                text_file,
-                e,
-            )
-            return False
-
     try:
         with open(text_file, "r", encoding="utf-8") as f:
             lines = [line.strip() for line in f.readlines() if line.strip()]
@@ -775,50 +713,6 @@ def _migrate_legacy_text_tracking_file(prerelease_dir: str) -> bool:
             "Failed to read legacy prerelease tracking file %s: %s", text_file, e
         )
         return False
-
-
-def _migrate_legacy_release_file(
-    legacy_file: str, json_file: str, file_type: str
-) -> bool:
-    """
-    Migrate legacy text-format release tracking file to new JSON format.
-
-    Converts simple text files containing just a version tag to JSON format
-    with structured metadata.
-
-    Parameters:
-        legacy_file (str): Path to the legacy text file.
-        json_file (str): Path to the target JSON file.
-        file_type (str): Type of file for logging (e.g., "Android", "Firmware").
-
-    Returns:
-        bool: True when legacy file was removed or successfully migrated; False when no legacy file existed or migration/cleanup failed.
-    """
-    file_type_lower = file_type.lower()
-
-    if not os.path.exists(legacy_file):
-        # No legacy file to migrate
-        return False
-
-    # Check if legacy file is too old to be worth migrating
-    if _is_legacy_file_too_old(legacy_file):
-        logger.info(
-            "Removing outdated legacy %s release file (older than %d days): %s",
-            file_type_lower,
-            MAX_LEGACY_FILE_AGE_DAYS,
-            legacy_file,
-        )
-        try:
-            os.remove(legacy_file)
-            return True
-        except OSError as e:
-            logger.warning(
-                "Could not remove outdated legacy %s release file %s: %s",
-                file_type_lower,
-                legacy_file,
-                e,
-            )
-            return False
 
     if os.path.exists(json_file):
         # JSON file already exists, assume migration already done
@@ -903,40 +797,6 @@ def _migrate_legacy_release_file(
             e,
         )
         return False
-
-
-def _migrate_all_legacy_tracking_files(download_dir: str) -> None:
-    """
-    Migrate all legacy text-based tracking files to JSON format.
-
-    This function handles the migration of:
-    - prerelease_commits.txt → prerelease_tracking.json
-    - latest_android_release.txt → latest_android_release.json
-    - latest_firmware_release.txt → latest_firmware_release.json
-
-    Parameters:
-        download_dir (str): Base download directory.
-    """
-    # Migrate prerelease tracking
-    prerelease_dir = os.path.join(download_dir, "firmware", "prerelease")
-    if os.path.exists(prerelease_dir):
-        _migrate_legacy_text_tracking_file(prerelease_dir)
-
-    # Migrate latest Android release tracking
-    apks_dir = os.path.join(download_dir, "apks")
-    android_legacy_file = os.path.join(apks_dir, LATEST_ANDROID_RELEASE_FILE)
-    android_json_file = os.path.join(apks_dir, "latest_android_release.json")
-    if os.path.exists(apks_dir):
-        _migrate_legacy_release_file(android_legacy_file, android_json_file, "Android")
-
-    # Migrate latest firmware release tracking
-    firmware_dir = os.path.join(download_dir, "firmware")
-    firmware_legacy_file = os.path.join(firmware_dir, LATEST_FIRMWARE_RELEASE_FILE)
-    firmware_json_file = os.path.join(firmware_dir, "latest_firmware_release.json")
-    if os.path.exists(firmware_dir):
-        _migrate_legacy_release_file(
-            firmware_legacy_file, firmware_json_file, "Firmware"
-        )
 
 
 def _read_latest_release_tag(legacy_file: str, json_file: str) -> Optional[str]:
@@ -4490,6 +4350,53 @@ def _format_api_summary(summary: Dict[str, Any]) -> str:
     return ", ".join(log_parts)
 
 
+def _cleanup_legacy_files(config: Dict[str, Any]) -> None:
+    """
+    Remove legacy files - we fetch fresh data instead of migrating old data.
+
+    Parameters:
+        config (Dict[str, Any]): Configuration dictionary containing paths.
+    """
+    try:
+        prerelease_dir = config.get("PRERELEASE_DIR")
+        if prerelease_dir and os.path.exists(prerelease_dir):
+            # Remove legacy text tracking files
+            for filename in os.listdir(prerelease_dir):
+                if filename.endswith(".txt"):
+                    legacy_file = os.path.join(prerelease_dir, filename)
+                    try:
+                        os.remove(legacy_file)
+                        logger.debug(
+                            "Removed legacy prerelease tracking file: %s", legacy_file
+                        )
+                    except OSError as e:
+                        logger.warning(
+                            "Could not remove legacy file %s: %s", legacy_file, e
+                        )
+
+        # Remove legacy release files
+        for release_type in ["Firmware", "APK"]:
+            legacy_file = config.get(f"LATEST_{release_type.upper()}_RELEASE_FILE")
+            if legacy_file and os.path.exists(legacy_file):
+                try:
+                    os.remove(legacy_file)
+                    logger.debug(
+                        "Removed legacy %s release file: %s",
+                        release_type.lower(),
+                        legacy_file,
+                    )
+                except OSError as e:
+                    logger.warning(
+                        "Could not remove legacy %s file %s: %s",
+                        release_type.lower(),
+                        legacy_file,
+                        e,
+                    )
+
+    except Exception as e:
+        logger.warning("Error removing legacy files: %s", e)
+
+
 def main(force_refresh: bool = False) -> None:
     """
     Run the Fetchtastic downloader workflow.
@@ -4530,9 +4437,6 @@ def main(force_refresh: bool = False) -> None:
 
     _check_wifi_connection(config)
 
-    # Migrate all legacy tracking files to JSON format once
-    _migrate_all_legacy_tracking_files(paths_and_urls["download_dir"])
-
     downloaded_firmwares: List[str]
     new_firmware_versions: List[str]
     failed_firmware_list: List[Dict[str, str]]
@@ -4552,6 +4456,10 @@ def main(force_refresh: bool = False) -> None:
     downloaded_apks, new_apk_versions, failed_apk_list, latest_apk_version, _ = (
         _process_apk_downloads(config, paths_and_urls, force_refresh)
     )
+
+    # Clean up legacy files - we fetch fresh data instead of migrating old data
+    logger.info("Cleaning up legacy files")
+    _cleanup_legacy_files(config)
 
     if failed_firmware_list:
         logger.debug(f"Collected failed firmware downloads: {failed_firmware_list}")

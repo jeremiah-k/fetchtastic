@@ -1056,82 +1056,6 @@ def test_safe_rmtree_additional_edge_cases(tmp_path):
 
 
 @pytest.mark.core_downloads
-def test_migrate_legacy_text_tracking_file(tmp_path):
-    """Test _migrate_legacy_text_tracking_file with various scenarios."""
-    import json
-
-    from fetchtastic.downloader import _migrate_legacy_text_tracking_file
-
-    # Test with no legacy file
-    result = _migrate_legacy_text_tracking_file(str(tmp_path))
-    assert result is False
-
-    # Test with empty legacy file
-    text_file = tmp_path / "prerelease_commits.txt"
-    text_file.write_text("")
-    result = _migrate_legacy_text_tracking_file(str(tmp_path))
-    assert result is True
-    assert not text_file.exists()
-
-    # Test with legacy format (no Release: line)
-    text_file.write_text("abc123\ndef456\n")
-    result = _migrate_legacy_text_tracking_file(str(tmp_path))
-    assert result is True
-    assert not text_file.exists()
-
-    # Check migrated JSON file
-    json_file = tmp_path / "prerelease_tracking.json"
-    assert json_file.exists()
-    with open(json_file) as f:
-        data = json.load(f)
-    assert data["version"] is None  # "unknown" becomes None
-    assert data["commits"] == ["abc123", "def456"]
-    assert "last_updated" in data
-
-    # Clean up for next test
-    json_file.unlink()
-
-    # Test with modern text format (with Release: line)
-    text_file.write_text("Release: v2.7.14\nabc123\ndef456\n")
-    result = _migrate_legacy_text_tracking_file(str(tmp_path))
-    assert result is True
-    assert not text_file.exists()
-
-    # Check migrated JSON file
-    with open(json_file) as f:
-        data = json.load(f)
-    assert data["version"] == "v2.7.14"
-    assert data["commits"] == ["abc123", "def456"]
-    assert "last_updated" in data
-
-    # Clean up for next test
-    json_file.unlink()
-
-    # Test with Unicode decode error
-    text_file.write_bytes(b"\xff\xfe\x00\x00")  # Invalid UTF-8
-    result = _migrate_legacy_text_tracking_file(str(tmp_path))
-    assert result is False
-    assert text_file.exists()  # File should be kept
-    assert not json_file.exists()  # No JSON file should be created
-
-    # Test with outdated legacy file (should be removed, not migrated)
-    import time
-
-    from fetchtastic.constants import MAX_LEGACY_FILE_AGE_DAYS
-
-    text_file.write_text("Release: v1.0.0\nabc123\n")
-    # Set file modification time to older than configured threshold
-    days_old = MAX_LEGACY_FILE_AGE_DAYS + 3
-    old_time = time.time() - (days_old * 24 * 60 * 60)
-    os.utime(text_file, (old_time, old_time))
-
-    result = _migrate_legacy_text_tracking_file(str(tmp_path))
-    assert result is True  # Function attempted cleanup
-    assert not text_file.exists()  # File should be removed due to age
-    assert not json_file.exists()  # No JSON should be created for outdated file
-
-
-@pytest.mark.core_downloads
 def test_cleanup_superseded_prereleases_file_removal(tmp_path):
     """Test file removal logic in cleanup_superseded_prereleases with various scenarios."""
     from unittest.mock import patch
@@ -1225,95 +1149,55 @@ def test_cleanup_superseded_prereleases_file_removal_edge_cases(tmp_path):
 
 
 @pytest.mark.core_downloads
-def test_migrate_legacy_text_tracking_file_edge_cases(tmp_path):
-    """Test edge cases for _migrate_legacy_text_tracking_file."""
-    import json
-    from unittest.mock import patch
+def test_cleanup_legacy_files(tmp_path):
+    """Test _cleanup_legacy_files removes legacy files without migration."""
+    from fetchtastic.downloader import _cleanup_legacy_files
 
-    from fetchtastic.downloader import _migrate_legacy_text_tracking_file
+    # Create mock config with paths
+    config = {
+        "PRERELEASE_DIR": str(tmp_path / "firmware" / "prerelease"),
+        "LATEST_FIRMWARE_RELEASE_FILE": "latest_firmware_release.txt",
+        "LATEST_APK_RELEASE_FILE": "latest_android_release.txt",
+    }
 
-    # Test atomic write failure
-    text_file = tmp_path / "prerelease_commits.txt"
-    text_file.write_text("abc123\ndef456\n")
+    # Create directory structure
+    prerelease_dir = tmp_path / "firmware" / "prerelease"
+    prerelease_dir.mkdir(parents=True)
+    apks_dir = tmp_path / "apks"
+    apks_dir.mkdir(parents=True)
+    firmware_dir = tmp_path / "firmware"
 
-    with patch("fetchtastic.downloader._atomic_write") as mock_atomic_write:
-        mock_atomic_write.return_value = False
+    # Create legacy files
+    prerelease_text = prerelease_dir / "prerelease_commits.txt"
+    prerelease_text.write_text("Release: v1.5.0\nabc123\ndef456\n")
 
-        result = _migrate_legacy_text_tracking_file(str(tmp_path))
+    android_legacy = apks_dir / "latest_android_release.txt"
+    android_legacy.write_text("v2.3.0")
 
-        assert result is False
-        assert text_file.exists()  # File should be kept if atomic write fails
-        mock_atomic_write.assert_called_once()
+    firmware_legacy = firmware_dir / "latest_firmware_release.txt"
+    firmware_legacy.write_text("v1.8.0")
 
-    # Test OSError during file operations
-    text_file.write_text("abc123\ndef456\n")
+    # Update config with actual paths
+    config["LATEST_FIRMWARE_RELEASE_FILE"] = str(firmware_legacy)
+    config["LATEST_APK_RELEASE_FILE"] = str(android_legacy)
 
-    with patch("builtins.open", side_effect=OSError("Disk full")):
-        result = _migrate_legacy_text_tracking_file(str(tmp_path))
-        assert result is False
-        assert text_file.exists()  # File should be kept on OSError
+    # Verify files exist before cleanup
+    assert prerelease_text.exists()
+    assert android_legacy.exists()
+    assert firmware_legacy.exists()
 
-    # Test migration with various commit formats
-    text_file.write_text("Release: v1.2.3\nABC123\nDef456\nGhI789\n")
-    result = _migrate_legacy_text_tracking_file(str(tmp_path))
-    assert result is True
-    assert not text_file.exists()
+    # Run cleanup
+    _cleanup_legacy_files(config)
 
-    json_file = tmp_path / "prerelease_tracking.json"
-    assert json_file.exists()
+    # Verify all legacy files are removed
+    assert not prerelease_text.exists()
+    assert not android_legacy.exists()
+    assert not firmware_legacy.exists()
 
-    with open(json_file) as f:
-        data = json.load(f)
-
-    # Commits should be normalized to lowercase
-    assert data["commits"] == ["abc123", "def456", "ghi789"]
-    assert data["version"] == "v1.2.3"
-
-    # Clean up
-    json_file.unlink()
-
-    # Test with whitespace-only lines
-    text_file.write_text("Release: v2.0.0\n\nabc123\n   \n\ndef456\n\n")
-    result = _migrate_legacy_text_tracking_file(str(tmp_path))
-    assert result is True
-
-    with open(json_file) as f:
-        data = json.load(f)
-
-    # Should ignore empty/whitespace lines
-    assert data["commits"] == ["abc123", "def456"]
-    assert data["version"] == "v2.0.0"
-
-
-@pytest.mark.core_downloads
-def test_migrate_legacy_text_tracking_file_file_permissions(tmp_path):
-    """Test migration behavior with file permission issues."""
-    import stat
-
-    from fetchtastic.downloader import _migrate_legacy_text_tracking_file
-
-    # Test with directory that doesn't exist
-    non_existent_dir = tmp_path / "non_existent"
-    result = _migrate_legacy_text_tracking_file(str(non_existent_dir))
-    assert result is False
-
-    # Create a text file for permission testing
-    text_file = tmp_path / "prerelease_commits.txt"
-    text_file.write_text("abc123\ndef456\n")
-
-    # Make file read-only to simulate permission error during removal
-    current_permissions = text_file.stat().st_mode
-    text_file.chmod(stat.S_IRUSR)  # Read-only
-
-    try:
-        result = _migrate_legacy_text_tracking_file(str(tmp_path))
-        # Migration should succeed (JSON written) but file removal might fail
-        # The exact behavior depends on the OS and file system
-        assert isinstance(result, bool)
-    finally:
-        # Restore permissions for cleanup if file still exists
-        if text_file.exists():
-            text_file.chmod(current_permissions)
+    # Verify no JSON files were created (since we don't migrate)
+    assert not (prerelease_dir / "prerelease_tracking.json").exists()
+    assert not (apks_dir / "latest_android_release.json").exists()
+    assert not (firmware_dir / "latest_firmware_release.json").exists()
 
 
 @pytest.mark.core_downloads
@@ -1472,131 +1356,6 @@ def test_normalize_commit_identifier_edge_cases():
 
     # Test case normalization
     assert _normalize_commit_identifier("ABC123", "v1.2.3") == "1.2.3.abc123"
-
-
-@pytest.mark.core_downloads
-def test_migrate_legacy_release_file(tmp_path):
-    """Test _migrate_legacy_release_file with various scenarios."""
-    import json
-
-    from fetchtastic.downloader import _migrate_legacy_release_file
-
-    # Test with no legacy file
-    legacy_file = tmp_path / "latest_test_release.txt"
-    json_file = tmp_path / "latest_test_release.json"
-    result = _migrate_legacy_release_file(str(legacy_file), str(json_file), "Test")
-    assert result is False
-    assert not legacy_file.exists()
-    assert not json_file.exists()
-
-    # Test with empty legacy file
-    legacy_file.write_text("")
-    result = _migrate_legacy_release_file(str(legacy_file), str(json_file), "Test")
-    assert result is True
-    assert not legacy_file.exists()
-    assert not json_file.exists()
-
-    # Test with valid legacy file
-    legacy_file.write_text("v2.1.0")
-    result = _migrate_legacy_release_file(str(legacy_file), str(json_file), "Test")
-    assert result is True
-    assert not legacy_file.exists()
-    assert json_file.exists()
-
-    # Check migrated JSON file
-    with open(json_file) as f:
-        data = json.load(f)
-    assert data["latest_version"] == "v2.1.0"
-    assert data["file_type"] == "test"
-    assert "last_updated" in data
-
-    # Test with JSON file already exists (should remove legacy)
-    legacy_file.write_text("v3.0.0")
-    result = _migrate_legacy_release_file(str(legacy_file), str(json_file), "Test")
-    assert result is True
-    assert not legacy_file.exists()
-    assert json_file.exists()
-
-    # JSON should still have original data
-    with open(json_file) as f:
-        data = json.load(f)
-    assert data["latest_version"] == "v2.1.0"  # Original data preserved
-
-    # Note: Unicode decode error testing is complex due to mock interference
-    # The error handling is tested implicitly through other test cases
-
-    # Note: Atomic write failure testing is complex due to mock interference
-    # The error handling is tested implicitly through other test cases
-
-
-@pytest.mark.core_downloads
-def test_migrate_all_legacy_tracking_files(tmp_path):
-    """Test _migrate_all_legacy_tracking_files with complete directory structure."""
-    import json
-
-    from fetchtastic.downloader import _migrate_all_legacy_tracking_files
-
-    # Create complete directory structure
-    download_dir = tmp_path / "downloads"
-    download_dir.mkdir()
-
-    firmware_dir = download_dir / "firmware"
-    firmware_dir.mkdir()
-
-    prerelease_dir = firmware_dir / "prerelease"
-    prerelease_dir.mkdir()
-
-    apks_dir = download_dir / "apks"
-    apks_dir.mkdir()
-
-    # Create all legacy files
-    prerelease_text = prerelease_dir / "prerelease_commits.txt"
-    prerelease_text.write_text("Release: v1.5.0\nabc123\ndef456\n")
-
-    android_legacy = apks_dir / "latest_android_release.txt"
-    android_legacy.write_text("v2.3.0")
-
-    firmware_legacy = firmware_dir / "latest_firmware_release.txt"
-    firmware_legacy.write_text("v1.8.0")
-
-    # Run migration
-    _migrate_all_legacy_tracking_files(str(download_dir))
-
-    # Check all legacy files are removed
-    assert not prerelease_text.exists()
-    assert not android_legacy.exists()
-    assert not firmware_legacy.exists()
-
-    # Check all JSON files are created
-    prerelease_json = prerelease_dir / "prerelease_tracking.json"
-    android_json = apks_dir / "latest_android_release.json"
-    firmware_json = firmware_dir / "latest_firmware_release.json"
-
-    assert prerelease_json.exists()
-    assert android_json.exists()
-    assert firmware_json.exists()
-
-    # Check prerelease JSON content
-    with open(prerelease_json) as f:
-        data = json.load(f)
-    assert data["version"] == "v1.5.0"
-    assert data["commits"] == ["abc123", "def456"]
-
-    # Check Android JSON content
-    with open(android_json) as f:
-        data = json.load(f)
-    assert data["latest_version"] == "v2.3.0"
-    assert data["file_type"] == "android"
-
-    # Check Firmware JSON content
-    with open(firmware_json) as f:
-        data = json.load(f)
-    assert data["latest_version"] == "v1.8.0"
-    assert data["file_type"] == "firmware"
-
-    # Test with missing directories (should not crash)
-    empty_dir = tmp_path / "empty"
-    _migrate_all_legacy_tracking_files(str(empty_dir))
 
 
 @pytest.mark.core_downloads
