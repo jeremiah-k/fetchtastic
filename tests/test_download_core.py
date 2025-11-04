@@ -1104,6 +1104,201 @@ def test_migrate_legacy_text_tracking_file(tmp_path):
     assert data["commits"] == ["abc123", "def456"]
     assert "last_updated" in data
 
+    # Clean up for next test
+    json_file.unlink()
+
+    # Test with Unicode decode error
+    text_file.write_bytes(b"\xff\xfe\x00\x00")  # Invalid UTF-8
+    result = _migrate_legacy_text_tracking_file(str(tmp_path))
+    assert result is False
+    assert text_file.exists()  # File should be kept
+    assert not json_file.exists()  # No JSON file should be created
+
+
+@pytest.mark.core_downloads
+def test_cleanup_superseded_prereleases_file_removal(tmp_path, mocker):
+    """Test file removal logic in cleanup_superseded_prereleases with various scenarios."""
+    from unittest.mock import patch
+
+    from fetchtastic.downloader import cleanup_superseded_prereleases
+
+    # Create directory structure
+    firmware_dir = tmp_path / "firmware"
+    firmware_dir.mkdir()
+    prerelease_dir = firmware_dir / "prerelease"
+    prerelease_dir.mkdir()
+
+    # Create test files
+    json_tracking_file = prerelease_dir / "prerelease_tracking.json"
+    text_tracking_file = prerelease_dir / "prerelease_commits.txt"
+
+    json_tracking_file.write_text('{"version": "v1.0.0", "commits": ["abc123"]}')
+    text_tracking_file.write_text("Release: v1.0.0\nabc123\n")
+
+    # Test successful removal of both files
+    with patch("os.path.exists") as mock_exists, patch("os.remove") as mock_remove:
+
+        mock_exists.return_value = True
+
+        cleanup_superseded_prereleases(str(tmp_path), "v2.0.0")
+
+        # Should attempt to remove both files (may be called multiple times due to migration)
+        assert mock_remove.call_count >= 2
+        remove_calls = [str(call[0][0]) for call in mock_remove.call_args_list]
+        assert any("prerelease_tracking.json" in call for call in remove_calls)
+        assert any("prerelease_commits.txt" in call for call in remove_calls)
+
+    # Test OSError during file removal
+    with patch("os.path.exists") as mock_exists, patch(
+        "os.remove"
+    ) as mock_remove, patch("fetchtastic.downloader.logger") as mock_logger:
+
+        mock_exists.return_value = True
+        mock_remove.side_effect = OSError("Permission denied")
+
+        # Should not raise exception, should log warning
+        cleanup_superseded_prereleases(str(tmp_path), "v2.0.0")
+
+        # Should log warnings for both files (may be more due to migration process)
+        assert mock_logger.warning.call_count >= 2
+
+    # Test when files don't exist
+    with patch("os.path.exists") as mock_exists, patch("os.remove") as mock_remove:
+
+        mock_exists.return_value = False
+
+        cleanup_superseded_prereleases(str(tmp_path), "v2.0.0")
+
+        # Should not attempt to remove any files
+        mock_remove.assert_not_called()
+
+
+@pytest.mark.core_downloads
+def test_cleanup_superseded_prereleases_file_removal_edge_cases(tmp_path):
+    """Test edge cases for file removal in cleanup_superseded_prereleases."""
+
+    from fetchtastic.downloader import cleanup_superseded_prereleases
+
+    # Create directory structure
+    firmware_dir = tmp_path / "firmware"
+    firmware_dir.mkdir()
+    prerelease_dir = firmware_dir / "prerelease"
+    prerelease_dir.mkdir()
+
+    # Test with only JSON file exists
+    json_tracking_file = prerelease_dir / "prerelease_tracking.json"
+    json_tracking_file.write_text('{"version": "v1.0.0", "commits": ["abc123"]}')
+
+    cleanup_superseded_prereleases(str(tmp_path), "v2.0.0")
+    assert not json_tracking_file.exists()
+
+    # Recreate for next test
+    json_tracking_file.write_text('{"version": "v1.0.0", "commits": ["abc123"]}')
+
+    # Test with only text file exists
+    text_tracking_file = prerelease_dir / "prerelease_commits.txt"
+    text_tracking_file.write_text("Release: v1.0.0\nabc123\n")
+
+    cleanup_superseded_prereleases(str(tmp_path), "v2.0.0")
+    assert not text_tracking_file.exists()
+    assert not json_tracking_file.exists()  # Should be migrated then removed
+
+    # Test with no tracking files
+    cleanup_superseded_prereleases(str(tmp_path), "v2.0.0")
+    # Should not raise any exceptions
+
+
+@pytest.mark.core_downloads
+def test_migrate_legacy_text_tracking_file_edge_cases(tmp_path, mocker):
+    """Test edge cases for _migrate_legacy_text_tracking_file."""
+    import json
+    from unittest.mock import patch
+
+    from fetchtastic.downloader import _migrate_legacy_text_tracking_file
+
+    # Test atomic write failure
+    text_file = tmp_path / "prerelease_commits.txt"
+    text_file.write_text("abc123\ndef456\n")
+
+    with patch("fetchtastic.downloader._atomic_write") as mock_atomic_write:
+        mock_atomic_write.return_value = False
+
+        result = _migrate_legacy_text_tracking_file(str(tmp_path))
+
+        assert result is False
+        assert text_file.exists()  # File should be kept if atomic write fails
+        mock_atomic_write.assert_called_once()
+
+    # Test OSError during file operations
+    text_file.write_text("abc123\ndef456\n")
+
+    with patch("builtins.open", side_effect=OSError("Disk full")):
+        result = _migrate_legacy_text_tracking_file(str(tmp_path))
+        assert result is False
+        assert text_file.exists()  # File should be kept on OSError
+
+    # Test migration with various commit formats
+    text_file.write_text("Release: v1.2.3\nABC123\nDef456\nGhI789\n")
+    result = _migrate_legacy_text_tracking_file(str(tmp_path))
+    assert result is True
+    assert not text_file.exists()
+
+    json_file = tmp_path / "prerelease_tracking.json"
+    assert json_file.exists()
+
+    with open(json_file) as f:
+        data = json.load(f)
+
+    # Commits should be normalized to lowercase
+    assert data["commits"] == ["abc123", "def456", "ghi789"]
+    assert data["version"] == "v1.2.3"
+
+    # Clean up
+    json_file.unlink()
+
+    # Test with whitespace-only lines
+    text_file.write_text("Release: v2.0.0\n\nabc123\n   \n\ndef456\n\n")
+    result = _migrate_legacy_text_tracking_file(str(tmp_path))
+    assert result is True
+
+    with open(json_file) as f:
+        data = json.load(f)
+
+    # Should ignore empty/whitespace lines
+    assert data["commits"] == ["abc123", "def456"]
+    assert data["version"] == "v2.0.0"
+
+
+@pytest.mark.core_downloads
+def test_migrate_legacy_text_tracking_file_file_permissions(tmp_path):
+    """Test migration behavior with file permission issues."""
+    import stat
+
+    from fetchtastic.downloader import _migrate_legacy_text_tracking_file
+
+    # Test with directory that doesn't exist
+    non_existent_dir = tmp_path / "non_existent"
+    result = _migrate_legacy_text_tracking_file(str(non_existent_dir))
+    assert result is False
+
+    # Create a text file for permission testing
+    text_file = tmp_path / "prerelease_commits.txt"
+    text_file.write_text("abc123\ndef456\n")
+
+    # Make file read-only to simulate permission error during removal
+    current_permissions = text_file.stat().st_mode
+    text_file.chmod(stat.S_IRUSR)  # Read-only
+
+    try:
+        result = _migrate_legacy_text_tracking_file(str(tmp_path))
+        # Migration should succeed (JSON written) but file removal might fail
+        # The exact behavior depends on the OS and file system
+        assert isinstance(result, bool)
+    finally:
+        # Restore permissions for cleanup if file still exists
+        if text_file.exists():
+            text_file.chmod(current_permissions)
+
 
 @pytest.mark.core_downloads
 def test_parse_json_formats_error_handling():

@@ -439,33 +439,33 @@ def cleanup_superseded_prereleases(
                 prerelease_dir, "prerelease_tracking.json"
             )
 
-            # Remove JSON tracking file
-            if os.path.exists(json_tracking_file):
-                try:
-                    os.remove(json_tracking_file)
-                    logger.debug(
-                        "Removed prerelease tracking file: %s", json_tracking_file
-                    )
-                except OSError as e:
-                    logger.warning(
-                        "Could not remove tracking file %s: %s", json_tracking_file, e
-                    )
-
-            # Remove any remaining legacy text tracking files
-            text_tracking_file = os.path.join(prerelease_dir, "prerelease_commits.txt")
-            if os.path.exists(text_tracking_file):
-                try:
-                    os.remove(text_tracking_file)
-                    logger.debug(
-                        "Removed legacy prerelease tracking file: %s",
-                        text_tracking_file,
-                    )
-                except OSError as e:
-                    logger.warning(
-                        "Could not remove legacy tracking file %s: %s",
-                        text_tracking_file,
-                        e,
-                    )
+            # Remove tracking files (both JSON and legacy text)
+            for file_path, is_legacy in [
+                (json_tracking_file, False),
+                (os.path.join(prerelease_dir, "prerelease_commits.txt"), True),
+            ]:
+                if os.path.exists(file_path):
+                    try:
+                        os.remove(file_path)
+                        if is_legacy:
+                            logger.debug(
+                                "Removed legacy prerelease tracking file: %s", file_path
+                            )
+                        else:
+                            logger.debug(
+                                "Removed prerelease tracking file: %s", file_path
+                            )
+                    except OSError as e:
+                        if is_legacy:
+                            logger.warning(
+                                "Could not remove legacy tracking file %s: %s",
+                                file_path,
+                                e,
+                            )
+                        else:
+                            logger.warning(
+                                "Could not remove tracking file %s: %s", file_path, e
+                            )
 
     return cleaned_up
 
@@ -728,27 +728,6 @@ def _migrate_legacy_text_tracking_file(prerelease_dir: str) -> bool:
             "Failed to migrate legacy prerelease tracking file %s: %s", text_file, e
         )
         return False
-
-    try:
-        with open(text_file, "r", encoding="utf-8") as f:
-            lines = [line.strip() for line in f.readlines() if line.strip()]
-            if not lines:
-                return [], None
-            if lines[0].startswith("Release: "):
-                current_release = lines[0][9:]  # Remove "Release: " prefix
-                commits_raw = lines[1:]
-            else:
-                # Legacy format: treat all lines as commits; release unknown
-                current_release = "unknown"
-                commits_raw = lines
-            commits = [
-                commit.lower() for commit in commits_raw
-            ]  # Normalize to lowercase for consistency
-            return commits, current_release
-    except (IOError, UnicodeDecodeError) as e:
-        logger.debug(f"Could not read legacy prerelease tracking file: {e}")
-
-    return [], None
 
 
 def _ensure_v_prefix_if_missing(version: Optional[str]) -> Optional[str]:
