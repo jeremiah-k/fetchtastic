@@ -436,8 +436,9 @@ def cleanup_superseded_prereleases(
         remaining_prereleases = bool(_get_existing_prerelease_dirs(prerelease_dir))
         if not remaining_prereleases:
             # Remove tracking files since no prereleases remain
+            # JSON tracking file is stored in the cache directory
             json_tracking_file = os.path.join(
-                prerelease_dir, PRERELEASE_TRACKING_JSON_FILE
+                _ensure_cache_dir(), PRERELEASE_TRACKING_JSON_FILE
             )
 
             # Remove tracking files (both JSON and legacy text)
@@ -1555,33 +1556,33 @@ def _load_prerelease_dir_cache() -> None:
     if _prerelease_dir_cache_loaded:
         return
 
-    with _cache_lock:
-        if _prerelease_dir_cache_loaded:
-            return
-
-        def validate_prerelease_entry(cache_entry: Dict[str, Any]) -> bool:
-            return (
-                isinstance(cache_entry, dict)
-                and "directories" in cache_entry
-                and "cached_at" in cache_entry
-            )
-
-        def process_prerelease_entry(
-            cache_entry: Dict[str, Any], cached_at: datetime
-        ) -> Tuple[List[str], datetime]:
-            directories = cache_entry["directories"]
-            if not isinstance(directories, list):
-                raise ValueError("directories is not a list")
-            return (directories, cached_at)
-
-        loaded_data = _load_json_cache_with_expiry(
-            cache_file_path=_get_prerelease_dir_cache_file(),
-            expiry_hours=PRERELEASE_DIR_CACHE_EXPIRY_SECONDS / 3600,
-            cache_entry_validator=validate_prerelease_entry,
-            entry_processor=process_prerelease_entry,
-            cache_name="prerelease directory",
+    # Perform I/O outside of lock to minimize contention
+    def validate_prerelease_entry(cache_entry: Dict[str, Any]) -> bool:
+        return (
+            isinstance(cache_entry, dict)
+            and "directories" in cache_entry
+            and "cached_at" in cache_entry
         )
 
+    def process_prerelease_entry(
+        cache_entry: Dict[str, Any], cached_at: datetime
+    ) -> Tuple[List[str], datetime]:
+        directories = cache_entry["directories"]
+        if not isinstance(directories, list):
+            raise ValueError("directories is not a list")
+        return (directories, cached_at)
+
+    loaded_data = _load_json_cache_with_expiry(
+        cache_file_path=_get_prerelease_dir_cache_file(),
+        expiry_hours=PRERELEASE_DIR_CACHE_EXPIRY_SECONDS / 3600,
+        cache_entry_validator=validate_prerelease_entry,
+        entry_processor=process_prerelease_entry,
+        cache_name="prerelease directory",
+    )
+
+    with _cache_lock:
+        if _prerelease_dir_cache_loaded:
+            return  # Another thread might have loaded it while we were reading from disk
         _prerelease_dir_cache.update(loaded_data)
         _prerelease_dir_cache_loaded = True
 
@@ -3589,7 +3590,7 @@ def check_and_download(
                         json_file, release_tag, release_type
                     ):
                         logger.warning(
-                            f"Error updating latest release file: {latest_release_file}"
+                            "Error updating latest release JSON: %s", json_file
                         )
                     else:
                         logger.debug(
@@ -3933,7 +3934,7 @@ def check_and_download(
                     json_file, latest_release_tag_val, release_type
                 ):
                     logger.warning(
-                        f"Error writing latest release tag to {latest_release_file}"
+                        "Error writing latest release tag to JSON: %s", json_file
                     )
                 else:
                     logger.debug(
@@ -4165,7 +4166,8 @@ def _cleanup_legacy_files(
     config: Dict[str, Any], paths_and_urls: Dict[str, str]
 ) -> None:
     """
-    Remove legacy text tracking files after they have been migrated to JSON.
+    Remove legacy text tracking files after fresh data is fetched into JSON
+    (no on-disk migration is performed).
 
     Parameters:
         config (Dict[str, Any]): Configuration dictionary containing paths.

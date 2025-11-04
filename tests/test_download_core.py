@@ -376,7 +376,6 @@ def test_check_and_download_release_already_complete_logs_up_to_date(tmp_path, c
     # Note: The code now reads from JSON files, so we need to write to JSON format
     json_file = tmp_path / "latest_firmware_release.json"
     json_file.write_text('{"latest_version": "v1.0.0", "file_type": "firmware"}')
-    Path(latest_release_file).write_text(release_tag)  # Keep for compatibility
 
     downloaded, new_versions, failures = downloader.check_and_download(
         releases,
@@ -1072,15 +1071,19 @@ def test_cleanup_superseded_prereleases_file_removal(tmp_path):
     firmware_dir.mkdir()
     prerelease_dir = firmware_dir / "prerelease"
     prerelease_dir.mkdir()
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
 
     # Test successful removal of both files
-    json_tracking_file = prerelease_dir / "prerelease_tracking.json"
+    # JSON tracking file is now in cache directory, text file in prerelease dir
+    json_tracking_file = cache_dir / "prerelease_tracking.json"
     text_tracking_file = prerelease_dir / "prerelease_commits.txt"
 
     json_tracking_file.write_text('{"version": "v1.0.0", "commits": ["abc123"]}')
     text_tracking_file.write_text("Release: v1.0.0\nabc123\n")
 
-    cleanup_superseded_prereleases(str(tmp_path), "v2.0.0")
+    with patch("fetchtastic.downloader._ensure_cache_dir", return_value=str(cache_dir)):
+        cleanup_superseded_prereleases(str(tmp_path), "v2.0.0")
 
     # Both files should be removed
     assert not json_tracking_file.exists()
@@ -1090,7 +1093,9 @@ def test_cleanup_superseded_prereleases_file_removal(tmp_path):
     json_tracking_file.write_text('{"version": "v1.0.0", "commits": ["abc123"]}')
     text_tracking_file.write_text("Release: v1.0.0\nabc123\n")
 
-    with patch("os.remove", side_effect=OSError("Permission denied")), patch(
+    with patch(
+        "fetchtastic.downloader._ensure_cache_dir", return_value=str(cache_dir)
+    ), patch("os.remove", side_effect=OSError("Permission denied")), patch(
         "fetchtastic.downloader.logger"
     ) as mock_logger:
 
@@ -1101,7 +1106,8 @@ def test_cleanup_superseded_prereleases_file_removal(tmp_path):
         assert mock_logger.warning.call_count >= 1
 
     # Test with no tracking files
-    cleanup_superseded_prereleases(str(tmp_path), "v2.0.0")
+    with patch("fetchtastic.downloader._ensure_cache_dir", return_value=str(cache_dir)):
+        cleanup_superseded_prereleases(str(tmp_path), "v2.0.0")
     # Should not raise any exceptions
 
 
@@ -1116,12 +1122,15 @@ def test_cleanup_superseded_prereleases_file_removal_edge_cases(tmp_path):
     firmware_dir.mkdir()
     prerelease_dir = firmware_dir / "prerelease"
     prerelease_dir.mkdir()
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
 
     # Test with only JSON file exists
-    json_tracking_file = prerelease_dir / "prerelease_tracking.json"
+    json_tracking_file = cache_dir / "prerelease_tracking.json"
     json_tracking_file.write_text('{"version": "v1.0.0", "commits": ["abc123"]}')
 
-    cleanup_superseded_prereleases(str(tmp_path), "v2.0.0")
+    with patch("fetchtastic.downloader._ensure_cache_dir", return_value=str(cache_dir)):
+        cleanup_superseded_prereleases(str(tmp_path), "v2.0.0")
     assert not json_tracking_file.exists()
 
     # Recreate for next test
@@ -1131,12 +1140,14 @@ def test_cleanup_superseded_prereleases_file_removal_edge_cases(tmp_path):
     text_tracking_file = prerelease_dir / "prerelease_commits.txt"
     text_tracking_file.write_text("Release: v1.0.0\nabc123\n")
 
-    cleanup_superseded_prereleases(str(tmp_path), "v2.0.0")
+    with patch("fetchtastic.downloader._ensure_cache_dir", return_value=str(cache_dir)):
+        cleanup_superseded_prereleases(str(tmp_path), "v2.0.0")
     assert not text_tracking_file.exists()
-    assert not json_tracking_file.exists()  # Should be migrated then removed
+    assert not json_tracking_file.exists()  # Should be removed from cache
 
     # Test with no tracking files
-    cleanup_superseded_prereleases(str(tmp_path), "v2.0.0")
+    with patch("fetchtastic.downloader._ensure_cache_dir", return_value=str(cache_dir)):
+        cleanup_superseded_prereleases(str(tmp_path), "v2.0.0")
     # Should not raise any exceptions
 
 

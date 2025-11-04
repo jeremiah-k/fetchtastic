@@ -305,11 +305,8 @@ def test_user_facing_status_messages(tmp_path, caplog):
         }
     ]
 
-    # Write the latest release file to indicate this release is current
-    # Note: The code now reads from JSON files, so we need to write to JSON format
     json_file = Path(latest_release_file).parent / "latest_firmware_release.json"
     json_file.write_text('{"latest_version": "v1.0.0", "file_type": "firmware"}')
-    Path(latest_release_file).write_text("v1.0.0")  # Keep for compatibility
 
     with patch("fetchtastic.downloader.download_file_with_retry", return_value=True):
         downloaded, new_versions, failures = downloader.check_and_download(
