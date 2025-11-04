@@ -3493,6 +3493,7 @@ def check_and_download(
     failed_downloads_details: List[Dict[str, str]] = []
     actions_taken: bool = False
     exclude_patterns_list: List[str] = exclude_patterns or []
+    already_complete_releases: set[str] = set()
 
     if not os.path.exists(download_dir_path):
         os.makedirs(download_dir_path)
@@ -3570,6 +3571,8 @@ def check_and_download(
                 logger.debug(
                     f"Release {raw_release_tag} already exists and is complete, skipping download"
                 )
+                # Track that this release was already complete
+                already_complete_releases.add(release_tag)
                 # Update latest_release_file if this is the most recent release
                 if (
                     release_tag != saved_release_tag
@@ -3962,8 +3965,13 @@ def check_and_download(
     newer_tags: List[str] = _newer_tags_since_saved(tags_order, saved_release_tag)
 
     # Report all newer releases that were not successfully downloaded as newly available.
-    # This ensures users are notified about new versions even if the download failed.
-    new_candidates: List[str] = [t for t in newer_tags if t not in downloaded_versions]
+    # This ensures users are notified about new versions even if download failed.
+    # Exclude releases that were already complete to avoid showing already-downloaded releases as "new"
+    new_candidates: List[str] = [
+        t
+        for t in newer_tags
+        if t not in downloaded_versions and t not in already_complete_releases
+    ]
 
     if not actions_taken and not new_candidates:
         logger.info(f"All {release_type} assets are up to date.")

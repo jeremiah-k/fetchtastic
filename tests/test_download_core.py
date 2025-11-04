@@ -373,7 +373,10 @@ def test_check_and_download_release_already_complete_logs_up_to_date(tmp_path, c
     download_dir = str(tmp_path)
 
     # Write the latest release file to indicate this release is current
-    Path(latest_release_file).write_text(release_tag)
+    # Note: The code now reads from JSON files, so we need to write to JSON format
+    json_file = tmp_path / "latest_firmware_release.json"
+    json_file.write_text('{"latest_version": "v1.0.0", "type": "Firmware"}')
+    Path(latest_release_file).write_text(release_tag)  # Keep for compatibility
 
     downloaded, new_versions, failures = downloader.check_and_download(
         releases,
@@ -424,7 +427,10 @@ def test_check_and_download_corrupted_existing_zip_records_failure(tmp_path):
     corrupted_zip.write_text("not a zip file")
 
     # Write the latest release file to indicate this release is current
-    Path(latest_release_file).write_text(release_tag)
+    # Note: The code now reads from JSON files, so we need to write to JSON format
+    json_file = tmp_path / "latest_firmware_release.json"
+    json_file.write_text('{"latest_version": "v1.0.0", "type": "Firmware"}')
+    Path(latest_release_file).write_text(release_tag)  # Keep for compatibility
 
     def mock_download(_url, _path):
         # Mock download failure to test error handling
@@ -1364,7 +1370,7 @@ def test_read_latest_release_tag(tmp_path):
 
     from fetchtastic.downloader import _read_latest_release_tag
 
-    legacy_file = tmp_path / "latest_test.txt"
+    tmp_path / "latest_test.txt"
     json_file = tmp_path / "latest_test.json"
 
     # Test with no files
@@ -1394,7 +1400,7 @@ def test_write_latest_release_tag(tmp_path):
 
     from fetchtastic.downloader import _write_latest_release_tag
 
-    legacy_file = tmp_path / "latest_test.txt"
+    tmp_path / "latest_test.txt"
     json_file = tmp_path / "latest_test.json"
 
     # Test successful write

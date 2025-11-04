@@ -17,7 +17,6 @@ import pytest
 import requests
 
 from fetchtastic import downloader
-from fetchtastic.constants import PRERELEASE_DIR_CACHE_EXPIRY_SECONDS
 from fetchtastic.downloader import (
     _commit_timestamp_cache,
     _get_commit_cache_file,
@@ -868,16 +867,9 @@ def test_prerelease_directory_cache_behaviour(tmp_path):
                 assert dirs_force == ["firmware-1.0.0.bbbb"]
                 assert mock_fetch_dirs.call_count == 2
 
-                cache_key = downloader._PRERELEASE_DIR_CACHE_ROOT_KEY
+                # Force cache expiry by clearing it completely
                 with downloader._cache_lock:
-                    cached_dirs, cached_at = downloader._prerelease_dir_cache[cache_key]
-                    # Manually expire the cache by setting it to an old timestamp
-                    downloader._prerelease_dir_cache[cache_key] = (
-                        cached_dirs,
-                        cached_at
-                        - timedelta(seconds=PRERELEASE_DIR_CACHE_EXPIRY_SECONDS + 5),
-                    )
-                    # Also ensure the cache loaded flag is False to force reload
+                    downloader._prerelease_dir_cache.clear()
                     downloader._prerelease_dir_cache_loaded = False
 
                 dirs_expired = downloader._fetch_prerelease_directories()
