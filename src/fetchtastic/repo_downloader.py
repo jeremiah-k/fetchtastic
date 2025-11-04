@@ -95,7 +95,7 @@ def download_repo_files(selected_files, download_dir):  # log_message_func remov
             ):  # Removed log_message_func
                 # download_file_with_retry already logs the download completion
                 # Set executable permissions for shell script files (moved here, after successful download)
-                if file_name.endswith(SHELL_SCRIPT_EXTENSION):
+                if file_name.lower().endswith(SHELL_SCRIPT_EXTENSION):
                     try:
                         os.chmod(file_path, EXECUTABLE_PERMISSIONS)
                         logger.debug(

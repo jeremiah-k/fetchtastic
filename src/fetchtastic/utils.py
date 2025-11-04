@@ -798,7 +798,7 @@ def download_file_with_retry(
 
     # Check if file exists and is valid (especially for zips)
     if os.path.exists(download_path):
-        if download_path.lower().endswith(ZIP_EXTENSION.lower()):
+        if download_path.lower().endswith(ZIP_EXTENSION):
             try:
                 with zipfile.ZipFile(download_path, "r") as zf:
                     if zf.testzip() is not None:  # None means no errors
@@ -941,7 +941,7 @@ def download_file_with_retry(
 
         # Log completion after successful file replacement (moved below)
 
-        if download_path.lower().endswith(ZIP_EXTENSION.lower()):
+        if download_path.lower().endswith(ZIP_EXTENSION):
             try:
                 with zipfile.ZipFile(temp_path, "r") as zf_temp:
                     if zf_temp.testzip() is not None:
