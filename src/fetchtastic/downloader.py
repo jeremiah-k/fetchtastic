@@ -678,7 +678,7 @@ def _migrate_legacy_text_tracking_file(prerelease_dir: str) -> bool:
 
     # No JSON exists, check for legacy file to migrate
     if not os.path.exists(text_file):
-        return False
+        return True
 
     try:
         with open(text_file, "r", encoding="utf-8") as f:
@@ -797,6 +797,10 @@ def _migrate_legacy_release_file(
             )
             return False
 
+    # Check if legacy file exists before trying to migrate
+    if not os.path.exists(legacy_file):
+        return True
+
     try:
         with open(legacy_file, "r", encoding="utf-8") as f:
             version_tag = f.read().strip()
@@ -861,6 +865,38 @@ def _migrate_legacy_release_file(
         return False
 
 
+def _migrate_all_legacy_tracking_files(
+    download_dir: str, paths_and_urls: Dict[str, str]
+) -> None:
+    """
+    Migrate all legacy tracking files to JSON format.
+
+    Parameters:
+        download_dir (str): Base download directory.
+        paths_and_urls (Dict[str, str]): Dictionary containing file paths.
+    """
+    # Migrate prerelease tracking
+    prerelease_dir = os.path.join(download_dir, "firmware", "prerelease")
+    if os.path.exists(prerelease_dir):
+        _migrate_legacy_text_tracking_file(prerelease_dir)
+
+    # Migrate latest firmware release tracking
+    firmware_legacy = paths_and_urls.get("latest_firmware_release_file")
+    if firmware_legacy and os.path.exists(firmware_legacy):
+        firmware_json = os.path.join(
+            os.path.dirname(firmware_legacy), LATEST_FIRMWARE_RELEASE_JSON_FILE
+        )
+        _migrate_legacy_release_file(firmware_legacy, firmware_json, "Firmware")
+
+    # Migrate latest Android release tracking
+    android_legacy = paths_and_urls.get("latest_android_release_file")
+    if android_legacy and os.path.exists(android_legacy):
+        android_json = os.path.join(
+            os.path.dirname(android_legacy), LATEST_ANDROID_RELEASE_JSON_FILE
+        )
+        _migrate_legacy_release_file(android_legacy, android_json, "Android")
+
+
 def _read_latest_release_tag(legacy_file: str, json_file: str) -> Optional[str]:
     """
     Read the latest release tag from either legacy text or JSON format.
@@ -880,7 +916,9 @@ def _read_latest_release_tag(legacy_file: str, json_file: str) -> Optional[str]:
                 version = data.get("latest_version")
                 return version if version else None
         except (IOError, json.JSONDecodeError, KeyError) as e:
-            logger.debug(f"Could not read release tag from JSON file {json_file}: {e}")
+            logger.debug(
+                "Could not read release tag from JSON file %s: %s", json_file, e
+            )
 
     # Fall back to legacy text format
     if os.path.exists(legacy_file):
@@ -911,10 +949,19 @@ def _write_latest_release_tag(
     Returns:
         bool: True if write succeeded, False otherwise.
     """
+    # Normalize release_type to consistent slug for file_type field
+    file_type_lower = release_type.lower()
+    if "android" in file_type_lower:
+        file_type_slug = "android"
+    elif "firmware" in file_type_lower:
+        file_type_slug = "firmware"
+    else:
+        file_type_slug = file_type_lower.replace(" ", "_")
+
     migration_data = {
         "latest_version": version_tag,
         "last_updated": datetime.now(timezone.utc).isoformat(),
-        "file_type": release_type.lower(),
+        "file_type": file_type_slug,
     }
 
     def write_json_data(f):
@@ -926,11 +973,11 @@ def _write_latest_release_tag(
             try:
                 os.remove(legacy_file)
                 logger.debug(
-                    f"Removed legacy release file after JSON write: {legacy_file}"
+                    "Removed legacy release file after JSON write: %s", legacy_file
                 )
             except OSError as e:
                 logger.warning(
-                    f"Could not remove legacy release file {legacy_file}: {e}"
+                    "Could not remove legacy release file %s: %s", legacy_file, e
                 )
         return True
     else:
@@ -3816,10 +3863,7 @@ def check_and_download(
                     release_tag != saved_release_tag
                     and release_data == releases_to_download[0]
                 ):
-                    json_basename = _get_json_release_basename(release_type)
-                    json_file = os.path.join(
-                        os.path.dirname(latest_release_file), json_basename
-                    )
+                    # Use json_file calculated at function start
                     if not _write_latest_release_tag(
                         latest_release_file, json_file, release_tag, release_type
                     ):
@@ -4123,10 +4167,7 @@ def check_and_download(
                     # Consider the latest release processed even without downloads to avoid re-scanning
                     try:
                         if idx == 1:
-                            json_file = os.path.join(
-                                os.path.dirname(latest_release_file),
-                                _get_json_release_basename(release_type),
-                            )
+                            # Use json_file calculated at function start
                             if _write_latest_release_tag(
                                 latest_release_file,
                                 json_file,
@@ -4170,10 +4211,7 @@ def check_and_download(
                 latest_release_tag_val is not None
                 and latest_release_tag_val != saved_release_tag
             ):
-                json_basename = _get_json_release_basename(release_type)
-                json_file = os.path.join(
-                    os.path.dirname(latest_release_file), json_basename
-                )
+                # Use json_file calculated at function start
                 if not _write_latest_release_tag(
                     latest_release_file, json_file, latest_release_tag_val, release_type
                 ):
@@ -4559,6 +4597,10 @@ def main(force_refresh: bool = False) -> None:
     downloaded_apks, new_apk_versions, failed_apk_list, latest_apk_version, _ = (
         _process_apk_downloads(config, paths_and_urls, force_refresh)
     )
+
+    # Migrate legacy tracking files to JSON format
+    logger.info("Migrating legacy tracking files to JSON format...")
+    _migrate_all_legacy_tracking_files(paths_and_urls["download_dir"], paths_and_urls)
 
     # Clean up legacy files - we fetch fresh data instead of migrating old data
     logger.info("Cleaning up legacy files")

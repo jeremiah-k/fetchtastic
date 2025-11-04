@@ -282,7 +282,7 @@ def test_prerelease_tracking_functionality(
     assert len(versions) > 0
 
     # Check that tracking file was created (now JSON format in cache directory)
-    from src.fetchtastic.downloader import _ensure_cache_dir
+    from fetchtastic.downloader import _ensure_cache_dir
 
     cache_dir = Path(_ensure_cache_dir())
     tracking_file = cache_dir / "prerelease_tracking.json"

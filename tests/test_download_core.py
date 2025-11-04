@@ -1361,7 +1361,6 @@ def test_normalize_commit_identifier_edge_cases():
 @pytest.mark.core_downloads
 def test_read_latest_release_tag(tmp_path):
     """Test _read_latest_release_tag with various scenarios."""
-    import json
 
     from fetchtastic.downloader import _read_latest_release_tag
 
