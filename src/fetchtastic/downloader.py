@@ -595,7 +595,8 @@ def _safe_rmtree(path_to_remove: str, base_dir: str, item_name: str) -> bool:
 
         if common_base != real_base_dir:
             logger.warning(
-                f"Skipping removal of {path_to_remove} because it resolves outside the base directory"
+                "Skipping removal of %s because it resolves outside the base directory",
+                path_to_remove,
             )
             return False
 
@@ -620,7 +621,7 @@ def compare_file_hashes(file1, file2):
         file2 (str): Path to the second file to compare.
 
     Returns:
-        `true` if both files are readable and their SHA-256 digests match, `false` otherwise.
+        bool: True if both files are readable and their SHA-256 digests match, False otherwise.
     """
     import hashlib
 
@@ -1631,7 +1632,7 @@ def _load_prerelease_dir_cache() -> None:
         """
         directories = cache_entry["directories"]
         if not isinstance(directories, list):
-            raise ValueError("directories is not a list")
+            raise TypeError("directories is not a list")
         return (directories, cached_at)
 
     loaded_data = _load_json_cache_with_expiry(
@@ -1849,50 +1850,50 @@ def _load_releases_cache() -> None:
     if _releases_cache_loaded:
         return
 
+    # Define validators outside of lock; perform I/O outside of lock
+    def validate_releases_entry(cache_entry: Dict[str, Any]) -> bool:
+        """
+        Validate that a cache entry has the expected structure for stored releases.
+
+        Parameters:
+            cache_entry (dict): Candidate cache object to check.
+
+        Returns:
+            True if `cache_entry` is a dict containing with keys `"releases"` and `"cached_at"`, False otherwise.
+        """
+        return (
+            isinstance(cache_entry, dict)
+            and "releases" in cache_entry
+            and "cached_at" in cache_entry
+        )
+
+    def process_releases_entry(
+        cache_entry: Dict[str, Any], cached_at: datetime
+    ) -> Tuple[List[Dict[str, Any]], datetime]:
+        """
+        Extracts the stored releases list and its original cache timestamp from a cache entry.
+
+        Parameters:
+            cache_entry (Dict[str, Any]): A cache record expected to contain a "releases" key with a list of release dictionaries.
+            cached_at (datetime): The timestamp when the cache entry was created or saved.
+
+        Returns:
+            Tuple[List[Dict[str, Any]], datetime]: A tuple containing the releases list and the original `cached_at` timestamp.
+        """
+        releases_data = cache_entry["releases"]
+        return (releases_data, cached_at)
+
+    loaded_data = _load_json_cache_with_expiry(
+        cache_file_path=_get_releases_cache_file(),
+        expiry_hours=RELEASES_CACHE_EXPIRY_HOURS,
+        cache_entry_validator=validate_releases_entry,
+        entry_processor=process_releases_entry,
+        cache_name="releases",
+    )
+
     with _cache_lock:
         if _releases_cache_loaded:
             return
-
-        def validate_releases_entry(cache_entry: Dict[str, Any]) -> bool:
-            """
-            Validate that a cache entry has the expected structure for stored releases.
-
-            Parameters:
-                cache_entry (dict): Candidate cache object to check.
-
-            Returns:
-                True if `cache_entry` is a dict containing the keys `"releases"` and `"cached_at"`, False otherwise.
-            """
-            return (
-                isinstance(cache_entry, dict)
-                and "releases" in cache_entry
-                and "cached_at" in cache_entry
-            )
-
-        def process_releases_entry(
-            cache_entry: Dict[str, Any], cached_at: datetime
-        ) -> Tuple[List[Dict[str, Any]], datetime]:
-            """
-            Extract the stored releases list and its original cache timestamp from a cache entry.
-
-            Parameters:
-                cache_entry (Dict[str, Any]): A cache record expected to contain a "releases" key with a list of release dictionaries.
-                cached_at (datetime): The timestamp when the cache entry was created or saved.
-
-            Returns:
-                Tuple[List[Dict[str, Any]], datetime]: A tuple containing the releases list and the original `cached_at` timestamp.
-            """
-            releases_data = cache_entry["releases"]
-            return (releases_data, cached_at)
-
-        loaded_data = _load_json_cache_with_expiry(
-            cache_file_path=_get_releases_cache_file(),
-            expiry_hours=RELEASES_CACHE_EXPIRY_HOURS,
-            cache_entry_validator=validate_releases_entry,
-            entry_processor=process_releases_entry,
-            cache_name="releases",
-        )
-
         _releases_cache.update(loaded_data)
         _releases_cache_loaded = True
 
@@ -4303,7 +4304,7 @@ def main(force_refresh: bool = False) -> None:
     """
     Run the Fetchtastic downloader workflow.
 
-    Performs startup and configuration, optionally clears caches and device hardware cache when requested, enforces Wi‑Fi gating, processes firmware and APK downloads (with a single retry pass for failures), cleans legacy files, finalizes logging and notifications, and records an API usage summary.
+    Performs startup and configuration, optionally clears caches and device hardware cache when requested, enforces Wi-Fi gating, processes firmware and APK downloads (with a single retry pass for failures), cleans legacy files, finalizes logging and notifications, and records an API usage summary.
 
     Parameters:
         force_refresh (bool): When True, clear all persistent caches and the device hardware cache before fetching remote data.
