@@ -452,7 +452,7 @@ def test_get_prerelease_tracking_info_error_handling():
     with tempfile.TemporaryDirectory() as tmp_dir:
         prerelease_dir = Path(tmp_dir)
 
-        # Mock the cache directory to test error handling
+        # Test with non-existent cache directory
         with patch("fetchtastic.downloader._ensure_cache_dir") as mock_cache_dir:
             # Test with non-existent cache directory
             mock_cache_dir.return_value = str(prerelease_dir / "nonexistent")

@@ -3497,7 +3497,7 @@ def check_and_download(
     if saved_raw_tag is not None and saved_release_tag is None:
         logger.warning(
             "Ignoring unsafe contents in latest release file %s",
-            latest_release_file,
+            json_file,
         )
 
     releases_to_download: List[Dict[str, Any]] = releases[:versions_to_keep]

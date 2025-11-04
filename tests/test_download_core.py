@@ -430,7 +430,6 @@ def test_check_and_download_corrupted_existing_zip_records_failure(tmp_path):
     # Note: The code now reads from JSON files, so we need to write to JSON format
     json_file = tmp_path / "latest_firmware_release.json"
     json_file.write_text('{"latest_version": "v1.0.0", "type": "Firmware"}')
-    Path(latest_release_file).write_text(release_tag)  # Keep for compatibility
 
     def mock_download(_url, _path):
         # Mock download failure to test error handling
