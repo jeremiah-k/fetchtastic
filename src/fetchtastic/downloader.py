@@ -44,6 +44,7 @@ from fetchtastic.constants import (
     LATEST_ANDROID_RELEASE_FILE,
     LATEST_FIRMWARE_RELEASE_FILE,
     MAX_CONCURRENT_TIMESTAMP_FETCHES,
+    MAX_LEGACY_FILE_AGE_DAYS,
     MESHTASTIC_ANDROID_RELEASES_URL,
     MESHTASTIC_FIRMWARE_RELEASES_URL,
     NTFY_REQUEST_TIMEOUT,
@@ -658,6 +659,26 @@ def compare_file_hashes(file1, file2):
     return hash1 == hash2
 
 
+def _is_legacy_file_too_old(file_path: str) -> bool:
+    """
+    Check if a legacy tracking file is too old to be worth migrating.
+
+    Parameters:
+        file_path (str): Path to the legacy file.
+
+    Returns:
+        bool: True if file is older than MAX_LEGACY_FILE_AGE_DAYS, False otherwise.
+    """
+    try:
+        file_mtime = os.path.getmtime(file_path)
+        file_age = time.time() - file_mtime
+        max_age_seconds = MAX_LEGACY_FILE_AGE_DAYS * 24 * 60 * 60
+        return file_age > max_age_seconds
+    except OSError:
+        # If we can't get file age, assume it's not too old
+        return False
+
+
 def _migrate_legacy_text_tracking_file(prerelease_dir: str) -> bool:
     """
     Migrate legacy text-format prerelease tracking data to new JSON format and remove the old file.
@@ -676,6 +697,24 @@ def _migrate_legacy_text_tracking_file(prerelease_dir: str) -> bool:
 
     if not os.path.exists(text_file):
         return False
+
+    # Check if legacy file is too old to be worth migrating
+    if _is_legacy_file_too_old(text_file):
+        logger.info(
+            "Removing outdated legacy prerelease tracking file (older than %d days): %s",
+            MAX_LEGACY_FILE_AGE_DAYS,
+            text_file,
+        )
+        try:
+            os.remove(text_file)
+            return True
+        except OSError as e:
+            logger.warning(
+                "Could not remove outdated legacy prerelease tracking file %s: %s",
+                text_file,
+                e,
+            )
+            return False
 
     try:
         with open(text_file, "r", encoding="utf-8") as f:
@@ -750,6 +789,26 @@ def _migrate_legacy_release_file(
     if not os.path.exists(legacy_file):
         # No legacy file to migrate
         return False
+
+    # Check if legacy file is too old to be worth migrating
+    if _is_legacy_file_too_old(legacy_file):
+        logger.info(
+            "Removing outdated legacy %s release file (older than %d days): %s",
+            file_type.lower(),
+            MAX_LEGACY_FILE_AGE_DAYS,
+            legacy_file,
+        )
+        try:
+            os.remove(legacy_file)
+            return True
+        except OSError as e:
+            logger.warning(
+                "Could not remove outdated legacy %s release file %s: %s",
+                file_type.lower(),
+                legacy_file,
+                e,
+            )
+            return False
 
     if os.path.exists(json_file):
         # JSON file already exists, assume migration already done

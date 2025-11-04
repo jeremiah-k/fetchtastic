@@ -1114,6 +1114,19 @@ def test_migrate_legacy_text_tracking_file(tmp_path):
     assert text_file.exists()  # File should be kept
     assert not json_file.exists()  # No JSON file should be created
 
+    # Test with outdated legacy file (should be removed, not migrated)
+    import time
+
+    text_file.write_text("Release: v1.0.0\nabc123\n")
+    # Set file modification time to 10 days ago
+    old_time = time.time() - (10 * 24 * 60 * 60)  # 10 days ago
+    os.utime(text_file, (old_time, old_time))
+
+    result = _migrate_legacy_text_tracking_file(str(tmp_path))
+    assert result is True  # Function attempted cleanup
+    assert not text_file.exists()  # File should be removed due to age
+    assert not json_file.exists()  # No JSON should be created for outdated file
+
 
 @pytest.mark.core_downloads
 def test_cleanup_superseded_prereleases_file_removal(tmp_path, mocker):

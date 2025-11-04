@@ -42,6 +42,9 @@ LATEST_ANDROID_RELEASE_FILE = "latest_android_release.txt"
 LATEST_FIRMWARE_RELEASE_FILE = "latest_firmware_release.txt"
 WINDOWS_SHORTCUT_FILE = "fetchtastic_yaml.lnk"
 
+# Legacy data management
+MAX_LEGACY_FILE_AGE_DAYS = 7  # Maximum age in days for legacy files to be migrated
+
 # Directories that Fetchtastic manages and can safely clean
 MANAGED_DIRECTORIES = (
     REPO_DOWNLOADS_DIR,
