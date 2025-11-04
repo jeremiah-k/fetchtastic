@@ -455,8 +455,8 @@ def test_get_prerelease_tracking_info_error_handling():
         result = get_prerelease_tracking_info(str(prerelease_dir / "nonexistent"))
         assert result == {}
 
-        # Test with corrupted tracking file
-        tracking_file = prerelease_dir / "prerelease_commits.txt"
+        # Test with corrupted JSON tracking file
+        tracking_file = prerelease_dir / "prerelease_tracking.json"
         tracking_file.write_bytes(b"\xff\xfe\x00\x00")  # Invalid UTF-8
 
         result = get_prerelease_tracking_info(str(prerelease_dir))

@@ -1056,42 +1056,53 @@ def test_safe_rmtree_additional_edge_cases(tmp_path):
 
 
 @pytest.mark.core_downloads
-def test_read_text_tracking_file_edge_cases(tmp_path):
-    """Test _read_text_tracking_file with edge cases."""
-    from fetchtastic.downloader import _read_text_tracking_file
+def test_migrate_legacy_text_tracking_file(tmp_path):
+    """Test _migrate_legacy_text_tracking_file with various scenarios."""
+    import json
 
-    # Create a tracking file
-    tracking_file = tmp_path / "prerelease_tracking.json"
+    from fetchtastic.downloader import _migrate_legacy_text_tracking_file
+
+    # Test with no legacy file
+    result = _migrate_legacy_text_tracking_file(str(tmp_path))
+    assert result is False
+
+    # Test with empty legacy file
     text_file = tmp_path / "prerelease_commits.txt"
-
-    # Test with missing text file
-    commits, release = _read_text_tracking_file(str(tracking_file))
-    assert commits == []
-    assert release is None
-
-    # Test with empty text file
     text_file.write_text("")
-    commits, release = _read_text_tracking_file(str(tracking_file))
-    assert commits == []
-    assert release is None
+    result = _migrate_legacy_text_tracking_file(str(tmp_path))
+    assert result is True
+    assert not text_file.exists()
 
-    # Test with legacy format (no "Release:" line)
-    text_file.write_text("commit1\ncommit2\n")
-    commits, release = _read_text_tracking_file(str(tracking_file))
-    assert commits == ["commit1", "commit2"]
-    assert release == "unknown"
+    # Test with legacy format (no Release: line)
+    text_file.write_text("abc123\ndef456\n")
+    result = _migrate_legacy_text_tracking_file(str(tmp_path))
+    assert result is True
+    assert not text_file.exists()
 
-    # Test with modern format
-    text_file.write_text("Release: v1.0.0\ncommit1\ncommit2\n")
-    commits, release = _read_text_tracking_file(str(tracking_file))
-    assert commits == ["commit1", "commit2"]
-    assert release == "v1.0.0"
+    # Check migrated JSON file
+    json_file = tmp_path / "prerelease_tracking.json"
+    assert json_file.exists()
+    with open(json_file) as f:
+        data = json.load(f)
+    assert data["version"] is None  # "unknown" becomes None
+    assert data["commits"] == ["abc123", "def456"]
+    assert "last_updated" in data
 
-    # Test with Unicode decode error
-    text_file.write_bytes(b"\xff\xfe\x00\x00")  # Invalid UTF-8
-    commits, release = _read_text_tracking_file(str(tracking_file))
-    assert commits == []
-    assert release is None
+    # Clean up for next test
+    json_file.unlink()
+
+    # Test with modern text format (with Release: line)
+    text_file.write_text("Release: v2.7.14\nabc123\ndef456\n")
+    result = _migrate_legacy_text_tracking_file(str(tmp_path))
+    assert result is True
+    assert not text_file.exists()
+
+    # Check migrated JSON file
+    with open(json_file) as f:
+        data = json.load(f)
+    assert data["version"] == "v2.7.14"
+    assert data["commits"] == ["abc123", "def456"]
+    assert "last_updated" in data
 
 
 @pytest.mark.core_downloads

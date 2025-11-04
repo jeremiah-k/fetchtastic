@@ -346,6 +346,9 @@ def cleanup_superseded_prereleases(
     if not os.path.exists(prerelease_dir):
         return False
 
+    # Migrate any legacy text tracking files before cleanup
+    _migrate_legacy_text_tracking_file(prerelease_dir)
+
     # Check for matching pre-release directories
     cleaned_up = False
     for raw_dir_name in os.listdir(prerelease_dir):
@@ -435,19 +438,34 @@ def cleanup_superseded_prereleases(
             json_tracking_file = os.path.join(
                 prerelease_dir, "prerelease_tracking.json"
             )
-            text_tracking_file = os.path.join(prerelease_dir, "prerelease_commits.txt")
 
-            for tracking_file in [json_tracking_file, text_tracking_file]:
-                if os.path.exists(tracking_file):
-                    try:
-                        os.remove(tracking_file)
-                        logger.debug(
-                            "Removed prerelease tracking file: %s", tracking_file
-                        )
-                    except OSError as e:
-                        logger.warning(
-                            "Could not remove tracking file %s: %s", tracking_file, e
-                        )
+            # Remove JSON tracking file
+            if os.path.exists(json_tracking_file):
+                try:
+                    os.remove(json_tracking_file)
+                    logger.debug(
+                        "Removed prerelease tracking file: %s", json_tracking_file
+                    )
+                except OSError as e:
+                    logger.warning(
+                        "Could not remove tracking file %s: %s", json_tracking_file, e
+                    )
+
+            # Remove any remaining legacy text tracking files
+            text_tracking_file = os.path.join(prerelease_dir, "prerelease_commits.txt")
+            if os.path.exists(text_tracking_file):
+                try:
+                    os.remove(text_tracking_file)
+                    logger.debug(
+                        "Removed legacy prerelease tracking file: %s",
+                        text_tracking_file,
+                    )
+                except OSError as e:
+                    logger.warning(
+                        "Could not remove legacy tracking file %s: %s",
+                        text_tracking_file,
+                        e,
+                    )
 
     return cleaned_up
 
@@ -640,27 +658,76 @@ def compare_file_hashes(file1, file2):
     return hash1 == hash2
 
 
-def _read_text_tracking_file(tracking_file):
+def _migrate_legacy_text_tracking_file(prerelease_dir: str) -> bool:
     """
-    Read legacy text-format prerelease tracking data.
+    Migrate legacy text-format prerelease tracking data to new JSON format and remove the old file.
 
-    Parses a sibling "prerelease_commits.txt" next to the provided tracking file. Supported formats:
-    - Modern text format: first non-empty line begins with "Release: <tag>", subsequent lines are prerelease IDs.
-    - Legacy format: every non-empty line is a commit and the release is reported as "unknown".
+    This function should be called during startup to convert any remaining old text files
+    to the new JSON format, then clean up the old files.
 
     Parameters:
-        tracking_file (str): Path to the JSON tracking file used to locate the sibling "prerelease_commits.txt".
+        prerelease_dir (str): Directory containing prerelease tracking files.
 
     Returns:
-        tuple[list[str], str | None]: (commits, current_release)
-            - commits: list of prerelease IDs normalized to lowercase (empty if file missing or unreadable).
-            - current_release: the release tag for the commits, the string "unknown" for legacy-format files, or None if the text file is missing/unreadable.
+        bool: True if migration was attempted (regardless of success), False if no old file found.
     """
-    text_file = os.path.join(os.path.dirname(tracking_file), "prerelease_commits.txt")
+    text_file = os.path.join(prerelease_dir, "prerelease_commits.txt")
+    json_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
 
-    # Only attempt to read if the legacy file exists
     if not os.path.exists(text_file):
-        return [], None
+        return False
+
+    try:
+        with open(text_file, "r", encoding="utf-8") as f:
+            lines = [line.strip() for line in f.readlines() if line.strip()]
+
+        if not lines:
+            # Empty file, just remove it
+            os.remove(text_file)
+            logger.debug("Removed empty legacy prerelease tracking file: %s", text_file)
+            return True
+
+        # Parse the old format
+        if lines[0].startswith("Release: "):
+            current_release = lines[0][9:]  # Remove "Release: " prefix
+            commits_raw = lines[1:]
+        else:
+            # Legacy format: treat all lines as commits; release unknown
+            current_release = "unknown"
+            commits_raw = lines
+
+        # Normalize commits to lowercase
+        commits = [commit.lower() for commit in commits_raw]
+
+        # Create new JSON format data
+        migration_data = {
+            "version": current_release if current_release != "unknown" else None,
+            "commits": commits,
+            "last_updated": datetime.now(timezone.utc).isoformat(),
+        }
+
+        # Write to new JSON format
+        def write_json_data(f):
+            json.dump(migration_data, f, indent=2)
+
+        if _atomic_write(json_file, write_json_data, ".json"):
+            # Successfully wrote JSON, now remove old text file
+            os.remove(text_file)
+            logger.info(
+                "Migrated legacy prerelease tracking from text to JSON format: %s → %s",
+                text_file,
+                json_file,
+            )
+            return True
+        else:
+            logger.warning("Failed to write migrated JSON data, keeping old text file")
+            return False
+
+    except (IOError, UnicodeDecodeError, OSError) as e:
+        logger.warning(
+            "Failed to migrate legacy prerelease tracking file %s: %s", text_file, e
+        )
+        return False
 
     try:
         with open(text_file, "r", encoding="utf-8") as f:
@@ -880,9 +947,11 @@ def _parse_legacy_json_format(
 
 def _read_prerelease_tracking_data(tracking_file):
     """
-    Read prerelease tracking information from a JSON tracking file or fall back to legacy text format.
+    Read prerelease tracking information from a JSON tracking file.
 
-    Attempts to parse prerelease_tracking.json supporting both newer schema (keys like "version", "hash", "commits", "last_updated"/"timestamp") and legacy JSON schema ("release", "commits"). If JSON read fails or file does not exist, falls back to reading legacy text-formatted tracking via _read_text_tracking_file. Commit hashes are normalized to lowercase and release tag is normalized to include a leading "v" when applicable.
+    Supports both newer schema (keys like "version", "hash", "commits", "last_updated"/"timestamp")
+    and legacy JSON schema ("release", "commits"). Legacy text format support has been removed
+    - migration should be handled by _migrate_legacy_text_tracking_file before calling this function.
 
     Returns:
         tuple: (commits, current_release, last_updated)
@@ -893,7 +962,6 @@ def _read_prerelease_tracking_data(tracking_file):
     commits = []
     current_release = None
     last_updated = None
-    read_from_json_success = False
 
     if os.path.exists(tracking_file):
         try:
@@ -910,34 +978,13 @@ def _read_prerelease_tracking_data(tracking_file):
                         tracking_data
                     )
                 else:
-                    # Legacy format
+                    # Legacy JSON format
                     commits, current_release, last_updated = _parse_legacy_json_format(
                         tracking_data
                     )
 
-            read_from_json_success = True
         except (IOError, json.JSONDecodeError, UnicodeDecodeError) as e:
             logger.warning(f"Could not read prerelease tracking file: {e}")
-
-    if not read_from_json_success:
-        # Fallback to legacy text format if JSON read failed or file didn't exist
-        commits_raw, current_release = _read_text_tracking_file(tracking_file)
-        # Only normalize the release tag when it's meaningful; otherwise treat as missing
-        release_for_norm = (
-            _ensure_v_prefix_if_missing(current_release)
-            if (current_release and current_release != "unknown")
-            else None
-        )
-        # Normalize commits to version+hash format for consistency
-        commits = [
-            _normalize_commit_identifier(commit, release_for_norm)
-            for commit in commits_raw
-        ]
-        # Return normalized release tag for consistency with JSON paths
-        current_release = (
-            release_for_norm if release_for_norm is not None else current_release
-        )
-        last_updated = None
 
     return commits, current_release, last_updated
 
