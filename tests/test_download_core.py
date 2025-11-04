@@ -432,6 +432,14 @@ def test_check_and_download_corrupted_existing_zip_records_failure(tmp_path):
 
     def mock_download(_url, _path):
         # Mock download failure to test error handling
+        """
+        Simulates a download operation that always fails.
+        
+        Used in tests to force a download failure for exercising error handling.
+        
+        Returns:
+            False: Indicates the download did not succeed.
+        """
         return False
 
     with patch(
