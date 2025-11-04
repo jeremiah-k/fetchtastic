@@ -1247,7 +1247,7 @@ def _update_tracking_with_newest_prerelease(
     if not newest_prerelease_dir:
         return 0
 
-    tracking_file = os.path.join(prerelease_dir, PRERELEASE_TRACKING_JSON_FILE)
+    tracking_file = os.path.join(_ensure_cache_dir(), PRERELEASE_TRACKING_JSON_FILE)
 
     # Extract single prerelease version and hash from directory name
     # Validate that directory name follows expected pattern: firmware-<version>
@@ -1386,7 +1386,7 @@ def matches_extract_patterns(filename, extract_patterns, device_manager=None):
 
 def get_prerelease_tracking_info(prerelease_dir):
     """
-    Return a summary of prerelease tracking data found in prerelease_tracking.json within the given directory.
+    Return a summary of prerelease tracking data found in prerelease_tracking.json within the cache directory.
 
     Reads prerelease tracking data and returns a dictionary with the tracked official release, ordered prerelease commit identifiers, a count, and the last-updated timestamp. If no tracking data is present, returns an empty dict.
 
@@ -1398,7 +1398,7 @@ def get_prerelease_tracking_info(prerelease_dir):
             - "last_updated" (str | None): ISO 8601 timestamp of the last update, or None.
             - "latest_prerelease" (str | None): Most recent prerelease identifier from `commits`, or None.
     """
-    tracking_file = os.path.join(prerelease_dir, PRERELEASE_TRACKING_JSON_FILE)
+    tracking_file = os.path.join(_ensure_cache_dir(), PRERELEASE_TRACKING_JSON_FILE)
     commits, release, last_updated = _read_prerelease_tracking_data(tracking_file)
     if not commits and not release:
         return {}
@@ -2883,10 +2883,10 @@ def _initial_setup_and_config() -> Tuple[
         "firmware_dir": firmware_dir,
         "apks_dir": apks_dir,
         "latest_android_release_file": os.path.join(
-            apks_dir, LATEST_ANDROID_RELEASE_FILE
+            _ensure_cache_dir(), LATEST_ANDROID_RELEASE_FILE
         ),
         "latest_firmware_release_file": os.path.join(
-            firmware_dir, LATEST_FIRMWARE_RELEASE_FILE
+            _ensure_cache_dir(), LATEST_FIRMWARE_RELEASE_FILE
         ),
         "android_releases_url": MESHTASTIC_ANDROID_RELEASES_URL,
         "firmware_releases_url": MESHTASTIC_FIRMWARE_RELEASES_URL,
@@ -4359,6 +4359,7 @@ def _cleanup_legacy_files(config: Dict[str, Any]) -> None:
         config (Dict[str, Any]): Configuration dictionary containing paths.
     """
     try:
+        # Clean up legacy files from download directories
         prerelease_dir = config.get("PRERELEASE_DIR")
         if prerelease_dir and os.path.exists(prerelease_dir):
             # Remove legacy text tracking files
@@ -4375,7 +4376,7 @@ def _cleanup_legacy_files(config: Dict[str, Any]) -> None:
                             "Could not remove legacy file %s: %s", legacy_file, e
                         )
 
-        # Remove legacy release files
+        # Remove legacy release files from download directories
         for release_type in ["Firmware", "APK"]:
             legacy_file = config.get(f"LATEST_{release_type.upper()}_RELEASE_FILE")
             if legacy_file and os.path.exists(legacy_file):
@@ -4393,6 +4394,47 @@ def _cleanup_legacy_files(config: Dict[str, Any]) -> None:
                         legacy_file,
                         e,
                     )
+
+        # Clean up legacy files from cache directory
+        cache_dir = _ensure_cache_dir()
+        if os.path.exists(cache_dir):
+            # Remove legacy prerelease tracking file from cache
+            legacy_prerelease_file = os.path.join(
+                cache_dir, PRERELEASE_COMMITS_LEGACY_FILE
+            )
+            if os.path.exists(legacy_prerelease_file):
+                try:
+                    os.remove(legacy_prerelease_file)
+                    logger.debug(
+                        "Removed legacy prerelease tracking file from cache: %s",
+                        legacy_prerelease_file,
+                    )
+                except OSError as e:
+                    logger.warning(
+                        "Could not remove legacy prerelease file from cache %s: %s",
+                        legacy_prerelease_file,
+                        e,
+                    )
+
+            # Remove legacy release files from cache
+            for release_type in ["android", "firmware"]:
+                legacy_filename = f"latest_{release_type}_release.txt"
+                legacy_file = os.path.join(cache_dir, legacy_filename)
+                if os.path.exists(legacy_file):
+                    try:
+                        os.remove(legacy_file)
+                        logger.debug(
+                            "Removed legacy %s release file from cache: %s",
+                            release_type,
+                            legacy_file,
+                        )
+                    except OSError as e:
+                        logger.warning(
+                            "Could not remove legacy %s file from cache %s: %s",
+                            release_type,
+                            legacy_file,
+                            e,
+                        )
 
     except Exception as e:
         logger.warning("Error removing legacy files: %s", e)

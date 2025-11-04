@@ -281,9 +281,11 @@ def test_prerelease_tracking_functionality(
     assert downloaded is True
     assert len(versions) > 0
 
-    # Check that tracking file was created (now JSON format)
-    prerelease_dir = download_dir / "firmware" / "prerelease"
-    tracking_file = prerelease_dir / "prerelease_tracking.json"
+    # Check that tracking file was created (now JSON format in cache directory)
+    from src.fetchtastic.downloader import _ensure_cache_dir
+
+    cache_dir = Path(_ensure_cache_dir())
+    tracking_file = cache_dir / "prerelease_tracking.json"
     assert tracking_file.exists()
 
     # Check tracking file contents (JSON format)
@@ -315,7 +317,9 @@ def test_prerelease_tracking_functionality(
     assert len(set(tracking_data["commits"])) == len(tracking_data["commits"])
 
     # Test get_prerelease_tracking_info function
-    info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
+    info = downloader.get_prerelease_tracking_info(
+        str(download_dir / "firmware" / "prerelease")
+    )
     expected_clean_version = (
         downloader._extract_clean_version(latest_release_tag) or latest_release_tag
     )
@@ -451,16 +455,23 @@ def test_get_prerelease_tracking_info_error_handling():
     with tempfile.TemporaryDirectory() as tmp_dir:
         prerelease_dir = Path(tmp_dir)
 
-        # Test with non-existent directory
-        result = get_prerelease_tracking_info(str(prerelease_dir / "nonexistent"))
-        assert result == {}
+        # Mock the cache directory to test error handling
+        with patch("fetchtastic.downloader._ensure_cache_dir") as mock_cache_dir:
+            # Test with non-existent cache directory
+            mock_cache_dir.return_value = str(prerelease_dir / "nonexistent")
+            result = get_prerelease_tracking_info(str(prerelease_dir))
+            assert result == {}
 
-        # Test with corrupted JSON tracking file
-        tracking_file = prerelease_dir / "prerelease_tracking.json"
-        tracking_file.write_bytes(b"\xff\xfe\x00\x00")  # Invalid UTF-8
+            # Test with corrupted JSON tracking file
+            cache_dir = prerelease_dir / "cache"
+            cache_dir.mkdir()
+            mock_cache_dir.return_value = str(cache_dir)
 
-        result = get_prerelease_tracking_info(str(prerelease_dir))
-        assert result == {}  # Should handle decode errors gracefully
+            tracking_file = cache_dir / "prerelease_tracking.json"
+            tracking_file.write_bytes(b"\xff\xfe\x00\x00")  # Invalid UTF-8
+
+            result = get_prerelease_tracking_info(str(prerelease_dir))
+            assert result == {}  # Should handle decode errors gracefully
 
 
 def test_update_prerelease_tracking_error_handling():
@@ -471,21 +482,25 @@ def test_update_prerelease_tracking_error_handling():
     if os.name == "nt":
         pytest.skip("Permission bits unreliable on Windows")
 
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        # Test with read-only directory (should handle write errors)
-        prerelease_dir = Path(tmp_dir) / "readonly"
-        prerelease_dir.mkdir()
-        prerelease_dir.chmod(0o444)  # Read-only
+    # Test error handling by mocking the cache directory to be unwritable
+    with patch("fetchtastic.downloader._ensure_cache_dir") as mock_cache_dir:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            cache_dir = Path(tmp_dir) / "cache"
+            cache_dir.mkdir()
+            cache_dir.chmod(0o444)  # Read-only
+            mock_cache_dir.return_value = str(cache_dir)
 
-        try:
-            # Should handle write errors gracefully and return count of existing commits
-            result = update_prerelease_tracking(
-                str(prerelease_dir), "v2.7.8", "firmware-2.7.9.abc123"
-            )
-            assert result == 0  # Should return actual persisted count (0 on failure)
-        finally:
-            # Restore permissions for cleanup
-            prerelease_dir.chmod(0o755)
+            try:
+                # Should handle write errors gracefully and return count of existing commits
+                result = update_prerelease_tracking(
+                    "/some/dummy/dir", "v2.7.8", "firmware-2.7.9.abc123"
+                )
+                assert (
+                    result == 0
+                )  # Should return actual persisted count (0 on failure)
+            finally:
+                # Restore permissions for cleanup
+                cache_dir.chmod(0o755)
 
 
 @pytest.mark.core_downloads
