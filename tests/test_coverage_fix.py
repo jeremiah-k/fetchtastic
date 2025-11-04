@@ -242,3 +242,60 @@ def test_main_function_full_coverage(tmp_path):
         # Verify device manager was instantiated and cache cleared
         mock_device_mgr.assert_called()
         mock_device_mgr.return_value.clear_cache.assert_called_once()
+
+
+def test_main_function_migration_coverage(tmp_path):
+    """
+    Exercise downloader.main to cover migration orchestration path.
+
+    Verifies that _migrate_all_legacy_tracking_files is called during main execution.
+    """
+    with patch("fetchtastic.downloader._initial_setup_and_config") as mock_setup, patch(
+        "fetchtastic.downloader._check_wifi_connection"
+    ) as _, patch(
+        "fetchtastic.downloader._process_firmware_downloads"
+    ) as mock_firmware, patch(
+        "fetchtastic.downloader._process_apk_downloads"
+    ) as mock_apk, patch(
+        "fetchtastic.downloader._finalize_and_notify"
+    ) as _, patch(
+        "fetchtastic.downloader._migrate_all_legacy_tracking_files"
+    ) as mock_migrate, patch(
+        "fetchtastic.downloader._cleanup_legacy_files"
+    ) as mock_cleanup:
+
+        # Mock setup to return valid config with paths
+        mock_setup.return_value = (
+            {"GITHUB_TOKEN": None},  # config
+            "v0.8.0",  # current_version
+            "v0.8.0",  # latest_version
+            False,  # update_available
+            {
+                "firmware_releases_url": "https://api.github.com/repos/meshtastic/firmware/releases",
+                "download_dir": str(tmp_path / "download"),
+                "latest_firmware_release_file": str(
+                    tmp_path / "latest_firmware_release.txt"
+                ),
+                "latest_android_release_file": str(
+                    tmp_path / "latest_android_release.txt"
+                ),
+            },
+        )
+
+        # Mock download processing to return empty results
+        mock_firmware.return_value = ([], [], [], None, None)
+        mock_apk.return_value = ([], [], [], None, None)
+
+        from fetchtastic.downloader import main
+
+        # Call main function
+        main(force_refresh=False)
+
+        # Verify migration was called before cleanup
+        mock_migrate.assert_called_once()
+        mock_cleanup.assert_called_once()
+
+        # Verify migration was called with correct parameters
+        migrate_call = mock_migrate.call_args
+        assert migrate_call[0][0] == str(tmp_path / "download")  # download_dir
+        assert "latest_firmware_release_file" in migrate_call[0][1]  # paths_and_urls
