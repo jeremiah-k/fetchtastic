@@ -867,12 +867,15 @@ def test_prerelease_directory_cache_behaviour(tmp_path):
                 assert dirs_force == ["firmware-1.0.0.bbbb"]
                 assert mock_fetch_dirs.call_count == 2
 
-                # Force cache expiry by clearing it completely and preventing reload
+                # Force cache expiry by clearing it completely and removing persisted cache file
                 with downloader._cache_lock:
                     downloader._prerelease_dir_cache.clear()
-                    downloader._prerelease_dir_cache_loaded = (
-                        True  # Prevent disk reload
-                    )
+                    downloader._prerelease_dir_cache_loaded = False
+                    if downloader._prerelease_dir_cache_file:
+                        Path(downloader._prerelease_dir_cache_file).unlink(
+                            missing_ok=True
+                        )
+                        downloader._prerelease_dir_cache_file = None
 
                 dirs_expired = downloader._fetch_prerelease_directories()
                 assert dirs_expired == ["firmware-1.0.0.cccc"]

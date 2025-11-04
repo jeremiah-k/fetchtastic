@@ -689,7 +689,11 @@ def _write_latest_release_tag(
         bool: True if write succeeded, False otherwise.
     """
     try:
-        data = {"latest_version": version_tag, "type": release_type}
+        data = {
+            "latest_version": version_tag,
+            "file_type": release_type.lower(),
+            "last_updated": datetime.now(timezone.utc).isoformat(),
+        }
         return _atomic_write_json(json_file, data)
     except Exception as e:
         logger.error(
@@ -1477,45 +1481,25 @@ def _get_prerelease_dir_cache_file() -> str:
 
 def _load_json_cache_with_expiry(
     cache_file_path: str,
-    loaded_global_var: Any,
-    loaded_flag_global_var: Any,
     expiry_hours: float,
     cache_entry_validator: Callable[[Dict[str, Any]], bool],
     entry_processor: Callable[[Dict[str, Any], datetime], Any],
     cache_name: str,
-) -> None:
+) -> Dict[str, Any]:
     """
     Generic helper to load JSON cache files with expiry validation.
 
-    This function consolidates the common pattern of loading JSON cache files,
-    validating structure, checking expiry, and updating global cache variables.
-
-    Parameters:
-        cache_file_path: Path to the cache file
-        loaded_global_var: Global variable to store loaded data (will be updated)
-        loaded_flag_global_var: Global variable to track if cache is loaded (will be set to True)
-        expiry_hours: Number of hours after which cache entries expire
-        cache_entry_validator: Function that validates individual cache entry structure
-        entry_processor: Function that processes valid cache entries and returns the value to store
-        cache_name: Name of the cache for logging purposes
+    Returns a dict of valid cache entries for the caller to merge into their global.
     """
-    with _cache_lock:
-        if loaded_flag_global_var:
-            return
-
     try:
         if not os.path.exists(cache_file_path):
-            with _cache_lock:
-                loaded_flag_global_var = True
-            return
+            return {}
 
         with open(cache_file_path, "r", encoding="utf-8") as f:
             cache_data = json.load(f)
 
         if not isinstance(cache_data, dict):
-            with _cache_lock:
-                loaded_flag_global_var = True
-            return
+            return {}
 
         current_time = datetime.now(timezone.utc)
         loaded: Dict[str, Any] = {}
@@ -1530,11 +1514,10 @@ def _load_json_cache_with_expiry(
                     )
                     continue
 
+                # Check if entry is still valid (not expired)
                 cached_at = datetime.fromisoformat(
                     cache_entry["cached_at"].replace("Z", "+00:00")
                 )
-
-                # Check if entry is still valid (not expired)
                 age = current_time - cached_at
                 if age.total_seconds() < expiry_hours * 60 * 60:
                     loaded[cache_key] = entry_processor(cache_entry, cached_at)
@@ -1547,13 +1530,13 @@ def _load_json_cache_with_expiry(
                 )
                 continue
 
-        with _cache_lock:
-            loaded_global_var.update(loaded)
-            loaded_flag_global_var = True
-        logger.debug("Loaded %d %s entries from cache", len(loaded), cache_name)
+        if loaded:
+            logger.debug("Loaded %d %s entries from cache", len(loaded), cache_name)
+        return loaded
 
     except (IOError, json.JSONDecodeError) as e:
         logger.debug("Could not load %s cache: %s", cache_name, e)
+        return {}
 
 
 def _load_prerelease_dir_cache() -> None:
@@ -1577,15 +1560,17 @@ def _load_prerelease_dir_cache() -> None:
             raise ValueError("directories is not a list")
         return (directories, cached_at)
 
-    _load_json_cache_with_expiry(
+    loaded_data = _load_json_cache_with_expiry(
         cache_file_path=_get_prerelease_dir_cache_file(),
-        loaded_global_var=_prerelease_dir_cache,
-        loaded_flag_global_var=_prerelease_dir_cache_loaded,
         expiry_hours=PRERELEASE_DIR_CACHE_EXPIRY_SECONDS / 3600,
         cache_entry_validator=validate_prerelease_entry,
         entry_processor=process_prerelease_entry,
         cache_name="prerelease directory",
     )
+
+    with _cache_lock:
+        _prerelease_dir_cache.update(loaded_data)
+        _prerelease_dir_cache_loaded = True
 
 
 def _save_prerelease_dir_cache() -> None:
@@ -1780,15 +1765,17 @@ def _load_releases_cache() -> None:
         releases_data = cache_entry["releases"]
         return (releases_data, cached_at)
 
-    _load_json_cache_with_expiry(
+    loaded_data = _load_json_cache_with_expiry(
         cache_file_path=_get_releases_cache_file(),
-        loaded_global_var=_releases_cache,
-        loaded_flag_global_var=_releases_cache_loaded,
         expiry_hours=RELEASES_CACHE_EXPIRY_HOURS,
         cache_entry_validator=validate_releases_entry,
         entry_processor=process_releases_entry,
         cache_name="releases",
     )
+
+    with _cache_lock:
+        _releases_cache.update(loaded_data)
+        _releases_cache_loaded = True
 
 
 def _save_releases_cache() -> None:
@@ -4159,7 +4146,7 @@ def _cleanup_legacy_files(
     config: Dict[str, Any], paths_and_urls: Dict[str, str]
 ) -> None:
     """
-    Remove legacy files - we fetch fresh data instead of migrating old data.
+    Remove legacy text tracking files after they have been migrated to JSON.
 
     Parameters:
         config (Dict[str, Any]): Configuration dictionary containing paths.
@@ -4167,12 +4154,18 @@ def _cleanup_legacy_files(
     """
     try:
         # Clean up legacy files from download directories
-        prerelease_dir = config.get("PRERELEASE_DIR")
+        download_dir = paths_and_urls.get("download_dir")
+        if not download_dir:
+            return
+
+        # Support both config-based and direct path approaches for prerelease dir
+        prerelease_dir = config.get("PRERELEASE_DIR") or os.path.join(
+            download_dir, "firmware", "prerelease"
+        )
         if prerelease_dir and os.path.exists(prerelease_dir):
             # Remove specific legacy text tracking files
             legacy_files = [
                 PRERELEASE_COMMITS_LEGACY_FILE,
-                "prerelease_tracking.txt",  # Old tracking file name if different
             ]
             for filename in legacy_files:
                 legacy_file = os.path.join(prerelease_dir, filename)
@@ -4187,10 +4180,12 @@ def _cleanup_legacy_files(
                             "Could not remove legacy file %s: %s", legacy_file, e
                         )
 
-        # Remove legacy release files from download directories
+        # Remove legacy release files from download directories (not cache)
+        firmware_dir = os.path.join(download_dir, "firmware")
+        apks_dir = os.path.join(download_dir, "apks")
         legacy_files_to_remove = {
-            "firmware": paths_and_urls.get("latest_firmware_release_file"),
-            "android": paths_and_urls.get("latest_android_release_file"),
+            "firmware": os.path.join(firmware_dir, LATEST_FIRMWARE_RELEASE_FILE),
+            "android": os.path.join(apks_dir, LATEST_ANDROID_RELEASE_FILE),
         }
         for release_type, legacy_file in legacy_files_to_remove.items():
             if legacy_file and os.path.exists(legacy_file):
@@ -4208,47 +4203,6 @@ def _cleanup_legacy_files(
                         legacy_file,
                         e,
                     )
-
-        # Clean up legacy files from cache directory
-        cache_dir = _ensure_cache_dir()
-        if os.path.exists(cache_dir):
-            # Remove legacy prerelease tracking file from cache
-            legacy_prerelease_file = os.path.join(
-                cache_dir, PRERELEASE_COMMITS_LEGACY_FILE
-            )
-            if os.path.exists(legacy_prerelease_file):
-                try:
-                    os.remove(legacy_prerelease_file)
-                    logger.debug(
-                        "Removed legacy prerelease tracking file from cache: %s",
-                        legacy_prerelease_file,
-                    )
-                except OSError as e:
-                    logger.warning(
-                        "Could not remove legacy prerelease file from cache %s: %s",
-                        legacy_prerelease_file,
-                        e,
-                    )
-
-            # Remove legacy release files from cache
-            for release_type in ["android", "firmware"]:
-                legacy_filename = f"latest_{release_type}_release.txt"
-                legacy_file = os.path.join(cache_dir, legacy_filename)
-                if os.path.exists(legacy_file):
-                    try:
-                        os.remove(legacy_file)
-                        logger.debug(
-                            "Removed legacy %s release file from cache: %s",
-                            release_type,
-                            legacy_file,
-                        )
-                    except OSError as e:
-                        logger.warning(
-                            "Could not remove legacy %s file from cache %s: %s",
-                            release_type,
-                            legacy_file,
-                            e,
-                        )
 
     except Exception as e:
         logger.warning("Error removing legacy files: %s", e)

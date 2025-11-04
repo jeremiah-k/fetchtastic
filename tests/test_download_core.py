@@ -1162,6 +1162,8 @@ def test_cleanup_legacy_files(tmp_path):
     # Create mock config and paths_and_urls
     config = {
         "PRERELEASE_DIR": str(tmp_path / "firmware" / "prerelease"),
+        "APK_DIR": str(tmp_path / "apks"),
+        "FIRMWARE_DIR": str(tmp_path / "firmware"),
     }
 
     # Create directory structure
@@ -1185,6 +1187,7 @@ def test_cleanup_legacy_files(tmp_path):
     paths_and_urls = {
         "latest_firmware_release_file": str(firmware_legacy),
         "latest_android_release_file": str(android_legacy),
+        "download_dir": str(tmp_path),
     }
 
     # Verify files exist before cleanup
@@ -1411,7 +1414,7 @@ def test_write_latest_release_tag(tmp_path):
     with open(json_file) as f:
         data = json.load(f)
     assert data["latest_version"] == "v3.0.0"
-    assert data["type"] == "Test"
+    assert data["file_type"] == "test"
 
     # Test write failure
     with patch("fetchtastic.downloader._atomic_write_json", return_value=False):
