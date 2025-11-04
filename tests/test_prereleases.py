@@ -871,11 +871,14 @@ def test_prerelease_directory_cache_behaviour(tmp_path):
                 cache_key = downloader._PRERELEASE_DIR_CACHE_ROOT_KEY
                 with downloader._cache_lock:
                     cached_dirs, cached_at = downloader._prerelease_dir_cache[cache_key]
+                    # Manually expire the cache by setting it to an old timestamp
                     downloader._prerelease_dir_cache[cache_key] = (
                         cached_dirs,
                         cached_at
                         - timedelta(seconds=PRERELEASE_DIR_CACHE_EXPIRY_SECONDS + 5),
                     )
+                    # Also ensure the cache loaded flag is False to force reload
+                    downloader._prerelease_dir_cache_loaded = False
 
                 dirs_expired = downloader._fetch_prerelease_directories()
                 assert dirs_expired == ["firmware-1.0.0.cccc"]

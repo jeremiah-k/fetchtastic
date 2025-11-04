@@ -1368,36 +1368,22 @@ def test_read_latest_release_tag(tmp_path):
     json_file = tmp_path / "latest_test.json"
 
     # Test with no files
-    result = _read_latest_release_tag(str(legacy_file), str(json_file))
+    result = _read_latest_release_tag(str(json_file))
     assert result is None
 
-    # Test with only legacy file
-    legacy_file.write_text("v1.2.3")
-    result = _read_latest_release_tag(str(legacy_file), str(json_file))
-    assert result == "v1.2.3"
-
     # Test with only JSON file
-    legacy_file.unlink()
-    json_file.write_text(
-        '{"latest_version": "v2.0.0", "last_updated": "2023-01-01T00:00:00Z"}'
-    )
-    result = _read_latest_release_tag(str(legacy_file), str(json_file))
+    json_file.write_text('{"latest_version": "v2.0.0", "type": "Test"}')
+    result = _read_latest_release_tag(str(json_file))
     assert result == "v2.0.0"
-
-    # Test with both files (JSON should take precedence)
-    legacy_file.write_text("v1.0.0")  # Older version
-    result = _read_latest_release_tag(str(legacy_file), str(json_file))
-    assert result == "v2.0.0"  # JSON version preferred
 
     # Test with invalid JSON
     json_file.write_text('{"invalid": json}')
-    result = _read_latest_release_tag(str(legacy_file), str(json_file))
-    assert result == "v1.0.0"  # Should fall back to legacy
+    result = _read_latest_release_tag(str(json_file))
+    assert result is None  # Should return None for invalid JSON
 
-    # Test with empty files
-    legacy_file.write_text("")
+    # Test with empty JSON
     json_file.write_text('{"latest_version": ""}')
-    result = _read_latest_release_tag(str(legacy_file), str(json_file))
+    result = _read_latest_release_tag(str(json_file))
     assert result is None
 
 
@@ -1412,39 +1398,16 @@ def test_write_latest_release_tag(tmp_path):
     json_file = tmp_path / "latest_test.json"
 
     # Test successful write
-    result = _write_latest_release_tag(
-        str(legacy_file), str(json_file), "v3.0.0", "Test"
-    )
+    result = _write_latest_release_tag(str(json_file), "v3.0.0", "Test")
     assert result is True
-    assert not legacy_file.exists()
     assert json_file.exists()
 
     with open(json_file) as f:
         data = json.load(f)
     assert data["latest_version"] == "v3.0.0"
-    assert "last_updated" in data
-    assert data["file_type"] == "test"
+    assert data["type"] == "Test"
 
-    # Test with existing legacy file (should be removed)
-    legacy_file.write_text("old_version")
-    result = _write_latest_release_tag(
-        str(legacy_file), str(json_file), "v3.1.0", "Test"
-    )
-    assert result is True
-    assert not legacy_file.exists()
-
-    # Test atomic write failure (should fallback to legacy)
-    if legacy_file.exists():
-        legacy_file.unlink()  # Remove the file completely
-    # Mock only the first call to _atomic_write (for JSON) to fail,
-    # but allow the second call (for text fallback) to succeed
-    with patch("fetchtastic.downloader._atomic_write") as mock_atomic_write:
-        mock_atomic_write.side_effect = [
-            False,
-            True,
-        ]  # First call fails, second succeeds
-        result = _write_latest_release_tag(
-            str(legacy_file), str(json_file), "v3.2.0", "Test"
-        )
-        assert result is True  # Fallback should succeed
-        # Note: Due to mocking, we can't check actual file content, but the function should return True
+    # Test write failure
+    with patch("fetchtastic.downloader._atomic_write_json", return_value=False):
+        result = _write_latest_release_tag(str(json_file), "v3.1.0", "Test")
+        assert result is False

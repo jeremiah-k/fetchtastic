@@ -244,11 +244,11 @@ def test_main_function_full_coverage(tmp_path):
         mock_device_mgr.return_value.clear_cache.assert_called_once()
 
 
-def test_main_function_migration_coverage(tmp_path):
+def test_main_function_basic_coverage(tmp_path):
     """
-    Exercise downloader.main to cover migration orchestration path.
+    Exercise downloader.main to cover basic execution path.
 
-    Verifies that _migrate_all_legacy_tracking_files is called during main execution.
+    Tests the main function flow without legacy migration since that functionality was removed.
     """
     with patch("fetchtastic.downloader._initial_setup_and_config") as mock_setup, patch(
         "fetchtastic.downloader._check_wifi_connection"
@@ -258,11 +258,7 @@ def test_main_function_migration_coverage(tmp_path):
         "fetchtastic.downloader._process_apk_downloads"
     ) as mock_apk, patch(
         "fetchtastic.downloader._finalize_and_notify"
-    ) as _, patch(
-        "fetchtastic.downloader._migrate_all_legacy_tracking_files"
-    ) as mock_migrate, patch(
-        "fetchtastic.downloader._cleanup_legacy_files"
-    ) as mock_cleanup:
+    ) as _:
 
         # Mock setup to return valid config with paths
         mock_setup.return_value = (
@@ -291,11 +287,7 @@ def test_main_function_migration_coverage(tmp_path):
         # Call main function
         main(force_refresh=False)
 
-        # Verify migration was called before cleanup
-        mock_migrate.assert_called_once()
-        mock_cleanup.assert_called_once()
-
-        # Verify migration was called with correct parameters
-        migrate_call = mock_migrate.call_args
-        assert migrate_call[0][0] == str(tmp_path / "download")  # download_dir
-        assert "latest_firmware_release_file" in migrate_call[0][1]  # paths_and_urls
+        # Verify setup and processing were called
+        mock_setup.assert_called_once()
+        mock_firmware.assert_called_once()
+        mock_apk.assert_called_once()

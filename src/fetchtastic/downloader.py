@@ -3586,9 +3586,8 @@ def check_and_download(
                         logger.debug(
                             f"Updated latest release tag to {release_tag} (complete release)"
                         )
-                # Still add to new_versions_available if it's different from saved tag
-                elif release_tag != saved_release_tag:
-                    new_versions_available.append(release_tag)
+                # Don't add to new_versions_available for already-complete releases
+                # This prevents showing already-downloaded releases as "new"
                 continue
 
             if not os.path.exists(release_dir):
