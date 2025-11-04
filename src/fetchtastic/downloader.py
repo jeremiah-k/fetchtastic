@@ -656,10 +656,13 @@ def _read_text_tracking_file(tracking_file):
             - commits: list of prerelease IDs normalized to lowercase (empty if file missing or unreadable).
             - current_release: the release tag for the commits, the string "unknown" for legacy-format files, or None if the text file is missing/unreadable.
     """
+    text_file = os.path.join(os.path.dirname(tracking_file), "prerelease_commits.txt")
+
+    # Only attempt to read if the legacy file exists
+    if not os.path.exists(text_file):
+        return [], None
+
     try:
-        text_file = os.path.join(
-            os.path.dirname(tracking_file), "prerelease_commits.txt"
-        )
         with open(text_file, "r", encoding="utf-8") as f:
             lines = [line.strip() for line in f.readlines() if line.strip()]
             if not lines:
