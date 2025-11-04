@@ -1153,11 +1153,9 @@ def test_cleanup_legacy_files(tmp_path):
     """Test _cleanup_legacy_files removes legacy files without migration."""
     from fetchtastic.downloader import _cleanup_legacy_files
 
-    # Create mock config with paths
+    # Create mock config and paths_and_urls
     config = {
         "PRERELEASE_DIR": str(tmp_path / "firmware" / "prerelease"),
-        "LATEST_FIRMWARE_RELEASE_FILE": "latest_firmware_release.txt",
-        "LATEST_APK_RELEASE_FILE": "latest_android_release.txt",
     }
 
     # Create directory structure
@@ -1177,9 +1175,11 @@ def test_cleanup_legacy_files(tmp_path):
     firmware_legacy = firmware_dir / "latest_firmware_release.txt"
     firmware_legacy.write_text("v1.8.0")
 
-    # Update config with actual paths
-    config["LATEST_FIRMWARE_RELEASE_FILE"] = str(firmware_legacy)
-    config["LATEST_APK_RELEASE_FILE"] = str(android_legacy)
+    # Create paths_and_urls with actual paths
+    paths_and_urls = {
+        "latest_firmware_release_file": str(firmware_legacy),
+        "latest_android_release_file": str(android_legacy),
+    }
 
     # Verify files exist before cleanup
     assert prerelease_text.exists()
@@ -1187,7 +1187,7 @@ def test_cleanup_legacy_files(tmp_path):
     assert firmware_legacy.exists()
 
     # Run cleanup
-    _cleanup_legacy_files(config)
+    _cleanup_legacy_files(config, paths_and_urls)
 
     # Verify all legacy files are removed
     assert not prerelease_text.exists()

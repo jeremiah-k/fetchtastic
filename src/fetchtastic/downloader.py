@@ -650,6 +650,36 @@ def compare_file_hashes(file1, file2):
 
     return hash1 == hash2
 
+
+def _migrate_legacy_text_tracking_file(prerelease_dir: str) -> bool:
+    """
+    Migrate legacy text-format prerelease tracking file to new JSON format.
+
+    Parameters:
+        prerelease_dir (str): Directory containing prerelease tracking files.
+
+    Returns:
+        bool: True if migration succeeded or no legacy file exists, False on error.
+    """
+    text_file = os.path.join(prerelease_dir, PRERELEASE_COMMITS_LEGACY_FILE)
+    json_file = os.path.join(prerelease_dir, PRERELEASE_TRACKING_JSON_FILE)
+
+    # Check if JSON already exists before migrating
+    if os.path.exists(json_file):
+        # JSON file already exists, just clean up legacy file if present
+        if os.path.exists(text_file):
+            try:
+                os.remove(text_file)
+                logger.debug("Removed legacy prerelease tracking file: %s", text_file)
+            except OSError as e:
+                logger.warning("Could not remove legacy file %s: %s", text_file, e)
+                return False
+        return True
+
+    # No JSON exists, check for legacy file to migrate
+    if not os.path.exists(text_file):
+        return False
+
     try:
         with open(text_file, "r", encoding="utf-8") as f:
             lines = [line.strip() for line in f.readlines() if line.strip()]
@@ -717,6 +747,34 @@ def compare_file_hashes(file1, file2):
             "Failed to read legacy prerelease tracking file %s: %s", text_file, e
         )
         return False
+
+
+def _migrate_legacy_release_file(
+    legacy_file: str, json_file: str, file_type: str
+) -> bool:
+    """
+    Migrate legacy text-format release tracking file to new JSON format.
+
+    Parameters:
+        legacy_file (str): Path to the legacy text file.
+        json_file (str): Path to the target JSON file.
+        file_type (str): Type of file for logging (e.g., "Android", "Firmware").
+
+    Returns:
+        bool: True if migration succeeded, False otherwise.
+    """
+    # Normalize release_type to consistent slug
+    release_type_lower = file_type.lower()
+    file_type_slug = (
+        "android"
+        if "android" in release_type_lower
+        else (
+            "firmware"
+            if "firmware" in release_type_lower
+            else release_type_lower.replace(" ", "_")
+        )
+    )
+    file_type_lower = file_type_slug
 
     if os.path.exists(json_file):
         # JSON file already exists, assume migration already done
@@ -906,11 +964,6 @@ def _get_json_release_basename(release_type: str) -> str:
     Returns:
         The JSON basename (e.g., "latest_android_release.json")
     """
-    from fetchtastic.constants import (
-        LATEST_ANDROID_RELEASE_JSON_FILE,
-        LATEST_FIRMWARE_RELEASE_JSON_FILE,
-    )
-
     release_type_lower = release_type.lower()
     if "android" in release_type_lower:
         return LATEST_ANDROID_RELEASE_JSON_FILE
@@ -1199,7 +1252,7 @@ def _get_prerelease_patterns(config: dict) -> list[str]:
     return extract_patterns
 
 
-def update_prerelease_tracking(prerelease_dir, latest_release_tag, current_prerelease):
+def update_prerelease_tracking(latest_release_tag, current_prerelease):
     """
     Update or create prerelease_tracking.json to record a single prerelease commit.
 
@@ -1208,7 +1261,6 @@ def update_prerelease_tracking(prerelease_dir, latest_release_tag, current_prere
     interface for single-directory updates.
 
     Parameters:
-        prerelease_dir (str): Path to the prerelease directory (parent for prerelease_tracking.json).
         latest_release_tag (str): Latest official release tag used to determine whether to reset tracking.
         current_prerelease (str): Name of the current prerelease directory (used to extract the prerelease commit).
 
@@ -1216,13 +1268,13 @@ def update_prerelease_tracking(prerelease_dir, latest_release_tag, current_prere
          int: Number of tracked prerelease commits actually persisted to disk (0 on write failure).
     """
     result = _update_tracking_with_newest_prerelease(
-        prerelease_dir, latest_release_tag, current_prerelease
+        latest_release_tag, current_prerelease
     )
     return result if result is not None else 0
 
 
 def _update_tracking_with_newest_prerelease(
-    prerelease_dir: str, latest_release_tag: str, newest_prerelease_dir: str
+    latest_release_tag: str, newest_prerelease_dir: str
 ) -> Optional[int]:
     """
     Update prerelease_tracking.json by recording the newest prerelease identifier.
@@ -1234,7 +1286,6 @@ def _update_tracking_with_newest_prerelease(
     If the official release tag changes, tracked prerelease IDs are reset to start fresh for the new release.
 
     Parameters:
-        prerelease_dir (str): Directory containing prerelease_tracking.json.
         latest_release_tag (str): Current official release tag; when this differs from the stored release, tracked prerelease IDs are reset.
         newest_prerelease_dir (str): Newest prerelease directory name to process; entries without a commit are ignored.
 
@@ -1384,7 +1435,7 @@ def matches_extract_patterns(filename, extract_patterns, device_manager=None):
     return False
 
 
-def get_prerelease_tracking_info(prerelease_dir):
+def get_prerelease_tracking_info():
     """
     Return a summary of prerelease tracking data found in prerelease_tracking.json within the cache directory.
 
@@ -2474,7 +2525,7 @@ def check_for_prereleases(
 
     # Update tracking information if files were downloaded
     if files_downloaded or force_refresh:
-        update_prerelease_tracking(prerelease_base_dir, latest_release_tag, remote_dir)
+        update_prerelease_tracking(latest_release_tag, remote_dir)
 
     # Only clean up old prerelease directories if we successfully downloaded files
     # or if the remote_dir already existed locally (to prevent deleting last good prerelease)
@@ -3012,7 +3063,7 @@ def _process_firmware_downloads(
         # Read latest release tag (supports both legacy and JSON formats)
         firmware_json_file = os.path.join(
             os.path.dirname(paths_and_urls["latest_firmware_release_file"]),
-            "latest_firmware_release.json",
+            LATEST_FIRMWARE_RELEASE_JSON_FILE,
         )
         latest_release_tag = _read_latest_release_tag(
             paths_and_urls["latest_firmware_release_file"], firmware_json_file
@@ -3064,7 +3115,7 @@ def _process_firmware_downloads(
                 prerelease_dir = os.path.join(
                     paths_and_urls["download_dir"], "firmware", "prerelease"
                 )
-                tracking_info = get_prerelease_tracking_info(prerelease_dir)
+                tracking_info = get_prerelease_tracking_info()
                 if tracking_info:
                     count = tracking_info.get("prerelease_count", 0)
                     base_version = tracking_info.get("release", "unknown")
@@ -3765,7 +3816,6 @@ def check_and_download(
                     release_tag != saved_release_tag
                     and release_data == releases_to_download[0]
                 ):
-                    release_type_lower = release_type.lower()
                     json_basename = _get_json_release_basename(release_type)
                     json_file = os.path.join(
                         os.path.dirname(latest_release_file), json_basename
@@ -4351,21 +4401,28 @@ def _format_api_summary(summary: Dict[str, Any]) -> str:
     return ", ".join(log_parts)
 
 
-def _cleanup_legacy_files(config: Dict[str, Any]) -> None:
+def _cleanup_legacy_files(
+    config: Dict[str, Any], paths_and_urls: Dict[str, str]
+) -> None:
     """
     Remove legacy files - we fetch fresh data instead of migrating old data.
 
     Parameters:
         config (Dict[str, Any]): Configuration dictionary containing paths.
+        paths_and_urls (Dict[str, str]): Dictionary containing file paths and URLs.
     """
     try:
         # Clean up legacy files from download directories
         prerelease_dir = config.get("PRERELEASE_DIR")
         if prerelease_dir and os.path.exists(prerelease_dir):
-            # Remove legacy text tracking files
-            for filename in os.listdir(prerelease_dir):
-                if filename.endswith(".txt"):
-                    legacy_file = os.path.join(prerelease_dir, filename)
+            # Remove specific legacy text tracking files
+            legacy_files = [
+                PRERELEASE_COMMITS_LEGACY_FILE,
+                "prerelease_tracking.txt",  # Old tracking file name if different
+            ]
+            for filename in legacy_files:
+                legacy_file = os.path.join(prerelease_dir, filename)
+                if os.path.exists(legacy_file):
                     try:
                         os.remove(legacy_file)
                         logger.debug(
@@ -4377,20 +4434,23 @@ def _cleanup_legacy_files(config: Dict[str, Any]) -> None:
                         )
 
         # Remove legacy release files from download directories
-        for release_type in ["Firmware", "APK"]:
-            legacy_file = config.get(f"LATEST_{release_type.upper()}_RELEASE_FILE")
+        legacy_files_to_remove = {
+            "firmware": paths_and_urls.get("latest_firmware_release_file"),
+            "android": paths_and_urls.get("latest_android_release_file"),
+        }
+        for release_type, legacy_file in legacy_files_to_remove.items():
             if legacy_file and os.path.exists(legacy_file):
                 try:
                     os.remove(legacy_file)
                     logger.debug(
                         "Removed legacy %s release file: %s",
-                        release_type.lower(),
+                        release_type,
                         legacy_file,
                     )
                 except OSError as e:
                     logger.warning(
                         "Could not remove legacy %s file %s: %s",
-                        release_type.lower(),
+                        release_type,
                         legacy_file,
                         e,
                     )
@@ -4502,7 +4562,7 @@ def main(force_refresh: bool = False) -> None:
 
     # Clean up legacy files - we fetch fresh data instead of migrating old data
     logger.info("Cleaning up legacy files")
-    _cleanup_legacy_files(config)
+    _cleanup_legacy_files(config, paths_and_urls)
 
     if failed_firmware_list:
         logger.debug(f"Collected failed firmware downloads: {failed_firmware_list}")

@@ -317,9 +317,7 @@ def test_prerelease_tracking_functionality(
     assert len(set(tracking_data["commits"])) == len(tracking_data["commits"])
 
     # Test get_prerelease_tracking_info function
-    info = downloader.get_prerelease_tracking_info(
-        str(download_dir / "firmware" / "prerelease")
-    )
+    info = downloader.get_prerelease_tracking_info()
     expected_clean_version = (
         downloader._extract_clean_version(latest_release_tag) or latest_release_tag
     )
@@ -439,7 +437,7 @@ def test_prerelease_directory_cleanup(tmp_path, write_dummy_file):
                 )  # But directory is still tracked
 
             # And tracking JSON should reflect that commit
-            info = downloader.get_prerelease_tracking_info(str(prerelease_dir))
+            info = downloader.get_prerelease_tracking_info()
             assert "2.7.7.789abc" in info.get("commits", [])
 
     # Verify old directories were cleaned up
@@ -459,7 +457,7 @@ def test_get_prerelease_tracking_info_error_handling():
         with patch("fetchtastic.downloader._ensure_cache_dir") as mock_cache_dir:
             # Test with non-existent cache directory
             mock_cache_dir.return_value = str(prerelease_dir / "nonexistent")
-            result = get_prerelease_tracking_info(str(prerelease_dir))
+            result = get_prerelease_tracking_info()
             assert result == {}
 
             # Test with corrupted JSON tracking file
@@ -470,7 +468,7 @@ def test_get_prerelease_tracking_info_error_handling():
             tracking_file = cache_dir / "prerelease_tracking.json"
             tracking_file.write_bytes(b"\xff\xfe\x00\x00")  # Invalid UTF-8
 
-            result = get_prerelease_tracking_info(str(prerelease_dir))
+            result = get_prerelease_tracking_info()
             assert result == {}  # Should handle decode errors gracefully
 
 
@@ -492,9 +490,7 @@ def test_update_prerelease_tracking_error_handling():
 
             try:
                 # Should handle write errors gracefully and return count of existing commits
-                result = update_prerelease_tracking(
-                    "/some/dummy/dir", "v2.7.8", "firmware-2.7.9.abc123"
-                )
+                result = update_prerelease_tracking("v2.7.8", "firmware-2.7.9.abc123")
                 assert (
                     result == 0
                 )  # Should return actual persisted count (0 on failure)
