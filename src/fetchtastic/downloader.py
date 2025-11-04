@@ -3664,15 +3664,10 @@ def check_and_download(
                     and release_data == releases_to_download[0]
                 ):
                     # Use json_file calculated at function start
-                    if not _write_latest_release_tag(
-                        json_file, release_tag, release_type
-                    ):
-                        logger.warning(
-                            "Error updating latest release JSON: %s", json_file
-                        )
-                    else:
+                    if _write_latest_release_tag(json_file, release_tag, release_type):
                         logger.debug(
-                            f"Updated latest release tag to {release_tag} (complete release)"
+                            "Updated latest release tag to %s (complete release)",
+                            release_tag,
                         )
                 # Don't add to new_versions_available for already-complete releases
                 # This prevents showing already-downloaded releases as "new"
@@ -4008,15 +4003,11 @@ def check_and_download(
                 and latest_release_tag_val != saved_release_tag
             ):
                 # Use json_file calculated at function start
-                if not _write_latest_release_tag(
+                if _write_latest_release_tag(
                     json_file, latest_release_tag_val, release_type
                 ):
-                    logger.warning(
-                        "Error writing latest release tag to JSON: %s", json_file
-                    )
-                else:
                     logger.debug(
-                        f"Updated latest release tag to {latest_release_tag_val}"
+                        "Updated latest release tag to %s", latest_release_tag_val
                     )
         except (
             IndexError,
