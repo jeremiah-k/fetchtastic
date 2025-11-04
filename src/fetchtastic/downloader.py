@@ -667,7 +667,7 @@ def _read_latest_release_tag(json_file: str) -> Optional[str]:
                 data = json.load(f)
                 version = data.get("latest_version")
                 return version if version else None
-        except (IOError, json.JSONDecodeError, KeyError) as e:
+        except (IOError, json.JSONDecodeError) as e:
             logger.debug(
                 "Could not read release tag from JSON file %s: %s", json_file, e
             )
@@ -688,12 +688,25 @@ def _write_latest_release_tag(
     Returns:
         bool: True if write succeeded, False otherwise.
     """
+    release_type_l = release_type.lower()
+    file_type_slug = (
+        "android"
+        if "android" in release_type_l
+        else (
+            "firmware"
+            if "firmware" in release_type_l
+            else release_type_l.replace(" ", "_")
+        )
+    )
     data = {
         "latest_version": version_tag,
-        "file_type": release_type.lower(),
+        "file_type": file_type_slug,
         "last_updated": datetime.now(timezone.utc).isoformat(),
     }
-    return _atomic_write_json(json_file, data)
+    success = _atomic_write_json(json_file, data)
+    if not success:
+        logger.warning("Failed to write latest release tag to JSON file: %s", json_file)
+    return success
 
 
 def _ensure_v_prefix_if_missing(version: Optional[str]) -> Optional[str]:

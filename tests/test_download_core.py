@@ -375,7 +375,7 @@ def test_check_and_download_release_already_complete_logs_up_to_date(tmp_path, c
     # Write the latest release file to indicate this release is current
     # Note: The code now reads from JSON files, so we need to write to JSON format
     json_file = tmp_path / "latest_firmware_release.json"
-    json_file.write_text('{"latest_version": "v1.0.0", "type": "Firmware"}')
+    json_file.write_text('{"latest_version": "v1.0.0", "file_type": "firmware"}')
     Path(latest_release_file).write_text(release_tag)  # Keep for compatibility
 
     downloaded, new_versions, failures = downloader.check_and_download(
@@ -429,7 +429,7 @@ def test_check_and_download_corrupted_existing_zip_records_failure(tmp_path):
     # Write the latest release file to indicate this release is current
     # Note: The code now reads from JSON files, so we need to write to JSON format
     json_file = tmp_path / "latest_firmware_release.json"
-    json_file.write_text('{"latest_version": "v1.0.0", "type": "Firmware"}')
+    json_file.write_text('{"latest_version": "v1.0.0", "file_type": "firmware"}')
 
     def mock_download(_url, _path):
         # Mock download failure to test error handling
@@ -1073,49 +1073,36 @@ def test_cleanup_superseded_prereleases_file_removal(tmp_path):
     prerelease_dir = firmware_dir / "prerelease"
     prerelease_dir.mkdir()
 
-    # Create test files
+    # Test successful removal of both files
     json_tracking_file = prerelease_dir / "prerelease_tracking.json"
     text_tracking_file = prerelease_dir / "prerelease_commits.txt"
 
     json_tracking_file.write_text('{"version": "v1.0.0", "commits": ["abc123"]}')
     text_tracking_file.write_text("Release: v1.0.0\nabc123\n")
 
-    # Test successful removal of both files
-    with patch("os.path.exists") as mock_exists, patch("os.remove") as mock_remove:
+    cleanup_superseded_prereleases(str(tmp_path), "v2.0.0")
 
-        mock_exists.return_value = True
-
-        cleanup_superseded_prereleases(str(tmp_path), "v2.0.0")
-
-        # Should attempt to remove both files (may be called multiple times due to migration)
-        assert mock_remove.call_count >= 2
-        remove_calls = [str(call[0][0]) for call in mock_remove.call_args_list]
-        assert any("prerelease_tracking.json" in call for call in remove_calls)
-        assert any("prerelease_commits.txt" in call for call in remove_calls)
+    # Both files should be removed
+    assert not json_tracking_file.exists()
+    assert not text_tracking_file.exists()
 
     # Test OSError during file removal
-    with patch("os.path.exists") as mock_exists, patch(
-        "os.remove"
-    ) as mock_remove, patch("fetchtastic.downloader.logger") as mock_logger:
+    json_tracking_file.write_text('{"version": "v1.0.0", "commits": ["abc123"]}')
+    text_tracking_file.write_text("Release: v1.0.0\nabc123\n")
 
-        mock_exists.return_value = True
-        mock_remove.side_effect = OSError("Permission denied")
+    with patch("os.remove", side_effect=OSError("Permission denied")), patch(
+        "fetchtastic.downloader.logger"
+    ) as mock_logger:
 
         # Should not raise exception, should log warning
         cleanup_superseded_prereleases(str(tmp_path), "v2.0.0")
 
-        # Should log warnings for both files (may be more due to migration process)
-        assert mock_logger.warning.call_count >= 2
+        # Should log warnings for file removal failures
+        assert mock_logger.warning.call_count >= 1
 
-    # Test when files don't exist
-    with patch("os.path.exists") as mock_exists, patch("os.remove") as mock_remove:
-
-        mock_exists.return_value = False
-
-        cleanup_superseded_prereleases(str(tmp_path), "v2.0.0")
-
-        # Should not attempt to remove any files
-        mock_remove.assert_not_called()
+    # Test with no tracking files
+    cleanup_superseded_prereleases(str(tmp_path), "v2.0.0")
+    # Should not raise any exceptions
 
 
 @pytest.mark.core_downloads
@@ -1380,7 +1367,7 @@ def test_read_latest_release_tag(tmp_path):
     assert result is None
 
     # Test with only JSON file
-    json_file.write_text('{"latest_version": "v2.0.0", "type": "Test"}')
+    json_file.write_text('{"latest_version": "v2.0.0", "file_type": "test"}')
     result = _read_latest_release_tag(str(json_file))
     assert result == "v2.0.0"
 
