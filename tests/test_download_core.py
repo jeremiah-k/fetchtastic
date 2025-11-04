@@ -1117,9 +1117,12 @@ def test_migrate_legacy_text_tracking_file(tmp_path):
     # Test with outdated legacy file (should be removed, not migrated)
     import time
 
+    from fetchtastic.constants import MAX_LEGACY_FILE_AGE_DAYS
+
     text_file.write_text("Release: v1.0.0\nabc123\n")
-    # Set file modification time to 10 days ago
-    old_time = time.time() - (10 * 24 * 60 * 60)  # 10 days ago
+    # Set file modification time to older than configured threshold
+    days_old = MAX_LEGACY_FILE_AGE_DAYS + 3
+    old_time = time.time() - (days_old * 24 * 60 * 60)
     os.utime(text_file, (old_time, old_time))
 
     result = _migrate_legacy_text_tracking_file(str(tmp_path))
@@ -1129,7 +1132,7 @@ def test_migrate_legacy_text_tracking_file(tmp_path):
 
 
 @pytest.mark.core_downloads
-def test_cleanup_superseded_prereleases_file_removal(tmp_path, mocker):
+def test_cleanup_superseded_prereleases_file_removal(tmp_path):
     """Test file removal logic in cleanup_superseded_prereleases with various scenarios."""
     from unittest.mock import patch
 
@@ -1222,7 +1225,7 @@ def test_cleanup_superseded_prereleases_file_removal_edge_cases(tmp_path):
 
 
 @pytest.mark.core_downloads
-def test_migrate_legacy_text_tracking_file_edge_cases(tmp_path, mocker):
+def test_migrate_legacy_text_tracking_file_edge_cases(tmp_path):
     """Test edge cases for _migrate_legacy_text_tracking_file."""
     import json
     from unittest.mock import patch

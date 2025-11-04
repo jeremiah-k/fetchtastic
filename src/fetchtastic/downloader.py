@@ -714,11 +714,21 @@ def _migrate_legacy_text_tracking_file(prerelease_dir: str) -> bool:
 
         if not lines:
             # Empty file, just remove it
-            os.remove(text_file)
-            logger.debug("Removed empty legacy prerelease tracking file: %s", text_file)
+            try:
+                os.remove(text_file)
+                logger.debug(
+                    "Removed empty legacy prerelease tracking file: %s", text_file
+                )
+            except OSError as e:
+                logger.warning(
+                    "Could not remove empty legacy prerelease tracking file %s: %s",
+                    text_file,
+                    e,
+                )
+                return False
             return True
 
-        # Parse the old format
+        # Parse old format
         if lines[0].startswith("Release: "):
             current_release = lines[0][9:]  # Remove "Release: " prefix
             commits_raw = lines[1:]
@@ -743,20 +753,26 @@ def _migrate_legacy_text_tracking_file(prerelease_dir: str) -> bool:
 
         if _atomic_write(json_file, write_json_data, ".json"):
             # Successfully wrote JSON, now remove old text file
-            os.remove(text_file)
-            logger.info(
-                "Migrated legacy prerelease tracking from text to JSON format: %s → %s",
-                text_file,
-                json_file,
-            )
+            try:
+                os.remove(text_file)
+                logger.info(
+                    "Migrated legacy prerelease tracking from text to JSON format: %s → %s",
+                    text_file,
+                    json_file,
+                )
+            except OSError as e:
+                logger.warning(
+                    "Failed to remove migrated legacy text file %s: %s", text_file, e
+                )
+                return False
             return True
         else:
             logger.warning("Failed to write migrated JSON data, keeping old text file")
             return False
 
-    except (IOError, UnicodeDecodeError, OSError) as e:
+    except (IOError, UnicodeDecodeError) as e:
         logger.warning(
-            "Failed to migrate legacy prerelease tracking file %s: %s", text_file, e
+            "Failed to read legacy prerelease tracking file %s: %s", text_file, e
         )
         return False
 
@@ -776,7 +792,7 @@ def _migrate_legacy_release_file(
         file_type (str): Type of file for logging (e.g., "Android", "Firmware").
 
     Returns:
-        bool: True if migration succeeded or file was already migrated, False otherwise.
+        bool: True when legacy file was removed or successfully migrated; False when no legacy file existed or migration/cleanup failed.
     """
     file_type_lower = file_type.lower()
 
@@ -831,10 +847,18 @@ def _migrate_legacy_release_file(
 
         if not version_tag:
             # Empty file, just remove it
-            os.remove(legacy_file)
-            logger.debug(
-                "Removed empty legacy %s release file: %s", file_type_lower, legacy_file
-            )
+            try:
+                os.remove(legacy_file)
+                logger.debug(
+                    "Removed empty legacy %s release file: %s",
+                    file_type_lower,
+                    legacy_file,
+                )
+            except OSError as e:
+                logger.warning(
+                    "Could not remove empty legacy release file %s: %s", legacy_file, e
+                )
+                return False
             return True
 
         # Create new JSON format data
@@ -850,13 +874,19 @@ def _migrate_legacy_release_file(
 
         if _atomic_write(json_file, write_json_data, ".json"):
             # Successfully wrote JSON, now remove old text file
-            os.remove(legacy_file)
-            logger.info(
-                "Migrated legacy %s release tracking from text to JSON format: %s → %s",
-                file_type_lower,
-                legacy_file,
-                json_file,
-            )
+            try:
+                os.remove(legacy_file)
+                logger.info(
+                    "Migrated legacy %s release tracking from text to JSON format: %s → %s",
+                    file_type_lower,
+                    legacy_file,
+                    json_file,
+                )
+            except OSError as e:
+                logger.warning(
+                    "Failed to remove migrated legacy file %s: %s", legacy_file, e
+                )
+                return False
             return True
         else:
             logger.warning(
@@ -865,9 +895,9 @@ def _migrate_legacy_release_file(
             )
             return False
 
-    except (IOError, UnicodeDecodeError, OSError) as e:
+    except (IOError, UnicodeDecodeError) as e:
         logger.warning(
-            "Failed to migrate legacy %s release file %s: %s",
+            "Failed to read legacy %s release file %s: %s",
             file_type_lower,
             legacy_file,
             e,
@@ -3773,10 +3803,17 @@ def check_and_download(
     real_download_base = os.path.realpath(download_dir_path)
 
     # Read saved release tag (supports both legacy and JSON formats)
-    json_file = os.path.join(
-        os.path.dirname(latest_release_file),
-        f"latest_{release_type.lower()}_release.json",
+    release_type_lower = release_type.lower()
+    json_basename = (
+        "latest_android_release.json"
+        if "android" in release_type_lower
+        else (
+            "latest_firmware_release.json"
+            if "firmware" in release_type_lower
+            else "latest_release.json"
+        )
     )
+    json_file = os.path.join(os.path.dirname(latest_release_file), json_basename)
     saved_raw_tag = _read_latest_release_tag(latest_release_file, json_file)
     saved_release_tag = (
         _sanitize_path_component(saved_raw_tag) if saved_raw_tag else None
@@ -3850,9 +3887,18 @@ def check_and_download(
                     release_tag != saved_release_tag
                     and release_data == releases_to_download[0]
                 ):
+                    release_type_lower = release_type.lower()
+                    json_basename = (
+                        "latest_android_release.json"
+                        if "android" in release_type_lower
+                        else (
+                            "latest_firmware_release.json"
+                            if "firmware" in release_type_lower
+                            else "latest_release.json"
+                        )
+                    )
                     json_file = os.path.join(
-                        os.path.dirname(latest_release_file),
-                        f"latest_{release_type.lower()}_release.json",
+                        os.path.dirname(latest_release_file), json_basename
                     )
                     if not _write_latest_release_tag(
                         latest_release_file, json_file, release_tag, release_type
@@ -4204,9 +4250,18 @@ def check_and_download(
                 latest_release_tag_val is not None
                 and latest_release_tag_val != saved_release_tag
             ):
+                release_type_lower = release_type.lower()
+                json_basename = (
+                    "latest_android_release.json"
+                    if "android" in release_type_lower
+                    else (
+                        "latest_firmware_release.json"
+                        if "firmware" in release_type_lower
+                        else "latest_release.json"
+                    )
+                )
                 json_file = os.path.join(
-                    os.path.dirname(latest_release_file),
-                    f"latest_{release_type.lower()}_release.json",
+                    os.path.dirname(latest_release_file), json_basename
                 )
                 if not _write_latest_release_tag(
                     latest_release_file, json_file, latest_release_tag_val, release_type

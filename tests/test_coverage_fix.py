@@ -34,7 +34,7 @@ def populated_releases_cache():
     downloader_module._releases_cache_loaded = original_loaded
 
 
-def test_token_warning_lines_coverage():
+def test_token_warning_lines_coverage(tmp_path):
     """Direct test to cover token warning lines in main function."""
     with patch("fetchtastic.downloader._initial_setup_and_config") as mock_setup, patch(
         "fetchtastic.downloader._check_wifi_connection"
@@ -54,7 +54,7 @@ def test_token_warning_lines_coverage():
             False,  # update_available
             {
                 "firmware_releases_url": "https://api.github.com/repos/meshtastic/firmware/releases",
-                "download_dir": "/tmp/test_download",
+                "download_dir": str(tmp_path / "download"),
             },
         )
 
@@ -195,7 +195,7 @@ def test_api_fetch_logging_lines_coverage():
         downloader_module._releases_cache_loaded = original_cache_loaded
 
 
-def test_main_function_full_coverage():
+def test_main_function_full_coverage(tmp_path):
     """
     Exercise downloader.main to cover cache-clearing and device manager cleanup paths.
 
@@ -223,7 +223,7 @@ def test_main_function_full_coverage():
             False,  # update_available
             {
                 "firmware_releases_url": "https://api.github.com/repos/meshtastic/firmware/releases",
-                "download_dir": "/tmp/test_download",
+                "download_dir": str(tmp_path / "download"),
             },
         )
 
