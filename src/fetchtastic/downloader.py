@@ -2808,7 +2808,7 @@ def _process_firmware_downloads(
         if fw_downloaded:
             logger.info(f"Downloaded Firmware versions: {', '.join(fw_downloaded)}")
 
-        # Read latest release tag (supports both legacy and JSON formats)
+        # Read latest release tag from the JSON tracking file
         firmware_json_file = os.path.join(
             os.path.dirname(paths_and_urls["latest_firmware_release_file"]),
             LATEST_FIRMWARE_RELEASE_JSON_FILE,
@@ -3487,7 +3487,7 @@ def check_and_download(
 
     real_download_base = os.path.realpath(download_dir_path)
 
-    # Read saved release tag (supports both legacy and JSON formats)
+    # Read saved release tag from the JSON tracking file
     json_basename = _get_json_release_basename(release_type)
     json_file = os.path.join(os.path.dirname(latest_release_file), json_basename)
     saved_raw_tag = _read_latest_release_tag(json_file)
