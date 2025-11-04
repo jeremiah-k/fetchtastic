@@ -677,7 +677,11 @@ def _read_latest_release_tag(json_file: str) -> Optional[str]:
             with open(json_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 version = data.get("latest_version")
-                return version if version else None
+                return (
+                    version.strip()
+                    if isinstance(version, str) and version.strip()
+                    else None
+                )
         except (IOError, json.JSONDecodeError) as e:
             logger.debug(
                 "Could not read release tag from JSON file %s: %s", json_file, e
@@ -1147,7 +1151,7 @@ def _update_tracking_with_newest_prerelease(
     commit_hash = _get_commit_hash_from_dir(newest_prerelease_dir)
 
     # Write updated tracking data in new format
-    now_iso = datetime.now().astimezone().isoformat()
+    now_iso = datetime.now(timezone.utc).isoformat()
     new_tracking_data = {
         "version": _extract_clean_version(
             latest_release_tag
@@ -2813,12 +2817,6 @@ def _initial_setup_and_config() -> Tuple[
         "firmware_dir": firmware_dir,
         "apks_dir": apks_dir,
         "cache_dir": cache_dir,
-        "latest_android_release_file": os.path.join(
-            cache_dir, LATEST_ANDROID_RELEASE_FILE
-        ),
-        "latest_firmware_release_file": os.path.join(
-            cache_dir, LATEST_FIRMWARE_RELEASE_FILE
-        ),
         "android_releases_url": MESHTASTIC_ANDROID_RELEASES_URL,
         "firmware_releases_url": MESHTASTIC_FIRMWARE_RELEASES_URL,
     }
@@ -3668,10 +3666,7 @@ def check_and_download(
                 # Track that this release was already complete
                 already_complete_releases.add(release_tag)
                 # Update latest_release_file if this is the most recent release
-                if (
-                    release_tag != saved_release_tag
-                    and release_data == releases_to_download[0]
-                ):
+                if release_tag != saved_release_tag and idx == 1:
                     # Use json_file calculated at function start
                     if _write_latest_release_tag(json_file, release_tag, release_type):
                         logger.debug(
@@ -4112,11 +4107,11 @@ def check_extraction_needed(
         exclude_patterns (List[str]): Exclusion patterns; matching base filenames are ignored.
 
     Returns:
-        bool: `true` if at least one matched file in the ZIP is missing from `extract_dir` (extraction needed), `false` otherwise.
+        bool: True if at least one matched file in the ZIP is missing from `extract_dir` (extraction needed), False otherwise.
 
     Notes:
-        - If the ZIP is corrupted (`zipfile.BadZipFile`), the function attempts to remove the ZIP file and returns `false`.
-        - If an IO/OSError or another unexpected exception occurs while inspecting the ZIP, the function conservatively returns `true` (assumes extraction is needed).
+        - If the ZIP is corrupted (`zipfile.BadZipFile`), the function attempts to remove the ZIP file and returns False.
+        - If an IO/OSError or another unexpected exception occurs while inspecting the ZIP, the function conservatively returns True (assumes extraction is needed).
     """
     # Preserve historical behavior: empty list of patterns means "do not extract".
     if not patterns:
@@ -4266,6 +4261,7 @@ def _cleanup_legacy_files(
             # Remove specific legacy text tracking files
             legacy_files = [
                 PRERELEASE_COMMITS_LEGACY_FILE,
+                PRERELEASE_TRACKING_JSON_FILE,
             ]
             for filename in legacy_files:
                 legacy_file = os.path.join(prerelease_dir, filename)
