@@ -53,7 +53,8 @@ def test_token_warning_lines_coverage():
             "v0.8.0",  # latest_version
             False,  # update_available
             {
-                "firmware_releases_url": "https://api.github.com/repos/meshtastic/firmware/releases"
+                "firmware_releases_url": "https://api.github.com/repos/meshtastic/firmware/releases",
+                "download_dir": "/tmp/test_download",
             },
         )
 
@@ -216,12 +217,13 @@ def test_main_function_full_coverage():
 
         # Mock setup to return valid config
         mock_setup.return_value = (
-            {"GITHUB_TOKEN": "fake_token"},  # config with token
+            {"GITHUB_TOKEN": None},  # config
             "v0.8.0",  # current_version
             "v0.8.0",  # latest_version
             False,  # update_available
             {
-                "firmware_releases_url": "https://api.github.com/repos/meshtastic/firmware/releases"
+                "firmware_releases_url": "https://api.github.com/repos/meshtastic/firmware/releases",
+                "download_dir": "/tmp/test_download",
             },
         )
 

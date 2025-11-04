@@ -28,7 +28,8 @@ class TestTokenWarningFix:
             "v0.8.0",  # latest_version
             False,  # update_available
             {
-                "firmware_releases_url": "https://api.github.com/repos/meshtastic/firmware/releases"
+                "firmware_releases_url": "https://api.github.com/repos/meshtastic/firmware/releases",
+                "download_dir": "/tmp/test_download",
             },
         )
 

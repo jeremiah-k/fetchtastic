@@ -1651,7 +1651,9 @@ def test_write_latest_release_tag(tmp_path):
     json_file = tmp_path / "latest_test.json"
 
     # Test successful write
-    result = _write_latest_release_tag(str(legacy_file), str(json_file), "v3.0.0")
+    result = _write_latest_release_tag(
+        str(legacy_file), str(json_file), "v3.0.0", "Test"
+    )
     assert result is True
     assert not legacy_file.exists()
     assert json_file.exists()
@@ -1660,10 +1662,13 @@ def test_write_latest_release_tag(tmp_path):
         data = json.load(f)
     assert data["latest_version"] == "v3.0.0"
     assert "last_updated" in data
+    assert data["file_type"] == "test"
 
     # Test with existing legacy file (should be removed)
     legacy_file.write_text("old_version")
-    result = _write_latest_release_tag(str(legacy_file), str(json_file), "v3.1.0")
+    result = _write_latest_release_tag(
+        str(legacy_file), str(json_file), "v3.1.0", "Test"
+    )
     assert result is True
     assert not legacy_file.exists()
 
@@ -1677,6 +1682,8 @@ def test_write_latest_release_tag(tmp_path):
             False,
             True,
         ]  # First call fails, second succeeds
-        result = _write_latest_release_tag(str(legacy_file), str(json_file), "v3.2.0")
+        result = _write_latest_release_tag(
+            str(legacy_file), str(json_file), "v3.2.0", "Test"
+        )
         assert result is True  # Fallback should succeed
         # Note: Due to mocking, we can't check actual file content, but the function should return True

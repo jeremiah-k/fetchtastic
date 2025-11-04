@@ -446,27 +446,19 @@ def cleanup_superseded_prereleases(
                 (os.path.join(prerelease_dir, "prerelease_commits.txt"), True),
             ]:
                 if os.path.exists(file_path):
+                    file_type = "legacy prerelease" if is_legacy else "prerelease"
                     try:
                         os.remove(file_path)
-                        if is_legacy:
-                            logger.debug(
-                                "Removed legacy prerelease tracking file: %s", file_path
-                            )
-                        else:
-                            logger.debug(
-                                "Removed prerelease tracking file: %s", file_path
-                            )
+                        logger.debug(
+                            "Removed %s tracking file: %s", file_type, file_path
+                        )
                     except OSError as e:
-                        if is_legacy:
-                            logger.warning(
-                                "Could not remove legacy tracking file %s: %s",
-                                file_path,
-                                e,
-                            )
-                        else:
-                            logger.warning(
-                                "Could not remove tracking file %s: %s", file_path, e
-                            )
+                        logger.warning(
+                            "Could not remove %s tracking file %s: %s",
+                            file_type,
+                            file_path,
+                            e,
+                        )
 
     return cleaned_up
 
@@ -786,6 +778,8 @@ def _migrate_legacy_release_file(
     Returns:
         bool: True if migration succeeded or file was already migrated, False otherwise.
     """
+    file_type_lower = file_type.lower()
+
     if not os.path.exists(legacy_file):
         # No legacy file to migrate
         return False
@@ -794,7 +788,7 @@ def _migrate_legacy_release_file(
     if _is_legacy_file_too_old(legacy_file):
         logger.info(
             "Removing outdated legacy %s release file (older than %d days): %s",
-            file_type.lower(),
+            file_type_lower,
             MAX_LEGACY_FILE_AGE_DAYS,
             legacy_file,
         )
@@ -804,7 +798,7 @@ def _migrate_legacy_release_file(
         except OSError as e:
             logger.warning(
                 "Could not remove outdated legacy %s release file %s: %s",
-                file_type.lower(),
+                file_type_lower,
                 legacy_file,
                 e,
             )
@@ -813,18 +807,21 @@ def _migrate_legacy_release_file(
     if os.path.exists(json_file):
         # JSON file already exists, assume migration already done
         logger.debug(
-            f"{file_type} release tracking already in JSON format: {json_file}"
+            "%s release tracking already in JSON format: %s", file_type, json_file
         )
         # Remove legacy file if JSON exists
         try:
             os.remove(legacy_file)
             logger.debug(
-                f"Removed legacy {file_type.lower()} release file: {legacy_file}"
+                "Removed legacy %s release file: %s", file_type_lower, legacy_file
             )
             return True
         except OSError as e:
             logger.warning(
-                f"Could not remove legacy {file_type.lower()} release file {legacy_file}: {e}"
+                "Could not remove legacy %s release file %s: %s",
+                file_type_lower,
+                legacy_file,
+                e,
             )
             return False
 
@@ -836,7 +833,7 @@ def _migrate_legacy_release_file(
             # Empty file, just remove it
             os.remove(legacy_file)
             logger.debug(
-                f"Removed empty legacy {file_type.lower()} release file: {legacy_file}"
+                "Removed empty legacy %s release file: %s", file_type_lower, legacy_file
             )
             return True
 
@@ -844,7 +841,7 @@ def _migrate_legacy_release_file(
         migration_data = {
             "latest_version": version_tag,
             "last_updated": datetime.now(timezone.utc).isoformat(),
-            "file_type": file_type.lower(),
+            "file_type": file_type_lower,
         }
 
         # Write to new JSON format
@@ -855,18 +852,25 @@ def _migrate_legacy_release_file(
             # Successfully wrote JSON, now remove old text file
             os.remove(legacy_file)
             logger.info(
-                f"Migrated legacy {file_type.lower()} release tracking from text to JSON format: {legacy_file} → {json_file}"
+                "Migrated legacy %s release tracking from text to JSON format: %s → %s",
+                file_type_lower,
+                legacy_file,
+                json_file,
             )
             return True
         else:
             logger.warning(
-                f"Failed to write migrated {file_type.lower()} release JSON data, keeping old text file"
+                "Failed to write migrated %s release JSON data, keeping old text file",
+                file_type_lower,
             )
             return False
 
     except (IOError, UnicodeDecodeError, OSError) as e:
         logger.warning(
-            f"Failed to migrate legacy {file_type.lower()} release file {legacy_file}: {e}"
+            "Failed to migrate legacy %s release file %s: %s",
+            file_type_lower,
+            legacy_file,
+            e,
         )
         return False
 
@@ -941,7 +945,7 @@ def _read_latest_release_tag(legacy_file: str, json_file: str) -> Optional[str]:
 
 
 def _write_latest_release_tag(
-    legacy_file: str, json_file: str, version_tag: str
+    legacy_file: str, json_file: str, version_tag: str, release_type: str
 ) -> bool:
     """
     Write the latest release tag in JSON format.
@@ -950,6 +954,7 @@ def _write_latest_release_tag(
         legacy_file (str): Path to the legacy text file.
         json_file (str): Path to the JSON file.
         version_tag (str): The version tag to write.
+        release_type (str): The type of release (e.g., "Firmware", "Android APK").
 
     Returns:
         bool: True if write succeeded, False otherwise.
@@ -957,6 +962,7 @@ def _write_latest_release_tag(
     migration_data = {
         "latest_version": version_tag,
         "last_updated": datetime.now(timezone.utc).isoformat(),
+        "file_type": release_type.lower(),
     }
 
     def write_json_data(f):
@@ -3034,9 +3040,6 @@ def _process_firmware_downloads(
     latest_firmware_version: Optional[str] = None
     latest_prerelease_version: Optional[str] = None
 
-    # Migrate all legacy tracking files to JSON format
-    _migrate_all_legacy_tracking_files(paths_and_urls["download_dir"])
-
     if config.get("SAVE_FIRMWARE", False) and config.get(
         "SELECTED_FIRMWARE_ASSETS", []
     ):
@@ -3194,9 +3197,6 @@ def _process_apk_downloads(
         []
     )  # Initialize all_failed_apk_downloads
     latest_apk_version: Optional[str] = None
-
-    # Migrate all legacy tracking files to JSON format
-    _migrate_all_legacy_tracking_files(paths_and_urls["download_dir"])
 
     if config.get("SAVE_APKS", False) and config.get("SELECTED_APK_ASSETS", []):
         latest_android_releases: List[Dict[str, Any]] = _get_latest_releases_data(
@@ -3855,7 +3855,7 @@ def check_and_download(
                         f"latest_{release_type.lower()}_release.json",
                     )
                     if not _write_latest_release_tag(
-                        latest_release_file, json_file, release_tag
+                        latest_release_file, json_file, release_tag, release_type
                     ):
                         logger.warning(
                             f"Error updating latest release file: {latest_release_file}"
@@ -4162,7 +4162,10 @@ def check_and_download(
                                 f"latest_{release_type.lower()}_release.json",
                             )
                             if _write_latest_release_tag(
-                                latest_release_file, json_file, release_tag
+                                latest_release_file,
+                                json_file,
+                                release_tag,
+                                release_type,
                             ):
                                 saved_release_tag = release_tag
                                 logger.debug(
@@ -4206,7 +4209,7 @@ def check_and_download(
                     f"latest_{release_type.lower()}_release.json",
                 )
                 if not _write_latest_release_tag(
-                    latest_release_file, json_file, latest_release_tag_val
+                    latest_release_file, json_file, latest_release_tag_val, release_type
                 ):
                     logger.warning(
                         f"Error writing latest release tag to {latest_release_file}"
@@ -4471,6 +4474,9 @@ def main(force_refresh: bool = False) -> None:
         device_manager.clear_cache()
 
     _check_wifi_connection(config)
+
+    # Migrate all legacy tracking files to JSON format once
+    _migrate_all_legacy_tracking_files(paths_and_urls["download_dir"])
 
     downloaded_firmwares: List[str]
     new_firmware_versions: List[str]
