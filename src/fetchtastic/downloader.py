@@ -750,7 +750,7 @@ def _matches_exclude(name: str, patterns: List[str]) -> bool:
         patterns (List[str]): Glob-style exclude patterns to match against (case-insensitive).
 
     Returns:
-        `true` if `name` matches any pattern in `patterns`, `false` otherwise.
+        bool: True if `name` matches any pattern in `patterns`, False otherwise.
     """
     name_l = name.lower()
     return any(fnmatch.fnmatch(name_l, p.lower()) for p in patterns)
@@ -879,7 +879,8 @@ def _parse_new_json_format(
     # Validate commits_raw is a list to prevent data corruption
     if not isinstance(commits_raw, list):
         logger.warning(
-            f"Invalid commits format in tracking file: expected list, got {type(commits_raw)}. Resetting commits."
+            "Invalid commits format in tracking file: expected list, got %s. Resetting commits.",
+            type(commits_raw).__name__,
         )
         commits_raw = []
 
@@ -892,7 +893,8 @@ def _parse_new_json_format(
                 commits.append(normalized)
         else:
             logger.warning(
-                f"Invalid commit entry in tracking file: expected str, got {type(commit)}. Skipping."
+                "Invalid commit entry in tracking file: expected str, got %s. Skipping.",
+                type(commit).__name__,
             )
 
     # Ensure uniqueness while preserving order
@@ -927,7 +929,8 @@ def _parse_legacy_json_format(
     # Validate commits_raw is a list to prevent data corruption
     if not isinstance(commits_raw, list):
         logger.warning(
-            f"Invalid commits format in legacy tracking file: expected list, got {type(commits_raw).__name__}. Resetting commits."
+            "Invalid commits format in legacy tracking file: expected list, got %s. Resetting commits.",
+            type(commits_raw).__name__,
         )
         commits_raw = []
 
@@ -1122,7 +1125,9 @@ def _update_tracking_with_newest_prerelease(
     clean_latest_release = _extract_clean_version(latest_release_tag)
     if existing_release and existing_release != clean_latest_release:
         logger.info(
-            f"New release {latest_release_tag} detected (previously tracking {existing_release}). Resetting prerelease tracking."
+            "New release %s detected (previously tracking %s). Resetting prerelease tracking.",
+            latest_release_tag,
+            existing_release,
         )
         existing_commits = []
 
@@ -1132,7 +1137,7 @@ def _update_tracking_with_newest_prerelease(
     # Only update if it's a new prerelease ID
     if not is_new_id:
         logger.debug(
-            f"Prerelease {new_prerelease_id} already tracked, no update needed"
+            "Prerelease %s already tracked, no update needed", new_prerelease_id
         )
         return len(existing_commits)
 
@@ -1158,7 +1163,9 @@ def _update_tracking_with_newest_prerelease(
         return None  # Return None on write failure
 
     logger.info(
-        f"Prerelease tracking updated: {len(updated_commits)} prerelease IDs tracked, latest: {new_prerelease_id}"
+        "Prerelease tracking updated: %d prerelease IDs tracked, latest: %s",
+        len(updated_commits),
+        new_prerelease_id,
     )
     return len(updated_commits)
 
@@ -1814,7 +1821,7 @@ def _load_commit_cache() -> None:
                     )
                     continue
 
-                timestamp_str, cached_at_str = cache_value
+                _timestamp_str, cached_at_str = cache_value
                 cached_at = datetime.fromisoformat(cached_at_str.replace("Z", "+00:00"))
 
                 # Check if entry is still valid (not expired)
@@ -2922,8 +2929,7 @@ def _process_firmware_downloads(
 
         # Read latest release tag from the JSON tracking file
         firmware_json_file = os.path.join(
-            os.path.dirname(paths_and_urls["latest_firmware_release_file"]),
-            LATEST_FIRMWARE_RELEASE_JSON_FILE,
+            paths_and_urls["cache_dir"], LATEST_FIRMWARE_RELEASE_JSON_FILE
         )
         latest_release_tag = _read_latest_release_tag(firmware_json_file)
 
