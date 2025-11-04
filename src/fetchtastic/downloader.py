@@ -42,12 +42,16 @@ from fetchtastic.constants import (
     GITHUB_API_BASE,
     GITHUB_API_TIMEOUT,
     LATEST_ANDROID_RELEASE_FILE,
+    LATEST_ANDROID_RELEASE_JSON_FILE,
     LATEST_FIRMWARE_RELEASE_FILE,
+    LATEST_FIRMWARE_RELEASE_JSON_FILE,
     MAX_CONCURRENT_TIMESTAMP_FETCHES,
     MESHTASTIC_ANDROID_RELEASES_URL,
     MESHTASTIC_FIRMWARE_RELEASES_URL,
     NTFY_REQUEST_TIMEOUT,
+    PRERELEASE_COMMITS_LEGACY_FILE,
     PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
+    PRERELEASE_TRACKING_JSON_FILE,
     RELEASE_SCAN_COUNT,
     RELEASES_CACHE_EXPIRY_HOURS,
     SHELL_SCRIPT_EXTENSION,
@@ -433,13 +437,13 @@ def cleanup_superseded_prereleases(
         if not remaining_prereleases:
             # Remove tracking files since no prereleases remain
             json_tracking_file = os.path.join(
-                prerelease_dir, "prerelease_tracking.json"
+                prerelease_dir, PRERELEASE_TRACKING_JSON_FILE
             )
 
             # Remove tracking files (both JSON and legacy text)
             for file_path, is_legacy in [
                 (json_tracking_file, False),
-                (os.path.join(prerelease_dir, "prerelease_commits.txt"), True),
+                (os.path.join(prerelease_dir, PRERELEASE_COMMITS_LEGACY_FILE), True),
             ]:
                 if os.path.exists(file_path):
                     file_type = "legacy prerelease" if is_legacy else "prerelease"
@@ -892,6 +896,29 @@ def _matches_exclude(name: str, patterns: List[str]) -> bool:
     return any(fnmatch.fnmatch(name_l, p.lower()) for p in patterns)
 
 
+def _get_json_release_basename(release_type: str) -> str:
+    """
+    Get the appropriate JSON basename for a given release type.
+
+    Args:
+        release_type: The release type (e.g., "Android APK", "Firmware")
+
+    Returns:
+        The JSON basename (e.g., "latest_android_release.json")
+    """
+    from fetchtastic.constants import (
+        LATEST_ANDROID_RELEASE_JSON_FILE,
+        LATEST_FIRMWARE_RELEASE_JSON_FILE,
+    )
+
+    release_type_lower = release_type.lower()
+    if "android" in release_type_lower:
+        return LATEST_ANDROID_RELEASE_JSON_FILE
+    if "firmware" in release_type_lower:
+        return LATEST_FIRMWARE_RELEASE_JSON_FILE
+    return "latest_release.json"
+
+
 def _normalize_commit_identifier(commit_id: str, release_version: Optional[str]) -> str:
     """
     Normalize a commit identifier to version+hash format for consistency.
@@ -1220,7 +1247,7 @@ def _update_tracking_with_newest_prerelease(
     if not newest_prerelease_dir:
         return 0
 
-    tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
+    tracking_file = os.path.join(prerelease_dir, PRERELEASE_TRACKING_JSON_FILE)
 
     # Extract single prerelease version and hash from directory name
     # Validate that directory name follows expected pattern: firmware-<version>
@@ -1371,7 +1398,7 @@ def get_prerelease_tracking_info(prerelease_dir):
             - "last_updated" (str | None): ISO 8601 timestamp of the last update, or None.
             - "latest_prerelease" (str | None): Most recent prerelease identifier from `commits`, or None.
     """
-    tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
+    tracking_file = os.path.join(prerelease_dir, PRERELEASE_TRACKING_JSON_FILE)
     commits, release, last_updated = _read_prerelease_tracking_data(tracking_file)
     if not commits and not release:
         return {}
@@ -3663,16 +3690,7 @@ def check_and_download(
     real_download_base = os.path.realpath(download_dir_path)
 
     # Read saved release tag (supports both legacy and JSON formats)
-    release_type_lower = release_type.lower()
-    json_basename = (
-        "latest_android_release.json"
-        if "android" in release_type_lower
-        else (
-            "latest_firmware_release.json"
-            if "firmware" in release_type_lower
-            else "latest_release.json"
-        )
-    )
+    json_basename = _get_json_release_basename(release_type)
     json_file = os.path.join(os.path.dirname(latest_release_file), json_basename)
     saved_raw_tag = _read_latest_release_tag(latest_release_file, json_file)
     saved_release_tag = (
@@ -3748,15 +3766,7 @@ def check_and_download(
                     and release_data == releases_to_download[0]
                 ):
                     release_type_lower = release_type.lower()
-                    json_basename = (
-                        "latest_android_release.json"
-                        if "android" in release_type_lower
-                        else (
-                            "latest_firmware_release.json"
-                            if "firmware" in release_type_lower
-                            else "latest_release.json"
-                        )
-                    )
+                    json_basename = _get_json_release_basename(release_type)
                     json_file = os.path.join(
                         os.path.dirname(latest_release_file), json_basename
                     )
@@ -4065,7 +4075,7 @@ def check_and_download(
                         if idx == 1:
                             json_file = os.path.join(
                                 os.path.dirname(latest_release_file),
-                                f"latest_{release_type.lower()}_release.json",
+                                _get_json_release_basename(release_type),
                             )
                             if _write_latest_release_tag(
                                 latest_release_file,
@@ -4110,16 +4120,7 @@ def check_and_download(
                 latest_release_tag_val is not None
                 and latest_release_tag_val != saved_release_tag
             ):
-                release_type_lower = release_type.lower()
-                json_basename = (
-                    "latest_android_release.json"
-                    if "android" in release_type_lower
-                    else (
-                        "latest_firmware_release.json"
-                        if "firmware" in release_type_lower
-                        else "latest_release.json"
-                    )
-                )
+                json_basename = _get_json_release_basename(release_type)
                 json_file = os.path.join(
                     os.path.dirname(latest_release_file), json_basename
                 )
