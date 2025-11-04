@@ -2800,15 +2800,17 @@ def _initial_setup_and_config() -> Tuple[
                 # Depending on severity, might want to return None or raise error
                 # For now, log and continue, some functionality might be impaired.
 
+    cache_dir = _ensure_cache_dir()
     paths_and_urls: Dict[str, str] = {
         "download_dir": download_dir,
         "firmware_dir": firmware_dir,
         "apks_dir": apks_dir,
+        "cache_dir": cache_dir,
         "latest_android_release_file": os.path.join(
-            _ensure_cache_dir(), LATEST_ANDROID_RELEASE_FILE
+            cache_dir, LATEST_ANDROID_RELEASE_FILE
         ),
         "latest_firmware_release_file": os.path.join(
-            _ensure_cache_dir(), LATEST_FIRMWARE_RELEASE_FILE
+            cache_dir, LATEST_FIRMWARE_RELEASE_FILE
         ),
         "android_releases_url": MESHTASTIC_ANDROID_RELEASES_URL,
         "firmware_releases_url": MESHTASTIC_FIRMWARE_RELEASES_URL,
@@ -2897,7 +2899,7 @@ def _process_firmware_downloads(
         fw_downloaded, fw_new_versions, failed_fw_downloads_details = (
             check_and_download(  # Corrected unpacking
                 latest_firmware_releases,
-                paths_and_urls["latest_firmware_release_file"],
+                paths_and_urls["cache_dir"],
                 "Firmware",
                 paths_and_urls["firmware_dir"],
                 config.get(
@@ -3049,7 +3051,7 @@ def _process_apk_downloads(
         apk_downloaded, apk_new_versions_list, failed_apk_downloads_details = (
             check_and_download(  # Unpack 3 values
                 latest_android_releases,
-                paths_and_urls["latest_android_release_file"],
+                paths_and_urls["cache_dir"],
                 "Android APK",
                 paths_and_urls["apks_dir"],
                 config.get(
@@ -3530,7 +3532,7 @@ def _is_release_complete(
 
 def check_and_download(
     releases: List[Dict[str, Any]],
-    latest_release_file: str,
+    cache_dir: str,
     release_type: str,
     download_dir_path: str,
     versions_to_keep: int,
@@ -3548,16 +3550,16 @@ def check_and_download(
     - Schedules and downloads assets that match `selected_patterns` (if provided) and do not match `exclude_patterns`.
     - Optionally extracts files from ZIP assets when `auto_extract` is True and `release_type == "Firmware"`, using `extract_patterns` to select files.
     - Writes release notes, sets executable bits on shell scripts, and prunes old release subdirectories outside the retention window.
-    - Atomically updates `latest_release_file` when a newer release has been successfully processed.
+    - Atomically updates the release tracking file when a newer release has been successfully processed.
 
     Side effects:
-    - Creates per-release subdirectories and may write `latest_release_file` and release notes.
+    - Creates per-release subdirectories and may write release tracking files and release notes.
     - May remove corrupted ZIP files and delete older release directories.
     - Honors a global Wi-Fi gating flag: if downloads are skipped globally, the function will not perform downloads and instead returns newer release tags.
 
     Parameters:
     - releases: List of release dictionaries (expected newest-first order) as returned by the API.
-    - latest_release_file: Path to a file that stores the most recently recorded release tag.
+    - cache_dir: Directory where release tracking files are stored.
     - release_type: Human-readable type used in logs and failure records (e.g., "Firmware" or "APK").
     - download_dir_path: Root directory where per-release subdirectories are created.
     - versions_to_keep: Number of newest releases to consider for download/retention.
@@ -3588,7 +3590,7 @@ def check_and_download(
 
     # Read saved release tag from the JSON tracking file
     json_basename = _get_json_release_basename(release_type)
-    json_file = os.path.join(os.path.dirname(latest_release_file), json_basename)
+    json_file = os.path.join(cache_dir, json_basename)
     saved_raw_tag = _read_latest_release_tag(json_file)
     saved_release_tag = (
         _sanitize_path_component(saved_raw_tag) if saved_raw_tag else None

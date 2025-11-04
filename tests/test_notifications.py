@@ -226,12 +226,12 @@ def test_logging_output_validation(tmp_path, caplog):
             }
         ]
 
-        latest_release_file = str(tmp_path / "latest.txt")
+        cache_dir = str(tmp_path)
         download_dir = str(tmp_path / "downloads")
 
         downloaded, new_versions, failures = downloader.check_and_download(
             releases,
-            latest_release_file,
+            cache_dir,
             "Firmware",
             download_dir,
             versions_to_keep=1,
@@ -275,7 +275,7 @@ def test_user_facing_status_messages(tmp_path, caplog):
     """
     caplog.set_level("INFO", logger="fetchtastic")
 
-    latest_release_file = str(tmp_path / "latest.txt")
+    cache_dir = str(tmp_path)
     download_dir = str(tmp_path / "downloads")
 
     # Pre-create release directory to simulate up-to-date state
@@ -310,13 +310,13 @@ def test_user_facing_status_messages(tmp_path, caplog):
         }
     ]
 
-    json_file = Path(latest_release_file).parent / "latest_firmware_release.json"
+    json_file = Path(cache_dir) / "latest_firmware_release.json"
     json_file.write_text('{"latest_version": "v1.0.0", "file_type": "firmware"}')
 
     with patch("fetchtastic.downloader.download_file_with_retry", return_value=True):
         downloaded, new_versions, failures = downloader.check_and_download(
             releases,
-            latest_release_file,
+            cache_dir,
             "Firmware",
             download_dir,
             versions_to_keep=1,
@@ -353,7 +353,7 @@ class TestNotificationIntegration:
             }
         ]
 
-        latest_release_file = str(tmp_path / "latest.txt")
+        cache_dir = str(tmp_path)
         download_dir = str(tmp_path / "downloads")
 
         with patch(
@@ -361,7 +361,7 @@ class TestNotificationIntegration:
         ):
             downloaded, new_versions, failures = downloader.check_and_download(
                 releases,
-                latest_release_file,
+                cache_dir,
                 "Firmware",
                 download_dir,
                 versions_to_keep=1,

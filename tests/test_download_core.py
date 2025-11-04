@@ -97,7 +97,7 @@ def test_check_and_download_logs_when_no_assets_match(tmp_path, caplog):
         },
     ]
 
-    latest_release_file = str(tmp_path / "latest_firmware_release.txt")
+    cache_dir = str(tmp_path)
     download_dir = str(tmp_path / "firmware")
 
     # Run with a pattern that won't match provided asset name
@@ -109,7 +109,7 @@ def test_check_and_download_logs_when_no_assets_match(tmp_path, caplog):
     try:
         downloaded, _new_versions, failures = downloader.check_and_download(
             releases,
-            latest_release_file,
+            cache_dir,
             "Firmware",
             download_dir,
             versions_to_keep=2,
@@ -179,15 +179,12 @@ def test_new_versions_detection_with_saved_tag(tmp_path):
         },
     ]
 
-    latest_release_file = str(tmp_path / "latest_firmware_release.txt")
+    cache_dir = str(tmp_path)
     download_dir = str(tmp_path / "firmware")
-
-    # Write saved tag
-    Path(latest_release_file).write_text("v2")
 
     downloaded, new_versions, failures = downloader.check_and_download(
         releases,
-        latest_release_file,
+        cache_dir,
         "Firmware",
         download_dir,
         versions_to_keep=2,
@@ -227,7 +224,7 @@ def test_check_and_download_happy_path_with_extraction(tmp_path, caplog):
         }
     ]
 
-    latest_release_file = str(tmp_path / "latest_firmware_release.txt")
+    cache_dir = str(tmp_path)
     download_dir = str(tmp_path)
 
     # Mock downloader to write a real ZIP that contains a file we want to auto-extract
@@ -256,7 +253,7 @@ def test_check_and_download_happy_path_with_extraction(tmp_path, caplog):
     with patch("fetchtastic.downloader.download_file_with_retry", side_effect=_mock_dl):
         downloaded, _new_versions, failures = downloader.check_and_download(
             releases,
-            latest_release_file,
+            cache_dir,
             "Firmware",
             download_dir,
             versions_to_keep=1,
@@ -302,7 +299,7 @@ def test_auto_extract_with_empty_patterns_does_not_extract(tmp_path, caplog):
         }
     ]
 
-    latest_release_file = str(tmp_path / "latest_firmware_release.txt")
+    cache_dir = str(tmp_path)
     download_dir = str(tmp_path)
 
     # Mock downloader to write a real ZIP that contains a file that would normally be extracted
@@ -317,7 +314,7 @@ def test_auto_extract_with_empty_patterns_does_not_extract(tmp_path, caplog):
     with patch("fetchtastic.downloader.download_file_with_retry", side_effect=_mock_dl):
         downloaded, _new_versions, failures = downloader.check_and_download(
             releases,
-            latest_release_file,
+            cache_dir,
             "Firmware",
             download_dir,
             versions_to_keep=1,
@@ -369,7 +366,7 @@ def test_check_and_download_release_already_complete_logs_up_to_date(tmp_path, c
         }
     ]
 
-    latest_release_file = str(tmp_path / "latest_firmware_release.txt")
+    cache_dir = str(tmp_path)
     download_dir = str(tmp_path)
 
     # Write the latest release file to indicate this release is current
@@ -379,7 +376,7 @@ def test_check_and_download_release_already_complete_logs_up_to_date(tmp_path, c
 
     downloaded, new_versions, failures = downloader.check_and_download(
         releases,
-        latest_release_file,
+        cache_dir,
         "Firmware",
         download_dir,
         versions_to_keep=1,
@@ -416,7 +413,7 @@ def test_check_and_download_corrupted_existing_zip_records_failure(tmp_path):
         }
     ]
 
-    latest_release_file = str(tmp_path / "latest_firmware_release.txt")
+    cache_dir = str(tmp_path)
     download_dir = str(tmp_path)
 
     # Pre-create a corrupted ZIP file
@@ -447,7 +444,7 @@ def test_check_and_download_corrupted_existing_zip_records_failure(tmp_path):
     ):
         downloaded, _new_versions, failures = downloader.check_and_download(
             releases,
-            latest_release_file,
+            cache_dir,
             "Firmware",
             download_dir,
             versions_to_keep=1,
@@ -486,7 +483,7 @@ def test_check_and_download_redownloads_mismatched_non_zip(tmp_path):
         }
     ]
 
-    latest_release_file = str(tmp_path / "latest_firmware_release.txt")
+    cache_dir = str(tmp_path)
     download_dir = str(tmp_path)
 
     # Pre-create a file with wrong size
@@ -496,7 +493,10 @@ def test_check_and_download_redownloads_mismatched_non_zip(tmp_path):
     existing_file.write_text("wrong size content")  # Much smaller than expected
 
     # Write the latest release file to indicate this release is current
-    Path(latest_release_file).write_text(release_tag)
+    json_file = tmp_path / "latest_firmware_release.json"
+    json_file.write_text(
+        f'{{"latest_version": "{release_tag}", "file_type": "firmware"}}'
+    )
 
     with patch(
         "fetchtastic.downloader.download_file_with_retry",
@@ -504,7 +504,7 @@ def test_check_and_download_redownloads_mismatched_non_zip(tmp_path):
     ) as mock_download:
         downloaded, _new_versions, failures = downloader.check_and_download(
             releases,
-            latest_release_file,
+            cache_dir,
             "Firmware",
             download_dir,
             versions_to_keep=1,
@@ -538,12 +538,12 @@ def test_check_and_download_missing_download_url(tmp_path):
         }
     ]
 
-    latest_release_file = str(tmp_path / "latest_firmware_release.txt")
+    cache_dir = str(tmp_path)
     download_dir = str(tmp_path)
 
     downloaded, new_versions, failures = downloader.check_and_download(
         releases,
-        latest_release_file,
+        cache_dir,
         "Firmware",
         download_dir,
         versions_to_keep=1,
@@ -582,7 +582,7 @@ class TestDownloadCoreIntegration:
             }
         ]
 
-        latest_release_file = str(tmp_path / "latest.txt")
+        cache_dir = str(tmp_path)
         download_dir = str(tmp_path / "downloads")
 
         mock_download_file = mocker.patch(
@@ -592,7 +592,7 @@ class TestDownloadCoreIntegration:
 
         downloaded, new, failed = downloader.check_and_download(
             releases,
-            latest_release_file,
+            cache_dir,
             "Firmware",
             download_dir,
             versions_to_keep=2,
@@ -641,7 +641,7 @@ class TestDownloadCoreIntegration:
             }
         ]
 
-        latest_release_file = str(tmp_path / "latest.txt")
+        cache_dir = str(tmp_path)
         download_dir = str(tmp_path / "downloads")
 
         with patch(
@@ -650,7 +650,7 @@ class TestDownloadCoreIntegration:
             # Only select rak4631 and tbeam patterns
             downloaded, new, failed = downloader.check_and_download(
                 releases,
-                latest_release_file,
+                cache_dir,
                 "Firmware",
                 download_dir,
                 versions_to_keep=2,
@@ -688,7 +688,7 @@ class TestDownloadCoreIntegration:
             }
         ]
 
-        latest_release_file = str(tmp_path / "latest.txt")
+        cache_dir = str(tmp_path)
         download_dir = str(tmp_path / "downloads")
 
         with patch(
@@ -697,7 +697,7 @@ class TestDownloadCoreIntegration:
             # Select rak4631 but exclude eink variants
             downloaded, new, failed = downloader.check_and_download(
                 releases,
-                latest_release_file,
+                cache_dir,
                 "Firmware",
                 download_dir,
                 versions_to_keep=2,
@@ -730,7 +730,7 @@ class TestDownloadCoreIntegration:
             }
         ]
 
-        latest_release_file = str(tmp_path / "latest.txt")
+        cache_dir = str(tmp_path)
         download_dir = str(tmp_path / "downloads")
 
         def mock_download(_url, _path):
@@ -742,7 +742,7 @@ class TestDownloadCoreIntegration:
         ):
             downloaded, new, failed = downloader.check_and_download(
                 releases,
-                latest_release_file,
+                cache_dir,
                 "Firmware",
                 download_dir,
                 versions_to_keep=2,
@@ -762,7 +762,7 @@ class TestDownloadCoreIntegration:
     @pytest.mark.core_downloads
     def test_version_tracking_across_multiple_runs(self, tmp_path):
         """Test version tracking across multiple download runs."""
-        latest_release_file = str(tmp_path / "latest.txt")
+        cache_dir = str(tmp_path)
         download_dir = str(tmp_path / "downloads")
 
         # First run - download v1.0
@@ -786,7 +786,7 @@ class TestDownloadCoreIntegration:
         ):
             downloaded, new, failed = downloader.check_and_download(
                 releases_v1,
-                latest_release_file,
+                cache_dir,
                 "Firmware",
                 download_dir,
                 versions_to_keep=2,
@@ -812,7 +812,7 @@ class TestDownloadCoreIntegration:
         ):
             downloaded, new, failed = downloader.check_and_download(
                 releases_v1,
-                latest_release_file,
+                cache_dir,
                 "Firmware",
                 download_dir,
                 versions_to_keep=2,
@@ -849,7 +849,7 @@ class TestDownloadCoreIntegration:
         ):
             downloaded, new, failed = downloader.check_and_download(
                 releases_v2,
-                latest_release_file,
+                cache_dir,
                 "Firmware",
                 download_dir,
                 versions_to_keep=2,
@@ -894,7 +894,7 @@ class TestDownloadCoreIntegration:
             },
         ]
 
-        latest_release_file = str(tmp_path / "latest.txt")
+        cache_dir = str(tmp_path)
         download_dir = str(tmp_path / "downloads")
 
         # Mock download to succeed for v1.0.0 but fail for v1.1.0
@@ -909,7 +909,7 @@ class TestDownloadCoreIntegration:
         ):
             downloaded, new, failed = downloader.check_and_download(
                 releases,
-                latest_release_file,
+                cache_dir,
                 "Firmware",
                 download_dir,
                 versions_to_keep=2,
