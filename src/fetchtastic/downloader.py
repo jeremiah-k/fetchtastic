@@ -1692,16 +1692,16 @@ def _save_prerelease_dir_cache() -> None:
                 for cache_key, (directories, cached_at) in _prerelease_dir_cache.items()
             }
 
-            # Perform I/O inside lock to prevent race conditions
-            if _atomic_write_json(cache_file, cache_data):
-                logger.debug(
-                    "Saved %d prerelease directory cache entries to disk",
-                    len(cache_data),
-                )
-            else:
-                logger.warning(
-                    "Failed to save prerelease directory cache to %s", cache_file
-                )
+        # Perform I/O outside lock to reduce contention
+        if _atomic_write_json(cache_file, cache_data):
+            logger.debug(
+                "Saved %d prerelease directory cache entries to disk",
+                len(cache_data),
+            )
+        else:
+            logger.warning(
+                "Failed to save prerelease directory cache to %s", cache_file
+            )
 
     except (IOError, OSError) as e:
         logger.warning("Could not save prerelease directory cache: %s", e)
@@ -1953,11 +1953,11 @@ def _save_releases_cache() -> None:
                 for cache_key, (releases_data, cached_at) in _releases_cache.items()
             }
 
-            # Perform I/O inside lock to prevent race conditions
-            if _atomic_write_json(cache_file, cache_data):
-                logger.debug("Saved %d releases entries to cache", len(cache_data))
-            else:
-                logger.warning("Failed to save releases cache to %s", cache_file)
+        # Perform I/O outside lock to reduce contention
+        if _atomic_write_json(cache_file, cache_data):
+            logger.debug("Saved %d releases entries to cache", len(cache_data))
+        else:
+            logger.warning("Failed to save releases cache to %s", cache_file)
 
     except OSError as e:
         logger.warning("Could not save releases cache: %s", e)
@@ -2558,11 +2558,11 @@ def _save_commit_cache() -> None:
                 for cache_key, (timestamp, cached_at) in _commit_timestamp_cache.items()
             }
 
-            # Perform I/O inside lock to prevent race conditions
-            if _atomic_write_json(cache_file, cache_data):
-                logger.debug(f"Saved {len(cache_data)} commit timestamps to cache")
-            else:
-                logger.warning(f"Failed to save commit timestamp cache to {cache_file}")
+        # Perform I/O outside lock to reduce contention
+        if _atomic_write_json(cache_file, cache_data):
+            logger.debug(f"Saved {len(cache_data)} commit timestamps to cache")
+        else:
+            logger.warning(f"Failed to save commit timestamp cache to {cache_file}")
 
     except OSError as e:
         logger.warning(f"Could not save commit timestamp cache: {e}")

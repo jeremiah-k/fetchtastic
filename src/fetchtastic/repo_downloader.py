@@ -48,8 +48,7 @@ def download_repo_files(selected_files, download_dir):  # log_message_func remov
     # Create repo downloads directory if it doesn't exist
     repo_dir = os.path.join(download_dir, "firmware", REPO_DOWNLOADS_DIR)
     try:
-        if not os.path.exists(repo_dir):
-            os.makedirs(repo_dir, exist_ok=True)
+        os.makedirs(repo_dir, exist_ok=True)
 
         # Resolve and validate target directory to prevent traversal
         if directory:
