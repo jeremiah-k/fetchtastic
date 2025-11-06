@@ -448,30 +448,22 @@ def make_github_api_request(
     custom_403_message: Optional[str] = None,
 ) -> requests.Response:
     """
-    Make an authenticated GitHub API request with proper headers, rate limiting, and error handling.
-
-    This function handles:
-    - Setting proper GitHub API headers
-    - Authentication using provided token or environment variable
-    - Automatic retry without token on 401 error
-    - Rate limit warnings
-    - Polite delays after requests
-
+    Perform a GitHub API GET request using an optional token, track and cache rate-limit information, and retry once without authentication if token-based auth fails.
+    
     Parameters:
-        url (str): GitHub API URL to request
-        github_token (Optional[str]): GitHub token for authentication
-        allow_env_token (bool): Whether to allow using environment variable token
-        params (Optional[Dict[str, Any]]): Query parameters for the request
-        timeout (Optional[int]): Request timeout in seconds
-        _is_retry (bool): Internal flag to prevent infinite recursion on retries.
-        custom_403_message (Optional[str]): Custom message for 403 errors, overrides default rate limit message
-
+        url (str): GitHub API URL to request.
+        github_token (Optional[str]): Explicit GitHub token to use for Authorization; trimmed and preferred over environment token.
+        allow_env_token (bool): If True, allow falling back to the GITHUB_TOKEN environment variable when no explicit token is provided.
+        params (Optional[Dict[str, Any]]): Query parameters to include in the request.
+        timeout (Optional[int]): Request timeout in seconds; if omitted, the module default is used.
+        custom_403_message (Optional[str]): Custom message to use when raising on 403 responses; if omitted a default rate-limit message is used.
+    
     Returns:
-        requests.Response: The response object
-
+        requests.Response: The HTTP response returned by GitHub.
+    
     Raises:
-        requests.HTTPError: For HTTP errors.
-        requests.RequestException: For other request-related errors.
+        requests.HTTPError: For HTTP error responses (including 401/403 conditions handled by the function).
+        requests.RequestException: For lower-level network or request errors.
     """
     from fetchtastic.constants import API_CALL_DELAY, GITHUB_API_TIMEOUT
     from fetchtastic.log_utils import logger
