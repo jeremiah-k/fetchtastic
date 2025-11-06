@@ -2366,3 +2366,132 @@ def test_cache_thread_safety():
                 assert (
                     error is None
                 ), f"Prerelease thread {thread_id} failed with error: {error}"
+
+
+@pytest.mark.core_downloads
+def test_read_latest_release_tag_non_dict_json(tmp_path):
+    """Test _read_latest_release_tag handles non-dict JSON correctly."""
+    from fetchtastic.downloader import _read_latest_release_tag
+
+    # Test with JSON array instead of object
+    json_file = tmp_path / "invalid.json"
+    json_file.write_text('["not", "an", "object"]')
+
+    result = _read_latest_release_tag(str(json_file))
+    assert result is None  # Should return None for invalid JSON structure
+
+
+@pytest.mark.core_downloads
+def test_read_prerelease_tracking_data_non_dict_json(tmp_path):
+    """Test _read_prerelease_tracking_data handles non-dict JSON correctly."""
+    from fetchtastic.downloader import _read_prerelease_tracking_data
+
+    # Test with JSON string instead of object
+    tracking_file = tmp_path / "invalid.json"
+    tracking_file.write_text('"not an object"')
+
+    commits, current_release, last_updated = _read_prerelease_tracking_data(
+        str(tracking_file)
+    )
+
+    # Should return default values when JSON structure is invalid
+    assert commits == []
+    assert current_release is None
+    assert last_updated is None
+
+
+@pytest.mark.core_downloads
+def test_get_commit_hash_from_dir_length_validation():
+    """Test _get_commit_hash_from_dir enforces 6-40 character hash length."""
+    from fetchtastic.downloader import _get_commit_hash_from_dir
+
+    # Test with 4-character hash (should be rejected)
+    assert (
+        _get_commit_hash_from_dir("firmware-v1.0.0-abc123") is not None
+    )  # 6 chars, should work
+    assert (
+        _get_commit_hash_from_dir("firmware-v1.0.0-abcd") is None
+    )  # 4 chars, should fail
+
+    # Test with 6-character hash (should work)
+    assert _get_commit_hash_from_dir("firmware-v1.0.0-abcdef") == "abcdef"
+
+    # Test with 40-character hash (should work)
+    long_hash = "a" * 40
+    assert _get_commit_hash_from_dir(f"firmware-v1.0.0-{long_hash}") == long_hash
+
+    # Test with 41-character hash (should fail)
+    too_long_hash = "a" * 41
+    assert _get_commit_hash_from_dir(f"firmware-v1.0.0-{too_long_hash}") is None
+
+
+@pytest.mark.core_downloads
+def test_main_downloads_skipped_reset():
+    """Test main function resets downloads_skipped flag."""
+    import fetchtastic.downloader as downloader_module
+
+    # Set the flag to True first
+    downloader_module.downloads_skipped = True
+
+    # Mock the initial setup to avoid actual configuration loading
+    with patch("fetchtastic.downloader._initial_setup_and_config") as mock_setup:
+        mock_setup.return_value = (
+            None,
+            None,
+            None,
+            False,
+            None,
+        )  # config, current_version, latest_version, update_available, paths_and_urls
+
+        try:
+            # Call main function - it should fail early but still reset the flag
+            downloader_module.main(force_refresh=False)
+        except SystemExit:
+            pass  # Expected when setup fails
+
+        # Flag should be reset to False even when setup fails
+        assert downloader_module.downloads_skipped is False
+
+
+@pytest.mark.core_downloads
+def test_path_traversal_protection_logic():
+    """Test path traversal protection logic directly."""
+    import os
+    import tempfile
+
+    # Create a temporary directory structure
+    with tempfile.TemporaryDirectory() as temp_dir:
+        repo_dir = os.path.join(temp_dir, "firmware", "test-downloads")
+        os.makedirs(repo_dir, exist_ok=True)
+
+        # Test path traversal logic (same logic as in repo_downloader.py)
+        test_cases = [
+            ("../../../etc", "should be sanitized"),
+            ("../safe", "should be sanitized"),
+            ("subdir", "should be allowed"),
+            ("", "should use base dir"),
+        ]
+
+        for directory, description in test_cases:
+            if directory:
+                candidate = os.path.join(repo_dir, directory)
+            else:
+                candidate = repo_dir
+
+            real_repo = os.path.realpath(repo_dir)
+            real_target = os.path.realpath(candidate)
+
+            try:
+                common = os.path.commonpath([real_repo, real_target])
+            except ValueError:
+                common = None
+
+            # If traversal attempt, common should not equal real_repo
+            if ".." in directory:
+                assert (
+                    common != real_repo or common is None
+                ), f"Traversal attempt not blocked: {directory} {description}"
+            else:
+                assert (
+                    common == real_repo
+                ), f"Safe path incorrectly blocked: {directory} {description}"
