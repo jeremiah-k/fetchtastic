@@ -68,8 +68,6 @@ _api_request_count = 0
 _api_cache_hits = 0
 _api_cache_misses = 0
 _api_auth_used = False
-_api_first_auth_logged = False
-_api_first_unauth_logged = False
 _api_tracking_lock = threading.Lock()
 
 
@@ -147,19 +145,15 @@ def reset_api_tracking() -> None:
     """
     Reset session-wide API request tracking counters and flags.
 
-    Resets the request count, cache hit and miss counters, the authentication-used flag,
-    and the first-authenticated/first-unauthenticated logged flags while holding the
-    module's tracking lock to ensure thread-safety.
+    Resets request count, cache hit and miss counters, and authentication-used flag
+    while holding the module's tracking lock to ensure thread-safety.
     """
     global _api_request_count, _api_cache_hits, _api_cache_misses, _api_auth_used
-    global _api_first_auth_logged, _api_first_unauth_logged
     with _api_tracking_lock:
         _api_request_count = 0
         _api_cache_hits = 0
         _api_cache_misses = 0
         _api_auth_used = False
-        _api_first_auth_logged = False
-        _api_first_unauth_logged = False
 
 
 def get_effective_github_token(
