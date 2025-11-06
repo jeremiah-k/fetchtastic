@@ -674,12 +674,19 @@ def _read_latest_release_tag(json_file: str) -> Optional[str]:
         try:
             with open(json_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                version = data.get("latest_version")
-                return (
-                    version.strip()
-                    if isinstance(version, str) and version.strip()
-                    else None
-                )
+                if isinstance(data, dict):
+                    version = data.get("latest_version")
+                    return (
+                        version.strip()
+                        if isinstance(version, str) and version.strip()
+                        else None
+                    )
+                else:
+                    logger.debug(
+                        "Unexpected JSON structure in %s (type %s); expected object",
+                        json_file,
+                        type(data).__name__,
+                    )
         except (IOError, json.JSONDecodeError) as e:
             logger.debug(
                 "Could not read release tag from JSON file %s: %s", json_file, e
@@ -979,6 +986,14 @@ def _read_prerelease_tracking_data(tracking_file):
         try:
             with open(tracking_file, "r", encoding="utf-8") as f:
                 tracking_data = json.load(f)
+
+                if not isinstance(tracking_data, dict):
+                    logger.warning(
+                        "Unexpected JSON type in prerelease tracking file %s: %s",
+                        tracking_file,
+                        type(tracking_data).__name__,
+                    )
+                    return commits, current_release, last_updated
 
                 # Check for new format (version, hash, count)
                 # Note: "count" is not used; reserved for future aggregation.

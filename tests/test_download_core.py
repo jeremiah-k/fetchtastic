@@ -1710,7 +1710,7 @@ def test_sanitize_path_component_invalid_inputs():
 
 
 @pytest.mark.core_downloads
-def test_normalize_version_prerelease_parsing(tmp_path):
+def test_normalize_version_prerelease_parsing():
     """Test _normalize_version handles prerelease versions correctly."""
     from fetchtastic.downloader import _normalize_version
 
@@ -1732,7 +1732,7 @@ def test_normalize_version_prerelease_parsing(tmp_path):
 
 
 @pytest.mark.core_downloads
-def test_normalize_version_hash_suffix(tmp_path):
+def test_normalize_version_hash_suffix():
     """Test _normalize_version handles hash suffix versions."""
     from fetchtastic.downloader import _normalize_version
 
@@ -1744,7 +1744,7 @@ def test_normalize_version_hash_suffix(tmp_path):
 
 
 @pytest.mark.core_downloads
-def test_normalize_version_invalid_prerelease(tmp_path):
+def test_normalize_version_invalid_prerelease():
     """Test _normalize_version handles invalid prerelease versions."""
     from fetchtastic.downloader import _normalize_version
 
