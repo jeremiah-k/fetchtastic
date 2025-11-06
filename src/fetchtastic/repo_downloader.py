@@ -17,18 +17,18 @@ from fetchtastic.utils import download_file_with_retry
 def download_repo_files(selected_files, download_dir):  # log_message_func removed
     """
     Download the specified repository files into a repository-specific downloads directory.
-    
+
     Sanitizes file names to prevent path traversal and saves files under
     download_dir/firmware/REPO_DOWNLOADS_DIR/<selected_files["directory"]> (or the repo directory if empty).
     Sets executable permissions for files whose original name ends with SHELL_SCRIPT_EXTENSION.
     Skips items missing required fields or that fail to download; returns only the successfully downloaded file paths.
-    
+
     Parameters:
         selected_files (dict): Mapping with keys:
             - "directory" (str): Subdirectory name inside the repo downloads directory.
             - "files" (iterable[dict]): Each dict must include "name" (str) and "download_url" (str).
         download_dir (str): Base path under which the repository downloads directory will be created.
-    
+
     Returns:
         list[str]: Absolute paths to files that were successfully downloaded.
     """
@@ -48,17 +48,28 @@ def download_repo_files(selected_files, download_dir):  # log_message_func remov
     # Create repo downloads directory if it doesn't exist
     repo_dir = os.path.join(download_dir, "firmware", REPO_DOWNLOADS_DIR)
     try:
-        if not os.path.exists(repo_dir):
-            os.makedirs(repo_dir)
+        os.makedirs(repo_dir, exist_ok=True)
 
-        # Create directory structure matching the repository path
+        # Resolve and validate target directory to prevent traversal
         if directory:
-            dir_path = os.path.join(repo_dir, directory)
+            candidate = os.path.join(repo_dir, directory)
         else:
-            dir_path = repo_dir
-
-        if not os.path.exists(dir_path):
-            os.makedirs(dir_path)
+            candidate = repo_dir
+        real_repo = os.path.realpath(repo_dir)
+        real_target = os.path.realpath(candidate)
+        try:
+            common = os.path.commonpath([real_repo, real_target])
+        except ValueError:
+            common = None
+        if common != real_repo:
+            logger.warning(
+                "Sanitized unsafe repository subdirectory '%s'; using base repo directory",
+                directory,
+            )
+            dir_path = real_repo
+        else:
+            dir_path = real_target
+        os.makedirs(dir_path, exist_ok=True)
     except OSError as e:
         logger.error(
             f"Error creating base directories for repo downloads ({repo_dir} or {dir_path}): {e}",
@@ -184,14 +195,12 @@ def clean_repo_directory(download_dir):  # log_message_func removed
 
 def main(config):  # log_message_func removed
     """
-    Main function to run the repository downloader.
+    Run the repository downloader flow using settings from config.
 
-    Args:
-        config: Configuration dictionary
-        # log_message_func removed
+    Starts an interactive repository file browser, downloads the selected files into the directory specified by config["DOWNLOAD_DIR"], and on Windows optionally prompts to open the download folder. Logs progress and errors via the module logger.
 
-    Returns:
-        None
+    Parameters:
+        config (dict): Configuration mapping; must contain the key "DOWNLOAD_DIR" with the path to the base download directory.
     """
     # Removed local log_message_func definition
 

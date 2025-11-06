@@ -264,9 +264,8 @@ def _load_rate_limit_cache() -> None:
                             loaded[cache_key] = (remaining, reset_timestamp)
                     except (ValueError, TypeError):
                         continue
-    except (IOError, json.JSONDecodeError):
-        pass  # Silently ignore cache loading errors
-        loaded = {}
+    except (OSError, json.JSONDecodeError):
+        loaded = {}  # Silently ignore cache loading errors
 
     # Publish under lock, double-check flag
     with _rate_limit_lock:
@@ -329,7 +328,7 @@ def _save_rate_limit_cache() -> None:
                 except OSError:
                     pass
 
-    except IOError:
+    except OSError:
         pass  # Silently ignore cache saving errors
 
 
@@ -787,12 +786,16 @@ def download_file_with_retry(
     # log_message_func: Callable[[str], None] # Removed
 ) -> bool:
     """
-    Download a remote file to disk, verify its integrity, and atomically install it.
-    
-    Streams the remote content to a temporary file with retry-capable HTTP requests, validates ZIP archives when applicable, verifies or writes a SHA-256 `.sha256` sidecar, and atomically replaces the target file on success. If an existing file is already verified it is left in place. Temporary and partially downloaded files are removed on failure; corrupted or mismatched files and their sidecars are removed before re-downloading.
-    
+    Download a remote file to disk, verify integrity, and atomically install it.
+
+    Streams the URL to a temporary file with retry-capable HTTP requests, validates ZIP archives when applicable, verifies or writes a SHA-256 `.sha256` sidecar, and atomically replaces the destination. If an existing file is already verified it is left in place. Temporary and partially downloaded files are removed on failure; corrupted or mismatched files and their sidecars are removed before re-downloading.
+
+    Parameters:
+        url (str): The HTTP(S) URL of the remote file to download.
+        download_path (str): Final filesystem path where the downloaded file will be installed.
+
     Returns:
-        True if the destination file is present and verified or was downloaded and installed successfully, False otherwise.
+        bool: `True` if the destination file is present and verified or was downloaded and installed successfully, `False` otherwise.
     """
     # Note: Session is created after pre-checks and closed in finally
 
@@ -1151,22 +1154,21 @@ def matches_selected_patterns(
     filename: str, selected_patterns: Optional[List[str]]
 ) -> bool:
     """
-    Return True if any of the provided patterns match the filename's normalized base name.
+    Determine whether a filename matches any of the provided patterns after normalization.
 
-    Checks both the modern normalization (which removes the version token and its preceding separator)
-    and the legacy normalization (which preserves the separator before the version token). If
-    `selected_patterns` is falsy (None or empty) the function returns True.
-
-    The matcher is forgiving about minor naming changes introduced upstream by normalising both the
-    candidate filename and the patterns to lower-case and by also performing a punctuation-stripped
-    comparison. This keeps existing configurations working when asset names switch between styles such
-    as ``fdroidRelease-`` and ``app-fdroid-release``.
+    Compares the filename's normalized base forms (modern and legacy normalization) against each
+    pattern. Matching is case-insensitive and additionally supports punctuation-stripped comparisons
+    for patterns that are mixed-case, contain dots, or include keywords like "release", "apk",
+    "aab", or "fdroid". If `selected_patterns` is None or empty, the function matches all filenames.
 
     Parameters:
-        selected_patterns: Iterable of substring patterns to search for; empty or None means "match all".
+        filename (str): The filename to test.
+        selected_patterns (Optional[List[str]]): Iterable of substring patterns to search for;
+            empty or None means match all.
 
     Returns:
-        True if any non-empty pattern appears in either normalized base name; otherwise False.
+        bool: `true` if any non-empty pattern appears in either normalized base name (including
+        punctuation-stripped fallbacks), `false` otherwise.
     """
 
     if not selected_patterns:

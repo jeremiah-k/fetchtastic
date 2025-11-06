@@ -208,7 +208,7 @@ def test_device_hardware_manager_cache_corruption_handling(caplog):
 def test_logging_output_validation(tmp_path, caplog):
     """
     Verify that check_and_download logs progress and returns expected results when a download succeeds.
-    
+
     Sets the "fetchtastic" logger to INFO, patches download_file_with_retry to simulate a successful download, invokes check_and_download with a single release asset, and asserts that the returned `downloaded` and `new_versions` contain "v1.0.0" and `failures` is empty.
     """
     caplog.set_level("INFO", logger="fetchtastic")

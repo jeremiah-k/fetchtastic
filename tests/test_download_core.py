@@ -430,9 +430,10 @@ def test_check_and_download_corrupted_existing_zip_records_failure(tmp_path):
     def mock_download(_url, _path):
         # Mock download failure to test error handling
         """
-        Simulates a failed download for testing purposes.
-        
-        @returns False indicating the download did not succeed.
+        Simulates a download failure for tests.
+
+        Returns:
+            `False` indicating the download did not succeed.
         """
         return False
 
@@ -734,11 +735,11 @@ class TestDownloadCoreIntegration:
             # Mock download that returns False to test error handling
             """
             Simulates a download that always fails, used for testing error handling.
-            
+
             Parameters:
                 _url (str): URL argument (ignored).
                 _path (str | Path): Destination path argument (ignored).
-            
+
             Returns:
                 bool: `False` indicating the download failed.
             """
@@ -1496,24 +1497,21 @@ def test_load_json_cache_with_expiry_no_file(tmp_path):
 
     def dummy_validator(entry):
         """
-        Always considers the provided entry valid.
-        
-        Parameters:
-            entry: The object representing the entry to validate.
-        
+        Always treats the provided entry as valid.
+
         Returns:
-            True — the entry is always treated as valid.
+            `True` for any input.
         """
         return True
 
     def dummy_processor(entry, cached_at):
         """
-        Return the provided entry without modification.
-        
+        Return the entry unchanged.
+
         Parameters:
-            entry: The entry object to be returned unchanged.
-            cached_at: A timestamp or metadata indicating when the entry was cached; this parameter is accepted but ignored.
-        
+            entry: Object to return unchanged.
+            cached_at: Timestamp or metadata when the entry was cached; accepted but ignored.
+
         Returns:
             The same `entry` object that was passed in.
         """
@@ -1540,24 +1538,21 @@ def test_load_json_cache_with_expiry_invalid_json(tmp_path):
 
     def dummy_validator(entry):
         """
-        Always considers the provided entry valid.
-        
-        Parameters:
-            entry: The object representing the entry to validate.
-        
+        Always treats the provided entry as valid.
+
         Returns:
-            True — the entry is always treated as valid.
+            `True` for any input.
         """
         return True
 
     def dummy_processor(entry, cached_at):
         """
-        Return the provided entry without modification.
-        
+        Return the entry unchanged.
+
         Parameters:
-            entry: The entry object to be returned unchanged.
-            cached_at: A timestamp or metadata indicating when the entry was cached; this parameter is accepted but ignored.
-        
+            entry: Object to return unchanged.
+            cached_at: Timestamp or metadata when the entry was cached; accepted but ignored.
+
         Returns:
             The same `entry` object that was passed in.
         """
@@ -1584,24 +1579,21 @@ def test_load_json_cache_with_expiry_wrong_type(tmp_path):
 
     def dummy_validator(entry):
         """
-        Always considers the provided entry valid.
-        
-        Parameters:
-            entry: The object representing the entry to validate.
-        
+        Always treats the provided entry as valid.
+
         Returns:
-            True — the entry is always treated as valid.
+            `True` for any input.
         """
         return True
 
     def dummy_processor(entry, cached_at):
         """
-        Return the provided entry without modification.
-        
+        Return the entry unchanged.
+
         Parameters:
-            entry: The entry object to be returned unchanged.
-            cached_at: A timestamp or metadata indicating when the entry was cached; this parameter is accepted but ignored.
-        
+            entry: Object to return unchanged.
+            cached_at: Timestamp or metadata when the entry was cached; accepted but ignored.
+
         Returns:
             The same `entry` object that was passed in.
         """
@@ -1642,10 +1634,10 @@ def test_load_json_cache_with_expiry_expired_entries(tmp_path):
     def dummy_validator(entry):
         """
         Check whether a cache entry contains the required metadata keys.
-        
+
         Parameters:
             entry (Mapping): The mapping to validate.
-        
+
         Returns:
             bool: `True` if `entry` contains both the `cached_at` and `data` keys, `False` otherwise.
         """
@@ -1653,14 +1645,14 @@ def test_load_json_cache_with_expiry_expired_entries(tmp_path):
 
     def dummy_processor(entry, cached_at):
         """
-        Extracts and returns the `data` field from a cache entry.
-        
+        Return the value of the "data" key from a cache entry.
+
         Parameters:
-            entry (dict): A mapping representing a cached entry; must contain a `"data"` key.
-            cached_at: Timestamp or metadata for when the entry was cached (ignored by this processor).
-        
+            entry (dict): Cache entry mapping that must contain a "data" key.
+            cached_at: Ignored; timestamp or metadata for when the entry was cached.
+
         Returns:
-            The value stored under the `"data"` key in `entry`.
+            The value stored under the "data" key in `entry`.
         """
         return entry["data"]
 
@@ -1710,7 +1702,7 @@ def test_sanitize_path_component_invalid_inputs():
 
 
 @pytest.mark.core_downloads
-def test_normalize_version_prerelease_parsing(tmp_path):
+def test_normalize_version_prerelease_parsing():
     """Test _normalize_version handles prerelease versions correctly."""
     from fetchtastic.downloader import _normalize_version
 
@@ -1732,7 +1724,7 @@ def test_normalize_version_prerelease_parsing(tmp_path):
 
 
 @pytest.mark.core_downloads
-def test_normalize_version_hash_suffix(tmp_path):
+def test_normalize_version_hash_suffix():
     """Test _normalize_version handles hash suffix versions."""
     from fetchtastic.downloader import _normalize_version
 
@@ -1744,7 +1736,7 @@ def test_normalize_version_hash_suffix(tmp_path):
 
 
 @pytest.mark.core_downloads
-def test_normalize_version_invalid_prerelease(tmp_path):
+def test_normalize_version_invalid_prerelease():
     """Test _normalize_version handles invalid prerelease versions."""
     from fetchtastic.downloader import _normalize_version
 
@@ -1990,7 +1982,7 @@ def test_atomic_write_operations(tmp_path):
     def write_content(f):
         """
         Write the literal string "test content" to the provided writable file-like object.
-        
+
         Parameters:
             f (io.TextIOBase): A writable file-like object opened in text mode.
         """
@@ -2170,7 +2162,7 @@ def test_strip_unwanted_chars():
 
     # Test with non-ASCII characters (should be removed)
     assert strip_unwanted_chars("hello🌟world") == "helloworld"
-    assert strip_unwanted_chars("café") == "caf"
+    assert strip_unwanted_chars("café") == "caf"  # codespell:ignore
     assert strip_unwanted_chars("text with émojis 🚀") == "text with mojis "
 
     # Test with clean ASCII text (should remain unchanged)
@@ -2243,3 +2235,287 @@ def test_safe_rmtree():
         # Test security check failure
         result = _safe_rmtree("/test/path", "/base", "test_item")
         assert result is False
+
+
+@pytest.mark.core_downloads
+def test_cache_thread_safety():
+    """Test that cache operations are thread-safe."""
+    import threading
+    import time
+    from unittest.mock import patch
+
+    from fetchtastic.downloader import (
+        _load_commit_cache,
+        _load_prerelease_dir_cache,
+        _load_releases_cache,
+        clear_all_caches,
+        clear_commit_timestamp_cache,
+    )
+
+    def simulate_cache_operation(_cache_type, operation_func, results_list, thread_id):
+        """
+        Run a cache-related operation in a thread and record its timing and outcome.
+
+        Appends a tuple to `results_list` containing (thread_id, start_timestamp, end_timestamp, error_message_or_None). If the operation raises, the exception string is recorded as `error_message_or_None`; otherwise that field is `None`.
+
+        Parameters:
+            _cache_type: Identifier for the cache being exercised (unused by this helper; provided for context).
+            operation_func: Callable that performs the cache operation to measure.
+            results_list: Mutable sequence to which the timing/result tuple will be appended.
+            thread_id: Identifier for the calling thread, included in the recorded tuple.
+        """
+        start_time = time.time()
+        try:
+            operation_func()
+            end_time = time.time()
+            results_list.append((thread_id, start_time, end_time, None))
+        except Exception as e:
+            end_time = time.time()
+            results_list.append((thread_id, start_time, end_time, str(e)))
+
+    # Test commit cache thread safety
+    with patch("fetchtastic.downloader._ensure_cache_dir", return_value="/test/cache"):
+        with patch("fetchtastic.downloader._atomic_write_json", return_value=True):
+
+            # Reset cache state
+            clear_commit_timestamp_cache()
+
+            # Test concurrent loads
+            commit_results = []
+            commit_threads = []
+
+            for i in range(3):
+                thread = threading.Thread(
+                    target=simulate_cache_operation,
+                    args=("commit", _load_commit_cache, commit_results, i),
+                )
+                commit_threads.append(thread)
+                thread.start()
+
+            # Wait for all threads to complete
+            for thread in commit_threads:
+                thread.join(timeout=5.0)
+
+            # Verify all threads completed without errors
+            assert len(commit_results) == 3
+            for thread_id, start, end, error in commit_results:
+                assert error is None, f"Thread {thread_id} failed with error: {error}"
+                assert (
+                    end - start < 2.0
+                ), f"Thread {thread_id} took too long: {end - start}s"
+
+    # Test releases cache thread safety
+    with patch("fetchtastic.downloader._ensure_cache_dir", return_value="/test/cache"):
+        with patch("fetchtastic.downloader._atomic_write_json", return_value=True):
+
+            # Reset cache state using clear_all_caches
+            clear_all_caches()
+
+            # Test concurrent loads
+            release_results = []
+            release_threads = []
+
+            for i in range(3):
+                thread = threading.Thread(
+                    target=simulate_cache_operation,
+                    args=("releases", _load_releases_cache, release_results, i),
+                )
+                release_threads.append(thread)
+                thread.start()
+
+            # Wait for all threads to complete
+            for thread in release_threads:
+                thread.join(timeout=5.0)
+
+            # Verify all threads completed without errors
+            assert len(release_results) == 3
+            for thread_id, _, _, error in release_results:
+                assert (
+                    error is None
+                ), f"Release thread {thread_id} failed with error: {error}"
+
+    # Test prerelease cache thread safety
+    with patch("fetchtastic.downloader._ensure_cache_dir", return_value="/test/cache"):
+        with patch("fetchtastic.downloader._atomic_write_json", return_value=True):
+
+            # Reset cache state
+            clear_all_caches()
+
+            # Test concurrent loads
+            prerelease_results = []
+            prerelease_threads = []
+
+            for i in range(3):
+                thread = threading.Thread(
+                    target=simulate_cache_operation,
+                    args=(
+                        "prerelease",
+                        _load_prerelease_dir_cache,
+                        prerelease_results,
+                        i,
+                    ),
+                )
+                prerelease_threads.append(thread)
+                thread.start()
+
+            # Wait for all threads to complete
+            for thread in prerelease_threads:
+                thread.join(timeout=5.0)
+
+            # Verify all threads completed without errors
+            assert len(prerelease_results) == 3
+            for thread_id, _, _, error in prerelease_results:
+                assert (
+                    error is None
+                ), f"Prerelease thread {thread_id} failed with error: {error}"
+
+
+@pytest.mark.core_downloads
+def test_read_latest_release_tag_non_dict_json(tmp_path):
+    """Test _read_latest_release_tag handles non-dict JSON correctly."""
+    from fetchtastic.downloader import _read_latest_release_tag
+
+    # Test with JSON array instead of object
+    json_file = tmp_path / "invalid.json"
+    json_file.write_text('["not", "an", "object"]')
+
+    result = _read_latest_release_tag(str(json_file))
+    assert result is None  # Should return None for invalid JSON structure
+
+
+@pytest.mark.core_downloads
+def test_read_prerelease_tracking_data_non_dict_json(tmp_path):
+    """Test _read_prerelease_tracking_data handles non-dict JSON correctly."""
+    from fetchtastic.downloader import _read_prerelease_tracking_data
+
+    # Test with JSON string instead of object
+    tracking_file = tmp_path / "invalid.json"
+    tracking_file.write_text('"not an object"')
+
+    commits, current_release, last_updated = _read_prerelease_tracking_data(
+        str(tracking_file)
+    )
+
+    # Should return default values when JSON structure is invalid
+    assert commits == []
+    assert current_release is None
+    assert last_updated is None
+
+
+@pytest.mark.core_downloads
+def test_get_commit_hash_from_dir_length_validation():
+    """Test _get_commit_hash_from_dir enforces 6-40 character hash length."""
+    from fetchtastic.downloader import _get_commit_hash_from_dir
+
+    # Test with 4-character hash (should be rejected)
+    assert (
+        _get_commit_hash_from_dir("firmware-v1.0.0-abc123") is not None
+    )  # 6 chars, should work
+    assert (
+        _get_commit_hash_from_dir("firmware-v1.0.0-abcd") is None
+    )  # 4 chars, should fail
+
+    # Test with 6-character hash (should work)
+    assert _get_commit_hash_from_dir("firmware-v1.0.0-abcdef") == "abcdef"
+
+    # Test with 40-character hash (should work)
+    long_hash = "a" * 40
+    assert _get_commit_hash_from_dir(f"firmware-v1.0.0-{long_hash}") == long_hash
+
+    # Test with 41-character hash (should fail)
+    too_long_hash = "a" * 41
+    assert _get_commit_hash_from_dir(f"firmware-v1.0.0-{too_long_hash}") is None
+
+
+@pytest.mark.core_downloads
+def test_main_downloads_skipped_reset():
+    """Test main function resets downloads_skipped flag."""
+    import fetchtastic.downloader as downloader_module
+
+    # Set the flag to True first
+    downloader_module.downloads_skipped = True
+
+    # Mock the initial setup to avoid actual configuration loading
+    with patch("fetchtastic.downloader._initial_setup_and_config") as mock_setup:
+        mock_setup.return_value = (
+            None,
+            None,
+            None,
+            False,
+            None,
+        )  # config, current_version, latest_version, update_available, paths_and_urls
+
+        try:
+            # Call main function - it should fail early but still reset the flag
+            downloader_module.main(force_refresh=False)
+        except SystemExit:
+            pass  # Expected when setup fails
+
+        # Flag should be reset to False even when setup fails
+        assert downloader_module.downloads_skipped is False
+
+
+@pytest.mark.core_downloads
+def test_download_repo_files_path_traversal(tmp_path):
+    """Test that download_repo_files prevents path traversal attacks."""
+    import os
+    from unittest.mock import patch
+
+    from fetchtastic.repo_downloader import download_repo_files
+
+    download_dir = str(tmp_path)
+    repo_dir = tmp_path / "firmware" / "repo-dls"
+
+    # Test malicious directory path
+    malicious_dir = "../../../etc"
+    selected_files = {
+        "directory": malicious_dir,
+        "files": [{"name": "passwd", "download_url": "http://example.com/passwd"}],
+    }
+
+    def mock_download_file_with_retry(url, file_path):
+        """Mock that creates the file to simulate successful download."""
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        with open(file_path, "w") as f:
+            f.write("mock content")
+        return True
+
+    # Test the actual behavior of download_repo_files
+    with patch(
+        "fetchtastic.repo_downloader.download_file_with_retry",
+        side_effect=mock_download_file_with_retry,
+    ):
+        downloaded_files = download_repo_files(selected_files, download_dir)
+
+    # CRITICAL: Assert that the file was NOT written outside the intended repo directory
+    assert not (
+        tmp_path / "etc" / "passwd"
+    ).exists(), "SECURITY: File was written outside repo directory!"
+
+    # Assert that the file was written to the base repo directory as a fallback
+    assert (repo_dir / "passwd").exists(), "File was not written to fallback directory!"
+
+    # Verify the returned path points to the safe location
+    expected_safe_path = str(repo_dir / "passwd")
+    assert (
+        expected_safe_path in downloaded_files
+    ), "Returned path does not point to safe location!"
+
+    # Additional test: verify safe directory works normally
+    safe_selected_files = {
+        "directory": "safe_subdir",
+        "files": [{"name": "safe_file.txt", "download_url": "http://example.com/safe"}],
+    }
+
+    with patch(
+        "fetchtastic.repo_downloader.download_file_with_retry",
+        side_effect=mock_download_file_with_retry,
+    ):
+        safe_downloaded_files = download_repo_files(safe_selected_files, download_dir)
+
+    # Safe directory should work normally
+    safe_dir = repo_dir / "safe_subdir"
+    assert (safe_dir / "safe_file.txt").exists(), "Safe directory file was not created!"
+    assert (
+        str(safe_dir / "safe_file.txt") in safe_downloaded_files
+    ), "Safe file not in returned paths!"
