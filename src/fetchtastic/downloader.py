@@ -2689,6 +2689,7 @@ def _get_latest_releases_data(
     logger.debug(f"Cache miss for releases {url} - fetching from API")
     track_api_cache_miss()
 
+    releases: List[Dict[str, Any]] = []  # Initialize to prevent NameError
     try:
         # Add progress feedback
         if effective_release_type:
@@ -2696,6 +2697,9 @@ def _get_latest_releases_data(
         else:
             # Fallback for generic case
             logger.info("Fetching releases from GitHub...")
+
+        # Initialize releases to prevent NameError in error paths
+        releases: List[Dict[str, Any]] = []
 
         # scan_count already clamped above
         response: requests.Response = make_github_api_request(
