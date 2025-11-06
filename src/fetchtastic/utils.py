@@ -264,9 +264,8 @@ def _load_rate_limit_cache() -> None:
                             loaded[cache_key] = (remaining, reset_timestamp)
                     except (ValueError, TypeError):
                         continue
-    except (IOError, json.JSONDecodeError):
-        pass  # Silently ignore cache loading errors
-        loaded = {}
+    except (OSError, IOError, json.JSONDecodeError):
+        loaded = {}  # Silently ignore cache loading errors
 
     # Publish under lock, double-check flag
     with _rate_limit_lock:
@@ -329,7 +328,7 @@ def _save_rate_limit_cache() -> None:
                 except OSError:
                     pass
 
-    except IOError:
+    except (OSError, IOError):
         pass  # Silently ignore cache saving errors
 
 

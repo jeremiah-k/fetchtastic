@@ -2170,7 +2170,7 @@ def test_strip_unwanted_chars():
 
     # Test with non-ASCII characters (should be removed)
     assert strip_unwanted_chars("hello🌟world") == "helloworld"
-    assert strip_unwanted_chars("cafe") == "cafe"
+    assert strip_unwanted_chars("café") == "caf"
     assert strip_unwanted_chars("text with émojis 🚀") == "text with mojis "
 
     # Test with clean ASCII text (should remain unchanged)
@@ -2260,7 +2260,7 @@ def test_cache_thread_safety():
         clear_commit_timestamp_cache,
     )
 
-    def simulate_cache_operation(cache_type, operation_func, results_list, thread_id):
+    def simulate_cache_operation(_cache_type, operation_func, results_list, thread_id):
         """Simulate a cache operation and record timing."""
         start_time = time.time()
         try:

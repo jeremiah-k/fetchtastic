@@ -49,16 +49,28 @@ def download_repo_files(selected_files, download_dir):  # log_message_func remov
     repo_dir = os.path.join(download_dir, "firmware", REPO_DOWNLOADS_DIR)
     try:
         if not os.path.exists(repo_dir):
-            os.makedirs(repo_dir)
+            os.makedirs(repo_dir, exist_ok=True)
 
-        # Create directory structure matching the repository path
+        # Resolve and validate target directory to prevent traversal
         if directory:
-            dir_path = os.path.join(repo_dir, directory)
+            candidate = os.path.join(repo_dir, directory)
         else:
-            dir_path = repo_dir
-
-        if not os.path.exists(dir_path):
-            os.makedirs(dir_path)
+            candidate = repo_dir
+        real_repo = os.path.realpath(repo_dir)
+        real_target = os.path.realpath(candidate)
+        try:
+            common = os.path.commonpath([real_repo, real_target])
+        except ValueError:
+            common = None
+        if common != real_repo:
+            logger.warning(
+                "Sanitized unsafe repository subdirectory '%s'; using base repo directory",
+                directory,
+            )
+            dir_path = real_repo
+        else:
+            dir_path = real_target
+        os.makedirs(dir_path, exist_ok=True)
     except OSError as e:
         logger.error(
             f"Error creating base directories for repo downloads ({repo_dir} or {dir_path}): {e}",

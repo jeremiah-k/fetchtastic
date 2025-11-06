@@ -1422,16 +1422,16 @@ def _get_commit_hash_from_dir(dir_name: str) -> Optional[str]:
     """
     Extracts a commit hash from a prerelease directory name.
 
-    Searches the version portion (after the "firmware-" prefix) for a hexadecimal commit identifier of 4-40 characters and returns it in lowercase if found; returns None when no commit hash is present.
+    Searches the version portion (after the "firmware-" prefix) for a hexadecimal commit identifier of 6-40 characters and returns it in lowercase if found; returns None when no commit hash is present.
 
     Returns:
         commit_hash (Optional[str]): Lowercase commit hash when present, otherwise None.
     """
     version_part = extract_version(dir_name)  # Removes "firmware-" prefix
-    # Use regex to find a hex string of 4-40 characters, which is more robust.
+    # Use regex to find a hex string of 6-40 characters, which is more robust.
     # This pattern looks for a dot or dash, then the hash, followed by another separator or end of string.
     commit_match = re.search(
-        r"[.-]([a-f0-9]{4,40})(?:[.-]|$)", version_part, re.IGNORECASE
+        r"[.-]([a-f0-9]{6,40})(?:[.-]|$)", version_part, re.IGNORECASE
     )
     if commit_match:
         return commit_match.group(1).lower()
@@ -1959,7 +1959,7 @@ def _save_releases_cache() -> None:
             else:
                 logger.warning("Failed to save releases cache to %s", cache_file)
 
-    except (OSError, json.JSONDecodeError) as e:
+    except OSError as e:
         logger.warning("Could not save releases cache: %s", e)
 
 
@@ -2564,7 +2564,7 @@ def _save_commit_cache() -> None:
             else:
                 logger.warning(f"Failed to save commit timestamp cache to {cache_file}")
 
-    except (OSError, json.JSONDecodeError) as e:
+    except OSError as e:
         logger.warning(f"Could not save commit timestamp cache: {e}")
 
 
@@ -2671,9 +2671,9 @@ def _get_latest_releases_data(
             if age.total_seconds() < RELEASES_CACHE_EXPIRY_HOURS * 60 * 60:
                 track_api_cache_hit()
                 if effective_release_type:
-                    logger.info(f"Using cached {effective_release_type} releases data")
+                    logger.debug(f"Using cached {effective_release_type} releases data")
                 else:
-                    logger.info("Using cached releases data")
+                    logger.debug("Using cached releases data")
                 logger.debug(
                     f"Using cached releases for {url} (cached {age.total_seconds():.0f}s ago)"
                 )
@@ -4333,6 +4333,10 @@ def main(force_refresh: bool = False) -> None:
     """
     start_time: float = time.time()
     logger.info("Starting Fetchtastic...")  # Changed to logger.info
+
+    # Reset Wi‑Fi gating flag for each run
+    global downloads_skipped
+    downloads_skipped = False
 
     config: Optional[Dict[str, Any]]
     current_version: Optional[str]
