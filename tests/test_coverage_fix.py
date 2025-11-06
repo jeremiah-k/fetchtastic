@@ -253,7 +253,7 @@ def test_main_function_basic_coverage(tmp_path):
     """
     Cover the basic execution path of fetchtastic.downloader.main.
 
-    Mocks initial setup, Wi‑Fi check, firmware and APK processing, and finalization; invokes main(force_refresh=False) and asserts that setup, firmware processing, and APK processing were each called once.
+    Mocks initial setup, Wi-Fi check, firmware and APK processing, and finalization; invokes main(force_refresh=False) and asserts that setup, firmware processing, and APK processing were each called once.
     """
     with patch("fetchtastic.downloader._initial_setup_and_config") as mock_setup, patch(
         "fetchtastic.downloader._check_wifi_connection"

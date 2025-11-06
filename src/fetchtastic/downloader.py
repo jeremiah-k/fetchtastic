@@ -2671,12 +2671,11 @@ def _get_latest_releases_data(
             age = datetime.now(timezone.utc) - cached_at
             if age.total_seconds() < RELEASES_CACHE_EXPIRY_HOURS * 60 * 60:
                 track_api_cache_hit()
-                if effective_release_type:
-                    logger.debug(f"Using cached {effective_release_type} releases data")
-                else:
-                    logger.debug("Using cached releases data")
+                release_type_str = (
+                    f"{effective_release_type} " if effective_release_type else ""
+                )
                 logger.debug(
-                    f"Using cached releases for {url} (cached {age.total_seconds():.0f}s ago)"
+                    f"Using cached {release_type_str}releases for {url} (cached {age.total_seconds():.0f}s ago)"
                 )
                 return releases_data
             else:
@@ -4333,7 +4332,7 @@ def main(force_refresh: bool = False) -> None:
     start_time: float = time.time()
     logger.info("Starting Fetchtastic...")  # Changed to logger.info
 
-    # Reset Wi‑Fi gating flag for each run
+    # Reset Wi-Fi gating flag for each run
     global downloads_skipped
     downloads_skipped = False
 
