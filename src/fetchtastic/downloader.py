@@ -1729,14 +1729,14 @@ def _clear_prerelease_cache() -> None:
 def _fetch_prerelease_directories(force_refresh: bool = False) -> List[str]:
     """
     Get the list of prerelease directory names from the meshtastic.github.io repository, using a cached value when fresh.
-    
+
     When the cache is missing, expired, or when `force_refresh` is True, fetches the directory list from GitHub and updates the on-disk cache.
-    
+
     Parameters:
-    	force_refresh (bool): If True, bypass the cache and fetch fresh data from GitHub.
-    
+        force_refresh (bool): If True, bypass the cache and fetch fresh data from GitHub.
+
     Returns:
-    	List[str]: Directory names found at the repository root.
+        List[str]: Directory names found at the repository root.
     """
     cache_key = _PRERELEASE_DIR_CACHE_ROOT_KEY
 
