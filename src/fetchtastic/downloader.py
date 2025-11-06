@@ -1801,11 +1801,11 @@ def _load_commit_cache() -> None:
         Parse a cached commit entry's ISO 8601 timestamp and return it together with the original cache time.
 
         Parameters:
-                cache_entry (Any): Sequence-like cached entry whose first element is an ISO 8601 timestamp string; a trailing "Z" is interpreted as UTC.
-                cached_at (datetime): The time entry was cached; returned unchanged.
+            cache_entry (Any): Sequence-like cached entry whose first element is an ISO 8601 timestamp string; a trailing "Z" is interpreted as UTC.
+            cached_at (datetime): The time entry was cached; returned unchanged.
 
         Returns:
-                tuple (datetime, datetime): `(commit_timestamp, cached_at)` where `commit_timestamp` is a timezone-aware datetime parsed from cached ISO 8601 string and `cached_at` is the provided cache time.
+            tuple (datetime, datetime): `(commit_timestamp, cached_at)` where `commit_timestamp` is a timezone-aware datetime parsed from cached ISO 8601 string and `cached_at` is the provided cache time.
         """
         timestamp_str, _ = cache_entry  # cached_at is already parsed
         timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
