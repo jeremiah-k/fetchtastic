@@ -430,9 +430,10 @@ def test_check_and_download_corrupted_existing_zip_records_failure(tmp_path):
     def mock_download(_url, _path):
         # Mock download failure to test error handling
         """
-        Simulates a failed download for testing purposes.
-
-        @returns False indicating the download did not succeed.
+        Simulates a download failure for tests.
+        
+        Returns:
+            `False` indicating the download did not succeed.
         """
         return False
 
@@ -1496,24 +1497,21 @@ def test_load_json_cache_with_expiry_no_file(tmp_path):
 
     def dummy_validator(entry):
         """
-        Always considers the provided entry valid.
-
-        Parameters:
-            entry: The object representing the entry to validate.
-
+        Always treats the provided entry as valid.
+        
         Returns:
-            True — the entry is always treated as valid.
+            `True` for any input.
         """
         return True
 
     def dummy_processor(entry, cached_at):
         """
-        Return the provided entry without modification.
-
+        Return the entry unchanged.
+        
         Parameters:
-            entry: The entry object to be returned unchanged.
-            cached_at: A timestamp or metadata indicating when the entry was cached; this parameter is accepted but ignored.
-
+            entry: Object to return unchanged.
+            cached_at: Timestamp or metadata when the entry was cached; accepted but ignored.
+        
         Returns:
             The same `entry` object that was passed in.
         """
@@ -1540,24 +1538,21 @@ def test_load_json_cache_with_expiry_invalid_json(tmp_path):
 
     def dummy_validator(entry):
         """
-        Always considers the provided entry valid.
-
-        Parameters:
-            entry: The object representing the entry to validate.
-
+        Always treats the provided entry as valid.
+        
         Returns:
-            True — the entry is always treated as valid.
+            `True` for any input.
         """
         return True
 
     def dummy_processor(entry, cached_at):
         """
-        Return the provided entry without modification.
-
+        Return the entry unchanged.
+        
         Parameters:
-            entry: The entry object to be returned unchanged.
-            cached_at: A timestamp or metadata indicating when the entry was cached; this parameter is accepted but ignored.
-
+            entry: Object to return unchanged.
+            cached_at: Timestamp or metadata when the entry was cached; accepted but ignored.
+        
         Returns:
             The same `entry` object that was passed in.
         """
@@ -1584,24 +1579,21 @@ def test_load_json_cache_with_expiry_wrong_type(tmp_path):
 
     def dummy_validator(entry):
         """
-        Always considers the provided entry valid.
-
-        Parameters:
-            entry: The object representing the entry to validate.
-
+        Always treats the provided entry as valid.
+        
         Returns:
-            True — the entry is always treated as valid.
+            `True` for any input.
         """
         return True
 
     def dummy_processor(entry, cached_at):
         """
-        Return the provided entry without modification.
-
+        Return the entry unchanged.
+        
         Parameters:
-            entry: The entry object to be returned unchanged.
-            cached_at: A timestamp or metadata indicating when the entry was cached; this parameter is accepted but ignored.
-
+            entry: Object to return unchanged.
+            cached_at: Timestamp or metadata when the entry was cached; accepted but ignored.
+        
         Returns:
             The same `entry` object that was passed in.
         """
@@ -1653,14 +1645,14 @@ def test_load_json_cache_with_expiry_expired_entries(tmp_path):
 
     def dummy_processor(entry, cached_at):
         """
-        Extracts and returns the `data` field from a cache entry.
-
+        Return the value of the "data" key from a cache entry.
+        
         Parameters:
-            entry (dict): A mapping representing a cached entry; must contain a `"data"` key.
-            cached_at: Timestamp or metadata for when the entry was cached (ignored by this processor).
-
+            entry (dict): Cache entry mapping that must contain a "data" key.
+            cached_at: Ignored; timestamp or metadata for when the entry was cached.
+        
         Returns:
-            The value stored under the `"data"` key in `entry`.
+            The value stored under the "data" key in `entry`.
         """
         return entry["data"]
 
@@ -2261,7 +2253,17 @@ def test_cache_thread_safety():
     )
 
     def simulate_cache_operation(_cache_type, operation_func, results_list, thread_id):
-        """Simulate a cache operation and record timing."""
+        """
+        Run a cache-related operation in a thread and record its timing and outcome.
+        
+        Appends a tuple to `results_list` containing (thread_id, start_timestamp, end_timestamp, error_message_or_None). If the operation raises, the exception string is recorded as `error_message_or_None`; otherwise that field is `None`.
+        
+        Parameters:
+            _cache_type: Identifier for the cache being exercised (unused by this helper; provided for context).
+            operation_func: Callable that performs the cache operation to measure.
+            results_list: Mutable sequence to which the timing/result tuple will be appended.
+            thread_id: Identifier for the calling thread, included in the recorded tuple.
+        """
         start_time = time.time()
         try:
             operation_func()

@@ -968,10 +968,10 @@ def _parse_legacy_json_format(
 
 def _read_prerelease_tracking_data(tracking_file):
     """
-    Read prerelease tracking data from a JSON file and normalize it to the internal tuple form.
-
-    Supports the current JSON schema (keys like "version" with either "hash" or "commits", optional "last_updated" or "timestamp") and a legacy JSON schema (keys like "release" and "commits"). Legacy plain-text tracking files are not supported.
-
+    Parse prerelease tracking JSON and normalize it to a (commits, current_release, last_updated) tuple.
+    
+    Supports the current JSON schema (contains "version" and either "hash" or "commits", optional "last_updated" or "timestamp") and a legacy JSON schema (keys like "release" and "commits"). If the file contains non-dict JSON or cannot be read/decoded, returns empty/None values.
+    
     Returns:
         tuple: (commits, current_release, last_updated)
             commits (list[str]): Ordered list of prerelease identifiers (may be empty).
@@ -1189,19 +1189,19 @@ def _update_tracking_with_newest_prerelease(
 
 def matches_extract_patterns(filename, extract_patterns, device_manager=None):
     """
-    Determine whether a filename matches any configured extract patterns.
-
-    Pattern matching is case-insensitive and recognizes:
-    - file-type prefix patterns (e.g., those from FILE_TYPE_PREFIXES),
-    - device patterns (boundary-aware matching for device identifiers),
+    Check if a filename matches any configured extract patterns.
+    
+    Matching is case-insensitive and supports:
+    - file-type prefix patterns (e.g., entries starting with known FILE_TYPE_PREFIXES),
+    - device patterns (boundary-aware matching for device identifiers; can use device_manager.is_device_pattern),
     - the special "littlefs-" prefix,
-    - and general substring patterns as a fallback.
-
+    - and a simple substring fallback for other patterns.
+    
     Parameters:
-        filename (str): The file name to test.
+        filename (str): The filename to test.
         extract_patterns (Iterable[str]): Patterns from configuration to match against.
-        device_manager (optional): Object with `is_device_pattern(pattern)` to identify device-style patterns.
-
+        device_manager (optional): Object providing `is_device_pattern(pattern)` to identify device-style patterns.
+    
     Returns:
         bool: `True` if any pattern matches the filename, `False` otherwise.
     """
@@ -1420,12 +1420,12 @@ def extract_version(dir_name: str) -> str:
 
 def _get_commit_hash_from_dir(dir_name: str) -> Optional[str]:
     """
-    Extracts a commit hash from a prerelease directory name.
-
-    Searches the version portion (after the "firmware-" prefix) for a hexadecimal commit identifier of 6-40 characters and returns it in lowercase if found; returns None when no commit hash is present.
-
+    Extract the commit hash embedded in a prerelease directory name.
+    
+    Scans the version portion (after removing a leading "firmware-" prefix) for a hexadecimal commit identifier of 6 to 40 characters and returns it in lowercase if found.
+    
     Returns:
-        commit_hash (Optional[str]): Lowercase commit hash when present, otherwise None.
+        Optional[str]: Lowercase commit hash when present, otherwise None.
     """
     version_part = extract_version(dir_name)  # Removes "firmware-" prefix
     # Use regex to find a hex string of 6-40 characters, which is more robust.
@@ -1622,15 +1622,17 @@ def _load_prerelease_dir_cache() -> None:
     # Perform I/O outside of lock to minimize contention
     def validate_prerelease_entry(cache_entry: Dict[str, Any]) -> bool:
         """
-        Validate that an object conforms to the prerelease directory cache entry schema.
-
+        Validate that a mapping represents a prerelease directory cache entry.
+        
+        This checks for the presence of the required top-level keys used by the prerelease directory cache:
+        - "directories": expected to be a sequence or mapping of prerelease directory names.
+        - "cached_at": expected to be an ISO timestamp string or a numeric epoch.
+        
         Parameters:
-            cache_entry (dict): Candidate cache entry expected to be a mapping that contains a "directories"
-                key (list or mapping of prerelease directory names) and a "cached_at" key (ISO timestamp
-                string or numeric epoch).
-
+            cache_entry (dict): Mapping to validate as a prerelease directory cache entry.
+        
         Returns:
-            True if `cache_entry` is a dict containing both "directories" and "cached_at", `False` otherwise.
+            `True` if `cache_entry` is a mapping containing both `"directories"` and `"cached_at"`, `False` otherwise.
         """
         return (
             isinstance(cache_entry, dict)
@@ -1676,9 +1678,9 @@ def _load_prerelease_dir_cache() -> None:
 
 def _save_prerelease_dir_cache() -> None:
     """
-    Persist in-memory prerelease directory cache to disk.
-
-    Writes the current in-memory prerelease directory entries to the configured cache file; cached timestamps are serialized in ISO 8601 format. Logs success or failure but does not raise on I/O errors.
+    Persist the in-memory prerelease directory cache to the configured cache file.
+    
+    Cached timestamps are serialized as ISO 8601 strings. I/O errors are logged and suppressed; the function does not raise on write failures.
     """
     cache_file = _get_prerelease_dir_cache_file()
 
@@ -1772,9 +1774,9 @@ def _fetch_prerelease_directories(force_refresh: bool = False) -> List[str]:
 
 def _load_commit_cache() -> None:
     """
-    Load non-expired commit timestamps from on-disk cache into in-memory commit timestamp cache.
-
-    Reads the commit cache JSON file (a mapping of commit id -> [timestamp, cached_at]), parses ISO-8601 timestamps, skips entries that are malformed or whose cached_at is older than COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS, and updates module-level _commit_timestamp_cache. Marks the cache as loaded to prevent repeated loads and logs debug messages when entries are skipped or cache cannot be read.
+    Populate the in-memory commit timestamp cache with non-expired entries from the on-disk cache.
+    
+    Reads the commit cache JSON file and loads entries whose cached_at is within COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS into the module-level cache. Malformed or expired entries are ignored. The function uses a module-level lock and a loaded flag to ensure the cache is initialized only once across threads.
     """
     global _commit_timestamp_cache, _commit_cache_loaded
 
@@ -1872,10 +1874,9 @@ def _load_commit_cache() -> None:
 
 def _load_releases_cache() -> None:
     """
-    Load the on-disk releases cache into the in-memory releases cache while honoring expiry.
-
-    Reads the releases cache file, validates and processes cached entries, converts stored timestamps to datetimes,
-    and loads only entries that have not expired into the module-level cache so subsequent calls are no-ops.
+    Load non-expired releases from the on-disk cache into the module-level in-memory releases cache.
+    
+    This populates the module cache with cached release entries that have not expired, performing I/O only when needed and making subsequent calls a no-op once the cache is loaded.
     """
     global _releases_cache, _releases_cache_loaded
 
@@ -2342,20 +2343,20 @@ def check_for_prereleases(
 ) -> Tuple[bool, List[str]]:
     """
     Detect and download matching prerelease firmware assets for the expected prerelease version.
-
-    If matching assets are found and downloaded, the function updates on-disk prerelease tracking and prunes older prerelease directories when appropriate.
-
+    
+    Computes the expected prerelease version from latest_release_tag, locates a matching remote prerelease directory, downloads assets that match selected_patterns (respecting exclude_patterns and device_manager), updates on-disk prerelease tracking, and prunes older prerelease directories when appropriate.
+    
     Parameters:
         download_dir (str): Base download directory containing firmware/prerelease subdirectory.
-        latest_release_tag (str): Latest official release tag used to compute the expected prerelease version (e.g., "2.7.6").
+        latest_release_tag (str): Official release tag used to compute the expected prerelease version.
         selected_patterns (Optional[List[str]]): Asset selection patterns; if None or empty, no prerelease downloads are attempted.
         exclude_patterns (Optional[List[str]]): Patterns to exclude from matching assets.
         device_manager: Optional device pattern resolver used for device-aware matching.
         github_token (Optional[str]): GitHub API token for querying remote prerelease directories.
         force_refresh (bool): When True, force remote checks and update tracking even if cached data exists.
-
+    
     Returns:
-        `true` if any new prerelease assets were downloaded, `false` otherwise; and a list of relevant prerelease directory name(s) (downloaded directory when downloads occurred, otherwise existing/inspected directory names; empty list if none).
+        `True` if any new prerelease assets were downloaded, `False` otherwise; and a list of relevant prerelease directory name(s) — the downloaded directory when downloads occurred, otherwise existing/inspected directory names; empty list if none.
     """
     global downloads_skipped
 
@@ -2544,9 +2545,9 @@ def get_commit_timestamp(
 
 def _save_commit_cache() -> None:
     """
-    Persist in-memory commit timestamp cache to the configured cache file.
-
-    Writes the module-level _commit_timestamp_cache to disk using an atomic JSON write; timestamps are stored as ISO 8601 strings and failures are logged.
+    Persist the in-memory commit timestamp cache to the configured on-disk cache file.
+    
+    Timestamps are stored as ISO 8601 strings keyed by commit identifier. On failure the function logs a warning.
     """
     global _commit_timestamp_cache
     cache_file = _get_commit_cache_file()
@@ -3306,13 +3307,13 @@ def extract_files(
 ) -> None:
     """
     Extract selected files from a ZIP archive into the given directory.
-
-    Only members whose base filename matches one of the provided inclusion patterns and do not match any exclusion patterns are extracted; if `patterns` is empty, extraction is skipped. The archive's internal directory structure is preserved and missing target directories are created. Files whose base name ends with the configured shell-script extension are made executable after extraction. Unsafe extraction paths are skipped; a corrupted ZIP will be removed. IO, OS, and ZIP errors are handled and logged internally.
-
+    
+    Only archive members whose base filename matches one of the provided inclusion patterns and do not match any exclusion patterns are extracted; if `patterns` is empty, extraction is skipped. The archive's internal directory structure is preserved and missing target directories are created. Files whose base name ends with the configured shell-script extension are given executable permissions after extraction. Unsafe extraction paths are skipped; a corrupted ZIP file will be removed. IO, OS, and ZIP errors are handled and logged internally.
+    
     Parameters:
         zip_path (str): Path to the ZIP archive to read.
-        extract_dir (str): Destination directory where files will be extracted.
-        patterns (List[str]): Inclusion patterns used to select files; empty list means no extraction.
+        extract_dir (str): Destination directory where matching files will be extracted.
+        patterns (List[str]): Inclusion patterns used to select files; an empty list causes no extraction.
         exclude_patterns (List[str]): Glob-style patterns applied to the base filename to exclude matching entries.
     """
     # Historical behavior: empty pattern list means "do not extract anything".
@@ -4324,12 +4325,10 @@ def _cleanup_legacy_files(
 
 def main(force_refresh: bool = False) -> None:
     """
-    Run the Fetchtastic downloader workflow.
-
-    Performs startup and configuration, optionally clears caches and device hardware cache when requested, enforces Wi-Fi gating, processes firmware and APK downloads (with a single retry pass for failures), cleans legacy files, finalizes logging and notifications, and records an API usage summary.
-
+    Run the main Fetchtastic workflow: perform startup/configuration, optionally clear caches, process firmware and APK downloads with a retry pass for failures, clean legacy files, and send final notifications.
+    
     Parameters:
-        force_refresh (bool): When True, clear all persistent caches and the device hardware cache before fetching remote data.
+        force_refresh (bool): If True, clear all persistent caches and the device hardware cache before fetching remote data.
     """
     start_time: float = time.time()
     logger.info("Starting Fetchtastic...")  # Changed to logger.info
