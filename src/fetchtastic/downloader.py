@@ -48,6 +48,7 @@ from fetchtastic.constants import (
     MAX_CONCURRENT_TIMESTAMP_FETCHES,
     MESHTASTIC_ANDROID_RELEASES_URL,
     MESHTASTIC_FIRMWARE_RELEASES_URL,
+    MESHTASTIC_GITHUB_IO_CONTENTS_URL,
     NTFY_REQUEST_TIMEOUT,
     PRERELEASE_COMMITS_LEGACY_FILE,
     PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
@@ -1760,7 +1761,9 @@ def _fetch_prerelease_directories(force_refresh: bool = False) -> List[str]:
             )
             del _prerelease_dir_cache[cache_key]
 
-    logger.debug("Cache miss for prerelease directories - fetching from GitHub API")
+    logger.debug(
+        f"Cache miss for prerelease directories {MESHTASTIC_GITHUB_IO_CONTENTS_URL} - fetching from API"
+    )
     track_api_cache_miss()
     directories = menu_repo.fetch_repo_directories()
     updated_at = datetime.now(timezone.utc)
@@ -4438,12 +4441,12 @@ def main(force_refresh: bool = False) -> None:
         latest_prerelease_version,
     )
 
-    # Log API request summary
+    # Log API request summary at debug level
     summary = get_api_request_summary()
     if summary["total_requests"] > 0:
-        logger.info(_format_api_summary(summary))
+        logger.debug(_format_api_summary(summary))
     else:
-        logger.info(
+        logger.debug(
             "📊 GitHub API Summary: No API requests made (all data served from cache)"
         )
 

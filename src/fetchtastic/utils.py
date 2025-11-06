@@ -515,6 +515,7 @@ def make_github_api_request(
     try:
         # Make the request
         actual_timeout = timeout or GITHUB_API_TIMEOUT
+        logger.debug(f"Making GitHub API request: {url}")
         response = requests.get(
             url, timeout=actual_timeout, headers=headers, params=params
         )
@@ -572,15 +573,8 @@ def make_github_api_request(
             # API request counter increment
             if effective_token:
                 _api_auth_used = True
-                if not _api_first_auth_logged:
-                    logger.info("🔐 Making first authenticated GitHub API request")
-                    _api_first_auth_logged = True
             else:
-                if not _api_first_unauth_logged:
-                    logger.info(
-                        "🌐 Making first unauthenticated GitHub API request (60/hour limit)"
-                    )
-                    _api_first_unauth_logged = True
+                pass
 
     # Enhanced rate limit tracking and logging
     try:
@@ -620,8 +614,8 @@ def make_github_api_request(
                     logger.warning(
                         f"GitHub API rate limit running low: {remaining} requests remaining"
                     )
-                elif remaining <= 50:
-                    logger.info(
+                elif remaining <= 20:
+                    logger.warning(
                         f"GitHub API rate limit: {remaining} requests remaining"
                     )
 
