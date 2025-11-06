@@ -2,6 +2,53 @@
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[project]
+name = "fetchtastic"
+version = "0.8.2"
+authors = [{ name = "Jeremiah K", email = "jeremiahk@gmx.com" }]
+description = "Meshtastic Firmware and APK Downloader"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Operating System :: Android",
+  "Operating System :: POSIX :: Linux",
+  "Operating System :: MacOS",
+  "Operating System :: Microsoft :: Windows",
+]
+dependencies = [
+  "requests",
+  "pick",
+  "PyYAML",
+  "urllib3>=2.0",
+  "packaging",
+  "platformdirs==4.5.0",
+  "rich",
+]
+
+[project.optional-dependencies]
+win = ["pywin32", "winshell"]
+test = ["pytest", "pytest-mock", "pytest-cov"]
+
+[project.urls]
+Homepage = "https://github.com/jeremiah-k/fetchtastic"
+Repository = "https://github.com/jeremiah-k/fetchtastic"
+Issues = "https://github.com/jeremiah-k/fetchtastic/issues"
+
+[project.scripts]
+fetchtastic = "fetchtastic.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"fetchtastic.tools" = ["*.bat", "*.sh"]
+
 [tool.pytest.ini_options]
 minversion = "6.0"
 addopts = "-ra -q --strict-markers --cov=src/fetchtastic --cov-report=xml --cov-report=html --cov-report=term-missing --cov-branch"
