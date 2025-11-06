@@ -11,7 +11,7 @@ import pytest
 def populated_releases_cache():
     """
     Populate the fetchtastic.downloader releases cache with a deterministic entry for use as a pytest fixture, then restore the original cache state after the test.
-    
+
     Yields:
         tuple: (test_data, cache_key) where `test_data` is a list containing a single release dict `{"tag_name": "v2.7.8"}` and `cache_key` is the firmware releases URL used as the cache key.
     """
@@ -150,7 +150,7 @@ def test_cache_logging_lines_coverage(populated_releases_cache):
 def test_api_fetch_logging_lines_coverage():
     """
     Exercise the API-fetch path of _get_latest_releases_data for the firmware and Android release endpoints.
-    
+
     Restores the downloader module's releases cache and loaded flag after the test to avoid polluting global state.
     """
     import fetchtastic.downloader as downloader_module

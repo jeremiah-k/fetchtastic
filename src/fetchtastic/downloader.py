@@ -663,10 +663,10 @@ def compare_file_hashes(file1, file2):
 def _read_latest_release_tag(json_file: str) -> Optional[str]:
     """
     Read the latest release tag stored under the top-level `latest_version` key in a JSON file.
-    
+
     Parameters:
         json_file (str): Path to the JSON file to read.
-    
+
     Returns:
         Optional[str]: The stripped `latest_version` string if present and non-empty, otherwise `None`.
     """
@@ -761,10 +761,10 @@ def _matches_exclude(name: str, patterns: List[str]) -> bool:
 def _get_json_release_basename(release_type: str) -> str:
     """
     Get the JSON basename used to record the latest release for a release type.
-    
+
     Parameters:
         release_type (str): Human-readable release type (for example "Android APK" or "Firmware").
-    
+
     Returns:
         str: Filename basename to use for the latest-release JSON (e.g., the value of LATEST_ANDROID_RELEASE_JSON_FILE for Android, LATEST_FIRMWARE_RELEASE_JSON_FILE for firmware, or "latest_release.json" for other types).
     """
@@ -1087,13 +1087,13 @@ def _update_tracking_with_newest_prerelease(
 ) -> Optional[int]:
     """
     Record the newest prerelease identifier in the prerelease tracking JSON and update the tracked commits list.
-    
+
     If the official release tag has changed since last tracking, reset the tracked prerelease commits before adding the newest prerelease. Ignores directories that do not match the firmware prerelease naming pattern.
-    
+
     Parameters:
         latest_release_tag (str): Official release tag used to determine whether tracking should be reset.
         newest_prerelease_dir (str): Name of the newest prerelease directory (expected to start with the firmware prefix).
-    
+
     Returns:
         Optional[int]: Number of tracked prerelease commits after the update;
             `0` if `newest_prerelease_dir` is empty or invalid;
@@ -1175,18 +1175,18 @@ def _update_tracking_with_newest_prerelease(
 def matches_extract_patterns(filename, extract_patterns, device_manager=None):
     """
     Determine whether a filename matches any configured extract patterns.
-    
+
     Pattern matching is case-insensitive and recognizes:
     - file-type prefix patterns (e.g., those from FILE_TYPE_PREFIXES),
     - device patterns (boundary-aware matching for device identifiers),
     - the special "littlefs-" prefix,
     - and general substring patterns as a fallback.
-    
+
     Parameters:
         filename (str): The file name to test.
         extract_patterns (Iterable[str]): Patterns from configuration to match against.
         device_manager (optional): Object with `is_device_pattern(pattern)` to identify device-style patterns.
-    
+
     Returns:
         bool: `True` if any pattern matches the filename, `False` otherwise.
     """
@@ -1246,9 +1246,9 @@ def matches_extract_patterns(filename, extract_patterns, device_manager=None):
 def get_prerelease_tracking_info():
     """
     Return a summary of prerelease tracking stored in the user's prerelease_tracking.json.
-    
+
     Reads normalized prerelease tracking data and returns a dictionary with the tracked official release tag, ordered prerelease identifiers, count, last-updated timestamp, and the most recent prerelease identifier. If no tracking data exists, returns an empty dict.
-    
+
     Returns:
         dict: If data present, a dictionary with keys:
             - "release" (str | None): Tracked official release tag or None.
@@ -1596,7 +1596,7 @@ def _load_json_cache_with_expiry(
 def _load_prerelease_dir_cache() -> None:
     """
     Load the on-disk prerelease directory cache into memory, validating entries and applying expiry.
-    
+
     If the cache is already loaded this is a no-op. Reads the persistent cache file (performing validation and expiry checks) and merges valid entries into the module-level prerelease directory cache under the module lock to ensure thread safety.
     """
     global _prerelease_dir_cache, _prerelease_dir_cache_loaded
@@ -1608,12 +1608,12 @@ def _load_prerelease_dir_cache() -> None:
     def validate_prerelease_entry(cache_entry: Dict[str, Any]) -> bool:
         """
         Validate that an object conforms to the prerelease directory cache entry schema.
-        
+
         Parameters:
             cache_entry (dict): Candidate cache entry expected to be a mapping that contains a "directories"
                 key (list or mapping of prerelease directory names) and a "cached_at" key (ISO timestamp
                 string or numeric epoch).
-        
+
         Returns:
             True if `cache_entry` is a dict containing both "directories" and "cached_at", `False` otherwise.
         """
@@ -1628,14 +1628,14 @@ def _load_prerelease_dir_cache() -> None:
     ) -> Tuple[List[str], datetime]:
         """
         Validate a prerelease cache record and return its directory list with the original timestamp.
-        
+
         Parameters:
             cache_entry (Dict[str, Any]): Cache record expected to contain a "directories" key mapping to a list of prerelease directory names.
             cached_at (datetime): Timestamp when the cache entry was recorded.
-        
+
         Returns:
             Tuple[List[str], datetime]: A tuple containing the directories list and the original cached_at timestamp.
-        
+
         Raises:
             TypeError: If the "directories" value is not a list.
         """
@@ -1661,7 +1661,7 @@ def _load_prerelease_dir_cache() -> None:
 
 def _save_prerelease_dir_cache() -> None:
     """
-    Persist the in-memory prerelease directory cache to disk.
+    Persist in-memory prerelease directory cache to disk.
 
     Writes the current in-memory prerelease directory entries to the configured cache file; cached timestamps are serialized in ISO 8601 format. Logs success or failure but does not raise on I/O errors.
     """
@@ -1677,15 +1677,16 @@ def _save_prerelease_dir_cache() -> None:
                 for cache_key, (directories, cached_at) in _prerelease_dir_cache.items()
             }
 
-        if _atomic_write_json(cache_file, cache_data):
-            logger.debug(
-                "Saved %d prerelease directory cache entries to disk",
-                len(cache_data),
-            )
-        else:
-            logger.warning(
-                "Failed to save prerelease directory cache to %s", cache_file
-            )
+            # Perform I/O inside lock to prevent race conditions
+            if _atomic_write_json(cache_file, cache_data):
+                logger.debug(
+                    "Saved %d prerelease directory cache entries to disk",
+                    len(cache_data),
+                )
+            else:
+                logger.warning(
+                    "Failed to save prerelease directory cache to %s", cache_file
+                )
 
     except (IOError, OSError) as e:
         logger.warning("Could not save prerelease directory cache: %s", e)
@@ -1756,11 +1757,15 @@ def _fetch_prerelease_directories(force_refresh: bool = False) -> List[str]:
 
 def _load_commit_cache() -> None:
     """
-    Load non-expired commit timestamps from the on-disk cache into the in-memory commit timestamp cache.
+    Load non-expired commit timestamps from on-disk cache into in-memory commit timestamp cache.
 
-    Reads the commit cache JSON file (a mapping of commit id -> [timestamp, cached_at]), parses ISO-8601 timestamps, skips entries that are malformed or whose cached_at is older than COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS, and updates the module-level _commit_timestamp_cache. Marks the cache as loaded to prevent repeated loads and logs debug messages when entries are skipped or the cache cannot be read.
+    Reads the commit cache JSON file (a mapping of commit id -> [timestamp, cached_at]), parses ISO-8601 timestamps, skips entries that are malformed or whose cached_at is older than COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS, and updates module-level _commit_timestamp_cache. Marks the cache as loaded to prevent repeated loads and logs debug messages when entries are skipped or cache cannot be read.
     """
     global _commit_timestamp_cache, _commit_cache_loaded
+
+    # Fast path: check if already loaded (double-checked locking pattern)
+    if _commit_cache_loaded:
+        return
 
     def validate_commit_entry(cache_entry: Any) -> bool:
         """
@@ -1779,29 +1784,27 @@ def _load_commit_cache() -> None:
     ) -> Tuple[datetime, datetime]:
         """
         Parse a cached commit entry's ISO 8601 timestamp and return it together with the original cache time.
-        
+
         Parameters:
-        	cache_entry (Any): Sequence-like cached entry whose first element is an ISO 8601 timestamp string; a trailing "Z" is interpreted as UTC.
-        	cached_at (datetime): The time the entry was cached; returned unchanged.
-        
+                cache_entry (Any): Sequence-like cached entry whose first element is an ISO 8601 timestamp string; a trailing "Z" is interpreted as UTC.
+                cached_at (datetime): The time entry was cached; returned unchanged.
+
         Returns:
-        	tuple (datetime, datetime): `(commit_timestamp, cached_at)` where `commit_timestamp` is a timezone-aware datetime parsed from the cached ISO 8601 string and `cached_at` is the provided cache time.
+                tuple (datetime, datetime): `(commit_timestamp, cached_at)` where `commit_timestamp` is a timezone-aware datetime parsed from cached ISO 8601 string and `cached_at` is the provided cache time.
         """
         timestamp_str, _ = cache_entry  # cached_at is already parsed
         timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
         return (timestamp, cached_at)
 
-    # Note: Commit cache has a different structure (list/tuple) so we handle it specially
-    with _cache_lock:
-        if _commit_cache_loaded:
-            return
-
+    # Perform I/O outside of lock to minimize contention
     cache_file = _get_commit_cache_file()
     loaded: Dict[str, Tuple[datetime, datetime]] = {}
 
     try:
         if not os.path.exists(cache_file):
             with _cache_lock:
+                if _commit_cache_loaded:
+                    return  # Another thread might have loaded it while we were checking
                 _commit_cache_loaded = True
             return
 
@@ -1810,6 +1813,8 @@ def _load_commit_cache() -> None:
 
         if not isinstance(cache_data, dict):
             with _cache_lock:
+                if _commit_cache_loaded:
+                    return  # Another thread might have loaded it while we were checking
                 _commit_cache_loaded = True
             return
 
@@ -1836,19 +1841,24 @@ def _load_commit_cache() -> None:
                 )
                 continue
 
+        # Update cache under lock with double-checked pattern
         with _cache_lock:
+            if _commit_cache_loaded:
+                return  # Another thread might have loaded it while we were reading from disk
             _commit_timestamp_cache.update(loaded)
             _commit_cache_loaded = True
         logger.debug("Loaded %d commit timestamps from cache", len(loaded))
 
-    except (IOError, json.JSONDecodeError) as e:
-        logger.debug("Could not load commit timestamp cache: %s", e)
+    except (OSError, json.JSONDecodeError) as e:
+        logger.debug("Could not load commit cache: %s", e)
+        with _cache_lock:
+            _commit_cache_loaded = True
 
 
 def _load_releases_cache() -> None:
     """
     Load the on-disk releases cache into the in-memory releases cache while honoring expiry.
-    
+
     Reads the releases cache file, validates and processes cached entries, converts stored timestamps to datetimes,
     and loads only entries that have not expired into the module-level cache so subsequent calls are no-ops.
     """
@@ -1907,11 +1917,11 @@ def _load_releases_cache() -> None:
 
 def _save_releases_cache() -> None:
     """
-    Persist the in-memory releases cache to the platform cache file.
+    Persist in-memory releases cache to platform cache file.
 
     Writes a JSON object mapping cache keys to records with two fields:
-    - `releases`: the cached releases data
-    - `cached_at`: ISO 8601 timestamp when the entry was cached
+    - `releases`: cached releases data
+    - `cached_at`: ISO 8601 timestamp when entry was cached
 
     The write is performed atomically to avoid partial files; success or failure is logged at debug level.
     """
@@ -1928,13 +1938,13 @@ def _save_releases_cache() -> None:
                 for cache_key, (releases_data, cached_at) in _releases_cache.items()
             }
 
-        # Use atomic write to prevent cache corruption
-        if _atomic_write_json(cache_file, cache_data):
-            logger.debug("Saved %d releases entries to cache", len(cache_data))
-        else:
-            logger.warning("Failed to save releases cache to %s", cache_file)
+            # Perform I/O inside lock to prevent race conditions
+            if _atomic_write_json(cache_file, cache_data):
+                logger.debug("Saved %d releases entries to cache", len(cache_data))
+            else:
+                logger.warning("Failed to save releases cache to %s", cache_file)
 
-    except (IOError, OSError) as e:
+    except (OSError, json.JSONDecodeError) as e:
         logger.warning("Could not save releases cache: %s", e)
 
 
@@ -2317,9 +2327,9 @@ def check_for_prereleases(
 ) -> Tuple[bool, List[str]]:
     """
     Detect and download matching prerelease firmware assets for the expected prerelease version.
-    
+
     If matching assets are found and downloaded, the function updates on-disk prerelease tracking and prunes older prerelease directories when appropriate.
-    
+
     Parameters:
         download_dir (str): Base download directory containing firmware/prerelease subdirectory.
         latest_release_tag (str): Latest official release tag used to compute the expected prerelease version (e.g., "2.7.6").
@@ -2328,7 +2338,7 @@ def check_for_prereleases(
         device_manager: Optional device pattern resolver used for device-aware matching.
         github_token (Optional[str]): GitHub API token for querying remote prerelease directories.
         force_refresh (bool): When True, force remote checks and update tracking even if cached data exists.
-    
+
     Returns:
         `true` if any new prerelease assets were downloaded, `false` otherwise; and a list of relevant prerelease directory name(s) (downloaded directory when downloads occurred, otherwise existing/inspected directory names; empty list if none).
     """
@@ -2519,7 +2529,7 @@ def get_commit_timestamp(
 
 def _save_commit_cache() -> None:
     """
-    Persist the in-memory commit timestamp cache to the configured cache file.
+    Persist in-memory commit timestamp cache to the configured cache file.
 
     Writes the module-level _commit_timestamp_cache to disk using an atomic JSON write; timestamps are stored as ISO 8601 strings and failures are logged.
     """
@@ -2533,13 +2543,13 @@ def _save_commit_cache() -> None:
                 for cache_key, (timestamp, cached_at) in _commit_timestamp_cache.items()
             }
 
-        # Use atomic write to prevent cache corruption
-        if _atomic_write_json(cache_file, cache_data):
-            logger.debug(f"Saved {len(cache_data)} commit timestamps to cache")
-        else:
-            logger.warning(f"Failed to save commit timestamp cache to {cache_file}")
+            # Perform I/O inside lock to prevent race conditions
+            if _atomic_write_json(cache_file, cache_data):
+                logger.debug(f"Saved {len(cache_data)} commit timestamps to cache")
+            else:
+                logger.warning(f"Failed to save commit timestamp cache to {cache_file}")
 
-    except (IOError, OSError) as e:
+    except (OSError, json.JSONDecodeError) as e:
         logger.warning(f"Could not save commit timestamp cache: {e}")
 
 
@@ -2840,14 +2850,14 @@ def _process_firmware_downloads(
 ) -> Tuple[List[str], List[str], List[Dict[str, str]], Optional[str], Optional[str]]:
     """
     Manage firmware release downloads, enforce retention, and optionally discover/download prerelease firmware.
-    
+
     Downloads configured firmware assets into the download directories, updates the latest-release and prerelease tracking JSON where applicable, and removes superseded prerelease directories when an official release is available.
-    
+
     Parameters:
         config (Dict[str, Any]): Runtime configuration mapping (used for feature flags, selection patterns, retention counts, tokens, and related options).
         paths_and_urls (Dict[str, str]): Precomputed local paths and remote URLs used for downloads, cache, and storage.
         force_refresh (bool): When true, bypasses caches and forces remote refreshes.
-    
+
     Returns:
         Tuple[
             List[str],                # downloaded firmware versions: names of firmware versions that were newly downloaded; prereleases are prefixed with "pre-release ".
@@ -3281,9 +3291,9 @@ def extract_files(
 ) -> None:
     """
     Extract selected files from a ZIP archive into the given directory.
-    
+
     Only members whose base filename matches one of the provided inclusion patterns and do not match any exclusion patterns are extracted; if `patterns` is empty, extraction is skipped. The archive's internal directory structure is preserved and missing target directories are created. Files whose base name ends with the configured shell-script extension are made executable after extraction. Unsafe extraction paths are skipped; a corrupted ZIP will be removed. IO, OS, and ZIP errors are handled and logged internally.
-    
+
     Parameters:
         zip_path (str): Path to the ZIP archive to read.
         extract_dir (str): Destination directory where files will be extracted.

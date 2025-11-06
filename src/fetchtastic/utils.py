@@ -788,9 +788,9 @@ def download_file_with_retry(
 ) -> bool:
     """
     Download a remote file to disk, verify its integrity, and atomically install it.
-    
+
     Streams the remote content to a temporary file with retry-capable HTTP requests, validates ZIP archives when applicable, verifies or writes a SHA-256 `.sha256` sidecar, and atomically replaces the target file on success. If an existing file is already verified it is left in place. Temporary and partially downloaded files are removed on failure; corrupted or mismatched files and their sidecars are removed before re-downloading.
-    
+
     Returns:
         True if the destination file is present and verified or was downloaded and installed successfully, False otherwise.
     """

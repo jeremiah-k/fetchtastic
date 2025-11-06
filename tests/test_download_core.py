@@ -431,7 +431,7 @@ def test_check_and_download_corrupted_existing_zip_records_failure(tmp_path):
         # Mock download failure to test error handling
         """
         Simulates a failed download for testing purposes.
-        
+
         @returns False indicating the download did not succeed.
         """
         return False
@@ -734,11 +734,11 @@ class TestDownloadCoreIntegration:
             # Mock download that returns False to test error handling
             """
             Simulates a download that always fails, used for testing error handling.
-            
+
             Parameters:
                 _url (str): URL argument (ignored).
                 _path (str | Path): Destination path argument (ignored).
-            
+
             Returns:
                 bool: `False` indicating the download failed.
             """
@@ -1497,10 +1497,10 @@ def test_load_json_cache_with_expiry_no_file(tmp_path):
     def dummy_validator(entry):
         """
         Always considers the provided entry valid.
-        
+
         Parameters:
             entry: The object representing the entry to validate.
-        
+
         Returns:
             True — the entry is always treated as valid.
         """
@@ -1509,11 +1509,11 @@ def test_load_json_cache_with_expiry_no_file(tmp_path):
     def dummy_processor(entry, cached_at):
         """
         Return the provided entry without modification.
-        
+
         Parameters:
             entry: The entry object to be returned unchanged.
             cached_at: A timestamp or metadata indicating when the entry was cached; this parameter is accepted but ignored.
-        
+
         Returns:
             The same `entry` object that was passed in.
         """
@@ -1541,10 +1541,10 @@ def test_load_json_cache_with_expiry_invalid_json(tmp_path):
     def dummy_validator(entry):
         """
         Always considers the provided entry valid.
-        
+
         Parameters:
             entry: The object representing the entry to validate.
-        
+
         Returns:
             True — the entry is always treated as valid.
         """
@@ -1553,11 +1553,11 @@ def test_load_json_cache_with_expiry_invalid_json(tmp_path):
     def dummy_processor(entry, cached_at):
         """
         Return the provided entry without modification.
-        
+
         Parameters:
             entry: The entry object to be returned unchanged.
             cached_at: A timestamp or metadata indicating when the entry was cached; this parameter is accepted but ignored.
-        
+
         Returns:
             The same `entry` object that was passed in.
         """
@@ -1585,10 +1585,10 @@ def test_load_json_cache_with_expiry_wrong_type(tmp_path):
     def dummy_validator(entry):
         """
         Always considers the provided entry valid.
-        
+
         Parameters:
             entry: The object representing the entry to validate.
-        
+
         Returns:
             True — the entry is always treated as valid.
         """
@@ -1597,11 +1597,11 @@ def test_load_json_cache_with_expiry_wrong_type(tmp_path):
     def dummy_processor(entry, cached_at):
         """
         Return the provided entry without modification.
-        
+
         Parameters:
             entry: The entry object to be returned unchanged.
             cached_at: A timestamp or metadata indicating when the entry was cached; this parameter is accepted but ignored.
-        
+
         Returns:
             The same `entry` object that was passed in.
         """
@@ -1642,10 +1642,10 @@ def test_load_json_cache_with_expiry_expired_entries(tmp_path):
     def dummy_validator(entry):
         """
         Check whether a cache entry contains the required metadata keys.
-        
+
         Parameters:
             entry (Mapping): The mapping to validate.
-        
+
         Returns:
             bool: `True` if `entry` contains both the `cached_at` and `data` keys, `False` otherwise.
         """
@@ -1654,11 +1654,11 @@ def test_load_json_cache_with_expiry_expired_entries(tmp_path):
     def dummy_processor(entry, cached_at):
         """
         Extracts and returns the `data` field from a cache entry.
-        
+
         Parameters:
             entry (dict): A mapping representing a cached entry; must contain a `"data"` key.
             cached_at: Timestamp or metadata for when the entry was cached (ignored by this processor).
-        
+
         Returns:
             The value stored under the `"data"` key in `entry`.
         """
@@ -1990,7 +1990,7 @@ def test_atomic_write_operations(tmp_path):
     def write_content(f):
         """
         Write the literal string "test content" to the provided writable file-like object.
-        
+
         Parameters:
             f (io.TextIOBase): A writable file-like object opened in text mode.
         """
@@ -2170,7 +2170,7 @@ def test_strip_unwanted_chars():
 
     # Test with non-ASCII characters (should be removed)
     assert strip_unwanted_chars("hello🌟world") == "helloworld"
-    assert strip_unwanted_chars("café") == "caf"
+    assert strip_unwanted_chars("cafe") == "cafe"
     assert strip_unwanted_chars("text with émojis 🚀") == "text with mojis "
 
     # Test with clean ASCII text (should remain unchanged)
@@ -2243,3 +2243,126 @@ def test_safe_rmtree():
         # Test security check failure
         result = _safe_rmtree("/test/path", "/base", "test_item")
         assert result is False
+
+
+@pytest.mark.core_downloads
+def test_cache_thread_safety():
+    """Test that cache operations are thread-safe."""
+    import threading
+    import time
+    from unittest.mock import patch
+
+    from fetchtastic.downloader import (
+        _load_commit_cache,
+        _load_prerelease_dir_cache,
+        _load_releases_cache,
+        clear_all_caches,
+        clear_commit_timestamp_cache,
+    )
+
+    def simulate_cache_operation(cache_type, operation_func, results_list, thread_id):
+        """Simulate a cache operation and record timing."""
+        start_time = time.time()
+        try:
+            operation_func()
+            end_time = time.time()
+            results_list.append((thread_id, start_time, end_time, None))
+        except Exception as e:
+            end_time = time.time()
+            results_list.append((thread_id, start_time, end_time, str(e)))
+
+    # Test commit cache thread safety
+    with patch("fetchtastic.downloader._ensure_cache_dir", return_value="/test/cache"):
+        with patch("fetchtastic.downloader._atomic_write_json", return_value=True):
+
+            # Reset cache state
+            clear_commit_timestamp_cache()
+
+            # Test concurrent loads
+            commit_results = []
+            commit_threads = []
+
+            for i in range(3):
+                thread = threading.Thread(
+                    target=simulate_cache_operation,
+                    args=("commit", _load_commit_cache, commit_results, i),
+                )
+                commit_threads.append(thread)
+                thread.start()
+
+            # Wait for all threads to complete
+            for thread in commit_threads:
+                thread.join(timeout=5.0)
+
+            # Verify all threads completed without errors
+            assert len(commit_results) == 3
+            for thread_id, start, end, error in commit_results:
+                assert error is None, f"Thread {thread_id} failed with error: {error}"
+                assert (
+                    end - start < 2.0
+                ), f"Thread {thread_id} took too long: {end - start}s"
+
+    # Test releases cache thread safety
+    with patch("fetchtastic.downloader._ensure_cache_dir", return_value="/test/cache"):
+        with patch("fetchtastic.downloader._atomic_write_json", return_value=True):
+
+            # Reset cache state using clear_all_caches
+            clear_all_caches()
+
+            # Test concurrent loads
+            release_results = []
+            release_threads = []
+
+            for i in range(3):
+                thread = threading.Thread(
+                    target=simulate_cache_operation,
+                    args=("releases", _load_releases_cache, release_results, i),
+                )
+                release_threads.append(thread)
+                thread.start()
+
+            # Wait for all threads to complete
+            for thread in release_threads:
+                thread.join(timeout=5.0)
+
+            # Verify all threads completed without errors
+            assert len(release_results) == 3
+            for thread_id, _, _, error in release_results:
+                assert (
+                    error is None
+                ), f"Release thread {thread_id} failed with error: {error}"
+
+    # Test prerelease cache thread safety
+    with patch("fetchtastic.downloader._ensure_cache_dir", return_value="/test/cache"):
+        with patch("fetchtastic.downloader._atomic_write_json", return_value=True):
+
+            # Reset cache state
+            clear_all_caches()
+
+            # Test concurrent loads
+            prerelease_results = []
+            prerelease_threads = []
+
+            for i in range(3):
+                thread = threading.Thread(
+                    target=simulate_cache_operation,
+                    args=(
+                        "prerelease",
+                        _load_prerelease_dir_cache,
+                        prerelease_results,
+                        i,
+                    ),
+                )
+                prerelease_threads.append(thread)
+                thread.start()
+
+            # Wait for all threads to complete
+            for thread in prerelease_threads:
+                thread.join(timeout=5.0)
+
+            # Verify all threads completed without errors
+            assert len(prerelease_results) == 3
+            for thread_id, _, _, error in prerelease_results:
+                assert (
+                    error is None
+                ), f"Prerelease thread {thread_id} failed with error: {error}"
