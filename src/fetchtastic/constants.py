@@ -40,7 +40,12 @@ FIRMWARE_DIR_NAME = "firmware"
 APKS_DIR_NAME = "apks"
 LATEST_ANDROID_RELEASE_FILE = "latest_android_release.txt"
 LATEST_FIRMWARE_RELEASE_FILE = "latest_firmware_release.txt"
+LATEST_ANDROID_RELEASE_JSON_FILE = "latest_android_release.json"
+LATEST_FIRMWARE_RELEASE_JSON_FILE = "latest_firmware_release.json"
+PRERELEASE_TRACKING_JSON_FILE = "prerelease_tracking.json"
+PRERELEASE_COMMITS_LEGACY_FILE = "prerelease_commits.txt"
 WINDOWS_SHORTCUT_FILE = "fetchtastic_yaml.lnk"
+
 
 # Directories that Fetchtastic manages and can safely clean
 MANAGED_DIRECTORIES = (

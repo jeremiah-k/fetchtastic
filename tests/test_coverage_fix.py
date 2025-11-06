@@ -9,7 +9,12 @@ import pytest
 
 @pytest.fixture
 def populated_releases_cache():
-    """Fixture to populate releases cache for testing."""
+    """
+    Populate the fetchtastic.downloader releases cache with a deterministic entry for use as a pytest fixture, then restore the original cache state after the test.
+    
+    Yields:
+        tuple: (test_data, cache_key) where `test_data` is a list containing a single release dict `{"tag_name": "v2.7.8"}` and `cache_key` is the firmware releases URL used as the cache key.
+    """
     from datetime import datetime, timezone
 
     import fetchtastic.downloader as downloader_module
@@ -34,7 +39,7 @@ def populated_releases_cache():
     downloader_module._releases_cache_loaded = original_loaded
 
 
-def test_token_warning_lines_coverage():
+def test_token_warning_lines_coverage(tmp_path):
     """Direct test to cover token warning lines in main function."""
     with patch("fetchtastic.downloader._initial_setup_and_config") as mock_setup, patch(
         "fetchtastic.downloader._check_wifi_connection"
@@ -53,7 +58,8 @@ def test_token_warning_lines_coverage():
             "v0.8.0",  # latest_version
             False,  # update_available
             {
-                "firmware_releases_url": "https://api.github.com/repos/meshtastic/firmware/releases"
+                "firmware_releases_url": "https://api.github.com/repos/meshtastic/firmware/releases",
+                "download_dir": str(tmp_path / "download"),
             },
         )
 
@@ -143,9 +149,9 @@ def test_cache_logging_lines_coverage(populated_releases_cache):
 
 def test_api_fetch_logging_lines_coverage():
     """
-    Exercise the API-fetch code path in _get_latest_releases_data and verify it returns parsed release data for firmware and Android release URLs.
-
-    This test clears the module's releases cache to force an API request, patches make_github_api_request to return a mocked JSON payload, calls _get_latest_releases_data for both firmware and Android endpoints with force_refresh=True, and asserts the returned data matches the mocked response. The test restores the original cache state afterwards to avoid polluting global state.
+    Exercise the API-fetch path of _get_latest_releases_data for the firmware and Android release endpoints.
+    
+    Restores the downloader module's releases cache and loaded flag after the test to avoid polluting global state.
     """
     import fetchtastic.downloader as downloader_module
 
@@ -194,11 +200,11 @@ def test_api_fetch_logging_lines_coverage():
         downloader_module._releases_cache_loaded = original_cache_loaded
 
 
-def test_main_function_full_coverage():
+def test_main_function_full_coverage(tmp_path):
     """
-    Exercise downloader.main to cover cache-clearing and device manager cleanup paths.
+    Exercise fetchtastic.downloader.main to cover cache-clearing and device manager cleanup paths.
 
-    Verifies that clear_all_caches is invoked once and that DeviceHardwareManager is instantiated and its clear_cache method is called once.
+    Verifies that clear_all_caches is called once and that DeviceHardwareManager is instantiated and its clear_cache method is called once.
     """
     with patch("fetchtastic.downloader._initial_setup_and_config") as mock_setup, patch(
         "fetchtastic.downloader._check_wifi_connection"
@@ -216,12 +222,13 @@ def test_main_function_full_coverage():
 
         # Mock setup to return valid config
         mock_setup.return_value = (
-            {"GITHUB_TOKEN": "fake_token"},  # config with token
+            {"GITHUB_TOKEN": None},  # config
             "v0.8.0",  # current_version
             "v0.8.0",  # latest_version
             False,  # update_available
             {
-                "firmware_releases_url": "https://api.github.com/repos/meshtastic/firmware/releases"
+                "firmware_releases_url": "https://api.github.com/repos/meshtastic/firmware/releases",
+                "download_dir": str(tmp_path / "download"),
             },
         )
 
@@ -240,3 +247,52 @@ def test_main_function_full_coverage():
         # Verify device manager was instantiated and cache cleared
         mock_device_mgr.assert_called()
         mock_device_mgr.return_value.clear_cache.assert_called_once()
+
+
+def test_main_function_basic_coverage(tmp_path):
+    """
+    Exercise downloader.main to cover basic execution path.
+
+    Tests the main function flow without legacy migration since that functionality was removed.
+    """
+    with patch("fetchtastic.downloader._initial_setup_and_config") as mock_setup, patch(
+        "fetchtastic.downloader._check_wifi_connection"
+    ) as _, patch(
+        "fetchtastic.downloader._process_firmware_downloads"
+    ) as mock_firmware, patch(
+        "fetchtastic.downloader._process_apk_downloads"
+    ) as mock_apk, patch(
+        "fetchtastic.downloader._finalize_and_notify"
+    ) as _:
+
+        # Mock setup to return valid config with paths
+        mock_setup.return_value = (
+            {"GITHUB_TOKEN": None},  # config
+            "v0.8.0",  # current_version
+            "v0.8.0",  # latest_version
+            False,  # update_available
+            {
+                "firmware_releases_url": "https://api.github.com/repos/meshtastic/firmware/releases",
+                "download_dir": str(tmp_path / "download"),
+                "latest_firmware_release_file": str(
+                    tmp_path / "latest_firmware_release.txt"
+                ),
+                "latest_android_release_file": str(
+                    tmp_path / "latest_android_release.txt"
+                ),
+            },
+        )
+
+        # Mock download processing to return empty results
+        mock_firmware.return_value = ([], [], [], None, None)
+        mock_apk.return_value = ([], [], [], None, None)
+
+        from fetchtastic.downloader import main
+
+        # Call main function
+        main(force_refresh=False)
+
+        # Verify setup and processing were called
+        mock_setup.assert_called_once()
+        mock_firmware.assert_called_once()
+        mock_apk.assert_called_once()

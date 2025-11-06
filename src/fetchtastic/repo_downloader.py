@@ -16,22 +16,21 @@ from fetchtastic.utils import download_file_with_retry
 
 def download_repo_files(selected_files, download_dir):  # log_message_func removed
     """
-    Download files listed in selected_files into a repository-specific downloads directory and return their local paths.
-
-    This function:
-    - Validates selected_files contains a "directory" and "files" list; returns [] if missing or empty.
-    - Ensures a repository downloads directory exists under download_dir/firmware/{REPO_DOWNLOADS_DIR} and creates a matching subdirectory for the selected_files["directory"]. If directory creation fails, the function aborts and returns [].
-    - Iterates each file item and, for items that include both "name" and "download_url", downloads the file to the computed directory and appends the absolute local path to the returned list.
-    - Sanitizes file names with os.path.basename to prevent path traversal; items with differing sanitized names will be renamed to the basename.
-    - For files whose original names end with SHELL_SCRIPT_EXTENSION, attempts to set executable permissions after a successful download.
-    - Skips items missing required fields and continues on per-item errors; malformed item structures and unexpected per-item exceptions are handled per-item and do not stop the whole operation.
-
+    Download the specified repository files into a repository-specific downloads directory.
+    
+    Sanitizes file names to prevent path traversal and saves files under
+    download_dir/firmware/REPO_DOWNLOADS_DIR/<selected_files["directory"]> (or the repo directory if empty).
+    Sets executable permissions for files whose original name ends with SHELL_SCRIPT_EXTENSION.
+    Skips items missing required fields or that fail to download; returns only the successfully downloaded file paths.
+    
     Parameters:
-        selected_files (dict): Expected to contain "directory" (str) and "files" (iterable of dicts with keys "name" and "download_url").
-        download_dir (str): Base path under which the repository downloads directory (firmware/{REPO_DOWNLOADS_DIR}) will be created.
-
+        selected_files (dict): Mapping with keys:
+            - "directory" (str): Subdirectory name inside the repo downloads directory.
+            - "files" (iterable[dict]): Each dict must include "name" (str) and "download_url" (str).
+        download_dir (str): Base path under which the repository downloads directory will be created.
+    
     Returns:
-        list[str]: Paths to successfully downloaded files (empty list if none or on fatal directory-creation failure).
+        list[str]: Absolute paths to files that were successfully downloaded.
     """
     # Removed local log_message_func definition
 
@@ -95,7 +94,7 @@ def download_repo_files(selected_files, download_dir):  # log_message_func remov
             ):  # Removed log_message_func
                 # download_file_with_retry already logs the download completion
                 # Set executable permissions for shell script files (moved here, after successful download)
-                if file_name.endswith(SHELL_SCRIPT_EXTENSION):
+                if file_name.lower().endswith(SHELL_SCRIPT_EXTENSION):
                     try:
                         os.chmod(file_path, EXECUTABLE_PERMISSIONS)
                         logger.debug(

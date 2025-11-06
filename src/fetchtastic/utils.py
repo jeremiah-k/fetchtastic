@@ -787,18 +787,18 @@ def download_file_with_retry(
     # log_message_func: Callable[[str], None] # Removed
 ) -> bool:
     """
-    Download a URL to disk and ensure the file is intact and atomically installed.
-
-    Performs integrity verification (SHA-256 sidecar and ZIP validation for archives), skips downloading when an existing file is already verified, streams the remote content to a temporary file with retry-capable HTTP requests, and atomically replaces the target file on success (with additional retries on Windows to handle transient access errors). Temporary and partially downloaded files are removed on failure; a companion `.sha256` sidecar is written after successful installation.
-
+    Download a remote file to disk, verify its integrity, and atomically install it.
+    
+    Streams the remote content to a temporary file with retry-capable HTTP requests, validates ZIP archives when applicable, verifies or writes a SHA-256 `.sha256` sidecar, and atomically replaces the target file on success. If an existing file is already verified it is left in place. Temporary and partially downloaded files are removed on failure; corrupted or mismatched files and their sidecars are removed before re-downloading.
+    
     Returns:
-        `true` if the file is present and verified or was downloaded and installed successfully, `false` otherwise.
+        True if the destination file is present and verified or was downloaded and installed successfully, False otherwise.
     """
     # Note: Session is created after pre-checks and closed in finally
 
     # Check if file exists and is valid (especially for zips)
     if os.path.exists(download_path):
-        if download_path.lower().endswith(ZIP_EXTENSION.lower()):
+        if download_path.lower().endswith(ZIP_EXTENSION):
             try:
                 with zipfile.ZipFile(download_path, "r") as zf:
                     if zf.testzip() is not None:  # None means no errors
@@ -941,7 +941,7 @@ def download_file_with_retry(
 
         # Log completion after successful file replacement (moved below)
 
-        if download_path.lower().endswith(ZIP_EXTENSION.lower()):
+        if download_path.lower().endswith(ZIP_EXTENSION):
             try:
                 with zipfile.ZipFile(temp_path, "r") as zf_temp:
                     if zf_temp.testzip() is not None:

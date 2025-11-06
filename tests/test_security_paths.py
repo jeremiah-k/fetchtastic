@@ -513,12 +513,12 @@ def test_check_and_download_skips_unsafe_release_tag(
         }
     ]
 
-    latest_release_file = str(tmp_path / "latest.txt")
+    cache_dir = str(tmp_path)
     download_dir = tmp_path / "downloads"
 
     downloaded, new_versions, failures = downloader.check_and_download(
         releases,
-        latest_release_file,
+        cache_dir,
         "Firmware",
         str(download_dir),
         versions_to_keep=1,
@@ -559,12 +559,12 @@ def test_check_and_download_skips_unsafe_asset_name(
         }
     ]
 
-    latest_release_file = str(tmp_path / "latest.txt")
+    cache_dir = str(tmp_path)
     download_dir = tmp_path / "downloads"
 
     downloaded, new_versions, failures = downloader.check_and_download(
         releases,
-        latest_release_file,
+        cache_dir,
         "Firmware",
         str(download_dir),
         versions_to_keep=1,

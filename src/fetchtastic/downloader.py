@@ -42,12 +42,16 @@ from fetchtastic.constants import (
     GITHUB_API_BASE,
     GITHUB_API_TIMEOUT,
     LATEST_ANDROID_RELEASE_FILE,
+    LATEST_ANDROID_RELEASE_JSON_FILE,
     LATEST_FIRMWARE_RELEASE_FILE,
+    LATEST_FIRMWARE_RELEASE_JSON_FILE,
     MAX_CONCURRENT_TIMESTAMP_FETCHES,
     MESHTASTIC_ANDROID_RELEASES_URL,
     MESHTASTIC_FIRMWARE_RELEASES_URL,
     NTFY_REQUEST_TIMEOUT,
+    PRERELEASE_COMMITS_LEGACY_FILE,
     PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
+    PRERELEASE_TRACKING_JSON_FILE,
     RELEASE_SCAN_COUNT,
     RELEASES_CACHE_EXPIRY_HOURS,
     SHELL_SCRIPT_EXTENSION,
@@ -432,21 +436,29 @@ def cleanup_superseded_prereleases(
         remaining_prereleases = bool(_get_existing_prerelease_dirs(prerelease_dir))
         if not remaining_prereleases:
             # Remove tracking files since no prereleases remain
+            # JSON tracking file is stored in the cache directory
             json_tracking_file = os.path.join(
-                prerelease_dir, "prerelease_tracking.json"
+                _ensure_cache_dir(), PRERELEASE_TRACKING_JSON_FILE
             )
-            text_tracking_file = os.path.join(prerelease_dir, "prerelease_commits.txt")
 
-            for tracking_file in [json_tracking_file, text_tracking_file]:
-                if os.path.exists(tracking_file):
+            # Remove tracking files (both JSON and legacy text)
+            for file_path, is_legacy in [
+                (json_tracking_file, False),
+                (os.path.join(prerelease_dir, PRERELEASE_COMMITS_LEGACY_FILE), True),
+            ]:
+                if os.path.exists(file_path):
+                    file_type = "legacy prerelease" if is_legacy else "prerelease"
                     try:
-                        os.remove(tracking_file)
+                        os.remove(file_path)
                         logger.debug(
-                            "Removed prerelease tracking file: %s", tracking_file
+                            "Removed %s tracking file: %s", file_type, file_path
                         )
                     except OSError as e:
                         logger.warning(
-                            "Could not remove tracking file %s: %s", tracking_file, e
+                            "Could not remove %s tracking file %s: %s",
+                            file_type,
+                            file_path,
+                            e,
                         )
 
     return cleaned_up
@@ -471,14 +483,14 @@ def _atomic_write(
             dir=os.path.dirname(file_path), prefix="tmp-", suffix=suffix
         )
     except OSError as e:
-        logger.error(f"Could not create temporary file for {file_path}: {e}")
+        logger.error("Could not create temporary file for %s: %s", file_path, e)
         return False
     try:
         with os.fdopen(temp_fd, "w", encoding="utf-8") as temp_f:
             writer_func(temp_f)
         os.replace(temp_path, file_path)
     except (IOError, UnicodeEncodeError, OSError) as e:
-        logger.error(f"Could not write to {file_path}: {e}")
+        logger.error("Could not write to %s: %s", file_path, e)
         return False
     finally:
         if os.path.exists(temp_path):
@@ -555,13 +567,21 @@ def _sanitize_path_component(component: Optional[str]) -> Optional[str]:
 
 def _safe_rmtree(path_to_remove: str, base_dir: str, item_name: str) -> bool:
     """
-    Safely remove a filesystem path (file or directory), preventing symlink traversal outside a permitted base directory.
+    Remove a file or directory only if it safely resides under a permitted base directory.
 
-    If the target is a symlink it is unlinked immediately. Otherwise the function resolves the real path and ensures it lies under base_dir before removing; directories are removed with shutil.rmtree and files with os.remove. item_name is used only for log messages. Returns True when removal succeeded, False on any error or when the resolved path is outside base_dir.
+    If `path_to_remove` is a symlink it is unlinked; otherwise the path is resolved to its real path and removed only when that resolved path is located under `base_dir`. `item_name` is used for log messages.
+
+    Parameters:
+        path_to_remove (str): The filesystem path to remove.
+        base_dir (str): The allowed base directory; removal is skipped if the resolved path is outside this directory.
+        item_name (str): Human-readable name for logging.
+
+    Returns:
+        bool: `True` if the path was removed successfully; `False` on error or if the resolved path is outside `base_dir`.
     """
     try:
         if os.path.islink(path_to_remove):
-            logger.info(f"Removing symlink: {item_name}")
+            logger.info("Removing symlink: %s", item_name)
             os.unlink(path_to_remove)
             return True
 
@@ -575,7 +595,8 @@ def _safe_rmtree(path_to_remove: str, base_dir: str, item_name: str) -> bool:
 
         if common_base != real_base_dir:
             logger.warning(
-                f"Skipping removal of {path_to_remove} because it resolves outside the base directory"
+                "Skipping removal of %s because it resolves outside the base directory",
+                path_to_remove,
             )
             return False
 
@@ -584,24 +605,23 @@ def _safe_rmtree(path_to_remove: str, base_dir: str, item_name: str) -> bool:
         else:
             os.remove(path_to_remove)
     except OSError as e:
-        logger.error(f"Error removing {path_to_remove}: {e}")
+        logger.error("Error removing %s: %s", path_to_remove, e)
         return False
     else:
-        logger.info(f"Removed path: {path_to_remove}")
+        logger.info("Removed path: %s", path_to_remove)
         return True
 
 
 def compare_file_hashes(file1, file2):
     """
-    Compare two files by computing their SHA-256 hashes.
-
-    Reads each file in 4KB chunks and returns True if both files can be read and their SHA-256 digests are identical. If either file does not exist or cannot be read, the function returns False.
+    Determine whether two files have identical SHA-256 hashes.
 
     Parameters:
-        file1, file2 (str): Paths to the two files to compare.
+        file1 (str): Path to the first file to compare.
+        file2 (str): Path to the second file to compare.
 
     Returns:
-        bool: True when both files were successfully read and their SHA-256 hashes match; False otherwise.
+        bool: True if both files are readable and their SHA-256 digests match, False otherwise.
     """
     import hashlib
 
@@ -617,7 +637,7 @@ def compare_file_hashes(file1, file2):
             Optional[str]: Hexadecimal SHA-256 digest of the file, or None if the file does not exist or cannot be read.
         """
         if not os.path.exists(file_path):
-            logger.warning(f"File does not exist for hashing: {file_path}")
+            logger.warning("File does not exist for hashing: %s", file_path)
             return None
 
         sha256_hash = hashlib.sha256()
@@ -628,7 +648,7 @@ def compare_file_hashes(file1, file2):
                     sha256_hash.update(byte_block)
             return sha256_hash.hexdigest()
         except IOError as e:
-            logger.error(f"Error reading file {file_path} for hashing: {e}")
+            logger.error("Error reading file %s for hashing: %s", file_path, e)
             return None
 
     hash1 = get_file_hash(file1)
@@ -640,49 +660,81 @@ def compare_file_hashes(file1, file2):
     return hash1 == hash2
 
 
-def _read_text_tracking_file(tracking_file):
+def _read_latest_release_tag(json_file: str) -> Optional[str]:
     """
-    Read legacy text-format prerelease tracking data.
+    Read the latest release tag stored under the top-level `latest_version` key in a JSON file.
+    
+    Parameters:
+        json_file (str): Path to the JSON file to read.
+    
+    Returns:
+        Optional[str]: The stripped `latest_version` string if present and non-empty, otherwise `None`.
+    """
+    if os.path.exists(json_file):
+        try:
+            with open(json_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                version = data.get("latest_version")
+                return (
+                    version.strip()
+                    if isinstance(version, str) and version.strip()
+                    else None
+                )
+        except (IOError, json.JSONDecodeError) as e:
+            logger.debug(
+                "Could not read release tag from JSON file %s: %s", json_file, e
+            )
+    return None
 
-    Parses a sibling "prerelease_commits.txt" next to the provided tracking file. Supported formats:
-    - Modern text format: first non-empty line begins with "Release: <tag>", subsequent lines are prerelease IDs.
-    - Legacy format: every non-empty line is a commit and the release is reported as "unknown".
+
+def _write_latest_release_tag(
+    json_file: str, version_tag: str, release_type: str
+) -> bool:
+    """
+    Persist the latest release tag and related metadata to a JSON file for the given release type.
 
     Parameters:
-        tracking_file (str): Path to the JSON tracking file used to locate the sibling "prerelease_commits.txt".
+        json_file (str): Filesystem path where the JSON will be written.
+        version_tag (str): Release tag to record (e.g., "v1.2.3").
+        release_type (str): Human-readable release category (e.g., "Firmware", "Android APK"); used to derive a file_type slug.
 
     Returns:
-        tuple[list[str], str | None]: (commits, current_release)
-            - commits: list of prerelease IDs normalized to lowercase (empty if file missing or unreadable).
-            - current_release: the release tag for the commits, the string "unknown" for legacy-format files, or None if the text file is missing/unreadable.
-    """
-    try:
-        text_file = os.path.join(
-            os.path.dirname(tracking_file), "prerelease_commits.txt"
-        )
-        with open(text_file, "r", encoding="utf-8") as f:
-            lines = [line.strip() for line in f.readlines() if line.strip()]
-            if not lines:
-                return [], None
-            if lines[0].startswith("Release: "):
-                current_release = lines[0][9:]  # Remove "Release: " prefix
-                commits_raw = lines[1:]
-            else:
-                # Legacy format: treat all lines as commits; release unknown
-                current_release = "unknown"
-                commits_raw = lines
-            commits = [
-                commit.lower() for commit in commits_raw
-            ]  # Normalize to lowercase for consistency
-            return commits, current_release
-    except (IOError, UnicodeDecodeError) as e:
-        logger.debug(f"Could not read legacy prerelease tracking file: {e}")
+        bool: `True` if the JSON was written successfully, `False` otherwise.
 
-    return [], None
+    Notes:
+        The written JSON contains `latest_version`, `file_type` (derived slug), and `last_updated` as an ISO 8601 UTC timestamp.
+    """
+    release_type_l = release_type.lower()
+    file_type_slug = (
+        "android"
+        if "android" in release_type_l
+        else (
+            "firmware"
+            if "firmware" in release_type_l
+            else release_type_l.replace(" ", "_")
+        )
+    )
+    data = {
+        "latest_version": version_tag,
+        "file_type": file_type_slug,
+        "last_updated": datetime.now(timezone.utc).isoformat(),
+    }
+    success = _atomic_write_json(json_file, data)
+    if not success:
+        logger.warning("Failed to write latest release tag to JSON file: %s", json_file)
+    return success
 
 
 def _ensure_v_prefix_if_missing(version: Optional[str]) -> Optional[str]:
-    """Add 'v' prefix to version if missing (case-insensitive)."""
+    """
+    Ensure a version string begins with a leading "v".
+
+    Parameters:
+        version (Optional[str]): Version string to normalize; leading/trailing whitespace is stripped. If `None`, no normalization is performed.
+
+    Returns:
+        Optional[str]: `None` if `version` is `None`; otherwise the input string with a leading "v" added if it did not already start with "v" or "V".
+    """
     if version is None:
         return None
     version = version.strip()
@@ -692,21 +744,50 @@ def _ensure_v_prefix_if_missing(version: Optional[str]) -> Optional[str]:
 
 
 def _matches_exclude(name: str, patterns: List[str]) -> bool:
-    """Case-insensitive fnmatch against any exclude pattern."""
+    """
+    Check whether a filename matches any exclude pattern using case-insensitive glob matching.
+
+    Parameters:
+        name (str): The filename or path component to test.
+        patterns (List[str]): Glob-style exclude patterns to match against (case-insensitive).
+
+    Returns:
+        bool: True if `name` matches any pattern in `patterns`, False otherwise.
+    """
     name_l = name.lower()
     return any(fnmatch.fnmatch(name_l, p.lower()) for p in patterns)
 
 
+def _get_json_release_basename(release_type: str) -> str:
+    """
+    Get the JSON basename used to record the latest release for a release type.
+    
+    Parameters:
+        release_type (str): Human-readable release type (for example "Android APK" or "Firmware").
+    
+    Returns:
+        str: Filename basename to use for the latest-release JSON (e.g., the value of LATEST_ANDROID_RELEASE_JSON_FILE for Android, LATEST_FIRMWARE_RELEASE_JSON_FILE for firmware, or "latest_release.json" for other types).
+    """
+    release_type_lower = release_type.lower()
+    if "android" in release_type_lower:
+        return LATEST_ANDROID_RELEASE_JSON_FILE
+    if "firmware" in release_type_lower:
+        return LATEST_FIRMWARE_RELEASE_JSON_FILE
+    return "latest_release.json"
+
+
 def _normalize_commit_identifier(commit_id: str, release_version: Optional[str]) -> str:
     """
-    Normalize a commit identifier to version+hash format for consistency.
+    Normalize a commit identifier into a version-plus-hash form.
 
-    Args:
-        commit_id: The commit identifier (may be hash-only or version+hash)
-        release_version: The release version (e.g., "v2.7.13") to use for hash-only entries
+    If `commit_id` already contains a numeric version followed by a hex hash (e.g., "2.7.13.abcdef"), it is returned unchanged. If `commit_id` is a hex hash only, `release_version` (when provided) is used to derive a numeric version (leading "v" is removed) and the result is returned as "MAJOR.MINOR.PATCH.hash". Otherwise the original `commit_id` is returned unchanged.
+
+    Parameters:
+        commit_id: Commit identifier (hash-only or version+hash).
+        release_version: Optional release tag (e.g., "v2.7.13") used to infer the version for hash-only identifiers.
 
     Returns:
-        Normalized commit identifier in version+hash format (e.g., "2.7.13.abcdef")
+        A normalized commit identifier in `MAJOR.MINOR.PATCH.hash` form when possible; otherwise the original `commit_id`.
     """
     commit_id = commit_id.lower()
 
@@ -800,7 +881,8 @@ def _parse_new_json_format(
     # Validate commits_raw is a list to prevent data corruption
     if not isinstance(commits_raw, list):
         logger.warning(
-            f"Invalid commits format in tracking file: expected list, got {type(commits_raw)}. Resetting commits."
+            "Invalid commits format in tracking file: expected list, got %s. Resetting commits.",
+            type(commits_raw).__name__,
         )
         commits_raw = []
 
@@ -813,7 +895,8 @@ def _parse_new_json_format(
                 commits.append(normalized)
         else:
             logger.warning(
-                f"Invalid commit entry in tracking file: expected str, got {type(commit)}. Skipping."
+                "Invalid commit entry in tracking file: expected str, got %s. Skipping.",
+                type(commit).__name__,
             )
 
     # Ensure uniqueness while preserving order
@@ -848,7 +931,8 @@ def _parse_legacy_json_format(
     # Validate commits_raw is a list to prevent data corruption
     if not isinstance(commits_raw, list):
         logger.warning(
-            f"Invalid commits format in legacy tracking file: expected list, got {type(commits_raw).__name__}. Resetting commits."
+            "Invalid commits format in legacy tracking file: expected list, got %s. Resetting commits.",
+            type(commits_raw).__name__,
         )
         commits_raw = []
 
@@ -877,20 +961,19 @@ def _parse_legacy_json_format(
 
 def _read_prerelease_tracking_data(tracking_file):
     """
-    Read prerelease tracking information from a JSON tracking file or fall back to legacy text format.
+    Read prerelease tracking data from a JSON file and normalize it to the internal tuple form.
 
-    Attempts to parse prerelease_tracking.json supporting both newer schema (keys like "version", "hash", "commits", "last_updated"/"timestamp") and legacy JSON schema ("release", "commits"). If JSON read fails or file does not exist, falls back to reading legacy text-formatted tracking via _read_text_tracking_file. Commit hashes are normalized to lowercase and release tag is normalized to include a leading "v" when applicable.
+    Supports the current JSON schema (keys like "version" with either "hash" or "commits", optional "last_updated" or "timestamp") and a legacy JSON schema (keys like "release" and "commits"). Legacy plain-text tracking files are not supported.
 
     Returns:
         tuple: (commits, current_release, last_updated)
-            commits (list[str]): Ordered list of prerelease IDs (may be empty).
-            current_release (str | None): Release tag associated with commits, or None if unknown.
-            last_updated (str | None): ISO timestamp of last update from JSON (or None if unavailable).
+            commits (list[str]): Ordered list of prerelease identifiers (may be empty).
+            current_release (str | None): Release tag associated with the commits, or None if not present.
+            last_updated (str | None): ISO timestamp from the tracking JSON, or None if unavailable.
     """
     commits = []
     current_release = None
     last_updated = None
-    read_from_json_success = False
 
     if os.path.exists(tracking_file):
         try:
@@ -907,43 +990,25 @@ def _read_prerelease_tracking_data(tracking_file):
                         tracking_data
                     )
                 else:
-                    # Legacy format
+                    # Legacy JSON format
                     commits, current_release, last_updated = _parse_legacy_json_format(
                         tracking_data
                     )
 
-            read_from_json_success = True
         except (IOError, json.JSONDecodeError, UnicodeDecodeError) as e:
-            logger.warning(f"Could not read prerelease tracking file: {e}")
-
-    if not read_from_json_success:
-        # Fallback to legacy text format if JSON read failed or file didn't exist
-        commits_raw, current_release = _read_text_tracking_file(tracking_file)
-        # Only normalize the release tag when it's meaningful; otherwise treat as missing
-        release_for_norm = (
-            _ensure_v_prefix_if_missing(current_release)
-            if (current_release and current_release != "unknown")
-            else None
-        )
-        # Normalize commits to version+hash format for consistency
-        commits = [
-            _normalize_commit_identifier(commit, release_for_norm)
-            for commit in commits_raw
-        ]
-        # Return normalized release tag for consistency with JSON paths
-        current_release = (
-            release_for_norm if release_for_norm is not None else current_release
-        )
-        last_updated = None
+            logger.warning("Could not read prerelease tracking file: %s", e)
 
     return commits, current_release, last_updated
 
 
 def _get_existing_prerelease_dirs(prerelease_dir: str) -> list[str]:
     """
-    Return safe prerelease directory names directly under ``prerelease_dir``.
+    List safe prerelease directory names directly under the given prerelease directory.
 
-    Symlinks are ignored to avoid traversing outside the managed prerelease tree.
+    Symlinks are ignored to avoid traversing outside the managed prerelease tree; entries are validated and sanitized before being returned.
+
+    Returns:
+        list[str]: Sanitized names of direct subdirectories that start with `FIRMWARE_DIR_PREFIX`. Returns an empty list if the directory does not exist, contains no valid prerelease dirs, or on scan error.
     """
 
     if not os.path.exists(prerelease_dir):
@@ -965,22 +1030,25 @@ def _get_existing_prerelease_dirs(prerelease_dir: str) -> list[str]:
                     continue
                 entries.append(safe_name)
     except OSError as e:
-        logger.debug(f"Error scanning prerelease dir {prerelease_dir}: {e}")
+        logger.debug("Error scanning prerelease dir %s: %s", prerelease_dir, e)
 
     return entries
 
 
 def _get_prerelease_patterns(config: dict) -> list[str]:
     """
-    Return the list of file-selection patterns used for prerelease assets.
+    Get the file-selection patterns used to identify prerelease assets.
 
-    Prefers the new SELECTED_PRERELEASE_ASSETS key from config. If that key is absent,
-    falls back to the legacy EXTRACT_PATTERNS key (and logs a deprecation warning).
-    Always returns a list (empty if no patterns are configured).
+    Prefers the `SELECTED_PRERELEASE_ASSETS` key in `config`; if absent, falls back to the legacy
+    `EXTRACT_PATTERNS` key and emits a deprecation warning. Always returns a list (empty if no
+    patterns are configured).
 
     Parameters:
-        config (dict): Configuration mapping that may contain SELECTED_PRERELEASE_ASSETS
-            or the legacy EXTRACT_PATTERNS key.
+        config (dict): Configuration mapping that may contain `SELECTED_PRERELEASE_ASSETS` or the
+            legacy `EXTRACT_PATTERNS` key.
+
+    Returns:
+        list[str]: The list of prerelease asset selection patterns.
     """
     # Check for new dedicated configuration key first
     if "SELECTED_PRERELEASE_ASSETS" in config:
@@ -997,55 +1065,44 @@ def _get_prerelease_patterns(config: dict) -> list[str]:
     return extract_patterns
 
 
-def update_prerelease_tracking(prerelease_dir, latest_release_tag, current_prerelease):
+def update_prerelease_tracking(latest_release_tag, current_prerelease):
     """
-    Update or create prerelease_tracking.json to record a single prerelease commit.
-
-    This is a convenience wrapper around `_update_tracking_with_newest_prerelease` for handling
-    a single prerelease directory. It provides the same functionality with a simpler
-    interface for single-directory updates.
+    Record a single prerelease commit in prerelease_tracking.json for the current prerelease directory.
 
     Parameters:
-        prerelease_dir (str): Path to the prerelease directory (parent for prerelease_tracking.json).
-        latest_release_tag (str): Latest official release tag used to determine whether to reset tracking.
-        current_prerelease (str): Name of the current prerelease directory (used to extract the prerelease commit).
+        latest_release_tag (str): Latest official release tag used to determine whether existing prerelease tracking should be reset.
+        current_prerelease (str): Name of the current prerelease directory (from which the prerelease commit is extracted).
 
-     Returns:
-         int: Number of tracked prerelease commits actually persisted to disk (0 on write failure).
+    Returns:
+        int: Number of prerelease commits persisted to disk; `0` if no update was written.
     """
     result = _update_tracking_with_newest_prerelease(
-        prerelease_dir, latest_release_tag, current_prerelease
+        latest_release_tag, current_prerelease
     )
     return result if result is not None else 0
 
 
 def _update_tracking_with_newest_prerelease(
-    prerelease_dir: str, latest_release_tag: str, newest_prerelease_dir: str
+    latest_release_tag: str, newest_prerelease_dir: str
 ) -> Optional[int]:
     """
-    Update prerelease_tracking.json by recording the newest prerelease identifier.
-
-    This function maintains two levels of state:
-    - **On disk**: Keeps only the newest prerelease directory; older directories are automatically removed.
-    - **In tracking file**: Preserves a cumulative list of all prerelease identifiers for the current release version (full identifiers like '2.7.7.abcd123' including version and commit hash).
-
-    If the official release tag changes, tracked prerelease IDs are reset to start fresh for the new release.
-
+    Record the newest prerelease identifier in the prerelease tracking JSON and update the tracked commits list.
+    
+    If the official release tag has changed since last tracking, reset the tracked prerelease commits before adding the newest prerelease. Ignores directories that do not match the firmware prerelease naming pattern.
+    
     Parameters:
-        prerelease_dir (str): Directory containing prerelease_tracking.json.
-        latest_release_tag (str): Current official release tag; when this differs from the stored release, tracked prerelease IDs are reset.
-        newest_prerelease_dir (str): Newest prerelease directory name to process; entries without a commit are ignored.
-
-      Returns:
-          Optional[int]: Total number of tracked prerelease commits after update.
-               Returns 0 immediately if newest_prerelease_dir is empty or invalid.
-               Returns None if the tracking file could not be written to disk.
-               Returns the number of commits actually persisted to disk on success.
+        latest_release_tag (str): Official release tag used to determine whether tracking should be reset.
+        newest_prerelease_dir (str): Name of the newest prerelease directory (expected to start with the firmware prefix).
+    
+    Returns:
+        Optional[int]: Number of tracked prerelease commits after the update;
+            `0` if `newest_prerelease_dir` is empty or invalid;
+            `None` if the tracking file could not be written to disk.
     """
     if not newest_prerelease_dir:
         return 0
 
-    tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
+    tracking_file = os.path.join(_ensure_cache_dir(), PRERELEASE_TRACKING_JSON_FILE)
 
     # Extract single prerelease version and hash from directory name
     # Validate that directory name follows expected pattern: firmware-<version>
@@ -1070,7 +1127,9 @@ def _update_tracking_with_newest_prerelease(
     clean_latest_release = _extract_clean_version(latest_release_tag)
     if existing_release and existing_release != clean_latest_release:
         logger.info(
-            f"New release {latest_release_tag} detected (previously tracking {existing_release}). Resetting prerelease tracking."
+            "New release %s detected (previously tracking %s). Resetting prerelease tracking.",
+            latest_release_tag,
+            existing_release,
         )
         existing_commits = []
 
@@ -1080,7 +1139,7 @@ def _update_tracking_with_newest_prerelease(
     # Only update if it's a new prerelease ID
     if not is_new_id:
         logger.debug(
-            f"Prerelease {new_prerelease_id} already tracked, no update needed"
+            "Prerelease %s already tracked, no update needed", new_prerelease_id
         )
         return len(existing_commits)
 
@@ -1090,7 +1149,7 @@ def _update_tracking_with_newest_prerelease(
     commit_hash = _get_commit_hash_from_dir(newest_prerelease_dir)
 
     # Write updated tracking data in new format
-    now_iso = datetime.now().astimezone().isoformat()
+    now_iso = datetime.now(timezone.utc).isoformat()
     new_tracking_data = {
         "version": _extract_clean_version(
             latest_release_tag
@@ -1106,26 +1165,28 @@ def _update_tracking_with_newest_prerelease(
         return None  # Return None on write failure
 
     logger.info(
-        f"Prerelease tracking updated: {len(updated_commits)} prerelease IDs tracked, latest: {new_prerelease_id}"
+        "Prerelease tracking updated: %d prerelease IDs tracked, latest: %s",
+        len(updated_commits),
+        new_prerelease_id,
     )
     return len(updated_commits)
 
 
 def matches_extract_patterns(filename, extract_patterns, device_manager=None):
     """
-    Determine whether a filename matches any of the configured extract patterns.
-
-    Matching is case-insensitive and supports:
-    - file-type prefix patterns (from FILE_TYPE_PREFIXES) matched by substring,
-    - device patterns (identified by trailing '-' or '_' or via device_manager.is_device_pattern()) that match device names with boundary-aware regexes (short patterns use word-boundary matching),
-    - the special "littlefs-" pattern which matches filenames starting with "littlefs-",
+    Determine whether a filename matches any configured extract patterns.
+    
+    Pattern matching is case-insensitive and recognizes:
+    - file-type prefix patterns (e.g., those from FILE_TYPE_PREFIXES),
+    - device patterns (boundary-aware matching for device identifiers),
+    - the special "littlefs-" prefix,
     - and general substring patterns as a fallback.
-
+    
     Parameters:
         filename (str): The file name to test.
         extract_patterns (Iterable[str]): Patterns from configuration to match against.
-        device_manager (optional): Object providing is_device_pattern(pattern) to identify device patterns.
-
+        device_manager (optional): Object with `is_device_pattern(pattern)` to identify device-style patterns.
+    
     Returns:
         bool: `True` if any pattern matches the filename, `False` otherwise.
     """
@@ -1182,21 +1243,22 @@ def matches_extract_patterns(filename, extract_patterns, device_manager=None):
     return False
 
 
-def get_prerelease_tracking_info(prerelease_dir):
+def get_prerelease_tracking_info():
     """
-    Return a summary of prerelease tracking data found in prerelease_tracking.json within the given directory.
-
-    Reads prerelease tracking data and returns a dictionary with the tracked official release, ordered prerelease commit identifiers, a count, and the last-updated timestamp. If no tracking data is present, returns an empty dict.
-
+    Return a summary of prerelease tracking stored in the user's prerelease_tracking.json.
+    
+    Reads normalized prerelease tracking data and returns a dictionary with the tracked official release tag, ordered prerelease identifiers, count, last-updated timestamp, and the most recent prerelease identifier. If no tracking data exists, returns an empty dict.
+    
     Returns:
-        dict: Summary with keys:
-            - "release" (str | None): Latest official release tag, or None.
+        dict: If data present, a dictionary with keys:
+            - "release" (str | None): Tracked official release tag or None.
             - "commits" (list[str]): Ordered list of tracked prerelease identifiers (may be empty).
             - "prerelease_count" (int): Number of tracked prerelease commits.
             - "last_updated" (str | None): ISO 8601 timestamp of the last update, or None.
             - "latest_prerelease" (str | None): Most recent prerelease identifier from `commits`, or None.
+        An empty dict if no tracking data is present.
     """
-    tracking_file = os.path.join(prerelease_dir, "prerelease_tracking.json")
+    tracking_file = os.path.join(_ensure_cache_dir(), PRERELEASE_TRACKING_JSON_FILE)
     commits, release, last_updated = _read_prerelease_tracking_data(tracking_file)
     if not commits and not release:
         return {}
@@ -1286,19 +1348,19 @@ def _prepare_for_redownload(file_path: str) -> bool:
     try:
         if os.path.exists(file_path):
             os.remove(file_path)
-            logger.debug(f"Removed existing file: {file_path}")
+            logger.debug("Removed existing file: %s", file_path)
 
         hash_path = get_hash_file_path(file_path)
         if os.path.exists(hash_path):
             os.remove(hash_path)
-            logger.debug(f"Removed stale hash file: {hash_path}")
+            logger.debug("Removed stale hash file: %s", hash_path)
 
         # Also remove any orphaned temp files from previous runs
         for tmp_path in glob.glob(f"{glob.escape(file_path)}.tmp.*"):
             os.remove(tmp_path)
-            logger.debug(f"Removed orphaned temp file: {tmp_path}")
+            logger.debug("Removed orphaned temp file: %s", tmp_path)
     except OSError as e:
-        logger.error(f"Error preparing for re-download of {file_path}: {e}")
+        logger.error("Error preparing for re-download of %s: %s", file_path, e)
         return False
     else:
         return True
@@ -1450,7 +1512,7 @@ def _get_releases_cache_file() -> str:
 
 def _get_prerelease_dir_cache_file() -> str:
     """
-    Return the filesystem path of the persistent prerelease directory cache file.
+    Get the filesystem path for the persistent prerelease directory cache JSON file.
 
     Returns:
         str: Path to the prerelease directories cache JSON file.
@@ -1463,87 +1525,145 @@ def _get_prerelease_dir_cache_file() -> str:
     return _prerelease_dir_cache_file
 
 
-def _load_prerelease_dir_cache() -> None:
+def _load_json_cache_with_expiry(
+    cache_file_path: str,
+    expiry_hours: float,
+    cache_entry_validator: Callable[[Dict[str, Any]], bool],
+    entry_processor: Callable[[Dict[str, Any], datetime], Any],
+    cache_name: str,
+) -> Dict[str, Any]:
     """
-    Populate the in-memory prerelease directory cache from disk, respecting expiry.
+    Load a JSON cache file and return entries that have not expired.
+
+    Parameters:
+        cache_file_path (str): Filesystem path to the JSON cache file.
+        expiry_hours (float): Maximum age in hours for an entry to be considered valid.
+        cache_entry_validator (Callable[[Dict[str, Any]], bool]): Predicate that returns `True` for entries that have the expected structure.
+        entry_processor (Callable[[Dict[str, Any], datetime], Any]): Function that converts a raw cache entry and its `cached_at` timestamp into the value to be returned for that key.
+        cache_name (str): Human-readable name used in debug logs.
+
+    Returns:
+        Dict[str, Any]: Mapping of cache keys to processed entries for those entries present in the file, valid according to `cache_entry_validator`, and younger than `expiry_hours`.
     """
-    global _prerelease_dir_cache_loaded
-
-    with _cache_lock:
-        if _prerelease_dir_cache_loaded:
-            return
-
-    cache_file = _get_prerelease_dir_cache_file()
-
     try:
-        if not os.path.exists(cache_file):
-            with _cache_lock:
-                _prerelease_dir_cache_loaded = True
-            return
+        if not os.path.exists(cache_file_path):
+            return {}
 
-        with open(cache_file, "r", encoding="utf-8") as f:
+        with open(cache_file_path, "r", encoding="utf-8") as f:
             cache_data = json.load(f)
 
         if not isinstance(cache_data, dict):
-            with _cache_lock:
-                _prerelease_dir_cache_loaded = True
-            return
+            return {}
 
         current_time = datetime.now(timezone.utc)
-        loaded: Dict[str, Tuple[List[str], datetime]] = {}
+        loaded: Dict[str, Any] = {}
 
         for cache_key, cache_entry in cache_data.items():
             try:
-                if (
-                    not isinstance(cache_entry, dict)
-                    or "directories" not in cache_entry
-                    or "cached_at" not in cache_entry
-                ):
+                if not cache_entry_validator(cache_entry):
                     logger.debug(
-                        "Skipping invalid prerelease cache entry for %s: incorrect structure",
+                        "Skipping invalid %s cache entry for %s: incorrect structure",
+                        cache_name,
                         cache_key,
                     )
                     continue
 
-                directories = cache_entry["directories"]
+                # Check if entry is still valid (not expired)
                 cached_at = datetime.fromisoformat(
                     cache_entry["cached_at"].replace("Z", "+00:00")
                 )
-
-                if not isinstance(directories, list):
-                    logger.debug(
-                        "Skipping prerelease cache entry for %s: directories not a list",
-                        cache_key,
-                    )
-                    continue
-
                 age = current_time - cached_at
-                if age.total_seconds() < PRERELEASE_DIR_CACHE_EXPIRY_SECONDS:
-                    loaded[cache_key] = (list(directories), cached_at)
+                if age.total_seconds() < expiry_hours * 60 * 60:
+                    loaded[cache_key] = entry_processor(cache_entry, cached_at)
             except (ValueError, TypeError, KeyError) as e:
                 logger.debug(
-                    "Skipping invalid prerelease cache entry for %s: %s",
+                    "Skipping invalid %s cache entry for %s: %s",
+                    cache_name,
                     cache_key,
                     e,
                 )
                 continue
 
-        with _cache_lock:
-            _prerelease_dir_cache.update(loaded)
-            _prerelease_dir_cache_loaded = True
-
         if loaded:
-            logger.debug(
-                "Loaded %d prerelease directory cache entries from disk", len(loaded)
-            )
+            logger.debug("Loaded %d %s entries from cache", len(loaded), cache_name)
+        return loaded
 
     except (IOError, json.JSONDecodeError) as e:
-        logger.debug(f"Could not load prerelease directory cache: {e}")
+        logger.debug("Could not load %s cache: %s", cache_name, e)
+        return {}
+
+
+def _load_prerelease_dir_cache() -> None:
+    """
+    Load the on-disk prerelease directory cache into memory, validating entries and applying expiry.
+    
+    If the cache is already loaded this is a no-op. Reads the persistent cache file (performing validation and expiry checks) and merges valid entries into the module-level prerelease directory cache under the module lock to ensure thread safety.
+    """
+    global _prerelease_dir_cache, _prerelease_dir_cache_loaded
+
+    if _prerelease_dir_cache_loaded:
+        return
+
+    # Perform I/O outside of lock to minimize contention
+    def validate_prerelease_entry(cache_entry: Dict[str, Any]) -> bool:
+        """
+        Validate that an object conforms to the prerelease directory cache entry schema.
+        
+        Parameters:
+            cache_entry (dict): Candidate cache entry expected to be a mapping that contains a "directories"
+                key (list or mapping of prerelease directory names) and a "cached_at" key (ISO timestamp
+                string or numeric epoch).
+        
+        Returns:
+            True if `cache_entry` is a dict containing both "directories" and "cached_at", `False` otherwise.
+        """
+        return (
+            isinstance(cache_entry, dict)
+            and "directories" in cache_entry
+            and "cached_at" in cache_entry
+        )
+
+    def process_prerelease_entry(
+        cache_entry: Dict[str, Any], cached_at: datetime
+    ) -> Tuple[List[str], datetime]:
+        """
+        Validate a prerelease cache record and return its directory list with the original timestamp.
+        
+        Parameters:
+            cache_entry (Dict[str, Any]): Cache record expected to contain a "directories" key mapping to a list of prerelease directory names.
+            cached_at (datetime): Timestamp when the cache entry was recorded.
+        
+        Returns:
+            Tuple[List[str], datetime]: A tuple containing the directories list and the original cached_at timestamp.
+        
+        Raises:
+            TypeError: If the "directories" value is not a list.
+        """
+        directories = cache_entry["directories"]
+        if not isinstance(directories, list):
+            raise TypeError("directories is not a list")
+        return (directories, cached_at)
+
+    loaded_data = _load_json_cache_with_expiry(
+        cache_file_path=_get_prerelease_dir_cache_file(),
+        expiry_hours=PRERELEASE_DIR_CACHE_EXPIRY_SECONDS / 3600,
+        cache_entry_validator=validate_prerelease_entry,
+        entry_processor=process_prerelease_entry,
+        cache_name="prerelease directory",
+    )
+
+    with _cache_lock:
+        if _prerelease_dir_cache_loaded:
+            return  # Another thread might have loaded it while we were reading from disk
+        _prerelease_dir_cache.update(loaded_data)
+        _prerelease_dir_cache_loaded = True
 
 
 def _save_prerelease_dir_cache() -> None:
     """
     Persist the in-memory prerelease directory cache to disk.
+
+    Writes the current in-memory prerelease directory entries to the configured cache file; cached timestamps are serialized in ISO 8601 format. Logs success or failure but does not raise on I/O errors.
     """
     cache_file = _get_prerelease_dir_cache_file()
 
@@ -1568,7 +1688,7 @@ def _save_prerelease_dir_cache() -> None:
             )
 
     except (IOError, OSError) as e:
-        logger.warning(f"Could not save prerelease directory cache: {e}")
+        logger.warning("Could not save prerelease directory cache: %s", e)
 
 
 def _clear_prerelease_cache() -> None:
@@ -1636,25 +1756,46 @@ def _fetch_prerelease_directories(force_refresh: bool = False) -> List[str]:
 
 def _load_commit_cache() -> None:
     """
-    Populate the in-memory commit timestamp cache from the on-disk cache file, respecting cache expiry.
+    Load non-expired commit timestamps from the on-disk cache into the in-memory commit timestamp cache.
 
-    Reads the commit cache file, validates and parses cached entries, converts stored timestamps to datetimes,
-    and loads only entries that have not expired into the module-level commit timestamp cache. Marks the cache as loaded
-    to avoid repeated loads and logs debug information on success or when the cache cannot be read or contains
-    invalid entries.
+    Reads the commit cache JSON file (a mapping of commit id -> [timestamp, cached_at]), parses ISO-8601 timestamps, skips entries that are malformed or whose cached_at is older than COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS, and updates the module-level _commit_timestamp_cache. Marks the cache as loaded to prevent repeated loads and logs debug messages when entries are skipped or the cache cannot be read.
     """
-    global _commit_cache_loaded
+    global _commit_timestamp_cache, _commit_cache_loaded
 
-    # Fast path without lock
-    if _commit_cache_loaded:
-        return
+    def validate_commit_entry(cache_entry: Any) -> bool:
+        """
+        Validate that a cache entry is a two-item sequence.
 
-    # Double-checked locking pattern with minimal lock time
+        Parameters:
+                cache_entry (Any): Value to validate.
+
+        Returns:
+                True if `cache_entry` is a `list` or `tuple` with exactly two items, False otherwise.
+        """
+        return isinstance(cache_entry, (list, tuple)) and len(cache_entry) == 2
+
+    def process_commit_entry(
+        cache_entry: Any, cached_at: datetime
+    ) -> Tuple[datetime, datetime]:
+        """
+        Parse a cached commit entry's ISO 8601 timestamp and return it together with the original cache time.
+        
+        Parameters:
+        	cache_entry (Any): Sequence-like cached entry whose first element is an ISO 8601 timestamp string; a trailing "Z" is interpreted as UTC.
+        	cached_at (datetime): The time the entry was cached; returned unchanged.
+        
+        Returns:
+        	tuple (datetime, datetime): `(commit_timestamp, cached_at)` where `commit_timestamp` is a timezone-aware datetime parsed from the cached ISO 8601 string and `cached_at` is the provided cache time.
+        """
+        timestamp_str, _ = cache_entry  # cached_at is already parsed
+        timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
+        return (timestamp, cached_at)
+
+    # Note: Commit cache has a different structure (list/tuple) so we handle it specially
     with _cache_lock:
         if _commit_cache_loaded:
             return
 
-    # Load cache data outside the lock to avoid holding it during I/O
     cache_file = _get_commit_cache_file()
     loaded: Dict[str, Tuple[datetime, datetime]] = {}
 
@@ -1667,114 +1808,101 @@ def _load_commit_cache() -> None:
         with open(cache_file, "r", encoding="utf-8") as f:
             cache_data = json.load(f)
 
-        # Validate cache structure
         if not isinstance(cache_data, dict):
             with _cache_lock:
                 _commit_cache_loaded = True
             return
 
-        # Convert string timestamps back to datetime objects (build locally)
         current_time = datetime.now(timezone.utc)
         for cache_key, cache_value in cache_data.items():
             try:
-                if not isinstance(cache_value, (list, tuple)) or len(cache_value) != 2:
+                if not validate_commit_entry(cache_value):
                     logger.debug(
-                        f"Skipping invalid cache entry for {cache_key}: incorrect structure"
+                        "Skipping invalid commit cache entry for %s: incorrect structure",
+                        cache_key,
                     )
                     continue
-                timestamp_str, cached_at_str = cache_value
-                timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
+
+                _timestamp_str, cached_at_str = cache_value
                 cached_at = datetime.fromisoformat(cached_at_str.replace("Z", "+00:00"))
 
                 # Check if entry is still valid (not expired)
                 age = current_time - cached_at
                 if age.total_seconds() < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 60 * 60:
-                    loaded[cache_key] = (timestamp, cached_at)
+                    loaded[cache_key] = process_commit_entry(cache_value, cached_at)
             except (ValueError, TypeError) as e:
-                # Skip invalid entries
-                logger.debug(f"Skipping invalid cache entry for {cache_key}: {e}")
+                logger.debug(
+                    "Skipping invalid commit cache entry for %s: %s", cache_key, e
+                )
                 continue
 
-        # Update cache and mark loaded atomically under lock
         with _cache_lock:
             _commit_timestamp_cache.update(loaded)
             _commit_cache_loaded = True
-        logger.debug(f"Loaded {len(loaded)} commit timestamps from cache")
+        logger.debug("Loaded %d commit timestamps from cache", len(loaded))
 
     except (IOError, json.JSONDecodeError) as e:
-        logger.debug(f"Could not load commit timestamp cache: {e}")
-        # Don't mark as loaded to allow retry on subsequent API calls
+        logger.debug("Could not load commit timestamp cache: %s", e)
 
 
 def _load_releases_cache() -> None:
     """
-    Populate the in-memory releases cache from the on-disk cache file, respecting cache expiry.
-
-    Reads the releases cache file, validates and parses cached entries, converts stored timestamps to datetimes,
-    and loads only entries that have not expired into the module-level releases cache. Marks the cache as loaded
-    to avoid repeated loads and logs debug information on success or when the cache cannot be read or contains
-    invalid entries.
+    Load the on-disk releases cache into the in-memory releases cache while honoring expiry.
+    
+    Reads the releases cache file, validates and processes cached entries, converts stored timestamps to datetimes,
+    and loads only entries that have not expired into the module-level cache so subsequent calls are no-ops.
     """
     global _releases_cache, _releases_cache_loaded
+
+    if _releases_cache_loaded:
+        return
+
+    # Define validators outside of lock; perform I/O outside of lock
+    def validate_releases_entry(cache_entry: Dict[str, Any]) -> bool:
+        """
+        Validate that a cache entry has the expected structure for stored releases.
+
+        Parameters:
+            cache_entry (dict): Candidate cache object to check.
+
+        Returns:
+            True if `cache_entry` is a dict containing with keys `"releases"` and `"cached_at"`, False otherwise.
+        """
+        return (
+            isinstance(cache_entry, dict)
+            and "releases" in cache_entry
+            and "cached_at" in cache_entry
+        )
+
+    def process_releases_entry(
+        cache_entry: Dict[str, Any], cached_at: datetime
+    ) -> Tuple[List[Dict[str, Any]], datetime]:
+        """
+        Extracts the stored releases list and its original cache timestamp from a cache entry.
+
+        Parameters:
+            cache_entry (Dict[str, Any]): A cache record expected to contain a "releases" key with a list of release dictionaries.
+            cached_at (datetime): The timestamp when the cache entry was created or saved.
+
+        Returns:
+            Tuple[List[Dict[str, Any]], datetime]: A tuple containing the releases list and the original `cached_at` timestamp.
+        """
+        releases_data = cache_entry["releases"]
+        return (releases_data, cached_at)
+
+    loaded_data = _load_json_cache_with_expiry(
+        cache_file_path=_get_releases_cache_file(),
+        expiry_hours=RELEASES_CACHE_EXPIRY_HOURS,
+        cache_entry_validator=validate_releases_entry,
+        entry_processor=process_releases_entry,
+        cache_name="releases",
+    )
 
     with _cache_lock:
         if _releases_cache_loaded:
             return
-
-    cache_file = _get_releases_cache_file()
-
-    try:
-        if not os.path.exists(cache_file):
-            with _cache_lock:
-                _releases_cache_loaded = True
-            return
-
-        with open(cache_file, "r", encoding="utf-8") as f:
-            cache_data = json.load(f)
-
-        # Validate cache structure
-        if not isinstance(cache_data, dict):
-            with _cache_lock:
-                _releases_cache_loaded = True
-            return
-
-        # Convert string timestamps back to datetime objects (build locally)
-        current_time = datetime.now(timezone.utc)
-        loaded: Dict[str, Tuple[List[Dict[str, Any]], datetime]] = {}
-        for cache_key, cache_entry in cache_data.items():
-            try:
-                # Validate cache entry structure
-                if (
-                    not isinstance(cache_entry, dict)
-                    or "releases" not in cache_entry
-                    or "cached_at" not in cache_entry
-                ):
-                    logger.debug(
-                        f"Skipping invalid cache entry for {cache_key}: incorrect structure"
-                    )
-                    continue
-
-                releases_data = cache_entry["releases"]
-                cached_at = datetime.fromisoformat(
-                    cache_entry["cached_at"].replace("Z", "+00:00")
-                )
-
-                # Check if entry is still valid (not expired)
-                age = current_time - cached_at
-                if age.total_seconds() < RELEASES_CACHE_EXPIRY_HOURS * 60 * 60:
-                    loaded[cache_key] = (releases_data, cached_at)
-            except (ValueError, TypeError, KeyError) as e:
-                # Skip invalid entries
-                logger.debug(f"Skipping invalid cache entry for {cache_key}: {e}")
-                continue
-
-        with _cache_lock:
-            _releases_cache.update(loaded)
-            _releases_cache_loaded = True
-        logger.debug(f"Loaded {len(loaded)} releases entries from cache")
-
-    except (IOError, json.JSONDecodeError) as e:
-        logger.debug(f"Could not load releases cache: {e}")
+        _releases_cache.update(loaded_data)
+        _releases_cache_loaded = True
 
 
 def _save_releases_cache() -> None:
@@ -1802,12 +1930,12 @@ def _save_releases_cache() -> None:
 
         # Use atomic write to prevent cache corruption
         if _atomic_write_json(cache_file, cache_data):
-            logger.debug(f"Saved {len(cache_data)} releases entries to cache")
+            logger.debug("Saved %d releases entries to cache", len(cache_data))
         else:
-            logger.warning(f"Failed to save releases cache to {cache_file}")
+            logger.warning("Failed to save releases cache to %s", cache_file)
 
     except (IOError, OSError) as e:
-        logger.warning(f"Could not save releases cache: {e}")
+        logger.warning("Could not save releases cache: %s", e)
 
 
 def _clear_cache_generic(
@@ -1817,13 +1945,17 @@ def _clear_cache_generic(
     lock: Any = _cache_lock,
 ) -> None:
     """
-    Generic cache clearing helper to reduce code duplication.
+    Clear an in-memory cache and remove its on-disk file if present.
+
+    Clears the provided cache dictionary while holding the given lock, then attempts
+    to remove the corresponding cache file returned by `cache_file_getter`. Any
+    OS-level errors when removing the file are caught and logged at debug level.
 
     Parameters:
-        cache_dict: The cache dictionary to clear
-        cache_file_getter: Function that returns the cache file path
-        cache_name: Name of the cache for logging purposes
-        lock: Lock to use for thread safety (defaults to _cache_lock)
+        cache_dict (Dict[str, Any]): In-memory cache to be cleared.
+        cache_file_getter (Callable[[], str]): Callable that returns the path to the on-disk cache file.
+        cache_name (str): Human-readable name for logging.
+        lock (Any): Lock used to protect the in-memory cache during clearing (defaults to module `_cache_lock`).
     """
     with lock:
         cache_dict.clear()
@@ -1832,17 +1964,16 @@ def _clear_cache_generic(
         cache_file = cache_file_getter()
         if os.path.exists(cache_file):
             os.remove(cache_file)
-            logger.debug(f"Removed {cache_name} cache file")
+            logger.debug("Removed %s cache file", cache_name)
     except OSError as e:
-        logger.debug(f"Error clearing {cache_name} cache file: {e}")
+        logger.debug("Error clearing %s cache file: %s", cache_name, e)
 
 
 def _clear_commit_cache() -> None:
     """
     Clear the in-memory and on-disk commit timestamp cache.
 
-    Helper function that clears the commit timestamp cache from memory
-    and removes the persistent cache file from disk.
+    Also resets the internal loaded flag so the commit cache will be reloaded on next access.
     """
     global _commit_timestamp_cache, _commit_cache_loaded
 
@@ -2185,21 +2316,21 @@ def check_for_prereleases(
     force_refresh: bool = False,
 ) -> Tuple[bool, List[str]]:
     """
-    Check for newer prerelease firmware matching the expected prerelease version and download any assets that match the provided patterns.
-
-    Updates on-disk prerelease tracking and prunes older prerelease directories when appropriate.
-
+    Detect and download matching prerelease firmware assets for the expected prerelease version.
+    
+    If matching assets are found and downloaded, the function updates on-disk prerelease tracking and prunes older prerelease directories when appropriate.
+    
     Parameters:
         download_dir (str): Base download directory containing firmware/prerelease subdirectory.
-        latest_release_tag (str): Latest official release tag (e.g., "2.7.6"); used to compute the expected prerelease version.
-        selected_patterns (Optional[List[str]]): Asset selection patterns; if empty or None, no prerelease downloads are attempted.
+        latest_release_tag (str): Latest official release tag used to compute the expected prerelease version (e.g., "2.7.6").
+        selected_patterns (Optional[List[str]]): Asset selection patterns; if None or empty, no prerelease downloads are attempted.
         exclude_patterns (Optional[List[str]]): Patterns to exclude from matching assets.
-        device_manager: Optional DeviceHardwareManager used for device-aware pattern matching.
-        github_token (Optional[str]): GitHub API token to use when querying remote prerelease directories.
-        force_refresh (bool): If True, force remote checks and update tracking even when cached or existing prerelease data exists.
-
+        device_manager: Optional device pattern resolver used for device-aware matching.
+        github_token (Optional[str]): GitHub API token for querying remote prerelease directories.
+        force_refresh (bool): When True, force remote checks and update tracking even if cached data exists.
+    
     Returns:
-        Tuple[bool, List[str]]: `True` and a list containing the downloaded prerelease directory name if new prerelease assets were downloaded; `False` and a list of existing or inspected prerelease directory name(s) otherwise (empty list if none).
+        `true` if any new prerelease assets were downloaded, `false` otherwise; and a list of relevant prerelease directory name(s) (downloaded directory when downloads occurred, otherwise existing/inspected directory names; empty list if none).
     """
     global downloads_skipped
 
@@ -2272,7 +2403,7 @@ def check_for_prereleases(
 
     # Update tracking information if files were downloaded
     if files_downloaded or force_refresh:
-        update_prerelease_tracking(prerelease_base_dir, latest_release_tag, remote_dir)
+        update_prerelease_tracking(latest_release_tag, remote_dir)
 
     # Only clean up old prerelease directories if we successfully downloaded files
     # or if the remote_dir already existed locally (to prevent deleting last good prerelease)
@@ -2676,16 +2807,12 @@ def _initial_setup_and_config() -> Tuple[
                 # Depending on severity, might want to return None or raise error
                 # For now, log and continue, some functionality might be impaired.
 
+    cache_dir = _ensure_cache_dir()
     paths_and_urls: Dict[str, str] = {
         "download_dir": download_dir,
         "firmware_dir": firmware_dir,
         "apks_dir": apks_dir,
-        "latest_android_release_file": os.path.join(
-            apks_dir, LATEST_ANDROID_RELEASE_FILE
-        ),
-        "latest_firmware_release_file": os.path.join(
-            firmware_dir, LATEST_FIRMWARE_RELEASE_FILE
-        ),
+        "cache_dir": cache_dir,
         "android_releases_url": MESHTASTIC_ANDROID_RELEASES_URL,
         "firmware_releases_url": MESHTASTIC_FIRMWARE_RELEASES_URL,
     }
@@ -2712,30 +2839,23 @@ def _process_firmware_downloads(
     config: Dict[str, Any], paths_and_urls: Dict[str, str], force_refresh: bool = False
 ) -> Tuple[List[str], List[str], List[Dict[str, str]], Optional[str], Optional[str]]:
     """
-    Process firmware release downloads and optional prerelease handling.
-
-    When enabled in config (SAVE_FIRMWARE and SELECTED_FIRMWARE_ASSETS), fetches the latest firmware releases,
-    downloads missing assets (honoring selected and excluded asset patterns), optionally extracts archives,
-    updates the latest-release tracking file, and performs cleanup/retention according to configured
-    FIRMWARE_VERSIONS_TO_KEEP. If a latest release tag exists, checks for promoted prereleases and — when
-    CHECK_PRERELEASES is enabled and downloads have not been skipped due to Wi-Fi gating — attempts to
-    discover and download newer prerelease firmware that matches the selection criteria.
-
-    Configuration keys referenced: SAVE_FIRMWARE, SELECTED_FIRMWARE_ASSETS, FIRMWARE_VERSIONS_TO_KEEP,
-    EXTRACT_PATTERNS (dual purpose: file extraction AND prerelease file selection), AUTO_EXTRACT,
-    EXCLUDE_PATTERNS, CHECK_PRERELEASES.
-
+    Manage firmware release downloads, enforce retention, and optionally discover/download prerelease firmware.
+    
+    Downloads configured firmware assets into the download directories, updates the latest-release and prerelease tracking JSON where applicable, and removes superseded prerelease directories when an official release is available.
+    
     Parameters:
-        config (Dict[str, Any]): Configuration dictionary containing download settings.
-        paths_and_urls (Dict[str, str]): Mapping of path identifiers to URLs.
-        force_refresh (bool): If True, bypass cache and fetch fresh data.
-
-    Returns a tuple of:
-    - downloaded firmware versions (List[str]) — includes strings like "pre-release X.Y.Z" for prereleases,
-    - newly detected release versions that were not previously recorded (List[str]),
-    - list of dictionaries with details for failed downloads (List[Dict[str, str]]),
-    - the latest firmware release tag string or None if no releases were found,
-    - the latest prerelease version string or None if no prereleases are tracked.
+        config (Dict[str, Any]): Runtime configuration mapping (used for feature flags, selection patterns, retention counts, tokens, and related options).
+        paths_and_urls (Dict[str, str]): Precomputed local paths and remote URLs used for downloads, cache, and storage.
+        force_refresh (bool): When true, bypasses caches and forces remote refreshes.
+    
+    Returns:
+        Tuple[
+            List[str],                # downloaded firmware versions: names of firmware versions that were newly downloaded; prereleases are prefixed with "pre-release ".
+            List[str],                # newly detected release versions: release tags discovered that were not previously tracked.
+            List[Dict[str, str]],     # failed download details: records describing each failed asset download.
+            Optional[str],            # latest firmware release tag: most recent firmware release tag discovered, or None if none found.
+            Optional[str]             # latest prerelease version: currently tracked latest prerelease version, or None if not tracked.
+        ]
     """
     global downloads_skipped
 
@@ -2786,7 +2906,7 @@ def _process_firmware_downloads(
         fw_downloaded, fw_new_versions, failed_fw_downloads_details = (
             check_and_download(  # Corrected unpacking
                 latest_firmware_releases,
-                paths_and_urls["latest_firmware_release_file"],
+                paths_and_urls["cache_dir"],
                 "Firmware",
                 paths_and_urls["firmware_dir"],
                 config.get(
@@ -2807,10 +2927,11 @@ def _process_firmware_downloads(
         if fw_downloaded:
             logger.info(f"Downloaded Firmware versions: {', '.join(fw_downloaded)}")
 
-        latest_release_tag: Optional[str] = None
-        if os.path.exists(paths_and_urls["latest_firmware_release_file"]):
-            with open(paths_and_urls["latest_firmware_release_file"], "r") as f:
-                latest_release_tag = f.read().strip()
+        # Read latest release tag from the JSON tracking file
+        firmware_json_file = os.path.join(
+            paths_and_urls["cache_dir"], LATEST_FIRMWARE_RELEASE_JSON_FILE
+        )
+        latest_release_tag = _read_latest_release_tag(firmware_json_file)
 
         if latest_release_tag:
             cleaned_up: bool = cleanup_superseded_prereleases(
@@ -2858,7 +2979,7 @@ def _process_firmware_downloads(
                 prerelease_dir = os.path.join(
                     paths_and_urls["download_dir"], "firmware", "prerelease"
                 )
-                tracking_info = get_prerelease_tracking_info(prerelease_dir)
+                tracking_info = get_prerelease_tracking_info()
                 if tracking_info:
                     count = tracking_info.get("prerelease_count", 0)
                     base_version = tracking_info.get("release", "unknown")
@@ -2936,7 +3057,7 @@ def _process_apk_downloads(
         apk_downloaded, apk_new_versions_list, failed_apk_downloads_details = (
             check_and_download(  # Unpack 3 values
                 latest_android_releases,
-                paths_and_urls["latest_android_release_file"],
+                paths_and_urls["cache_dir"],
                 "Android APK",
                 paths_and_urls["apks_dir"],
                 config.get(
@@ -3159,24 +3280,15 @@ def extract_files(
     zip_path: str, extract_dir: str, patterns: List[str], exclude_patterns: List[str]
 ) -> None:
     """
-    Extract selected files from a ZIP archive into the target directory.
-
-    Only archive members whose base filename matches one of the provided `patterns`
-    (via the centralized matcher) and do not match any `exclude_patterns` are
-    extracted. If `patterns` is empty, extraction is skipped. The archive's
-    internal subdirectory structure is preserved and missing target directories
-    are created. Files whose base name ends with the configured shell-script
-    extension are made executable after extraction. Unsafe extraction paths are
-    skipped (validated via safe_extract_path). If the ZIP is corrupted it will be
-    removed; IO, OS, and ZIP errors are logged and handled internally.
-
+    Extract selected files from a ZIP archive into the given directory.
+    
+    Only members whose base filename matches one of the provided inclusion patterns and do not match any exclusion patterns are extracted; if `patterns` is empty, extraction is skipped. The archive's internal directory structure is preserved and missing target directories are created. Files whose base name ends with the configured shell-script extension are made executable after extraction. Unsafe extraction paths are skipped; a corrupted ZIP will be removed. IO, OS, and ZIP errors are handled and logged internally.
+    
     Parameters:
         zip_path (str): Path to the ZIP archive to read.
         extract_dir (str): Destination directory where files will be extracted.
-        patterns (List[str]): Inclusion patterns used by the centralized matcher.
-            An empty list means "do not extract anything."
-        exclude_patterns (List[str]): Glob-style patterns (fnmatch) applied to the
-            base filename to exclude matching entries.
+        patterns (List[str]): Inclusion patterns used to select files; empty list means no extraction.
+        exclude_patterns (List[str]): Glob-style patterns applied to the base filename to exclude matching entries.
     """
     # Historical behavior: empty pattern list means "do not extract anything".
     if not patterns:
@@ -3219,7 +3331,7 @@ def extract_files(
                                 )
                             logger.debug(f"  Extracted: {file_name}")
                         if base_name.lower().endswith(
-                            SHELL_SCRIPT_EXTENSION.lower()
+                            SHELL_SCRIPT_EXTENSION
                         ) and not os.access(target_path, os.X_OK):
                             os.chmod(
                                 target_path, EXECUTABLE_PERMISSIONS
@@ -3313,27 +3425,16 @@ def _is_release_complete(
     exclude_patterns: List[str],
 ) -> bool:
     """
-    Return True if the local release directory contains all expected assets (filtered by include/exclude patterns)
-    and those assets pass basic integrity checks; otherwise False.
-
-    This verifies presence and basic integrity of release assets as declared in release_data["assets"]:
-    - Assets are selected if they match selected_patterns (when provided, via the centralized matcher)
-      and do not match any fnmatch pattern in exclude_patterns.
-    - For each expected asset:
-      - Existence is required.
-      - Zip files are opened and tested with ZipFile.testzip(); file size is compared to the declared asset size when available.
-      - Non-zip files have their on-disk size compared to the declared asset size when available.
+    Check whether a local release directory contains all expected assets that match the include/exclude patterns and pass basic integrity and size checks.
 
     Parameters:
-        release_data: Release metadata dict containing an "assets" list (each asset should include "name"
-            and may include "size") used to determine expected filenames and sizes.
-        release_dir: Filesystem path to the local release directory to inspect.
-        selected_patterns: Optional list of inclusion patterns; when provided only assets matching these
-            (via matches_selected_patterns) are considered expected.
-        exclude_patterns: List of fnmatch-style patterns; any asset matching one of these is ignored.
+        release_data (Dict[str, Any]): Release metadata containing an "assets" list; each asset should include "name" and may include "size" for expected file size checks.
+        release_dir (str): Path to the local directory holding downloaded release assets.
+        selected_patterns (Optional[List[str]]): Inclusion patterns used to select which assets are considered expected; when provided, only assets matching these are considered.
+        exclude_patterns (List[str]): fnmatch-style patterns; any asset matching one of these is ignored.
 
     Returns:
-        True if all expected assets are present and pass integrity/size checks; False otherwise.
+        bool: `True` if all expected assets are present and pass integrity/size checks, `False` otherwise.
     """
     if not os.path.exists(release_dir):
         return False
@@ -3372,7 +3473,7 @@ def _is_release_complete(
             return False
 
         # For zip files, verify they're not corrupted
-        if asset_name.lower().endswith(ZIP_EXTENSION.lower()):
+        if asset_name.lower().endswith(ZIP_EXTENSION):
             try:
                 with zipfile.ZipFile(asset_path, "r") as zf:
                     if zf.testzip() is not None:
@@ -3428,7 +3529,7 @@ def _is_release_complete(
 
 def check_and_download(
     releases: List[Dict[str, Any]],
-    latest_release_file: str,
+    cache_dir: str,
     release_type: str,
     download_dir_path: str,
     versions_to_keep: int,
@@ -3446,16 +3547,16 @@ def check_and_download(
     - Schedules and downloads assets that match `selected_patterns` (if provided) and do not match `exclude_patterns`.
     - Optionally extracts files from ZIP assets when `auto_extract` is True and `release_type == "Firmware"`, using `extract_patterns` to select files.
     - Writes release notes, sets executable bits on shell scripts, and prunes old release subdirectories outside the retention window.
-    - Atomically updates `latest_release_file` when a newer release has been successfully processed.
+    - Atomically updates the release tracking file when a newer release has been successfully processed.
 
     Side effects:
-    - Creates per-release subdirectories and may write `latest_release_file` and release notes.
+    - Creates per-release subdirectories and may write release tracking files and release notes.
     - May remove corrupted ZIP files and delete older release directories.
     - Honors a global Wi-Fi gating flag: if downloads are skipped globally, the function will not perform downloads and instead returns newer release tags.
 
     Parameters:
     - releases: List of release dictionaries (expected newest-first order) as returned by the API.
-    - latest_release_file: Path to a file that stores the most recently recorded release tag.
+    - cache_dir: Directory where release tracking files are stored.
     - release_type: Human-readable type used in logs and failure records (e.g., "Firmware" or "APK").
     - download_dir_path: Root directory where per-release subdirectories are created.
     - versions_to_keep: Number of newest releases to consider for download/retention.
@@ -3477,27 +3578,25 @@ def check_and_download(
     failed_downloads_details: List[Dict[str, str]] = []
     actions_taken: bool = False
     exclude_patterns_list: List[str] = exclude_patterns or []
+    already_complete_releases: set[str] = set()
 
     if not os.path.exists(download_dir_path):
         os.makedirs(download_dir_path)
 
     real_download_base = os.path.realpath(download_dir_path)
 
-    saved_release_tag: Optional[str] = None
-    if os.path.exists(latest_release_file):
-        try:
-            with open(latest_release_file, "r") as f:
-                saved_release_tag = _sanitize_path_component(f.read())
-                if saved_release_tag is None:
-                    logger.warning(
-                        "Ignoring unsafe contents in latest release file %s",
-                        latest_release_file,
-                    )
-        except IOError as e:
-            logger.warning(
-                f"Error reading latest release file {latest_release_file}: {e}"
-            )
-            # Potentially critical, could lead to re-downloading, but proceed for now.
+    # Read saved release tag from the JSON tracking file
+    json_basename = _get_json_release_basename(release_type)
+    json_file = os.path.join(cache_dir, json_basename)
+    saved_raw_tag = _read_latest_release_tag(json_file)
+    saved_release_tag = (
+        _sanitize_path_component(saved_raw_tag) if saved_raw_tag else None
+    )
+    if saved_raw_tag is not None and saved_release_tag is None:
+        logger.warning(
+            "Ignoring unsafe contents in latest release file %s",
+            json_file,
+        )
 
     releases_to_download: List[Dict[str, Any]] = releases[:versions_to_keep]
 
@@ -3557,22 +3656,18 @@ def check_and_download(
                 logger.debug(
                     f"Release {raw_release_tag} already exists and is complete, skipping download"
                 )
+                # Track that this release was already complete
+                already_complete_releases.add(release_tag)
                 # Update latest_release_file if this is the most recent release
-                if (
-                    release_tag != saved_release_tag
-                    and release_data == releases_to_download[0]
-                ):
-                    if not _atomic_write_text(latest_release_file, release_tag):
-                        logger.warning(
-                            f"Error updating latest release file: {latest_release_file}"
-                        )
-                    else:
+                if release_tag != saved_release_tag and idx == 1:
+                    # Use json_file calculated at function start
+                    if _write_latest_release_tag(json_file, release_tag, release_type):
                         logger.debug(
-                            f"Updated latest release tag to {release_tag} (complete release)"
+                            "Updated latest release tag to %s (complete release)",
+                            release_tag,
                         )
-                # Still add to new_versions_available if it's different from saved tag
-                elif release_tag != saved_release_tag:
-                    new_versions_available.append(release_tag)
+                # Don't add to new_versions_available for already-complete releases
+                # This prevents showing already-downloaded releases as "new"
                 continue
 
             if not os.path.exists(release_dir):
@@ -3637,7 +3732,7 @@ def check_and_download(
                     )
                     continue
 
-                if file_name.lower().endswith(ZIP_EXTENSION.lower()):
+                if file_name.lower().endswith(ZIP_EXTENSION):
                     asset_download_path: str = os.path.join(release_dir, safe_file_name)
                     if os.path.exists(asset_download_path):
                         try:
@@ -3826,7 +3921,7 @@ def check_and_download(
                     if not file_name:
                         continue
 
-                    if file_name.lower().endswith(ZIP_EXTENSION.lower()):
+                    if file_name.lower().endswith(ZIP_EXTENSION):
                         safe_zip_name = _sanitize_path_component(file_name)
                         if safe_zip_name is None:
                             logger.warning(
@@ -3863,7 +3958,10 @@ def check_and_download(
                     # Consider the latest release processed even without downloads to avoid re-scanning
                     try:
                         if idx == 1:
-                            if _atomic_write_text(latest_release_file, release_tag):
+                            # Use json_file calculated at function start
+                            if _write_latest_release_tag(
+                                json_file, release_tag, release_type
+                            ):
                                 saved_release_tag = release_tag
                                 logger.debug(
                                     f"Updated latest release tag to {release_tag} (no matching assets)"
@@ -3901,13 +3999,12 @@ def check_and_download(
                 latest_release_tag_val is not None
                 and latest_release_tag_val != saved_release_tag
             ):
-                if not _atomic_write_text(latest_release_file, latest_release_tag_val):
-                    logger.warning(
-                        f"Error writing latest release tag to {latest_release_file}"
-                    )
-                else:
+                # Use json_file calculated at function start
+                if _write_latest_release_tag(
+                    json_file, latest_release_tag_val, release_type
+                ):
                     logger.debug(
-                        f"Updated latest release tag to {latest_release_tag_val}"
+                        "Updated latest release tag to %s", latest_release_tag_val
                     )
         except (
             IndexError,
@@ -3941,8 +4038,13 @@ def check_and_download(
     newer_tags: List[str] = _newer_tags_since_saved(tags_order, saved_release_tag)
 
     # Report all newer releases that were not successfully downloaded as newly available.
-    # This ensures users are notified about new versions even if the download failed.
-    new_candidates: List[str] = [t for t in newer_tags if t not in downloaded_versions]
+    # This ensures users are notified about new versions even if download failed.
+    # Exclude releases that were already complete to avoid showing already-downloaded releases as "new"
+    new_candidates: List[str] = [
+        t
+        for t in newer_tags
+        if t not in downloaded_versions and t not in already_complete_releases
+    ]
 
     if not actions_taken and not new_candidates:
         logger.info(f"All {release_type} assets are up to date.")
@@ -3957,9 +4059,9 @@ def check_and_download(
 
 def set_permissions_on_sh_files(directory: str) -> None:
     """
-    Ensure all files ending with the shell script extension under `directory` are executable.
+    Set executable permissions on files ending with the shell script extension under a directory.
 
-    Recursively walks `directory` and sets executable permissions (using EXECUTABLE_PERMISSIONS) on files whose names end with `SHELL_SCRIPT_EXTENSION` (case-insensitive) when they lack execute permission. IO and permission errors are caught and logged; the function does not raise on such errors.
+    Recursively walks `directory` and makes files whose names end with `SHELL_SCRIPT_EXTENSION` (case-insensitive) executable using `EXECUTABLE_PERMISSIONS`. IO and permission errors are logged and do not propagate.
     """
     root: str
     files: List[str]
@@ -3967,7 +4069,7 @@ def set_permissions_on_sh_files(directory: str) -> None:
         for root, _dirs, files in os.walk(directory):
             file_in_dir: str
             for file_in_dir in files:
-                if file_in_dir.lower().endswith(SHELL_SCRIPT_EXTENSION.lower()):
+                if file_in_dir.lower().endswith(SHELL_SCRIPT_EXTENSION):
                     file_path: str = os.path.join(root, file_in_dir)
                     try:
                         if not os.access(file_path, os.X_OK):
@@ -3998,11 +4100,11 @@ def check_extraction_needed(
         exclude_patterns (List[str]): Exclusion patterns; matching base filenames are ignored.
 
     Returns:
-        bool: `true` if at least one matched file in the ZIP is missing from `extract_dir` (extraction needed), `false` otherwise.
+        bool: True if at least one matched file in the ZIP is missing from `extract_dir` (extraction needed), False otherwise.
 
     Notes:
-        - If the ZIP is corrupted (`zipfile.BadZipFile`), the function attempts to remove the ZIP file and returns `false`.
-        - If an IO/OSError or another unexpected exception occurs while inspecting the ZIP, the function conservatively returns `true` (assumes extraction is needed).
+        - If the ZIP is corrupted (`zipfile.BadZipFile`), the function attempts to remove the ZIP file and returns False.
+        - If an IO/OSError or another unexpected exception occurs while inspecting the ZIP, the function conservatively returns True (assumes extraction is needed).
     """
     # Preserve historical behavior: empty list of patterns means "do not extract".
     if not patterns:
@@ -4126,14 +4228,83 @@ def _format_api_summary(summary: Dict[str, Any]) -> str:
     return ", ".join(log_parts)
 
 
+def _cleanup_legacy_files(
+    config: Dict[str, Any], paths_and_urls: Dict[str, str]
+) -> None:
+    """
+    Remove legacy tracking and release files left in download directories after JSON-based tracking is used.
+
+    Deletes legacy prerelease tracking text files from the prerelease directory and legacy latest-release files from the firmware and apks download subdirectories. No on-disk migration is performed; missing paths are ignored and failures are logged as warnings.
+
+    Parameters:
+        config (Dict[str, Any]): Configuration mapping; may provide "PRERELEASE_DIR" to locate prerelease files.
+        paths_and_urls (Dict[str, str]): Mapping that must include "download_dir" to locate firmware and apks directories.
+    """
+    try:
+        # Clean up legacy files from download directories
+        download_dir = paths_and_urls.get("download_dir")
+        if not download_dir:
+            return
+
+        # Support both config-based and direct path approaches for prerelease dir
+        prerelease_dir = config.get("PRERELEASE_DIR") or os.path.join(
+            download_dir, "firmware", "prerelease"
+        )
+        if prerelease_dir and os.path.exists(prerelease_dir):
+            # Remove specific legacy text tracking files
+            legacy_files = [
+                PRERELEASE_COMMITS_LEGACY_FILE,
+                PRERELEASE_TRACKING_JSON_FILE,
+            ]
+            for filename in legacy_files:
+                legacy_file = os.path.join(prerelease_dir, filename)
+                if os.path.exists(legacy_file):
+                    try:
+                        os.remove(legacy_file)
+                        logger.debug(
+                            "Removed legacy prerelease tracking file: %s", legacy_file
+                        )
+                    except OSError as e:
+                        logger.warning(
+                            "Could not remove legacy file %s: %s", legacy_file, e
+                        )
+
+        # Remove legacy release files from download directories (not cache)
+        firmware_dir = os.path.join(download_dir, "firmware")
+        apks_dir = os.path.join(download_dir, "apks")
+        legacy_files_to_remove = {
+            "firmware": os.path.join(firmware_dir, LATEST_FIRMWARE_RELEASE_FILE),
+            "android": os.path.join(apks_dir, LATEST_ANDROID_RELEASE_FILE),
+        }
+        for release_type, legacy_file in legacy_files_to_remove.items():
+            if legacy_file and os.path.exists(legacy_file):
+                try:
+                    os.remove(legacy_file)
+                    logger.debug(
+                        "Removed legacy %s release file: %s",
+                        release_type,
+                        legacy_file,
+                    )
+                except OSError as e:
+                    logger.warning(
+                        "Could not remove legacy %s file %s: %s",
+                        release_type,
+                        legacy_file,
+                        e,
+                    )
+
+    except OSError as e:
+        logger.warning("Error removing legacy files: %s", e)
+
+
 def main(force_refresh: bool = False) -> None:
     """
     Run the Fetchtastic downloader workflow.
 
-    Performs initial setup, optionally clears caches when force_refresh is True, enforces Wi-Fi gating, processes firmware and APK downloads (including retries for failures), and finalizes by logging summary and sending notifications.
+    Performs startup and configuration, optionally clears caches and device hardware cache when requested, enforces Wi-Fi gating, processes firmware and APK downloads (with a single retry pass for failures), cleans legacy files, finalizes logging and notifications, and records an API usage summary.
 
     Parameters:
-        force_refresh (bool): If True, clear all persistent caches and device hardware cache before fetching remote data.
+        force_refresh (bool): When True, clear all persistent caches and the device hardware cache before fetching remote data.
     """
     start_time: float = time.time()
     logger.info("Starting Fetchtastic...")  # Changed to logger.info
@@ -4185,6 +4356,10 @@ def main(force_refresh: bool = False) -> None:
     downloaded_apks, new_apk_versions, failed_apk_list, latest_apk_version, _ = (
         _process_apk_downloads(config, paths_and_urls, force_refresh)
     )
+
+    # Clean up legacy files - we fetch fresh data instead of migrating old data
+    logger.info("Cleaning up legacy files")
+    _cleanup_legacy_files(config, paths_and_urls)
 
     if failed_firmware_list:
         logger.debug(f"Collected failed firmware downloads: {failed_firmware_list}")

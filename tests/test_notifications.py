@@ -206,7 +206,11 @@ def test_device_hardware_manager_cache_corruption_handling(caplog):
 
 
 def test_logging_output_validation(tmp_path, caplog):
-    """Test that logging output contains expected information."""
+    """
+    Verify that check_and_download logs progress and returns expected results when a download succeeds.
+    
+    Sets the "fetchtastic" logger to INFO, patches download_file_with_retry to simulate a successful download, invokes check_and_download with a single release asset, and asserts that the returned `downloaded` and `new_versions` contain "v1.0.0" and `failures` is empty.
+    """
     caplog.set_level("INFO", logger="fetchtastic")
 
     # Test download progress logging
@@ -226,12 +230,12 @@ def test_logging_output_validation(tmp_path, caplog):
             }
         ]
 
-        latest_release_file = str(tmp_path / "latest.txt")
+        cache_dir = str(tmp_path)
         download_dir = str(tmp_path / "downloads")
 
         downloaded, new_versions, failures = downloader.check_and_download(
             releases,
-            latest_release_file,
+            cache_dir,
             "Firmware",
             download_dir,
             versions_to_keep=1,
@@ -267,10 +271,15 @@ def test_error_message_handling(caplog):
 
 
 def test_user_facing_status_messages(tmp_path, caplog):
-    """Test user-facing status messages during operations."""
+    """
+    Verify that check_and_download reports no new downloads when the local release matches the latest release.
+
+    Creates a release directory and a valid ZIP file whose size matches the declared asset size, writes a compatibility `latest_firmware_release.json` indicating the latest version, patches the download function to succeed, and asserts that no downloads, new_versions, or failures are reported.
+
+    """
     caplog.set_level("INFO", logger="fetchtastic")
 
-    latest_release_file = str(tmp_path / "latest.txt")
+    cache_dir = str(tmp_path)
     download_dir = str(tmp_path / "downloads")
 
     # Pre-create release directory to simulate up-to-date state
@@ -305,12 +314,13 @@ def test_user_facing_status_messages(tmp_path, caplog):
         }
     ]
 
-    Path(latest_release_file).write_text("v1.0.0")
+    json_file = Path(cache_dir) / "latest_firmware_release.json"
+    json_file.write_text('{"latest_version": "v1.0.0", "file_type": "firmware"}')
 
     with patch("fetchtastic.downloader.download_file_with_retry", return_value=True):
         downloaded, new_versions, failures = downloader.check_and_download(
             releases,
-            latest_release_file,
+            cache_dir,
             "Firmware",
             download_dir,
             versions_to_keep=1,
@@ -347,7 +357,7 @@ class TestNotificationIntegration:
             }
         ]
 
-        latest_release_file = str(tmp_path / "latest.txt")
+        cache_dir = str(tmp_path)
         download_dir = str(tmp_path / "downloads")
 
         with patch(
@@ -355,7 +365,7 @@ class TestNotificationIntegration:
         ):
             downloaded, new_versions, failures = downloader.check_and_download(
                 releases,
-                latest_release_file,
+                cache_dir,
                 "Firmware",
                 download_dir,
                 versions_to_keep=1,
