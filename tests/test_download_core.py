@@ -2170,7 +2170,7 @@ def test_strip_unwanted_chars():
 
     # Test with non-ASCII characters (should be removed)
     assert strip_unwanted_chars("hello🌟world") == "helloworld"
-    assert strip_unwanted_chars("café") == "caf"
+    assert strip_unwanted_chars("café") == "caf"  # codespell:ignore
     assert strip_unwanted_chars("text with émojis 🚀") == "text with mojis "
 
     # Test with clean ASCII text (should remain unchanged)
