@@ -16,19 +16,19 @@ from fetchtastic.utils import download_file_with_retry
 
 def download_repo_files(selected_files, download_dir):  # log_message_func removed
     """
-    Download the files described by selected_files into a repository-specific downloads directory.
-
-    Sanitizes each file name with os.path.basename to prevent path traversal, downloads files into
-    download_dir/firmware/{REPO_DOWNLOADS_DIR}/<selected_files["directory"]> (or the repo directory if empty),
-    and sets executable permissions for files whose original name ends with SHELL_SCRIPT_EXTENSION.
-    Skips items missing required fields and continues on per-item errors; returns only successfully
-    downloaded file paths.
-
+    Download the specified repository files into a repository-specific downloads directory.
+    
+    Sanitizes file names to prevent path traversal and saves files under
+    download_dir/firmware/REPO_DOWNLOADS_DIR/<selected_files["directory"]> (or the repo directory if empty).
+    Sets executable permissions for files whose original name ends with SHELL_SCRIPT_EXTENSION.
+    Skips items missing required fields or that fail to download; returns only the successfully downloaded file paths.
+    
     Parameters:
-        selected_files (dict): Expected to contain "directory" (str) and "files" (iterable of dicts).
-            Each file dict must include "name" (str) and "download_url" (str).
+        selected_files (dict): Mapping with keys:
+            - "directory" (str): Subdirectory name inside the repo downloads directory.
+            - "files" (iterable[dict]): Each dict must include "name" (str) and "download_url" (str).
         download_dir (str): Base path under which the repository downloads directory will be created.
-
+    
     Returns:
         list[str]: Absolute paths to files that were successfully downloaded.
     """

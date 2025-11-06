@@ -787,12 +787,12 @@ def download_file_with_retry(
     # log_message_func: Callable[[str], None] # Removed
 ) -> bool:
     """
-    Download a URL to disk and atomically install it with integrity verification.
-
-    Streams the remote content to a temporary file with retry-capable HTTP requests, validates ZIP archives and SHA-256 sidecar files, skips download when an existing file is already verified, and atomically replaces the target file on success. Temporary and partially downloaded files are removed on failure; a `.sha256` sidecar is written after successful installation.
-
+    Download a remote file to disk, verify its integrity, and atomically install it.
+    
+    Streams the remote content to a temporary file with retry-capable HTTP requests, validates ZIP archives when applicable, verifies or writes a SHA-256 `.sha256` sidecar, and atomically replaces the target file on success. If an existing file is already verified it is left in place. Temporary and partially downloaded files are removed on failure; corrupted or mismatched files and their sidecars are removed before re-downloading.
+    
     Returns:
-        True if the file is present and verified or was downloaded and installed successfully, False otherwise.
+        True if the destination file is present and verified or was downloaded and installed successfully, False otherwise.
     """
     # Note: Session is created after pre-checks and closed in finally
 

@@ -430,12 +430,9 @@ def test_check_and_download_corrupted_existing_zip_records_failure(tmp_path):
     def mock_download(_url, _path):
         # Mock download failure to test error handling
         """
-        Simulates a download operation that always fails.
-
-        Used in tests to force a download failure for exercising error handling.
-
-        Returns:
-            False: Indicates the download did not succeed.
+        Simulates a failed download for testing purposes.
+        
+        @returns False indicating the download did not succeed.
         """
         return False
 
@@ -735,6 +732,16 @@ class TestDownloadCoreIntegration:
 
         def mock_download(_url, _path):
             # Mock download that returns False to test error handling
+            """
+            Simulates a download that always fails, used for testing error handling.
+            
+            Parameters:
+                _url (str): URL argument (ignored).
+                _path (str | Path): Destination path argument (ignored).
+            
+            Returns:
+                bool: `False` indicating the download failed.
+            """
             return False
 
         with patch(
@@ -1488,9 +1495,28 @@ def test_load_json_cache_with_expiry_no_file(tmp_path):
     non_existent_file = str(tmp_path / "non_existent.json")
 
     def dummy_validator(entry):
+        """
+        Always considers the provided entry valid.
+        
+        Parameters:
+            entry: The object representing the entry to validate.
+        
+        Returns:
+            True — the entry is always treated as valid.
+        """
         return True
 
     def dummy_processor(entry, cached_at):
+        """
+        Return the provided entry without modification.
+        
+        Parameters:
+            entry: The entry object to be returned unchanged.
+            cached_at: A timestamp or metadata indicating when the entry was cached; this parameter is accepted but ignored.
+        
+        Returns:
+            The same `entry` object that was passed in.
+        """
         return entry
 
     result = _load_json_cache_with_expiry(
@@ -1513,9 +1539,28 @@ def test_load_json_cache_with_expiry_invalid_json(tmp_path):
     invalid_json_file.write_text("{ invalid json content")
 
     def dummy_validator(entry):
+        """
+        Always considers the provided entry valid.
+        
+        Parameters:
+            entry: The object representing the entry to validate.
+        
+        Returns:
+            True — the entry is always treated as valid.
+        """
         return True
 
     def dummy_processor(entry, cached_at):
+        """
+        Return the provided entry without modification.
+        
+        Parameters:
+            entry: The entry object to be returned unchanged.
+            cached_at: A timestamp or metadata indicating when the entry was cached; this parameter is accepted but ignored.
+        
+        Returns:
+            The same `entry` object that was passed in.
+        """
         return entry
 
     result = _load_json_cache_with_expiry(
@@ -1538,9 +1583,28 @@ def test_load_json_cache_with_expiry_wrong_type(tmp_path):
     wrong_type_file.write_text('["not", "a", "dict"]')
 
     def dummy_validator(entry):
+        """
+        Always considers the provided entry valid.
+        
+        Parameters:
+            entry: The object representing the entry to validate.
+        
+        Returns:
+            True — the entry is always treated as valid.
+        """
         return True
 
     def dummy_processor(entry, cached_at):
+        """
+        Return the provided entry without modification.
+        
+        Parameters:
+            entry: The entry object to be returned unchanged.
+            cached_at: A timestamp or metadata indicating when the entry was cached; this parameter is accepted but ignored.
+        
+        Returns:
+            The same `entry` object that was passed in.
+        """
         return entry
 
     result = _load_json_cache_with_expiry(
@@ -1576,9 +1640,28 @@ def test_load_json_cache_with_expiry_expired_entries(tmp_path):
     cache_file.write_text(json.dumps(cache_data))
 
     def dummy_validator(entry):
+        """
+        Check whether a cache entry contains the required metadata keys.
+        
+        Parameters:
+            entry (Mapping): The mapping to validate.
+        
+        Returns:
+            bool: `True` if `entry` contains both the `cached_at` and `data` keys, `False` otherwise.
+        """
         return "cached_at" in entry and "data" in entry
 
     def dummy_processor(entry, cached_at):
+        """
+        Extracts and returns the `data` field from a cache entry.
+        
+        Parameters:
+            entry (dict): A mapping representing a cached entry; must contain a `"data"` key.
+            cached_at: Timestamp or metadata for when the entry was cached (ignored by this processor).
+        
+        Returns:
+            The value stored under the `"data"` key in `entry`.
+        """
         return entry["data"]
 
     result = _load_json_cache_with_expiry(
@@ -1905,6 +1988,12 @@ def test_atomic_write_operations(tmp_path):
 
     # Test successful write
     def write_content(f):
+        """
+        Write the literal string "test content" to the provided writable file-like object.
+        
+        Parameters:
+            f (io.TextIOBase): A writable file-like object opened in text mode.
+        """
         f.write("test content")
 
     result = _atomic_write(str(test_file), write_content, suffix=".tmp")
