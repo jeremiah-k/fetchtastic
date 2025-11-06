@@ -96,9 +96,10 @@ class TestTokenWarningLogic:
             # Call with no token - should show warning
             _show_token_warning_if_needed(None)
 
-            # Verify warning was logged
-            mock_logger.warning.assert_called_once()
-            assert "No GITHUB_TOKEN found" in mock_logger.warning.call_args[0][0]
+            # Verify debug message was logged
+            mock_logger.debug.assert_called_once()
+            assert "No GITHUB_TOKEN found" in mock_logger.debug.call_args[0][0]
+            assert "this is fine for normal usage" in mock_logger.debug.call_args[0][0]
 
     def test_token_warning_shows_with_different_allow_env(self):
         """Test that warning shows regardless of allow_env_token parameter."""
@@ -110,8 +111,8 @@ class TestTokenWarningLogic:
             # Call with no token and allow_env_token=False - should still show warning
             _show_token_warning_if_needed(None)
 
-            # Verify warning was logged
-            mock_logger.warning.assert_called_once()
+            # Verify debug message was logged (changed from warning to debug)
+            mock_logger.debug.assert_called_once()
 
     def test_token_warning_not_shown_with_token(self):
         """Test that warning doesn't show when token is provided."""
@@ -123,8 +124,8 @@ class TestTokenWarningLogic:
             # Call with token - should not show warning
             _show_token_warning_if_needed("fake_token")
 
-            # Verify warning was not logged
-            mock_logger.warning.assert_not_called()
+            # Verify debug message was not logged
+            mock_logger.debug.assert_not_called()
 
     def test_token_warning_shows_only_once(self):
         """Test that warning shows only once per session."""
@@ -135,13 +136,13 @@ class TestTokenWarningLogic:
 
             # First call - should show warning
             _show_token_warning_if_needed(None)
-            first_call_count = mock_logger.warning.call_count
+            first_call_count = mock_logger.debug.call_count
 
             # Second call - should not show warning again
             _show_token_warning_if_needed(None)
-            second_call_count = mock_logger.warning.call_count
+            second_call_count = mock_logger.debug.call_count
 
-            # Verify warning was called only once
+            # Verify debug message was called only once
             assert first_call_count == 1
             assert second_call_count == 1
             assert first_call_count == second_call_count

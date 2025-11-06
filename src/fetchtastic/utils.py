@@ -191,8 +191,9 @@ def _show_token_warning_if_needed(effective_token: Optional[str]) -> None:
         global _token_warning_shown
         with _token_warning_lock:
             if not _token_warning_shown:
-                logger.warning(
+                logger.debug(
                     "No GITHUB_TOKEN found - using unauthenticated API requests (60/hour limit). "
+                    "Requests are cached, so this is fine for normal usage. "
                     "Set GITHUB_TOKEN environment variable or run 'fetchtastic setup github' for higher limits (5000/hour)."
                 )
                 _token_warning_shown = True
