@@ -573,8 +573,6 @@ def make_github_api_request(
             # API request counter increment
             if effective_token:
                 _api_auth_used = True
-            else:
-                pass
 
     # Enhanced rate limit tracking and logging
     try:
