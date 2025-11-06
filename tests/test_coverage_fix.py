@@ -11,7 +11,7 @@ import pytest
 def populated_releases_cache():
     """
     Prepare a deterministic releases cache entry for tests and restore the original cache after the fixture completes.
-    
+
     Yields:
         tuple: (test_data, cache_key) where `test_data` is a list containing a single release dict `{"tag_name": "v2.7.8"}` and `cache_key` is the firmware releases URL used as the cache key.
     """
@@ -252,7 +252,7 @@ def test_main_function_full_coverage(tmp_path):
 def test_main_function_basic_coverage(tmp_path):
     """
     Cover the basic execution path of fetchtastic.downloader.main.
-    
+
     Mocks initial setup, Wi‑Fi check, firmware and APK processing, and finalization; invokes main(force_refresh=False) and asserts that setup, firmware processing, and APK processing were each called once.
     """
     with patch("fetchtastic.downloader._initial_setup_and_config") as mock_setup, patch(

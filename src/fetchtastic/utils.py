@@ -787,13 +787,13 @@ def download_file_with_retry(
 ) -> bool:
     """
     Download a remote file to disk, verify integrity, and atomically install it.
-    
+
     Streams the URL to a temporary file with retry-capable HTTP requests, validates ZIP archives when applicable, verifies or writes a SHA-256 `.sha256` sidecar, and atomically replaces the destination. If an existing file is already verified it is left in place. Temporary and partially downloaded files are removed on failure; corrupted or mismatched files and their sidecars are removed before re-downloading.
-    
+
     Parameters:
         url (str): The HTTP(S) URL of the remote file to download.
         download_path (str): Final filesystem path where the downloaded file will be installed.
-    
+
     Returns:
         bool: `True` if the destination file is present and verified or was downloaded and installed successfully, `False` otherwise.
     """
@@ -1155,17 +1155,17 @@ def matches_selected_patterns(
 ) -> bool:
     """
     Determine whether a filename matches any of the provided patterns after normalization.
-    
+
     Compares the filename's normalized base forms (modern and legacy normalization) against each
     pattern. Matching is case-insensitive and additionally supports punctuation-stripped comparisons
     for patterns that are mixed-case, contain dots, or include keywords like "release", "apk",
     "aab", or "fdroid". If `selected_patterns` is None or empty, the function matches all filenames.
-    
+
     Parameters:
         filename (str): The filename to test.
         selected_patterns (Optional[List[str]]): Iterable of substring patterns to search for;
             empty or None means match all.
-    
+
     Returns:
         bool: `true` if any non-empty pattern appears in either normalized base name (including
         punctuation-stripped fallbacks), `false` otherwise.

@@ -431,7 +431,7 @@ def test_check_and_download_corrupted_existing_zip_records_failure(tmp_path):
         # Mock download failure to test error handling
         """
         Simulates a download failure for tests.
-        
+
         Returns:
             `False` indicating the download did not succeed.
         """
@@ -1498,7 +1498,7 @@ def test_load_json_cache_with_expiry_no_file(tmp_path):
     def dummy_validator(entry):
         """
         Always treats the provided entry as valid.
-        
+
         Returns:
             `True` for any input.
         """
@@ -1507,11 +1507,11 @@ def test_load_json_cache_with_expiry_no_file(tmp_path):
     def dummy_processor(entry, cached_at):
         """
         Return the entry unchanged.
-        
+
         Parameters:
             entry: Object to return unchanged.
             cached_at: Timestamp or metadata when the entry was cached; accepted but ignored.
-        
+
         Returns:
             The same `entry` object that was passed in.
         """
@@ -1539,7 +1539,7 @@ def test_load_json_cache_with_expiry_invalid_json(tmp_path):
     def dummy_validator(entry):
         """
         Always treats the provided entry as valid.
-        
+
         Returns:
             `True` for any input.
         """
@@ -1548,11 +1548,11 @@ def test_load_json_cache_with_expiry_invalid_json(tmp_path):
     def dummy_processor(entry, cached_at):
         """
         Return the entry unchanged.
-        
+
         Parameters:
             entry: Object to return unchanged.
             cached_at: Timestamp or metadata when the entry was cached; accepted but ignored.
-        
+
         Returns:
             The same `entry` object that was passed in.
         """
@@ -1580,7 +1580,7 @@ def test_load_json_cache_with_expiry_wrong_type(tmp_path):
     def dummy_validator(entry):
         """
         Always treats the provided entry as valid.
-        
+
         Returns:
             `True` for any input.
         """
@@ -1589,11 +1589,11 @@ def test_load_json_cache_with_expiry_wrong_type(tmp_path):
     def dummy_processor(entry, cached_at):
         """
         Return the entry unchanged.
-        
+
         Parameters:
             entry: Object to return unchanged.
             cached_at: Timestamp or metadata when the entry was cached; accepted but ignored.
-        
+
         Returns:
             The same `entry` object that was passed in.
         """
@@ -1646,11 +1646,11 @@ def test_load_json_cache_with_expiry_expired_entries(tmp_path):
     def dummy_processor(entry, cached_at):
         """
         Return the value of the "data" key from a cache entry.
-        
+
         Parameters:
             entry (dict): Cache entry mapping that must contain a "data" key.
             cached_at: Ignored; timestamp or metadata for when the entry was cached.
-        
+
         Returns:
             The value stored under the "data" key in `entry`.
         """
@@ -2255,9 +2255,9 @@ def test_cache_thread_safety():
     def simulate_cache_operation(_cache_type, operation_func, results_list, thread_id):
         """
         Run a cache-related operation in a thread and record its timing and outcome.
-        
+
         Appends a tuple to `results_list` containing (thread_id, start_timestamp, end_timestamp, error_message_or_None). If the operation raises, the exception string is recorded as `error_message_or_None`; otherwise that field is `None`.
-        
+
         Parameters:
             _cache_type: Identifier for the cache being exercised (unused by this helper; provided for context).
             operation_func: Callable that performs the cache operation to measure.
@@ -2456,44 +2456,66 @@ def test_main_downloads_skipped_reset():
 
 
 @pytest.mark.core_downloads
-def test_path_traversal_protection_logic():
-    """Test path traversal protection logic directly."""
+def test_download_repo_files_path_traversal(tmp_path):
+    """Test that download_repo_files prevents path traversal attacks."""
     import os
-    import tempfile
+    from unittest.mock import patch
 
-    # Create a temporary directory structure
-    with tempfile.TemporaryDirectory() as temp_dir:
-        repo_dir = os.path.join(temp_dir, "firmware", "test-downloads")
-        os.makedirs(repo_dir, exist_ok=True)
+    from fetchtastic.repo_downloader import download_repo_files
 
-        # Test path traversal logic (same logic as in repo_downloader.py)
-        test_cases = [
-            ("../../../etc", "should be sanitized"),
-            ("../safe", "should be sanitized"),
-            ("subdir", "should be allowed"),
-            ("", "should use base dir"),
-        ]
+    download_dir = str(tmp_path)
+    repo_dir = tmp_path / "firmware" / "repo-dls"
 
-        for directory, description in test_cases:
-            if directory:
-                candidate = os.path.join(repo_dir, directory)
-            else:
-                candidate = repo_dir
+    # Test malicious directory path
+    malicious_dir = "../../../etc"
+    selected_files = {
+        "directory": malicious_dir,
+        "files": [{"name": "passwd", "download_url": "http://example.com/passwd"}],
+    }
 
-            real_repo = os.path.realpath(repo_dir)
-            real_target = os.path.realpath(candidate)
+    def mock_download_file_with_retry(url, file_path):
+        """Mock that creates the file to simulate successful download."""
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        with open(file_path, "w") as f:
+            f.write("mock content")
+        return True
 
-            try:
-                common = os.path.commonpath([real_repo, real_target])
-            except ValueError:
-                common = None
+    # Test the actual behavior of download_repo_files
+    with patch(
+        "fetchtastic.repo_downloader.download_file_with_retry",
+        side_effect=mock_download_file_with_retry,
+    ):
+        downloaded_files = download_repo_files(selected_files, download_dir)
 
-            # If traversal attempt, common should not equal real_repo
-            if ".." in directory:
-                assert (
-                    common != real_repo or common is None
-                ), f"Traversal attempt not blocked: {directory} {description}"
-            else:
-                assert (
-                    common == real_repo
-                ), f"Safe path incorrectly blocked: {directory} {description}"
+    # CRITICAL: Assert that the file was NOT written outside the intended repo directory
+    assert not (
+        tmp_path / "etc" / "passwd"
+    ).exists(), "SECURITY: File was written outside repo directory!"
+
+    # Assert that the file was written to the base repo directory as a fallback
+    assert (repo_dir / "passwd").exists(), "File was not written to fallback directory!"
+
+    # Verify the returned path points to the safe location
+    expected_safe_path = str(repo_dir / "passwd")
+    assert (
+        expected_safe_path in downloaded_files
+    ), "Returned path does not point to safe location!"
+
+    # Additional test: verify safe directory works normally
+    safe_selected_files = {
+        "directory": "safe_subdir",
+        "files": [{"name": "safe_file.txt", "download_url": "http://example.com/safe"}],
+    }
+
+    with patch(
+        "fetchtastic.repo_downloader.download_file_with_retry",
+        side_effect=mock_download_file_with_retry,
+    ):
+        safe_downloaded_files = download_repo_files(safe_selected_files, download_dir)
+
+    # Safe directory should work normally
+    safe_dir = repo_dir / "safe_subdir"
+    assert (safe_dir / "safe_file.txt").exists(), "Safe directory file was not created!"
+    assert (
+        str(safe_dir / "safe_file.txt") in safe_downloaded_files
+    ), "Safe file not in returned paths!"
