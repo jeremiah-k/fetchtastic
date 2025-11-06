@@ -68,8 +68,6 @@ _api_request_count = 0
 _api_cache_hits = 0
 _api_cache_misses = 0
 _api_auth_used = False
-_api_first_auth_logged = False
-_api_first_unauth_logged = False
 _api_tracking_lock = threading.Lock()
 
 
@@ -147,19 +145,15 @@ def reset_api_tracking() -> None:
     """
     Reset session-wide API request tracking counters and flags.
 
-    Resets the request count, cache hit and miss counters, the authentication-used flag,
-    and the first-authenticated/first-unauthenticated logged flags while holding the
-    module's tracking lock to ensure thread-safety.
+    Resets request count, cache hit and miss counters, and authentication-used flag
+    while holding the module's tracking lock to ensure thread-safety.
     """
     global _api_request_count, _api_cache_hits, _api_cache_misses, _api_auth_used
-    global _api_first_auth_logged, _api_first_unauth_logged
     with _api_tracking_lock:
         _api_request_count = 0
         _api_cache_hits = 0
         _api_cache_misses = 0
         _api_auth_used = False
-        _api_first_auth_logged = False
-        _api_first_unauth_logged = False
 
 
 def get_effective_github_token(
@@ -197,8 +191,9 @@ def _show_token_warning_if_needed(effective_token: Optional[str]) -> None:
         global _token_warning_shown
         with _token_warning_lock:
             if not _token_warning_shown:
-                logger.warning(
+                logger.debug(
                     "No GITHUB_TOKEN found - using unauthenticated API requests (60/hour limit). "
+                    "Requests are cached, so this is fine for normal usage. "
                     "Set GITHUB_TOKEN environment variable or run 'fetchtastic setup github' for higher limits (5000/hour)."
                 )
                 _token_warning_shown = True
@@ -454,30 +449,22 @@ def make_github_api_request(
     custom_403_message: Optional[str] = None,
 ) -> requests.Response:
     """
-    Make an authenticated GitHub API request with proper headers, rate limiting, and error handling.
-
-    This function handles:
-    - Setting proper GitHub API headers
-    - Authentication using provided token or environment variable
-    - Automatic retry without token on 401 error
-    - Rate limit warnings
-    - Polite delays after requests
+    Perform a GitHub API GET request using an optional token, track and cache rate-limit information, and retry once without authentication if token-based auth fails.
 
     Parameters:
-        url (str): GitHub API URL to request
-        github_token (Optional[str]): GitHub token for authentication
-        allow_env_token (bool): Whether to allow using environment variable token
-        params (Optional[Dict[str, Any]]): Query parameters for the request
-        timeout (Optional[int]): Request timeout in seconds
-        _is_retry (bool): Internal flag to prevent infinite recursion on retries.
-        custom_403_message (Optional[str]): Custom message for 403 errors, overrides default rate limit message
+        url (str): GitHub API URL to request.
+        github_token (Optional[str]): Explicit GitHub token to use for Authorization; trimmed and preferred over environment token.
+        allow_env_token (bool): If True, allow falling back to the GITHUB_TOKEN environment variable when no explicit token is provided.
+        params (Optional[Dict[str, Any]]): Query parameters to include in the request.
+        timeout (Optional[int]): Request timeout in seconds; if omitted, the module default is used.
+        custom_403_message (Optional[str]): Custom message to use when raising on 403 responses; if omitted a default rate-limit message is used.
 
     Returns:
-        requests.Response: The response object
+        requests.Response: The HTTP response returned by GitHub.
 
     Raises:
-        requests.HTTPError: For HTTP errors.
-        requests.RequestException: For other request-related errors.
+        requests.HTTPError: For HTTP error responses (including 401/403 conditions handled by the function).
+        requests.RequestException: For lower-level network or request errors.
     """
     from fetchtastic.constants import API_CALL_DELAY, GITHUB_API_TIMEOUT
     from fetchtastic.log_utils import logger
@@ -515,6 +502,7 @@ def make_github_api_request(
     try:
         # Make the request
         actual_timeout = timeout or GITHUB_API_TIMEOUT
+        logger.debug(f"Making GitHub API request: {url}")
         response = requests.get(
             url, timeout=actual_timeout, headers=headers, params=params
         )
@@ -572,15 +560,6 @@ def make_github_api_request(
             # API request counter increment
             if effective_token:
                 _api_auth_used = True
-                if not _api_first_auth_logged:
-                    logger.info("🔐 Making first authenticated GitHub API request")
-                    _api_first_auth_logged = True
-            else:
-                if not _api_first_unauth_logged:
-                    logger.info(
-                        "🌐 Making first unauthenticated GitHub API request (60/hour limit)"
-                    )
-                    _api_first_unauth_logged = True
 
     # Enhanced rate limit tracking and logging
     try:
@@ -620,8 +599,8 @@ def make_github_api_request(
                     logger.warning(
                         f"GitHub API rate limit running low: {remaining} requests remaining"
                     )
-                elif remaining <= 50:
-                    logger.info(
+                elif remaining <= 20:
+                    logger.warning(
                         f"GitHub API rate limit: {remaining} requests remaining"
                     )
 

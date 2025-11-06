@@ -864,6 +864,63 @@ def test_make_github_api_request_rate_limit_warnings():
 
 @pytest.mark.core_downloads
 @pytest.mark.unit
+def test_make_github_api_request_debug_logging():
+    """Test that API requests are logged at debug level."""
+    # Mock response without rate limit headers to avoid parsing issues
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.headers = {}  # No rate limit headers
+    mock_response.raise_for_status.return_value = None
+
+    with patch("fetchtastic.utils.requests.get") as mock_get:
+        mock_get.return_value = mock_response
+
+        # Make API request - should generate debug log
+        with patch("fetchtastic.log_utils.logger") as mock_logger:
+            utils.make_github_api_request("https://api.github.com/repos/test/repo")
+
+            # Should have logged debug message with URL
+            debug_calls = [call[0][0] for call in mock_logger.debug.call_args_list]
+            api_request_call = next(
+                (
+                    call
+                    for call in debug_calls
+                    if "making github api request" in call.lower()
+                ),
+                None,
+            )
+            assert (
+                api_request_call is not None
+            ), "No debug call with 'making github api request' found"
+            assert "https://api.github.com/repos/test/repo" in api_request_call
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
+def test_make_github_api_request_rate_limit_20_warning():
+    """Test rate limit warning at exactly 20 requests remaining."""
+    # Mock response with exactly 20 rate limit as integer
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.headers = {"X-RateLimit-Remaining": 20}  # Integer instead of string
+    mock_response.raise_for_status.return_value = None
+
+    with patch("fetchtastic.utils.requests.get") as mock_get:
+        mock_get.return_value = mock_response
+
+        # Make API request - should generate warning at 20
+        with patch("fetchtastic.log_utils.logger") as mock_logger:
+            utils.make_github_api_request("https://api.github.com/repos/test/repo")
+
+            # Should have logged a warning about rate limit
+            mock_logger.warning.assert_called()
+            warning_call = mock_logger.warning.call_args[0][0]
+            assert "github api rate limit" in warning_call.lower()
+            assert "20" in warning_call
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
 def test_make_github_api_request_cached_rate_limit():
     """Test that cached rate limits are used when headers are missing."""
     from datetime import datetime, timedelta, timezone
@@ -1250,4 +1307,45 @@ def test_matches_selected_patterns_edge_cases():
     assert (
         utils.matches_selected_patterns("file-with-dashes.bin", ["file-with-dashes"])
         is True
+    )
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
+def test_format_api_summary_debug_coverage():
+    """Test _format_api_summary function to ensure debug logging path is covered."""
+    from datetime import datetime, timezone
+
+    from fetchtastic.downloader import _format_api_summary
+
+    # Test the function directly to ensure it's covered
+    summary = {
+        "total_requests": 5,
+        "auth_used": False,
+        "cache_hits": 2,
+        "cache_misses": 3,
+        "rate_limit_remaining": 55,
+        "rate_limit_reset": datetime.now(timezone.utc),
+    }
+
+    result = _format_api_summary(summary)
+
+    # Verify the function returns expected format
+    assert "📊 GitHub API Summary: 5 API requests (🌐 unauthenticated)" in result
+    assert "5 cache lookups" in result
+    assert "2 hits" in result
+    assert "3 misses" in result
+    assert "55 requests remaining" in result
+
+    # Test with no requests
+    summary_no_requests = {
+        "total_requests": 0,
+        "auth_used": True,
+        "cache_hits": 0,
+        "cache_misses": 0,
+    }
+
+    result_no_requests = _format_api_summary(summary_no_requests)
+    assert (
+        "📊 GitHub API Summary: 0 API requests (🔐 authenticated)" in result_no_requests
     )
