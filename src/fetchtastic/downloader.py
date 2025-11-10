@@ -2618,6 +2618,81 @@ def _send_ntfy_notification(
         pass
 
 
+def _fetch_releases_with_retry(
+    url: str,
+    scan_count: int,
+    github_token: Optional[str] = None,
+    allow_env_token: bool = True,
+    timeout: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Fetch releases from GitHub API with retry logic to handle API quirks.
+
+    Some GitHub API endpoints have quirks where requesting certain per_page values
+    returns fewer results than expected. This function retries with a larger request
+    size when insufficient results are received.
+
+    Parameters:
+        url (str): GitHub API URL for releases
+        scan_count (int): Number of releases desired
+        github_token (Optional[str]): GitHub API token
+        allow_env_token (bool): Whether to allow environment token
+        timeout (Optional[int]): Request timeout
+
+    Returns:
+        List[Dict[str, Any]]: List of releases (at least scan_count if available)
+    """
+    from fetchtastic.constants import GITHUB_API_TIMEOUT
+
+    if timeout is None:
+        timeout = GITHUB_API_TIMEOUT
+
+    max_attempts = 2
+    releases: List[Dict[str, Any]] = []
+
+    for attempt in range(max_attempts):
+        # Calculate request size for this attempt
+        if attempt == 0:
+            request_size = scan_count
+        else:
+            # For retry, request more releases to work around GitHub API quirks
+            request_size = min(scan_count + 5, 100)  # GitHub max is 100 per page
+            logger.debug(
+                f"GitHub API retry {attempt + 1}: requesting {request_size} releases "
+                f"(originally wanted {scan_count}, got {len(releases)})"
+            )
+
+        try:
+            response = make_github_api_request(
+                url,
+                github_token=github_token,
+                allow_env_token=allow_env_token,
+                params={"per_page": request_size},
+                timeout=timeout,
+            )
+
+            releases = response.json()
+            logger.debug(
+                f"GitHub API returned {len(releases)} releases (requested {request_size})"
+            )
+
+            # If we got enough releases, or this is our last attempt, we're done
+            if len(releases) >= scan_count or attempt == max_attempts - 1:
+                break
+
+        except (
+            requests.HTTPError,
+            requests.exceptions.RequestException,
+            json.JSONDecodeError,
+        ) as e:
+            logger.warning(f"GitHub API request failed on attempt {attempt + 1}: {e}")
+            if attempt == max_attempts - 1:
+                return []
+            continue
+
+    return releases
+
+
 def _get_latest_releases_data(
     url: str,
     scan_count: int = 10,
@@ -2694,45 +2769,28 @@ def _get_latest_releases_data(
     logger.debug(f"Cache miss for releases {url} - fetching from API")
     track_api_cache_miss()
 
-    releases: List[Dict[str, Any]] = []  # Initialize to prevent NameError
-    try:
-        # Add progress feedback
-        if effective_release_type:
-            logger.info(f"Fetching {effective_release_type} releases from GitHub...")
-        else:
-            # Fallback for generic case
-            logger.info("Fetching releases from GitHub...")
+    # Add progress feedback
+    if effective_release_type:
+        logger.info(f"Fetching {effective_release_type} releases from GitHub...")
+    else:
+        # Fallback for generic case
+        logger.info("Fetching releases from GitHub...")
 
-        # Initialize releases to prevent NameError in error paths
-        releases: List[Dict[str, Any]] = []
+    # Use retry logic to handle GitHub API quirks
+    releases = _fetch_releases_with_retry(
+        url,
+        scan_count,
+        github_token=github_token,
+        allow_env_token=allow_env_token,
+        timeout=GITHUB_API_TIMEOUT,
+    )
 
-        # scan_count already clamped above
-        response: requests.Response = make_github_api_request(
-            url,
-            github_token=github_token,
-            allow_env_token=allow_env_token,
-            params={"per_page": scan_count},
-            timeout=GITHUB_API_TIMEOUT,
-        )
-
-        try:
-            releases: List[Dict[str, Any]] = response.json()
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to decode JSON from {url}: {e}")
-            return []
-
-        # Log how many releases were fetched
-        logger.debug(f"Fetched {len(releases)} releases from GitHub API")
-
-    except requests.HTTPError as e:
-        logger.warning(f"HTTP error fetching releases data from {url}: {e}")
-        return []  # Return empty list on error
-    except requests.exceptions.RequestException as e:
-        logger.warning(f"Failed to fetch releases data from {url}: {e}")
-        return []  # Return empty list on error
-    except (ValueError, json.JSONDecodeError) as e:
-        logger.error(f"Failed to decode JSON response from {url}: {e}")
+    if not releases:
+        logger.warning(f"No releases data received from {url}")
         return []
+
+    # Log how many releases were fetched
+    logger.debug(f"Fetched {len(releases)} releases from GitHub API")
 
     # Sort releases by published date, descending order
     try:
