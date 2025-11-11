@@ -386,6 +386,8 @@ def cleanup_superseded_prereleases(
                 )
                 if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
                     cleaned_up = True
+                    # Record the deletion in tracking history for symlinked prerelease
+                    _record_prerelease_deletion(dir_name, latest_release_tag)
                 else:
                     logger.error(
                         "Failed to remove symlink %s in prerelease dir", dir_name
@@ -484,19 +486,18 @@ def _synthesize_commits_from_hash(tracking_data: dict, migrated_data: dict) -> l
     if commits_raw is not None:
         return commits_raw
 
-    # Try to synthesize from hash if available
     hash_val = tracking_data.get("hash")
     if not hash_val:
         return []
-
-    prefix = ""
     version = migrated_data.get("version")
-    if version:
-        expected = calculate_expected_prerelease_version(
+    expected = (
+        calculate_expected_prerelease_version(
             _ensure_v_prefix_if_missing(version) or ""
         )
-        if expected:
-            prefix = f"{expected}."
+        if version
+        else ""
+    )
+    prefix = f"{expected}." if expected else ""
     return [f"{prefix}{hash_val}"]
 
 
@@ -582,6 +583,10 @@ def _validate_and_migrate_first_seen(
                 type(first_seen).__name__,
             )
         first_seen = {}
+    else:
+        # Work on a copy to avoid mutating the original tracking_data, which could
+        # interfere with the migration detection logic later on.
+        first_seen = first_seen.copy()
 
     # Ensure all commits have first_seen timestamps
     for commit in commits:
@@ -646,7 +651,7 @@ def _validate_and_migrate_tracking_data(
 
     # Handle enhanced fields with defaults
     existing_all = tracking_data.get("all_prerelease_commits", [])
-    # Build complete history = active commits ∪ deleted directories, preserving order
+    # Build complete history = union of active commits and deleted directories, preserving order
     migrated_data["all_prerelease_commits"] = list(
         dict.fromkeys(
             list(existing_all)
@@ -1541,7 +1546,7 @@ def _update_tracking_with_newest_prerelease(
         "commits": updated_commits,  # full prerelease IDs in version+hash format
         "hash": commit_hash,  # optional single latest hash
         "count": len(updated_commits),  # total tracked prereleases
-        "timestamp": now_iso,  # per PR format
+        "timestamp": existing_tracking.get("timestamp", now_iso),
         "last_updated": now_iso,  # maintain compatibility with existing readers
         # Enhanced fields for comprehensive tracking
         "all_prerelease_commits": list(
@@ -1792,7 +1797,7 @@ def _fetch_historical_prerelease_commits(
         ]
         return list(dict.fromkeys(filtered))
 
-    except requests.RequestException as e:
+    except requests.exceptions.RequestException as e:
         logger.warning(f"Network error fetching historical prerelease commits: {e}")
         return []
     except (json.JSONDecodeError, KeyError) as e:
@@ -4848,11 +4853,8 @@ def _cleanup_legacy_files(
             download_dir, "firmware", "prerelease"
         )
         if prerelease_dir and os.path.exists(prerelease_dir):
-            # Remove specific legacy text tracking files
-            legacy_files = [
-                PRERELEASE_COMMITS_LEGACY_FILE,
-                PRERELEASE_TRACKING_JSON_FILE,
-            ]
+            # Remove specific legacy text tracking files (keep JSON tracking)
+            legacy_files = [PRERELEASE_COMMITS_LEGACY_FILE]
             for filename in legacy_files:
                 legacy_file = os.path.join(prerelease_dir, filename)
                 if os.path.exists(legacy_file):
