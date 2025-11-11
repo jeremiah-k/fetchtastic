@@ -568,19 +568,19 @@ def _validate_and_migrate_first_seen(
 ) -> dict:
     """Validate and migrate first_seen field."""
     first_seen = tracking_data.get("first_seen")
-    if first_seen is None:
-        # Create first_seen for existing commits
-        first_seen = {}
-        logger.info(
-            "Initializing first_seen timestamps for existing commits in %s",
-            tracking_file,
-        )
-    elif not isinstance(first_seen, dict):
-        logger.warning(
-            "Invalid first_seen format in tracking file %s: expected dict, got %s. Resetting.",
-            tracking_file,
-            type(first_seen).__name__,
-        )
+    if not isinstance(first_seen, dict):
+        if first_seen is None:
+            # Create first_seen for existing commits
+            logger.info(
+                "Initializing first_seen timestamps for existing commits in %s",
+                tracking_file,
+            )
+        else:
+            logger.warning(
+                "Invalid first_seen format in tracking file %s: expected dict, got %s. Resetting.",
+                tracking_file,
+                type(first_seen).__name__,
+            )
         first_seen = {}
 
     # Ensure all commits have first_seen timestamps
@@ -721,9 +721,9 @@ def _read_tracking_data(tracking_file: str) -> dict:
             )
             return _create_default_tracking_data()
 
-    except json.JSONDecodeError as e:
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
         logger.warning(
-            "Invalid JSON in tracking file %s: %s. Creating default tracking data to avoid data loss.",
+            "Invalid JSON or encoding in tracking file %s: %s. Creating default tracking data to avoid data loss.",
             tracking_file,
             e,
         )
@@ -754,12 +754,11 @@ def _record_prerelease_deletion(deleted_dir_name: str, latest_release_tag: str) 
     tracking_file = os.path.join(_ensure_cache_dir(), PRERELEASE_TRACKING_JSON_FILE)
 
     # Extract prerelease ID from deleted directory name
-    if deleted_dir_name.startswith(FIRMWARE_DIR_PREFIX):
-        deleted_prerelease_id = deleted_dir_name.removeprefix(
-            FIRMWARE_DIR_PREFIX
-        ).lower()
-    else:
-        deleted_prerelease_id = deleted_dir_name.lower()
+    deleted_prerelease_id = (
+        deleted_dir_name.removeprefix(FIRMWARE_DIR_PREFIX).lower()
+        if deleted_dir_name.startswith(FIRMWARE_DIR_PREFIX)
+        else deleted_dir_name.lower()
+    )
 
     # Read full tracking data to get existing fields
     tracking_data = _read_tracking_data(tracking_file)
@@ -1642,7 +1641,11 @@ def get_prerelease_tracking_info():
         Returns an empty dict if no tracking data is available.
     """
     tracking_file = os.path.join(_ensure_cache_dir(), PRERELEASE_TRACKING_JSON_FILE)
-    commits, release, last_updated = _read_prerelease_tracking_data(tracking_file)
+    tracking_data = _read_tracking_data(tracking_file)
+
+    release = tracking_data.get("version")
+    commits = tracking_data.get("commits", [])
+
     if not commits and not release:
         return {}
 
@@ -1668,9 +1671,9 @@ def get_prerelease_tracking_info():
         "relevant_commits": relevant_commits,  # Filtered for display
         "prerelease_count": len(relevant_commits),  # Filtered count for display
         "total_prerelease_count": len(commits),  # Total historical count
-        "last_updated": last_updated,
+        "last_updated": tracking_data.get("last_updated"),
         "latest_prerelease": commits[-1] if commits else None,
-        "deleted_directories": _get_deleted_directories_from_tracking(tracking_file),
+        "deleted_directories": tracking_data.get("deleted_directories", []),
     }
 
 
@@ -1737,9 +1740,9 @@ def _fetch_historical_prerelease_commits(
         if response.status_code != 200:
             logger.warning(f"Failed to fetch commit history: {response.status_code}")
             return []
-        else:
-            commits = response.json()
-            prerelease_commits = []
+
+        commits = response.json()
+        prerelease_commits = []
         # Normalize since_version by stripping leading 'v' for regex matching
         normalized_since = since_version.lstrip("vV") if since_version else None
 
