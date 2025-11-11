@@ -639,14 +639,20 @@ def _validate_and_migrate_tracking_data(
     # Handle timestamp fields with migration
     migrated_data.update(_validate_and_migrate_timestamp_fields(tracking_data, now_iso))
 
-    # Handle enhanced fields with defaults
-    migrated_data["all_prerelease_commits"] = tracking_data.get(
-        "all_prerelease_commits", migrated_data["commits"]
-    )
-
     # Handle deleted_directories field
     migrated_data["deleted_directories"] = _validate_and_migrate_deleted_directories(
         tracking_data, tracking_file
+    )
+
+    # Handle enhanced fields with defaults
+    existing_all = tracking_data.get("all_prerelease_commits", [])
+    # Build complete history = active commits ∪ deleted directories, preserving order
+    migrated_data["all_prerelease_commits"] = list(
+        dict.fromkeys(
+            list(existing_all)
+            + migrated_data["commits"]
+            + migrated_data["deleted_directories"]
+        )
     )
 
     # Handle first_seen field - this is critical for tracking
@@ -1649,6 +1655,14 @@ def get_prerelease_tracking_info():
     if not commits and not release:
         return {}
 
+    # Load complete history for totals and reference
+    history_commits = list(
+        dict.fromkeys(
+            (tracking_data.get("all_prerelease_commits") or commits)
+            + tracking_data.get("deleted_directories", [])
+        )
+    )
+
     # Filter commits to only include relevant prereleases (current version + 1)
     # This provides a more meaningful count for users while preserving full history
     relevant_commits = []
@@ -1667,10 +1681,10 @@ def get_prerelease_tracking_info():
 
     return {
         "release": release,
-        "commits": commits,  # Full history for reference
+        "commits": history_commits,  # Full history for reference
         "relevant_commits": relevant_commits,  # Filtered for display
         "prerelease_count": len(relevant_commits),  # Filtered count for display
-        "total_prerelease_count": len(commits),  # Total historical count
+        "total_prerelease_count": len(history_commits),  # Total historical count
         "last_updated": tracking_data.get("last_updated"),
         "latest_prerelease": commits[-1] if commits else None,
         "deleted_directories": tracking_data.get("deleted_directories", []),
@@ -1780,7 +1794,11 @@ def _fetch_historical_prerelease_commits(
             _normalize_commit_identifier(commit, since_version)
             for commit in prerelease_commits
         ]
-        return list(dict.fromkeys(normalized))
+        # Keep only identifiers that include a hash: MAJOR.MINOR.PATCH.<hex>
+        filtered = [
+            c for c in normalized if re.fullmatch(r"\d+\.\d+\.\d+\.[a-f0-9]{6,40}", c)
+        ]
+        return list(dict.fromkeys(filtered))
 
     except requests.RequestException as e:
         logger.warning(f"Network error fetching historical prerelease commits: {e}")
