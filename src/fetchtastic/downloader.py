@@ -467,64 +467,43 @@ def cleanup_superseded_prereleases(
     return cleaned_up
 
 
-def _validate_and_migrate_tracking_data(
-    tracking_data: dict, tracking_file: str
-) -> dict:
-    """
-    Validate and migrate tracking data to ensure it conforms to the current schema.
-
-    This function handles:
-    - Legacy format migration (release -> version, missing fields)
-    - Missing field population with sensible defaults
-    - Data type validation and correction
-    - Schema version compatibility
-
-    Parameters:
-        tracking_data (dict): Raw tracking data from JSON file
-        tracking_file (str): Path to the tracking file (for logging)
-
-    Returns:
-        dict: Validated and migrated tracking data
-    """
-    if not isinstance(tracking_data, dict):
-        logger.warning(
-            "Invalid tracking data format in %s: expected dict, got %s. Creating new tracking data.",
-            tracking_file,
-            type(tracking_data).__name__,
-        )
-        return _create_default_tracking_data()
-
-    now_iso = datetime.now(timezone.utc).isoformat()
-    migrated_data = {}
-
-    # Handle legacy format (using "release" instead of "version")
+def _migrate_legacy_version_field(tracking_data: dict, tracking_file: str) -> dict:
+    """Handle legacy format migration (release -> version)."""
     if "release" in tracking_data and "version" not in tracking_data:
         logger.info(
             "Migrating legacy tracking format in %s: 'release' -> 'version'",
             tracking_file,
         )
-        migrated_data["version"] = tracking_data["release"]
-    else:
-        migrated_data["version"] = tracking_data.get("version")
+        return {"version": tracking_data["release"]}
+    return {"version": tracking_data.get("version")}
 
-    # Handle commits field - ensure it's a list
+
+def _synthesize_commits_from_hash(tracking_data: dict, migrated_data: dict) -> list:
+    """Synthesize commits list from hash if commits field is missing."""
     commits_raw = tracking_data.get("commits")
-    if commits_raw is None:
-        # Try to synthesize from hash if available
-        hash_val = tracking_data.get("hash")
-        if hash_val:
-            prefix = ""
-            version = migrated_data.get("version")
-            if version:
-                expected = calculate_expected_prerelease_version(
-                    _ensure_v_prefix_if_missing(version) or ""
-                )
-                if expected:
-                    prefix = f"{expected}."
-            commits_raw = [f"{prefix}{hash_val}"]
-        else:
-            commits_raw = []
+    if commits_raw is not None:
+        return commits_raw
 
+    # Try to synthesize from hash if available
+    hash_val = tracking_data.get("hash")
+    if not hash_val:
+        return []
+
+    prefix = ""
+    version = migrated_data.get("version")
+    if version:
+        expected = calculate_expected_prerelease_version(
+            _ensure_v_prefix_if_missing(version) or ""
+        )
+        if expected:
+            prefix = f"{expected}."
+    return [f"{prefix}{hash_val}"]
+
+
+def _validate_and_normalize_commits(
+    commits_raw: list, version: str, tracking_file: str
+) -> list:
+    """Validate and normalize commits list."""
     if not isinstance(commits_raw, list):
         logger.warning(
             "Invalid commits format in tracking file %s: expected list, got %s. Resetting commits.",
@@ -533,9 +512,8 @@ def _validate_and_migrate_tracking_data(
         )
         commits_raw = []
 
-    # Normalize commits
     normalized_commits = []
-    current_release = _ensure_v_prefix_if_missing(migrated_data.get("version"))
+    current_release = _ensure_v_prefix_if_missing(version)
     for commit in commits_raw:
         if isinstance(commit, str):
             normalized = _normalize_commit_identifier(commit.lower(), current_release)
@@ -549,28 +527,29 @@ def _validate_and_migrate_tracking_data(
             )
 
     # Ensure uniqueness while preserving order
-    migrated_data["commits"] = list(dict.fromkeys(normalized_commits))
+    return list(dict.fromkeys(normalized_commits))
 
-    # Handle hash field
-    migrated_data["hash"] = tracking_data.get("hash")
 
-    # Handle count field - ensure it matches actual commits count
-    migrated_data["count"] = len(migrated_data["commits"])
+def _validate_and_migrate_timestamp_fields(tracking_data: dict, now_iso: str) -> dict:
+    """Validate and migrate timestamp fields."""
+    return {
+        "timestamp": (
+            tracking_data.get("timestamp")
+            or tracking_data.get("last_updated")
+            or now_iso
+        ),
+        "last_updated": (
+            tracking_data.get("last_updated")
+            or tracking_data.get("timestamp")
+            or now_iso
+        ),
+    }
 
-    # Handle timestamp fields with migration
-    migrated_data["timestamp"] = (
-        tracking_data.get("timestamp") or tracking_data.get("last_updated") or now_iso
-    )
-    migrated_data["last_updated"] = (
-        tracking_data.get("last_updated") or tracking_data.get("timestamp") or now_iso
-    )
 
-    # Handle enhanced fields with defaults
-    migrated_data["all_prerelease_commits"] = tracking_data.get(
-        "all_prerelease_commits", migrated_data["commits"]
-    )
-
-    # Handle deleted_directories field
+def _validate_and_migrate_deleted_directories(
+    tracking_data: dict, tracking_file: str
+) -> list:
+    """Validate and migrate deleted_directories field."""
     deleted_dirs = tracking_data.get("deleted_directories", [])
     if not isinstance(deleted_dirs, list):
         logger.warning(
@@ -579,9 +558,13 @@ def _validate_and_migrate_tracking_data(
             type(deleted_dirs).__name__,
         )
         deleted_dirs = []
-    migrated_data["deleted_directories"] = deleted_dirs
+    return deleted_dirs
 
-    # Handle first_seen field - this is critical for tracking
+
+def _validate_and_migrate_first_seen(
+    tracking_data: dict, commits: list, tracking_file: str, now_iso: str
+) -> dict:
+    """Validate and migrate first_seen field."""
     first_seen = tracking_data.get("first_seen")
     if first_seen is None:
         # Create first_seen for existing commits
@@ -599,11 +582,75 @@ def _validate_and_migrate_tracking_data(
         first_seen = {}
 
     # Ensure all commits have first_seen timestamps
-    for commit in migrated_data["commits"]:
+    for commit in commits:
         if commit not in first_seen:
             first_seen[commit] = now_iso
 
-    migrated_data["first_seen"] = first_seen
+    return first_seen
+
+
+def _validate_and_migrate_tracking_data(
+    tracking_data: dict, tracking_file: str
+) -> dict:
+    """
+    Validate and migrate tracking data to ensure it conforms to current schema.
+
+    This function handles:
+    - Legacy format migration (release -> version, missing fields)
+    - Missing field population with sensible defaults
+    - Data type validation and correction
+    - Schema version compatibility
+
+    Parameters:
+        tracking_data (dict): Raw tracking data from JSON file
+        tracking_file (str): Path to tracking file (for logging)
+
+    Returns:
+        dict: Validated and migrated tracking data
+    """
+    if not isinstance(tracking_data, dict):
+        logger.warning(
+            "Invalid tracking data format in %s: expected dict, got %s. Creating new tracking data.",
+            tracking_file,
+            type(tracking_data).__name__,
+        )
+        return _create_default_tracking_data()
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    migrated_data = {}
+
+    # Handle legacy format migration
+    migrated_data.update(_migrate_legacy_version_field(tracking_data, tracking_file))
+
+    # Handle commits field - ensure it's a list and normalize
+    commits_raw = _synthesize_commits_from_hash(tracking_data, migrated_data)
+    migrated_data["commits"] = _validate_and_normalize_commits(
+        commits_raw, migrated_data["version"], tracking_file
+    )
+
+    # Handle hash field
+    migrated_data["hash"] = tracking_data.get("hash")
+
+    # Handle count field - ensure it matches actual commits count
+    migrated_data["count"] = len(migrated_data["commits"])
+
+    # Handle timestamp fields with migration
+    migrated_data.update(_validate_and_migrate_timestamp_fields(tracking_data, now_iso))
+
+    # Handle enhanced fields with defaults
+    migrated_data["all_prerelease_commits"] = tracking_data.get(
+        "all_prerelease_commits", migrated_data["commits"]
+    )
+
+    # Handle deleted_directories field
+    migrated_data["deleted_directories"] = _validate_and_migrate_deleted_directories(
+        tracking_data, tracking_file
+    )
+
+    # Handle first_seen field - this is critical for tracking
+    migrated_data["first_seen"] = _validate_and_migrate_first_seen(
+        tracking_data, migrated_data["commits"], tracking_file, now_iso
+    )
 
     # Log migration if any changes were made
     if tracking_data != migrated_data:
@@ -1475,8 +1522,6 @@ def _update_tracking_with_newest_prerelease(
 
     # Update first_seen dictionary with timestamp for new prerelease ID
     if new_prerelease_id not in first_seen:
-        if not isinstance(first_seen, dict):
-            first_seen = {}  # Should already be a dict, but defensive
         first_seen[new_prerelease_id] = now_iso
 
     new_tracking_data = {
@@ -1699,6 +1744,11 @@ def _fetch_historical_prerelease_commits(
         # Normalize since_version by stripping leading 'v' for regex matching
         normalized_since = since_version.lstrip("vV") if since_version else None
 
+        # Pre-calculate next version base once to avoid redundant calculations
+        next_version_base = (
+            _increment_patch_version(normalized_since) if normalized_since else None
+        )
+
         # Look for commits that match prerelease pattern
         for commit in commits:
             commit_message = commit.get("commit", {}).get("message", "")
@@ -1708,23 +1758,17 @@ def _fetch_historical_prerelease_commits(
             )
             if version_match:
                 version_part = version_match.group(1)
-                # Check if it's a prerelease (contains hash or matches version+1 pattern)
-                next_version_base = (
-                    _increment_patch_version(normalized_since)
-                    if normalized_since
-                    else None
-                )
                 # A prerelease is identified by either being long enough to contain a hash,
                 # or by starting with the next logical patch version number.
                 is_long_enough_for_hash = len(version_part) > MIN_VERSION_LEN_WITH_HASH
 
                 is_next_patch_version = False
-                if normalized_since:
-                    next_version_base = _increment_patch_version(normalized_since)
-                    if next_version_base and next_version_base != normalized_since:
-                        is_next_patch_version = version_part.startswith(
-                            next_version_base
-                        )
+                if (
+                    normalized_since
+                    and next_version_base
+                    and next_version_base != normalized_since
+                ):
+                    is_next_patch_version = version_part.startswith(next_version_base)
 
                 if is_long_enough_for_hash or is_next_patch_version:
                     prerelease_commits.append(version_part.lower())
