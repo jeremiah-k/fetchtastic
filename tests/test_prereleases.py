@@ -1293,3 +1293,25 @@ def test_create_default_tracking_data():
     # Timestamps should be valid ISO format
     assert "T" in result["timestamp"]
     assert "Z" in result["timestamp"] or "+" in result["timestamp"]
+
+
+@pytest.mark.infrastructure
+@pytest.mark.unit
+def test_constants_imported_in_downloader():
+    """Test that constants are properly imported in downloader module."""
+    from fetchtastic.constants import (
+        GITHUB_API_RETRY_EXTRA_COUNT,
+        MIN_VERSION_LEN_WITH_HASH,
+    )
+
+    # Verify constants are accessible from downloader module
+    assert hasattr(downloader, "GITHUB_API_RETRY_EXTRA_COUNT")
+    assert hasattr(downloader, "MIN_VERSION_LEN_WITH_HASH")
+
+    # Verify the values match
+    assert downloader.GITHUB_API_RETRY_EXTRA_COUNT == GITHUB_API_RETRY_EXTRA_COUNT
+    assert downloader.MIN_VERSION_LEN_WITH_HASH == MIN_VERSION_LEN_WITH_HASH
+
+    # Verify expected values
+    assert downloader.GITHUB_API_RETRY_EXTRA_COUNT == 5
+    assert downloader.MIN_VERSION_LEN_WITH_HASH == 12

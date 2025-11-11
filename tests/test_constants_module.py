@@ -63,6 +63,11 @@ class TestNetworkConstants:
         assert constants.WINDOWS_MAX_REPLACE_RETRIES > 0
         assert constants.WINDOWS_INITIAL_RETRY_DELAY > 0
 
+    def test_github_api_retry_extra_count(self):
+        """Test GitHub API retry extra count constant."""
+        assert constants.GITHUB_API_RETRY_EXTRA_COUNT == 5
+        assert constants.GITHUB_API_RETRY_EXTRA_COUNT > 0
+
 
 @pytest.mark.infrastructure
 @pytest.mark.unit
@@ -159,6 +164,14 @@ class TestValidationConstants:
         # All patterns should be strings
         for pattern in constants.DEFAULT_EXTRACTION_PATTERNS:
             assert isinstance(pattern, str)
+
+    def test_min_version_len_with_hash(self):
+        """Test minimum version length with hash constant."""
+        assert constants.MIN_VERSION_LEN_WITH_HASH == 12
+        assert constants.MIN_VERSION_LEN_WITH_HASH > 0
+        # Test that it's reasonable for version+hash format
+        # Should be long enough to contain "1.2.3." (6 chars) + hash (7+ chars)
+        assert constants.MIN_VERSION_LEN_WITH_HASH >= 12
 
 
 @pytest.mark.infrastructure
