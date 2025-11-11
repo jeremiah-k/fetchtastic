@@ -724,7 +724,7 @@ def _record_prerelease_deletion(deleted_dir_name: str, latest_release_tag: str) 
         "last_updated": now_iso,
         "all_prerelease_commits": all_prerelease_commits,
         "deleted_directories": deleted_dirs,
-        "first_seen": tracking_data.get("first_seen", now_iso),
+        "first_seen": tracking_data.get("first_seen", {}),
     }
 
     _atomic_write_json(tracking_file, updated_tracking_data)
@@ -1423,7 +1423,7 @@ def _update_tracking_with_newest_prerelease(
         )
         existing_commits = []
         deleted_dirs = []
-        first_seen = datetime.now(timezone.utc).isoformat()
+        first_seen = {}
         # Optionally fetch historical data for the new release
         historical_commits = _fetch_historical_prerelease_commits(
             since_version=clean_latest_release, github_token=github_token
@@ -1441,9 +1441,7 @@ def _update_tracking_with_newest_prerelease(
     else:
         # Preserve tracking fields from current release cycle
         deleted_dirs = existing_tracking.get("deleted_directories", [])
-        first_seen = existing_tracking.get(
-            "first_seen", datetime.now(timezone.utc).isoformat()
-        )
+        first_seen = existing_tracking.get("first_seen", {})
 
     # Check if this is a new prerelease ID for the same version
     is_new_id = new_prerelease_id not in set(existing_commits)
@@ -1462,6 +1460,12 @@ def _update_tracking_with_newest_prerelease(
 
     # Write updated tracking data in enhanced format with comprehensive history
     now_iso = datetime.now(timezone.utc).isoformat()
+
+    # Update first_seen dictionary with timestamp for new prerelease ID
+    if new_prerelease_id not in first_seen:
+        if not isinstance(first_seen, dict):
+            first_seen = {}  # Should already be a dict, but defensive
+        first_seen[new_prerelease_id] = now_iso
 
     new_tracking_data = {
         "version": _extract_clean_version(
@@ -2860,7 +2864,7 @@ def check_for_prereleases(
 
     # Update tracking information if files were downloaded
     if files_downloaded or force_refresh:
-        update_prerelease_tracking(latest_release_tag, remote_dir)
+        update_prerelease_tracking(latest_release_tag, remote_dir, github_token)
 
     # Only clean up old prerelease directories if we successfully downloaded files
     # or if the remote_dir already existed locally (to prevent deleting last good prerelease)
