@@ -2,9 +2,9 @@ name: Tests and Coverage
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, "**-review"]
   pull_request:
-    branches: [main, develop]
+    branches: [main, develop, "**-review"]
   workflow_dispatch:
 
 permissions:
