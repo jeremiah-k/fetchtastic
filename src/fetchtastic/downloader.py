@@ -782,7 +782,13 @@ def _record_prerelease_deletion(deleted_dir_name: str, latest_release_tag: str) 
         deleted_dirs.append(deleted_prerelease_id)
 
     # Create complete history including both active and deleted prereleases
-    all_prerelease_commits = list(dict.fromkeys(existing_commits + deleted_dirs))
+    all_prerelease_commits = list(
+        dict.fromkeys(
+            tracking_data.get("all_prerelease_commits", [])
+            + existing_commits
+            + deleted_dirs
+        )
+    )
 
     # Update tracking data with deletion record
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -1708,20 +1714,6 @@ def _increment_patch_version(version: str) -> str:
 
     # Always return a string
     return version
-
-
-def _get_deleted_directories_from_tracking(tracking_file: str) -> list[str]:
-    """
-    Return the list of deleted prerelease directory names recorded in the tracking JSON.
-
-    Parameters:
-        tracking_file (str): Path to the prerelease tracking JSON file.
-
-    Returns:
-        list[str]: Deleted directory names from the tracking data, or an empty list if none are recorded.
-    """
-    tracking_data = _read_tracking_data(tracking_file)
-    return tracking_data.get("deleted_directories", [])
 
 
 def _fetch_historical_prerelease_commits(
