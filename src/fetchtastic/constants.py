@@ -18,6 +18,9 @@ MESHTASTIC_GITHUB_IO_CONTENTS_URL = (
 # GitHub repository settings
 DEFAULT_BRANCH = "master"  # Default branch for meshtastic/firmware repository
 
+# GitHub API retry settings
+GITHUB_API_RETRY_EXTRA_COUNT = 5  # Number of extra releases to request when retrying GitHub API to work around API quirks
+
 # Network timeouts and delays (in seconds)
 GITHUB_API_TIMEOUT = 10
 NTFY_REQUEST_TIMEOUT = 10
@@ -86,6 +89,9 @@ INFO_LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
 DEBUG_LOG_FORMAT = "%(asctime)s - %(levelname)s - %(name)s: %(message)s"
 LOG_FILE_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
 LOG_FILE_BACKUP_COUNT = 5
+
+# Version handling constants
+MIN_VERSION_LEN_WITH_HASH = 12  # Heuristic minimum length for a version string to be considered as containing a commit hash (e.g., "1.2.3." + "abcdef" = 12 chars)
 
 # Version validation regex - supports semantic versions with optional prerelease and build metadata
 VERSION_REGEX_PATTERN = (

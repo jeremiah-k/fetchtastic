@@ -41,6 +41,7 @@ from fetchtastic.constants import (
     FILE_TYPE_PREFIXES,
     FIRMWARE_DIR_PREFIX,
     GITHUB_API_BASE,
+    GITHUB_API_RETRY_EXTRA_COUNT,
     GITHUB_API_TIMEOUT,
     LATEST_ANDROID_RELEASE_FILE,
     LATEST_ANDROID_RELEASE_JSON_FILE,
@@ -50,6 +51,7 @@ from fetchtastic.constants import (
     MESHTASTIC_ANDROID_RELEASES_URL,
     MESHTASTIC_FIRMWARE_RELEASES_URL,
     MESHTASTIC_GITHUB_IO_CONTENTS_URL,
+    MIN_VERSION_LEN_WITH_HASH,
     NTFY_REQUEST_TIMEOUT,
     PRERELEASE_COMMITS_LEGACY_FILE,
     PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
@@ -75,13 +77,6 @@ from fetchtastic.utils import (
     track_api_cache_miss,
     verify_file_integrity,
 )
-
-# Heuristic minimum length for a version string to be considered as containing a commit hash.
-# e.g., "1.2.3." (6 chars) + "abcdef" (6 chars) = 12 chars. A short hash is usually 7 chars, so > 12 is a safe bet.
-MIN_VERSION_LEN_WITH_HASH = 12
-
-# Number of extra releases to request when retrying GitHub API to work around API quirks
-GITHUB_API_RETRY_EXTRA_COUNT = 5
 
 """
 Version Handling for Meshtastic Releases
