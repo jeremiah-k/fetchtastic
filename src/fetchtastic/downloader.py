@@ -705,6 +705,10 @@ def _record_prerelease_deletion(deleted_dir_name: str, latest_release_tag: str) 
     # Extract commits from tracking data
     existing_commits = tracking_data.get("commits", [])
 
+    # Remove deleted prerelease from active commits if present
+    if deleted_prerelease_id in existing_commits:
+        existing_commits = [c for c in existing_commits if c != deleted_prerelease_id]
+
     # Get existing deleted directories and add new one if not already tracked
     deleted_dirs = tracking_data.get("deleted_directories", [])
     if deleted_prerelease_id not in deleted_dirs:
@@ -715,19 +719,18 @@ def _record_prerelease_deletion(deleted_dir_name: str, latest_release_tag: str) 
 
     # Update tracking data with deletion record
     now_iso = datetime.now(timezone.utc).isoformat()
-    updated_tracking_data = {
-        "version": _extract_clean_version(latest_release_tag),
-        "commits": existing_commits,
-        "hash": tracking_data.get("hash"),
-        "count": len(existing_commits),
-        "timestamp": tracking_data.get("timestamp"),
-        "last_updated": now_iso,
-        "all_prerelease_commits": all_prerelease_commits,
-        "deleted_directories": deleted_dirs,
-        "first_seen": tracking_data.get("first_seen", {}),
-    }
+    tracking_data.update(
+        {
+            "version": _extract_clean_version(latest_release_tag),
+            "commits": existing_commits,
+            "count": len(existing_commits),
+            "last_updated": now_iso,
+            "all_prerelease_commits": all_prerelease_commits,
+            "deleted_directories": deleted_dirs,
+        }
+    )
 
-    _atomic_write_json(tracking_file, updated_tracking_data)
+    _atomic_write_json(tracking_file, tracking_data)
     logger.debug(f"Recorded prerelease deletion: {deleted_prerelease_id}")
 
 
@@ -1689,7 +1692,7 @@ def _fetch_historical_prerelease_commits(
             commit_message = commit.get("commit", {}).get("message", "")
             # Look for version patterns in commit messages
             version_match = re.search(
-                r"(\d+\.\d+\.\d+(?:\.[a-f0-9]+)?)", commit_message
+                r"\b(\d+\.\d+\.\d+(?:\.[a-f0-9]+)?)\b", commit_message, re.IGNORECASE
             )
             if version_match:
                 version_part = version_match.group(1)
@@ -1708,6 +1711,11 @@ def _fetch_historical_prerelease_commits(
                 ):  # Next patch version
                     prerelease_commits.append(version_part.lower())
 
+        # Normalize commits before returning for better encapsulation
+        prerelease_commits = [
+            _normalize_commit_identifier(commit, since_version)
+            for commit in prerelease_commits
+        ]
         return prerelease_commits
 
     except requests.RequestException as e:
