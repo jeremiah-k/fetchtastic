@@ -1683,7 +1683,7 @@ def _fetch_historical_prerelease_commits(
             return []
         else:
             commits = response.json()
-        prerelease_commits = []
+            prerelease_commits = []
         # Normalize since_version by stripping leading 'v' for regex matching
         normalized_since = since_version.lstrip("vV") if since_version else None
 
