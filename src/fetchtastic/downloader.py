@@ -503,9 +503,8 @@ def _record_prerelease_deletion(deleted_dir_name: str, latest_release_tag: str) 
 
     # Create complete history including both active and deleted prereleases
     all_prerelease_commits = list(existing_commits)  # Start with active commits
-    for deleted_id in deleted_dirs:
-        if deleted_id not in all_prerelease_commits:
-            all_prerelease_commits.append(deleted_id)
+    seen_commits = set(all_prerelease_commits)
+    all_prerelease_commits.extend(d for d in deleted_dirs if d not in seen_commits)
 
     # Update tracking data with deletion record
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -1485,9 +1484,15 @@ def _fetch_historical_prerelease_commits(
             if version_match:
                 version_part = version_match.group(1)
                 # Check if it's a prerelease (contains hash or matches version+1 pattern)
+                next_version_base = (
+                    _increment_patch_version(normalized_since)
+                    if normalized_since
+                    else None
+                )
                 if len(version_part) > 12 or (  # Long version suggests hash included
-                    normalized_since
-                    and re.match(rf"{re.escape(normalized_since)}\.\d+", version_part)
+                    next_version_base
+                    and next_version_base != normalized_since
+                    and version_part.startswith(next_version_base)
                 ):  # Next patch version
                     prerelease_commits.append(version_part.lower())
 
