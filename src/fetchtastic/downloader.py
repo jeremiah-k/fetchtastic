@@ -1462,6 +1462,8 @@ def _fetch_historical_prerelease_commits(
 
         commits = response.json()
         prerelease_commits = []
+        # Normalize since_version by stripping leading 'v' for regex matching
+        normalized_since = since_version.lstrip("vV") if since_version else None
 
         # Look for commits that match prerelease pattern
         for commit in commits:
@@ -1472,8 +1474,8 @@ def _fetch_historical_prerelease_commits(
                 version_part = version_match.group(1)
                 # Check if it's a prerelease (contains hash or matches version+1 pattern)
                 if len(version_part) > 12 or (  # Long version suggests hash included
-                    since_version
-                    and re.match(rf"{re.escape(since_version)}\.\d+", version_part)
+                    normalized_since
+                    and re.match(rf"{re.escape(normalized_since)}\.\d+", version_part)
                 ):  # Next patch version
                     prerelease_commits.append(version_part.lower())
 
