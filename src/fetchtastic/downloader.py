@@ -429,6 +429,8 @@ def cleanup_superseded_prereleases(
                 )
                 if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
                     cleaned_up = True
+                    # Record the deletion in tracking history
+                    _record_prerelease_deletion(dir_name, latest_release_tag)
                 continue
 
     # Reset tracking info if no prerelease directories exist
@@ -436,33 +438,87 @@ def cleanup_superseded_prereleases(
         # Check if any prerelease directories remain
         remaining_prereleases = bool(_get_existing_prerelease_dirs(prerelease_dir))
         if not remaining_prereleases:
-            # Remove tracking files since no prereleases remain
-            # JSON tracking file is stored in the cache directory
-            json_tracking_file = os.path.join(
-                _ensure_cache_dir(), PRERELEASE_TRACKING_JSON_FILE
+            # Preserve JSON tracking file for historical count, but remove legacy text file
+            # This ensures users can see total prereleases that have existed since last full release
+            logger.debug(
+                "No prerelease directories remain, preserving JSON tracking file for historical count"
             )
 
-            # Remove tracking files (both JSON and legacy text)
-            for file_path, is_legacy in [
-                (json_tracking_file, False),
-                (os.path.join(prerelease_dir, PRERELEASE_COMMITS_LEGACY_FILE), True),
-            ]:
-                if os.path.exists(file_path):
-                    file_type = "legacy prerelease" if is_legacy else "prerelease"
-                    try:
-                        os.remove(file_path)
-                        logger.debug(
-                            "Removed %s tracking file: %s", file_type, file_path
-                        )
-                    except OSError as e:
-                        logger.warning(
-                            "Could not remove %s tracking file %s: %s",
-                            file_type,
-                            file_path,
-                            e,
-                        )
+            # Remove legacy text tracking file only
+            legacy_text_file = os.path.join(
+                prerelease_dir, PRERELEASE_COMMITS_LEGACY_FILE
+            )
+            if os.path.exists(legacy_text_file):
+                try:
+                    os.remove(legacy_text_file)
+                    logger.debug(
+                        "Removed legacy prerelease tracking file: %s", legacy_text_file
+                    )
+                except OSError as e:
+                    logger.warning(
+                        "Could not remove legacy prerelease tracking file %s: %s",
+                        legacy_text_file,
+                        e,
+                    )
 
     return cleaned_up
+
+
+def _record_prerelease_deletion(deleted_dir_name: str, latest_release_tag: str) -> None:
+    """
+    Record a prerelease directory deletion in the tracking history.
+
+    Parameters:
+        deleted_dir_name (str): Name of the deleted prerelease directory
+        latest_release_tag (str): Current official release tag
+    """
+    tracking_file = os.path.join(_ensure_cache_dir(), PRERELEASE_TRACKING_JSON_FILE)
+
+    # Read current tracking data
+    existing_commits, existing_release, _ = _read_prerelease_tracking_data(
+        tracking_file
+    )
+
+    # Extract prerelease ID from deleted directory name
+    if deleted_dir_name.startswith(FIRMWARE_DIR_PREFIX):
+        deleted_prerelease_id = deleted_dir_name.removeprefix(
+            FIRMWARE_DIR_PREFIX
+        ).lower()
+    else:
+        deleted_prerelease_id = deleted_dir_name.lower()
+
+    # Add to deleted directories list if not already tracked
+    if deleted_prerelease_id not in existing_commits:
+        # Read existing tracking data to get deleted_directories list
+        try:
+            if os.path.exists(tracking_file):
+                with open(tracking_file, "r", encoding="utf-8") as f:
+                    tracking_data = json.load(f)
+            else:
+                tracking_data = {}
+        except (json.JSONDecodeError, OSError):
+            tracking_data = {}
+
+        deleted_dirs = tracking_data.get("deleted_directories", [])
+        if deleted_prerelease_id not in deleted_dirs:
+            deleted_dirs.append(deleted_prerelease_id)
+
+        # Update tracking data with deletion record
+        now_iso = datetime.now(timezone.utc).isoformat()
+        updated_tracking_data = {
+            "version": _extract_clean_version(latest_release_tag),
+            "commits": existing_commits,
+            "hash": tracking_data.get("hash"),
+            "count": len(existing_commits),
+            "timestamp": tracking_data.get("timestamp"),
+            "last_updated": now_iso,
+            "all_prerelease_commits": existing_commits,
+            "deleted_directories": deleted_dirs,
+            "first_seen": tracking_data.get("first_seen", now_iso),
+        }
+
+        _atomic_write_json(tracking_file, updated_tracking_data)
+        logger.debug(f"Recorded prerelease deletion: {deleted_prerelease_id}")
 
 
 def _atomic_write(
@@ -1081,25 +1137,30 @@ def _get_prerelease_patterns(config: dict) -> list[str]:
     return extract_patterns
 
 
-def update_prerelease_tracking(latest_release_tag, current_prerelease):
+def update_prerelease_tracking(
+    latest_release_tag, current_prerelease, github_token=None
+):
     """
     Record a single prerelease commit in prerelease_tracking.json for the current prerelease directory.
 
     Parameters:
         latest_release_tag (str): Latest official release tag used to determine whether existing prerelease tracking should be reset.
         current_prerelease (str): Name of the current prerelease directory (from which the prerelease commit is extracted).
+        github_token (Optional[str]): GitHub API token for fetching historical data.
 
     Returns:
         int: Number of prerelease commits persisted to disk; `0` if no update was written.
     """
     result = _update_tracking_with_newest_prerelease(
-        latest_release_tag, current_prerelease
+        latest_release_tag, current_prerelease, github_token
     )
     return result if result is not None else 0
 
 
 def _update_tracking_with_newest_prerelease(
-    latest_release_tag: str, newest_prerelease_dir: str
+    latest_release_tag: str,
+    newest_prerelease_dir: str,
+    github_token: Optional[str] = None,
 ) -> Optional[int]:
     """
     Record the newest prerelease identifier in the prerelease tracking JSON and update the tracked commits list.
@@ -1148,6 +1209,15 @@ def _update_tracking_with_newest_prerelease(
             existing_release,
         )
         existing_commits = []
+        # Optionally fetch historical data for the new release
+        historical_commits = _fetch_historical_prerelease_commits(
+            since_version=clean_latest_release, github_token=github_token
+        )
+        if historical_commits:
+            logger.info(
+                f"Found {len(historical_commits)} historical prerelease commits"
+            )
+            existing_commits.extend(historical_commits)
 
     # Check if this is a new prerelease ID for the same version
     is_new_id = new_prerelease_id not in set(existing_commits)
@@ -1164,7 +1234,7 @@ def _update_tracking_with_newest_prerelease(
     # Extract commit hash for the newest prerelease directory
     commit_hash = _get_commit_hash_from_dir(newest_prerelease_dir)
 
-    # Write updated tracking data in new format
+    # Write updated tracking data in enhanced format with comprehensive history
     now_iso = datetime.now(timezone.utc).isoformat()
     new_tracking_data = {
         "version": _extract_clean_version(
@@ -1175,6 +1245,10 @@ def _update_tracking_with_newest_prerelease(
         "count": len(updated_commits),  # total tracked prereleases
         "timestamp": now_iso,  # per PR format
         "last_updated": now_iso,  # maintain compatibility with existing readers
+        # Enhanced fields for comprehensive tracking
+        "all_prerelease_commits": updated_commits,  # complete history of all prerelease commits
+        "deleted_directories": [],  # track when prerelease directories were deleted
+        "first_seen": now_iso,  # when this tracking started
     }
 
     if not _atomic_write_json(tracking_file, new_tracking_data):
@@ -1279,13 +1353,130 @@ def get_prerelease_tracking_info():
     if not commits and not release:
         return {}
 
+    # Filter commits to only include relevant prereleases (current version + 1)
+    # This provides a more meaningful count for users while preserving full history
+    relevant_commits = []
+    if release and commits:
+        # Extract base version from release (e.g., "2.7.13" from "v2.7.13")
+        release_match = re.match(r"v?(\d+\.\d+\.\d+)", release)
+        if release_match:
+            base_version = release_match.group(1)
+            # Count prereleases for current version and next version only
+            for commit in commits:
+                commit_version_match = re.match(r"(\d+\.\d+\.\d+)", commit)
+                if commit_version_match:
+                    commit_version = commit_version_match.group(1)
+                    # Include if it's current version or next version
+                    if commit_version == base_version or commit_version == str(
+                        _increment_patch_version(base_version)
+                    ):
+                        relevant_commits.append(commit)
+
     return {
         "release": release,
-        "commits": commits,
-        "prerelease_count": len(commits),
+        "commits": commits,  # Full history for reference
+        "relevant_commits": relevant_commits,  # Filtered for display
+        "prerelease_count": len(relevant_commits),  # Filtered count for display
+        "total_prerelease_count": len(commits),  # Total historical count
         "last_updated": last_updated,
         "latest_prerelease": commits[-1] if commits else None,
+        "deleted_directories": _get_deleted_directories_from_tracking(tracking_file),
     }
+
+
+def _increment_patch_version(version: str) -> str:
+    """
+    Increment the patch version by 1.
+
+    Parameters:
+        version (str): Version string like "2.7.13"
+
+    Returns:
+        str: Incremented version like "2.7.14", or original if parsing fails
+    """
+    try:
+        parts = version.split(".")
+        if len(parts) >= 3:
+            patch = int(parts[2]) + 1
+            return f"{parts[0]}.{parts[1]}.{patch}"
+    except (ValueError, IndexError):
+        pass
+
+    # Always return a string
+    return version
+
+
+def _get_deleted_directories_from_tracking(tracking_file: str) -> list[str]:
+    """
+    Get list of deleted directories from tracking file.
+
+    Parameters:
+        tracking_file (str): Path to tracking file
+
+    Returns:
+        list[str]: List of deleted directory names
+    """
+    try:
+        if os.path.exists(tracking_file):
+            with open(tracking_file, "r", encoding="utf-8") as f:
+                tracking_data = json.load(f)
+                return tracking_data.get("deleted_directories", [])
+        return []
+    except (json.JSONDecodeError, OSError):
+        return []
+
+
+def _fetch_historical_prerelease_commits(
+    since_version: Optional[str] = None, github_token: Optional[str] = None
+) -> List[str]:
+    """
+    Fetch historical prerelease commits from meshtastic/firmware since a given version.
+
+    Parameters:
+        since_version (str): Version string to fetch commits since (e.g., "2.7.13")
+        github_token (Optional[str]): GitHub API token
+
+    Returns:
+        List[str]: List of prerelease commit identifiers found
+    """
+    try:
+        # Use GitHub API to get commits from meshtastic/firmware
+        url = f"{GITHUB_API_BASE}/meshtastic/firmware/commits"
+        params = {
+            "per_page": 100,  # Max per page
+            "sha": "master",  # Get from main branch
+        }
+
+        response = make_github_api_request(
+            url, github_token=github_token, params=params, timeout=GITHUB_API_TIMEOUT
+        )
+
+        if response.status_code != 200:
+            logger.warning(f"Failed to fetch commit history: {response.status_code}")
+            return []
+
+        commits = response.json()
+        prerelease_commits = []
+
+        # Look for commits that match prerelease pattern
+        for commit in commits:
+            commit_message = commit.get("commit", {}).get("message", "")
+            # Look for version patterns in commit messages
+            version_match = re.search(r"(\d+\.\d+\.\d+[a-f0-9]*)", commit_message)
+            if version_match:
+                version_part = version_match.group(1)
+                # Check if it's a prerelease (contains hash or matches version+1 pattern)
+                if len(version_part) > 12 or (  # Long version suggests hash included
+                    since_version
+                    and re.match(rf"{re.escape(since_version)}\.\d+", version_part)
+                ):  # Next patch version
+                    prerelease_commits.append(version_part.lower())
+
+        return prerelease_commits
+
+    except Exception as e:
+        logger.warning(f"Error fetching historical prerelease commits: {e}")
+        return []
 
 
 def _iter_matching_prerelease_files(

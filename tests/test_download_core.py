@@ -1101,20 +1101,20 @@ def test_cleanup_superseded_prereleases_file_removal(tmp_path):
     with patch("fetchtastic.downloader._ensure_cache_dir", return_value=str(cache_dir)):
         cleanup_superseded_prereleases(str(tmp_path), "v2.0.0")
 
-    # Both files should be removed
-    assert not json_tracking_file.exists()
-    assert not text_tracking_file.exists()
+    # With enhanced tracking, JSON tracking file should be preserved even when no prerelease dirs exist
+    # Text tracking file should still be removed (legacy format)
+    assert json_tracking_file.exists()  # Preserved for historical tracking
+    assert not text_tracking_file.exists()  # Legacy format still removed
 
     # Test OSError during file removal
     json_tracking_file.write_text('{"version": "v1.0.0", "commits": ["abc123"]}')
     text_tracking_file.write_text("Release: v1.0.0\nabc123\n")
 
-    with patch(
-        "fetchtastic.downloader._ensure_cache_dir", return_value=str(cache_dir)
-    ), patch("os.remove", side_effect=OSError("Permission denied")), patch(
-        "fetchtastic.downloader.logger"
-    ) as mock_logger:
-
+    with (
+        patch("fetchtastic.downloader._ensure_cache_dir", return_value=str(cache_dir)),
+        patch("os.remove", side_effect=OSError("Permission denied")),
+        patch("fetchtastic.downloader.logger") as mock_logger,
+    ):
         # Should not raise exception, should log warning
         cleanup_superseded_prereleases(str(tmp_path), "v2.0.0")
 
@@ -1147,7 +1147,8 @@ def test_cleanup_superseded_prereleases_file_removal_edge_cases(tmp_path):
 
     with patch("fetchtastic.downloader._ensure_cache_dir", return_value=str(cache_dir)):
         cleanup_superseded_prereleases(str(tmp_path), "v2.0.0")
-    assert not json_tracking_file.exists()
+    # With enhanced tracking, JSON file should be preserved even when no prerelease dirs exist
+    assert json_tracking_file.exists()
 
     # Recreate for next test
     json_tracking_file.write_text('{"version": "v1.0.0", "commits": ["abc123"]}')
@@ -1159,7 +1160,8 @@ def test_cleanup_superseded_prereleases_file_removal_edge_cases(tmp_path):
     with patch("fetchtastic.downloader._ensure_cache_dir", return_value=str(cache_dir)):
         cleanup_superseded_prereleases(str(tmp_path), "v2.0.0")
     assert not text_tracking_file.exists()
-    assert not json_tracking_file.exists()  # Should be removed from cache
+    # With enhanced tracking, JSON file should be preserved even when only text file existed
+    assert json_tracking_file.exists()  # Preserved for historical tracking
 
     # Test with no tracking files
     with patch("fetchtastic.downloader._ensure_cache_dir", return_value=str(cache_dir)):
@@ -2213,10 +2215,12 @@ def test_safe_rmtree():
 
     from fetchtastic.downloader import _safe_rmtree
 
-    with patch("os.path.realpath") as mock_realpath, patch(
-        "os.path.commonpath", return_value="/base"
-    ), patch("os.path.isdir", return_value=True), patch("shutil.rmtree") as mock_rmtree:
-
+    with (
+        patch("os.path.realpath") as mock_realpath,
+        patch("os.path.commonpath", return_value="/base"),
+        patch("os.path.isdir", return_value=True),
+        patch("shutil.rmtree") as mock_rmtree,
+    ):
         # Setup mock to return same path for both calls
         mock_realpath.side_effect = lambda x: x
 
@@ -2225,10 +2229,13 @@ def test_safe_rmtree():
         assert result is True
         mock_rmtree.assert_called_once_with("/test/path")
 
-    with patch("os.path.realpath") as mock_realpath, patch(
-        "os.path.commonpath", side_effect=ValueError("Paths don't have the same drive")
+    with (
+        patch("os.path.realpath") as mock_realpath,
+        patch(
+            "os.path.commonpath",
+            side_effect=ValueError("Paths don't have the same drive"),
+        ),
     ):
-
         # Setup mock to return different paths (security check failure)
         mock_realpath.side_effect = ["/base", "/malicious/path"]
 
@@ -2276,7 +2283,6 @@ def test_cache_thread_safety():
     # Test commit cache thread safety
     with patch("fetchtastic.downloader._ensure_cache_dir", return_value="/test/cache"):
         with patch("fetchtastic.downloader._atomic_write_json", return_value=True):
-
             # Reset cache state
             clear_commit_timestamp_cache()
 
@@ -2307,7 +2313,6 @@ def test_cache_thread_safety():
     # Test releases cache thread safety
     with patch("fetchtastic.downloader._ensure_cache_dir", return_value="/test/cache"):
         with patch("fetchtastic.downloader._atomic_write_json", return_value=True):
-
             # Reset cache state using clear_all_caches
             clear_all_caches()
 
@@ -2337,7 +2342,6 @@ def test_cache_thread_safety():
     # Test prerelease cache thread safety
     with patch("fetchtastic.downloader._ensure_cache_dir", return_value="/test/cache"):
         with patch("fetchtastic.downloader._atomic_write_json", return_value=True):
-
             # Reset cache state
             clear_all_caches()
 
