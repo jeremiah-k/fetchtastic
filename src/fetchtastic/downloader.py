@@ -465,6 +465,25 @@ def cleanup_superseded_prereleases(
     return cleaned_up
 
 
+def _read_tracking_data(tracking_file: str) -> dict:
+    """
+    Reads and decodes the JSON tracking file, returning an empty dict on error.
+
+    Parameters:
+        tracking_file (str): Path to the tracking file
+
+    Returns:
+        dict: Tracking data dictionary, empty if file doesn't exist or is invalid
+    """
+    try:
+        if os.path.exists(tracking_file):
+            with open(tracking_file, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        pass
+    return {}
+
+
 def _record_prerelease_deletion(deleted_dir_name: str, latest_release_tag: str) -> None:
     """
     Record a prerelease directory deletion in tracking history.
@@ -484,14 +503,7 @@ def _record_prerelease_deletion(deleted_dir_name: str, latest_release_tag: str) 
         deleted_prerelease_id = deleted_dir_name.lower()
 
     # Read full tracking data to get existing fields
-    try:
-        if os.path.exists(tracking_file):
-            with open(tracking_file, "r", encoding="utf-8") as f:
-                tracking_data = json.load(f)
-        else:
-            tracking_data = {}
-    except (json.JSONDecodeError, OSError):
-        tracking_data = {}
+    tracking_data = _read_tracking_data(tracking_file)
 
     # Extract commits from tracking data
     existing_commits = tracking_data.get("commits", [])
@@ -1204,14 +1216,7 @@ def _update_tracking_with_newest_prerelease(
     )
 
     # Read full tracking data once to access all fields
-    try:
-        if os.path.exists(tracking_file):
-            with open(tracking_file, "r", encoding="utf-8") as f:
-                existing_tracking = json.load(f)
-        else:
-            existing_tracking = {}
-    except (json.JSONDecodeError, OSError):
-        existing_tracking = {}
+    existing_tracking = _read_tracking_data(tracking_file)
 
     # Check if we need to reset due to new official release
     clean_latest_release = _extract_clean_version(latest_release_tag)
@@ -1385,18 +1390,16 @@ def get_prerelease_tracking_info():
     relevant_commits = []
     if release and commits:
         # Extract base version from release (e.g., "2.7.13" from "v2.7.13")
-        release_match = re.match(r"v?(\d+\.\d+\.\d+)", release)
-        if release_match:
+        if release_match := re.match(r"v?(\d+\.\d+\.\d+)", release):
             base_version = release_match.group(1)
+            next_version = _increment_patch_version(base_version)
             # Count prereleases for current version and next version only
-            for commit in commits:
-                commit_version_match = re.match(r"(\d+\.\d+\.\d+)", commit)
-                if commit_version_match:
-                    commit_version = commit_version_match.group(1)
-                    # Include if it's current version or next version
-                    next_version = _increment_patch_version(base_version)
-                    if commit_version == base_version or commit_version == next_version:
-                        relevant_commits.append(commit)
+            relevant_commits = [
+                commit
+                for commit in commits
+                if (commit_version_match := re.match(r"(\d+\.\d+\.\d+)", commit))
+                and commit_version_match.group(1) in {base_version, next_version}
+            ]
 
     return {
         "release": release,
@@ -1442,15 +1445,8 @@ def _get_deleted_directories_from_tracking(tracking_file: str) -> list[str]:
     Returns:
         list[str]: List of deleted directory names
     """
-    try:
-        if os.path.exists(tracking_file):
-            with open(tracking_file, "r", encoding="utf-8") as f:
-                tracking_data = json.load(f)
-                return tracking_data.get("deleted_directories", [])
-        else:
-            return []
-    except (json.JSONDecodeError, OSError):
-        return []
+    tracking_data = _read_tracking_data(tracking_file)
+    return tracking_data.get("deleted_directories", [])
 
 
 def _fetch_historical_prerelease_commits(
