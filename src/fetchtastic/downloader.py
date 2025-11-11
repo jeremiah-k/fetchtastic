@@ -558,7 +558,9 @@ def _validate_and_migrate_deleted_directories(
             type(deleted_dirs).__name__,
         )
         deleted_dirs = []
-    return deleted_dirs
+    # Normalize to lowercase and ensure uniqueness while preserving order
+    deleted_dirs = [d.lower() for d in deleted_dirs if isinstance(d, str)]
+    return list(dict.fromkeys(deleted_dirs))
 
 
 def _validate_and_migrate_first_seen(
@@ -1468,13 +1470,10 @@ def _update_tracking_with_newest_prerelease(
         logger.debug("No valid firmware prerelease directory found")
         return 0
 
-    # Read current tracking data
-    existing_commits, existing_release, _ = _read_prerelease_tracking_data(
-        tracking_file
-    )
-
-    # Read full tracking data once to access all fields
+    # Read tracking data once (already validated/migrated)
     existing_tracking = _read_tracking_data(tracking_file)
+    existing_commits = existing_tracking.get("commits", [])
+    existing_release = _ensure_v_prefix_if_missing(existing_tracking.get("version"))
 
     # Check if we need to reset due to new official release
     clean_latest_release = _extract_clean_version(latest_release_tag)
@@ -1773,12 +1772,12 @@ def _fetch_historical_prerelease_commits(
                 if is_long_enough_for_hash or is_next_patch_version:
                     prerelease_commits.append(version_part.lower())
 
-        # Normalize commits before returning for better encapsulation
-        prerelease_commits = [
+        # Normalize and de-duplicate while preserving order
+        normalized = [
             _normalize_commit_identifier(commit, since_version)
             for commit in prerelease_commits
         ]
-        return prerelease_commits
+        return list(dict.fromkeys(normalized))
 
     except requests.RequestException as e:
         logger.warning(f"Network error fetching historical prerelease commits: {e}")
@@ -3037,7 +3036,7 @@ def get_commit_timestamp(
             # Persist cache for ad-hoc callers to improve durability
             _save_commit_cache()
             return timestamp
-    except (requests.HTTPError, requests.RequestException) as e:
+    except requests.exceptions.RequestException as e:
         # Network errors - these are expected and recoverable
         logger.warning(f"Network error getting commit timestamp for {commit_hash}: {e}")
     except (json.JSONDecodeError, KeyError, ValueError) as e:
@@ -3203,11 +3202,11 @@ def _get_latest_releases_data(
     """
     Retrieve recent releases from a GitHub releases API endpoint, using a cache and optional forced refresh.
 
-    This function respects a persisted in-process cache (unless `force_refresh` is True), clamps `scan_count` to GitHub's 1–100 per-page bounds, and prefers releases sorted by `published_at` in descending order. On fetch or parse errors an empty list is returned; if releases cannot be sorted by `published_at`, the original API list is returned.
+    This function respects a persisted in-process cache (unless `force_refresh` is True), clamps `scan_count` to GitHub's 1-100 per-page bounds, and prefers releases sorted by `published_at` in descending order. On fetch or parse errors an empty list is returned; if releases cannot be sorted by `published_at`, the original API list is returned.
 
     Parameters:
         url (str): GitHub API URL that returns a list of releases (JSON).
-        scan_count (int): Maximum number of releases to request and return (clamped to 1–100).
+        scan_count (int): Maximum number of releases to request and return (clamped to 1-100).
         github_token (Optional[str]): Optional GitHub API token for higher rate limits.
         allow_env_token (bool): Whether a token from the environment is allowed when making API requests.
         force_refresh (bool): If True, bypass the cache and fetch fresh data from the API.
