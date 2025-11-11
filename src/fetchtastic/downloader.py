@@ -618,10 +618,21 @@ def _validate_and_migrate_tracking_data(
 
 def _create_default_tracking_data() -> dict:
     """
-    Create a default tracking data structure with all required fields.
-
+    Return a default prerelease tracking mapping initialized with all required fields.
+    
+    Provides these keys:
+    - version: the tracked release version or None when unset.
+    - commits: list of normalized prerelease commit identifiers.
+    - hash: representative hash for the current tracked release, or None.
+    - count: number of tracked commits.
+    - timestamp: ISO-8601 UTC time when the record was created.
+    - last_updated: ISO-8601 UTC time of the last update (initially same as timestamp).
+    - all_prerelease_commits: historical list of all known prerelease commits.
+    - deleted_directories: list of prerelease directory names that were removed.
+    - first_seen: mapping of commit identifier -> ISO-8601 UTC first-seen timestamp.
+    
     Returns:
-        dict: Default tracking data with sensible defaults
+        dict: A mapping with the keys above populated with sensible defaults.
     """
     now_iso = datetime.now(timezone.utc).isoformat()
     return {
@@ -683,11 +694,17 @@ def _read_tracking_data(tracking_file: str) -> dict:
 
 def _record_prerelease_deletion(deleted_dir_name: str, latest_release_tag: str) -> None:
     """
-    Record a prerelease directory deletion in tracking history.
-
+    Record the deletion of a prerelease directory in the prerelease tracking history.
+    
+    Updates the prerelease tracking JSON with the deleted prerelease identifier, removes it
+    from the active commits list if present, refreshes the overall commits history, and
+    updates metadata such as `version`, `count`, and `last_updated`.
+    
     Parameters:
-        deleted_dir_name (str): Name of the deleted prerelease directory
-        latest_release_tag (str): Current official release tag
+        deleted_dir_name (str): The name of the deleted prerelease directory (may include the
+            firmware prefix); this will be normalized to the prerelease identifier.
+        latest_release_tag (str): The current official release tag used to set the tracking
+            `version` field (a cleaned `vMAJOR.MINOR.PATCH` form will be stored).
     """
     tracking_file = os.path.join(_ensure_cache_dir(), PRERELEASE_TRACKING_JSON_FILE)
 
@@ -1571,18 +1588,22 @@ def matches_extract_patterns(filename, extract_patterns, device_manager=None):
 
 def get_prerelease_tracking_info():
     """
-    Return a summary of prerelease tracking stored in the user's prerelease_tracking.json.
-
-    Reads normalized prerelease tracking data and returns a dictionary with the tracked official release tag, ordered prerelease identifiers, count, last-updated timestamp, and the most recent prerelease identifier. If no tracking data exists, returns an empty dict.
-
+    Summarize prerelease tracking stored in the user's prerelease_tracking.json.
+    
+    Reads normalized prerelease tracking data and returns a dictionary containing the tracked official release tag, the ordered history of prerelease identifiers, a filtered set of relevant prereleases (current release and next patch), counts, timestamps, the most recent prerelease, and any recorded deleted prerelease directories. If no tracking data exists, returns an empty dict.
+    
     Returns:
-        dict: If data present, a dictionary with keys:
-            - "release" (str | None): Tracked official release tag or None.
-            - "commits" (list[str]): Ordered list of tracked prerelease identifiers (may be empty).
-            - "prerelease_count" (int): Number of tracked prerelease commits.
+        dict: A mapping with the following keys when tracking data is present:
+            - "release" (str | None): Tracked official release tag (e.g., "v2.7.13") or None.
+            - "commits" (list[str]): Ordered list of all tracked prerelease identifiers (full history).
+            - "relevant_commits" (list[str]): Subset of `commits` limited to the current release and the next patch for display.
+            - "prerelease_count" (int): Number of items in `relevant_commits`.
+            - "total_prerelease_count" (int): Total number of tracked prerelease commits (len of `commits`).
             - "last_updated" (str | None): ISO 8601 timestamp of the last update, or None.
             - "latest_prerelease" (str | None): Most recent prerelease identifier from `commits`, or None.
-        An empty dict if no tracking data is present.
+            - "deleted_directories" (list[str]): List of prerelease directory names previously recorded as deleted.
+    
+        Returns an empty dict if no tracking data is available.
     """
     tracking_file = os.path.join(_ensure_cache_dir(), PRERELEASE_TRACKING_JSON_FILE)
     commits, release, last_updated = _read_prerelease_tracking_data(tracking_file)
@@ -1619,13 +1640,10 @@ def get_prerelease_tracking_info():
 
 def _increment_patch_version(version: str) -> str:
     """
-    Increment the patch version by 1.
-
-    Parameters:
-        version (str): Version string like "2.7.13"
-
+    Return the version with its patch component incremented by one.
+    
     Returns:
-        str: Incremented version like "2.7.14", or original if parsing fails
+        str: The incremented version (e.g., "2.7.14") if the input is in MAJOR.MINOR.PATCH form, otherwise the original input.
     """
     try:
         parts = version.split(".")
@@ -1641,13 +1659,13 @@ def _increment_patch_version(version: str) -> str:
 
 def _get_deleted_directories_from_tracking(tracking_file: str) -> list[str]:
     """
-    Get list of deleted directories from tracking file.
-
+    Return the list of deleted prerelease directory names recorded in the tracking JSON.
+    
     Parameters:
-        tracking_file (str): Path to tracking file
-
+        tracking_file (str): Path to the prerelease tracking JSON file.
+    
     Returns:
-        list[str]: List of deleted directory names
+        list[str]: Deleted directory names from the tracking data, or an empty list if none are recorded.
     """
     tracking_data = _read_tracking_data(tracking_file)
     return tracking_data.get("deleted_directories", [])
@@ -1657,14 +1675,16 @@ def _fetch_historical_prerelease_commits(
     since_version: Optional[str] = None, github_token: Optional[str] = None
 ) -> List[str]:
     """
-    Fetch historical prerelease commits from meshtastic/firmware since a given version.
-
+    Retrieve historical prerelease commit identifiers from the meshtastic/firmware commit history.
+    
+    Scans recent commits for version-like strings that represent prerelease builds (versions that include a hash suffix or advance the patch version relative to `since_version`), normalizes each found identifier to a consistent "version[.hash]" form, and returns the deduplicated list. On network or parsing errors the function returns an empty list.
+    
     Parameters:
-        since_version (str): Version string to fetch commits since (e.g., "2.7.13")
-        github_token (Optional[str]): GitHub API token
-
+        since_version (Optional[str]): Base release version to compare against (e.g., "2.7.13"); may include a leading "v".
+        github_token (Optional[str]): Optional GitHub API token to authenticate requests.
+    
     Returns:
-        List[str]: List of prerelease commit identifiers found
+        List[str]: Normalized prerelease commit identifiers discovered (e.g., "2.7.14.abcd12"); empty list if none found or on error.
     """
     try:
         # Use GitHub API to get commits from meshtastic/firmware
@@ -1733,21 +1753,21 @@ def _iter_matching_prerelease_files(
     device_manager,
 ) -> List[Dict[str, str]]:
     """
-    Return prerelease assets in a remote directory that match selection patterns and do not match any exclusion patterns.
-
-    Filters the remote directory named by dir_name using selected_patterns (resolved with device_manager when provided), excludes any filenames matching patterns in exclude_patterns_list, and skips entries with unsafe path components.
-
+    List prerelease assets in a remote directory that match selection patterns and do not match any exclusion patterns.
+    
+    Filters the remote directory named by `dir_name` using `selected_patterns` (device-aware patterns are resolved when `device_manager` is provided), excludes filenames matching any pattern in `exclude_patterns_list`, and skips entries with unsafe path components.
+    
     Parameters:
         dir_name (str): Remote prerelease directory to inspect.
-        selected_patterns (list): Patterns used to select matching assets; may include device-aware patterns.
+        selected_patterns (list): Patterns used to select matching assets; may include device-specific patterns.
         exclude_patterns_list (list): fnmatch-style patterns; any match causes an asset to be skipped.
         device_manager: Optional DeviceHardwareManager used to resolve device-specific patterns.
-
+    
     Returns:
-        list: A list of dictionaries, each with keys:
-            - "name": sanitized filename safe as a single path component
-            - "download_url": URL for downloading the asset
-            - "path": repository-relative path of the asset
+        list: A list of dictionaries for each matching asset with keys:
+            - "name" (str): sanitized filename safe as a single path component
+            - "download_url" (str): URL for downloading the asset
+            - "path" (str, optional): repository-relative path of the asset when provided by the remote index
     """
 
     files = menu_repo.fetch_directory_contents(dir_name) or []
@@ -2785,21 +2805,23 @@ def check_for_prereleases(
     force_refresh: bool = False,
 ) -> Tuple[bool, List[str]]:
     """
-    Detect and download matching prerelease firmware assets for the expected prerelease version.
-
-    Computes the expected prerelease version from latest_release_tag, locates a matching remote prerelease directory, downloads assets that match selected_patterns (respecting exclude_patterns and device_manager), updates on-disk prerelease tracking, and prunes older prerelease directories when appropriate.
-
+    Detect and download prerelease firmware assets that match configured patterns for the prerelease expected after an official release.
+    
+    Computes the expected prerelease base from latest_release_tag, finds the newest matching remote prerelease directory, downloads matching assets (respecting exclude patterns and device-aware matching), updates on-disk prerelease tracking, and prunes older prerelease directories when safe.
+    
     Parameters:
         download_dir (str): Base download directory containing firmware/prerelease subdirectory.
         latest_release_tag (str): Official release tag used to compute the expected prerelease version.
         selected_patterns (Optional[List[str]]): Asset selection patterns; if None or empty, no prerelease downloads are attempted.
         exclude_patterns (Optional[List[str]]): Patterns to exclude from matching assets.
         device_manager: Optional device pattern resolver used for device-aware matching.
-        github_token (Optional[str]): GitHub API token for querying remote prerelease directories.
+        github_token (Optional[str]): GitHub API token used to query remote prerelease directories.
         force_refresh (bool): When True, force remote checks and update tracking even if cached data exists.
-
+    
     Returns:
-        `True` if any new prerelease assets were downloaded, `False` otherwise; and a list of relevant prerelease directory name(s) — the downloaded directory when downloads occurred, otherwise existing/inspected directory names; empty list if none.
+        tuple:
+            - bool: `True` if any new prerelease assets were downloaded, `False` otherwise.
+            - List[str]: List of relevant prerelease directory name(s): the downloaded directory when downloads occurred, otherwise existing/inspected directory names; empty list if none.
     """
     global downloads_skipped
 
@@ -3135,26 +3157,20 @@ def _get_latest_releases_data(
     release_type: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
-    Fetches and returns recent releases from a GitHub releases API endpoint.
-
-    This function is cache-aware and will use a persisted cache unless `force_refresh` is set or the
-    cached entry has expired. It clamps `scan_count` to GitHub's per-page bounds (1-100), requests
-    up to that many releases, and prefers releases sorted by `published_at` in descending order.
-    On network or JSON decode errors an empty list is returned. If `published_at` is missing or
-    invalid, the original (unsorted) list from the API is returned.
-
+    Retrieve recent releases from a GitHub releases API endpoint, using a cache and optional forced refresh.
+    
+    This function respects a persisted in-process cache (unless `force_refresh` is True), clamps `scan_count` to GitHub's 1–100 per-page bounds, and prefers releases sorted by `published_at` in descending order. On fetch or parse errors an empty list is returned; if releases cannot be sorted by `published_at`, the original API list is returned.
+    
     Parameters:
         url (str): GitHub API URL that returns a list of releases (JSON).
-        scan_count (int): Maximum number of releases to request and return (clamped to 1-100).
+        scan_count (int): Maximum number of releases to request and return (clamped to 1–100).
         github_token (Optional[str]): Optional GitHub API token for higher rate limits.
-        allow_env_token (bool): Whether to allow using a token from the environment.
+        allow_env_token (bool): Whether a token from the environment is allowed when making API requests.
         force_refresh (bool): If True, bypass the cache and fetch fresh data from the API.
-        release_type (Optional[str]): Human-readable release type (e.g., "firmware", "Android APK") for logging purposes. If None, falls back to URL-based detection.
-
+        release_type (Optional[str]): Human-readable release type (e.g., "firmware", "Android APK") used for logging; if None, a type may be inferred from the URL.
+    
     Returns:
-        List[Dict[str, Any]]: Sorted list of release dictionaries (newest first). Returns an empty
-        list on network or JSON parse errors. If sorting by `published_at` is not possible due to
-        missing or invalid keys, the unsorted API list is returned.
+        List[Dict[str, Any]]: Release dictionaries sorted newest first (by `published_at`). Returns an empty list on network or JSON parse errors; if sorting by `published_at` is not possible, the unsorted API list is returned.
     """
     global _releases_cache
 
