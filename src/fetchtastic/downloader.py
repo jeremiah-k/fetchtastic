@@ -1203,6 +1203,16 @@ def _update_tracking_with_newest_prerelease(
         tracking_file
     )
 
+    # Read full tracking data once to access all fields
+    try:
+        if os.path.exists(tracking_file):
+            with open(tracking_file, "r", encoding="utf-8") as f:
+                existing_tracking = json.load(f)
+        else:
+            existing_tracking = {}
+    except (json.JSONDecodeError, OSError):
+        existing_tracking = {}
+
     # Check if we need to reset due to new official release
     clean_latest_release = _extract_clean_version(latest_release_tag)
     if existing_release and existing_release != clean_latest_release:
@@ -1212,6 +1222,8 @@ def _update_tracking_with_newest_prerelease(
             existing_release,
         )
         existing_commits = []
+        deleted_dirs = []
+        first_seen = datetime.now(timezone.utc).isoformat()
         # Optionally fetch historical data for the new release
         historical_commits = _fetch_historical_prerelease_commits(
             since_version=clean_latest_release, github_token=github_token
@@ -1220,7 +1232,18 @@ def _update_tracking_with_newest_prerelease(
             logger.info(
                 f"Found {len(historical_commits)} historical prerelease commits"
             )
-            existing_commits.extend(historical_commits)
+            # Normalize historical commits to standard format
+            normalized_historical = [
+                _normalize_commit_identifier(commit, clean_latest_release)
+                for commit in historical_commits
+            ]
+            existing_commits.extend(normalized_historical)
+    else:
+        # Preserve tracking fields from current release cycle
+        deleted_dirs = existing_tracking.get("deleted_directories", [])
+        first_seen = existing_tracking.get(
+            "first_seen", datetime.now(timezone.utc).isoformat()
+        )
 
     # Check if this is a new prerelease ID for the same version
     is_new_id = new_prerelease_id not in set(existing_commits)
@@ -1237,20 +1260,8 @@ def _update_tracking_with_newest_prerelease(
     # Extract commit hash for the newest prerelease directory
     commit_hash = _get_commit_hash_from_dir(newest_prerelease_dir)
 
-    # Read existing tracking to preserve deleted_directories and first_seen
-    try:
-        if os.path.exists(tracking_file):
-            with open(tracking_file, "r", encoding="utf-8") as f:
-                existing_tracking = json.load(f)
-        else:
-            existing_tracking = {}
-    except (json.JSONDecodeError, OSError):
-        existing_tracking = {}
-
     # Write updated tracking data in enhanced format with comprehensive history
     now_iso = datetime.now(timezone.utc).isoformat()
-    first_seen = existing_tracking.get("first_seen", now_iso)
-    deleted_dirs = existing_tracking.get("deleted_directories", [])
 
     new_tracking_data = {
         "version": _extract_clean_version(
@@ -1470,8 +1481,8 @@ def _fetch_historical_prerelease_commits(
         if response.status_code != 200:
             logger.warning(f"Failed to fetch commit history: {response.status_code}")
             return []
-
-        commits = response.json()
+        else:
+            commits = response.json()
         prerelease_commits = []
         # Normalize since_version by stripping leading 'v' for regex matching
         normalized_since = since_version.lstrip("vV") if since_version else None
@@ -1480,7 +1491,9 @@ def _fetch_historical_prerelease_commits(
         for commit in commits:
             commit_message = commit.get("commit", {}).get("message", "")
             # Look for version patterns in commit messages
-            version_match = re.search(r"(\d+\.\d+\.\d+[a-f0-9]*)", commit_message)
+            version_match = re.search(
+                r"(\d+\.\d+\.\d+(?:\.[a-f0-9]+)?)", commit_message
+            )
             if version_match:
                 version_part = version_match.group(1)
                 # Check if it's a prerelease (contains hash or matches version+1 pattern)
