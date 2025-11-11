@@ -19,11 +19,14 @@ import requests
 from fetchtastic import downloader
 from fetchtastic.downloader import (
     _commit_timestamp_cache,
+    _create_default_tracking_data,
     _get_commit_cache_file,
     _get_commit_hash_from_dir,
     _load_commit_cache,
     _normalize_version,
+    _read_tracking_data,
     _save_commit_cache,
+    _validate_and_migrate_tracking_data,
     clear_commit_timestamp_cache,
     get_commit_timestamp,
     get_prerelease_tracking_info,
@@ -909,12 +912,13 @@ def test_prerelease_commit_cache_save_only_on_new_entries():
             "fetchtastic.downloader._fetch_prerelease_directories",
             return_value=["firmware-2.7.13.abcdef12"],
         ):
-            with patch(
-                "fetchtastic.downloader.get_commit_timestamp",
-                return_value=cached_timestamp,
-            ) as mock_get_timestamp, patch(
-                "fetchtastic.downloader._save_commit_cache"
-            ) as mock_save_cache:
+            with (
+                patch(
+                    "fetchtastic.downloader.get_commit_timestamp",
+                    return_value=cached_timestamp,
+                ) as mock_get_timestamp,
+                patch("fetchtastic.downloader._save_commit_cache") as mock_save_cache,
+            ):
                 result = downloader._find_latest_remote_prerelease_dir("2.7.13")
                 assert result == "firmware-2.7.13.abcdef12"
                 mock_get_timestamp.assert_called_once()
@@ -936,12 +940,13 @@ def test_prerelease_commit_cache_save_only_on_new_entries():
             "fetchtastic.downloader._fetch_prerelease_directories",
             return_value=["firmware-2.7.13.abcdef12"],
         ):
-            with patch(
-                "fetchtastic.downloader.get_commit_timestamp",
-                side_effect=_populate_cache,
-            ) as mock_get_timestamp, patch(
-                "fetchtastic.downloader._save_commit_cache"
-            ) as mock_save_cache:
+            with (
+                patch(
+                    "fetchtastic.downloader.get_commit_timestamp",
+                    side_effect=_populate_cache,
+                ) as mock_get_timestamp,
+                patch("fetchtastic.downloader._save_commit_cache") as mock_save_cache,
+            ):
                 result = downloader._find_latest_remote_prerelease_dir("2.7.13")
                 assert result == "firmware-2.7.13.abcdef12"
                 mock_get_timestamp.assert_called_once()
@@ -1070,3 +1075,221 @@ def test_normalize_version():
     # Test invalid versions
     assert _normalize_version("invalid") is None
     assert _normalize_version("v") is None
+
+
+@pytest.mark.core_downloads
+def test_validate_and_migrate_tracking_data_new_format():
+    """Test schema validation with current format data."""
+
+    # Test with valid current format data
+    tracking_data = {
+        "version": "v2.7.8",
+        "commits": ["2.7.9.abc123", "2.7.9.def456"],
+        "hash": "def456",
+        "count": 2,
+        "timestamp": "2024-01-01T00:00:00+00:00",
+        "last_updated": "2024-01-01T00:00:00+00:00",
+        "all_prerelease_commits": ["2.7.9.abc123", "2.7.9.def456"],
+        "deleted_directories": ["2.7.9.ghi789"],
+        "first_seen": {"2.7.9.abc123": "2024-01-01T00:00:00+00:00"},
+    }
+
+    result = _validate_and_migrate_tracking_data(tracking_data, "/test/path")
+
+    # Should return essentially the same data (no migration needed)
+    assert result["version"] == "v2.7.8"
+    assert len(result["commits"]) == 2
+    assert result["count"] == 2
+    assert "deleted_directories" in result
+    assert "first_seen" in result
+
+
+@pytest.mark.core_downloads
+def test_validate_and_migrate_tracking_data_legacy_format():
+    """Test schema migration from legacy format."""
+
+    # Test with legacy format data (using "release" instead of "version")
+    legacy_data = {
+        "release": "v2.7.8",
+        "commits": ["abc123", "def456"],
+        "last_updated": "2024-01-01T00:00:00+00:00",
+    }
+
+    result = _validate_and_migrate_tracking_data(legacy_data, "/test/path")
+
+    # Should migrate to current format
+    assert result["version"] == "v2.7.8"  # migrated from "release"
+    assert "release" not in result  # legacy key removed
+    assert len(result["commits"]) == 2
+    assert result["count"] == 2  # calculated automatically
+    assert result["timestamp"] == "2024-01-01T00:00:00+00:00"  # from last_updated
+    assert result["last_updated"] == "2024-01-01T00:00:00+00:00"
+    assert result["all_prerelease_commits"] == result["commits"]  # default
+    assert result["deleted_directories"] == []  # default
+    assert "first_seen" in result  # added with timestamps
+
+
+@pytest.mark.core_downloads
+def test_validate_and_migrate_tracking_data_missing_fields():
+    """Test schema migration with missing fields."""
+
+    # Test with minimal data
+    minimal_data = {
+        "version": "v2.7.8",
+        "hash": "abc123",
+    }
+
+    result = _validate_and_migrate_tracking_data(minimal_data, "/test/path")
+
+    # Should populate missing fields with defaults
+    assert result["version"] == "v2.7.8"
+    assert result["hash"] == "abc123"
+    assert len(result["commits"]) == 1  # synthesized from hash
+    assert result["count"] == 1
+    assert "timestamp" in result
+    assert "last_updated" in result
+    assert result["all_prerelease_commits"] == result["commits"]
+    assert result["deleted_directories"] == []
+    assert "first_seen" in result
+    assert len(result["first_seen"]) == 1  # timestamp for synthesized commit
+
+
+@pytest.mark.core_downloads
+def test_validate_and_migrate_tracking_data_invalid_types():
+    """Test schema migration with invalid data types."""
+
+    # Test with invalid data types
+    invalid_data = {
+        "version": "v2.7.8",
+        "commits": "not_a_list",  # should be list
+        "deleted_directories": "also_not_a_list",  # should be list
+        "first_seen": "not_a_dict",  # should be dict
+    }
+
+    result = _validate_and_migrate_tracking_data(invalid_data, "/test/path")
+
+    # Should correct invalid types
+    assert result["version"] == "v2.7.8"
+    assert isinstance(result["commits"], list)
+    assert len(result["commits"]) == 0  # reset due to invalid type
+    assert isinstance(result["deleted_directories"], list)
+    assert len(result["deleted_directories"]) == 0  # reset due to invalid type
+    assert isinstance(result["first_seen"], dict)
+    assert len(result["first_seen"]) == 0  # reset due to invalid type
+
+
+@pytest.mark.core_downloads
+def test_validate_and_migrate_tracking_data_non_dict():
+    """Test schema migration with non-dict input."""
+
+    # Test with non-dict input
+    result = _validate_and_migrate_tracking_data("not_a_dict", "/test/path")
+
+    # Should return default tracking data
+    assert result["version"] is None
+    assert result["commits"] == []
+    assert result["count"] == 0
+    assert "timestamp" in result
+    assert "last_updated" in result
+    assert result["all_prerelease_commits"] == []
+    assert result["deleted_directories"] == []
+    assert isinstance(result["first_seen"], dict)
+
+
+@pytest.mark.core_downloads
+def test_read_tracking_data_with_migration():
+    """Test _read_tracking_data with schema migration."""
+    import json
+    import tempfile
+
+    # Test reading legacy format file
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        legacy_data = {
+            "release": "v2.7.8",
+            "commits": ["abc123", "def456"],
+            "last_updated": "2024-01-01T00:00:00+00:00",
+        }
+        json.dump(legacy_data, f)
+        temp_file = f.name
+
+    try:
+        result = _read_tracking_data(temp_file)
+
+        # Should migrate to current format
+        assert result["version"] == "v2.7.8"  # migrated from "release"
+        assert "release" not in result
+        assert len(result["commits"]) == 2
+        assert result["count"] == 2
+        assert "first_seen" in result
+        assert len(result["first_seen"]) == 2  # timestamps for both commits
+
+    finally:
+        os.unlink(temp_file)
+
+
+@pytest.mark.core_downloads
+def test_read_tracking_data_corrupted_json():
+    """Test _read_tracking_data with corrupted JSON."""
+    import tempfile
+
+    # Test reading corrupted JSON file
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        f.write('{"invalid": json}')  # Invalid JSON
+        temp_file = f.name
+
+    try:
+        result = _read_tracking_data(temp_file)
+
+        # Should return default tracking data instead of empty dict
+        assert result["version"] is None
+        assert result["commits"] == []
+        assert result["count"] == 0
+        assert "timestamp" in result
+        assert "last_updated" in result
+        assert result["all_prerelease_commits"] == []
+        assert result["deleted_directories"] == []
+        assert isinstance(result["first_seen"], dict)
+
+    finally:
+        os.unlink(temp_file)
+
+
+@pytest.mark.core_downloads
+def test_read_tracking_data_nonexistent_file():
+    """Test _read_tracking_data with nonexistent file."""
+
+    # Test reading nonexistent file
+    result = _read_tracking_data("/nonexistent/path/tracking.json")
+
+    # Should return default tracking data
+    assert result["version"] is None
+    assert result["commits"] == []
+    assert result["count"] == 0
+    assert "timestamp" in result
+    assert "last_updated" in result
+    assert result["all_prerelease_commits"] == []
+    assert result["deleted_directories"] == []
+    assert isinstance(result["first_seen"], dict)
+
+
+@pytest.mark.core_downloads
+def test_create_default_tracking_data():
+    """Test _create_default_tracking_data function."""
+
+    result = _create_default_tracking_data()
+
+    # Should have all required fields with proper defaults
+    assert result["version"] is None
+    assert result["commits"] == []
+    assert result["hash"] is None
+    assert result["count"] == 0
+    assert "timestamp" in result
+    assert "last_updated" in result
+    assert result["all_prerelease_commits"] == []
+    assert result["deleted_directories"] == []
+    assert isinstance(result["first_seen"], dict)
+    assert len(result["first_seen"]) == 0
+
+    # Timestamps should be valid ISO format
+    assert "T" in result["timestamp"]
+    assert "Z" in result["timestamp"] or "+" in result["timestamp"]

@@ -76,6 +76,10 @@ from fetchtastic.utils import (
     verify_file_integrity,
 )
 
+# Heuristic minimum length for a version string to be considered as containing a commit hash.
+# e.g., "1.2.3." (6 chars) + "abcdef" (6 chars) = 12 chars. A short hash is usually 7 chars, so > 12 is a safe bet.
+MIN_VERSION_LEN_WITH_HASH = 12
+
 """
 Version Handling for Meshtastic Releases
 
@@ -465,23 +469,216 @@ def cleanup_superseded_prereleases(
     return cleaned_up
 
 
+def _validate_and_migrate_tracking_data(
+    tracking_data: dict, tracking_file: str
+) -> dict:
+    """
+    Validate and migrate tracking data to ensure it conforms to the current schema.
+
+    This function handles:
+    - Legacy format migration (release -> version, missing fields)
+    - Missing field population with sensible defaults
+    - Data type validation and correction
+    - Schema version compatibility
+
+    Parameters:
+        tracking_data (dict): Raw tracking data from JSON file
+        tracking_file (str): Path to the tracking file (for logging)
+
+    Returns:
+        dict: Validated and migrated tracking data
+    """
+    if not isinstance(tracking_data, dict):
+        logger.warning(
+            "Invalid tracking data format in %s: expected dict, got %s. Creating new tracking data.",
+            tracking_file,
+            type(tracking_data).__name__,
+        )
+        return _create_default_tracking_data()
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    migrated_data = {}
+
+    # Handle legacy format (using "release" instead of "version")
+    if "release" in tracking_data and "version" not in tracking_data:
+        logger.info(
+            "Migrating legacy tracking format in %s: 'release' -> 'version'",
+            tracking_file,
+        )
+        migrated_data["version"] = tracking_data["release"]
+    else:
+        migrated_data["version"] = tracking_data.get("version")
+
+    # Handle commits field - ensure it's a list
+    commits_raw = tracking_data.get("commits")
+    if commits_raw is None:
+        # Try to synthesize from hash if available
+        hash_val = tracking_data.get("hash")
+        if hash_val:
+            version = migrated_data.get("version")
+            if version:
+                expected = calculate_expected_prerelease_version(
+                    _ensure_v_prefix_if_missing(version) or ""
+                )
+                if expected:
+                    commits_raw = [f"{expected}.{hash_val}"]
+                else:
+                    commits_raw = [hash_val]
+            else:
+                commits_raw = [hash_val]
+        else:
+            commits_raw = []
+
+    if not isinstance(commits_raw, list):
+        logger.warning(
+            "Invalid commits format in tracking file %s: expected list, got %s. Resetting commits.",
+            tracking_file,
+            type(commits_raw).__name__,
+        )
+        commits_raw = []
+
+    # Normalize commits
+    normalized_commits = []
+    current_release = _ensure_v_prefix_if_missing(migrated_data.get("version"))
+    for commit in commits_raw:
+        if isinstance(commit, str):
+            normalized = _normalize_commit_identifier(commit.lower(), current_release)
+            if normalized:
+                normalized_commits.append(normalized)
+        else:
+            logger.warning(
+                "Invalid commit entry in tracking file %s: expected str, got %s. Skipping.",
+                tracking_file,
+                type(commit).__name__,
+            )
+
+    # Ensure uniqueness while preserving order
+    migrated_data["commits"] = list(dict.fromkeys(normalized_commits))
+
+    # Handle hash field
+    migrated_data["hash"] = tracking_data.get("hash")
+
+    # Handle count field - ensure it matches actual commits count
+    migrated_data["count"] = len(migrated_data["commits"])
+
+    # Handle timestamp fields with migration
+    migrated_data["timestamp"] = (
+        tracking_data.get("timestamp") or tracking_data.get("last_updated") or now_iso
+    )
+    migrated_data["last_updated"] = (
+        tracking_data.get("last_updated") or tracking_data.get("timestamp") or now_iso
+    )
+
+    # Handle enhanced fields with defaults
+    migrated_data["all_prerelease_commits"] = tracking_data.get(
+        "all_prerelease_commits", migrated_data["commits"]
+    )
+
+    # Handle deleted_directories field
+    deleted_dirs = tracking_data.get("deleted_directories", [])
+    if not isinstance(deleted_dirs, list):
+        logger.warning(
+            "Invalid deleted_directories format in tracking file %s: expected list, got %s. Resetting.",
+            tracking_file,
+            type(deleted_dirs).__name__,
+        )
+        deleted_dirs = []
+    migrated_data["deleted_directories"] = deleted_dirs
+
+    # Handle first_seen field - this is critical for tracking
+    first_seen = tracking_data.get("first_seen")
+    if first_seen is None:
+        # Create first_seen for existing commits
+        first_seen = {}
+        logger.info(
+            "Initializing first_seen timestamps for existing commits in %s",
+            tracking_file,
+        )
+    elif not isinstance(first_seen, dict):
+        logger.warning(
+            "Invalid first_seen format in tracking file %s: expected dict, got %s. Resetting.",
+            tracking_file,
+            type(first_seen).__name__,
+        )
+        first_seen = {}
+
+    # Ensure all commits have first_seen timestamps
+    for commit in migrated_data["commits"]:
+        if commit not in first_seen:
+            first_seen[commit] = now_iso
+
+    migrated_data["first_seen"] = first_seen
+
+    # Log migration if any changes were made
+    if tracking_data != migrated_data:
+        logger.info("Tracking data migration completed for %s", tracking_file)
+
+    return migrated_data
+
+
+def _create_default_tracking_data() -> dict:
+    """
+    Create a default tracking data structure with all required fields.
+
+    Returns:
+        dict: Default tracking data with sensible defaults
+    """
+    now_iso = datetime.now(timezone.utc).isoformat()
+    return {
+        "version": None,
+        "commits": [],
+        "hash": None,
+        "count": 0,
+        "timestamp": now_iso,
+        "last_updated": now_iso,
+        "all_prerelease_commits": [],
+        "deleted_directories": [],
+        "first_seen": {},
+    }
+
+
 def _read_tracking_data(tracking_file: str) -> dict:
     """
-    Reads and decodes the JSON tracking file, returning an empty dict on error.
+    Reads and decodes the JSON tracking file with schema validation and migration.
+
+    This function loads the tracking data and ensures it conforms to the current schema,
+    migrating legacy formats and populating missing fields with sensible defaults.
+    It provides better error handling than silently returning an empty dict.
 
     Parameters:
         tracking_file (str): Path to the tracking file
 
     Returns:
-        dict: Tracking data dictionary, empty if file doesn't exist or is invalid
+        dict: Validated and migrated tracking data dictionary
     """
     try:
         if os.path.exists(tracking_file):
             with open(tracking_file, "r", encoding="utf-8") as f:
-                return json.load(f)
-    except (json.JSONDecodeError, OSError):
-        pass
-    return {}
+                tracking_data = json.load(f)
+
+            # Validate and migrate the data
+            return _validate_and_migrate_tracking_data(tracking_data, tracking_file)
+        else:
+            # File doesn't exist, return default structure
+            logger.debug(
+                "Tracking file %s does not exist, creating default data", tracking_file
+            )
+            return _create_default_tracking_data()
+
+    except json.JSONDecodeError as e:
+        logger.warning(
+            "Invalid JSON in tracking file %s: %s. Creating default tracking data to avoid data loss.",
+            tracking_file,
+            e,
+        )
+        return _create_default_tracking_data()
+    except OSError as e:
+        logger.warning(
+            "Error reading tracking file %s: %s. Creating default tracking data.",
+            tracking_file,
+            e,
+        )
+        return _create_default_tracking_data()
 
 
 def _record_prerelease_deletion(deleted_dir_name: str, latest_release_tag: str) -> None:
@@ -514,9 +711,7 @@ def _record_prerelease_deletion(deleted_dir_name: str, latest_release_tag: str) 
         deleted_dirs.append(deleted_prerelease_id)
 
     # Create complete history including both active and deleted prereleases
-    all_prerelease_commits = list(existing_commits)  # Start with active commits
-    seen_commits = set(all_prerelease_commits)
-    all_prerelease_commits.extend(d for d in deleted_dirs if d not in seen_commits)
+    all_prerelease_commits = list(dict.fromkeys(existing_commits + deleted_dirs))
 
     # Update tracking data with deletion record
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -1278,7 +1473,9 @@ def _update_tracking_with_newest_prerelease(
         "timestamp": now_iso,  # per PR format
         "last_updated": now_iso,  # maintain compatibility with existing readers
         # Enhanced fields for comprehensive tracking
-        "all_prerelease_commits": updated_commits,  # complete history of all prerelease commits
+        "all_prerelease_commits": list(
+            dict.fromkeys(updated_commits + deleted_dirs)
+        ),  # complete history of all prerelease commits
         "deleted_directories": deleted_dirs,  # track when prerelease directories were deleted
         "first_seen": first_seen,  # when this tracking started
     }
@@ -1498,7 +1695,9 @@ def _fetch_historical_prerelease_commits(
                     if normalized_since
                     else None
                 )
-                if len(version_part) > 12 or (  # Long version suggests hash included
+                if len(
+                    version_part
+                ) > MIN_VERSION_LEN_WITH_HASH or (  # Long version suggests hash included
                     next_version_base
                     and next_version_base != normalized_since
                     and version_part.startswith(next_version_base)
