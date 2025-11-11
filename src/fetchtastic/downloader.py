@@ -3109,11 +3109,7 @@ def _fetch_releases_with_retry(
             if len(releases) >= scan_count or attempt == max_attempts - 1:
                 break
 
-        except (
-            requests.HTTPError,
-            requests.exceptions.RequestException,
-            json.JSONDecodeError,
-        ) as e:
+        except (requests.exceptions.RequestException, json.JSONDecodeError) as e:
             logger.warning(f"GitHub API request failed on attempt {attempt + 1}: {e}")
             if attempt == max_attempts - 1:
                 return []
