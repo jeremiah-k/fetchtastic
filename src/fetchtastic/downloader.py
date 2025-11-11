@@ -33,6 +33,7 @@ from fetchtastic import menu_repo, setup_config
 from fetchtastic.constants import (
     COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS,
     DEFAULT_ANDROID_VERSIONS_TO_KEEP,
+    DEFAULT_BRANCH,
     DEFAULT_FIRMWARE_VERSIONS_TO_KEEP,
     DEVICE_HARDWARE_API_URL,
     DEVICE_HARDWARE_CACHE_HOURS,
@@ -474,11 +475,6 @@ def _record_prerelease_deletion(deleted_dir_name: str, latest_release_tag: str) 
     """
     tracking_file = os.path.join(_ensure_cache_dir(), PRERELEASE_TRACKING_JSON_FILE)
 
-    # Read current tracking data once
-    existing_commits, existing_release, _ = _read_prerelease_tracking_data(
-        tracking_file
-    )
-
     # Extract prerelease ID from deleted directory name
     if deleted_dir_name.startswith(FIRMWARE_DIR_PREFIX):
         deleted_prerelease_id = deleted_dir_name.removeprefix(
@@ -496,6 +492,9 @@ def _record_prerelease_deletion(deleted_dir_name: str, latest_release_tag: str) 
             tracking_data = {}
     except (json.JSONDecodeError, OSError):
         tracking_data = {}
+
+    # Extract commits from tracking data
+    existing_commits = tracking_data.get("commits", [])
 
     # Get existing deleted directories and add new one if not already tracked
     deleted_dirs = tracking_data.get("deleted_directories", [])
@@ -1239,8 +1238,21 @@ def _update_tracking_with_newest_prerelease(
     # Extract commit hash for the newest prerelease directory
     commit_hash = _get_commit_hash_from_dir(newest_prerelease_dir)
 
+    # Read existing tracking to preserve deleted_directories and first_seen
+    try:
+        if os.path.exists(tracking_file):
+            with open(tracking_file, "r", encoding="utf-8") as f:
+                existing_tracking = json.load(f)
+        else:
+            existing_tracking = {}
+    except (json.JSONDecodeError, OSError):
+        existing_tracking = {}
+
     # Write updated tracking data in enhanced format with comprehensive history
     now_iso = datetime.now(timezone.utc).isoformat()
+    first_seen = existing_tracking.get("first_seen", now_iso)
+    deleted_dirs = existing_tracking.get("deleted_directories", [])
+
     new_tracking_data = {
         "version": _extract_clean_version(
             latest_release_tag
@@ -1252,8 +1264,8 @@ def _update_tracking_with_newest_prerelease(
         "last_updated": now_iso,  # maintain compatibility with existing readers
         # Enhanced fields for comprehensive tracking
         "all_prerelease_commits": updated_commits,  # complete history of all prerelease commits
-        "deleted_directories": [],  # track when prerelease directories were deleted
-        "first_seen": now_iso,  # when this tracking started
+        "deleted_directories": deleted_dirs,  # track when prerelease directories were deleted
+        "first_seen": first_seen,  # when this tracking started
     }
 
     if not _atomic_write_json(tracking_file, new_tracking_data):
@@ -1372,9 +1384,8 @@ def get_prerelease_tracking_info():
                 if commit_version_match:
                     commit_version = commit_version_match.group(1)
                     # Include if it's current version or next version
-                    if commit_version == base_version or commit_version == str(
-                        _increment_patch_version(base_version)
-                    ):
+                    next_version = _increment_patch_version(base_version)
+                    if commit_version == base_version or commit_version == next_version:
                         relevant_commits.append(commit)
 
     return {
@@ -1426,7 +1437,8 @@ def _get_deleted_directories_from_tracking(tracking_file: str) -> list[str]:
             with open(tracking_file, "r", encoding="utf-8") as f:
                 tracking_data = json.load(f)
                 return tracking_data.get("deleted_directories", [])
-        return []
+        else:
+            return []
     except (json.JSONDecodeError, OSError):
         return []
 
@@ -1449,7 +1461,7 @@ def _fetch_historical_prerelease_commits(
         url = f"{GITHUB_API_BASE}/meshtastic/firmware/commits"
         params = {
             "per_page": 100,  # Max per page
-            "sha": "master",  # Get from main branch
+            "sha": DEFAULT_BRANCH,  # Get from default branch
         }
 
         response = make_github_api_request(
@@ -1481,7 +1493,10 @@ def _fetch_historical_prerelease_commits(
 
         return prerelease_commits
 
-    except (requests.RequestException, json.JSONDecodeError, KeyError) as e:
+    except requests.RequestException as e:
+        logger.warning(f"Network error fetching historical prerelease commits: {e}")
+        return []
+    except (json.JSONDecodeError, KeyError) as e:
         logger.warning(f"Error fetching historical prerelease commits: {e}")
         return []
 
@@ -2840,7 +2855,6 @@ def _fetch_releases_with_retry(
     Returns:
         List[Dict[str, Any]]: List of releases (at least scan_count if available)
     """
-    from fetchtastic.constants import GITHUB_API_TIMEOUT
 
     if timeout is None:
         timeout = GITHUB_API_TIMEOUT

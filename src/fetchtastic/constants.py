@@ -15,6 +15,9 @@ MESHTASTIC_GITHUB_IO_CONTENTS_URL = (
     f"{GITHUB_API_BASE}/meshtastic/meshtastic.github.io/contents"
 )
 
+# GitHub repository settings
+DEFAULT_BRANCH = "master"  # Default branch for meshtastic/firmware repository
+
 # Network timeouts and delays (in seconds)
 GITHUB_API_TIMEOUT = 10
 NTFY_REQUEST_TIMEOUT = 10
