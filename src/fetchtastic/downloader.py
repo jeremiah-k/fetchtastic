@@ -466,7 +466,7 @@ def cleanup_superseded_prereleases(
 
 def _record_prerelease_deletion(deleted_dir_name: str, latest_release_tag: str) -> None:
     """
-    Record a prerelease directory deletion in the tracking history.
+    Record a prerelease directory deletion in tracking history.
 
     Parameters:
         deleted_dir_name (str): Name of the deleted prerelease directory
@@ -474,7 +474,7 @@ def _record_prerelease_deletion(deleted_dir_name: str, latest_release_tag: str) 
     """
     tracking_file = os.path.join(_ensure_cache_dir(), PRERELEASE_TRACKING_JSON_FILE)
 
-    # Read current tracking data
+    # Read current tracking data once
     existing_commits, existing_release, _ = _read_prerelease_tracking_data(
         tracking_file
     )
@@ -487,38 +487,43 @@ def _record_prerelease_deletion(deleted_dir_name: str, latest_release_tag: str) 
     else:
         deleted_prerelease_id = deleted_dir_name.lower()
 
-    # Add to deleted directories list if not already tracked
-    if deleted_prerelease_id not in existing_commits:
-        # Read existing tracking data to get deleted_directories list
-        try:
-            if os.path.exists(tracking_file):
-                with open(tracking_file, "r", encoding="utf-8") as f:
-                    tracking_data = json.load(f)
-            else:
-                tracking_data = {}
-        except (json.JSONDecodeError, OSError):
+    # Read full tracking data to get existing fields
+    try:
+        if os.path.exists(tracking_file):
+            with open(tracking_file, "r", encoding="utf-8") as f:
+                tracking_data = json.load(f)
+        else:
             tracking_data = {}
+    except (json.JSONDecodeError, OSError):
+        tracking_data = {}
 
-        deleted_dirs = tracking_data.get("deleted_directories", [])
-        if deleted_prerelease_id not in deleted_dirs:
-            deleted_dirs.append(deleted_prerelease_id)
+    # Get existing deleted directories and add new one if not already tracked
+    deleted_dirs = tracking_data.get("deleted_directories", [])
+    if deleted_prerelease_id not in deleted_dirs:
+        deleted_dirs.append(deleted_prerelease_id)
 
-        # Update tracking data with deletion record
-        now_iso = datetime.now(timezone.utc).isoformat()
-        updated_tracking_data = {
-            "version": _extract_clean_version(latest_release_tag),
-            "commits": existing_commits,
-            "hash": tracking_data.get("hash"),
-            "count": len(existing_commits),
-            "timestamp": tracking_data.get("timestamp"),
-            "last_updated": now_iso,
-            "all_prerelease_commits": existing_commits,
-            "deleted_directories": deleted_dirs,
-            "first_seen": tracking_data.get("first_seen", now_iso),
-        }
+    # Create complete history including both active and deleted prereleases
+    all_prerelease_commits = list(existing_commits)  # Start with active commits
+    for deleted_id in deleted_dirs:
+        if deleted_id not in all_prerelease_commits:
+            all_prerelease_commits.append(deleted_id)
 
-        _atomic_write_json(tracking_file, updated_tracking_data)
-        logger.debug(f"Recorded prerelease deletion: {deleted_prerelease_id}")
+    # Update tracking data with deletion record
+    now_iso = datetime.now(timezone.utc).isoformat()
+    updated_tracking_data = {
+        "version": _extract_clean_version(latest_release_tag),
+        "commits": existing_commits,
+        "hash": tracking_data.get("hash"),
+        "count": len(existing_commits),
+        "timestamp": tracking_data.get("timestamp"),
+        "last_updated": now_iso,
+        "all_prerelease_commits": all_prerelease_commits,
+        "deleted_directories": deleted_dirs,
+        "first_seen": tracking_data.get("first_seen", now_iso),
+    }
+
+    _atomic_write_json(tracking_file, updated_tracking_data)
+    logger.debug(f"Recorded prerelease deletion: {deleted_prerelease_id}")
 
 
 def _atomic_write(
@@ -1474,7 +1479,7 @@ def _fetch_historical_prerelease_commits(
 
         return prerelease_commits
 
-    except Exception as e:
+    except (requests.RequestException, json.JSONDecodeError, KeyError) as e:
         logger.warning(f"Error fetching historical prerelease commits: {e}")
         return []
 
