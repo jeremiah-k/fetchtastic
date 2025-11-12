@@ -2005,35 +2005,66 @@ def _fetch_recent_repo_commits(
     github_token: Optional[str] = None,
     allow_env_token: bool = True,
 ) -> List[Dict[str, Any]]:
-    """Fetch recent commits from meshtastic.github.io for prerelease tracking."""
+    """Fetch recent commits from meshtastic.github.io for prerelease tracking.
 
-    per_page = max(1, min(max_commits, 100))
+    Uses pagination to efficiently fetch commits without excessive API calls.
+    """
+
+    all_commits = []
+    per_page = min(100, max_commits)  # GitHub max is 100 per page
+    page = 1
+
     url = f"{GITHUB_API_BASE}/meshtastic/meshtastic.github.io/commits"
-    params = {"sha": "master", "per_page": per_page}
 
     try:
-        response = make_github_api_request(
-            url,
-            github_token=github_token,
-            allow_env_token=allow_env_token,
-            params=params,
-            timeout=GITHUB_API_TIMEOUT,
-        )
-        commits = response.json()
-        if not isinstance(commits, list):
-            logger.warning(
-                "Unexpected response when fetching repo commits: %s",
-                type(commits).__name__,
+        while len(all_commits) < max_commits:
+            params = {"sha": "master", "per_page": per_page, "page": page}
+
+            response = make_github_api_request(
+                url,
+                github_token=github_token,
+                allow_env_token=allow_env_token,
+                params=params,
+                timeout=GITHUB_API_TIMEOUT,
             )
-            return []
-        logger.debug("Fetched %d repo commits for prerelease tracking", len(commits))
-        return commits
+            commits = response.json()
+
+            if not isinstance(commits, list):
+                logger.warning(
+                    "Unexpected response when fetching repo commits: %s",
+                    type(commits).__name__,
+                )
+                break
+
+            if not commits:  # No more commits available
+                break
+
+            all_commits.extend(commits)
+
+            # If we got fewer than per_page, we've reached the end
+            if len(commits) < per_page:
+                break
+
+            # Stop if we have enough commits
+            if len(all_commits) >= max_commits:
+                all_commits = all_commits[:max_commits]  # Trim excess
+                break
+
+            page += 1
+
+        logger.debug(
+            "Fetched %d repo commits for prerelease tracking (from %d pages)",
+            len(all_commits),
+            page,
+        )
+        return all_commits
+
     except requests.HTTPError as exc:
         logger.warning("HTTP error fetching repo commits: %s", exc)
     except requests.RequestException as exc:
-        logger.warning("Network error fetching repo commits: %s", exc)
-    except (ValueError, json.JSONDecodeError) as exc:
-        logger.error("Error decoding repo commits response: %s", exc, exc_info=True)
+        logger.warning("Could not fetch repo commits: %s", exc)
+    except (ValueError, KeyError) as exc:
+        logger.error("Error parsing repo commits response: %s", exc)
 
     return []
 
@@ -2148,6 +2179,7 @@ def _build_simplified_prerelease_history(
 
     This function creates a cleaner, simpler structure that tracks prerelease
     directories and their status (active/deleted) based on commit history.
+    Uses an optimized approach that parses commit messages instead of making API calls.
     """
 
     if not expected_version or not commits:
@@ -2155,70 +2187,133 @@ def _build_simplified_prerelease_history(
 
     entries: Dict[str, Dict[str, Any]] = {}
 
-    # Process oldest first so later commits can override state (newest wins)
+    # OPTIMIZATION: Parse commit messages instead of making individual API calls
+    # The meshtastic.github.io repository has structured commit messages that contain
+    # all the information we need: version, operation type, and commit hash
+
+    logger.debug(
+        "Building prerelease history from %d commits by parsing messages (no individual API calls)",
+        len(commits),
+    )
+
+    # Process oldest first so newer commits override older ones
     for commit in reversed(commits):
         sha = commit.get("sha")
-        if not sha:
+        commit_msg = commit.get("commit", {}).get("message", "").strip()
+        timestamp = commit.get("commit", {}).get("committer", {}).get("date")
+
+        if not sha or not timestamp:
             continue
 
-        summary = _get_commit_change_summary(sha, github_token)
-        dirs = summary.get("dirs") or {}
-        timestamp = summary.get("timestamp") or (
-            commit.get("commit", {}).get("committer", {}).get("date")
+        # Pattern 1: Adding a prerelease
+        # Examples: "2.7.14.e959000 meshtastic/firmware@e959000"
+        add_match = re.match(
+            r"^(\d+\.\d+\.\d+)\.([a-f0-9]{6,})\s+meshtastic/firmware@([a-f0-9]{6,})",
+            commit_msg,
         )
 
-        for dir_name, change in dirs.items():
-            version_str = extract_version(dir_name)
-            match = re.match(r"(\d+\.\d+\.\d+)", version_str)
-            if not match or match.group(1) != expected_version:
+        if add_match:
+            version, short_hash, full_hash = add_match.groups()
+            if version == expected_version:
+                identifier = f"{version}.{short_hash}"
+                directory = f"firmware-{identifier}"
+
+                entry = entries.setdefault(
+                    directory,
+                    {
+                        "directory": directory,
+                        "identifier": identifier,
+                        "base_version": expected_version,
+                        "commit_hash": short_hash,
+                        "added_at": None,
+                        "removed_at": None,
+                        "added_sha": sha,
+                        "removed_sha": None,
+                        "active": False,
+                        "status": "unknown",
+                    },
+                )
+
+                # Update entry with addition info
+                if not entry["added_at"]:
+                    entry["added_at"] = timestamp
+                    entry["added_sha"] = sha
+                    entry["active"] = True
+                    entry["status"] = "active"
+
                 continue
 
-            # Extract commit hash from directory name for identifier
-            identifier = version_str
-            entry = entries.setdefault(
-                dir_name,
-                {
-                    "directory": dir_name,
-                    "identifier": identifier,
-                    "base_version": expected_version,
-                    "commit_hash": None,
-                    "added_at": None,
-                    "removed_at": None,
-                    "added_sha": sha,
-                    "removed_sha": None,
-                    "active": False,
-                    "status": "unknown",
-                },
-            )
+        # Pattern 2: Deleting a prerelease
+        # Examples: "Delete firmware-2.7.13.ffb168b directory"
+        delete_match = re.match(
+            r"^Delete firmware-(\d+\.\d+\.\d+)\.([a-f0-9]{6,})\s+directory", commit_msg
+        )
 
-            # Extract commit hash from directory name if it looks like a hash
-            hash_match = re.search(r"([a-f0-9]{6,8})$", dir_name)
-            if hash_match:
-                entry["commit_hash"] = hash_match.group(1)
+        if delete_match:
+            version, short_hash = delete_match.groups()
+            if version == expected_version:
+                identifier = f"{version}.{short_hash}"
+                directory = f"firmware-{identifier}"
 
-            if timestamp and not entry["added_at"] and not change.get("removed"):
-                entry["added_at"] = timestamp
-                entry["added_sha"] = sha
+                entry = entries.setdefault(
+                    directory,
+                    {
+                        "directory": directory,
+                        "identifier": identifier,
+                        "base_version": expected_version,
+                        "commit_hash": short_hash,
+                        "added_at": None,
+                        "removed_at": None,
+                        "added_sha": None,
+                        "removed_sha": None,
+                        "active": False,
+                        "status": "unknown",
+                    },
+                )
 
-            if change.get("removed"):
+                # Update entry with deletion info
                 entry["removed_at"] = timestamp
                 entry["removed_sha"] = sha
                 entry["active"] = False
                 entry["status"] = "deleted"
-            elif change.get("added") or change.get("touched"):
-                entry["active"] = True
-                entry["status"] = "active"
 
-    # Convert to list and sort by added_at (newest first)
+                continue
+
+        # Skip other commits that don't relate to prerelease operations
+
+    # Convert to list and sort by added_at (newest first), then by removed_at
     entry_list = list(entries.values())
 
     def _sort_key(entry: Dict[str, Any]) -> tuple:
-        # Sort by added_at first, then by identifier for tie-break
+        # Sort by most recent timestamp (added or removed), newest first
         added_at = entry.get("added_at") or ""
-        return (added_at, entry.get("identifier", ""))
+        removed_at = entry.get("removed_at") or ""
+        # Use the most recent timestamp for sorting
+        most_recent = removed_at if removed_at > added_at else added_at
+        return (most_recent, entry.get("identifier", ""))
 
     entry_list.sort(key=_sort_key, reverse=True)
+
+    logger.debug(
+        "Built prerelease history with %d entries from commit message parsing (0 individual API calls)",
+        len(entry_list),
+    )
+
     return entry_list
+
+    # MAJOR OPTIMIZATION: Skip individual API calls completely
+    # The original approach made 30+ individual API calls which is too expensive
+    # Instead, we'll return empty history and rely on directory scanning
+    # This is much more efficient and provides the same end result
+
+    logger.debug(
+        "Skipping individual API calls for %d commits - using directory scanning instead",
+        len(commits),
+    )
+
+    # Return empty list to force fallback to directory scanning approach
+    # This avoids the expensive individual commit detail fetching
+    return []
 
 
 def _build_prerelease_history_from_commits(
