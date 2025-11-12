@@ -53,6 +53,8 @@ from fetchtastic.constants import (
     NTFY_REQUEST_TIMEOUT,
     PRERELEASE_COMMIT_CHANGES_FILE,
     PRERELEASE_COMMIT_HISTORY_FILE,
+    PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS,
+    PRERELEASE_COMMITS_CACHE_FILE,
     PRERELEASE_COMMITS_LEGACY_FILE,
     PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
     PRERELEASE_HISTORY_CACHE_EXPIRY_SECONDS,
@@ -2008,7 +2010,36 @@ def _fetch_recent_repo_commits(
     """Fetch recent commits from meshtastic.github.io for prerelease tracking.
 
     Uses pagination to efficiently fetch commits without excessive API calls.
+    Caches raw API response to avoid repeated calls.
     """
+
+    # Check cache first
+    cache_file = os.path.join(_ensure_cache_dir(), PRERELEASE_COMMITS_CACHE_FILE)
+
+    try:
+        if os.path.exists(cache_file):
+            with open(cache_file, "r", encoding="utf-8") as f:
+                cache_data = json.load(f)
+
+            # Check if cache is still valid
+            cached_at = datetime.fromisoformat(
+                cache_data.get("cached_at", "1970-01-01")
+            )
+            age = datetime.now(timezone.utc) - cached_at
+
+            if age.total_seconds() < PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS:
+                logger.debug(
+                    f"Using cached commits data (age: {age.total_seconds():.1f}s)"
+                )
+                track_api_cache_hit()
+                return cache_data.get("commits", [])
+            else:
+                logger.debug(f"Commits cache expired (age: {age.total_seconds():.1f}s)")
+    except (json.JSONDecodeError, KeyError, ValueError, OSError) as e:
+        logger.debug(f"Error reading commits cache: {e}")
+
+    # Cache miss or expired - fetch from API
+    logger.debug("Fetching commits from API (cache miss/expired)")
 
     all_commits = []
     per_page = min(100, max_commits)  # GitHub max is 100 per page
@@ -2057,6 +2088,19 @@ def _fetch_recent_repo_commits(
             len(all_commits),
             page,
         )
+
+        # Save to cache
+        try:
+            cache_data = {
+                "cached_at": datetime.now(timezone.utc).isoformat(),
+                "commits": all_commits,
+            }
+            with open(cache_file, "w", encoding="utf-8") as f:
+                json.dump(cache_data, f, indent=2)
+            logger.debug(f"Cached {len(all_commits)} commits to {cache_file}")
+        except (OSError, TypeError) as e:
+            logger.debug(f"Failed to cache commits: {e}")
+
         return all_commits
 
     except requests.HTTPError as exc:

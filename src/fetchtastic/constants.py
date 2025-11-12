@@ -43,6 +43,7 @@ LATEST_FIRMWARE_RELEASE_FILE = "latest_firmware_release.txt"
 LATEST_ANDROID_RELEASE_JSON_FILE = "latest_android_release.json"
 LATEST_FIRMWARE_RELEASE_JSON_FILE = "latest_firmware_release.json"
 PRERELEASE_TRACKING_JSON_FILE = "prerelease_tracking.json"
+PRERELEASE_COMMITS_CACHE_FILE = "prerelease_commits_cache.json"
 PRERELEASE_COMMITS_LEGACY_FILE = "prerelease_commits.txt"
 PRERELEASE_COMMIT_HISTORY_FILE = "prerelease_commit_history.json"
 PRERELEASE_COMMIT_CHANGES_FILE = "prerelease_commit_changes.json"
@@ -131,6 +132,7 @@ COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS = 24
 RELEASES_CACHE_EXPIRY_HOURS = 1 / 60  # 1 minute
 PRERELEASE_DIR_CACHE_EXPIRY_SECONDS = 60  # 1 minute
 PRERELEASE_HISTORY_CACHE_EXPIRY_SECONDS = 120  # 2 minutes
+PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS = 300  # 5 minutes
 DEFAULT_PRERELEASE_COMMITS_TO_FETCH = 40
 
 # Concurrent operations limits
