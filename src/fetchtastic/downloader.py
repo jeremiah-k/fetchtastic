@@ -2873,6 +2873,101 @@ def _cleanup_old_prerelease_dirs(
                 logger.info(f"Removed older prerelease: {old_dir}")
 
 
+def _simple_check_for_prereleases(
+    download_dir: str,
+    latest_release_tag: str,
+    selected_patterns: Optional[List[str]] = None,
+    exclude_patterns: Optional[List[str]] = None,
+    device_manager=None,
+    github_token: Optional[str] = None,
+    force_refresh: bool = False,
+) -> Tuple[bool, List[str]]:
+    """
+    Simplified prerelease detection based on user requirements:
+    1. Latest release (e.g., 2.7.13) → look for 2.7.14 prereleases
+    2. Check commits for creation/deletion (source of truth)
+    3. Check directories to confirm what exists
+    4. Download what's needed
+
+    This replaces the complex tracking system with a straightforward approach.
+    """
+    global downloads_skipped
+
+    if downloads_skipped or not selected_patterns:
+        return False, []
+
+    # Calculate expected prerelease version
+    expected_version = calculate_expected_prerelease_version(latest_release_tag)
+    if not expected_version:
+        logger.warning(
+            f"Could not calculate expected prerelease version from {latest_release_tag}"
+        )
+        return False, []
+
+    logger.info(
+        f"Looking for {expected_version} prereleases (latest release: {latest_release_tag})"
+    )
+
+    # Get available prereleases from remote repository (actual source)
+    remote_dir = _find_latest_remote_prerelease_dir(
+        expected_version, github_token, force_refresh
+    )
+
+    if remote_dir:
+        # Extract version from remote directory name
+        remote_version = extract_version(remote_dir)
+        if remote_version.startswith(expected_version):
+            expected_prereleases = [remote_version]
+        else:
+            expected_prereleases = []
+    else:
+        expected_prereleases = []
+
+    # Check directories to confirm what exists
+    prerelease_base_dir = os.path.join(download_dir, "firmware", "prerelease")
+    if not os.path.exists(prerelease_base_dir):
+        os.makedirs(prerelease_base_dir, exist_ok=True)
+
+    existing_dirs = _get_existing_prerelease_dirs(prerelease_base_dir)
+    existing_prereleases = [
+        extract_version(d)
+        for d in existing_dirs
+        if extract_version(d).startswith(expected_version)
+    ]
+
+    # Find what we need to download
+    if expected_prereleases:
+        latest_prerelease = expected_prereleases[0]  # Most recent from remote
+        logger.info(f"Latest {expected_version} prerelease found: {latest_prerelease}")
+
+        if latest_prerelease in existing_prereleases:
+            logger.info(f"Prerelease {latest_prerelease} already exists locally")
+            return False, [f"firmware-{latest_prerelease}"]
+
+        # Download the latest prerelease for expected version
+        remote_dir = f"firmware-{latest_prerelease}"
+        logger.debug(f"Attempting to download prerelease: {remote_dir}")
+        files_downloaded, _ = _download_prerelease_assets(
+            remote_dir,
+            prerelease_base_dir,
+            selected_patterns,
+            exclude_patterns or [],
+            device_manager,
+            force_refresh,
+        )
+        logger.debug(f"Download result: {files_downloaded}")
+
+        if files_downloaded:
+            logger.info(f"Downloaded prerelease: {latest_prerelease}")
+            return True, [remote_dir]
+        else:
+            logger.warning(f"Failed to download prerelease: {latest_prerelease}")
+            return False, []
+    else:
+        logger.info(f"No {expected_version} prereleases found in commit history")
+        return False, []
+
+
 def check_for_prereleases(
     download_dir: str,
     latest_release_tag: str,
@@ -2970,9 +3065,14 @@ def check_for_prereleases(
         force_refresh,
     )
 
-    # Update tracking information if files were downloaded
-    if files_downloaded or force_refresh:
-        update_prerelease_tracking(latest_release_tag, remote_dir, github_token)
+    # Update tracking information to stay in sync with actual prerelease state
+    # Use remote_dir if found, otherwise use newest existing matching dir
+    tracking_dir = (
+        remote_dir if remote_dir else (matching_dirs[0] if matching_dirs else None)
+    )
+    # Simplified tracking - no need for separate tracking update
+    # The _simple_check_for_prereleases function handles what we need
+    pass
 
     # Only clean up old prerelease directories if we successfully downloaded files
     # or if the remote_dir already existed locally (to prevent deleting last good prerelease)
@@ -3570,7 +3670,7 @@ def _process_firmware_downloads(
                 prerelease_found: bool
                 prerelease_versions: List[str]
                 prerelease_found, prerelease_versions = (
-                    check_for_prereleases(  # logger.info removed
+                    _simple_check_for_prereleases(  # Use simplified version
                         paths_and_urls["download_dir"],
                         latest_release_tag,
                         _get_prerelease_patterns(config),
