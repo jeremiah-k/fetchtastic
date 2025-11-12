@@ -41,6 +41,7 @@ from fetchtastic.constants import (
     FILE_TYPE_PREFIXES,
     FIRMWARE_DIR_PREFIX,
     GITHUB_API_BASE,
+    GITHUB_API_MAX_ATTEMPTS,
     GITHUB_API_RETRY_EXTRA_COUNT,
     GITHUB_API_TIMEOUT,
     LATEST_ANDROID_RELEASE_FILE,
@@ -765,11 +766,14 @@ def _record_prerelease_deletion(deleted_dir_name: str, latest_release_tag: str) 
     tracking_file = os.path.join(_ensure_cache_dir(), PRERELEASE_TRACKING_JSON_FILE)
 
     # Extract prerelease ID from deleted directory name
-    deleted_prerelease_id = (
+    raw_deleted_id = (
         deleted_dir_name.removeprefix(FIRMWARE_DIR_PREFIX).lower()
         if deleted_dir_name.startswith(FIRMWARE_DIR_PREFIX)
         else deleted_dir_name.lower()
     )
+    # Normalize to canonical MAJOR.MINOR.PATCH.hash to match stored entries
+    clean_release = _extract_clean_version(latest_release_tag)
+    deleted_prerelease_id = _normalize_commit_identifier(raw_deleted_id, clean_release)
 
     # Read full tracking data to get existing fields
     tracking_data = _read_tracking_data(tracking_file)
@@ -797,6 +801,10 @@ def _record_prerelease_deletion(deleted_dir_name: str, latest_release_tag: str) 
 
     # Update tracking data with deletion record
     now_iso = datetime.now(timezone.utc).isoformat()
+    # Ensure first_seen contains the deleted ID if it was never recorded
+    first_seen = tracking_data.get("first_seen", {})
+    if isinstance(first_seen, dict) and deleted_prerelease_id not in first_seen:
+        first_seen[deleted_prerelease_id] = now_iso
     tracking_data.update(
         {
             "version": _extract_clean_version(latest_release_tag),
@@ -805,6 +813,7 @@ def _record_prerelease_deletion(deleted_dir_name: str, latest_release_tag: str) 
             "last_updated": now_iso,
             "all_prerelease_commits": all_prerelease_commits,
             "deleted_directories": deleted_dirs,
+            "first_seen": first_seen,
         }
     )
 
@@ -1491,6 +1500,12 @@ def _update_tracking_with_newest_prerelease(
     existing_commits = existing_tracking.get("commits", [])
     existing_release = _ensure_v_prefix_if_missing(existing_tracking.get("version"))
 
+    # Canonicalize newest ID to MAJOR.MINOR.PATCH.hash
+    clean_latest_release = _extract_clean_version(latest_release_tag)
+    new_prerelease_id = _normalize_commit_identifier(
+        new_prerelease_id, clean_latest_release
+    )
+
     # Check if we need to reset due to new official release
     clean_latest_release = _extract_clean_version(latest_release_tag)
     if existing_release and existing_release != clean_latest_release:
@@ -1550,7 +1565,11 @@ def _update_tracking_with_newest_prerelease(
         "last_updated": now_iso,  # maintain compatibility with existing readers
         # Enhanced fields for comprehensive tracking
         "all_prerelease_commits": list(
-            dict.fromkeys(updated_commits + deleted_dirs)
+            dict.fromkeys(
+                (existing_tracking.get("all_prerelease_commits", []) or [])
+                + updated_commits
+                + deleted_dirs
+            )
         ),  # complete history of all prerelease commits
         "deleted_directories": deleted_dirs,  # track when prerelease directories were deleted
         "first_seen": first_seen,  # when this tracking started
@@ -1677,7 +1696,7 @@ def get_prerelease_tracking_info():
     # Filter commits to only include relevant prereleases (current version + 1)
     # This provides a more meaningful count for users while preserving full history
     relevant_commits = []
-    if release and commits:
+    if release and history_commits:
         # Extract base version from release (e.g., "2.7.13" from "v2.7.13")
         if release_match := re.match(r"v?(\d+\.\d+\.\d+)", release):
             base_version = release_match.group(1)
@@ -1685,7 +1704,7 @@ def get_prerelease_tracking_info():
             # Count prereleases for current version and next version only
             relevant_commits = [
                 commit
-                for commit in commits
+                for commit in history_commits
                 if (commit_version_match := re.match(r"(\d+\.\d+\.\d+)", commit))
                 and commit_version_match.group(1) in {base_version, next_version}
             ]
@@ -3165,7 +3184,7 @@ def _fetch_releases_with_retry(
     if timeout is None:
         timeout = GITHUB_API_TIMEOUT
 
-    max_attempts = 2
+    max_attempts = GITHUB_API_MAX_ATTEMPTS
     releases: List[Dict[str, Any]] = []
 
     for attempt in range(max_attempts):

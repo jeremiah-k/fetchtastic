@@ -19,6 +19,7 @@ MESHTASTIC_GITHUB_IO_CONTENTS_URL = (
 DEFAULT_BRANCH = "master"  # Default branch for meshtastic/firmware repository
 
 # GitHub API retry settings
+GITHUB_API_MAX_ATTEMPTS = 2  # Maximum number of attempts for GitHub API calls
 GITHUB_API_RETRY_EXTRA_COUNT = 5  # Number of extra releases to request when retrying GitHub API to work around API quirks
 
 # Network timeouts and delays (in seconds)
