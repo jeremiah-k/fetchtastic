@@ -3758,9 +3758,7 @@ def _process_firmware_downloads(
                     logger.info("No new pre-release firmware found.")
 
                 # Display prerelease tracking information
-                prerelease_dir = os.path.join(
-                    paths_and_urls["download_dir"], "firmware", "prerelease"
-                )
+                os.path.join(paths_and_urls["download_dir"], "firmware", "prerelease")
                 tracking_info = get_prerelease_tracking_info(
                     github_token=config.get("GITHUB_TOKEN"),
                     force_refresh=force_refresh,
@@ -4304,22 +4302,11 @@ def _is_release_complete(
                     if asset_data:
                         expected_size = asset_data.get("size")
                         if expected_size is not None:
-                            # Allow small size differences (up to 1KB or 0.1% of file size)
-                            # This accounts for GitHub API rounding, compression variations, etc.
-                            size_diff = abs(actual_size - expected_size)
-                            tolerance = max(
-                                1024, int(expected_size * 0.001)
-                            )  # 1KB or 0.1%
-
-                            if size_diff > tolerance:
+                            if actual_size != expected_size:
                                 logger.debug(
-                                    f"File size mismatch for {asset_path}: expected {expected_size}, got {actual_size} (diff: {size_diff})"
+                                    f"File size mismatch for {asset_path}: expected {expected_size}, got {actual_size}"
                                 )
                                 return False
-                            else:
-                                logger.debug(
-                                    f"File size within tolerance for {asset_path}: expected {expected_size}, got {actual_size} (diff: {size_diff}, tolerance: {tolerance})"
-                                )
                 except (OSError, TypeError):
                     logger.debug(f"Error checking file size for {asset_path}")
                     return False

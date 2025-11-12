@@ -559,7 +559,7 @@ def test_get_prerelease_tracking_info_includes_history(monkeypatch, tmp_path):
     assert (
         first_entry["display_name"] == sample_history[0]["identifier"]
     )  # No strikethrough for active
-    assert first_entry["is_deleted"] == False
+    assert not first_entry["is_deleted"]
 
     # Check second entry (deleted)
     second_entry = formatted_history[1]
@@ -567,7 +567,7 @@ def test_get_prerelease_tracking_info_includes_history(monkeypatch, tmp_path):
     assert (
         second_entry["display_name"] == f"~~{sample_history[1]['identifier']}~~"
     )  # Strikethrough for deleted
-    assert second_entry["is_deleted"] == True
+    assert second_entry["is_deleted"]
 
     assert info["prerelease_count"] == len(sample_history)
     assert info["commits"] == []
