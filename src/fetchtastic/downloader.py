@@ -4259,11 +4259,23 @@ def _is_release_complete(
                     )
                     if asset_data:
                         expected_size = asset_data.get("size")
-                        if expected_size is not None and actual_size != expected_size:
-                            logger.debug(
-                                f"File size mismatch for {asset_path}: expected {expected_size}, got {actual_size}"
-                            )
-                            return False
+                        if expected_size is not None:
+                            # Allow small size differences (up to 1KB or 0.1% of file size)
+                            # This accounts for GitHub API rounding, compression variations, etc.
+                            size_diff = abs(actual_size - expected_size)
+                            tolerance = max(
+                                1024, int(expected_size * 0.001)
+                            )  # 1KB or 0.1%
+
+                            if size_diff > tolerance:
+                                logger.debug(
+                                    f"File size mismatch for {asset_path}: expected {expected_size}, got {actual_size} (diff: {size_diff})"
+                                )
+                                return False
+                            else:
+                                logger.debug(
+                                    f"File size within tolerance for {asset_path}: expected {expected_size}, got {actual_size} (diff: {size_diff}, tolerance: {tolerance})"
+                                )
                 except (OSError, TypeError):
                     logger.debug(f"Error checking file size for {asset_path}")
                     return False
