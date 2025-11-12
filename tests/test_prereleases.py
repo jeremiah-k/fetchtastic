@@ -548,7 +548,27 @@ def test_get_prerelease_tracking_info_includes_history(monkeypatch, tmp_path):
     )
 
     info = downloader.get_prerelease_tracking_info()
-    assert info["history"] == sample_history
+
+    # Check that history entries have the new display formatting fields
+    formatted_history = info["history"]
+    assert len(formatted_history) == len(sample_history)
+
+    # Check first entry (active)
+    first_entry = formatted_history[0]
+    assert first_entry["identifier"] == sample_history[0]["identifier"]
+    assert (
+        first_entry["display_name"] == sample_history[0]["identifier"]
+    )  # No strikethrough for active
+    assert first_entry["is_deleted"] == False
+
+    # Check second entry (deleted)
+    second_entry = formatted_history[1]
+    assert second_entry["identifier"] == sample_history[1]["identifier"]
+    assert (
+        second_entry["display_name"] == f"~~{sample_history[1]['identifier']}~~"
+    )  # Strikethrough for deleted
+    assert second_entry["is_deleted"] == True
+
     assert info["prerelease_count"] == len(sample_history)
     assert info["commits"] == []
 
@@ -991,12 +1011,13 @@ def test_prerelease_commit_cache_save_only_on_new_entries():
             "fetchtastic.downloader._fetch_prerelease_directories",
             return_value=["firmware-2.7.13.abcdef12"],
         ):
-            with patch(
-                "fetchtastic.downloader.get_commit_timestamp",
-                return_value=cached_timestamp,
-            ) as mock_get_timestamp, patch(
-                "fetchtastic.downloader._save_commit_cache"
-            ) as mock_save_cache:
+            with (
+                patch(
+                    "fetchtastic.downloader.get_commit_timestamp",
+                    return_value=cached_timestamp,
+                ) as mock_get_timestamp,
+                patch("fetchtastic.downloader._save_commit_cache") as mock_save_cache,
+            ):
                 result = downloader._find_latest_remote_prerelease_dir("2.7.13")
                 assert result == "firmware-2.7.13.abcdef12"
                 mock_get_timestamp.assert_called_once()
@@ -1018,12 +1039,13 @@ def test_prerelease_commit_cache_save_only_on_new_entries():
             "fetchtastic.downloader._fetch_prerelease_directories",
             return_value=["firmware-2.7.13.abcdef12"],
         ):
-            with patch(
-                "fetchtastic.downloader.get_commit_timestamp",
-                side_effect=_populate_cache,
-            ) as mock_get_timestamp, patch(
-                "fetchtastic.downloader._save_commit_cache"
-            ) as mock_save_cache:
+            with (
+                patch(
+                    "fetchtastic.downloader.get_commit_timestamp",
+                    side_effect=_populate_cache,
+                ) as mock_get_timestamp,
+                patch("fetchtastic.downloader._save_commit_cache") as mock_save_cache,
+            ):
                 result = downloader._find_latest_remote_prerelease_dir("2.7.13")
                 assert result == "firmware-2.7.13.abcdef12"
                 mock_get_timestamp.assert_called_once()

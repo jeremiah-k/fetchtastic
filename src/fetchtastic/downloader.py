@@ -1312,13 +1312,27 @@ def get_prerelease_tracking_info(
     history_count = len(history_entries)
     counted_commits = len(commits) if commits else history_count
 
+    # Add display formatting for history entries
+    formatted_history = []
+    for entry in history_entries:
+        formatted_entry = dict(entry)
+        # Add strikethrough formatting for deleted commits
+        is_deleted = entry.get("status") == "deleted" or not entry.get("active", True)
+        if is_deleted:
+            formatted_entry["display_name"] = f"~~{entry.get('identifier', '')}~~"
+            formatted_entry["is_deleted"] = True
+        else:
+            formatted_entry["display_name"] = entry.get("identifier", "")
+            formatted_entry["is_deleted"] = False
+        formatted_history.append(formatted_entry)
+
     return {
         "release": release,
         "commits": commits,
         "prerelease_count": counted_commits,
         "last_updated": last_updated,
         "latest_prerelease": commits[-1] if commits else None,
-        "history": history_entries,
+        "history": formatted_history,
     }
 
 
@@ -2125,6 +2139,88 @@ def _get_commit_change_summary(
     return summary
 
 
+def _build_simplified_prerelease_history(
+    expected_version: str,
+    commits: List[Dict[str, Any]],
+    github_token: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Build simplified prerelease history from commit data.
+
+    This function creates a cleaner, simpler structure that tracks prerelease
+    directories and their status (active/deleted) based on commit history.
+    """
+
+    if not expected_version or not commits:
+        return []
+
+    entries: Dict[str, Dict[str, Any]] = {}
+
+    # Process oldest first so later commits can override state (newest wins)
+    for commit in reversed(commits):
+        sha = commit.get("sha")
+        if not sha:
+            continue
+
+        summary = _get_commit_change_summary(sha, github_token)
+        dirs = summary.get("dirs") or {}
+        timestamp = summary.get("timestamp") or (
+            commit.get("commit", {}).get("committer", {}).get("date")
+        )
+
+        for dir_name, change in dirs.items():
+            version_str = extract_version(dir_name)
+            match = re.match(r"(\d+\.\d+\.\d+)", version_str)
+            if not match or match.group(1) != expected_version:
+                continue
+
+            # Extract commit hash from directory name for identifier
+            identifier = version_str
+            entry = entries.setdefault(
+                dir_name,
+                {
+                    "directory": dir_name,
+                    "identifier": identifier,
+                    "base_version": expected_version,
+                    "commit_hash": None,
+                    "added_at": None,
+                    "removed_at": None,
+                    "added_sha": sha,
+                    "removed_sha": None,
+                    "active": False,
+                    "status": "unknown",
+                },
+            )
+
+            # Extract commit hash from directory name if it looks like a hash
+            hash_match = re.search(r"([a-f0-9]{6,8})$", dir_name)
+            if hash_match:
+                entry["commit_hash"] = hash_match.group(1)
+
+            if timestamp and not entry["added_at"] and not change.get("removed"):
+                entry["added_at"] = timestamp
+                entry["added_sha"] = sha
+
+            if change.get("removed"):
+                entry["removed_at"] = timestamp
+                entry["removed_sha"] = sha
+                entry["active"] = False
+                entry["status"] = "deleted"
+            elif change.get("added") or change.get("touched"):
+                entry["active"] = True
+                entry["status"] = "active"
+
+    # Convert to list and sort by added_at (newest first)
+    entry_list = list(entries.values())
+
+    def _sort_key(entry: Dict[str, Any]) -> tuple:
+        # Sort by added_at first, then by identifier for tie-break
+        added_at = entry.get("added_at") or ""
+        return (added_at, entry.get("identifier", ""))
+
+    entry_list.sort(key=_sort_key, reverse=True)
+    return entry_list
+
+
 def _build_prerelease_history_from_commits(
     expected_version: str,
     commits: List[Dict[str, Any]],
@@ -2197,12 +2293,15 @@ def _refresh_prerelease_commit_history(
     force_refresh: bool,
     max_commits: int,
 ) -> List[Dict[str, Any]]:
+    """Fetch and cache simplified prerelease commit history."""
     commits = _fetch_recent_repo_commits(max_commits, github_token)
     if not commits:
         return []
 
     track_api_cache_miss()
-    history_entries = _build_prerelease_history_from_commits(
+
+    # Build simplified history from commits
+    history_entries = _build_simplified_prerelease_history(
         expected_version, commits, github_token
     )
 
@@ -2862,34 +2961,75 @@ def check_for_prereleases(
             logger.error(f"Failed to create prerelease directory: {e}")
             return False, []
 
-    # Check for existing prereleases
+    # Check for existing prereleases locally first
     existing_dirs = _get_existing_prerelease_dirs(prerelease_base_dir)
 
-    # Find the newest matching prerelease directory
-    matching_dirs = [
-        d for d in existing_dirs if extract_version(d).startswith(expected_version)
-    ]
-
-    if matching_dirs:
-        # Sort by numeric version tuple first, fall back to string for tie-break
-        matching_dirs.sort(
-            key=lambda d: (
-                _get_release_tuple(extract_version(d)) or (),
-                extract_version(d),
-            ),
-            reverse=True,
+    # Try to get commit history first (new approach)
+    try:
+        history_entries = _get_prerelease_commit_history(
+            expected_version,
+            github_token=github_token,
+            force_refresh=force_refresh,
         )
-        newest_dir = matching_dirs[0]
-        logger.debug(f"Found existing prerelease: {newest_dir}")
-    else:
+
+        # Find the latest active prerelease from commit history
+        latest_active_dir = None
+        for entry in history_entries:
+            if entry.get("status") == "active" and entry.get("directory"):
+                latest_active_dir = entry["directory"]
+                break
+
+        # Determine which directory to use
+        if latest_active_dir and latest_active_dir in existing_dirs:
+            # Latest active prerelease already exists locally
+            remote_dir = latest_active_dir
+            newest_dir = latest_active_dir
+            logger.debug(f"Using existing active prerelease: {remote_dir}")
+        elif latest_active_dir:
+            # Latest active prerelease found remotely but not local
+            remote_dir = latest_active_dir
+            newest_dir = None
+            logger.debug(f"Found remote active prerelease: {remote_dir}")
+        else:
+            # No active prerelease found, fall back to directory scanning
+            remote_dir = None
+            newest_dir = None
+            logger.debug("No active prerelease found in commit history")
+    except Exception as exc:
+        logger.debug(f"Failed to get prerelease commit history: {exc}")
+        history_entries = []
+        remote_dir = None
         newest_dir = None
 
-    # Find the latest remote prerelease directory
-    remote_dir = _find_latest_remote_prerelease_dir(
-        expected_version, github_token, force_refresh
-    )
+    # Fallback to directory scanning if commit history approach failed
     if not remote_dir:
-        return (False, [newest_dir]) if newest_dir else (False, [])
+        logger.debug("Falling back to directory scanning approach")
+
+        # Find newest matching prerelease directory
+        matching_dirs = [
+            d for d in existing_dirs if extract_version(d).startswith(expected_version)
+        ]
+
+        if matching_dirs:
+            # Sort by numeric version tuple first, fall back to string for tie-break
+            matching_dirs.sort(
+                key=lambda d: (
+                    _get_release_tuple(extract_version(d)) or (),
+                    extract_version(d),
+                ),
+                reverse=True,
+            )
+            newest_dir = matching_dirs[0]
+            logger.debug(f"Found existing prerelease: {newest_dir}")
+        else:
+            newest_dir = None
+
+        # Find the latest remote prerelease directory (old approach)
+        remote_dir = _find_latest_remote_prerelease_dir(
+            expected_version, github_token, force_refresh
+        )
+        if not remote_dir:
+            return (False, [newest_dir]) if newest_dir else (False, [])
 
     # Download assets for the selected prerelease
     files_downloaded, _ = _download_prerelease_assets(
@@ -2925,9 +3065,9 @@ def check_for_prereleases(
 
     if files_downloaded:
         return True, [remote_dir]
-    elif matching_dirs:
+    elif newest_dir:
         # Existing prerelease found but no new files downloaded
-        return False, [matching_dirs[0]]
+        return False, [newest_dir]
     else:
         return False, []
 
