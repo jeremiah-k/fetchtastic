@@ -47,6 +47,37 @@ def _deny_network():
                     yield
 
 
+@pytest.fixture(autouse=True)
+def _mock_commit_history(monkeypatch):
+    """Avoid real commit-history fetches during tests by returning empty history."""
+
+    monkeypatch.setattr(
+        downloader,
+        "_get_prerelease_commit_history",
+        lambda *args, **kwargs: [],
+    )
+
+
+@pytest.fixture(autouse=True)
+def _use_isolated_cache(tmp_path_factory, monkeypatch):
+    """Ensure cache writes go to an isolated temp directory for each test."""
+
+    cache_dir = tmp_path_factory.mktemp("fetchtastic-cache")
+    monkeypatch.setattr(
+        downloader.platformdirs,
+        "user_cache_dir",
+        lambda *_args, **_kwargs: str(cache_dir),
+    )
+
+    # Reset cached file path globals so newly patched cache dir is used
+    downloader._commit_cache_file = None
+    downloader._releases_cache_file = None
+    downloader._prerelease_dir_cache_file = None
+    downloader._prerelease_commit_history_file = None
+    downloader._repo_commit_change_cache_file = None
+    return cache_dir
+
+
 def mock_github_commit_timestamp(commit_timestamps):
     """
     Create a requests.get-compatible mock that returns commit timestamp data for specified commit hashes.
@@ -323,6 +354,7 @@ def test_prerelease_tracking_functionality(
     assert info["release"] == expected_clean_version
     assert info["prerelease_count"] > 0
     assert len(info["commits"]) > 0
+    assert "history" in info
 
 
 def test_prerelease_smart_pattern_matching():
@@ -469,6 +501,56 @@ def test_get_prerelease_tracking_info_error_handling():
 
             result = get_prerelease_tracking_info()
             assert result == {}  # Should handle decode errors gracefully
+
+
+def test_get_prerelease_tracking_info_includes_history(monkeypatch, tmp_path):
+    """Ensure commit history data is surfaced even when commits list is empty."""
+
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    tracking_file = cache_dir / "prerelease_tracking.json"
+    tracking_file.write_text(
+        json.dumps(
+            {
+                "version": "2.7.13",
+                "hash": "abc1234",
+                "commits": [],
+                "last_updated": "2025-01-01T00:00:00Z",
+            }
+        )
+    )
+
+    monkeypatch.setattr(downloader, "_ensure_cache_dir", lambda: str(cache_dir))
+
+    sample_history = [
+        {
+            "identifier": "2.7.14.e959000",
+            "dir": "firmware-2.7.14.e959000",
+            "base_version": "2.7.14",
+            "active": True,
+            "added_at": "2025-01-02T00:00:00Z",
+            "removed_at": None,
+        },
+        {
+            "identifier": "2.7.14.1c0c6b2",
+            "dir": "firmware-2.7.14.1c0c6b2",
+            "base_version": "2.7.14",
+            "active": False,
+            "added_at": "2025-01-01T00:00:00Z",
+            "removed_at": "2025-01-03T00:00:00Z",
+        },
+    ]
+
+    monkeypatch.setattr(
+        downloader,
+        "_get_prerelease_commit_history",
+        lambda *args, **kwargs: sample_history,
+    )
+
+    info = downloader.get_prerelease_tracking_info()
+    assert info["history"] == sample_history
+    assert info["prerelease_count"] == len(sample_history)
+    assert info["commits"] == []
 
 
 def test_update_prerelease_tracking_error_handling():
