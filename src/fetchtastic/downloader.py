@@ -2491,16 +2491,19 @@ def _get_prerelease_commit_history(
         with _cache_lock:
             cached = _prerelease_commit_history_cache.get(expected_version)
             if cached:
-                track_api_cache_hit()
                 entries, cached_at = cached
                 age = datetime.now(timezone.utc) - cached_at
                 if age.total_seconds() < PRERELEASE_HISTORY_CACHE_EXPIRY_SECONDS:
+                    track_api_cache_hit()
                     logger.debug(
                         "Using cached prerelease history for %s (cached %.0fs ago)",
                         expected_version,
                         age.total_seconds(),
                     )
                     return [dict(entry) for entry in entries]
+                else:
+                    # Cache entry exists but is expired
+                    track_api_cache_miss()
 
     return _refresh_prerelease_commit_history(
         expected_version, github_token, force_refresh, max_commits, allow_env_token
