@@ -1567,15 +1567,6 @@ def test_prerelease_history_cache_expiry(tmp_path_factory, monkeypatch):
     ]
 
     # Mock _fetch_recent_repo_commits to return sample commits
-    sample_commits = [
-        {
-            "sha": "fresh123abc456",
-            "commit": {
-                "message": "2.7.15.abc123 meshtastic/firmware@abc123",
-                "committer": {"date": "2025-01-03T10:00:00Z"},
-            },
-        }
-    ]
 
     # Reset cache loaded flag to force reload
     downloader._prerelease_commit_history_loaded = False
@@ -1642,7 +1633,6 @@ def test_fetch_recent_repo_commits_with_api_mocking(tmp_path_factory, monkeypatc
     """Test _fetch_recent_repo_commits with targeted API mocking instead of full function mock."""
 
     import json
-    from datetime import datetime, timedelta, timezone
 
     cache_dir = Path(tmp_path_factory.mktemp("api-mock-test"))
     cache_file = cache_dir / "prerelease_commits_cache.json"
