@@ -1406,6 +1406,10 @@ def get_prerelease_tracking_info(
     counted_commits = created_count if created_count else len(commits or [])
     active_count = max(created_count - deleted_count, 0) if created_count else None
 
+    # Fallback logic for latest prerelease identifier:
+    # 1. Use latest active identifier if available
+    # 2. Otherwise use the most recent commit
+    # 3. Otherwise use the first entry from formatted history
     latest_prerelease_identifier = (
         latest_active_identifier
         or (commits[-1] if commits else None)
@@ -2247,11 +2251,13 @@ def _build_simplified_prerelease_history(
                 )
 
                 # Update entry with addition info
-                if not entry["added_at"]:
-                    entry["added_at"] = timestamp
-                    entry["added_sha"] = sha
-                    entry["active"] = True
-                    entry["status"] = "active"
+                entry["added_at"] = timestamp
+                entry["added_sha"] = sha
+                entry["active"] = True
+                entry["status"] = "active"
+                # Clear any previous deletion status
+                entry["removed_at"] = None
+                entry["removed_sha"] = None
 
                 continue
 
@@ -2347,12 +2353,13 @@ def _get_prerelease_commit_history(
                 track_api_cache_hit()
                 entries, cached_at = cached
                 age = datetime.now(timezone.utc) - cached_at
-                logger.debug(
-                    "Using cached prerelease history for %s (cached %.0fs ago)",
-                    expected_version,
-                    age.total_seconds(),
-                )
-                return [dict(entry) for entry in entries]
+                if age.total_seconds() < PRERELEASE_HISTORY_CACHE_EXPIRY_SECONDS:
+                    logger.debug(
+                        "Using cached prerelease history for %s (cached %.0fs ago)",
+                        expected_version,
+                        age.total_seconds(),
+                    )
+                    return [dict(entry) for entry in entries]
 
     return _refresh_prerelease_commit_history(
         expected_version, github_token, force_refresh, max_commits, allow_env_token

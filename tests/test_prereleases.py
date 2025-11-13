@@ -1476,6 +1476,122 @@ def test_build_simplified_prerelease_history():
     )
 
 
+def test_build_simplified_prerelease_history_re_add_scenario():
+    """Test that re-adding a prerelease after deletion properly updates status to active."""
+
+    # Sample commits that add, delete, then re-add the same prerelease
+    re_add_commits = [
+        {
+            "sha": "add123abc456",
+            "commit": {
+                "message": "2.7.15.abc123 meshtastic/firmware@abc123",
+                "committer": {"date": "2025-01-01T10:00:00Z"},
+            },
+        },
+        {
+            "sha": "del456def789",
+            "commit": {
+                "message": "Delete firmware-2.7.15.abc123 directory",
+                "committer": {"date": "2025-01-02T10:00:00Z"},
+            },
+        },
+        {
+            "sha": "readd789ghi012",
+            "commit": {
+                "message": "2.7.15.abc123 meshtastic/firmware@abc123",
+                "committer": {"date": "2025-01-03T10:00:00Z"},
+            },
+        },
+    ]
+
+    result = downloader._build_simplified_prerelease_history("2.7.15", re_add_commits)
+
+    # Should have 1 entry for version 2.7.15 (re-added, so active)
+    assert len(result) == 1
+
+    entry = result[0]
+    assert entry["identifier"] == "2.7.15.abc123"
+    assert entry["directory"] == "firmware-2.7.15.abc123"
+    assert entry["base_version"] == "2.7.15"
+    assert entry["commit_hash"] == "abc123"
+    # After re-add, status should be active
+    assert entry["status"] == "active"
+    assert entry["active"] is True
+    # added_at should remain the first add time
+    assert entry["added_at"] == "2025-01-01T10:00:00Z"
+    assert entry["added_sha"] == "add123abc456"
+    # removed_at should be cleared after re-add
+    assert entry["removed_at"] is None
+    assert entry["removed_sha"] is None
+
+
+def test_prerelease_history_cache_expiry(tmp_path_factory, monkeypatch):
+    """Test that prerelease history cache expiry works correctly."""
+
+    import json
+    from datetime import datetime, timedelta, timezone
+
+    cache_dir = Path(tmp_path_factory.mktemp("history-cache-test"))
+    cache_file = cache_dir / "prerelease_history_cache.json"
+
+    # Create expired cache (older than 2 minutes)
+    expired_time = (datetime.now(timezone.utc) - timedelta(minutes=3)).isoformat()
+    expired_cache = {
+        "2.7.15": {
+            "entries": [{"identifier": "2.7.15.test123", "status": "active"}],
+            "cached_at": expired_time,
+        }
+    }
+    cache_file.write_text(json.dumps(expired_cache))
+
+    monkeypatch.setattr(downloader, "_ensure_cache_dir", lambda: str(cache_dir))
+
+    # Mock the refresh function to return fresh data
+    fresh_entries = [{"identifier": "2.7.15.fresh456", "status": "active"}]
+
+    with patch(
+        "fetchtastic.downloader._refresh_prerelease_commit_history"
+    ) as mock_refresh:
+        mock_refresh.return_value = fresh_entries
+
+        # Reset cache loaded flag to force reload
+        downloader._prerelease_commit_history_loaded = False
+        downloader._prerelease_commit_history_cache.clear()
+
+        # Call the function - should refresh due to expired cache
+        result = downloader._get_prerelease_commit_history("2.7.15")
+
+        # Should return fresh data
+        assert result == fresh_entries
+        mock_refresh.assert_called_once_with("2.7.15", None, False, 40, True)
+
+    # Test with valid cache (less than 2 minutes old)
+    valid_time = (datetime.now(timezone.utc) - timedelta(seconds=30)).isoformat()
+    valid_cache = {
+        "2.7.16": {
+            "entries": [{"identifier": "2.7.16.cached789", "status": "active"}],
+            "cached_at": valid_time,
+        }
+    }
+    cache_file.write_text(json.dumps(valid_cache))
+
+    # Reset cache loaded flag to force reload
+    downloader._prerelease_commit_history_loaded = False
+    downloader._prerelease_commit_history_cache.clear()
+
+    with patch(
+        "fetchtastic.downloader._refresh_prerelease_commit_history"
+    ) as mock_refresh:
+        # Call the function - should use cache
+        result = downloader._get_prerelease_commit_history("2.7.16")
+
+        # Should return cached data
+        assert len(result) == 1
+        assert result[0]["identifier"] == "2.7.16.cached789"
+        # Should not have called refresh
+        mock_refresh.assert_not_called()
+
+
 def test_build_simplified_prerelease_history_edge_cases():
     """Test edge cases and malformed commit messages."""
 
