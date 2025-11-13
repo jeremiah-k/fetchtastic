@@ -2252,6 +2252,7 @@ def _build_simplified_prerelease_history(
                 # Update entry with addition info
                 if not entry.get("added_at"):
                     entry["added_at"] = timestamp
+                if not entry.get("added_sha"):
                     entry["added_sha"] = sha
                 entry["active"] = True
                 entry["status"] = "active"
