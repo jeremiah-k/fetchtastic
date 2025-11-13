@@ -70,6 +70,11 @@ from fetchtastic.constants import (
 # Default values for prerelease entries
 _DEFAULT_PRERELEASE_ACTIVE = False
 _DEFAULT_PRERELEASE_STATUS = "unknown"
+
+# Default values for prerelease entries
+_DEFAULT_PRERELEASE_ACTIVE = False
+_DEFAULT_PRERELEASE_STATUS = "unknown"
+
 from fetchtastic.device_hardware import DeviceHardwareManager
 from fetchtastic.log_utils import logger
 from fetchtastic.setup_config import display_version_info, get_upgrade_command

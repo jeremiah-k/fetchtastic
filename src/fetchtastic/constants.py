@@ -56,6 +56,14 @@ PRERELEASE_DELETE_COMMIT_PATTERN = (
     r"^Delete firmware-(\d+\.\d+\.\d+)\.([a-f0-9]{6,})\s+directory"
 )
 
+# Default values for prerelease entries
+DEFAULT_PRERELEASE_ACTIVE = False
+DEFAULT_PRERELEASE_STATUS = "unknown"
+DEFAULT_PRERELEASE_COMMITS_TO_FETCH = 40
+DEFAULT_FIRMWARE_VERSIONS_TO_KEEP = 2
+DEFAULT_ANDROID_VERSIONS_TO_KEEP = 2
+EXECUTABLE_PERMISSIONS = 0o755
+
 
 # Directories that Fetchtastic manages and can safely clean
 MANAGED_DIRECTORIES = (
