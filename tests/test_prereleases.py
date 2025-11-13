@@ -1480,12 +1480,13 @@ def test_build_simplified_prerelease_history_re_add_scenario():
     """Test that re-adding a prerelease after deletion properly updates status to active."""
 
     # Sample commits that add, delete, then re-add the same prerelease
+    # Commits in newest-to-oldest order (as returned by GitHub API)
     re_add_commits = [
         {
-            "sha": "add123abc456",
+            "sha": "readd789ghi012",
             "commit": {
                 "message": "2.7.15.abc123 meshtastic/firmware@abc123",
-                "committer": {"date": "2025-01-01T10:00:00Z"},
+                "committer": {"date": "2025-01-03T10:00:00Z"},
             },
         },
         {
@@ -1496,10 +1497,10 @@ def test_build_simplified_prerelease_history_re_add_scenario():
             },
         },
         {
-            "sha": "readd789ghi012",
+            "sha": "add123abc456",
             "commit": {
                 "message": "2.7.15.abc123 meshtastic/firmware@abc123",
-                "committer": {"date": "2025-01-03T10:00:00Z"},
+                "committer": {"date": "2025-01-01T10:00:00Z"},
             },
         },
     ]
