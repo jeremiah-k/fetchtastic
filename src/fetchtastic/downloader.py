@@ -11,7 +11,7 @@ import threading
 import time
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import IO, TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
 
 import platformdirs
@@ -1322,7 +1322,9 @@ def _sort_key(entry: Dict[str, Any]) -> tuple:
 
 
 def get_prerelease_tracking_info(
-    github_token: Optional[str] = None, force_refresh: bool = False
+    github_token: Optional[str] = None,
+    force_refresh: bool = False,
+    allow_env_token: bool = True,
 ):
     """
     Return a summary of prerelease tracking stored in the user's prerelease_tracking.json.
@@ -1368,6 +1370,7 @@ def get_prerelease_tracking_info(
                 expected_prerelease_version,
                 github_token=github_token,
                 force_refresh=force_refresh,
+                allow_env_token=allow_env_token,
             )
         except (
             requests.RequestException,
@@ -2054,10 +2057,23 @@ def _fetch_recent_repo_commits(
                 cache_data = json.load(f)
 
             # Check if cache is still valid
-            cached_at = datetime.fromisoformat(
-                cache_data.get("cached_at", "1970-01-01")
-            )
-            age = datetime.now(timezone.utc) - cached_at
+            raw_cached_at = cache_data.get("cached_at")
+            if isinstance(raw_cached_at, str):
+                try:
+                    cached_at = datetime.fromisoformat(
+                        raw_cached_at.replace("Z", "+00:00")
+                    )
+                    if cached_at.tzinfo is None:
+                        cached_at = cached_at.replace(tzinfo=timezone.utc)
+                    age = datetime.now(timezone.utc) - cached_at
+                except (ValueError, TypeError):
+                    logger.debug(
+                        "Invalid cached_at timestamp format, treating as expired"
+                    )
+                    age = timedelta(days=1)  # Force expiry
+            else:
+                logger.debug("Missing cached_at timestamp, treating as expired")
+                age = timedelta(days=1)  # Force expiry
 
             if age.total_seconds() < PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS:
                 logger.debug(
@@ -2067,7 +2083,7 @@ def _fetch_recent_repo_commits(
                 return cache_data.get("commits", [])
             else:
                 logger.debug(f"Commits cache expired (age: {age.total_seconds():.1f}s)")
-    except (json.JSONDecodeError, KeyError, ValueError, OSError) as e:
+    except (json.JSONDecodeError, KeyError, ValueError, OSError, TypeError) as e:
         logger.debug(f"Error reading commits cache: {e}")
 
     # Cache miss or expired - fetch from API
@@ -2082,7 +2098,7 @@ def _fetch_recent_repo_commits(
 
     try:
         while len(all_commits) < max_commits:
-            params = {"sha": "master", "per_page": per_page, "page": page}
+            params = {"per_page": per_page, "page": page}
 
             response = make_github_api_request(
                 url,
@@ -2147,6 +2163,27 @@ def _fetch_recent_repo_commits(
     return []
 
 
+def _create_default_prerelease_entry(
+    directory: str,
+    identifier: str,
+    base_version: str,
+    commit_hash: str,
+) -> Dict[str, Any]:
+    """Create a default prerelease history entry dictionary."""
+    return {
+        "directory": directory,
+        "identifier": identifier,
+        "base_version": base_version,
+        "commit_hash": commit_hash,
+        "added_at": None,
+        "removed_at": None,
+        "added_sha": None,
+        "removed_sha": None,
+        "active": False,
+        "status": "unknown",
+    }
+
+
 def _build_simplified_prerelease_history(
     expected_version: str,
     commits: List[Dict[str, Any]],
@@ -2156,6 +2193,10 @@ def _build_simplified_prerelease_history(
     This function creates a cleaner, simpler structure that tracks prerelease
     directories and their status (active/deleted) based on commit history.
     Uses an optimized approach that parses commit messages instead of making API calls.
+
+    NOTE: This function relies on parsing commit messages from the meshtastic.github.io
+    repository. If the commit message format changes in that repository, the regex
+    patterns may fail and this feature could break silently.
     """
 
     if not expected_version or not commits:
@@ -2184,7 +2225,7 @@ def _build_simplified_prerelease_history(
         # Pattern 1: Adding a prerelease
         # Examples: "2.7.14.e959000 meshtastic/firmware@e959000"
         add_match = re.match(
-            r"^(\d+\.\d+\.\d+)\.([a-f0-9]{6,})\s+meshtastic/firmware@([a-f0-9]{6,})",
+            r"^(\d+\.\d+\.\d+)\.([a-f0-9]{6,})\s+meshtastic/firmware@(?:[a-f0-9]{6,})",
             commit_msg,
         )
 
@@ -2196,18 +2237,9 @@ def _build_simplified_prerelease_history(
 
                 entry = entries.setdefault(
                     directory,
-                    {
-                        "directory": directory,
-                        "identifier": identifier,
-                        "base_version": expected_version,
-                        "commit_hash": short_hash,
-                        "added_at": None,
-                        "removed_at": None,
-                        "added_sha": sha,
-                        "removed_sha": None,
-                        "active": False,
-                        "status": "unknown",
-                    },
+                    _create_default_prerelease_entry(
+                        directory, identifier, expected_version, short_hash
+                    ),
                 )
 
                 # Update entry with addition info
@@ -2233,18 +2265,9 @@ def _build_simplified_prerelease_history(
 
                 entry = entries.setdefault(
                     directory,
-                    {
-                        "directory": directory,
-                        "identifier": identifier,
-                        "base_version": expected_version,
-                        "commit_hash": short_hash,
-                        "added_at": None,
-                        "removed_at": None,
-                        "added_sha": None,
-                        "removed_sha": None,
-                        "active": False,
-                        "status": "unknown",
-                    },
+                    _create_default_prerelease_entry(
+                        directory, identifier, expected_version, short_hash
+                    ),
                 )
 
                 # Update entry with deletion info
@@ -2274,11 +2297,13 @@ def _refresh_prerelease_commit_history(
     github_token: Optional[str],
     force_refresh: bool,
     max_commits: int,
+    allow_env_token: bool = True,
 ) -> List[Dict[str, Any]]:
     """Fetch and cache simplified prerelease commit history."""
     commits = _fetch_recent_repo_commits(
         max_commits,
         github_token=github_token,
+        allow_env_token=allow_env_token,
         force_refresh=force_refresh,
     )
     if not commits:
@@ -2302,6 +2327,7 @@ def _get_prerelease_commit_history(
     github_token: Optional[str] = None,
     force_refresh: bool = False,
     max_commits: int = DEFAULT_PRERELEASE_COMMITS_TO_FETCH,
+    allow_env_token: bool = True,
 ) -> List[Dict[str, Any]]:
     """Return cached or freshly computed prerelease commit history for a version."""
 
@@ -2325,7 +2351,7 @@ def _get_prerelease_commit_history(
                 return [dict(entry) for entry in entries]
 
     return _refresh_prerelease_commit_history(
-        expected_version, github_token, force_refresh, max_commits
+        expected_version, github_token, force_refresh, max_commits, allow_env_token
     )
 
 
@@ -2604,6 +2630,7 @@ def _find_latest_remote_prerelease_dir(
     expected_version: str,
     github_token: Optional[str] = None,
     force_refresh: bool = False,
+    allow_env_token: bool = True,
 ) -> Optional[str]:
     """
     Select the newest remote prerelease directory that matches an expected prerelease base version.
@@ -2622,6 +2649,7 @@ def _find_latest_remote_prerelease_dir(
         directories = _fetch_prerelease_directories(
             force_refresh=force_refresh,
             github_token=github_token,
+            allow_env_token=allow_env_token,
         )
         if not directories:
             logger.info("No firmware directories found in the repository.")
@@ -2692,7 +2720,12 @@ def _find_latest_remote_prerelease_dir(
                 had_entry = cache_key in _commit_timestamp_cache
 
             timestamp = get_commit_timestamp(
-                "meshtastic", "firmware", commit_hash, github_token, force_refresh
+                "meshtastic",
+                "firmware",
+                commit_hash,
+                github_token,
+                force_refresh,
+                allow_env_token,
             )
 
             fetched_new = False
@@ -2903,6 +2936,7 @@ def check_for_prereleases(
     device_manager=None,
     github_token: Optional[str] = None,
     force_refresh: bool = False,
+    allow_env_token: bool = True,
 ) -> Tuple[bool, List[str]]:
     """
     Detect and download matching prerelease firmware assets for the expected prerelease version.
@@ -2960,6 +2994,7 @@ def check_for_prereleases(
             expected_version,
             github_token=github_token,
             force_refresh=force_refresh,
+            allow_env_token=allow_env_token,
         )
 
         # Find the latest active prerelease from commit history
@@ -3021,7 +3056,7 @@ def check_for_prereleases(
 
         # Find the latest remote prerelease directory (old approach)
         remote_dir = _find_latest_remote_prerelease_dir(
-            expected_version, github_token, force_refresh
+            expected_version, github_token, force_refresh, allow_env_token
         )
         if not remote_dir:
             return (False, [newest_dir]) if newest_dir else (False, [])
@@ -3595,6 +3630,7 @@ def _process_firmware_downloads(
                         device_manager=device_manager,
                         github_token=config.get("GITHUB_TOKEN"),
                         force_refresh=force_refresh,
+                        allow_env_token=config.get("ALLOW_ENV_TOKEN", True),
                     )
                 )
                 if prerelease_found:

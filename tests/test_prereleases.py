@@ -58,7 +58,7 @@ def _mock_commit_history(monkeypatch):
     monkeypatch.setattr(
         downloader,
         "_get_prerelease_commit_history",
-        lambda *args, **kwargs: [],
+        lambda *_args, **_kwargs: [],
     )
 
 
@@ -78,6 +78,8 @@ def _use_isolated_cache(tmp_path_factory, monkeypatch):
     downloader._releases_cache_file = None
     downloader._prerelease_dir_cache_file = None
     downloader._prerelease_commit_history_file = None
+    downloader._prerelease_dir_cache_loaded = False
+    downloader._prerelease_commit_history_loaded = False
     return cache_dir
 
 
@@ -216,13 +218,13 @@ def test_fetch_prerelease_directories_uses_token(monkeypatch):
         _fake_fetch_repo_directories,
     )
 
-    downloader._fetch_prerelease_directories(
+    downloader._fetch_prerelease_directories(  # noqa: S106
         force_refresh=True,
-        github_token="fake_token_for_testing_only",
+        github_token="fake_token_for_testing_only",  # noqa: S105
         allow_env_token=False,
     )
 
-    assert captured["github_token"] == "fake_token_for_testing_only"
+    assert captured["github_token"] == "fake_token_for_testing_only"  # noqa: S105
     assert captured["allow_env_token"] is False
 
 
@@ -579,9 +581,10 @@ def test_get_prerelease_tracking_info_includes_history(monkeypatch, tmp_path):
 
     info = downloader.get_prerelease_tracking_info()
 
-    # Check that history entries have the new display formatting fields
+    # Check that history entries have new display formatting fields
     formatted_history = info["history"]
     assert len(formatted_history) == len(sample_history)
+    assert info.get("expected_version") == "2.7.14"
 
     # Check first entry (active)
     first_entry = formatted_history[0]
