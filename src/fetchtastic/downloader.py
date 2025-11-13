@@ -71,10 +71,6 @@ from fetchtastic.constants import (
 _DEFAULT_PRERELEASE_ACTIVE = False
 _DEFAULT_PRERELEASE_STATUS = "unknown"
 
-# Default values for prerelease entries
-_DEFAULT_PRERELEASE_ACTIVE = False
-_DEFAULT_PRERELEASE_STATUS = "unknown"
-
 from fetchtastic.device_hardware import DeviceHardwareManager
 from fetchtastic.log_utils import logger
 from fetchtastic.setup_config import display_version_info, get_upgrade_command
@@ -1616,6 +1612,57 @@ def calculate_expected_prerelease_version(latest_version: str) -> str:
     patch = latest_tuple[2] if len(latest_tuple) > 2 else 0
     expected_patch = patch + 1
     return f"{major}.{minor}.{expected_patch}"
+
+
+def _display_prerelease_summary(tracking_info: Dict[str, Any]) -> None:
+    """Logs a summary of prerelease tracking information."""
+    if not tracking_info:
+        return
+
+    base_version = tracking_info.get("release") or "unknown"
+    history_entries: List[Dict[str, Any]] = tracking_info.get("history") or []
+    created = tracking_info.get("history_created", 0)
+    deleted = tracking_info.get("history_deleted", 0)
+    active = tracking_info.get("history_active")
+
+    created_display = created or tracking_info.get("prerelease_count", 0)
+    if active is None:
+        active = max(created_display - deleted, 0)
+
+    if created_display:
+        logger.info(
+            "Prereleases since %s: %d created, %d deleted, %d active",
+            base_version,
+            created_display,
+            deleted,
+            active,
+        )
+
+    history_labels = [
+        label
+        for entry in history_entries
+        if (
+            label := (
+                entry.get("markup_label")
+                or entry.get("display_name")
+                or entry.get("identifier")
+                or entry.get("dir")
+            )
+        )
+    ]
+
+    if history_labels:
+        history_base = (
+            history_entries[0].get("base_version")
+            if history_entries
+            else calculate_expected_prerelease_version(base_version)
+        )
+        history_list = ", ".join(history_labels)
+        logger.info(
+            "Prerelease commits for %s: %s",
+            history_base or "next",
+            history_list,
+        )
 
 
 # Global cache for commit timestamps to avoid repeated API calls
@@ -3762,54 +3809,7 @@ def _process_firmware_downloads(
                     github_token=config.get("GITHUB_TOKEN"),
                     force_refresh=force_refresh,
                 )
-                if tracking_info:
-                    base_version = tracking_info.get("release") or "unknown"
-                    latest_prerelease_version = tracking_info.get("latest_prerelease")
-                    history_entries: List[Dict[str, Any]] = (
-                        tracking_info.get("history") or []
-                    )
-                    created = tracking_info.get("history_created", 0)
-                    deleted = tracking_info.get("history_deleted", 0)
-                    active = tracking_info.get("history_active")
-
-                    created_display = created or tracking_info.get(
-                        "prerelease_count", 0
-                    )
-                    if active is None:
-                        active = max(created_display - deleted, 0)
-
-                    if created_display:
-                        logger.info(
-                            "Prereleases since %s: %d created, %d deleted, %d active",
-                            base_version,
-                            created_display,
-                            deleted,
-                            active,
-                        )
-
-                    history_labels: List[str] = []
-                    for entry in history_entries:
-                        label = (
-                            entry.get("markup_label")
-                            or entry.get("display_name")
-                            or entry.get("identifier")
-                            or entry.get("dir")
-                        )
-                        if label:
-                            history_labels.append(label)
-
-                    if history_labels:
-                        history_base = (
-                            history_entries[0].get("base_version")
-                            if history_entries
-                            else calculate_expected_prerelease_version(base_version)
-                        )
-                        history_list = ", ".join(history_labels)
-                        logger.info(
-                            "Prerelease commits for %s: %s",
-                            history_base or "next",
-                            history_list,
-                        )
+                _display_prerelease_summary(tracking_info)
             else:
                 logger.info("No latest release tag found. Skipping pre-release check.")
     elif not config.get("SELECTED_FIRMWARE_ASSETS", []):
