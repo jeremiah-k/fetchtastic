@@ -2106,33 +2106,6 @@ def _fetch_recent_repo_commits(
     return []
 
 
-def _fetch_commit_detail(
-    sha: str, github_token: Optional[str] = None, allow_env_token: bool = True
-) -> Optional[Dict[str, Any]]:
-    """Fetch commit detail (including file list) for the given SHA."""
-
-    url = f"{GITHUB_API_BASE}/meshtastic/meshtastic.github.io/commits/{sha}"
-    try:
-        response = make_github_api_request(
-            url,
-            github_token=github_token,
-            allow_env_token=allow_env_token,
-            timeout=GITHUB_API_TIMEOUT,
-        )
-        detail = response.json()
-        if isinstance(detail, dict):
-            return detail
-        logger.warning("Unexpected commit detail type for %s: %s", sha, type(detail))
-    except requests.HTTPError as exc:
-        logger.warning("HTTP error fetching commit %s: %s", sha, exc)
-    except requests.RequestException as exc:
-        logger.warning("Network error fetching commit %s: %s", sha, exc)
-    except (ValueError, json.JSONDecodeError) as exc:
-        logger.error("Error decoding commit %s details: %s", sha, exc, exc_info=True)
-
-    return None
-
-
 def _build_simplified_prerelease_history(
     expected_version: str,
     commits: List[Dict[str, Any]],
@@ -3603,7 +3576,6 @@ def _process_firmware_downloads(
                     logger.info("No new pre-release firmware found.")
 
                 # Display prerelease tracking information
-                os.path.join(paths_and_urls["download_dir"], "firmware", "prerelease")
                 tracking_info = get_prerelease_tracking_info(
                     github_token=config.get("GITHUB_TOKEN"),
                     force_refresh=force_refresh,
