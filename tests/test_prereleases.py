@@ -195,6 +195,7 @@ def test_cleanup_superseded_prereleases_handles_commit_suffix(tmp_path):
     assert future_dir.exists()
 
 
+# Temporary fix for indentation issues
 def test_fetch_prerelease_directories_uses_token(monkeypatch):
     """Ensure remote directory listing honours explicit GitHub token settings."""
 
@@ -213,11 +214,11 @@ def test_fetch_prerelease_directories_uses_token(monkeypatch):
 
     downloader._fetch_prerelease_directories(
         force_refresh=True,
-        github_token="abc123",
+        github_token="fake_token_for_testing_only",
         allow_env_token=False,
     )
 
-    assert captured["github_token"] == "abc123"
+    assert captured["github_token"] == "fake_token_for_testing_only"
     assert captured["allow_env_token"] is False
 
 

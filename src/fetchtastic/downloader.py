@@ -2256,7 +2256,7 @@ def _build_simplified_prerelease_history(
         added_at = entry.get("added_at") or ""
         removed_at = entry.get("removed_at") or ""
         # Use the most recent timestamp for sorting
-        most_recent = removed_at if removed_at > added_at else added_at
+        most_recent = max(added_at, removed_at)
         return (most_recent, entry.get("identifier", ""))
 
     entry_list.sort(key=_sort_key, reverse=True)
