@@ -1776,6 +1776,69 @@ def _load_json_cache_with_expiry(
         return {}
 
 
+def _load_and_save_json_cache(
+    cache_file: str,
+    expiry_seconds: int,
+    fetch_data_func: Callable[[], Optional[List[Dict[str, Any]]]],
+    data_key: str = "data",
+    force_refresh: bool = False,
+) -> List[Dict[str, Any]]:
+    """
+    Load JSON data from a cache file if not expired, otherwise fetch and save.
+
+    Args:
+        cache_file: Path to the cache file.
+        expiry_seconds: Cache expiry time in seconds.
+        fetch_data_func: Function to fetch data if cache is invalid/missing.
+        data_key: The key in the JSON cache where the data is stored.
+        force_refresh: If True, forces a refresh by ignoring the cache.
+
+    Returns:
+        The cached or freshly fetched data.
+    """
+    if force_refresh:
+        try:
+            os.remove(cache_file)
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            logger.debug(f"Failed to remove cache for refresh: {exc}")
+
+    try:
+        if not force_refresh and os.path.exists(cache_file):
+            with open(cache_file, "r", encoding="utf-8") as f:
+                cache_data = json.load(f)
+            cached_at_str = cache_data.get("cached_at")
+            if isinstance(cached_at_str, str):
+                cached_at = datetime.fromisoformat(cached_at_str.replace("Z", "+00:00"))
+                if cached_at.tzinfo is None:
+                    cached_at = cached_at.replace(tzinfo=timezone.utc)
+                age = datetime.now(timezone.utc) - cached_at
+                if age.total_seconds() < expiry_seconds:
+                    logger.debug(
+                        f"Using cached data (age: {age.total_seconds():.1f}s)"
+                    )
+                    track_api_cache_hit()
+                    return cache_data.get(data_key, [])
+    except (json.JSONDecodeError, KeyError, ValueError, OSError, TypeError) as e:
+        logger.debug(f"Error reading cache: {e}")
+
+    logger.debug("Fetching data from API (cache miss/expired)")
+    track_api_cache_miss()
+    data = fetch_data_func()
+    if data is not None:
+        try:
+            cache_data = {
+                "cached_at": datetime.now(timezone.utc).isoformat(),
+                data_key: data,
+            }
+            if _atomic_write_json(cache_file, cache_data):
+                logger.debug(f"Cached {len(data)} items to {cache_file}")
+        except (OSError, TypeError) as e:
+            logger.debug(f"Failed to cache data: {e}")
+    return data if data is not None else []
+
+
 def _load_prerelease_dir_cache() -> None:
     """
     Load the on-disk prerelease directory cache into memory, validating entries and applying expiry.
@@ -2043,140 +2106,51 @@ def _fetch_recent_repo_commits(
     allow_env_token: bool = True,
     force_refresh: bool = False,
 ) -> List[Dict[str, Any]]:
-    """Fetch recent commits from meshtastic.github.io for prerelease tracking.
-
-    Uses pagination to efficiently fetch commits without excessive API calls.
-    Caches raw API response to avoid repeated calls.
-    """
-
-    # Check cache first
+    """Fetch recent commits from meshtastic.github.io for prerelease tracking."""
     cache_file = os.path.join(_ensure_cache_dir(), PRERELEASE_COMMITS_CACHE_FILE)
 
-    # If force_refresh is True, remove cache file to bypass cache
-    if force_refresh:
+    def _fetch_data() -> Optional[List[Dict[str, Any]]]:
+        all_commits = []
+        per_page = min(100, max_commits)
+        page = 1
+        url = f"{GITHUB_API_BASE}/meshtastic/meshtastic.github.io/commits"
         try:
-            os.remove(cache_file)
-        except FileNotFoundError:
-            pass
-        except OSError as exc:
-            logger.debug(
-                f"Failed to remove prerelease commits cache for refresh: {exc}"
-            )
-
-    try:
-        if not force_refresh and os.path.exists(cache_file):
-            with open(cache_file, "r", encoding="utf-8") as f:
-                cache_data = json.load(f)
-
-            # Check if cache is still valid
-            raw_cached_at = cache_data.get("cached_at")
-            if isinstance(raw_cached_at, str):
-                try:
-                    cached_at = datetime.fromisoformat(
-                        raw_cached_at.replace("Z", "+00:00")
-                    )
-                    if cached_at.tzinfo is None:
-                        cached_at = cached_at.replace(tzinfo=timezone.utc)
-                    age = datetime.now(timezone.utc) - cached_at
-                except (ValueError, TypeError):
-                    logger.debug(
-                        "Invalid cached_at timestamp format, treating as expired"
-                    )
-                    age = timedelta(
-                        seconds=PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS + 1
-                    )  # Force expiry
-            else:
-                logger.debug("Missing cached_at timestamp, treating as expired")
-                age = timedelta(
-                    seconds=PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS + 1
-                )  # Force expiry
-
-            if age.total_seconds() < PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS:
-                logger.debug(
-                    f"Using cached commits data (age: {age.total_seconds():.1f}s)"
+            while len(all_commits) < max_commits:
+                params = {"per_page": per_page, "page": page}
+                response = make_github_api_request(
+                    url,
+                    github_token=github_token,
+                    allow_env_token=allow_env_token,
+                    params=params,
+                    timeout=GITHUB_API_TIMEOUT,
                 )
-                track_api_cache_hit()
-                return cache_data.get("commits", [])
-            else:
-                logger.debug(f"Commits cache expired (age: {age.total_seconds():.1f}s)")
-    except (json.JSONDecodeError, KeyError, ValueError, OSError, TypeError) as e:
-        logger.debug(f"Error reading commits cache: {e}")
+                commits = response.json()
+                if not isinstance(commits, list):
+                    logger.warning(
+                        "Unexpected response when fetching repo commits: %s",
+                        type(commits).__name__,
+                    )
+                    break
+                if not commits:
+                    break
+                all_commits.extend(commits)
+                if len(commits) < per_page or len(all_commits) >= max_commits:
+                    break
+                page += 1
+            return all_commits[:max_commits]
+        except requests.RequestException as exc:
+            logger.warning("Could not fetch repo commits: %s", exc)
+        except (ValueError, KeyError) as exc:
+            logger.error("Error parsing repo commits response: %s", exc)
+        return None
 
-    # Cache miss or expired - fetch from API
-    logger.debug("Fetching commits from API (cache miss/expired)")
-    track_api_cache_miss()
-
-    all_commits = []
-    per_page = min(100, max_commits)  # GitHub max is 100 per page
-    page = 1
-
-    url = f"{GITHUB_API_BASE}/meshtastic/meshtastic.github.io/commits"
-
-    try:
-        while len(all_commits) < max_commits:
-            params = {"per_page": per_page, "page": page}
-
-            response = make_github_api_request(
-                url,
-                github_token=github_token,
-                allow_env_token=allow_env_token,
-                params=params,
-                timeout=GITHUB_API_TIMEOUT,
-            )
-            commits = response.json()
-
-            if not isinstance(commits, list):
-                logger.warning(
-                    "Unexpected response when fetching repo commits: %s",
-                    type(commits).__name__,
-                )
-                break
-
-            if not commits:  # No more commits available
-                break
-
-            all_commits.extend(commits)
-
-            # If we got fewer than per_page, we've reached the end
-            if len(commits) < per_page:
-                break
-
-            # Stop if we have enough commits
-            if len(all_commits) >= max_commits:
-                all_commits = all_commits[:max_commits]  # Trim excess
-                break
-
-            page += 1
-
-        logger.debug(
-            "Fetched %d repo commits for prerelease tracking (from %d pages)",
-            len(all_commits),
-            page,
-        )
-
-        # Save to cache
-        try:
-            cache_data = {
-                "cached_at": datetime.now(timezone.utc).isoformat(),
-                "commits": all_commits,
-            }
-            if _atomic_write_json(cache_file, cache_data):
-                logger.debug(f"Cached {len(all_commits)} commits to {cache_file}")
-            else:
-                logger.debug(f"Failed to cache commits to {cache_file}")
-        except (OSError, TypeError) as e:
-            logger.debug(f"Failed to cache commits: {e}")
-
-        return all_commits
-
-    except requests.HTTPError as exc:
-        logger.warning("HTTP error fetching repo commits: %s", exc)
-    except requests.RequestException as exc:
-        logger.warning("Could not fetch repo commits: %s", exc)
-    except (ValueError, KeyError) as exc:
-        logger.error("Error parsing repo commits response: %s", exc)
-
-    return []
+    return _load_and_save_json_cache(
+        cache_file,
+        PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS,
+        _fetch_data,
+        data_key="commits",
+        force_refresh=force_refresh,
+    )
 
 
 def _create_default_prerelease_entry(
