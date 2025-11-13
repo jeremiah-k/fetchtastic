@@ -11,7 +11,7 @@ import threading
 import time
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import IO, TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
 
 import platformdirs
@@ -51,12 +51,10 @@ from fetchtastic.constants import (
     MESHTASTIC_FIRMWARE_RELEASES_URL,
     MESHTASTIC_GITHUB_IO_CONTENTS_URL,
     NTFY_REQUEST_TIMEOUT,
-    PRERELEASE_ADD_COMMIT_PATTERN,
     PRERELEASE_COMMIT_HISTORY_FILE,
     PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS,
     PRERELEASE_COMMITS_CACHE_FILE,
     PRERELEASE_COMMITS_LEGACY_FILE,
-    PRERELEASE_DELETE_COMMIT_PATTERN,
     PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
     PRERELEASE_HISTORY_CACHE_EXPIRY_SECONDS,
     PRERELEASE_TRACKING_JSON_FILE,
@@ -1776,6 +1774,133 @@ def _load_json_cache_with_expiry(
         return {}
 
 
+def _load_single_blob_cache_with_expiry(
+    cache_file_path: str,
+    expiry_seconds: float,
+    force_refresh: bool = False,
+    cache_hit_callback: Optional[Callable[[], None]] = None,
+    cache_miss_callback: Optional[Callable[[], None]] = None,
+    cache_name: str = "cache",
+    data_key: str = "data",
+) -> Optional[Any]:
+    """
+    Load a single-blob JSON cache file and return the data if not expired.
+
+    This function handles caching for single-value data structures (like lists or single objects)
+    as opposed to dictionary-of-entries patterns handled by _load_json_cache_with_expiry.
+
+    Parameters:
+        cache_file_path (str): Filesystem path to the JSON cache file.
+        expiry_seconds (float): Maximum age in seconds for the cache to be considered valid.
+        force_refresh (bool): If True, bypass cache and delete the cache file.
+        cache_hit_callback (Callable[[], None], optional): Function to call on successful cache hit.
+        cache_miss_callback (Callable[[], None], optional): Function to call on cache miss/expiry.
+        cache_name (str): Human-readable name used in debug logs.
+        data_key (str): Key name for the cached data in the JSON structure.
+
+    Returns:
+        Optional[Any]: The cached data if valid and not expired, None otherwise.
+    """
+    # Handle force refresh by deleting cache file
+    if force_refresh:
+        try:
+            os.remove(cache_file_path)
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            logger.debug(f"Failed to remove {cache_name} cache for refresh: {exc}")
+
+    try:
+        if not force_refresh and os.path.exists(cache_file_path):
+            with open(cache_file_path, "r", encoding="utf-8") as f:
+                cache_data = json.load(f)
+
+            # Check if cache has expected structure
+            if not isinstance(cache_data, dict):
+                logger.debug(f"Invalid {cache_name} cache structure: not a dictionary")
+                if cache_miss_callback:
+                    cache_miss_callback()
+                return None
+
+            # Check if cache is still valid
+            raw_cached_at = cache_data.get("cached_at")
+            if isinstance(raw_cached_at, str):
+                try:
+                    cached_at = datetime.fromisoformat(
+                        raw_cached_at.replace("Z", "+00:00")
+                    )
+                    if cached_at.tzinfo is None:
+                        cached_at = cached_at.replace(tzinfo=timezone.utc)
+                    age = datetime.now(timezone.utc) - cached_at
+
+                    if age.total_seconds() < expiry_seconds:
+                        logger.debug(
+                            f"Using cached {cache_name} data (age: {age.total_seconds():.1f}s)"
+                        )
+                        if cache_hit_callback:
+                            cache_hit_callback()
+                        return cache_data.get(data_key)
+                    else:
+                        logger.debug(
+                            f"{cache_name.capitalize()} cache expired (age: {age.total_seconds():.1f}s)"
+                        )
+                except (ValueError, TypeError):
+                    logger.debug(
+                        f"Invalid cached_at timestamp in {cache_name} cache, treating as expired"
+                    )
+            else:
+                logger.debug(
+                    f"Missing cached_at timestamp in {cache_name} cache, treating as expired"
+                )
+
+            if cache_miss_callback:
+                cache_miss_callback()
+        else:
+            if cache_miss_callback:
+                cache_miss_callback()
+
+    except (json.JSONDecodeError, KeyError, ValueError, OSError, TypeError) as e:
+        logger.debug(f"Error reading {cache_name} cache: {e}")
+        if cache_miss_callback:
+            cache_miss_callback()
+
+    return None
+
+
+def _save_single_blob_cache(
+    cache_file_path: str,
+    data: Any,
+    cache_name: str = "cache",
+    data_key: str = "data",
+) -> bool:
+    """
+    Save data to a single-blob JSON cache file with timestamp.
+
+    Parameters:
+        cache_file_path (str): Filesystem path to the JSON cache file.
+        data (Any): The data to cache.
+        cache_name (str): Human-readable name used in debug logs.
+        data_key (str): Key name for the cached data in the JSON structure.
+
+    Returns:
+        bool: True if cache was saved successfully, False otherwise.
+    """
+    try:
+        cache_data = {
+            "cached_at": datetime.now(timezone.utc).isoformat(),
+            data_key: data,
+        }
+        if _atomic_write_json(cache_file_path, cache_data):
+            logger.debug(f"Cached data to {cache_file_path}")
+            return True
+        else:
+            logger.debug(f"Failed to cache data to {cache_file_path}")
+            return False
+    except (OSError, TypeError) as e:
+        logger.debug(f"Failed to cache {cache_name} data: {e}")
+        return False
+
+
 def _load_prerelease_dir_cache() -> None:
     """
     Load the on-disk prerelease directory cache into memory, validating entries and applying expiry.
@@ -2049,62 +2174,24 @@ def _fetch_recent_repo_commits(
     Caches raw API response to avoid repeated calls.
     """
 
-    # Check cache first
+    # Check cache first using generic helper
     cache_file = os.path.join(_ensure_cache_dir(), PRERELEASE_COMMITS_CACHE_FILE)
 
-    # If force_refresh is True, remove cache file to bypass cache
-    if force_refresh:
-        try:
-            os.remove(cache_file)
-        except FileNotFoundError:
-            pass
-        except OSError as exc:
-            logger.debug(
-                f"Failed to remove prerelease commits cache for refresh: {exc}"
-            )
+    cached_commits = _load_single_blob_cache_with_expiry(
+        cache_file_path=cache_file,
+        expiry_seconds=PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS,
+        force_refresh=force_refresh,
+        cache_hit_callback=track_api_cache_hit,
+        cache_miss_callback=track_api_cache_miss,
+        cache_name="commits",
+        data_key="commits",
+    )
 
-    try:
-        if not force_refresh and os.path.exists(cache_file):
-            with open(cache_file, "r", encoding="utf-8") as f:
-                cache_data = json.load(f)
-
-            # Check if cache is still valid
-            raw_cached_at = cache_data.get("cached_at")
-            if isinstance(raw_cached_at, str):
-                try:
-                    cached_at = datetime.fromisoformat(
-                        raw_cached_at.replace("Z", "+00:00")
-                    )
-                    if cached_at.tzinfo is None:
-                        cached_at = cached_at.replace(tzinfo=timezone.utc)
-                    age = datetime.now(timezone.utc) - cached_at
-                except (ValueError, TypeError):
-                    logger.debug(
-                        "Invalid cached_at timestamp format, treating as expired"
-                    )
-                    age = timedelta(
-                        seconds=PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS + 1
-                    )  # Force expiry
-            else:
-                logger.debug("Missing cached_at timestamp, treating as expired")
-                age = timedelta(
-                    seconds=PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS + 1
-                )  # Force expiry
-
-            if age.total_seconds() < PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS:
-                logger.debug(
-                    f"Using cached commits data (age: {age.total_seconds():.1f}s)"
-                )
-                track_api_cache_hit()
-                return cache_data.get("commits", [])
-            else:
-                logger.debug(f"Commits cache expired (age: {age.total_seconds():.1f}s)")
-    except (json.JSONDecodeError, KeyError, ValueError, OSError, TypeError) as e:
-        logger.debug(f"Error reading commits cache: {e}")
+    if cached_commits is not None:
+        return cached_commits
 
     # Cache miss or expired - fetch from API
     logger.debug("Fetching commits from API (cache miss/expired)")
-    track_api_cache_miss()
 
     all_commits = []
     per_page = min(100, max_commits)  # GitHub max is 100 per page
@@ -2154,18 +2241,13 @@ def _fetch_recent_repo_commits(
             page,
         )
 
-        # Save to cache
-        try:
-            cache_data = {
-                "cached_at": datetime.now(timezone.utc).isoformat(),
-                "commits": all_commits,
-            }
-            if _atomic_write_json(cache_file, cache_data):
-                logger.debug(f"Cached {len(all_commits)} commits to {cache_file}")
-            else:
-                logger.debug(f"Failed to cache commits to {cache_file}")
-        except (OSError, TypeError) as e:
-            logger.debug(f"Failed to cache commits: {e}")
+        # Save to cache using generic helper
+        _save_single_blob_cache(
+            cache_file_path=cache_file,
+            data=all_commits,
+            cache_name="commits",
+            data_key="commits",
+        )
 
         return all_commits
 
