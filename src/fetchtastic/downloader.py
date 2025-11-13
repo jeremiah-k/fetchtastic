@@ -51,10 +51,12 @@ from fetchtastic.constants import (
     MESHTASTIC_FIRMWARE_RELEASES_URL,
     MESHTASTIC_GITHUB_IO_CONTENTS_URL,
     NTFY_REQUEST_TIMEOUT,
+    PRERELEASE_ADD_COMMIT_PATTERN,
     PRERELEASE_COMMIT_HISTORY_FILE,
     PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS,
     PRERELEASE_COMMITS_CACHE_FILE,
     PRERELEASE_COMMITS_LEGACY_FILE,
+    PRERELEASE_DELETE_COMMIT_PATTERN,
     PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
     PRERELEASE_HISTORY_CACHE_EXPIRY_SECONDS,
     PRERELEASE_TRACKING_JSON_FILE,
@@ -111,12 +113,8 @@ PRERELEASE_VERSION_RX = re.compile(
 )
 HASH_SUFFIX_VERSION_RX = re.compile(r"^(\d+(?:\.\d+)*)\.([A-Za-z0-9][A-Za-z0-9.-]*)$")
 VERSION_BASE_RX = re.compile(r"^(\d+(?:\.\d+)*)")
-PRERELEASE_ADD_RX = re.compile(
-    r"^(\d+\.\d+\.\d+)\.([a-f0-9]{6,})\s+meshtastic/firmware@(?:[a-f0-9]{6,})"
-)
-PRERELEASE_DELETE_RX = re.compile(
-    r"^Delete firmware-(\d+\.\d+\.\d+)\.([a-f0-9]{6,})\s+directory"
-)
+PRERELEASE_ADD_RX = re.compile(PRERELEASE_ADD_COMMIT_PATTERN)
+PRERELEASE_DELETE_RX = re.compile(PRERELEASE_DELETE_COMMIT_PATTERN)
 
 
 def _normalize_version(
@@ -2338,6 +2336,7 @@ def _build_simplified_prerelease_history(
                 )
 
                 # Update entry with addition info
+                # Preserve original creation timestamp when re-adding
                 if not entry.get("added_at"):
                     entry["added_at"] = timestamp
                 if not entry.get("added_sha"):
@@ -3102,6 +3101,9 @@ def check_for_prereleases(
             if entry.get("status") == "active" and entry.get("directory"):
                 latest_active_dir = entry["directory"]
                 break
+
+        if latest_active_dir:
+            logger.info("Using commit history for prerelease detection")
 
         # Determine which directory to use
         if latest_active_dir and latest_active_dir in existing_dirs:
