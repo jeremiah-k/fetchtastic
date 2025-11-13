@@ -1547,23 +1547,52 @@ def test_prerelease_history_cache_expiry(tmp_path_factory, monkeypatch):
     monkeypatch.setattr(downloader, "_ensure_cache_dir", lambda: str(cache_dir))
 
     # Mock the refresh function to return fresh data
-    fresh_entries = [{"identifier": "2.7.15.fresh456", "status": "active"}]
+    # Mock refresh function to return fresh data (matching full entry structure)
+    fresh_entries = [
+        {
+            "directory": "firmware-2.7.15.abc123",
+            "identifier": "2.7.15.abc123",
+            "base_version": "2.7.15",
+            "commit_hash": "abc123",
+            "added_at": "2025-01-03T10:00:00Z",
+            "removed_at": None,
+            "added_sha": "fresh123abc456",
+            "removed_sha": None,
+            "active": True,
+            "status": "active",
+        }
+    ]
 
-    with patch(
-        "fetchtastic.downloader._refresh_prerelease_commit_history"
-    ) as mock_refresh:
-        mock_refresh.return_value = fresh_entries
+    # Mock _fetch_recent_repo_commits to return sample commits
+    sample_commits = [
+        {
+            "sha": "fresh123abc456",
+            "commit": {
+                "message": "2.7.15.abc123 meshtastic/firmware@abc123",
+                "committer": {"date": "2025-01-03T10:00:00Z"},
+            },
+        }
+    ]
 
-        # Reset cache loaded flag to force reload
-        downloader._prerelease_commit_history_loaded = False
-        downloader._prerelease_commit_history_cache.clear()
+    with patch.object(downloader, "_refresh_prerelease_commit_history") as mock_refresh:
+        with patch.object(
+            downloader, "_fetch_recent_repo_commits"
+        ) as mock_fetch_commits:
+            mock_fetch_commits.return_value = sample_commits
+            mock_refresh.return_value = fresh_entries
 
-        # Call the function - should refresh due to expired cache
-        result = downloader._get_prerelease_commit_history("2.7.15")
+            # Reset cache loaded flag to force reload
+            downloader._prerelease_commit_history_loaded = False
+            downloader._prerelease_commit_history_cache.clear()
 
-        # Should return fresh data
-        assert result == fresh_entries
-        mock_refresh.assert_called_once_with("2.7.15", None, False, 40, True)
+            # Call the function - should refresh due to expired cache
+            result = downloader._get_prerelease_commit_history(
+                "2.7.15", force_refresh=True
+            )
+
+            # Should return fresh data
+            assert result == fresh_entries
+            mock_refresh.assert_called_once_with("2.7.15", None, True, 40, True)
 
     # Test with valid cache (less than 2 minutes old)
     valid_time = (datetime.now(timezone.utc) - timedelta(seconds=30)).isoformat()
