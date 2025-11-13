@@ -195,6 +195,32 @@ def test_cleanup_superseded_prereleases_handles_commit_suffix(tmp_path):
     assert future_dir.exists()
 
 
+def test_fetch_prerelease_directories_uses_token(monkeypatch):
+    """Ensure remote directory listing honours explicit GitHub token settings."""
+
+    captured = {}
+
+    def _fake_fetch_repo_directories(*, allow_env_token, github_token):
+        captured["allow_env_token"] = allow_env_token
+        captured["github_token"] = github_token
+        return []
+
+    monkeypatch.setattr(
+        downloader.menu_repo,
+        "fetch_repo_directories",
+        _fake_fetch_repo_directories,
+    )
+
+    downloader._fetch_prerelease_directories(
+        force_refresh=True,
+        github_token="abc123",
+        allow_env_token=False,
+    )
+
+    assert captured["github_token"] == "abc123"
+    assert captured["allow_env_token"] is False
+
+
 @patch("fetchtastic.menu_repo.fetch_repo_directories")
 @patch("fetchtastic.menu_repo.fetch_directory_contents")
 @patch("fetchtastic.downloader.download_file_with_retry")

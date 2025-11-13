@@ -1934,14 +1934,20 @@ def _clear_prerelease_commit_history_cache() -> None:
         _prerelease_commit_history_loaded = False
 
 
-def _fetch_prerelease_directories(force_refresh: bool = False) -> List[str]:
+def _fetch_prerelease_directories(
+    force_refresh: bool = False,
+    github_token: Optional[str] = None,
+    allow_env_token: bool = True,
+) -> List[str]:
     """
     Get the list of prerelease directory names from the meshtastic.github.io repository, using a cached value when fresh.
 
     When the cache is missing, expired, or when `force_refresh` is True, fetches the directory list from GitHub and updates the on-disk cache.
 
     Parameters:
-        force_refresh (bool): If True, bypass the cache and fetch fresh data from GitHub.
+        force_refresh (bool): If True, bypass cached directory listing and refetch.
+        github_token (Optional[str]): Explicit GitHub token to use for authenticated requests.
+        allow_env_token (bool): Whether to fall back to the `GITHUB_TOKEN` environment variable.
 
     Returns:
         List[str]: Directory names found at the repository root.
@@ -1975,7 +1981,10 @@ def _fetch_prerelease_directories(force_refresh: bool = False) -> List[str]:
         f"Cache miss for prerelease directories {MESHTASTIC_GITHUB_IO_CONTENTS_URL} - fetching from API"
     )
     track_api_cache_miss()
-    directories = menu_repo.fetch_repo_directories()
+    directories = menu_repo.fetch_repo_directories(
+        allow_env_token=allow_env_token,
+        github_token=github_token,
+    )
     updated_at = datetime.now(timezone.utc)
 
     with _cache_lock:
@@ -2604,7 +2613,10 @@ def _find_latest_remote_prerelease_dir(
         Optional[str]: Name of the newest matching prerelease directory (for example "firmware-2.7.13-abcdef"), or None if no matching directory is found.
     """
     try:
-        directories = _fetch_prerelease_directories(force_refresh=force_refresh)
+        directories = _fetch_prerelease_directories(
+            force_refresh=force_refresh,
+            github_token=github_token,
+        )
         if not directories:
             logger.info("No firmware directories found in the repository.")
             return None
