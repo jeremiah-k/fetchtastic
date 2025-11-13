@@ -66,6 +66,10 @@ from fetchtastic.constants import (
     VERSION_REGEX_PATTERN,
     ZIP_EXTENSION,
 )
+
+# Default values for prerelease entries
+_DEFAULT_PRERELEASE_ACTIVE = False
+_DEFAULT_PRERELEASE_STATUS = "unknown"
 from fetchtastic.device_hardware import DeviceHardwareManager
 from fetchtastic.log_utils import logger
 from fetchtastic.setup_config import display_version_info, get_upgrade_command
@@ -1827,8 +1831,6 @@ def _load_single_blob_cache_with_expiry(
                     cached_at = datetime.fromisoformat(
                         raw_cached_at.replace("Z", "+00:00")
                     )
-                    if cached_at.tzinfo is None:
-                        cached_at = cached_at.replace(tzinfo=timezone.utc)
                     age = datetime.now(timezone.utc) - cached_at
 
                     if age.total_seconds() < expiry_seconds:
@@ -2275,8 +2277,8 @@ def _create_default_prerelease_entry(
         "removed_at": None,
         "added_sha": None,
         "removed_sha": None,
-        "active": False,
-        "status": "unknown",
+        "active": _DEFAULT_PRERELEASE_ACTIVE,
+        "status": _DEFAULT_PRERELEASE_STATUS,
     }
 
 
