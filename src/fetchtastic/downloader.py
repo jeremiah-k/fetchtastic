@@ -2344,9 +2344,10 @@ def _get_prerelease_commit_history(
     if not expected_version:
         return []
 
-    _load_prerelease_commit_history_cache()
-
+    # Only load cache if we're not forcing a refresh
     if not force_refresh:
+        _load_prerelease_commit_history_cache()
+
         with _cache_lock:
             cached = _prerelease_commit_history_cache.get(expected_version)
             if cached:
