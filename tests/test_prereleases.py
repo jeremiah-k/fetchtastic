@@ -74,7 +74,6 @@ def _use_isolated_cache(tmp_path_factory, monkeypatch):
     downloader._releases_cache_file = None
     downloader._prerelease_dir_cache_file = None
     downloader._prerelease_commit_history_file = None
-    downloader._repo_commit_change_cache_file = None
     return cache_dir
 
 
@@ -556,20 +555,25 @@ def test_get_prerelease_tracking_info_includes_history(monkeypatch, tmp_path):
     # Check first entry (active)
     first_entry = formatted_history[0]
     assert first_entry["identifier"] == sample_history[0]["identifier"]
-    assert (
-        first_entry["display_name"] == sample_history[0]["identifier"]
-    )  # No strikethrough for active
+    assert first_entry["display_name"] == sample_history[0]["identifier"]
+    assert first_entry["markup_label"] == f"[green]{sample_history[0]['identifier']}[/]"
     assert not first_entry["is_deleted"]
+    assert first_entry["is_newest"]
 
     # Check second entry (deleted)
     second_entry = formatted_history[1]
     assert second_entry["identifier"] == sample_history[1]["identifier"]
+    assert second_entry["display_name"] == sample_history[1]["identifier"]
     assert (
-        second_entry["display_name"] == f"~~{sample_history[1]['identifier']}~~"
-    )  # Strikethrough for deleted
+        second_entry["markup_label"]
+        == f"[red][strike]{sample_history[1]['identifier']}[/strike][/red]"
+    )
     assert second_entry["is_deleted"]
 
     assert info["prerelease_count"] == len(sample_history)
+    assert info["history_created"] == len(sample_history)
+    assert info["history_deleted"] == 1
+    assert info["history_active"] == len(sample_history) - 1
     assert info["commits"] == []
 
 

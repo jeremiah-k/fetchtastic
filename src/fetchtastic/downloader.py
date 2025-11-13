@@ -51,7 +51,6 @@ from fetchtastic.constants import (
     MESHTASTIC_FIRMWARE_RELEASES_URL,
     MESHTASTIC_GITHUB_IO_CONTENTS_URL,
     NTFY_REQUEST_TIMEOUT,
-    PRERELEASE_COMMIT_CHANGES_FILE,
     PRERELEASE_COMMIT_HISTORY_FILE,
     PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS,
     PRERELEASE_COMMITS_CACHE_FILE,
@@ -1280,11 +1279,20 @@ def get_prerelease_tracking_info(
     Returns:
         dict: If data present, a dictionary with keys:
             - "release" (str | None): Tracked official release tag or None.
+            - "expected_version" (str | None): Calculated prerelease base version derived from "release".
             - "commits" (list[str]): Ordered list of tracked prerelease identifiers (may be empty).
-            - "prerelease_count" (int): Number of tracked prerelease commits.
+            - "prerelease_count" (int): Number of prerelease identifiers discovered (from history when available).
             - "last_updated" (str | None): ISO 8601 timestamp of the last update, or None.
-            - "latest_prerelease" (str | None): Most recent prerelease identifier from `commits`, or None.
-            - "history" (list[dict]): Repository commit-derived prerelease history entries, newest first.
+            - "latest_prerelease" (str | None): Most recent prerelease identifier inferred from history or tracking data.
+            - "history" (list[dict]): Repository commit-derived prerelease history entries, newest first, each entry enriched with:
+                * "display_name": Plain identifier text.
+                * "markup_label": Rich-formatted label (green for newest/active, red strikethrough for deleted).
+                * "is_deleted": Bool flag for deletions.
+                * "is_newest": Bool flag for newest entry.
+                * "is_latest": Bool flag for most recent active entry when available.
+            - "history_created" (int): Count of prerelease directories discovered via commit history.
+            - "history_deleted" (int): Count of entries flagged as deleted.
+            - "history_active" (int | None): Count of active prereleases (None when history is unavailable).
         An empty dict if no tracking data is present.
     """
     tracking_file = os.path.join(_ensure_cache_dir(), PRERELEASE_TRACKING_JSON_FILE)
@@ -1311,30 +1319,79 @@ def get_prerelease_tracking_info(
                 exc,
             )
 
-    history_count = len(history_entries)
-    counted_commits = len(commits) if commits else history_count
-
-    # Add display formatting for history entries
-    formatted_history = []
+    # Identify most recent active identifier for highlighting
+    latest_active_identifier: Optional[str] = None
     for entry in history_entries:
-        formatted_entry = dict(entry)
-        # Add strikethrough formatting for deleted commits
-        is_deleted = entry.get("status") == "deleted" or not entry.get("active", True)
+        identifier = (
+            entry.get("identifier") or entry.get("directory") or entry.get("dir") or ""
+        )
+        if not identifier:
+            continue
+        is_deleted = entry.get("status") == "deleted" or bool(entry.get("removed_at"))
+        if not is_deleted:
+            latest_active_identifier = identifier
+            break
+
+    formatted_history: List[Dict[str, Any]] = []
+    deleted_count = 0
+    for idx, entry in enumerate(history_entries):
+        identifier = (
+            entry.get("identifier") or entry.get("directory") or entry.get("dir") or ""
+        )
+        if not identifier:
+            continue
+
+        is_deleted = entry.get("status") == "deleted" or bool(entry.get("removed_at"))
         if is_deleted:
-            formatted_entry["display_name"] = f"~~{entry.get('identifier', '')}~~"
-            formatted_entry["is_deleted"] = True
+            deleted_count += 1
+
+        is_newest = idx == 0
+        is_latest_active = (
+            not is_deleted
+            and latest_active_identifier is not None
+            and identifier == latest_active_identifier
+        )
+
+        if is_deleted:
+            markup_label = f"[red][strike]{identifier}[/strike][/red]"
+        elif is_newest or is_latest_active:
+            markup_label = f"[green]{identifier}[/]"
         else:
-            formatted_entry["display_name"] = entry.get("identifier", "")
-            formatted_entry["is_deleted"] = False
+            markup_label = identifier
+
+        formatted_entry = dict(entry)
+        formatted_entry.update(
+            {
+                "display_name": identifier,
+                "markup_label": markup_label,
+                "is_deleted": is_deleted,
+                "is_newest": is_newest,
+                "is_latest": is_latest_active,
+            }
+        )
         formatted_history.append(formatted_entry)
+
+    created_count = len(formatted_history)
+    counted_commits = created_count if created_count else len(commits or [])
+    active_count = max(created_count - deleted_count, 0) if created_count else None
+
+    latest_prerelease_identifier = (
+        latest_active_identifier
+        or (commits[-1] if commits else None)
+        or (formatted_history[0].get("identifier") if formatted_history else None)
+    )
 
     return {
         "release": release,
+        "expected_version": expected_prerelease_version,
         "commits": commits,
         "prerelease_count": counted_commits,
         "last_updated": last_updated,
-        "latest_prerelease": commits[-1] if commits else None,
+        "latest_prerelease": latest_prerelease_identifier,
         "history": formatted_history,
+        "history_created": created_count,
+        "history_deleted": deleted_count,
+        "history_active": active_count,
     }
 
 
@@ -1538,10 +1595,6 @@ _prerelease_commit_history_file: Optional[str] = None
 _prerelease_commit_history_loaded = False
 
 # Global cache for repository commit change summaries keyed by commit SHA
-_repo_commit_change_cache: Dict[str, Dict[str, Any]] = {}
-_repo_commit_change_cache_file: Optional[str] = None
-_repo_commit_change_cache_loaded = False
-
 # Global flag to track if downloads were skipped due to Wi-Fi requirements
 downloads_skipped = False
 
@@ -1610,17 +1663,6 @@ def _get_prerelease_commit_history_file() -> str:
             _ensure_cache_dir(), PRERELEASE_COMMIT_HISTORY_FILE
         )
     return _prerelease_commit_history_file
-
-
-def _get_repo_commit_change_cache_file() -> str:
-    """Return the path to the repo commit change summary cache file."""
-
-    global _repo_commit_change_cache_file
-    if _repo_commit_change_cache_file is None:
-        _repo_commit_change_cache_file = os.path.join(
-            _ensure_cache_dir(), PRERELEASE_COMMIT_CHANGES_FILE
-        )
-    return _repo_commit_change_cache_file
 
 
 def _load_json_cache_with_expiry(
@@ -1892,65 +1934,6 @@ def _clear_prerelease_commit_history_cache() -> None:
         _prerelease_commit_history_loaded = False
 
 
-def _load_repo_commit_change_cache() -> None:
-    """Load cached commit change summaries keyed by commit SHA."""
-
-    global _repo_commit_change_cache, _repo_commit_change_cache_loaded
-
-    if _repo_commit_change_cache_loaded:
-        return
-
-    cache_file = _get_repo_commit_change_cache_file()
-    try:
-        if os.path.exists(cache_file):
-            with open(cache_file, "r", encoding="utf-8") as fh:
-                data = json.load(fh)
-                if isinstance(data, dict):
-                    _repo_commit_change_cache = data
-        _repo_commit_change_cache_loaded = True
-    except (OSError, json.JSONDecodeError) as exc:
-        logger.debug("Could not load commit change cache: %s", exc)
-        _repo_commit_change_cache = {}
-        _repo_commit_change_cache_loaded = True
-
-
-def _save_repo_commit_change_cache() -> None:
-    """Persist commit change summaries to disk."""
-
-    cache_file = _get_repo_commit_change_cache_file()
-    try:
-        with _cache_lock:
-            cache_data = dict(_repo_commit_change_cache)
-
-        if _atomic_write_json(cache_file, cache_data):
-            logger.debug(
-                "Saved %d commit change summaries to cache",
-                len(cache_data),
-            )
-        else:
-            logger.warning(
-                "Failed to save commit change cache to %s",
-                cache_file,
-            )
-    except (IOError, OSError) as exc:
-        logger.warning("Could not save commit change cache: %s", exc)
-
-
-def _clear_repo_commit_change_cache() -> None:
-    """Clear cached commit change summaries."""
-
-    global _repo_commit_change_cache_loaded
-
-    _clear_cache_generic(
-        cache_dict=_repo_commit_change_cache,
-        cache_file_getter=_get_repo_commit_change_cache_file,
-        cache_name="commit change",
-    )
-
-    with _cache_lock:
-        _repo_commit_change_cache_loaded = False
-
-
 def _fetch_prerelease_directories(force_refresh: bool = False) -> List[str]:
     """
     Get the list of prerelease directory names from the meshtastic.github.io repository, using a cached value when fresh.
@@ -2040,6 +2023,7 @@ def _fetch_recent_repo_commits(
 
     # Cache miss or expired - fetch from API
     logger.debug("Fetching commits from API (cache miss/expired)")
+    track_api_cache_miss()
 
     all_commits = []
     per_page = min(100, max_commits)  # GitHub max is 100 per page
@@ -2138,80 +2122,6 @@ def _fetch_commit_detail(
         logger.error("Error decoding commit %s details: %s", sha, exc, exc_info=True)
 
     return None
-
-
-def _summarize_commit_dirs(commit_detail: Dict[str, Any]) -> Dict[str, Dict[str, bool]]:
-    """Summarize firmware directory changes for a commit detail payload."""
-
-    summary: Dict[str, Dict[str, bool]] = {}
-    files = commit_detail.get("files") or []
-    for file_entry in files:
-        filename = file_entry.get("filename")
-        status = (file_entry.get("status") or "").lower()
-        if not filename or not status:
-            continue
-
-        dir_name = filename.split("/", 1)[0]
-        safe_dir = _sanitize_path_component(dir_name)
-        if not safe_dir or not safe_dir.startswith(FIRMWARE_DIR_PREFIX):
-            continue
-
-        dir_summary = summary.setdefault(
-            safe_dir, {"added": False, "removed": False, "touched": False}
-        )
-        if status == "added":
-            dir_summary["added"] = True
-        elif status == "removed":
-            dir_summary["removed"] = True
-        elif status == "renamed":
-            dir_summary["added"] = True
-        else:
-            dir_summary["touched"] = True
-
-        if status == "renamed":
-            prev_filename = file_entry.get("previous_filename")
-            if prev_filename:
-                prev_dir_name = prev_filename.split("/", 1)[0]
-                safe_prev = _sanitize_path_component(prev_dir_name)
-                if safe_prev and safe_prev.startswith(FIRMWARE_DIR_PREFIX):
-                    prev_summary = summary.setdefault(
-                        safe_prev,
-                        {"added": False, "removed": False, "touched": False},
-                    )
-                    prev_summary["removed"] = True
-
-        if status not in {"added", "removed", "renamed"}:
-            dir_summary["touched"] = True
-
-    return summary
-
-
-def _get_commit_change_summary(
-    sha: str, github_token: Optional[str] = None
-) -> Dict[str, Any]:
-    """Return cached or freshly computed change summary for a commit SHA."""
-
-    _load_repo_commit_change_cache()
-
-    cached = _repo_commit_change_cache.get(sha)
-    if cached:
-        return cached
-
-    detail = _fetch_commit_detail(sha, github_token)
-    if detail is None:
-        return {}
-
-    timestamp = detail.get("commit", {}).get("committer", {}).get("date")
-    summary = {
-        "timestamp": timestamp,
-        "dirs": _summarize_commit_dirs(detail),
-    }
-
-    with _cache_lock:
-        _repo_commit_change_cache[sha] = summary
-
-    _save_repo_commit_change_cache()
-    return summary
 
 
 def _build_simplified_prerelease_history(
@@ -2345,86 +2255,6 @@ def _build_simplified_prerelease_history(
 
     return entry_list
 
-    # MAJOR OPTIMIZATION: Skip individual API calls completely
-    # The original approach made 30+ individual API calls which is too expensive
-    # Instead, we'll return empty history and rely on directory scanning
-    # This is much more efficient and provides the same end result
-
-    logger.debug(
-        "Skipping individual API calls for %d commits - using directory scanning instead",
-        len(commits),
-    )
-
-    # Return empty list to force fallback to directory scanning approach
-    # This avoids the expensive individual commit detail fetching
-    return []
-
-
-def _build_prerelease_history_from_commits(
-    expected_version: str,
-    commits: List[Dict[str, Any]],
-    github_token: Optional[str] = None,
-) -> List[Dict[str, Any]]:
-    """Derive prerelease directory history for the expected version from commit data."""
-
-    if not expected_version or not commits:
-        return []
-
-    entries: Dict[str, Dict[str, Any]] = {}
-
-    # Process oldest first so later commits can override state (newest wins)
-    for commit in reversed(commits):
-        sha = commit.get("sha")
-        if not sha:
-            continue
-
-        summary = _get_commit_change_summary(sha, github_token)
-        dirs = summary.get("dirs") or {}
-        timestamp = summary.get("timestamp") or (
-            commit.get("commit", {}).get("committer", {}).get("date")
-        )
-
-        for dir_name, change in dirs.items():
-            version_str = extract_version(dir_name)
-            match = re.match(r"(\d+\.\d+\.\d+)", version_str)
-            if not match or match.group(1) != expected_version:
-                continue
-
-            identifier = version_str
-            entry = entries.setdefault(
-                dir_name,
-                {
-                    "dir": dir_name,
-                    "identifier": identifier,
-                    "base_version": expected_version,
-                    "added_at": None,
-                    "removed_at": None,
-                    "added_sha": None,
-                    "removed_sha": None,
-                    "active": False,
-                },
-            )
-
-            if timestamp and not entry["added_at"] and not change.get("removed"):
-                entry["added_at"] = timestamp
-                entry["added_sha"] = sha
-
-            if change.get("removed"):
-                entry["removed_at"] = timestamp
-                entry["removed_sha"] = sha
-                entry["active"] = False
-            elif change.get("added") or change.get("touched"):
-                entry["active"] = True
-
-    entry_list = list(entries.values())
-
-    def _sort_key(entry: Dict[str, Any]) -> tuple:
-        ref = entry.get("added_at") or entry.get("removed_at") or ""
-        return (ref, entry.get("identifier"))
-
-    entry_list.sort(key=_sort_key, reverse=True)
-    return entry_list
-
 
 def _refresh_prerelease_commit_history(
     expected_version: str,
@@ -2436,8 +2266,6 @@ def _refresh_prerelease_commit_history(
     commits = _fetch_recent_repo_commits(max_commits, github_token)
     if not commits:
         return []
-
-    track_api_cache_miss()
 
     # Build simplified history from commits
     history_entries = _build_simplified_prerelease_history(
@@ -2472,7 +2300,13 @@ def _get_prerelease_commit_history(
             cached = _prerelease_commit_history_cache.get(expected_version)
             if cached:
                 track_api_cache_hit()
-                entries, _cached_at = cached
+                entries, cached_at = cached
+                age = datetime.now(timezone.utc) - cached_at
+                logger.debug(
+                    "Using cached prerelease history for %s (cached %.0fs ago)",
+                    expected_version,
+                    age.total_seconds(),
+                )
                 return [dict(entry) for entry in entries]
 
     return _refresh_prerelease_commit_history(
@@ -2735,9 +2569,8 @@ def clear_all_caches() -> None:
     # Clear prerelease directory cache
     _clear_prerelease_cache()
 
-    # Clear prerelease commit history cache and commit change summaries
+    # Clear prerelease commit history cache
     _clear_prerelease_commit_history_cache()
-    _clear_repo_commit_change_cache()
 
     # Clear releases cache using generic helper
     _clear_cache_generic(
@@ -3764,25 +3597,40 @@ def _process_firmware_downloads(
                     force_refresh=force_refresh,
                 )
                 if tracking_info:
-                    count = tracking_info.get("prerelease_count", 0)
-                    base_version = tracking_info.get("release", "unknown")
+                    base_version = tracking_info.get("release") or "unknown"
                     latest_prerelease_version = tracking_info.get("latest_prerelease")
                     history_entries: List[Dict[str, Any]] = (
                         tracking_info.get("history") or []
                     )
+                    created = tracking_info.get("history_created", 0)
+                    deleted = tracking_info.get("history_deleted", 0)
+                    active = tracking_info.get("history_active")
+
+                    created_display = created or tracking_info.get(
+                        "prerelease_count", 0
+                    )
+                    if active is None:
+                        active = max(created_display - deleted, 0)
+
+                    if created_display:
+                        logger.info(
+                            "Prereleases since %s: %d created, %d deleted, %d active",
+                            base_version,
+                            created_display,
+                            deleted,
+                            active,
+                        )
+
                     history_labels: List[str] = []
                     for entry in history_entries:
-                        identifier = entry.get("identifier") or entry.get("dir")
-                        if not identifier:
-                            continue
-                        is_active = entry.get("active", False) and not entry.get(
-                            "removed_at"
+                        label = (
+                            entry.get("markup_label")
+                            or entry.get("display_name")
+                            or entry.get("identifier")
+                            or entry.get("dir")
                         )
-                        label = identifier if is_active else f"~~{identifier}~~"
-                        history_labels.append(label)
-
-                    if count > 0:
-                        logger.info(f"Total prereleases since {base_version}: {count}")
+                        if label:
+                            history_labels.append(label)
 
                     if history_labels:
                         history_base = (

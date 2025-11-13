@@ -46,7 +46,6 @@ PRERELEASE_TRACKING_JSON_FILE = "prerelease_tracking.json"
 PRERELEASE_COMMITS_CACHE_FILE = "prerelease_commits_cache.json"
 PRERELEASE_COMMITS_LEGACY_FILE = "prerelease_commits.txt"
 PRERELEASE_COMMIT_HISTORY_FILE = "prerelease_commit_history.json"
-PRERELEASE_COMMIT_CHANGES_FILE = "prerelease_commit_changes.json"
 WINDOWS_SHORTCUT_FILE = "fetchtastic_yaml.lnk"
 
 
