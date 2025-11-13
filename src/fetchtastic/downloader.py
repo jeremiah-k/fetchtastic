@@ -1264,6 +1264,54 @@ def matches_extract_patterns(filename, extract_patterns, device_manager=None):
     return False
 
 
+def _extract_identifier_from_entry(entry: Dict[str, Any]) -> str:
+    """Extract identifier from a history entry, trying multiple possible keys."""
+    return entry.get("identifier") or entry.get("directory") or entry.get("dir") or ""
+
+
+def _is_entry_deleted(entry: Dict[str, Any]) -> bool:
+    """Check if a history entry is marked as deleted."""
+    return entry.get("status") == "deleted" or bool(entry.get("removed_at"))
+
+
+def _format_history_entry(
+    entry: Dict[str, Any],
+    idx: int,
+    latest_active_identifier: Optional[str],
+) -> Dict[str, Any]:
+    """Format a history entry with rich markup and metadata."""
+    identifier = _extract_identifier_from_entry(entry)
+    if not identifier:
+        return entry
+
+    is_deleted = _is_entry_deleted(entry)
+    is_newest = idx == 0
+    is_latest_active = (
+        not is_deleted
+        and latest_active_identifier is not None
+        and identifier == latest_active_identifier
+    )
+
+    if is_deleted:
+        markup_label = f"[red][strike]{identifier}[/strike][/red]"
+    elif is_newest or is_latest_active:
+        markup_label = f"[green]{identifier}[/]"
+    else:
+        markup_label = identifier
+
+    formatted_entry = dict(entry)
+    formatted_entry.update(
+        {
+            "display_name": identifier,
+            "markup_label": markup_label,
+            "is_deleted": is_deleted,
+            "is_newest": is_newest,
+            "is_latest": is_latest_active,
+        }
+    )
+    return formatted_entry
+
+
 def get_prerelease_tracking_info(
     github_token: Optional[str] = None, force_refresh: bool = False
 ):
@@ -1312,7 +1360,12 @@ def get_prerelease_tracking_info(
                 github_token=github_token,
                 force_refresh=force_refresh,
             )
-        except Exception as exc:  # pragma: no cover - defensive safety
+        except (
+            requests.RequestException,
+            ValueError,
+            KeyError,
+            json.JSONDecodeError,
+        ) as exc:  # pragma: no cover - defensive safety
             logger.debug(
                 "Failed to load prerelease commit history for %s: %s",
                 expected_prerelease_version,
@@ -1322,53 +1375,19 @@ def get_prerelease_tracking_info(
     # Identify most recent active identifier for highlighting
     latest_active_identifier: Optional[str] = None
     for entry in history_entries:
-        identifier = (
-            entry.get("identifier") or entry.get("directory") or entry.get("dir") or ""
-        )
+        identifier = _extract_identifier_from_entry(entry)
         if not identifier:
             continue
-        is_deleted = entry.get("status") == "deleted" or bool(entry.get("removed_at"))
-        if not is_deleted:
+        if not _is_entry_deleted(entry):
             latest_active_identifier = identifier
             break
 
     formatted_history: List[Dict[str, Any]] = []
     deleted_count = 0
     for idx, entry in enumerate(history_entries):
-        identifier = (
-            entry.get("identifier") or entry.get("directory") or entry.get("dir") or ""
-        )
-        if not identifier:
-            continue
-
-        is_deleted = entry.get("status") == "deleted" or bool(entry.get("removed_at"))
-        if is_deleted:
+        formatted_entry = _format_history_entry(entry, idx, latest_active_identifier)
+        if formatted_entry.get("is_deleted"):
             deleted_count += 1
-
-        is_newest = idx == 0
-        is_latest_active = (
-            not is_deleted
-            and latest_active_identifier is not None
-            and identifier == latest_active_identifier
-        )
-
-        if is_deleted:
-            markup_label = f"[red][strike]{identifier}[/strike][/red]"
-        elif is_newest or is_latest_active:
-            markup_label = f"[green]{identifier}[/]"
-        else:
-            markup_label = identifier
-
-        formatted_entry = dict(entry)
-        formatted_entry.update(
-            {
-                "display_name": identifier,
-                "markup_label": markup_label,
-                "is_deleted": is_deleted,
-                "is_newest": is_newest,
-                "is_latest": is_latest_active,
-            }
-        )
         formatted_history.append(formatted_entry)
 
     created_count = len(formatted_history)
@@ -2100,9 +2119,10 @@ def _fetch_recent_repo_commits(
                 "cached_at": datetime.now(timezone.utc).isoformat(),
                 "commits": all_commits,
             }
-            with open(cache_file, "w", encoding="utf-8") as f:
-                json.dump(cache_data, f, indent=2)
-            logger.debug(f"Cached {len(all_commits)} commits to {cache_file}")
+            if _atomic_write_json(cache_file, cache_data):
+                logger.debug(f"Cached {len(all_commits)} commits to {cache_file}")
+            else:
+                logger.debug(f"Failed to cache commits to {cache_file}")
         except (OSError, TypeError) as e:
             logger.debug(f"Failed to cache commits: {e}")
 
@@ -2121,7 +2141,6 @@ def _fetch_recent_repo_commits(
 def _build_simplified_prerelease_history(
     expected_version: str,
     commits: List[Dict[str, Any]],
-    github_token: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """Build simplified prerelease history from commit data.
 
@@ -2161,7 +2180,7 @@ def _build_simplified_prerelease_history(
         )
 
         if add_match:
-            version, short_hash, full_hash = add_match.groups()
+            version, short_hash, _ = add_match.groups()
             if version == expected_version:
                 identifier = f"{version}.{short_hash}"
                 directory = f"firmware-{identifier}"
@@ -2266,9 +2285,7 @@ def _refresh_prerelease_commit_history(
         return []
 
     # Build simplified history from commits
-    history_entries = _build_simplified_prerelease_history(
-        expected_version, commits, github_token
-    )
+    history_entries = _build_simplified_prerelease_history(expected_version, commits)
 
     with _cache_lock:
         _prerelease_commit_history_cache[expected_version] = (
@@ -2968,7 +2985,12 @@ def check_for_prereleases(
             remote_dir = None
             newest_dir = None
             logger.debug("No active prerelease found in commit history")
-    except Exception as exc:
+    except (
+        requests.RequestException,
+        ValueError,
+        KeyError,
+        json.JSONDecodeError,
+    ) as exc:
         logger.debug(f"Failed to get prerelease commit history: {exc}")
         history_entries = []
         remote_dir = None
