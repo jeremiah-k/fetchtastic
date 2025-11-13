@@ -48,6 +48,14 @@ PRERELEASE_COMMITS_LEGACY_FILE = "prerelease_commits.txt"
 PRERELEASE_COMMIT_HISTORY_FILE = "prerelease_commit_history.json"
 WINDOWS_SHORTCUT_FILE = "fetchtastic_yaml.lnk"
 
+# Regex patterns for parsing prerelease commit messages
+PRERELEASE_ADD_COMMIT_PATTERN = (
+    r"^(\d+\.\d+\.\d+)\.([a-f0-9]{6,})\s+meshtastic/firmware@(?:[a-f0-9]{6,})"
+)
+PRERELEASE_DELETE_COMMIT_PATTERN = (
+    r"^Delete firmware-(\d+\.\d+\.\d+)\.([a-f0-9]{6,})\s+directory"
+)
+
 
 # Directories that Fetchtastic manages and can safely clean
 MANAGED_DIRECTORIES = (

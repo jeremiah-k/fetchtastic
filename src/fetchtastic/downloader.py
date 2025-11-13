@@ -51,10 +51,12 @@ from fetchtastic.constants import (
     MESHTASTIC_FIRMWARE_RELEASES_URL,
     MESHTASTIC_GITHUB_IO_CONTENTS_URL,
     NTFY_REQUEST_TIMEOUT,
+    PRERELEASE_ADD_COMMIT_PATTERN,
     PRERELEASE_COMMIT_HISTORY_FILE,
     PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS,
     PRERELEASE_COMMITS_CACHE_FILE,
     PRERELEASE_COMMITS_LEGACY_FILE,
+    PRERELEASE_DELETE_COMMIT_PATTERN,
     PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
     PRERELEASE_HISTORY_CACHE_EXPIRY_SECONDS,
     PRERELEASE_TRACKING_JSON_FILE,
@@ -2232,10 +2234,7 @@ def _build_simplified_prerelease_history(
 
         # Pattern 1: Adding a prerelease
         # Examples: "2.7.14.e959000 meshtastic/firmware@e959000"
-        add_match = re.match(
-            r"^(\d+\.\d+\.\d+)\.([a-f0-9]{6,})\s+meshtastic/firmware@(?:[a-f0-9]{6,})",
-            commit_msg,
-        )
+        add_match = re.match(PRERELEASE_ADD_COMMIT_PATTERN, commit_msg)
 
         if add_match:
             version, short_hash = add_match.groups()
@@ -2264,9 +2263,7 @@ def _build_simplified_prerelease_history(
 
         # Pattern 2: Deleting a prerelease
         # Examples: "Delete firmware-2.7.13.ffb168b directory"
-        delete_match = re.match(
-            r"^Delete firmware-(\d+\.\d+\.\d+)\.([a-f0-9]{6,})\s+directory", commit_msg
-        )
+        delete_match = re.match(PRERELEASE_DELETE_COMMIT_PATTERN, commit_msg)
 
         if delete_match:
             version, short_hash = delete_match.groups()
