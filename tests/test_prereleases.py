@@ -1324,3 +1324,64 @@ class TestPrereleaseHelperFunctions:
         entry4 = {"identifier": "test4"}
         result = _sort_key(entry4)
         assert result[0] == ""  # Missing fields should default to empty string
+
+
+def test_create_default_prerelease_entry():
+    """Test the new helper function for creating default prerelease entries."""
+
+    result = downloader._create_default_prerelease_entry(
+        directory="firmware-2.7.14.abc123",
+        identifier="2.7.14.abc123",
+        base_version="2.7.14",
+        commit_hash="abc123",
+    )
+
+    expected = {
+        "directory": "firmware-2.7.14.abc123",
+        "identifier": "2.7.14.abc123",
+        "base_version": "2.7.14",
+        "commit_hash": "abc123",
+        "added_at": None,
+        "removed_at": None,
+        "added_sha": None,
+        "removed_sha": None,
+        "active": False,
+        "status": "unknown",
+    }
+
+    assert result == expected
+
+
+def test_fetch_recent_repo_commits_cache_expiry(tmp_path_factory, monkeypatch):
+    """Test cache expiry logic in _fetch_recent_repo_commits."""
+
+    import json
+    from datetime import datetime, timedelta, timezone
+
+    cache_dir = Path(tmp_path_factory.mktemp("cache-test"))
+    cache_file = cache_dir / "prerelease_commits_cache.json"
+
+    # Create expired cache (older than expiry time)
+    expired_time = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
+    expired_cache = {
+        "cached_at": expired_time,
+        "commits": [{"sha": "test123", "commit": {"message": "test"}}],
+    }
+    cache_file.write_text(json.dumps(expired_cache))
+
+    monkeypatch.setattr(downloader, "_ensure_cache_dir", lambda: str(cache_dir))
+
+    # Mock the API call to return test data
+    mock_commits = [{"sha": "new456", "commit": {"message": "new test"}}]
+
+    # Mock response object with .json() method
+    mock_response = type("MockResponse", (), {"json": lambda self: mock_commits})()
+
+    with patch("fetchtastic.downloader.make_github_api_request") as mock_api:
+        mock_api.return_value = mock_response
+
+        result = downloader._fetch_recent_repo_commits(10, force_refresh=False)
+
+        # Should fetch from API due to expired cache
+        assert result == mock_commits
+        mock_api.assert_called_once()
