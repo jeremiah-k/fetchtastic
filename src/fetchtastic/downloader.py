@@ -1421,8 +1421,8 @@ def get_prerelease_tracking_info(
     # 3. Otherwise use the first entry from formatted history
     latest_prerelease_identifier = (
         latest_active_identifier
-        or (commits[-1] if commits else None)
         or (formatted_history[0].get("identifier") if formatted_history else None)
+        or (commits[-1] if commits else None)
     )
 
     return {
@@ -1646,6 +1646,7 @@ def _display_prerelease_summary(tracking_info: Dict[str, Any]) -> None:
                 entry.get("markup_label")
                 or entry.get("display_name")
                 or entry.get("identifier")
+                or entry.get("directory")
                 or entry.get("dir")
             )
         )
