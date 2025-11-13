@@ -2070,10 +2070,14 @@ def _fetch_recent_repo_commits(
                     logger.debug(
                         "Invalid cached_at timestamp format, treating as expired"
                     )
-                    age = timedelta(days=1)  # Force expiry
+                    age = timedelta(
+                        seconds=PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS + 1
+                    )  # Force expiry
             else:
                 logger.debug("Missing cached_at timestamp, treating as expired")
-                age = timedelta(days=1)  # Force expiry
+                age = timedelta(
+                    seconds=PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS + 1
+                )  # Force expiry
 
             if age.total_seconds() < PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS:
                 logger.debug(
@@ -2230,7 +2234,7 @@ def _build_simplified_prerelease_history(
         )
 
         if add_match:
-            version, short_hash, _ = add_match.groups()
+            version, short_hash = add_match.groups()
             if version == expected_version:
                 identifier = f"{version}.{short_hash}"
                 directory = f"firmware-{identifier}"

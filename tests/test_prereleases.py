@@ -1385,3 +1385,231 @@ def test_fetch_recent_repo_commits_cache_expiry(tmp_path_factory, monkeypatch):
         # Should fetch from API due to expired cache
         assert result == mock_commits
         mock_api.assert_called_once()
+
+
+def test_build_simplified_prerelease_history():
+    """Test the new commit message parsing logic with various scenarios."""
+
+    # Sample commit data that mimics real GitHub API response
+    sample_commits = [
+        {
+            "sha": "abc123def456",
+            "commit": {
+                "message": "2.7.14.e959000 meshtastic/firmware@e959000",
+                "committer": {"date": "2025-01-02T10:00:00Z"},
+            },
+        },
+        {
+            "sha": "def456ghi789",
+            "commit": {
+                "message": "Delete firmware-2.7.13.ffb168b directory",
+                "committer": {"date": "2025-01-03T10:00:00Z"},
+            },
+        },
+        {
+            "sha": "ghi789jkl012",
+            "commit": {
+                "message": "2.7.14.1c0c6b2 meshtastic/firmware@1c0c6b2",
+                "committer": {"date": "2025-01-01T10:00:00Z"},
+            },
+        },
+        {
+            "sha": "unrelated123",
+            "commit": {
+                "message": "Some unrelated commit message",
+                "committer": {"date": "2025-01-04T10:00:00Z"},
+            },
+        },
+    ]
+
+    # Test with expected version "2.7.14"
+    result = downloader._build_simplified_prerelease_history("2.7.14", sample_commits)
+
+    # Should have 2 entries for version 2.7.14 (one added, one deleted)
+    assert len(result) == 2
+
+    # First entry should be the newest active one (e959000)
+    first_entry = result[0]
+    assert first_entry["identifier"] == "2.7.14.e959000"
+    assert first_entry["directory"] == "firmware-2.7.14.e959000"
+    assert first_entry["base_version"] == "2.7.14"
+    assert first_entry["commit_hash"] == "e959000"
+    assert first_entry["status"] == "active"
+    assert first_entry["active"] is True
+    assert first_entry["added_at"] == "2025-01-02T10:00:00Z"
+    assert first_entry["added_sha"] == "abc123def456"
+    assert first_entry["removed_at"] is None
+    assert first_entry["removed_sha"] is None
+
+    # Second entry should be the older one (1c0c6b2)
+    second_entry = result[1]
+    assert second_entry["identifier"] == "2.7.14.1c0c6b2"
+    assert second_entry["directory"] == "firmware-2.7.14.1c0c6b2"
+    assert second_entry["base_version"] == "2.7.14"
+    assert second_entry["commit_hash"] == "1c0c6b2"
+    assert second_entry["status"] == "active"
+    assert second_entry["active"] is True
+    assert second_entry["added_at"] == "2025-01-01T10:00:00Z"
+    assert second_entry["added_sha"] == "ghi789jkl012"
+    assert second_entry["removed_at"] is None
+    assert second_entry["removed_sha"] is None
+
+    # Test with different expected version
+    result_diff = downloader._build_simplified_prerelease_history(
+        "2.7.13", sample_commits
+    )
+
+    # Should have 1 entry for version 2.7.13 (deleted one)
+    assert len(result_diff) == 1
+    deleted_entry = result_diff[0]
+    assert deleted_entry["identifier"] == "2.7.13.ffb168b"
+    assert deleted_entry["status"] == "deleted"
+    assert deleted_entry["active"] is False
+    assert deleted_entry["removed_at"] == "2025-01-03T10:00:00Z"
+    assert deleted_entry["removed_sha"] == "def456ghi789"
+
+    # Test edge cases
+    assert downloader._build_simplified_prerelease_history("", sample_commits) == []
+    assert downloader._build_simplified_prerelease_history("2.7.14", []) == []
+    assert (
+        downloader._build_simplified_prerelease_history("2.7.99", sample_commits) == []
+    )
+
+
+def test_build_simplified_prerelease_history_edge_cases():
+    """Test edge cases and malformed commit messages."""
+
+    # Test with malformed commit messages
+    malformed_commits = [
+        {
+            "sha": "abc123",
+            "commit": {
+                "message": "2.7.14.e959000",  # Missing firmware part
+                "committer": {"date": "2025-01-02T10:00:00Z"},
+            },
+        },
+        {
+            "sha": "def456",
+            "commit": {
+                "message": "Delete firmware-2.7.14 directory",  # Missing hash
+                "committer": {"date": "2025-01-03T10:00:00Z"},
+            },
+        },
+        {
+            "sha": "ghi789",
+            "commit": {
+                "message": "2.7.99.e959000 meshtastic/firmware@e959000",  # Wrong version
+                "committer": {"date": "2025-01-04T10:00:00Z"},
+            },
+        },
+    ]
+
+    result = downloader._build_simplified_prerelease_history(
+        "2.7.14", malformed_commits
+    )
+
+    # Should handle malformed messages gracefully
+    assert len(result) == 0
+
+
+def test_fetch_recent_repo_commits_with_api_mocking(tmp_path_factory, monkeypatch):
+    """Test _fetch_recent_repo_commits with targeted API mocking instead of full function mock."""
+
+    import json
+    from datetime import datetime, timedelta, timezone
+
+    cache_dir = Path(tmp_path_factory.mktemp("api-mock-test"))
+    cache_file = cache_dir / "prerelease_commits_cache.json"
+
+    # Mock API response with sample commit data
+    sample_commits = [
+        {
+            "sha": "abc123def456",
+            "commit": {
+                "message": "2.7.14.e959000 meshtastic/firmware@e959000",
+                "committer": {"date": "2025-01-02T10:00:00Z"},
+            },
+        },
+        {
+            "sha": "def456ghi789",
+            "commit": {
+                "message": "Delete firmware-2.7.13.ffb168b directory",
+                "committer": {"date": "2025-01-03T10:00:00Z"},
+            },
+        },
+    ]
+
+    # Mock response object
+    mock_response = type("MockResponse", (), {"json": lambda self: sample_commits})()
+
+    monkeypatch.setattr(downloader, "_ensure_cache_dir", lambda: str(cache_dir))
+
+    with patch("fetchtastic.downloader.make_github_api_request") as mock_api:
+        mock_api.return_value = mock_response
+
+        # Test fresh fetch (no cache)
+        result = downloader._fetch_recent_repo_commits(10, force_refresh=False)
+
+        # Should return the mocked commits
+        assert result == sample_commits
+        mock_api.assert_called_once()
+
+        # Verify cache was created
+        assert cache_file.exists()
+        cached_data = json.loads(cache_file.read_text())
+        assert "commits" in cached_data
+        assert "cached_at" in cached_data
+        assert cached_data["commits"] == sample_commits
+
+
+def test_fetch_recent_repo_commits_force_refresh(tmp_path_factory, monkeypatch):
+    """Test force_refresh bypasses cache."""
+
+    import json
+    from datetime import datetime, timedelta, timezone
+
+    cache_dir = Path(tmp_path_factory.mktemp("force-refresh-test"))
+    cache_file = cache_dir / "prerelease_commits_cache.json"
+
+    # Create existing cache
+    existing_time = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
+    existing_cache = {
+        "cached_at": existing_time,
+        "commits": [{"sha": "existing123", "commit": {"message": "existing"}}],
+    }
+    cache_file.write_text(json.dumps(existing_cache))
+
+    # Mock API response
+    fresh_commits = [{"sha": "fresh456", "commit": {"message": "fresh"}}]
+    mock_response = type("MockResponse", (), {"json": lambda self: fresh_commits})()
+
+    monkeypatch.setattr(downloader, "_ensure_cache_dir", lambda: str(cache_dir))
+
+    with patch("fetchtastic.downloader.make_github_api_request") as mock_api:
+        mock_api.return_value = mock_response
+
+        result = downloader._fetch_recent_repo_commits(10, force_refresh=True)
+
+        # Should fetch fresh data despite existing cache
+        assert result == fresh_commits
+        mock_api.assert_called_once()
+
+
+def test_create_default_prerelease_entry_edge_cases():
+    """Test helper function with various inputs."""
+
+    # Test with different inputs
+    result1 = downloader._create_default_prerelease_entry(
+        "firmware-2.7.14.abc123", "2.7.14.abc123", "2.7.14", "abc123"
+    )
+
+    assert result1["directory"] == "firmware-2.7.14.abc123"
+    assert result1["identifier"] == "2.7.14.abc123"
+    assert result1["base_version"] == "2.7.14"
+    assert result1["commit_hash"] == "abc123"
+    assert result1["added_at"] is None
+    assert result1["removed_at"] is None
+    assert result1["added_sha"] is None
+    assert result1["removed_sha"] is None
+    assert result1["active"] is False
+    assert result1["status"] == "unknown"
