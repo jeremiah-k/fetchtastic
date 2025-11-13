@@ -20,7 +20,11 @@ from fetchtastic import downloader
 
 @pytest.fixture
 def mock_commit_history(monkeypatch):
-    """Avoid real commit-history fetches during tests by returning empty history."""
+    """
+    Patch the prerelease commit-history fetcher to return an empty list for tests.
+    
+    Uses the provided pytest `monkeypatch` to replace fetchtastic.downloader._get_prerelease_commit_history with a stub that returns [] to avoid real network or VCS fetches during test execution.
+    """
     from fetchtastic import downloader
 
     monkeypatch.setattr(
