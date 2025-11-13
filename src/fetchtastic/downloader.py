@@ -34,7 +34,9 @@ from fetchtastic.constants import (
     COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS,
     DEFAULT_ANDROID_VERSIONS_TO_KEEP,
     DEFAULT_FIRMWARE_VERSIONS_TO_KEEP,
+    DEFAULT_PRERELEASE_ACTIVE,
     DEFAULT_PRERELEASE_COMMITS_TO_FETCH,
+    DEFAULT_PRERELEASE_STATUS,
     DEVICE_HARDWARE_API_URL,
     DEVICE_HARDWARE_CACHE_HOURS,
     EXECUTABLE_PERMISSIONS,
@@ -66,11 +68,6 @@ from fetchtastic.constants import (
     VERSION_REGEX_PATTERN,
     ZIP_EXTENSION,
 )
-
-# Default values for prerelease entries
-_DEFAULT_PRERELEASE_ACTIVE = False
-_DEFAULT_PRERELEASE_STATUS = "unknown"
-
 from fetchtastic.device_hardware import DeviceHardwareManager
 from fetchtastic.log_utils import logger
 from fetchtastic.setup_config import display_version_info, get_upgrade_command
@@ -118,8 +115,8 @@ PRERELEASE_VERSION_RX = re.compile(
 )
 HASH_SUFFIX_VERSION_RX = re.compile(r"^(\d+(?:\.\d+)*)\.([A-Za-z0-9][A-Za-z0-9.-]*)$")
 VERSION_BASE_RX = re.compile(r"^(\d+(?:\.\d+)*)")
-PRERELEASE_ADD_RX = re.compile(PRERELEASE_ADD_COMMIT_PATTERN)
-PRERELEASE_DELETE_RX = re.compile(PRERELEASE_DELETE_COMMIT_PATTERN)
+PRERELEASE_ADD_RX = re.compile(PRERELEASE_ADD_COMMIT_PATTERN, re.IGNORECASE)
+PRERELEASE_DELETE_RX = re.compile(PRERELEASE_DELETE_COMMIT_PATTERN, re.IGNORECASE)
 
 
 def _normalize_version(
@@ -2241,7 +2238,14 @@ def _fetch_recent_repo_commits(
     )
 
     if cached_commits is not None:
-        return cached_commits
+        if len(cached_commits) >= max_commits:
+            return cached_commits[:max_commits]
+        logger.debug(
+            "Commits cache has %d items but %d requested; fetching fresh data",
+            len(cached_commits),
+            max_commits,
+        )
+        # fall through to fetch
 
     # Cache miss or expired - fetch from API
     logger.debug("Fetching commits from API (cache miss/expired)")
@@ -2330,8 +2334,8 @@ def _create_default_prerelease_entry(
         "removed_at": None,
         "added_sha": None,
         "removed_sha": None,
-        "active": _DEFAULT_PRERELEASE_ACTIVE,
-        "status": _DEFAULT_PRERELEASE_STATUS,
+        "active": DEFAULT_PRERELEASE_ACTIVE,
+        "status": DEFAULT_PRERELEASE_STATUS,
     }
 
 
@@ -2504,7 +2508,7 @@ def _get_prerelease_commit_history(
                     return [dict(entry) for entry in entries]
                 else:
                     # Cache entry exists but is expired
-                    track_api_cache_miss()
+                    pass
 
     return _refresh_prerelease_commit_history(
         expected_version, github_token, force_refresh, max_commits, allow_env_token
