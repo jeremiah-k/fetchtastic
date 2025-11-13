@@ -1998,6 +1998,7 @@ def _fetch_recent_repo_commits(
     max_commits: int,
     github_token: Optional[str] = None,
     allow_env_token: bool = True,
+    force_refresh: bool = False,
 ) -> List[Dict[str, Any]]:
     """Fetch recent commits from meshtastic.github.io for prerelease tracking.
 
@@ -2008,8 +2009,19 @@ def _fetch_recent_repo_commits(
     # Check cache first
     cache_file = os.path.join(_ensure_cache_dir(), PRERELEASE_COMMITS_CACHE_FILE)
 
+    # If force_refresh is True, remove cache file to bypass cache
+    if force_refresh:
+        try:
+            os.remove(cache_file)
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            logger.debug(
+                f"Failed to remove prerelease commits cache for refresh: {exc}"
+            )
+
     try:
-        if os.path.exists(cache_file):
+        if not force_refresh and os.path.exists(cache_file):
             with open(cache_file, "r", encoding="utf-8") as f:
                 cache_data = json.load(f)
 
@@ -2245,7 +2257,11 @@ def _refresh_prerelease_commit_history(
     max_commits: int,
 ) -> List[Dict[str, Any]]:
     """Fetch and cache simplified prerelease commit history."""
-    commits = _fetch_recent_repo_commits(max_commits, github_token)
+    commits = _fetch_recent_repo_commits(
+        max_commits,
+        github_token=github_token,
+        force_refresh=force_refresh,
+    )
     if not commits:
         return []
 
