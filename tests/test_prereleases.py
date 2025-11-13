@@ -51,8 +51,8 @@ def _deny_network():
                     yield
 
 
-@pytest.fixture(autouse=True)
-def _mock_commit_history(monkeypatch):
+@pytest.fixture
+def mock_commit_history(monkeypatch):
     """Avoid real commit-history fetches during tests by returning empty history."""
 
     monkeypatch.setattr(
@@ -206,6 +206,7 @@ def test_fetch_prerelease_directories_uses_token(monkeypatch):
     """Ensure remote directory listing honours explicit GitHub token settings."""
 
     captured = {}
+    token = "fake_token_for_tests"
 
     def _fake_fetch_repo_directories(*, allow_env_token, github_token):
         captured["allow_env_token"] = allow_env_token
@@ -218,13 +219,13 @@ def test_fetch_prerelease_directories_uses_token(monkeypatch):
         _fake_fetch_repo_directories,
     )
 
-    downloader._fetch_prerelease_directories(  # noqa: S106
+    downloader._fetch_prerelease_directories(
         force_refresh=True,
-        github_token="fake_token_for_testing_only",  # noqa: S105
+        github_token=token,
         allow_env_token=False,
     )
 
-    assert captured["github_token"] == "fake_token_for_testing_only"  # noqa: S105
+    assert captured["github_token"] == token
     assert captured["allow_env_token"] is False
 
 
@@ -233,7 +234,13 @@ def test_fetch_prerelease_directories_uses_token(monkeypatch):
 @patch("fetchtastic.downloader.download_file_with_retry")
 @patch("fetchtastic.downloader.make_github_api_request")
 def test_check_for_prereleases_download_and_cleanup(
-    mock_api, mock_dl, mock_fetch_contents, mock_fetch_dirs, tmp_path, write_dummy_file
+    mock_api,
+    mock_dl,
+    mock_fetch_contents,
+    mock_fetch_dirs,
+    tmp_path,
+    write_dummy_file,
+    mock_commit_history,
 ):
     """Check that prerelease discovery downloads matching assets and cleans stale entries."""
     # Clear any cached prerelease directories to ensure fresh mock data
@@ -294,7 +301,9 @@ def test_check_for_prereleases_download_and_cleanup(
 
 
 @patch("fetchtastic.downloader.menu_repo.fetch_repo_directories")
-def test_check_for_prereleases_no_directories(mock_fetch_dirs, tmp_path):
+def test_check_for_prereleases_no_directories(
+    mock_fetch_dirs, tmp_path, mock_commit_history
+):
     """If repo has no firmware directories, function returns False, []."""
     mock_fetch_dirs.return_value = []
     downloaded, versions = downloader.check_for_prereleases(
@@ -309,7 +318,13 @@ def test_check_for_prereleases_no_directories(mock_fetch_dirs, tmp_path):
 @patch("fetchtastic.downloader.download_file_with_retry")
 @patch("fetchtastic.downloader.make_github_api_request")
 def test_prerelease_tracking_functionality(
-    mock_api, mock_dl, mock_fetch_contents, mock_fetch_dirs, tmp_path, write_dummy_file
+    mock_api,
+    mock_dl,
+    mock_fetch_contents,
+    mock_fetch_dirs,
+    tmp_path,
+    write_dummy_file,
+    mock_commit_history,
 ):
     """Test that prerelease tracking file is created and updated correctly."""
     # Setup mock data
@@ -424,7 +439,7 @@ def test_prerelease_smart_pattern_matching():
             ), f"File {filename} should NOT match patterns {extract_patterns}"
 
 
-def test_prerelease_directory_cleanup(tmp_path, write_dummy_file):
+def test_prerelease_directory_cleanup(tmp_path, write_dummy_file, mock_commit_history):
     """Test that old prerelease directories are cleaned up when new ones arrive."""
     download_dir = tmp_path
     prerelease_dir = download_dir / "firmware" / "prerelease"
@@ -573,11 +588,10 @@ def test_get_prerelease_tracking_info_includes_history(monkeypatch, tmp_path):
         },
     ]
 
-    monkeypatch.setattr(
-        downloader,
-        "_get_prerelease_commit_history",
-        lambda *args, **kwargs: sample_history,
-    )
+    def _mock_get_history(*_args, **_kwargs):
+        return sample_history
+
+    monkeypatch.setattr(downloader, "_get_prerelease_commit_history", _mock_get_history)
 
     info = downloader.get_prerelease_tracking_info()
 
@@ -1375,7 +1389,10 @@ def test_fetch_recent_repo_commits_cache_expiry(tmp_path_factory, monkeypatch):
     mock_commits = [{"sha": "new456", "commit": {"message": "new test"}}]
 
     # Mock response object with .json() method
-    mock_response = type("MockResponse", (), {"json": lambda self: mock_commits})()
+    from unittest.mock import Mock
+
+    mock_response = Mock()
+    mock_response.json.return_value = mock_commits
 
     with patch("fetchtastic.downloader.make_github_api_request") as mock_api:
         mock_api.return_value = mock_response
@@ -1566,8 +1583,6 @@ def test_prerelease_history_cache_expiry(tmp_path_factory, monkeypatch):
         }
     ]
 
-    # Mock _fetch_recent_repo_commits to return sample commits
-
     # Reset cache loaded flag to force reload
     downloader._prerelease_commit_history_loaded = False
     downloader._prerelease_commit_history_cache.clear()
@@ -1656,7 +1671,10 @@ def test_fetch_recent_repo_commits_with_api_mocking(tmp_path_factory, monkeypatc
     ]
 
     # Mock response object
-    mock_response = type("MockResponse", (), {"json": lambda self: sample_commits})()
+    from unittest.mock import Mock
+
+    mock_response = Mock()
+    mock_response.json.return_value = sample_commits
 
     monkeypatch.setattr(downloader, "_ensure_cache_dir", lambda: str(cache_dir))
 
@@ -1697,7 +1715,10 @@ def test_fetch_recent_repo_commits_force_refresh(tmp_path_factory, monkeypatch):
 
     # Mock API response
     fresh_commits = [{"sha": "fresh456", "commit": {"message": "fresh"}}]
-    mock_response = type("MockResponse", (), {"json": lambda self: fresh_commits})()
+    from unittest.mock import Mock
+
+    mock_response = Mock()
+    mock_response.json.return_value = fresh_commits
 
     monkeypatch.setattr(downloader, "_ensure_cache_dir", lambda: str(cache_dir))
 

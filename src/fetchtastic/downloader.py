@@ -113,6 +113,12 @@ PRERELEASE_VERSION_RX = re.compile(
 )
 HASH_SUFFIX_VERSION_RX = re.compile(r"^(\d+(?:\.\d+)*)\.([A-Za-z0-9][A-Za-z0-9.-]*)$")
 VERSION_BASE_RX = re.compile(r"^(\d+(?:\.\d+)*)")
+PRERELEASE_ADD_RX = re.compile(
+    r"^(\d+\.\d+\.\d+)\.([a-f0-9]{6,})\s+meshtastic/firmware@(?:[a-f0-9]{6,})"
+)
+PRERELEASE_DELETE_RX = re.compile(
+    r"^Delete firmware-(\d+\.\d+\.\d+)\.([a-f0-9]{6,})\s+directory"
+)
 
 
 def _normalize_version(
@@ -2234,7 +2240,7 @@ def _build_simplified_prerelease_history(
 
         # Pattern 1: Adding a prerelease
         # Examples: "2.7.14.e959000 meshtastic/firmware@e959000"
-        add_match = re.match(PRERELEASE_ADD_COMMIT_PATTERN, commit_msg)
+        add_match = PRERELEASE_ADD_RX.match(commit_msg)
 
         if add_match:
             version, short_hash = add_match.groups()
@@ -2264,7 +2270,7 @@ def _build_simplified_prerelease_history(
 
         # Pattern 2: Deleting a prerelease
         # Examples: "Delete firmware-2.7.13.ffb168b directory"
-        delete_match = re.match(PRERELEASE_DELETE_COMMIT_PATTERN, commit_msg)
+        delete_match = PRERELEASE_DELETE_RX.match(commit_msg)
 
         if delete_match:
             version, short_hash = delete_match.groups()

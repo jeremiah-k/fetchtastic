@@ -18,6 +18,18 @@ import pytest
 from fetchtastic import downloader
 
 
+@pytest.fixture
+def mock_commit_history(monkeypatch):
+    """Avoid real commit-history fetches during tests by returning empty history."""
+    from fetchtastic import downloader
+
+    monkeypatch.setattr(
+        downloader,
+        "_get_prerelease_commit_history",
+        lambda *_args, **_kwargs: [],
+    )
+
+
 class TestSecuritySymlinkAttacks:
     """Test security measures against symlink traversal attacks."""
 
@@ -587,7 +599,7 @@ def test_check_and_download_skips_unsafe_asset_name(
 @patch("fetchtastic.downloader.menu_repo.fetch_directory_contents")
 @patch("fetchtastic.downloader.menu_repo.fetch_repo_directories")
 def test_prerelease_functions_symlink_safety(
-    mock_fetch_dirs, mock_fetch_contents, tmp_path
+    mock_fetch_dirs, mock_fetch_contents, tmp_path, mock_commit_history
 ):
     """Test that prerelease functions handle symlinks safely."""
     download_dir = tmp_path
@@ -620,7 +632,7 @@ def test_prerelease_functions_symlink_safety(
 @patch("fetchtastic.downloader.menu_repo.fetch_directory_contents")
 @patch("fetchtastic.downloader.download_file_with_retry")
 def test_prerelease_symlink_traversal_attack_prevention(
-    mock_download, mock_fetch_contents, mock_fetch_dirs, tmp_path
+    mock_download, mock_fetch_contents, mock_fetch_dirs, tmp_path, mock_commit_history
 ):
     """Test that symlink traversal attacks are prevented during prerelease processing."""
     download_dir = tmp_path
@@ -660,7 +672,7 @@ def test_prerelease_symlink_traversal_attack_prevention(
 @patch("fetchtastic.downloader.menu_repo.fetch_directory_contents")
 @patch("fetchtastic.downloader.download_file_with_retry")
 def test_prerelease_symlink_mixed_with_valid_directories(
-    mock_download, mock_fetch_contents, mock_fetch_dirs, tmp_path
+    mock_download, mock_fetch_contents, mock_fetch_dirs, tmp_path, mock_commit_history
 ):
     """Test handling of mixed valid directories and symlinks in prerelease processing."""
     download_dir = tmp_path
