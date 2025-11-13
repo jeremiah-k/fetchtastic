@@ -74,15 +74,12 @@ MANAGED_DIRECTORIES = (
 )
 
 # Default configuration values
-DEFAULT_FIRMWARE_VERSIONS_TO_KEEP = 2
-DEFAULT_ANDROID_VERSIONS_TO_KEEP = 2
 DEFAULT_AUTO_EXTRACT = False
 
 # File extensions and patterns
 APK_EXTENSION = ".apk"
 ZIP_EXTENSION = ".zip"
 SHELL_SCRIPT_EXTENSION = ".sh"
-EXECUTABLE_PERMISSIONS = 0o755
 
 # Clean operation messages
 MSG_REMOVED_MANAGED_DIR = "Removed managed directory: {path}"
