@@ -1312,6 +1312,15 @@ def _format_history_entry(
     return formatted_entry
 
 
+def _sort_key(entry: Dict[str, Any]) -> tuple:
+    """Sort key for prerelease entries using most recent timestamp."""
+    added_at = entry.get("added_at") or ""
+    removed_at = entry.get("removed_at") or ""
+    # Use the most recent timestamp for sorting
+    most_recent = max(added_at, removed_at)
+    return (most_recent, entry.get("identifier", ""))
+
+
 def get_prerelease_tracking_info(
     github_token: Optional[str] = None, force_refresh: bool = False
 ):
@@ -2250,15 +2259,6 @@ def _build_simplified_prerelease_history(
 
     # Convert to list and sort by added_at (newest first), then by removed_at
     entry_list = list(entries.values())
-
-    def _sort_key(entry: Dict[str, Any]) -> tuple:
-        # Sort by most recent timestamp (added or removed), newest first
-        added_at = entry.get("added_at") or ""
-        removed_at = entry.get("removed_at") or ""
-        # Use the most recent timestamp for sorting
-        most_recent = max(added_at, removed_at)
-        return (most_recent, entry.get("identifier", ""))
-
     entry_list.sort(key=_sort_key, reverse=True)
 
     logger.debug(

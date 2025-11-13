@@ -19,11 +19,15 @@ import requests
 from fetchtastic import downloader
 from fetchtastic.downloader import (
     _commit_timestamp_cache,
+    _extract_identifier_from_entry,
+    _format_history_entry,
     _get_commit_cache_file,
     _get_commit_hash_from_dir,
+    _is_entry_deleted,
     _load_commit_cache,
     _normalize_version,
     _save_commit_cache,
+    _sort_key,
     clear_commit_timestamp_cache,
     get_commit_timestamp,
     get_prerelease_tracking_info,
@@ -1205,3 +1209,115 @@ def test_normalize_version():
     # Test invalid versions
     assert _normalize_version("invalid") is None
     assert _normalize_version("v") is None
+
+
+class TestPrereleaseHelperFunctions:
+    """Test helper functions for prerelease tracking."""
+
+    def test_extract_identifier_from_entry(self):
+        """Test identifier extraction from history entries."""
+        # Test with identifier field
+        entry1 = {"identifier": "test-123", "status": "active"}
+        assert _extract_identifier_from_entry(entry1) == "test-123"
+
+        # Test with directory field
+        entry2 = {"directory": "firmware-2.7.9.abc123", "status": "active"}
+        assert _extract_identifier_from_entry(entry2) == "firmware-2.7.9.abc123"
+
+        # Test with dir field
+        entry3 = {"dir": "test-dir", "status": "active"}
+        assert _extract_identifier_from_entry(entry3) == "test-dir"
+
+        # Test with missing all fields
+        entry4 = {"status": "active"}
+        assert _extract_identifier_from_entry(entry4) == ""
+
+        # Test with empty fields
+        entry5 = {"identifier": "", "directory": "", "dir": "", "status": "active"}
+        assert _extract_identifier_from_entry(entry5) == ""
+
+    def test_is_entry_deleted(self):
+        """Test entry deletion detection."""
+        # Test with deleted status
+        entry1 = {"status": "deleted"}
+        assert _is_entry_deleted(entry1) is True
+
+        # Test with removed_at field
+        entry2 = {"removed_at": "2023-01-01T00:00:00Z"}
+        assert _is_entry_deleted(entry2) is True
+
+        # Test with both deleted indicators
+        entry3 = {"status": "deleted", "removed_at": "2023-01-01T00:00:00Z"}
+        assert _is_entry_deleted(entry3) is True
+
+        # Test with active status
+        entry4 = {"status": "active"}
+        assert _is_entry_deleted(entry4) is False
+
+        # Test with empty status
+        entry5 = {"status": ""}
+        assert _is_entry_deleted(entry5) is False
+
+    def test_format_history_entry(self):
+        """Test history entry formatting."""
+        # Test newest entry
+        entry1 = {"identifier": "test-123", "status": "active"}
+        result = _format_history_entry(entry1, 0, "test-123")
+        assert result["display_name"] == "test-123"
+        assert result["is_deleted"] is False
+        assert result["is_newest"] is True
+        assert result["is_latest"] is True
+        assert "[green]" in result["markup_label"]
+
+        # Test deleted entry
+        entry2 = {"identifier": "test-456", "status": "deleted"}
+        result = _format_history_entry(entry2, 1, "test-123")
+        assert result["display_name"] == "test-456"
+        assert result["is_deleted"] is True
+        assert result["is_newest"] is False
+        assert result["is_latest"] is False
+        assert "[red][strike]" in result["markup_label"]
+
+        # Test middle entry (not newest, not latest active)
+        entry3 = {"identifier": "test-789", "status": "active"}
+        result = _format_history_entry(entry3, 2, "test-123")
+        assert result["display_name"] == "test-789"
+        assert result["is_deleted"] is False
+        assert result["is_newest"] is False
+        assert result["is_latest"] is False
+        assert result["markup_label"] == "test-789"
+
+        # Test empty identifier
+        entry4 = {"status": "active"}
+        result = _format_history_entry(entry4, 3, None)
+        assert result == entry4  # Should return unchanged if no identifier
+
+    def test_sort_key_with_max_function(self):
+        """Test the improved _sort_key function using max()."""
+        # Test with added_at more recent
+        entry1 = {
+            "identifier": "test1",
+            "added_at": "2023-12-01T10:00:00Z",
+            "removed_at": "2023-11-01T10:00:00Z",
+        }
+        result = _sort_key(entry1)
+        assert result[0] == "2023-12-01T10:00:00Z"  # max should pick added_at
+
+        # Test with removed_at more recent
+        entry2 = {
+            "identifier": "test2",
+            "added_at": "2023-10-01T10:00:00Z",
+            "removed_at": "2023-12-01T10:00:00Z",
+        }
+        result = _sort_key(entry2)
+        assert result[0] == "2023-12-01T10:00:00Z"  # max should pick removed_at
+
+        # Test with empty timestamps
+        entry3 = {"identifier": "test3", "added_at": "", "removed_at": ""}
+        result = _sort_key(entry3)
+        assert result[0] == ""  # max of empty strings should be empty
+
+        # Test with missing timestamp fields
+        entry4 = {"identifier": "test4"}
+        result = _sort_key(entry4)
+        assert result[0] == ""  # Missing fields should default to empty string
