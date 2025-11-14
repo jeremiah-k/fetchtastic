@@ -1581,8 +1581,8 @@ def test_build_simplified_prerelease_history_re_add_scenario():
     assert entry["removed_sha"] is None
 
 
-def test_prerelease_history_cache_expiry(tmp_path_factory, monkeypatch):
-    """Test that prerelease history cache expiry works correctly."""
+def test_prerelease_history_cache_is_persistent(tmp_path_factory, monkeypatch):
+    """Test that prerelease history cache persists and does not expire by age."""
 
     import json
     from datetime import datetime, timedelta, timezone
