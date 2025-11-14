@@ -53,7 +53,7 @@ class TestTokenWarningFix:
     def test_get_latest_releases_data_logs_cached_usage(self, mock_request):
         """Test that cached data usage is logged appropriately."""
 
-        def mock_api_request(url, **kwargs):
+        def mock_api_request(_url, **kwargs):
             """Mock API request that handles pagination correctly."""
             mock_response = MagicMock()
 

@@ -1740,6 +1740,58 @@ def test_build_history_fetches_uncertain_commits_when_rate_limit_allows(monkeypa
         mock_request.assert_called_once()
 
 
+def test_build_history_prioritizes_newest_uncertain_commits(monkeypatch):
+    """Newest uncertain commits should be processed first when the enrichment limit applies."""
+
+    call_order = []
+
+    monkeypatch.setattr(downloader, "_should_fetch_uncertain_commits", lambda: True)
+    monkeypatch.setattr(downloader, "_MAX_UNCERTAIN_COMMITS_TO_RESOLVE", 1)
+
+    def fake_fetch(sha, github_token, allow_env_token):
+        call_order.append(sha)
+        if sha == "sha-newest":
+            return [
+                {
+                    "filename": "firmware-2.7.15.abc1234/new.bin",
+                    "status": "added",
+                }
+            ]
+        return [
+            {
+                "filename": "firmware-2.7.15.old9999/old.bin",
+                "status": "added",
+            }
+        ]
+
+    monkeypatch.setattr(downloader, "_fetch_commit_files", fake_fetch)
+
+    commits = [
+        {
+            "sha": "sha-newest",
+            "commit": {
+                "message": "Manual prerelease update",
+                "committer": {"date": "2025-02-02T10:00:00Z"},
+            },
+        },
+        {
+            "sha": "sha-older",
+            "commit": {
+                "message": "Manual prerelease update",
+                "committer": {"date": "2025-01-30T10:00:00Z"},
+            },
+        },
+    ]
+
+    history = downloader._build_simplified_prerelease_history("2.7.15", commits)
+
+    assert call_order == ["sha-newest"]
+    assert history
+    assert history[0]["identifier"] == "2.7.15.abc1234"
+    assert history[0]["added_sha"] == "sha-newest"
+    assert all(entry["identifier"] != "2.7.15.old9999" for entry in history)
+
+
 def test_build_history_skips_detail_fetch_when_rate_limit_low(monkeypatch):
     """Ensure we avoid extra API calls for uncertain commits when requests are scarce."""
 

@@ -1449,9 +1449,9 @@ def get_prerelease_tracking_info(
     active_count = max(created_count - deleted_count, 0) if created_count else None
 
     # Fallback logic for latest prerelease identifier:
-    # 1. Use latest active identifier if available
-    # 2. Otherwise use the most recent commit
-    # 3. Otherwise use the first entry from formatted history
+    # 1. Use latest active identifier if available.
+    # 2. Otherwise use the most recent entry from history.
+    # 3. Otherwise fall back to the tracked commits list.
     latest_prerelease_identifier = (
         latest_active_identifier
         or (formatted_history[0].get("identifier") if formatted_history else None)
@@ -2567,7 +2567,7 @@ def _build_simplified_prerelease_history(
     """
     Build a simplified prerelease history from a list of repository commits.
 
-    Parses commit messages to derive prerelease add/delete events for the given expected_version and produces a chronological list of prerelease entries with normalized fields such as `directory`, `identifier`, `added_at`, `added_sha`, `removed_at`, `removed_sha`, `active`, and `status`. The function processes commits oldest-first so later commits override earlier ones. Commit messages that do not match the expected add/delete patterns are ignored unless commit-detail fetching is permitted and rate-limit conditions allow richer inspection.
+    Parses commit messages to derive prerelease add/delete events for the given expected_version and produces a chronological list of prerelease entries with normalized fields such as `directory`, `identifier`, `added_at`, `added_sha`, `removed_at`, `removed_sha`, `active`, and `status`. The function processes commits oldest-first so later commits override earlier ones. Commit messages that do not match the expected add/delete patterns are ignored unless commit-detail fetching is permitted and rate-limit conditions allow richer inspection, in which case the newest uncertain commits are examined first.
 
     Parameters:
         expected_version (str): Base prerelease version to filter commits against (e.g., "2.7.14").
@@ -2766,10 +2766,12 @@ def _enrich_history_from_commit_details(
 ) -> None:
     """
     Fetch commit details for commits that could not be classified from message parsing and update entries accordingly.
+
+    The newest uncertain commits are processed first so the resolution cap prioritizes the most recent prerelease activity.
     """
 
     processed = 0
-    for commit in uncertain_commits:
+    for commit in reversed(uncertain_commits):
         if processed >= _MAX_UNCERTAIN_COMMITS_TO_RESOLVE:
             break
 
@@ -2897,9 +2899,9 @@ def _get_prerelease_commit_history(
     allow_env_token: bool = True,
 ) -> List[Dict[str, Any]]:
     """
-    Get the prerelease commit history for the provided expected prerelease base version, using a cached copy when available and not expired.
+    Get the prerelease commit history for the provided expected prerelease base version, using a cached copy when available.
 
-    If `expected_version` is falsy an empty list is returned. When `force_refresh` is False the function will attempt to read a on-disk/in-memory cache and return it if still valid; otherwise it will fetch and rebuild the history.
+    If `expected_version` is falsy an empty list is returned. When `force_refresh` is False the function will attempt to read the on-disk/in-memory cache and return it if present; otherwise it will fetch and rebuild the history. The cache is intentionally persistent (no automatic expiry), so callers must request a force refresh when they need to bypass the cached value.
 
     Parameters:
         expected_version (str): The base version string used to identify prerelease commits (for example "1.2.3").

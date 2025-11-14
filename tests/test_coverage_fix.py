@@ -161,7 +161,7 @@ def test_api_fetch_logging_lines_coverage():
         downloader_module._releases_cache = {}
         downloader_module._releases_cache_loaded = True
 
-        def mock_api_request(url, **kwargs):
+        def mock_api_request(_url, **kwargs):
             """Mock API request that handles pagination correctly."""
             mock_response = MagicMock()
 
@@ -232,8 +232,9 @@ def test_get_latest_releases_data_paginates():
         call_pages = []
 
         def _fake_request(_url, **kwargs):
-            call_pages.append(kwargs["params"]["page"])
-            if kwargs["params"]["page"] == 1:
+            page = kwargs.get("params", {}).get("page", 1)
+            call_pages.append(page)
+            if page == 1:
                 return _make_response(
                     [
                         {
