@@ -42,12 +42,20 @@ _BLOCKED_NETWORK_MSG = "Network access is blocked in tests"
 @pytest.fixture(autouse=True)
 def _deny_network():
     """
-    Prevent external network access during tests by patching requests.get and requests.post
-    in both fetchtastic.downloader and fetchtastic.utils so any attempt to call them raises
-    an AssertionError with the test-network-block message.
+    Patch network calls in fetchtastic.downloader and fetchtastic.utils to raise an AssertionError when used.
+    
+    Patches `requests.get` and `requests.post` in both modules so any external network attempt triggers an `AssertionError` with the message `_BLOCKED_NETWORK_MSG`.
     """
 
     def _no_net(*_args, **_kwargs):
+        """
+        Raise an AssertionError to block any network access during tests.
+        
+        This helper is intended to be used as a replacement for network-call functions so that any attempt to perform network I/O fails immediately.
+        
+        Raises:
+            AssertionError: always raised with the message contained in `_BLOCKED_NETWORK_MSG`.
+        """
         raise AssertionError(_BLOCKED_NETWORK_MSG)
 
     with patch("fetchtastic.downloader.requests.get", _no_net):
@@ -60,9 +68,9 @@ def _deny_network():
 @pytest.fixture
 def mock_commit_history(monkeypatch):
     """
-    Ensure tests do not perform real commit-history lookups by forcing an empty history.
-
-    This fixture monkeypatches downloader._get_prerelease_commit_history to always return an empty list, preventing network access during prerelease-related tests.
+    Force prerelease commit history lookups to return an empty list to avoid network access during tests.
+    
+    Patches downloader._get_prerelease_commit_history so it always returns an empty list.
     """
 
     monkeypatch.setattr(
@@ -75,10 +83,10 @@ def mock_commit_history(monkeypatch):
 @pytest.fixture(autouse=True)
 def _use_isolated_cache(tmp_path_factory, monkeypatch):
     """
-    Create an isolated temporary cache directory and reconfigure downloader internals to use it for the test.
-
-    Patches downloader.platformdirs.user_cache_dir to return a fresh temporary directory and resets internal downloader cache-file globals so subsequent cache reads/writes use the isolated path.
-
+    Create an isolated temporary cache directory and configure the downloader to use it for the test.
+    
+    Patches downloader.platformdirs.user_cache_dir to return a fresh temporary directory and resets internal downloader cache-file globals so subsequent cache reads and writes use the isolated path.
+    
     Returns:
         pathlib.Path: Path to the temporary isolated cache directory.
     """
@@ -102,32 +110,33 @@ def _use_isolated_cache(tmp_path_factory, monkeypatch):
 
 def mock_github_commit_timestamp(commit_timestamps):
     """
-    Create a requests.get side-effect that returns GitHub-style commit timestamp responses for specified commit hashes.
-
-    For URLs containing "/commits/{hash}" or "/git/commits/{hash}" that match a key in commit_timestamps, the returned mock's json() yields {"commit": {"committer": {"date": "<ISO timestamp>"}}}; for other URLs json() yields {}. The mock's raise_for_status() is a no-op.
-
+    Create a requests.get side-effect that returns mock GitHub commit-timestamp responses for specified commit hashes.
+    
+    When the generated callable is invoked with a URL containing "/commits/{hash}" or "/git/commits/{hash}" and that hash exists in `commit_timestamps`, the returned mock's `json()` yields {"commit": {"committer": {"date": "<ISO timestamp>"}}} and `raise_for_status()` is a no-op. For other URLs the mock's `json()` returns an empty dict and `ok` is False.
+    
     Parameters:
         commit_timestamps (dict): Mapping of commit hash (str) to ISO 8601 timestamp string.
-
+    
     Returns:
-        function: A callable (url, **kwargs) -> unittest.mock.Mock that simulates the requests.get response described above.
+        function: A callable (url, **kwargs) -> unittest.mock.Mock that simulates the described requests.get response.
     """
 
     def mock_get_response(url, **_kwargs):
         """
-        Return a requests-like mock response for GitHub commit timestamp endpoints used in tests.
-
-        When the URL contains "commits/{commit_hash}" for a commit_hash present in
-        the surrounding `commit_timestamps` mapping, the mock's `json()` returns
-        {"commit": {"committer": {"date": <timestamp>}}}. For all other URLs the
-        mock's `json()` returns an empty dict. The mock's `raise_for_status()` is a no-op.
-
+        Create a requests-like mock response for GitHub commit-timestamp endpoints used in tests.
+        
+        When the URL contains "/commits/{commit_hash}" or "/git/commits/{commit_hash}" for a
+        commit_hash present in the surrounding `commit_timestamps` mapping, the mock's
+        json() returns {"commit": {"committer": {"date": <timestamp>}}} and the response
+        appears successful. For all other URLs the mock's json() returns an empty dict
+        and the response appears unsuccessful. The mock's raise_for_status() is a no-op.
+        
         Parameters:
             url (str): The requested URL.
-
+        
         Returns:
-            unittest.mock.Mock: A mock object implementing `json()` and `raise_for_status()`
-            that simulates a GitHub commit-timestamp API response.
+            unittest.mock.Mock: A mock object providing `json()`, `raise_for_status()`,
+            `status_code`, and `ok` to simulate a GitHub commit-timestamp API response.
         """
 
         # Extract commit hash from URL
@@ -619,13 +628,12 @@ def test_get_prerelease_tracking_info_includes_history(monkeypatch, tmp_path):
 
     def _mock_get_history(*_args, **_kwargs):
         """
-        Provide a pre-defined sample prerelease commit history for tests.
-
-        This helper ignores all positional and keyword arguments and returns the `sample_history`
-        object from the surrounding test scope.
-
+        Return the predefined sample prerelease commit history from the enclosing test scope.
+        
+        Ignores all positional and keyword arguments.
+        
         Returns:
-            sample_history: The pre-defined prerelease commit history used by tests.
+            sample_history: The sample prerelease commit history object supplied by the surrounding test.
         """
         return sample_history
 
@@ -1749,6 +1757,17 @@ def test_build_history_prioritizes_newest_uncertain_commits(monkeypatch):
     monkeypatch.setattr(downloader, "_MAX_UNCERTAIN_COMMITS_TO_RESOLVE", 1)
 
     def fake_fetch(sha, github_token, allow_env_token):
+        """
+        Return a fake list of file changes for a given commit SHA to simulate GitHub commit file listings.
+        
+        Parameters:
+            sha (str): Commit SHA to simulate. If equal to "sha-newest", the response contains a firmware file in a directory with suffix "abc1234"; otherwise it contains an older firmware file with suffix "old9999".
+            github_token: Ignored by this fake; included to match the real function signature.
+            allow_env_token: Ignored by this fake; included to match the real function signature.
+        
+        Returns:
+            list[dict]: A list of file-change dictionaries with keys `filename` (path to the file) and `status` (e.g., `"added"`).
+        """
         call_order.append(sha)
         if sha == "sha-newest":
             return [

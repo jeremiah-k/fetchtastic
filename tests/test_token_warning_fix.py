@@ -51,10 +51,28 @@ class TestTokenWarningFix:
     @patch("fetchtastic.downloader._releases_cache", {})
     @patch("fetchtastic.downloader.make_github_api_request")
     def test_get_latest_releases_data_logs_cached_usage(self, mock_request):
-        """Test that cached data usage is logged appropriately."""
+        """
+        Verify _get_latest_releases_data fetches paginated API results on a cache miss and returns the same cached results on a subsequent call without duplicating items.
+        
+        Sets a side-effect on the patched request to return one release on page 1 and no releases on later pages, calls _get_latest_releases_data once with force_refresh=True and once with force_refresh=False, and asserts both calls return the same single-item list containing the release with its published_at timestamp.
+        
+        Parameters:
+            mock_request: The patched function used to perform GitHub API requests; configured here to simulate paginated responses.
+        """
 
         def mock_api_request(_url, **kwargs):
-            """Mock API request that handles pagination correctly."""
+            """
+            Provide a mocked HTTP response that simulates paginated GitHub API results.
+            
+            When `params` in `kwargs` has `page` equal to 1, the response's `json()` returns a list with a single release dict containing `tag_name` and `published_at`. For any other page the response's `json()` returns an empty list.
+            
+            Parameters:
+                _url (str): Ignored; present to match the real request signature.
+                **kwargs: Keyword arguments forwarded from the caller; when `params` is present, `params.get("page")` controls pagination.
+            
+            Returns:
+                MagicMock: A mock response object whose `json()` method returns the page-specific list described above.
+            """
             mock_response = MagicMock()
 
             # Return data only for first page, empty for subsequent pages
