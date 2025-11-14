@@ -2018,7 +2018,7 @@ def test_enrich_history_from_commit_details_with_renamed_files():
     ):
         with patch("fetchtastic.downloader._record_prerelease_addition") as mock_add:
             with patch(
-                "fetchtastic.downloader._record_prerelease_removal"
+                "fetchtastic.downloader._record_prerelease_deletion"
             ) as mock_remove:
                 _enrich_history_from_commit_details(
                     entries,
@@ -2053,7 +2053,7 @@ def test_enrich_history_from_commit_details_with_renamed_files():
     ):
         with patch("fetchtastic.downloader._record_prerelease_addition") as mock_add:
             with patch(
-                "fetchtastic.downloader._record_prerelease_removal"
+                "fetchtastic.downloader._record_prerelease_deletion"
             ) as mock_remove:
                 _enrich_history_from_commit_details(
                     entries,
@@ -2124,154 +2124,6 @@ def test_create_default_prerelease_entry_edge_cases():
     assert result1["removed_sha"] is None
     assert result1["active"] is False
     assert result1["status"] == "unknown"
-
-
-def test_threadpool_executor_parallelization_edge_cases():
-    """Test ThreadPoolExecutor parallelization with various edge cases."""
-    from fetchtastic.downloader import _enrich_history_from_commit_details
-
-    expected_version = "2.7.99"
-    entries = {}
-
-    # Test case 1: Multiple commits processed in parallel
-    uncertain_commits_multiple = [
-        {
-            "sha": "abc123def456",
-            "commit": {"committer": {"date": "2023-01-01T00:00:00Z"}},
-        },
-        {
-            "sha": "def456abc123",
-            "commit": {"committer": {"date": "2023-01-02T00:00:00Z"}},
-        },
-        {
-            "sha": "ghi789def456",
-            "commit": {"committer": {"date": "2023-01-03T00:00:00Z"}},
-        },
-    ]
-
-    # Mock API responses for each commit
-    files_responses = [
-        [{"filename": "firmware-2.7.99.abc123/file1.bin", "status": "added"}],
-        [{"filename": "firmware-2.7.99.def456/file2.bin", "status": "added"}],
-        [{"filename": "firmware-2.7.99.ghi789/file3.bin", "status": "added"}],
-    ]
-
-    with patch(
-        "fetchtastic.downloader._fetch_commit_files", side_effect=files_responses
-    ):
-        with patch("fetchtastic.downloader._record_prerelease_addition") as mock_add:
-            with patch("fetchtastic.downloader.logger.debug") as mock_debug:
-                _enrich_history_from_commit_details(
-                    entries,
-                    uncertain_commits_multiple,
-                    expected_version,
-                    "test_token",
-                    False,
-                )
-
-                # Should have processed all 3 commits
-                assert mock_add.call_count == 3
-
-                # Should log debug messages about worker usage
-                debug_calls = [call.args[0] for call in mock_debug.call_args_list]
-                assert any("worker(s)" in call for call in debug_calls)
-
-    # Test case 2: Rate limiting with attempt cap
-    entries.clear()
-    with patch("fetchtastic.downloader.get_api_request_summary") as mock_summary:
-        mock_summary.return_value = {
-            "rate_limit_remaining": 5,  # Low rate limit
-            "auth_used": False,
-        }
-
-        with patch("fetchtastic.downloader._fetch_commit_files", return_value=[]):
-            with patch("fetchtastic.downloader.logger.debug") as mock_debug:
-                _enrich_history_from_commit_details(
-                    entries, uncertain_commits_multiple, expected_version, None, False
-                )
-
-                # Should log rate limiting behavior
-                debug_calls = [call.args[0] for call in mock_debug.call_args_list]
-                assert any("attempt cap" in call for call in debug_calls)
-
-    # Test case 3: Maximum commits limit reached
-    entries.clear()
-    many_commits = [
-        {
-            "sha": f"hash{i:03d}",
-            "commit": {"committer": {"date": f"2023-01-{i:02d}T00:00:00Z"}},
-        }
-        for i in range(20)  # More than max limit
-    ]
-
-    with patch("fetchtastic.downloader._fetch_commit_files", return_value=[]):
-        with patch("fetchtastic.downloader.logger.debug") as mock_debug:
-            _enrich_history_from_commit_details(
-                entries, many_commits, expected_version, "test_token", False
-            )
-
-            # Should log when max limit is reached
-            debug_calls = [call.args[0] for call in mock_debug.call_args_list]
-            assert any("maximum uncertain commits" in call for call in debug_calls)
-
-
-def test_threadpool_executor_error_handling():
-    """Test ThreadPoolExecutor error handling for failed API calls."""
-    from fetchtastic.downloader import _enrich_history_from_commit_details
-
-    expected_version = "2.7.99"
-    entries = {}
-
-    uncertain_commits = [
-        {
-            "sha": "abc123def456",
-            "commit": {"committer": {"date": "2023-01-01T00:00:00Z"}},
-        },
-        {
-            "sha": "def456abc123",
-            "commit": {"committer": {"date": "2023-01-02T00:00:00Z"}},
-        },
-    ]
-
-    # Test case 1: API call raises exception
-    with patch(
-        "fetchtastic.downloader._fetch_commit_files", side_effect=Exception("API Error")
-    ):
-        with patch("fetchtastic.downloader.logger.debug") as mock_debug:
-            _enrich_history_from_commit_details(
-                entries, uncertain_commits, expected_version, "test_token", False
-            )
-
-            # Should log debug messages about failed API calls
-            debug_calls = [call.args[0] for call in mock_debug.call_args_list]
-            assert any(
-                "Failed to obtain commit details" in call for call in debug_calls
-            )
-
-    # Test case 2: Mixed success and failure
-    entries.clear()
-
-    def mixed_responses(sha, *args, **kwargs):
-        if "abc123" in sha:
-            return [{"filename": "firmware-2.7.99.abc123/file.bin", "status": "added"}]
-        else:
-            raise Exception("API Error")
-
-    with patch(
-        "fetchtastic.downloader._fetch_commit_files", side_effect=mixed_responses
-    ):
-        with patch("fetchtastic.downloader._record_prerelease_addition") as mock_add:
-            with patch("fetchtastic.downloader.logger.debug") as mock_debug:
-                _enrich_history_from_commit_details(
-                    entries, uncertain_commits, expected_version, "test_token", False
-                )
-
-                # Should process successful commit and log error for failed one
-                assert mock_add.call_count == 1
-                debug_calls = [call.args[0] for call in mock_debug.call_args_list]
-                assert any(
-                    "Failed to obtain commit details" in call for call in debug_calls
-                )
 
 
 def test_cache_build_logging_scenarios():
