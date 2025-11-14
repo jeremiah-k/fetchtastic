@@ -22,7 +22,7 @@ from fetchtastic import downloader
 def mock_commit_history(monkeypatch):
     """
     Replace the prerelease commit-history fetcher with a stub that always returns an empty list during tests.
-    
+
     Parameters:
         monkeypatch (pytest.MonkeyPatch): Pytest fixture used to patch attributes on modules; this function uses it to replace
             fetchtastic.downloader._get_prerelease_commit_history with a stub that returns [].

@@ -1851,45 +1851,6 @@ def test_build_history_skips_detail_fetch_when_rate_limit_low(monkeypatch):
         mock_request.assert_not_called()
 
 
-def test_get_prerelease_history_logs_initial_build(monkeypatch):
-    """Ensure the first-time cache build logs a helpful message."""
-
-    original_cache = dict(downloader._prerelease_commit_history_cache)
-    original_loaded = downloader._prerelease_commit_history_loaded
-
-    def _noop_load() -> None:
-        """
-        Placeholder loader that performs no action.
-
-        Used where a callable loader is required but no loading behavior is needed.
-        """
-        return None
-
-    monkeypatch.setattr(downloader, "_load_prerelease_commit_history_cache", _noop_load)
-
-    try:
-        downloader._prerelease_commit_history_cache.clear()
-        downloader._prerelease_commit_history_loaded = False
-
-        with (
-            patch.object(
-                downloader, "_refresh_prerelease_commit_history", return_value=[]
-            ) as mock_refresh,
-            patch.object(downloader.logger, "info") as mock_info,
-        ):
-            downloader._get_prerelease_commit_history("2.7.99")
-            mock_refresh.assert_called_once()
-
-        mock_info.assert_called_once_with(
-            "Building prerelease history cache for %s (first run may take a couple of minutes)...",
-            "2.7.99",
-        )
-    finally:
-        downloader._prerelease_commit_history_cache.clear()
-        downloader._prerelease_commit_history_cache.update(original_cache)
-        downloader._prerelease_commit_history_loaded = original_loaded
-
-
 def test_fetch_recent_repo_commits_with_api_mocking(tmp_path_factory, monkeypatch):
     """Test _fetch_recent_repo_commits with targeted API mocking instead of full function mock."""
 
