@@ -43,16 +43,16 @@ _BLOCKED_NETWORK_MSG = "Network access is blocked in tests"
 def _deny_network():
     """
     Fixture that blocks external network access for the duration of a test.
-    
+
     Patches the HTTP call entry points used by the downloader tests so any attempt to perform network I/O raises an AssertionError with the message stored in `_BLOCKED_NETWORK_MSG`. This ensures tests cannot make real network requests.
     """
 
     def _no_net(*_args, **_kwargs):
         """
         Prevent network access by raising an AssertionError when called.
-        
+
         Intended as a replacement for network-call functions in tests so any attempted network I/O fails immediately.
-        
+
         Raises:
             AssertionError: always raised with the message contained in `_BLOCKED_NETWORK_MSG`.
         """
@@ -69,7 +69,7 @@ def _deny_network():
 def mock_commit_history(monkeypatch):
     """
     Force prerelease commit history lookups to return an empty list for tests.
-    
+
     Replaces downloader._get_prerelease_commit_history with a stub that returns [] to prevent network access during tests.
     """
 
@@ -84,9 +84,9 @@ def mock_commit_history(monkeypatch):
 def _use_isolated_cache(tmp_path_factory, monkeypatch):
     """
     Prepare an isolated temporary user cache directory for tests and configure the downloader to use it.
-    
+
     Resets downloader's internal cache-file globals so subsequent cache reads and writes target the isolated directory.
-    
+
     Returns:
         Path: The temporary isolated cache directory path.
     """
@@ -124,12 +124,12 @@ def mock_github_commit_timestamp(commit_timestamps):
     def mock_get_response(url, **_kwargs):
         """
         Produce a requests-like mock response for GitHub commit timestamp endpoints using the surrounding `commit_timestamps` mapping.
-        
+
         When the URL contains "/commits/{commit_hash}" or "/git/commits/{commit_hash}" for a commit_hash present in `commit_timestamps`, the response's `json()` returns {"commit": {"committer": {"date": <timestamp>}}}, `status_code` is 200, and `ok` is True. For other URLs `json()` returns an empty dict, `status_code` is 404, and `ok` is False. The mock also provides a `raise_for_status()` callable that is a no-op.
-        
+
         Parameters:
             url (str): The requested URL.
-        
+
         Returns:
             unittest.mock.Mock: A mock response object that mimics the shape and behavior of a requests.Response for commit-timestamp lookups.
         """
@@ -1734,9 +1734,9 @@ def test_build_history_fetches_uncertain_commits_when_rate_limit_allows(monkeypa
     def _fake_request(*_args, **_kwargs):
         """
         Provide a predefined fake HTTP response for use as a mock side-effect.
-        
+
         Used as a side-effect function when patching HTTP request calls in tests.
-        
+
         Returns:
             The predefined `fake_response` object from the enclosing scope.
         """
@@ -1860,7 +1860,7 @@ def test_get_prerelease_history_logs_initial_build(monkeypatch):
     def _noop_load() -> None:
         """
         Placeholder loader that performs no action.
-        
+
         Used where a callable loader is required but no loading behavior is needed.
         """
         return None
@@ -2090,15 +2090,6 @@ def test_extract_prerelease_dir_info_edge_cases():
     result = _extract_prerelease_dir_info(non_matching_path, expected_version)
     assert result is None
 
-    # Empty path
-    result = _extract_prerelease_dir_info("", expected_version)
-    assert result is None
-
-    # Non-matching pattern
-    non_matching_path = "some/other/path/file.bin"
-    result = _extract_prerelease_dir_info(non_matching_path, expected_version)
-    assert result is None
-
 
 def test_create_default_prerelease_entry_edge_cases():
     """Test helper function with various inputs."""
@@ -2131,7 +2122,7 @@ def test_cache_build_logging_scenarios(monkeypatch):
     def _noop_load() -> None:
         """
         No-op loader that performs no action.
-        
+
         Intended as a placeholder loader to use when no persistent load should occur.
         """
         return None
