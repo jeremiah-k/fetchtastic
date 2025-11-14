@@ -2834,7 +2834,15 @@ def _enrich_history_from_commit_details(
     seen_shas: Set[str] = set()
 
     for commit in reversed(uncertain_commits):
-        if len(commits_to_process) >= _MAX_UNCERTAIN_COMMITS_TO_RESOLVE:
+        # Allow processing more commits when we have many candidates,
+        # to account for ones that won't produce directory changes
+        effective_limit = _MAX_UNCERTAIN_COMMITS_TO_RESOLVE
+        if len(uncertain_commits) > _MAX_UNCERTAIN_COMMITS_TO_RESOLVE * 2:
+            effective_limit = min(
+                _MAX_UNCERTAIN_COMMITS_TO_RESOLVE * 2, len(uncertain_commits)
+            )
+
+        if len(commits_to_process) >= effective_limit:
             break
 
         sha = commit.get("sha")

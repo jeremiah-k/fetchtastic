@@ -1852,43 +1852,45 @@ def test_get_prerelease_history_logs_initial_build(monkeypatch):
     """Ensure the first-time cache build logs a helpful message."""
 
     original_cache = dict(downloader._prerelease_commit_history_cache)
+    original_loaded = downloader._prerelease_commit_history_loaded
 
     def _noop_load() -> None:
         return None
 
     monkeypatch.setattr(downloader, "_load_prerelease_commit_history_cache", _noop_load)
 
-    downloader._prerelease_commit_history_cache.clear()
-    downloader._prerelease_commit_history_loaded = False
+    try:
+        downloader._prerelease_commit_history_cache.clear()
+        downloader._prerelease_commit_history_loaded = False
 
-    with (
-        patch.object(
-            downloader, "_refresh_prerelease_commit_history", return_value=[]
-        ) as mock_refresh,
-        patch.object(downloader.logger, "info") as mock_info,
-    ):
-        downloader._get_prerelease_commit_history("2.7.99")
-        mock_refresh.assert_called_once()
+        with (
+            patch.object(
+                downloader, "_refresh_prerelease_commit_history", return_value=[]
+            ) as mock_refresh,
+            patch.object(downloader.logger, "info") as mock_info,
+        ):
+            downloader._get_prerelease_commit_history("2.7.99")
+            mock_refresh.assert_called_once()
 
-    logged_messages = []
-    for call in mock_info.call_args_list:
-        if not call.args:
-            continue
-        template = call.args[0]
-        params = call.args[1:]
-        try:
-            message = template % params if params else template
-        except TypeError:
-            message = template
-        logged_messages.append(message)
-    assert any(
-        "Building prerelease history cache for 2.7.99" in message
-        for message in logged_messages
-    )
-
-    downloader._prerelease_commit_history_cache.clear()
-    downloader._prerelease_commit_history_cache.update(original_cache)
-    downloader._prerelease_commit_history_loaded = False
+        logged_messages = []
+        for call in mock_info.call_args_list:
+            if not call.args:
+                continue
+            template = call.args[0]
+            params = call.args[1:]
+            try:
+                message = template % params if params else template
+            except TypeError:
+                message = template
+            logged_messages.append(message)
+        assert any(
+            "Building prerelease history cache for 2.7.99" in message
+            for message in logged_messages
+        )
+    finally:
+        downloader._prerelease_commit_history_cache.clear()
+        downloader._prerelease_commit_history_cache.update(original_cache)
+        downloader._prerelease_commit_history_loaded = original_loaded
 
 
 def test_fetch_recent_repo_commits_with_api_mocking(tmp_path_factory, monkeypatch):
