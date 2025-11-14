@@ -716,21 +716,23 @@ def configure_exclude_patterns(config: dict) -> None:
 
 def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> dict:
     """
-    Configure firmware-related settings in the provided config dictionary by interactively prompting the user.
-
-    Prompts and updates the following keys in `config`:
-    - FIRMWARE_VERSIONS_TO_KEEP (int): number of firmware versions to retain.
-    - AUTO_EXTRACT (bool): whether to automatically extract files from firmware zip archives.
-    - EXTRACT_PATTERNS (list[str]): space-separated keywords to match files to extract (set only if AUTO_EXTRACT is enabled).
-    - EXCLUDE_PATTERNS (list[str]): space-separated keywords to exclude from extraction.
-    - CHECK_PRERELEASES (bool): whether to check/download prerelease firmware.
-    - SELECTED_PRERELEASE_ASSETS (list[str]): device patterns for prereleases, copied from EXTRACT_PATTERNS.
-
-    Behavior notes:
-    - Uses current config values as defaults when present; otherwise falls back to provided defaults.
-    - If CHECK_PRERELEASES is enabled, SELECTED_PRERELEASE_ASSETS will be set to match EXTRACT_PATTERNS.
-    - If AUTO_EXTRACT is enabled but no extract patterns are provided, AUTO_EXTRACT will be disabled.
-    - Returns the updated config dict (the same object passed in, modified in place).
+    Configure firmware-related settings in the provided config dictionary via interactive prompts.
+    
+    Updates config in place with keys related to firmware retention, automatic extraction, extraction/exclusion patterns, and prerelease handling:
+    - FIRMWARE_VERSIONS_TO_KEEP
+    - AUTO_EXTRACT
+    - EXTRACT_PATTERNS
+    - EXCLUDE_PATTERNS
+    - CHECK_PRERELEASES
+    - SELECTED_PRERELEASE_ASSETS
+    
+    Parameters:
+        config (dict): Configuration mapping to read defaults from and write updated values into.
+        is_first_run (bool): When True, use first-run prompt wording and defaults.
+        default_versions (int): Fallback number of firmware versions to keep when not present in config.
+    
+    Returns:
+        dict: The same config object passed in, updated with firmware-related settings.
     """
 
     # Prompt for firmware versions to keep
@@ -853,10 +855,12 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
 
 def _configure_cron_job(install_crond_needed: bool = False) -> None:
     """
-    Prompt for cron job frequency and configure it.
-
-    Args:
-        install_crond_needed: Whether to install crond (for Termux)
+    Prompt the user for a cron frequency and configure a Fetchtastic cron job accordingly.
+    
+    If the chosen frequency is not "none", the function will install the Termux crond service first when requested and then create/update the cron job at the selected cadence. If the user selects "none", no cron job is configured and a message is printed.
+    
+    Parameters:
+        install_crond_needed (bool): If True, install and enable the Termux crond service before configuring the cron job.
     """
     frequency = _prompt_for_cron_frequency()
     if frequency != "none":
@@ -869,10 +873,10 @@ def _configure_cron_job(install_crond_needed: bool = False) -> None:
 
 def _prompt_for_cron_frequency() -> str:
     """
-    Prompt the user for cron job frequency choice.
-
+    Prompt the user to choose how often Fetchtastic should run its scheduled check.
+    
     Returns:
-        str: 'hourly', 'daily', or 'none'
+        frequency (str): 'hourly', 'daily', or 'none'.
     """
     choices = {"h": "hourly", "d": "daily", "n": "none"}
     while True:
@@ -894,15 +898,20 @@ def _setup_automation(
     config: dict, is_partial_run: bool, wants: Callable[[str], bool]
 ) -> dict:
     """
-    Handle automation setup (cron jobs, Windows startup, Termux boot scripts).
-
-    Args:
-        config: Current configuration dictionary
-        is_partial_run: Whether this is a partial setup run
-        wants: Function to check if a section should be processed
-
+    Configure platform-specific automation for Fetchtastic (cron jobs, startup/boot shortcuts).
+    
+    Depending on the platform, this function will offer to create, remove, or reconfigure:
+    - Windows: a startup shortcut to run Fetchtastic on user login.
+    - Termux: a scheduled cron job and an optional boot script to run on device boot.
+    - Linux/macOS: a scheduled cron job and an optional reboot/startup cron entry.
+    
+    Parameters:
+        config (dict): Current configuration dictionary that may be read and updated.
+        is_partial_run (bool): If True, only run when the caller indicates the automation section is desired.
+        wants (Callable[[str], bool]): Predicate that returns True if a named setup section should be processed.
+    
     Returns:
-        Updated configuration dictionary
+        dict: The potentially updated configuration dictionary.
     """
     if not is_partial_run or wants("automation"):
         if platform.system() == "Windows":
@@ -2364,11 +2373,12 @@ def install_crond():
 
 def setup_cron_job(frequency="hourly"):
     """
-    Sets up the cron job to run Fetchtastic at scheduled times.
-    On Windows, this function does nothing as cron jobs are not supported.
-
-    Args:
-        frequency (str): 'hourly' or 'daily' (default: 'hourly')
+    Add or update a cron job to run Fetchtastic on a regular schedule.
+    
+    On Windows this is a no-op. The function validates the `frequency` against available CRON_SCHEDULES (defaults to "hourly" on invalid input), removes any existing Fetchtastic cron entries except `@reboot` entries, and writes a new cron entry. On Termux it writes a plain `fetchtastic download` entry; on other platforms it requires the `fetchtastic` executable to be discoverable in PATH.
+    
+    Parameters:
+        frequency (str): Schedule key describing cadence; expected values include `"hourly"` or `"daily"`.
     """
     # Skip cron job setup on Windows
     if platform.system() == "Windows":
