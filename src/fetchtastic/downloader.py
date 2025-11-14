@@ -2879,13 +2879,24 @@ def _enrich_history_from_commit_details(
             inflight[future] = (sha, timestamp)
             attempted += 1
 
+    # Process candidates in order (newest-first), submitting only up to the limit
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        inflight: Dict["Future", Tuple[str, str]] = {}
-        _submit_more(executor, inflight)
+        for sha, timestamp in candidates:
+            # Check if we've reached the classification limit
+            if successful_classifications >= _MAX_UNCERTAIN_COMMITS_TO_RESOLVE:
+                logger.debug(
+                    "Reached maximum uncertain commits to resolve (%d), stopping further processing",
+                    _MAX_UNCERTAIN_COMMITS_TO_RESOLVE,
+                )
+                break
 
-        while inflight:
-            future = next(as_completed(inflight))
-            sha, timestamp = inflight.pop(future)
+            # Submit and wait for this commit individually to preserve order
+            future = executor.submit(
+                _fetch_commit_files,
+                sha,
+                github_token,
+                allow_env_token,
+            )
 
             try:
                 files = future.result()
@@ -2894,7 +2905,6 @@ def _enrich_history_from_commit_details(
                 files = []
 
             if not files:
-                _submit_more(executor, inflight)
                 continue
 
             directory_changes: Dict[str, Dict[str, Any]] = {}
@@ -2922,7 +2932,6 @@ def _enrich_history_from_commit_details(
                     change["removed"] = True
 
             if not directory_changes:
-                _submit_more(executor, inflight)
                 continue
 
             logger.debug(
@@ -2958,18 +2967,6 @@ def _enrich_history_from_commit_details(
 
             if made_change:
                 successful_classifications += 1
-                if successful_classifications >= _MAX_UNCERTAIN_COMMITS_TO_RESOLVE:
-                    logger.debug(
-                        "Reached maximum uncertain commits to resolve (%d), stopping further processing",
-                        _MAX_UNCERTAIN_COMMITS_TO_RESOLVE,
-                    )
-                    for pending_future in inflight:
-                        if not pending_future.done():
-                            pending_future.cancel()
-                    break
-
-            if attempted < attempt_cap:
-                _submit_more(executor, inflight)
 
 
 def _refresh_prerelease_commit_history(
