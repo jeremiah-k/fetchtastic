@@ -859,16 +859,10 @@ def _configure_cron_job(install_crond_needed: bool = False) -> None:
         install_crond_needed: Whether to install crond (for Termux)
     """
     frequency = _prompt_for_cron_frequency()
-    if frequency == "hourly":
+    if frequency != "none":
         if install_crond_needed:
             install_crond()
-        setup_cron_job("hourly")
-        print("Hourly cron job has been set up.")
-    elif frequency == "daily":
-        if install_crond_needed:
-            install_crond()
-        setup_cron_job("daily")
-        print("Daily cron job has been set up.")
+        setup_cron_job(frequency)
     else:
         print("Cron job has not been set up.")
 
