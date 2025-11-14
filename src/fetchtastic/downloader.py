@@ -2879,24 +2879,13 @@ def _enrich_history_from_commit_details(
             inflight[future] = (sha, timestamp)
             attempted += 1
 
-    # Process candidates in order (newest-first), submitting only up to the limit
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        for sha, timestamp in candidates:
-            # Check if we've reached the classification limit
-            if successful_classifications >= _MAX_UNCERTAIN_COMMITS_TO_RESOLVE:
-                logger.debug(
-                    "Reached maximum uncertain commits to resolve (%d), stopping further processing",
-                    _MAX_UNCERTAIN_COMMITS_TO_RESOLVE,
-                )
-                break
+        inflight: Dict["Future", Tuple[str, str]] = {}
+        _submit_more(executor, inflight)
 
-            # Submit and wait for this commit individually to preserve order
-            future = executor.submit(
-                _fetch_commit_files,
-                sha,
-                github_token,
-                allow_env_token,
-            )
+        while inflight:
+            future = next(as_completed(list(inflight.keys())))
+            sha, timestamp = inflight.pop(future)
 
             try:
                 files = future.result()
@@ -2905,6 +2894,7 @@ def _enrich_history_from_commit_details(
                 files = []
 
             if not files:
+                _submit_more(executor, inflight)
                 continue
 
             directory_changes: Dict[str, Dict[str, Any]] = {}
@@ -2930,8 +2920,18 @@ def _enrich_history_from_commit_details(
                     change["added"] = True
                 elif status == "removed":
                     change["removed"] = True
+                elif status == "renamed":
+                    prev_path = str(file_info.get("previous_filename") or "")
+                    prev_info = _extract_prerelease_dir_info(
+                        prev_path, expected_version
+                    )
+                    if prev_info and not dir_info:
+                        change["removed"] = True
+                    elif dir_info and not prev_info:
+                        change["added"] = True
 
             if not directory_changes:
+                _submit_more(executor, inflight)
                 continue
 
             logger.debug(
@@ -2967,6 +2967,29 @@ def _enrich_history_from_commit_details(
 
             if made_change:
                 successful_classifications += 1
+                if successful_classifications >= _MAX_UNCERTAIN_COMMITS_TO_RESOLVE:
+                    logger.debug(
+                        "Reached maximum uncertain commits to resolve (%d), stopping further processing",
+                        _MAX_UNCERTAIN_COMMITS_TO_RESOLVE,
+                    )
+                    for pending_future in inflight:
+                        if not pending_future.done():
+                            pending_future.cancel()
+                    inflight.clear()
+                    break
+
+            _submit_more(executor, inflight)
+
+    if (
+        successful_classifications == 0
+        and attempted >= attempt_cap
+        and attempt_cap < len(candidates)
+    ):
+        logger.debug(
+            "No uncertain commits classified after %d attempts (cap %d); older commits were not inspected.",
+            attempted,
+            attempt_cap,
+        )
 
 
 def _refresh_prerelease_commit_history(
