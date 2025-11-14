@@ -163,20 +163,18 @@ def test_api_fetch_logging_lines_coverage():
 
         def mock_api_request(_url, **kwargs):
             """
-            Return a MagicMock response that simulates a paginated GitHub API endpoint.
-
-            The mock inspects `kwargs.get("params", {}).get("page", 1)` and returns a response
-            whose `json()` yields a list containing a single release object when `page` is 1,
-            and an empty list for any subsequent page.
-
+            Create a MagicMock response that mimics a paginated GitHub releases API.
+            
+            When the provided request params include page=1, the mock's json() returns a list with a single release
+            object (tag_name "v2.7.8" and a published_at timestamp). For any other page number the mock's json()
+            returns an empty list.
+            
             Parameters:
                 _url (str): Ignored; present to match the real request signature.
-                **kwargs: Optional request parameters; expects an optional `params` dict
-                    with a numeric `page` key.
-
+                **kwargs: Optional request arguments; may include a `params` dict with a numeric `page` key.
+            
             Returns:
-                MagicMock: A mock response object whose `json()` method returns the page data
-                    described above.
+                MagicMock: A mock response whose `json()` method returns the page data described above.
             """
             mock_response = MagicMock()
 
@@ -257,14 +255,14 @@ def test_get_latest_releases_data_paginates():
 
         def _fake_request(_url, **kwargs):
             """
-            Simulate a paginated GitHub releases API request and record which page was requested.
-
+            Simulate a paginated GitHub releases API request and record the requested page numbers.
+            
             Parameters:
-                _url (str): Ignored request URL (present to match the real request signature).
-                **kwargs: Optional request parameters; if present, `params['page']` selects the page number. Recording of requested page is performed by appending to the outer-scope `call_pages` list.
-
+                _url (str): Ignored; present to match the real request signature.
+                **kwargs: Optional request parameters; if `params['page']` is provided that page number is used and appended to the outer-scope `call_pages` list.
+            
             Returns:
-                response-like: An object whose JSON payload contains a list of release dictionaries for the requested page. Page 1 returns two release items (ids 1 and 2); subsequent pages return a single release item (id 3).
+                response-like: An object whose `json()` returns a list of release dictionaries for the requested page. Page 1 returns two releases (ids 1 and 2); subsequent pages return a single release (id 3).
             """
             page = kwargs.get("params", {}).get("page", 1)
             call_pages.append(page)
