@@ -2126,7 +2126,7 @@ def test_create_default_prerelease_entry_edge_cases():
     assert result1["status"] == "unknown"
 
 
-def test_cache_build_logging_scenarios():
+def test_cache_build_logging_scenarios(monkeypatch):
     """Test cache build logging in various scenarios."""
     from fetchtastic.downloader import _get_prerelease_commit_history
 
@@ -2183,7 +2183,10 @@ def test_cache_build_logging_scenarios():
     ):
         # Set up cache as loaded
         downloader._prerelease_commit_history_loaded = True
-        downloader._prerelease_commit_history_cache["2.7.99"] = []
+        downloader._prerelease_commit_history_cache["2.7.99"] = (
+            [],
+            datetime.now(timezone.utc),
+        )
 
         _get_prerelease_commit_history("2.7.99")
         mock_refresh.assert_not_called()
@@ -2191,44 +2194,38 @@ def test_cache_build_logging_scenarios():
 
 
 def test_cache_expiry_and_logging():
-    """Test cache expiry behavior and associated logging."""
+    """Test cache behavior and associated logging."""
     from datetime import datetime, timedelta, timezone
 
     from fetchtastic.downloader import _get_prerelease_commit_history
 
-    # Test case 1: Expired cache triggers rebuild with logging
+    # Test case 1: Force refresh triggers rebuild with logging
     original_cache = dict(downloader._prerelease_commit_history_cache)
     original_loaded = downloader._prerelease_commit_history_loaded
 
     try:
-        # Create expired cache entry
-        expired_time = datetime.now(timezone.utc) - timedelta(
-            hours=25
-        )  # Older than 24h expiry
-        downloader._prerelease_commit_history_cache["2.7.99"] = {
-            "entries": [],
-            "cached_at": expired_time.isoformat(),
-        }
+        # Create cache entry
+        cache_time = datetime.now(timezone.utc) - timedelta(hours=1)
+        downloader._prerelease_commit_history_cache["2.7.99"] = ([], cache_time)
         downloader._prerelease_commit_history_loaded = True
 
         with (
             patch.object(
-                downloader, "_refresh_prerelease_commit_history", return_value=[]
+                downloader,
+                "_refresh_prerelease_commit_history",
+                return_value=([], datetime.now(timezone.utc)),
             ) as mock_refresh,
             patch.object(downloader.logger, "info") as mock_info,
-            patch.object(downloader.logger, "debug") as mock_debug,
         ):
-            _get_prerelease_commit_history("2.7.99")
+            # Force refresh should trigger rebuild
+            _get_prerelease_commit_history("2.7.99", force_refresh=True)
             mock_refresh.assert_called_once()
 
-        # Should log both info (build message) and debug (expiry message)
+        # Should log info message for cache build
         mock_info.assert_called_once_with(
             "Building prerelease history cache for %s (first run may take a couple of minutes)...",
             "2.7.99",
         )
-
-        debug_calls = [call.args[0] for call in mock_debug.call_args_list]
-        assert any("expired" in call for call in debug_calls)
 
     finally:
         downloader._prerelease_commit_history_cache.clear()
