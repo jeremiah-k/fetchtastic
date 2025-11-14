@@ -2856,6 +2856,7 @@ def _enrich_history_from_commit_details(
     )
 
     successful_classifications = 0
+    processed_commits = 0
     futures: Dict["Future", Tuple[str, str]] = {}
     submitted_count = 0
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -2868,7 +2869,7 @@ def _enrich_history_from_commit_details(
         while (
             submitted_count < len(candidates)
             and submitted_count < max_workers
-            and successful_classifications < _MAX_UNCERTAIN_COMMITS_TO_RESOLVE
+            and processed_commits < _MAX_UNCERTAIN_COMMITS_TO_RESOLVE
         ):
             sha, timestamp = next(candidate_iter)
             future = executor.submit(
@@ -2891,9 +2892,11 @@ def _enrich_history_from_commit_details(
                 files = completed_future.result()
             except Exception as exc:  # pragma: no cover - defensive guard
                 logger.debug("Failed to obtain commit details for %s: %s", sha[:8], exc)
+                processed_commits += 1
                 continue
 
             if not files:
+                processed_commits += 1
                 continue
 
             directory_changes: Dict[str, Dict[str, Any]] = {}
@@ -2954,24 +2957,26 @@ def _enrich_history_from_commit_details(
                     )
                     made_change = True
 
+            processed_commits += 1
             if made_change:
                 successful_classifications += 1
-                if successful_classifications >= _MAX_UNCERTAIN_COMMITS_TO_RESOLVE:
-                    logger.debug(
-                        "Reached maximum uncertain commits to resolve (%d), stopping further processing",
-                        _MAX_UNCERTAIN_COMMITS_TO_RESOLVE,
-                    )
-                    stop_requested = True
-                    for pending_future in futures:
-                        if not pending_future.done():
-                            pending_future.cancel()
-                    break
+
+            if processed_commits >= _MAX_UNCERTAIN_COMMITS_TO_RESOLVE:
+                logger.debug(
+                    "Reached maximum uncertain commits to resolve (%d), stopping further processing",
+                    _MAX_UNCERTAIN_COMMITS_TO_RESOLVE,
+                )
+                stop_requested = True
+                for pending_future in futures:
+                    if not pending_future.done():
+                        pending_future.cancel()
+                break
 
             # Submit next candidate if we haven't reached the limit yet
             if (
                 not stop_requested
                 and submitted_count < len(candidates)
-                and successful_classifications < _MAX_UNCERTAIN_COMMITS_TO_RESOLVE
+                and processed_commits < _MAX_UNCERTAIN_COMMITS_TO_RESOLVE
             ):
                 try:
                     sha, timestamp = next(candidate_iter)
