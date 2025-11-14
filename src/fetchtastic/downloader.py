@@ -2944,7 +2944,7 @@ def _enrich_history_from_commit_details(
                             },
                         )
                         prev_entry["removed"] = True
-                if dir_info and (not prev_info or prev_info[0] != directory):
+                if dir_info:
                     change["added"] = True
 
         if not directory_changes:
