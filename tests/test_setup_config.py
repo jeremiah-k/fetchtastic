@@ -531,8 +531,8 @@ def test_cron_job_setup_invalid_frequency(mocker):
     mock_communicate.assert_called_once()
     new_cron_content = mock_communicate.call_args[1]["input"]
 
-    # Should default to daily schedule (0 3 * * *)
-    assert "0 3 * * * /path/to/fetchtastic download  # fetchtastic" in new_cron_content
+    # Should default to hourly schedule (0 * * * *)
+    assert "0 * * * * /path/to/fetchtastic download  # fetchtastic" in new_cron_content
 
 
 def test_prompt_for_cron_frequency(mocker):
@@ -556,6 +556,11 @@ def test_prompt_for_cron_frequency(mocker):
 
     # Test default (empty input)
     mock_input.return_value = ""
+    result = setup_config._prompt_for_cron_frequency()
+    assert result == "hourly"
+
+    # Test invalid input followed by valid input
+    mock_input.side_effect = ["x", "h"]
     result = setup_config._prompt_for_cron_frequency()
     assert result == "hourly"
 

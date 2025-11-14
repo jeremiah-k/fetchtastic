@@ -37,6 +37,12 @@ RECOMMENDED_EXCLUDE_PATTERNS = [
     "*_eink*",  # e-ink display variants
 ]
 
+# Cron job schedule configurations
+CRON_SCHEDULES = {
+    "hourly": {"schedule": "0 * * * *", "desc": "hourly"},
+    "daily": {"schedule": "0 3 * * *", "desc": "daily at 3 AM"},
+}
+
 # Import Windows-specific modules if on Windows
 if platform.system() == "Windows":
     try:
@@ -852,20 +858,23 @@ def _prompt_for_cron_frequency() -> str:
     Returns:
         str: 'hourly', 'daily', or 'none'
     """
-    cron_choice = (
-        input(
-            "How often should Fetchtastic check for updates? [h/d/n] (h=hourly, d=daily, n=none, default: hourly): "
+    while True:
+        cron_choice = (
+            input(
+                "How often should Fetchtastic check for updates? [h/d/n] (h=hourly, d=daily, n=none, default: hourly): "
+            )
+            .strip()
+            .lower()
+            or "h"
         )
-        .strip()
-        .lower()
-        or "h"
-    )
-    if cron_choice == "h":
-        return "hourly"
-    elif cron_choice == "d":
-        return "daily"
-    else:
-        return "none"
+        if cron_choice == "h":
+            return "hourly"
+        elif cron_choice == "d":
+            return "daily"
+        elif cron_choice == "n":
+            return "none"
+        else:
+            print(f"Invalid choice '{cron_choice}'. Please enter 'h', 'd', or 'n'.")
 
 
 def _setup_automation(
@@ -2372,31 +2381,25 @@ def install_crond():
         pass
 
 
-def setup_cron_job(frequency="daily"):
+def setup_cron_job(frequency="hourly"):
     """
     Sets up the cron job to run Fetchtastic at scheduled times.
     On Windows, this function does nothing as cron jobs are not supported.
 
     Args:
-        frequency (str): 'hourly' or 'daily' (default: 'daily')
+        frequency (str): 'hourly' or 'daily' (default: 'hourly')
     """
     # Skip cron job setup on Windows
     if platform.system() == "Windows":
         print("Cron jobs are not supported on Windows.")
         return
 
-    # Define supported schedules
-    SCHEDULES = {
-        "hourly": {"schedule": "0 * * * *", "desc": "hourly"},
-        "daily": {"schedule": "0 3 * * *", "desc": "daily at 3 AM"},
-    }
-
     # Validate frequency and get schedule info
-    if frequency not in SCHEDULES:
-        print(f"Warning: Invalid cron frequency '{frequency}'. Defaulting to daily.")
-        frequency = "daily"
+    if frequency not in CRON_SCHEDULES:
+        print(f"Warning: Invalid cron frequency '{frequency}'. Defaulting to hourly.")
+        frequency = "hourly"
 
-    schedule_info = SCHEDULES[frequency]
+    schedule_info = CRON_SCHEDULES[frequency]
     cron_schedule = schedule_info["schedule"]
     frequency_desc = schedule_info["desc"]
 
