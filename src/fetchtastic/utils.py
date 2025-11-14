@@ -599,10 +599,6 @@ def make_github_api_request(
                     logger.warning(
                         f"GitHub API rate limit running low: {remaining} requests remaining"
                     )
-                elif remaining <= 20:
-                    logger.warning(
-                        f"GitHub API rate limit: {remaining} requests remaining"
-                    )
 
                 # Add reset time information if available
                 if rl_reset:

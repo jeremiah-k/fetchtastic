@@ -898,7 +898,7 @@ def test_make_github_api_request_debug_logging():
 @pytest.mark.core_downloads
 @pytest.mark.unit
 def test_make_github_api_request_rate_limit_20_warning():
-    """Test rate limit warning at exactly 20 requests remaining."""
+    """Test that no rate limit warning is generated at exactly 20 requests remaining."""
     # Mock response with exactly 20 rate limit as integer
     mock_response = MagicMock()
     mock_response.status_code = 200
@@ -908,15 +908,12 @@ def test_make_github_api_request_rate_limit_20_warning():
     with patch("fetchtastic.utils.requests.get") as mock_get:
         mock_get.return_value = mock_response
 
-        # Make API request - should generate warning at 20
+        # Make API request - should NOT generate warning at 20 (only warns at <= 10)
         with patch("fetchtastic.log_utils.logger") as mock_logger:
             utils.make_github_api_request("https://api.github.com/repos/test/repo")
 
-            # Should have logged a warning about rate limit
-            mock_logger.warning.assert_called()
-            warning_call = mock_logger.warning.call_args[0][0]
-            assert "github api rate limit" in warning_call.lower()
-            assert "20" in warning_call
+            # Should NOT have logged a warning about rate limit at 20
+            mock_logger.warning.assert_not_called()
 
 
 @pytest.mark.core_downloads

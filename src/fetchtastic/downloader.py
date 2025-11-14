@@ -72,6 +72,7 @@ from fetchtastic.constants import (
     PRERELEASE_COMMITS_CACHE_FILE,
     PRERELEASE_COMMITS_LEGACY_FILE,
     PRERELEASE_DELETE_COMMIT_PATTERN,
+    PRERELEASE_DETAIL_FETCH_WORKERS,
     PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
     PRERELEASE_TRACKING_JSON_FILE,
     RELEASE_SCAN_COUNT,
@@ -2829,16 +2830,47 @@ def _enrich_history_from_commit_details(
         allow_env_token (bool): If True, permit using an environment-provided token as a fallback when fetching commit details.
     """
 
-    processed = 0
+    commits_to_process: List[Dict[str, Any]] = []
+    seen_shas: Set[str] = set()
+
     for commit in reversed(uncertain_commits):
-        if processed >= _MAX_UNCERTAIN_COMMITS_TO_RESOLVE:
+        if len(commits_to_process) >= _MAX_UNCERTAIN_COMMITS_TO_RESOLVE:
             break
 
         sha = commit.get("sha")
-        if not sha:
+        timestamp = commit.get("commit", {}).get("committer", {}).get("date")
+        if not sha or not timestamp or sha in seen_shas:
             continue
 
-        files = _fetch_commit_files(sha, github_token, allow_env_token)
+        seen_shas.add(sha)
+        commits_to_process.append(
+            {
+                "sha": sha,
+                "timestamp": timestamp,
+            }
+        )
+
+    if not commits_to_process:
+        return
+
+    workers = min(PRERELEASE_DETAIL_FETCH_WORKERS, len(commits_to_process))
+    logger.debug(
+        "Fetching commit details for %d uncertain prerelease commits using %d worker(s)",
+        len(commits_to_process),
+        workers,
+    )
+
+    def _fetch_details(
+        commit_info: Dict[str, Any],
+    ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+        return commit_info, _fetch_commit_files(
+            commit_info["sha"], github_token, allow_env_token
+        )
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        results = list(executor.map(_fetch_details, commits_to_process))
+
+    for commit_info, files in results:
         if not files:
             continue
 
@@ -2869,8 +2901,8 @@ def _enrich_history_from_commit_details(
         if not directory_changes:
             continue
 
-        timestamp = commit.get("commit", {}).get("committer", {}).get("date")
-        processed += 1
+        sha = commit_info["sha"]
+        timestamp = commit_info["timestamp"]
         logger.debug(
             "Fetched commit details for %s to classify %d prerelease directories",
             sha[:8],
@@ -2976,6 +3008,8 @@ def _get_prerelease_commit_history(
     if not expected_version:
         return []
 
+    needs_initial_build = False
+
     # Only load cache if we're not forcing a refresh
     if not force_refresh:
         _load_prerelease_commit_history_cache()
@@ -2992,6 +3026,15 @@ def _get_prerelease_commit_history(
                     age.total_seconds(),
                 )
                 return [dict(entry) for entry in entries]
+            needs_initial_build = (
+                expected_version not in _prerelease_commit_history_cache
+            )
+
+    if needs_initial_build:
+        logger.info(
+            "Building prerelease history cache for %s (first run may take a couple of minutes)...",
+            expected_version,
+        )
 
     return _refresh_prerelease_commit_history(
         expected_version, github_token, force_refresh, max_commits, allow_env_token
