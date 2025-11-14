@@ -46,6 +46,7 @@ def _deny_network():
     in both fetchtastic.downloader and fetchtastic.utils so any attempt to call them raises
     an AssertionError with the test-network-block message.
     """
+
     def _no_net(*_args, **_kwargs):
         raise AssertionError(_BLOCKED_NETWORK_MSG)
 
@@ -60,7 +61,7 @@ def _deny_network():
 def mock_commit_history(monkeypatch):
     """
     Ensure tests do not perform real commit-history lookups by forcing an empty history.
-    
+
     This fixture monkeypatches downloader._get_prerelease_commit_history to always return an empty list, preventing network access during prerelease-related tests.
     """
 
@@ -75,9 +76,9 @@ def mock_commit_history(monkeypatch):
 def _use_isolated_cache(tmp_path_factory, monkeypatch):
     """
     Create an isolated temporary cache directory and reconfigure downloader internals to use it for the test.
-    
+
     Patches downloader.platformdirs.user_cache_dir to return a fresh temporary directory and resets internal downloader cache-file globals so subsequent cache reads/writes use the isolated path.
-    
+
     Returns:
         pathlib.Path: Path to the temporary isolated cache directory.
     """
@@ -102,12 +103,12 @@ def _use_isolated_cache(tmp_path_factory, monkeypatch):
 def mock_github_commit_timestamp(commit_timestamps):
     """
     Create a requests.get side-effect that returns GitHub-style commit timestamp responses for specified commit hashes.
-    
+
     For URLs containing "/commits/{hash}" or "/git/commits/{hash}" that match a key in commit_timestamps, the returned mock's json() yields {"commit": {"committer": {"date": "<ISO timestamp>"}}}; for other URLs json() yields {}. The mock's raise_for_status() is a no-op.
-    
+
     Parameters:
         commit_timestamps (dict): Mapping of commit hash (str) to ISO 8601 timestamp string.
-    
+
     Returns:
         function: A callable (url, **kwargs) -> unittest.mock.Mock that simulates the requests.get response described above.
     """
@@ -238,13 +239,13 @@ def test_fetch_prerelease_directories_uses_token(monkeypatch):
     def _fake_fetch_repo_directories(*, allow_env_token, github_token):
         """
         Record the received token parameters into the test `captured` mapping for later inspection.
-        
+
         This helper mutates the module-level `captured` dictionary by storing the values of `allow_env_token` and `github_token`.
-        
+
         Parameters:
             allow_env_token (bool): Whether environment-provided GitHub token is allowed.
             github_token (str | None): Explicit GitHub token provided to the fetch.
-        
+
         Returns:
             list: An empty list.
         """
@@ -630,10 +631,10 @@ def test_get_prerelease_tracking_info_includes_history(monkeypatch, tmp_path):
     def _mock_get_history(*_args, **_kwargs):
         """
         Provide a pre-defined sample prerelease commit history for tests.
-        
+
         This helper ignores all positional and keyword arguments and returns the `sample_history`
         object from the surrounding test scope.
-        
+
         Returns:
             sample_history: The pre-defined prerelease commit history used by tests.
         """
@@ -1614,7 +1615,6 @@ def test_prerelease_history_cache_expiry(tmp_path_factory, monkeypatch):
     # Reset the cached file path
     downloader._prerelease_commit_history_file = None
 
-    # Mock the refresh function to return fresh data
     # Mock refresh function to return fresh data (matching full entry structure)
     fresh_entries = [
         {
@@ -1635,25 +1635,39 @@ def test_prerelease_history_cache_expiry(tmp_path_factory, monkeypatch):
     downloader._prerelease_commit_history_loaded = False
     downloader._prerelease_commit_history_cache.clear()
 
-    # Test 1: When force_refresh=True, should bypass cache and return fresh data
-    # Since the function has issues with internal mocking, let's test the behavior
-    # by mocking the entire function to return expected result
-
-    with patch.object(downloader, "_get_prerelease_commit_history") as mock_get_history:
-        mock_get_history.return_value = fresh_entries
+    # Test 1: When force_refresh=True, should bypass cache and call refresh function
+    with patch.object(downloader, "_refresh_prerelease_commit_history") as mock_refresh:
+        mock_refresh.return_value = fresh_entries
 
         # Clear all cache state before test
         downloader._prerelease_commit_history_loaded = False
         downloader._prerelease_commit_history_cache.clear()
 
-        # Call with force_refresh=True - should return fresh data
+        # Call with force_refresh=True - should bypass cache and call refresh
         result = downloader._get_prerelease_commit_history("2.7.15", force_refresh=True)
 
-        # Should return fresh data from mock
+        # Should return fresh data from refresh function
         assert result == fresh_entries
+        # Verify refresh was called with correct parameters
+        mock_refresh.assert_called_once_with("2.7.15", None, True, 40, True)
 
-    # The main bug was that force_refresh=True was not working
-    # This test now passes because the bug is fixed
+    # Test 2: When cache is expired and force_refresh=False, should also call refresh
+    with patch.object(downloader, "_refresh_prerelease_commit_history") as mock_refresh:
+        mock_refresh.return_value = fresh_entries
+
+        # Clear all cache state before test
+        downloader._prerelease_commit_history_loaded = False
+        downloader._prerelease_commit_history_cache.clear()
+
+        # Call with force_refresh=False - should detect expired cache and call refresh
+        result = downloader._get_prerelease_commit_history(
+            "2.7.15", force_refresh=False
+        )
+
+        # Should return fresh data from refresh function
+        assert result == fresh_entries
+        # Verify refresh was called with correct parameters
+        mock_refresh.assert_called_once_with("2.7.15", None, False, 40, True)
 
 
 def test_build_simplified_prerelease_history_edge_cases():
@@ -1747,7 +1761,7 @@ def test_fetch_recent_repo_commits_with_api_mocking(tmp_path_factory, monkeypatc
 def test_fetch_recent_repo_commits_force_refresh(tmp_path_factory, monkeypatch):
     """
     Verify that _fetch_recent_repo_commits ignores an existing cache when force_refresh=True and fetches fresh commit data from the GitHub API.
-    
+
     This test creates a cached prerelease commits file, patches the cache directory and the GitHub API call, calls _fetch_recent_repo_commits with force_refresh=True, and asserts that the returned commits come from the API mock and that the API was invoked.
     """
 

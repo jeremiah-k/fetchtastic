@@ -6,13 +6,8 @@ and handle all edge cases and error conditions.
 """
 
 import json
-import os
-import tempfile
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from unittest.mock import Mock, patch
-
-import pytest
 
 from src.fetchtastic.downloader import (
     _load_single_blob_cache_with_expiry,
