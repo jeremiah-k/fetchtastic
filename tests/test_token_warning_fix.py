@@ -52,10 +52,22 @@ class TestTokenWarningFix:
     @patch("fetchtastic.downloader.make_github_api_request")
     def test_get_latest_releases_data_logs_cached_usage(self, mock_request):
         """Test that cached data usage is logged appropriately."""
-        # Mock successful API response
-        mock_response = MagicMock()
-        mock_response.json.return_value = [{"tag_name": "v2.7.8"}]
-        mock_request.return_value = mock_response
+
+        def mock_api_request(url, **kwargs):
+            """Mock API request that handles pagination correctly."""
+            mock_response = MagicMock()
+
+            # Return data only for first page, empty for subsequent pages
+            if kwargs.get("params", {}).get("page", 1) == 1:
+                mock_response.json.return_value = [
+                    {"tag_name": "v2.7.8", "published_at": "2025-01-01T00:00:00Z"}
+                ]
+            else:
+                mock_response.json.return_value = []  # No more pages
+
+            return mock_response
+
+        mock_request.side_effect = mock_api_request
 
         # First call - should fetch from API (cache miss)
         result1 = _get_latest_releases_data(
@@ -75,7 +87,10 @@ class TestTokenWarningFix:
             force_refresh=False,
         )
 
-        # Verify both calls return data
+        # Verify both calls return the same single item (not duplicated)
+        expected = [{"tag_name": "v2.7.8", "published_at": "2025-01-01T00:00:00Z"}]
+        assert result1 == expected
+        assert result2 == expected
         assert result1 == result2
 
         # The cache logging is tested by checking that no exception is raised

@@ -41,16 +41,13 @@ def populated_releases_cache():
 
 def test_token_warning_lines_coverage(tmp_path):
     """Direct test to cover token warning lines in main function."""
-    with patch("fetchtastic.downloader._initial_setup_and_config") as mock_setup, patch(
-        "fetchtastic.downloader._check_wifi_connection"
-    ) as _, patch(
-        "fetchtastic.downloader._process_firmware_downloads"
-    ) as mock_firmware, patch(
-        "fetchtastic.downloader._process_apk_downloads"
-    ) as mock_apk, patch(
-        "fetchtastic.downloader._finalize_and_notify"
-    ) as _:
-
+    with (
+        patch("fetchtastic.downloader._initial_setup_and_config") as mock_setup,
+        patch("fetchtastic.downloader._check_wifi_connection") as _,
+        patch("fetchtastic.downloader._process_firmware_downloads") as mock_firmware,
+        patch("fetchtastic.downloader._process_apk_downloads") as mock_apk,
+        patch("fetchtastic.downloader._finalize_and_notify") as _,
+    ):
         # Mock setup to return valid config
         mock_setup.return_value = (
             {"GITHUB_TOKEN": None},  # config
@@ -164,12 +161,24 @@ def test_api_fetch_logging_lines_coverage():
         downloader_module._releases_cache = {}
         downloader_module._releases_cache_loaded = True
 
-        with patch("fetchtastic.downloader.make_github_api_request") as mock_request:
-            # Mock successful API response
+        def mock_api_request(url, **kwargs):
+            """Mock API request that handles pagination correctly."""
             mock_response = MagicMock()
-            mock_response.json.return_value = [{"tag_name": "v2.7.8"}]
-            mock_request.return_value = mock_response
 
+            # Return data only for first page, empty for subsequent pages
+            if kwargs.get("params", {}).get("page", 1) == 1:
+                mock_response.json.return_value = [
+                    {"tag_name": "v2.7.8", "published_at": "2025-01-01T00:00:00Z"}
+                ]
+            else:
+                mock_response.json.return_value = []  # No more pages
+
+            return mock_response
+
+        with patch(
+            "fetchtastic.downloader.make_github_api_request",
+            side_effect=mock_api_request,
+        ):
             from fetchtastic.downloader import _get_latest_releases_data
 
             # This call should go through API fetch path and hit logging lines
@@ -181,8 +190,10 @@ def test_api_fetch_logging_lines_coverage():
                 force_refresh=True,  # Force API fetch
             )
 
-            # Verify call completed successfully
-            assert result == [{"tag_name": "v2.7.8"}]
+            # Verify call completed successfully - should return only the single item
+            assert result == [
+                {"tag_name": "v2.7.8", "published_at": "2025-01-01T00:00:00Z"}
+            ]
 
             # Test Android URL logging too
             result2 = _get_latest_releases_data(
@@ -193,7 +204,9 @@ def test_api_fetch_logging_lines_coverage():
                 force_refresh=True,
             )
 
-            assert result2 == [{"tag_name": "v2.7.8"}]
+            assert result2 == [
+                {"tag_name": "v2.7.8", "published_at": "2025-01-01T00:00:00Z"}
+            ]
     finally:
         # Restore original state to prevent test pollution
         downloader_module._releases_cache = original_cache
@@ -272,20 +285,15 @@ def test_main_function_full_coverage(tmp_path):
 
     Verifies that clear_all_caches is called once and that DeviceHardwareManager is instantiated and its clear_cache method is called once.
     """
-    with patch("fetchtastic.downloader._initial_setup_and_config") as mock_setup, patch(
-        "fetchtastic.downloader._check_wifi_connection"
-    ) as _, patch(
-        "fetchtastic.downloader._process_firmware_downloads"
-    ) as mock_firmware, patch(
-        "fetchtastic.downloader._process_apk_downloads"
-    ) as mock_apk, patch(
-        "fetchtastic.downloader._finalize_and_notify"
-    ) as _, patch(
-        "fetchtastic.downloader.clear_all_caches"
-    ) as mock_clear, patch(
-        "fetchtastic.downloader.DeviceHardwareManager"
-    ) as mock_device_mgr:
-
+    with (
+        patch("fetchtastic.downloader._initial_setup_and_config") as mock_setup,
+        patch("fetchtastic.downloader._check_wifi_connection") as _,
+        patch("fetchtastic.downloader._process_firmware_downloads") as mock_firmware,
+        patch("fetchtastic.downloader._process_apk_downloads") as mock_apk,
+        patch("fetchtastic.downloader._finalize_and_notify") as _,
+        patch("fetchtastic.downloader.clear_all_caches") as mock_clear,
+        patch("fetchtastic.downloader.DeviceHardwareManager") as mock_device_mgr,
+    ):
         # Mock setup to return valid config
         mock_setup.return_value = (
             {"GITHUB_TOKEN": None},  # config
@@ -321,16 +329,13 @@ def test_main_function_basic_coverage(tmp_path):
 
     Mocks initial setup, Wi-Fi check, firmware and APK processing, and finalization; invokes main(force_refresh=False) and asserts that setup, firmware processing, and APK processing were each called once.
     """
-    with patch("fetchtastic.downloader._initial_setup_and_config") as mock_setup, patch(
-        "fetchtastic.downloader._check_wifi_connection"
-    ) as _, patch(
-        "fetchtastic.downloader._process_firmware_downloads"
-    ) as mock_firmware, patch(
-        "fetchtastic.downloader._process_apk_downloads"
-    ) as mock_apk, patch(
-        "fetchtastic.downloader._finalize_and_notify"
-    ) as _:
-
+    with (
+        patch("fetchtastic.downloader._initial_setup_and_config") as mock_setup,
+        patch("fetchtastic.downloader._check_wifi_connection") as _,
+        patch("fetchtastic.downloader._process_firmware_downloads") as mock_firmware,
+        patch("fetchtastic.downloader._process_apk_downloads") as mock_apk,
+        patch("fetchtastic.downloader._finalize_and_notify") as _,
+    ):
         # Mock setup to return valid config with paths
         mock_setup.return_value = (
             {"GITHUB_TOKEN": None},  # config
