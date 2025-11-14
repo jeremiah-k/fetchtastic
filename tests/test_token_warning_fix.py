@@ -53,25 +53,25 @@ class TestTokenWarningFix:
     def test_get_latest_releases_data_logs_cached_usage(self, mock_request):
         """
         Verify _get_latest_releases_data fetches paginated API results on a cache miss and returns the same cached results on a subsequent call without duplicating items.
-        
+
         Sets a side-effect on the patched request to return one release on page 1 and no releases on later pages, calls _get_latest_releases_data once with force_refresh=True and once with force_refresh=False, and asserts both calls return the same single-item list containing the release with its published_at timestamp.
-        
+
         Parameters:
             mock_request: The patched function used to perform GitHub API requests; configured here to simulate paginated responses.
         """
 
         def mock_api_request(_url, **kwargs):
             """
-            Provide a mocked HTTP response that simulates paginated GitHub API results.
-            
-            When `params` in `kwargs` has `page` equal to 1, the response's `json()` returns a list with a single release dict containing `tag_name` and `published_at`. For any other page the response's `json()` returns an empty list.
-            
+            Create a mock HTTP response that simulates paginated GitHub releases.
+
+            When `kwargs` contains `params` with `page == 1`, the response's `json()` returns a list with one release dict containing `tag_name` and `published_at`. For any other page `json()` returns an empty list.
+
             Parameters:
-                _url (str): Ignored; present to match the real request signature.
-                **kwargs: Keyword arguments forwarded from the caller; when `params` is present, `params.get("page")` controls pagination.
-            
+                _url (str): Ignored placeholder to match the real request signature.
+                **kwargs: Forwarded keyword arguments; if present, `params.get("page")` controls pagination.
+
             Returns:
-                MagicMock: A mock response object whose `json()` method returns the page-specific list described above.
+                MagicMock: A mock response whose `json()` method returns the page-specific list described above.
             """
             mock_response = MagicMock()
 

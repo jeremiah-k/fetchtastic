@@ -10,7 +10,12 @@ import tempfile
 import threading
 import time
 import zipfile
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import (
+    FIRST_COMPLETED,
+    CancelledError,
+    ThreadPoolExecutor,
+    wait,
+)
 from datetime import datetime, timezone
 from typing import (
     IO,
@@ -32,6 +37,8 @@ from packaging.version import parse as parse_version
 
 # Try to import LegacyVersion for type annotations (available in older packaging versions)
 if TYPE_CHECKING:
+    from concurrent.futures import Future
+
     try:
         from packaging.version import LegacyVersion  # type: ignore
     except ImportError:
@@ -72,6 +79,8 @@ from fetchtastic.constants import (
     PRERELEASE_COMMITS_CACHE_FILE,
     PRERELEASE_COMMITS_LEGACY_FILE,
     PRERELEASE_DELETE_COMMIT_PATTERN,
+    PRERELEASE_DETAIL_ATTEMPT_MULTIPLIER,
+    PRERELEASE_DETAIL_FETCH_WORKERS,
     PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
     PRERELEASE_TRACKING_JSON_FILE,
     RELEASE_SCAN_COUNT,
@@ -2819,29 +2828,102 @@ def _enrich_history_from_commit_details(
     allow_env_token: bool,
 ) -> None:
     """
-    Enrich prerelease history entries using file-level details from commits that could not be classified by message parsing.
+    Classify uncertain prerelease commits by inspecting their file diffs and update `entries` in place to record detected additions or deletions of prerelease directories.
+
+    Inspects file-level changes for commits in `uncertain_commits`, maps changed paths to prerelease directory names for `expected_version`, and records additions or removals in the provided `entries` mapping. Uses `github_token` (or an environment token when `allow_env_token` is True) to fetch commit file details; processing is rate-limit aware and will stop after classifying a bounded number of uncertain commits.
 
     Parameters:
-        entries (dict): Mapping of prerelease directory -> entry dict that will be updated in-place with additions or deletions.
-        uncertain_commits (list): List of commit dictionaries (expected to include at least a `sha` and `commit` metadata) to inspect for file changes.
-        expected_version (str): Base prerelease version used to interpret directory names found in changed file paths.
-        github_token (Optional[str]): GitHub token to use when fetching commit file details; may be None.
-        allow_env_token (bool): If True, permit using an environment-provided token as a fallback when fetching commit details.
+        entries (dict): Mapping of prerelease directory name -> history entry dict that will be updated in place.
+        uncertain_commits (list): Commits that could not be classified by message parsing; each item must include at least a `sha` and `commit` metadata containing a committer `date`.
+        expected_version (str): Base prerelease version used to recognize prerelease directory names in file paths.
+        github_token (Optional[str]): Explicit GitHub token to use when fetching commit file details; may be None.
+        allow_env_token (bool): If True, permit falling back to a token supplied via the environment when fetching commit details.
     """
 
-    processed = 0
+    candidates: List[Tuple[str, str]] = []
+    seen_shas: Set[str] = set()
+
     for commit in reversed(uncertain_commits):
-        if processed >= _MAX_UNCERTAIN_COMMITS_TO_RESOLVE:
-            break
-
         sha = commit.get("sha")
-        if not sha:
+        timestamp = commit.get("commit", {}).get("committer", {}).get("date")
+        if not sha or not timestamp or sha in seen_shas:
             continue
+        seen_shas.add(sha)
+        candidates.append((sha, timestamp))
 
-        files = _fetch_commit_files(sha, github_token, allow_env_token)
-        if not files:
-            continue
+    if not candidates:
+        return
 
+    max_workers = max(1, min(PRERELEASE_DETAIL_FETCH_WORKERS, len(candidates)))
+    logger.debug(
+        "Fetching commit details for uncertain prerelease commits using %d worker(s)",
+        max_workers,
+    )
+
+    attempt_cap = min(
+        len(candidates),
+        _MAX_UNCERTAIN_COMMITS_TO_RESOLVE * PRERELEASE_DETAIL_ATTEMPT_MULTIPLIER,
+    )
+    summary = get_api_request_summary()
+    remaining = summary.get("rate_limit_remaining")
+    auth_used = summary.get("auth_used", False)
+    if not auth_used and isinstance(remaining, int):
+        safe_allowance = max(0, remaining - 1)
+        attempt_cap = min(attempt_cap, safe_allowance)
+    if attempt_cap <= 0:
+        logger.debug(
+            "Skipping uncertain commit detail fetches because attempt cap resolved to %d",
+            attempt_cap,
+        )
+        return
+    successful_classifications = 0
+    attempted = 0
+    next_idx = 0
+    next_result_index = 0
+    pending_results: Dict[int, Tuple[str, str, List[Dict[str, Any]]]] = {}
+
+    def _submit_more(
+        executor: ThreadPoolExecutor, inflight: Dict["Future", Tuple[int, str, str]]
+    ) -> None:
+        """
+        Schedule additional commit-file fetch tasks while respecting worker and attempt limits.
+
+        Submits up to the available worker slots (bounded by `max_workers`), stops when the total number of fetch attempts reaches `attempt_cap` or when there are no more candidate commits, and records each submitted task in the `inflight` mapping keyed by the returned Future. For each submission, advances the candidate index and increments the attempted counter.
+
+        Parameters:
+            executor (ThreadPoolExecutor): Executor used to submit fetch tasks.
+            inflight (Dict[Future, Tuple[int, str, str]]): Mapping where each new Future is stored with a tuple (candidate_index, commit_sha, commit_timestamp) to track in-flight work.
+        """
+        nonlocal attempted, next_idx
+        while (
+            len(inflight) < max_workers
+            and attempted < attempt_cap
+            and next_idx < len(candidates)
+        ):
+            sha, timestamp = candidates[next_idx]
+            idx = next_idx
+            next_idx += 1
+            future = executor.submit(
+                _fetch_commit_files,
+                sha,
+                github_token,
+                allow_env_token,
+            )
+            inflight[future] = (idx, sha, timestamp)
+            attempted += 1
+
+    def _process_result(sha: str, timestamp: str, files: List[Dict[str, Any]]) -> bool:
+        """
+        Classify a commit's file changes to detect prerelease directory additions or removals and record them.
+
+        Parameters:
+            sha (str): Commit SHA used for recording and logging.
+            timestamp (str): Commit timestamp used when recording history entries.
+            files (List[Dict[str, Any]]): List of file-change dictionaries from the commit. Each dictionary is expected to contain at least the keys `filename` and `status`, and may include `previous_filename` for renames.
+
+        Returns:
+            bool: `true` if any prerelease addition or deletion was recorded, `false` otherwise.
+        """
         directory_changes: Dict[str, Dict[str, Any]] = {}
         for file_info in files:
             path = str(file_info.get("filename") or "")
@@ -2865,18 +2947,36 @@ def _enrich_history_from_commit_details(
                 change["added"] = True
             elif status == "removed":
                 change["removed"] = True
+            elif status == "renamed":
+                prev_path = str(file_info.get("previous_filename") or "")
+                prev_info = _extract_prerelease_dir_info(prev_path, expected_version)
+
+                if prev_info:
+                    prev_dir, prev_identifier, prev_short_hash = prev_info
+                    if prev_dir != directory:
+                        prev_entry = directory_changes.setdefault(
+                            prev_dir,
+                            {
+                                "identifier": prev_identifier,
+                                "short_hash": prev_short_hash,
+                                "added": False,
+                                "removed": False,
+                            },
+                        )
+                        prev_entry["removed"] = True
+                if dir_info:
+                    change["added"] = True
 
         if not directory_changes:
-            continue
+            return False
 
-        timestamp = commit.get("commit", {}).get("committer", {}).get("date")
-        processed += 1
         logger.debug(
             "Fetched commit details for %s to classify %d prerelease directories",
             sha[:8],
             len(directory_changes),
         )
 
+        made_change = False
         for directory, change in directory_changes.items():
             if change["added"] and not change["removed"]:
                 _record_prerelease_addition(
@@ -2888,6 +2988,7 @@ def _enrich_history_from_commit_details(
                     timestamp,
                     sha,
                 )
+                made_change = True
             elif change["removed"] and not change["added"]:
                 _record_prerelease_deletion(
                     entries,
@@ -2898,6 +2999,72 @@ def _enrich_history_from_commit_details(
                     timestamp,
                     sha,
                 )
+                made_change = True
+
+        return made_change
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        inflight: Dict["Future", Tuple[int, str, str]] = {}
+        _submit_more(executor, inflight)
+
+        while inflight or pending_results:
+            while (
+                next_result_index in pending_results
+                and successful_classifications < _MAX_UNCERTAIN_COMMITS_TO_RESOLVE
+            ):
+                sha, timestamp, files = pending_results.pop(next_result_index)
+                next_result_index += 1
+                if not files:
+                    continue
+                if _process_result(sha, timestamp, files):
+                    successful_classifications += 1
+                    if successful_classifications >= _MAX_UNCERTAIN_COMMITS_TO_RESOLVE:
+                        logger.debug(
+                            "Reached maximum uncertain commits to resolve (%d), stopping further processing",
+                            _MAX_UNCERTAIN_COMMITS_TO_RESOLVE,
+                        )
+                        for pending_future in inflight:
+                            if not pending_future.done():
+                                pending_future.cancel()
+                        inflight.clear()
+                        break
+            if successful_classifications >= _MAX_UNCERTAIN_COMMITS_TO_RESOLVE:
+                break
+
+            if not inflight:
+                break
+
+            done_futures, _ = wait(inflight, return_when=FIRST_COMPLETED)
+            for future in done_futures:
+                idx, sha, timestamp = inflight.pop(future)
+                try:
+                    files = future.result()
+                except CancelledError:
+                    files = []
+                except (
+                    requests.RequestException,
+                    ValueError,
+                    KeyError,
+                    TypeError,
+                ) as exc:
+                    logger.debug(
+                        "Failed to obtain commit details for %s: %s", sha[:8], exc
+                    )
+                    files = []
+                pending_results[idx] = (sha, timestamp, files)
+
+            _submit_more(executor, inflight)
+
+    if (
+        successful_classifications == 0
+        and attempted >= attempt_cap
+        and attempt_cap < len(candidates)
+    ):
+        logger.debug(
+            "No uncertain commits classified after %d attempts (cap %d); older commits were not inspected.",
+            attempted,
+            attempt_cap,
+        )
 
 
 def _refresh_prerelease_commit_history(
@@ -2976,6 +3143,8 @@ def _get_prerelease_commit_history(
     if not expected_version:
         return []
 
+    needs_initial_build = False
+
     # Only load cache if we're not forcing a refresh
     if not force_refresh:
         _load_prerelease_commit_history_cache()
@@ -2992,6 +3161,13 @@ def _get_prerelease_commit_history(
                     age.total_seconds(),
                 )
                 return [dict(entry) for entry in entries]
+            needs_initial_build = True
+
+    if needs_initial_build or force_refresh:
+        logger.info(
+            "Building prerelease history cache for %s (this may take a couple of minutes on initial builds)...",
+            expected_version,
+        )
 
     return _refresh_prerelease_commit_history(
         expected_version, github_token, force_refresh, max_commits, allow_env_token
