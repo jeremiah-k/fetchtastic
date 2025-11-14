@@ -43,7 +43,7 @@ _BLOCKED_NETWORK_MSG = "Network access is blocked in tests"
 def _deny_network():
     """
     Prevent external network access in tests by patching network-call functions in fetchtastic.downloader and fetchtastic.utils so they raise an AssertionError with the message stored in `_BLOCKED_NETWORK_MSG`.
-    
+
     The fixture replaces `requests.get` and `requests.post` in those modules so any attempted HTTP call fails immediately.
     """
 
@@ -69,7 +69,7 @@ def _deny_network():
 def mock_commit_history(monkeypatch):
     """
     Make prerelease commit history lookups return an empty list for tests.
-    
+
     Uses the provided pytest `monkeypatch` to replace downloader._get_prerelease_commit_history with a stub that always returns an empty list, preventing network access.
     """
 
@@ -84,9 +84,9 @@ def mock_commit_history(monkeypatch):
 def _use_isolated_cache(tmp_path_factory, monkeypatch):
     """
     Create and configure an isolated temporary cache directory for tests.
-    
+
     Patches the downloader's user cache directory to a fresh temporary path and resets internal cache-file globals so subsequent cache reads and writes use the isolated directory.
-    
+
     Returns:
         Path to the temporary isolated cache directory.
     """
@@ -124,17 +124,17 @@ def mock_github_commit_timestamp(commit_timestamps):
     def mock_get_response(url, **_kwargs):
         """
         Create a requests-like mock response for GitHub commit-timestamp endpoints used in tests.
-        
+
         When the URL contains "/commits/{commit_hash}" or "/git/commits/{commit_hash}" for a
         commit_hash present in the surrounding `commit_timestamps` mapping, the mock's
         json() returns {"commit": {"committer": {"date": <timestamp>}}} and the response
         indicates success. For other URLs the mock's json() returns an empty dict and the
         response indicates failure. The mock provides `json()`, `raise_for_status()`,
         `status_code`, and `ok` attributes; `raise_for_status()` is a no-op.
-        
+
         Parameters:
             url (str): The requested URL.
-        
+
         Returns:
             unittest.mock.Mock: A mock response object mimicking the shape and behavior of
             a requests.Response for commit-timestamp lookups.
@@ -630,9 +630,9 @@ def test_get_prerelease_tracking_info_includes_history(monkeypatch, tmp_path):
     def _mock_get_history(*_args, **_kwargs):
         """
         Provide the predefined sample prerelease commit history from the surrounding test scope.
-        
+
         Ignores all positional and keyword arguments.
-        
+
         Returns:
             sample_history (object): The sample prerelease commit history object supplied by the surrounding test.
         """
@@ -1740,9 +1740,9 @@ def test_build_history_fetches_uncertain_commits_when_rate_limit_allows(monkeypa
     def _fake_request(*_args, **_kwargs):
         """
         Return a predefined fake response regardless of provided arguments.
-        
+
         Used as a side-effect function for mocking HTTP request calls in tests.
-        
+
         Returns:
             The `fake_response` object captured from the enclosing scope.
         """
@@ -1771,12 +1771,12 @@ def test_build_history_prioritizes_newest_uncertain_commits(monkeypatch):
     def fake_fetch(sha, github_token, allow_env_token):
         """
         Simulate GitHub commit file changes for testing.
-        
+
         Parameters:
             sha (str): Commit SHA to simulate. If equal to "sha-newest" the returned list contains a firmware file in a directory suffixed with "abc1234"; otherwise it contains an older firmware file suffixed with "old9999".
             github_token: Ignored by this fake; present to match the real function signature.
             allow_env_token: Ignored by this fake; present to match the real function signature.
-        
+
         Returns:
             list[dict]: A list of file-change dictionaries with keys `filename` (path to the file) and `status` (for example, `"added"`).
         """
@@ -1866,7 +1866,7 @@ def test_get_prerelease_history_logs_initial_build(monkeypatch):
     def _noop_load() -> None:
         """
         No-op loader used as a placeholder where a load function is required.
-        
+
         This function intentionally performs no action and exists solely to satisfy APIs that expect a callable loader.
         """
         return None
@@ -1986,6 +1986,124 @@ def test_fetch_recent_repo_commits_force_refresh(tmp_path_factory, monkeypatch):
         # Should fetch fresh data despite existing cache
         assert result == fresh_commits
         mock_api.assert_called_once()
+
+
+def test_enrich_history_from_commit_details_with_renamed_files():
+    """Test the _enrich_history_from_commit_details function handles renamed files correctly."""
+    from fetchtastic.downloader import _enrich_history_from_commit_details
+
+    # Mock data for renamed files scenario
+    expected_version = "2.7.99"
+    entries = {}
+
+    # Test case 1: File renamed within same directory
+    uncertain_commits_same_dir = [
+        {
+            "sha": "abc123def456",
+            "commit": {"committer": {"date": "2023-01-01T00:00:00Z"}},
+        }
+    ]
+
+    # Mock the API response for commit files
+    files_same_dir = [
+        {
+            "filename": "firmware-2.7.99.abc123/new_file.bin",
+            "status": "renamed",
+            "previous_filename": "firmware-2.7.99.abc123/old_file.bin",
+        }
+    ]
+
+    with patch(
+        "fetchtastic.downloader._fetch_commit_files", return_value=files_same_dir
+    ):
+        with patch("fetchtastic.downloader._record_prerelease_addition") as mock_add:
+            with patch(
+                "fetchtastic.downloader._record_prerelease_removal"
+            ) as mock_remove:
+                _enrich_history_from_commit_details(
+                    entries,
+                    uncertain_commits_same_dir,
+                    expected_version,
+                    "test_token",
+                    False,
+                )
+                # Should be marked as added since dir_info exists (the fix we applied)
+                mock_add.assert_called_once()
+                mock_remove.assert_not_called()
+
+    # Test case 2: File renamed to different directory
+    uncertain_commits_diff_dir = [
+        {
+            "sha": "def456abc123",
+            "commit": {"committer": {"date": "2023-01-01T00:00:00Z"}},
+        }
+    ]
+
+    files_diff_dir = [
+        {
+            "filename": "firmware-2.7.99.def456/new_file.bin",
+            "status": "renamed",
+            "previous_filename": "firmware-2.7.99.abc123/old_file.bin",
+        }
+    ]
+
+    entries.clear()
+    with patch(
+        "fetchtastic.downloader._fetch_commit_files", return_value=files_diff_dir
+    ):
+        with patch("fetchtastic.downloader._record_prerelease_addition") as mock_add:
+            with patch(
+                "fetchtastic.downloader._record_prerelease_removal"
+            ) as mock_remove:
+                _enrich_history_from_commit_details(
+                    entries,
+                    uncertain_commits_diff_dir,
+                    expected_version,
+                    "test_token",
+                    False,
+                )
+                # Should be marked as added since dir_info exists
+                mock_add.assert_called_once()
+                mock_remove.assert_called_once()
+
+
+def test_extract_prerelease_dir_info_edge_cases():
+    """Test _extract_prerelease_dir_info with various edge cases."""
+    from fetchtastic.downloader import _extract_prerelease_dir_info
+
+    expected_version = "2.7.99"
+
+    # Valid cases
+    valid_path = "some/path/firmware-2.7.99.abc123/file.bin"
+    result = _extract_prerelease_dir_info(valid_path, expected_version)
+    assert result is not None
+    directory, identifier, short_hash = result
+    assert directory == "firmware-2.7.99.abc123"
+    assert identifier == "2.7.99.abc123"
+    assert short_hash == "abc123"
+
+    # Invalid version
+    invalid_version_path = "some/path/firmware-1.2.3.def456/file.bin"
+    result = _extract_prerelease_dir_info(invalid_version_path, expected_version)
+    assert result is None
+
+    # Empty path
+    result = _extract_prerelease_dir_info("", expected_version)
+    assert result is None
+
+    # Non-matching pattern
+    non_matching_path = "some/other/path/file.bin"
+    result = _extract_prerelease_dir_info(non_matching_path, expected_version)
+    assert result is None
+
+    # Empty path
+    result = _extract_prerelease_dir_info("", expected_version)
+    assert result is None
+
+    # Non-matching pattern
+    non_matching_path = "some/other/path/file.bin"
+    result = _extract_prerelease_dir_info(non_matching_path, expected_version)
+    assert result is None
 
 
 def test_create_default_prerelease_entry_edge_cases():
