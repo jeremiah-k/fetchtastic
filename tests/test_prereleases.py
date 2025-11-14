@@ -42,17 +42,17 @@ _BLOCKED_NETWORK_MSG = "Network access is blocked in tests"
 @pytest.fixture(autouse=True)
 def _deny_network():
     """
-    Prevent external network access in tests by patching network-call functions in fetchtastic.downloader and fetchtastic.utils so they raise an AssertionError with the message stored in `_BLOCKED_NETWORK_MSG`.
-
-    The fixture replaces `requests.get` and `requests.post` in those modules so any attempted HTTP call fails immediately.
+    Fixture that blocks external network access for the duration of a test.
+    
+    Patches the HTTP call entry points used by the downloader tests so any attempt to perform network I/O raises an AssertionError with the message stored in `_BLOCKED_NETWORK_MSG`. This ensures tests cannot make real network requests.
     """
 
     def _no_net(*_args, **_kwargs):
         """
-        Raise an AssertionError to block any network access during tests.
-
-        This helper is intended to be used as a replacement for network-call functions so that any attempt to perform network I/O fails immediately.
-
+        Prevent network access by raising an AssertionError when called.
+        
+        Intended as a replacement for network-call functions in tests so any attempted network I/O fails immediately.
+        
         Raises:
             AssertionError: always raised with the message contained in `_BLOCKED_NETWORK_MSG`.
         """
@@ -68,9 +68,9 @@ def _deny_network():
 @pytest.fixture
 def mock_commit_history(monkeypatch):
     """
-    Make prerelease commit history lookups return an empty list for tests.
-
-    Uses the provided pytest `monkeypatch` to replace downloader._get_prerelease_commit_history with a stub that always returns an empty list, preventing network access.
+    Force prerelease commit history lookups to return an empty list for tests.
+    
+    Replaces downloader._get_prerelease_commit_history with a stub that returns [] to prevent network access during tests.
     """
 
     monkeypatch.setattr(
@@ -83,12 +83,12 @@ def mock_commit_history(monkeypatch):
 @pytest.fixture(autouse=True)
 def _use_isolated_cache(tmp_path_factory, monkeypatch):
     """
-    Create and configure an isolated temporary cache directory for tests.
-
-    Patches the downloader's user cache directory to a fresh temporary path and resets internal cache-file globals so subsequent cache reads and writes use the isolated directory.
-
+    Prepare an isolated temporary user cache directory for tests and configure the downloader to use it.
+    
+    Resets downloader's internal cache-file globals so subsequent cache reads and writes target the isolated directory.
+    
     Returns:
-        Path to the temporary isolated cache directory.
+        Path: The temporary isolated cache directory path.
     """
 
     cache_dir = tmp_path_factory.mktemp("fetchtastic-cache")
@@ -123,21 +123,15 @@ def mock_github_commit_timestamp(commit_timestamps):
 
     def mock_get_response(url, **_kwargs):
         """
-        Create a requests-like mock response for GitHub commit-timestamp endpoints used in tests.
-
-        When the URL contains "/commits/{commit_hash}" or "/git/commits/{commit_hash}" for a
-        commit_hash present in the surrounding `commit_timestamps` mapping, the mock's
-        json() returns {"commit": {"committer": {"date": <timestamp>}}} and the response
-        indicates success. For other URLs the mock's json() returns an empty dict and the
-        response indicates failure. The mock provides `json()`, `raise_for_status()`,
-        `status_code`, and `ok` attributes; `raise_for_status()` is a no-op.
-
+        Produce a requests-like mock response for GitHub commit timestamp endpoints using the surrounding `commit_timestamps` mapping.
+        
+        When the URL contains "/commits/{commit_hash}" or "/git/commits/{commit_hash}" for a commit_hash present in `commit_timestamps`, the response's `json()` returns {"commit": {"committer": {"date": <timestamp>}}}, `status_code` is 200, and `ok` is True. For other URLs `json()` returns an empty dict, `status_code` is 404, and `ok` is False. The mock also provides a `raise_for_status()` callable that is a no-op.
+        
         Parameters:
             url (str): The requested URL.
-
+        
         Returns:
-            unittest.mock.Mock: A mock response object mimicking the shape and behavior of
-            a requests.Response for commit-timestamp lookups.
+            unittest.mock.Mock: A mock response object that mimics the shape and behavior of a requests.Response for commit-timestamp lookups.
         """
 
         # Extract commit hash from URL
@@ -1739,12 +1733,12 @@ def test_build_history_fetches_uncertain_commits_when_rate_limit_allows(monkeypa
 
     def _fake_request(*_args, **_kwargs):
         """
-        Return a predefined fake response regardless of provided arguments.
-
-        Used as a side-effect function for mocking HTTP request calls in tests.
-
+        Provide a predefined fake HTTP response for use as a mock side-effect.
+        
+        Used as a side-effect function when patching HTTP request calls in tests.
+        
         Returns:
-            The `fake_response` object captured from the enclosing scope.
+            The predefined `fake_response` object from the enclosing scope.
         """
         return fake_response
 
@@ -1865,9 +1859,9 @@ def test_get_prerelease_history_logs_initial_build(monkeypatch):
 
     def _noop_load() -> None:
         """
-        No-op loader used as a placeholder where a load function is required.
-
-        This function intentionally performs no action and exists solely to satisfy APIs that expect a callable loader.
+        Placeholder loader that performs no action.
+        
+        Used where a callable loader is required but no loading behavior is needed.
         """
         return None
 
@@ -2135,6 +2129,11 @@ def test_cache_build_logging_scenarios(monkeypatch):
     original_loaded = downloader._prerelease_commit_history_loaded
 
     def _noop_load() -> None:
+        """
+        No-op loader that performs no action.
+        
+        Intended as a placeholder loader to use when no persistent load should occur.
+        """
         return None
 
     monkeypatch.setattr(downloader, "_load_prerelease_commit_history_cache", _noop_load)

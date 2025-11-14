@@ -62,14 +62,14 @@ class TestTokenWarningFix:
 
         def mock_api_request(_url, **kwargs):
             """
-            Mock an HTTP response that simulates paginated GitHub releases.
-
-            When `kwargs` includes a `params` mapping whose `page` value is `1`, the response's `json()` returns a list with one release dict containing `tag_name` and `published_at`. For any other page the `json()` method returns an empty list.
-
+            Create a mock HTTP response that simulates paginated GitHub releases.
+            
+            When `kwargs` contains `params` with `page == 1`, the response's `json()` returns a list with one release dict containing `tag_name` and `published_at`. For any other page `json()` returns an empty list.
+            
             Parameters:
                 _url (str): Ignored placeholder to match the real request signature.
-                **kwargs: Keyword arguments forwarded from the caller; if present, `params.get("page")` controls pagination.
-
+                **kwargs: Forwarded keyword arguments; if present, `params.get("page")` controls pagination.
+            
             Returns:
                 MagicMock: A mock response whose `json()` method returns the page-specific list described above.
             """

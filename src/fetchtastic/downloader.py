@@ -2828,14 +2828,14 @@ def _enrich_history_from_commit_details(
     allow_env_token: bool,
 ) -> None:
     """
-    Enrich prerelease history entries by classifying uncertain commits using file-level changes from their diffs.
-
-    Inspects the file changes for each commit in `uncertain_commits`, maps changed paths to prerelease directories for `expected_version`, and updates `entries` in-place to record additions or removals. Fetches commit file details in parallel (bounded by PRERELEASE_DETAIL_FETCH_WORKERS) and stops after classifying a capped number of uncertain commits. Uses `github_token` or an environment-provided token when `allow_env_token` is True.
-
+    Classify uncertain prerelease commits by inspecting their file diffs and update `entries` in place to record detected additions or deletions of prerelease directories.
+    
+    Inspects file-level changes for commits in `uncertain_commits`, maps changed paths to prerelease directory names for `expected_version`, and records additions or removals in the provided `entries` mapping. Uses `github_token` (or an environment token when `allow_env_token` is True) to fetch commit file details; processing is rate-limit aware and will stop after classifying a bounded number of uncertain commits.
+    
     Parameters:
-        entries (dict): Mapping of prerelease directory name -> history entry dict to be updated in-place.
-        uncertain_commits (list): Commits that could not be classified by message parsing; each item should include at least a `sha` and `commit` metadata.
-        expected_version (str): Base prerelease version used to recognise prerelease directory names in file paths.
+        entries (dict): Mapping of prerelease directory name -> history entry dict that will be updated in place.
+        uncertain_commits (list): Commits that could not be classified by message parsing; each item must include at least a `sha` and `commit` metadata containing a committer `date`.
+        expected_version (str): Base prerelease version used to recognize prerelease directory names in file paths.
         github_token (Optional[str]): Explicit GitHub token to use when fetching commit file details; may be None.
         allow_env_token (bool): If True, permit falling back to a token supplied via the environment when fetching commit details.
     """
@@ -2885,6 +2885,15 @@ def _enrich_history_from_commit_details(
     def _submit_more(
         executor: ThreadPoolExecutor, inflight: Dict["Future", Tuple[int, str, str]]
     ) -> None:
+        """
+        Schedule additional commit-file fetch tasks while respecting worker and attempt limits.
+        
+        Submits up to the available worker slots (bounded by `max_workers`), stops when the total number of fetch attempts reaches `attempt_cap` or when there are no more candidate commits, and records each submitted task in the `inflight` mapping keyed by the returned Future. For each submission, advances the candidate index and increments the attempted counter.
+        
+        Parameters:
+            executor (ThreadPoolExecutor): Executor used to submit fetch tasks.
+            inflight (Dict[Future, Tuple[int, str, str]]): Mapping where each new Future is stored with a tuple (candidate_index, commit_sha, commit_timestamp) to track in-flight work.
+        """
         nonlocal attempted, next_idx
         while (
             len(inflight) < max_workers
@@ -2904,6 +2913,17 @@ def _enrich_history_from_commit_details(
             attempted += 1
 
     def _process_result(sha: str, timestamp: str, files: List[Dict[str, Any]]) -> bool:
+        """
+        Classify a commit's file changes to detect prerelease directory additions or removals and record them.
+        
+        Parameters:
+            sha (str): Commit SHA used for recording and logging.
+            timestamp (str): Commit timestamp used when recording history entries.
+            files (List[Dict[str, Any]]): List of file-change dictionaries from the commit. Each dictionary is expected to contain at least the keys `filename` and `status`, and may include `previous_filename` for renames.
+        
+        Returns:
+            bool: `true` if any prerelease addition or deletion was recorded, `false` otherwise.
+        """
         directory_changes: Dict[str, Dict[str, Any]] = {}
         for file_info in files:
             path = str(file_info.get("filename") or "")
