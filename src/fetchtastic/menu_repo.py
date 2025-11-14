@@ -146,13 +146,13 @@ def fetch_repo_directories(
     github_token: Optional[str] = None,
 ):
     """
-    Return the names of directories at the given repository path on meshtastic.github.io.
+    List directory names at the given repository path on meshtastic.github.io.
     
-    Filters out common hidden and excluded directories; kept for backward compatibility.
+    Hidden and common excluded directories (e.g., those in EXCLUDED_DIRS) are omitted from the results.
     
     Parameters:
         path (str): Repository-relative path to list (empty string for root).
-        allow_env_token (bool): If True, allow using a token from the environment when making the GitHub API request.
+        allow_env_token (bool): If True, allow using a GitHub token from the environment when making the API request.
         github_token (Optional[str]): Explicit GitHub token to use instead of an environment token.
     
     Returns:
