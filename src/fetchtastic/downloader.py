@@ -3048,6 +3048,10 @@ def _get_prerelease_commit_history(
                 expected_version not in _prerelease_commit_history_cache
             )
 
+    # Also log initial build message on force refresh if cache is empty
+    if force_refresh and expected_version not in _prerelease_commit_history_cache:
+        needs_initial_build = True
+
     if needs_initial_build:
         logger.info(
             "Building prerelease history cache for %s (first run may take a couple of minutes)...",
