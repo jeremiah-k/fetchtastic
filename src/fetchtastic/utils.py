@@ -449,21 +449,21 @@ def make_github_api_request(
     custom_403_message: Optional[str] = None,
 ) -> requests.Response:
     """
-    Perform a GitHub API GET request using an optional token, track and cache rate-limit information, and retry once without authentication if token-based auth fails.
-
+    Perform a GitHub API GET request with optional token authentication, update in-memory and on-disk rate-limit tracking, and retry once without authentication if token-based auth returns 401.
+    
     Parameters:
         url (str): GitHub API URL to request.
-        github_token (Optional[str]): Explicit GitHub token to use for Authorization; trimmed and preferred over environment token.
+        github_token (Optional[str]): Explicit GitHub token to prefer for Authorization; trimmed before use.
         allow_env_token (bool): If True, allow falling back to the GITHUB_TOKEN environment variable when no explicit token is provided.
         params (Optional[Dict[str, Any]]): Query parameters to include in the request.
-        timeout (Optional[int]): Request timeout in seconds; if omitted, the module default is used.
+        timeout (Optional[int]): Request timeout in seconds; if omitted the module default is used.
         custom_403_message (Optional[str]): Custom message to use when raising on 403 responses; if omitted a default rate-limit message is used.
-
+    
     Returns:
         requests.Response: The HTTP response returned by GitHub.
-
+    
     Raises:
-        requests.HTTPError: For HTTP error responses (including 401/403 conditions handled by the function).
+        requests.HTTPError: For HTTP error responses (including handled 401/403 conditions where a descriptive message is raised).
         requests.RequestException: For lower-level network or request errors.
     """
     from fetchtastic.constants import API_CALL_DELAY, GITHUB_API_TIMEOUT
