@@ -283,22 +283,15 @@ Select "[Quit]" to exit without downloading."""
 
 def run_menu():
     """
-    Run an interactive CLI to browse the Meshtastic GitHub Pages repository and select files to download.
-    Presents a navigable menu of directories and files (using fetch_repo_contents, select_item, and select_files), allowing the user to:
-    - navigate into directories,
-    - go back to parent directories,
-    - multi-select files to download, or
-    - quit/cancel at any time.
-
+    Browse the Meshtastic GitHub Pages repository interactively and select files to download.
+    
+    This function runs a CLI-based navigator that lets the user move between directories, multi-select files for download, go back to parent directories, or quit. It handles user cancellation and errors internally and is intended for interactive use.
+    
     Returns:
         dict: On success, a dictionary with:
             - "directory" (str): repository path containing the selected files (empty string for root).
-            - "files" (list): list of file dictionaries chosen by the user (each item matches entries returned by fetch_repo_contents).
-        None: If the user quits/cancels, if no items/files are found, or if an error occurs during execution.
-
-    Notes:
-        - This function is interactive and intended for CLI use.
-        - All errors are caught internally; on error it prints a message and returns None.
+            - "files" (list): list of file dictionaries chosen by the user (each matches entries returned by fetch_repo_contents).
+        None: If the user cancels/quits, no items/files are found, or an error occurs.
     """
     try:
         current_path = ""

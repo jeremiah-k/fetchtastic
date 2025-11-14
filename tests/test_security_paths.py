@@ -21,9 +21,9 @@ from fetchtastic import downloader
 @pytest.fixture
 def mock_commit_history(monkeypatch):
     """
-    Patch the prerelease commit-history fetcher to always return an empty list during tests.
-
-    Uses the provided pytest monkeypatch fixture to replace fetchtastic.downloader._get_prerelease_commit_history with a stub that returns [] to avoid network or VCS access.
+    Replace the prerelease commit-history fetcher with a stub that always returns an empty list for tests.
+    
+    Patches fetchtastic.downloader._get_prerelease_commit_history to avoid network or VCS access during testing.
     """
     from fetchtastic import downloader
 

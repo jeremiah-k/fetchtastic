@@ -2820,14 +2820,16 @@ def _enrich_history_from_commit_details(
     allow_env_token: bool,
 ) -> None:
     """
-    Enrich prerelease history entries using file-level details from commits that could not be classified by message parsing.
-
+    Enrich prerelease history entries by classifying uncertain commits using file-level changes from their diffs.
+    
+    Inspects the file changes for each commit in `uncertain_commits`, maps changed paths to prerelease directories for `expected_version`, and updates `entries` in-place to record additions or removals. Fetches commit file details in parallel (bounded by PRERELEASE_DETAIL_FETCH_WORKERS) and stops after classifying a capped number of uncertain commits. Uses `github_token` or an environment-provided token when `allow_env_token` is True.
+    
     Parameters:
-        entries (dict): Mapping of prerelease directory -> entry dict that will be updated in-place with additions or deletions.
-        uncertain_commits (list): List of commit dictionaries (expected to include at least a `sha` and `commit` metadata) to inspect for file changes.
-        expected_version (str): Base prerelease version used to interpret directory names found in changed file paths.
-        github_token (Optional[str]): GitHub token to use when fetching commit file details; may be None.
-        allow_env_token (bool): If True, permit using an environment-provided token as a fallback when fetching commit details.
+        entries (dict): Mapping of prerelease directory name -> history entry dict to be updated in-place.
+        uncertain_commits (list): Commits that could not be classified by message parsing; each item should include at least a `sha` and `commit` metadata.
+        expected_version (str): Base prerelease version used to recognise prerelease directory names in file paths.
+        github_token (Optional[str]): Explicit GitHub token to use when fetching commit file details; may be None.
+        allow_env_token (bool): If True, permit falling back to a token supplied via the environment when fetching commit details.
     """
 
     candidates: List[Tuple[str, str]] = []
