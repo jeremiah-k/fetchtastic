@@ -79,6 +79,7 @@ from fetchtastic.constants import (
     PRERELEASE_COMMITS_CACHE_FILE,
     PRERELEASE_COMMITS_LEGACY_FILE,
     PRERELEASE_DELETE_COMMIT_PATTERN,
+    PRERELEASE_DETAIL_ATTEMPT_MULTIPLIER,
     PRERELEASE_DETAIL_FETCH_WORKERS,
     PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
     PRERELEASE_TRACKING_JSON_FILE,
@@ -2859,7 +2860,22 @@ def _enrich_history_from_commit_details(
         max_workers,
     )
 
-    attempt_cap = min(len(candidates), _MAX_UNCERTAIN_COMMITS_TO_RESOLVE * 3)
+    attempt_cap = min(
+        len(candidates),
+        _MAX_UNCERTAIN_COMMITS_TO_RESOLVE * PRERELEASE_DETAIL_ATTEMPT_MULTIPLIER,
+    )
+    summary = get_api_request_summary()
+    remaining = summary.get("rate_limit_remaining")
+    auth_used = summary.get("auth_used", False)
+    if not auth_used and isinstance(remaining, int):
+        safe_allowance = max(0, remaining - 1)
+        attempt_cap = min(attempt_cap, safe_allowance)
+    if attempt_cap <= 0:
+        logger.debug(
+            "Skipping uncertain commit detail fetches because attempt cap resolved to %d",
+            attempt_cap,
+        )
+        return
     successful_classifications = 0
     attempted = 0
     next_idx = 0
@@ -2914,9 +2930,21 @@ def _enrich_history_from_commit_details(
             elif status == "renamed":
                 prev_path = str(file_info.get("previous_filename") or "")
                 prev_info = _extract_prerelease_dir_info(prev_path, expected_version)
-                if prev_info and not dir_info:
-                    change["removed"] = True
-                elif dir_info and not prev_info:
+
+                if prev_info:
+                    prev_dir, prev_identifier, prev_short_hash = prev_info
+                    if prev_dir != directory:
+                        prev_entry = directory_changes.setdefault(
+                            prev_dir,
+                            {
+                                "identifier": prev_identifier,
+                                "short_hash": prev_short_hash,
+                                "added": False,
+                                "removed": False,
+                            },
+                        )
+                        prev_entry["removed"] = True
+                if dir_info and (not prev_info or prev_info[0] != directory):
                     change["added"] = True
 
         if not directory_changes:
@@ -2986,7 +3014,7 @@ def _enrich_history_from_commit_details(
             if not inflight:
                 break
 
-            done_futures, _ = wait(inflight.keys(), return_when=FIRST_COMPLETED)
+            done_futures, _ = wait(inflight, return_when=FIRST_COMPLETED)
             for future in done_futures:
                 idx, sha, timestamp = inflight.pop(future)
                 try:
