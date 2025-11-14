@@ -845,6 +845,29 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
     return config
 
 
+def _prompt_for_cron_frequency() -> str:
+    """
+    Prompt the user for cron job frequency choice.
+
+    Returns:
+        str: 'hourly', 'daily', or 'none'
+    """
+    cron_choice = (
+        input(
+            "How often should Fetchtastic check for updates? [h/d/n] (h=hourly, d=daily, n=none, default: hourly): "
+        )
+        .strip()
+        .lower()
+        or "h"
+    )
+    if cron_choice == "h":
+        return "hourly"
+    elif cron_choice == "d":
+        return "daily"
+    else:
+        return "none"
+
+
 def _setup_automation(
     config: dict, is_partial_run: bool, wants: Callable[[str], bool]
 ) -> dict:
@@ -943,26 +966,29 @@ def _setup_automation(
                     remove_cron_job()
                     print("Existing cron job removed for reconfiguration.")
 
-                    # Then set up new cron job
-                    install_crond()
-                    setup_cron_job()
-                    print("Cron job has been reconfigured.")
+                    # Ask about cron job frequency
+                    frequency = _prompt_for_cron_frequency()
+                    if frequency == "hourly":
+                        install_crond()
+                        setup_cron_job("hourly")
+                        print("Hourly cron job has been set up.")
+                    elif frequency == "daily":
+                        install_crond()
+                        setup_cron_job("daily")
+                        print("Daily cron job has been set up.")
+                    else:
+                        print("Cron job will not be set up.")
                 else:
                     print("Cron job configuration left unchanged.")
             else:
-                # Ask if the user wants to set up a cron job
-                cron_default = "yes"  # Default to 'yes'
-                setup_cron = (
-                    input(
-                        f"Would you like to schedule Fetchtastic to run daily at 3 AM? [y/n] (default: {cron_default}): "
-                    )
-                    .strip()
-                    .lower()
-                    or cron_default[0]
-                )
-                if setup_cron == "y":
+                # Ask about cron job frequency
+                frequency = _prompt_for_cron_frequency()
+                if frequency == "hourly":
                     install_crond()
-                    setup_cron_job()
+                    setup_cron_job("hourly")
+                elif frequency == "daily":
+                    install_crond()
+                    setup_cron_job("daily")
                 else:
                     print("Cron job has not been set up.")
 
@@ -1021,21 +1047,16 @@ def _setup_automation(
                     remove_reboot_cron_job()
                     print("Existing cron jobs removed for reconfiguration.")
 
-                    # Ask if they want to set up daily cron job
-                    cron_default = "yes"
-                    setup_cron = (
-                        input(
-                            f"Would you like to schedule Fetchtastic to run daily at 3 AM? [y/n] (default: {cron_default}): "
-                        )
-                        .strip()
-                        .lower()
-                        or cron_default[0]
-                    )
-                    if setup_cron == "y":
-                        setup_cron_job()
+                    # Ask about cron job frequency
+                    frequency = _prompt_for_cron_frequency()
+                    if frequency == "hourly":
+                        setup_cron_job("hourly")
+                        print("Hourly cron job has been set up.")
+                    elif frequency == "daily":
+                        setup_cron_job("daily")
                         print("Daily cron job has been set up.")
                     else:
-                        print("Daily cron job will not be set up.")
+                        print("Cron job will not be set up.")
 
                     # Ask if they want to set up a reboot cron job
                     boot_default = "yes"
@@ -1056,20 +1077,14 @@ def _setup_automation(
                     print("Cron job configurations left unchanged.")
             else:
                 # No existing cron jobs, ask if they want to set them up
-                # Ask if they want to set up daily cron job
-                cron_default = "yes"
-                setup_cron = (
-                    input(
-                        f"Would you like to schedule Fetchtastic to run daily at 3 AM? [y/n] (default: {cron_default}): "
-                    )
-                    .strip()
-                    .lower()
-                    or cron_default[0]
-                )
-                if setup_cron == "y":
-                    setup_cron_job()
+                # Ask about cron job frequency
+                frequency = _prompt_for_cron_frequency()
+                if frequency == "hourly":
+                    setup_cron_job("hourly")
+                elif frequency == "daily":
+                    setup_cron_job("daily")
                 else:
-                    print("Daily cron job has not been set up.")
+                    print("Cron job has not been set up.")
 
                 # Ask if they want to set up a reboot cron job
                 boot_default = "yes"
@@ -2357,15 +2372,33 @@ def install_crond():
         pass
 
 
-def setup_cron_job():
+def setup_cron_job(frequency="daily"):
     """
     Sets up the cron job to run Fetchtastic at scheduled times.
     On Windows, this function does nothing as cron jobs are not supported.
+
+    Args:
+        frequency (str): 'hourly' or 'daily' (default: 'daily')
     """
     # Skip cron job setup on Windows
     if platform.system() == "Windows":
         print("Cron jobs are not supported on Windows.")
         return
+
+    # Define supported schedules
+    SCHEDULES = {
+        "hourly": {"schedule": "0 * * * *", "desc": "hourly"},
+        "daily": {"schedule": "0 3 * * *", "desc": "daily at 3 AM"},
+    }
+
+    # Validate frequency and get schedule info
+    if frequency not in SCHEDULES:
+        print(f"Warning: Invalid cron frequency '{frequency}'. Defaulting to daily.")
+        frequency = "daily"
+
+    schedule_info = SCHEDULES[frequency]
+    cron_schedule = schedule_info["schedule"]
+    frequency_desc = schedule_info["desc"]
 
     try:
         # Get current crontab entries
@@ -2393,14 +2426,16 @@ def setup_cron_job():
 
         # Add new cron job
         if is_termux():
-            cron_lines.append("0 3 * * * fetchtastic download  # fetchtastic")
+            cron_lines.append(f"{cron_schedule} fetchtastic download  # fetchtastic")
         else:
             # Non-Termux environments
             fetchtastic_path = shutil.which("fetchtastic")
             if not fetchtastic_path:
                 print("Error: fetchtastic executable not found in PATH.")
                 return
-            cron_lines.append(f"0 3 * * * {fetchtastic_path} download  # fetchtastic")
+            cron_lines.append(
+                f"{cron_schedule} {fetchtastic_path} download  # fetchtastic"
+            )
 
         # Join cron lines
         new_cron = "\n".join(cron_lines)
@@ -2412,7 +2447,7 @@ def setup_cron_job():
         # Update crontab
         process = subprocess.Popen(["crontab", "-"], stdin=subprocess.PIPE, text=True)
         process.communicate(input=new_cron)
-        print("Cron job added to run Fetchtastic daily at 3 AM.")
+        print(f"Cron job added to run Fetchtastic {frequency_desc}.")
     except Exception as e:
         print(f"An error occurred while setting up the cron job: {e}")
 

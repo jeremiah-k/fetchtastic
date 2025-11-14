@@ -493,6 +493,23 @@ def test_cron_job_setup(mocker):
     assert "fetchtastic download" not in final_cron_content
 
 
+def test_cron_job_setup_hourly(mocker):
+    """Test the cron job setup for hourly frequency."""
+    mock_run = mocker.patch("subprocess.run")
+    mock_popen = mocker.patch("subprocess.Popen")
+    mock_communicate = mock_popen.return_value.communicate
+    mocker.patch("shutil.which", return_value="/path/to/fetchtastic")
+
+    # Add an hourly cron job
+    mock_run.return_value = mocker.MagicMock(stdout="", returncode=0)
+    setup_config.setup_cron_job("hourly")
+    mock_communicate.assert_called_once()
+    new_cron_content = mock_communicate.call_args[1]["input"]
+
+    # Check that the cron job contains hourly schedule (0 * * * *)
+    assert "0 * * * * /path/to/fetchtastic download  # fetchtastic" in new_cron_content
+
+
 def test_windows_shortcut_creation(mocker):
     """Test the Windows shortcut creation logic."""
     # Mock platform and inject a mock winshell module into sys.modules
@@ -743,7 +760,7 @@ def test_run_setup_first_run_termux(  # noqa: ARG001
         "n",  # No pre-releases
         "n",  # No auto-extract
         "y",  # wifi only
-        "y",  # cron job
+        "h",  # hourly cron job
         "y",  # boot script
         "n",  # No NTFY notifications
         "n",  # No GitHub token setup
