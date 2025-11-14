@@ -2848,55 +2848,35 @@ def _enrich_history_from_commit_details(
     if not candidates:
         return
 
-    max_workers = max(1, min(PRERELEASE_DETAIL_FETCH_WORKERS, len(candidates)))
+    max_to_attempt = min(len(candidates), _MAX_UNCERTAIN_COMMITS_TO_RESOLVE)
+    max_workers = max(1, min(PRERELEASE_DETAIL_FETCH_WORKERS, max_to_attempt))
     logger.debug(
-        "Fetching commit details for %d uncertain prerelease commits using %d worker(s)",
-        len(candidates),
+        "Fetching commit details for up to %d uncertain prerelease commits using %d worker(s)",
+        max_to_attempt,
         max_workers,
     )
 
     successful_classifications = 0
-    processed_commits = 0
-    futures: Dict["Future", Tuple[str, str]] = {}
-    submitted_count = 0
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        stop_requested = False
-
-        # Process candidates incrementally to avoid unnecessary API calls
-        candidate_iter = iter(candidates)
-
-        # Submit initial batch of futures (up to max_workers or remaining needed)
-        while (
-            submitted_count < len(candidates)
-            and submitted_count < max_workers
-            and processed_commits < _MAX_UNCERTAIN_COMMITS_TO_RESOLVE
-        ):
-            sha, timestamp = next(candidate_iter)
-            future = executor.submit(
+        futures: Dict["Future", Tuple[str, str]] = {
+            executor.submit(
                 _fetch_commit_files,
                 sha,
                 github_token,
                 allow_env_token,
-            )
-            futures[future] = (sha, timestamp)
-            submitted_count += 1
+            ): (sha, timestamp)
+            for sha, timestamp in candidates[:max_to_attempt]
+        }
 
-        # Process futures dynamically to handle newly added ones
-        while futures:
-            # Get the next completed future from current set
-            completed_future = next(as_completed(futures))
-            sha, timestamp = futures[completed_future]
-            # Remove from dict to avoid processing again
-            del futures[completed_future]
+        for future in as_completed(futures):
+            sha, timestamp = futures[future]
             try:
-                files = completed_future.result()
-            except Exception as exc:  # pragma: no cover - defensive guard
+                files = future.result()
+            except Exception as exc:  # pragma: no cover  # noqa: BLE001
                 logger.debug("Failed to obtain commit details for %s: %s", sha[:8], exc)
-                processed_commits += 1
                 continue
 
             if not files:
-                processed_commits += 1
                 continue
 
             directory_changes: Dict[str, Dict[str, Any]] = {}
@@ -2957,39 +2937,17 @@ def _enrich_history_from_commit_details(
                     )
                     made_change = True
 
-            processed_commits += 1
             if made_change:
                 successful_classifications += 1
-
-            if processed_commits >= _MAX_UNCERTAIN_COMMITS_TO_RESOLVE:
-                logger.debug(
-                    "Reached maximum uncertain commits to resolve (%d), stopping further processing",
-                    _MAX_UNCERTAIN_COMMITS_TO_RESOLVE,
-                )
-                stop_requested = True
-                for pending_future in futures:
-                    if not pending_future.done():
-                        pending_future.cancel()
-                break
-
-            # Submit next candidate if we haven't reached the limit yet
-            if (
-                not stop_requested
-                and submitted_count < len(candidates)
-                and processed_commits < _MAX_UNCERTAIN_COMMITS_TO_RESOLVE
-            ):
-                try:
-                    sha, timestamp = next(candidate_iter)
-                    future = executor.submit(
-                        _fetch_commit_files,
-                        sha,
-                        github_token,
-                        allow_env_token,
+                if successful_classifications >= _MAX_UNCERTAIN_COMMITS_TO_RESOLVE:
+                    logger.debug(
+                        "Reached maximum uncertain commits to resolve (%d), stopping further processing",
+                        _MAX_UNCERTAIN_COMMITS_TO_RESOLVE,
                     )
-                    futures[future] = (sha, timestamp)
-                    submitted_count += 1
-                except StopIteration:
-                    pass  # No more candidates
+                    for pending_future in futures:
+                        if not pending_future.done():
+                            pending_future.cancel()
+                    break
 
 
 def _refresh_prerelease_commit_history(
