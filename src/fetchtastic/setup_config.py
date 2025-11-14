@@ -37,6 +37,12 @@ RECOMMENDED_EXCLUDE_PATTERNS = [
     "*_eink*",  # e-ink display variants
 ]
 
+# Cron job schedule configurations
+CRON_SCHEDULES = {
+    "hourly": {"schedule": "0 * * * *", "desc": "hourly"},
+    "daily": {"schedule": "0 3 * * *", "desc": "daily at 3 AM"},
+}
+
 # Import Windows-specific modules if on Windows
 if platform.system() == "Windows":
     try:
@@ -710,21 +716,23 @@ def configure_exclude_patterns(config: dict) -> None:
 
 def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> dict:
     """
-    Configure firmware-related settings in the provided config dictionary by interactively prompting the user.
-
-    Prompts and updates the following keys in `config`:
-    - FIRMWARE_VERSIONS_TO_KEEP (int): number of firmware versions to retain.
-    - AUTO_EXTRACT (bool): whether to automatically extract files from firmware zip archives.
-    - EXTRACT_PATTERNS (list[str]): space-separated keywords to match files to extract (set only if AUTO_EXTRACT is enabled).
-    - EXCLUDE_PATTERNS (list[str]): space-separated keywords to exclude from extraction.
-    - CHECK_PRERELEASES (bool): whether to check/download prerelease firmware.
-    - SELECTED_PRERELEASE_ASSETS (list[str]): device patterns for prereleases, copied from EXTRACT_PATTERNS.
-
-    Behavior notes:
-    - Uses current config values as defaults when present; otherwise falls back to provided defaults.
-    - If CHECK_PRERELEASES is enabled, SELECTED_PRERELEASE_ASSETS will be set to match EXTRACT_PATTERNS.
-    - If AUTO_EXTRACT is enabled but no extract patterns are provided, AUTO_EXTRACT will be disabled.
-    - Returns the updated config dict (the same object passed in, modified in place).
+    Configure firmware-related settings in the provided config dictionary via interactive prompts.
+    
+    Updates config in place with keys related to firmware retention, automatic extraction, extraction/exclusion patterns, and prerelease handling:
+    - FIRMWARE_VERSIONS_TO_KEEP
+    - AUTO_EXTRACT
+    - EXTRACT_PATTERNS
+    - EXCLUDE_PATTERNS
+    - CHECK_PRERELEASES
+    - SELECTED_PRERELEASE_ASSETS
+    
+    Parameters:
+        config (dict): Configuration mapping to read defaults from and write updated values into.
+        is_first_run (bool): When True, use first-run prompt wording and defaults.
+        default_versions (int): Fallback number of firmware versions to keep when not present in config.
+    
+    Returns:
+        dict: The same config object passed in, updated with firmware-related settings.
     """
 
     # Prompt for firmware versions to keep
@@ -845,19 +853,65 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
     return config
 
 
+def _configure_cron_job(install_crond_needed: bool = False) -> None:
+    """
+    Prompt the user for a cron frequency and configure a Fetchtastic cron job accordingly.
+    
+    If the chosen frequency is not "none", the function will install the Termux crond service first when requested and then create/update the cron job at the selected cadence. If the user selects "none", no cron job is configured and a message is printed.
+    
+    Parameters:
+        install_crond_needed (bool): If True, install and enable the Termux crond service before configuring the cron job.
+    """
+    frequency = _prompt_for_cron_frequency()
+    if frequency != "none":
+        if install_crond_needed:
+            install_crond()
+        setup_cron_job(frequency)
+    else:
+        print("Cron job has not been set up.")
+
+
+def _prompt_for_cron_frequency() -> str:
+    """
+    Prompt the user to choose how often Fetchtastic should run its scheduled check.
+    
+    Returns:
+        frequency (str): 'hourly', 'daily', or 'none'.
+    """
+    choices = {"h": "hourly", "d": "daily", "n": "none"}
+    while True:
+        cron_choice = (
+            input(
+                "How often should Fetchtastic check for updates? [h/d/n] (h=hourly, d=daily, n=none, default: hourly): "
+            )
+            .strip()
+            .lower()
+            or "h"
+        )
+        if cron_choice in choices:
+            return choices[cron_choice]
+        else:
+            print(f"Invalid choice '{cron_choice}'. Please enter 'h', 'd', or 'n'.")
+
+
 def _setup_automation(
     config: dict, is_partial_run: bool, wants: Callable[[str], bool]
 ) -> dict:
     """
-    Handle automation setup (cron jobs, Windows startup, Termux boot scripts).
-
-    Args:
-        config: Current configuration dictionary
-        is_partial_run: Whether this is a partial setup run
-        wants: Function to check if a section should be processed
-
+    Configure platform-specific automation for Fetchtastic (cron jobs, startup/boot shortcuts).
+    
+    Depending on the platform, this function will offer to create, remove, or reconfigure:
+    - Windows: a startup shortcut to run Fetchtastic on user login.
+    - Termux: a scheduled cron job and an optional boot script to run on device boot.
+    - Linux/macOS: a scheduled cron job and an optional reboot/startup cron entry.
+    
+    Parameters:
+        config (dict): Current configuration dictionary that may be read and updated.
+        is_partial_run (bool): If True, only run when the caller indicates the automation section is desired.
+        wants (Callable[[str], bool]): Predicate that returns True if a named setup section should be processed.
+    
     Returns:
-        Updated configuration dictionary
+        dict: The potentially updated configuration dictionary.
     """
     if not is_partial_run or wants("automation"):
         if platform.system() == "Windows":
@@ -943,28 +997,13 @@ def _setup_automation(
                     remove_cron_job()
                     print("Existing cron job removed for reconfiguration.")
 
-                    # Then set up new cron job
-                    install_crond()
-                    setup_cron_job()
-                    print("Cron job has been reconfigured.")
+                    # Configure cron job
+                    _configure_cron_job(install_crond_needed=True)
                 else:
                     print("Cron job configuration left unchanged.")
             else:
-                # Ask if the user wants to set up a cron job
-                cron_default = "yes"  # Default to 'yes'
-                setup_cron = (
-                    input(
-                        f"Would you like to schedule Fetchtastic to run daily at 3 AM? [y/n] (default: {cron_default}): "
-                    )
-                    .strip()
-                    .lower()
-                    or cron_default[0]
-                )
-                if setup_cron == "y":
-                    install_crond()
-                    setup_cron_job()
-                else:
-                    print("Cron job has not been set up.")
+                # Configure cron job
+                _configure_cron_job(install_crond_needed=True)
 
             # Check if boot script already exists
             boot_script_exists = check_boot_script_exists()
@@ -1021,21 +1060,8 @@ def _setup_automation(
                     remove_reboot_cron_job()
                     print("Existing cron jobs removed for reconfiguration.")
 
-                    # Ask if they want to set up daily cron job
-                    cron_default = "yes"
-                    setup_cron = (
-                        input(
-                            f"Would you like to schedule Fetchtastic to run daily at 3 AM? [y/n] (default: {cron_default}): "
-                        )
-                        .strip()
-                        .lower()
-                        or cron_default[0]
-                    )
-                    if setup_cron == "y":
-                        setup_cron_job()
-                        print("Daily cron job has been set up.")
-                    else:
-                        print("Daily cron job will not be set up.")
+                    # Configure cron job
+                    _configure_cron_job(install_crond_needed=False)
 
                     # Ask if they want to set up a reboot cron job
                     boot_default = "yes"
@@ -1056,20 +1082,8 @@ def _setup_automation(
                     print("Cron job configurations left unchanged.")
             else:
                 # No existing cron jobs, ask if they want to set them up
-                # Ask if they want to set up daily cron job
-                cron_default = "yes"
-                setup_cron = (
-                    input(
-                        f"Would you like to schedule Fetchtastic to run daily at 3 AM? [y/n] (default: {cron_default}): "
-                    )
-                    .strip()
-                    .lower()
-                    or cron_default[0]
-                )
-                if setup_cron == "y":
-                    setup_cron_job()
-                else:
-                    print("Daily cron job has not been set up.")
+                # Configure cron job
+                _configure_cron_job(install_crond_needed=False)
 
                 # Ask if they want to set up a reboot cron job
                 boot_default = "yes"
@@ -2357,15 +2371,28 @@ def install_crond():
         pass
 
 
-def setup_cron_job():
+def setup_cron_job(frequency="hourly"):
     """
-    Sets up the cron job to run Fetchtastic at scheduled times.
-    On Windows, this function does nothing as cron jobs are not supported.
+    Add or update a cron job to run Fetchtastic on a regular schedule.
+    
+    On Windows this is a no-op. The function validates the `frequency` against available CRON_SCHEDULES (defaults to "hourly" on invalid input), removes any existing Fetchtastic cron entries except `@reboot` entries, and writes a new cron entry. On Termux it writes a plain `fetchtastic download` entry; on other platforms it requires the `fetchtastic` executable to be discoverable in PATH.
+    
+    Parameters:
+        frequency (str): Schedule key describing cadence; expected values include `"hourly"` or `"daily"`.
     """
     # Skip cron job setup on Windows
     if platform.system() == "Windows":
         print("Cron jobs are not supported on Windows.")
         return
+
+    # Validate frequency and get schedule info
+    if frequency not in CRON_SCHEDULES:
+        print(f"Warning: Invalid cron frequency '{frequency}'. Defaulting to hourly.")
+        frequency = "hourly"
+
+    schedule_info = CRON_SCHEDULES[frequency]
+    cron_schedule = schedule_info["schedule"]
+    frequency_desc = schedule_info["desc"]
 
     try:
         # Get current crontab entries
@@ -2393,14 +2420,16 @@ def setup_cron_job():
 
         # Add new cron job
         if is_termux():
-            cron_lines.append("0 3 * * * fetchtastic download  # fetchtastic")
+            cron_lines.append(f"{cron_schedule} fetchtastic download  # fetchtastic")
         else:
             # Non-Termux environments
             fetchtastic_path = shutil.which("fetchtastic")
             if not fetchtastic_path:
                 print("Error: fetchtastic executable not found in PATH.")
                 return
-            cron_lines.append(f"0 3 * * * {fetchtastic_path} download  # fetchtastic")
+            cron_lines.append(
+                f"{cron_schedule} {fetchtastic_path} download  # fetchtastic"
+            )
 
         # Join cron lines
         new_cron = "\n".join(cron_lines)
@@ -2412,7 +2441,7 @@ def setup_cron_job():
         # Update crontab
         process = subprocess.Popen(["crontab", "-"], stdin=subprocess.PIPE, text=True)
         process.communicate(input=new_cron)
-        print("Cron job added to run Fetchtastic daily at 3 AM.")
+        print(f"Cron job added to run Fetchtastic {frequency_desc}.")
     except Exception as e:
         print(f"An error occurred while setting up the cron job: {e}")
 

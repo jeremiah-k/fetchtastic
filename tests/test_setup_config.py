@@ -493,6 +493,164 @@ def test_cron_job_setup(mocker):
     assert "fetchtastic download" not in final_cron_content
 
 
+def test_cron_job_setup_hourly(mocker):
+    """Test the cron job setup for hourly frequency."""
+    mock_run = mocker.patch("subprocess.run")
+    mock_popen = mocker.patch("subprocess.Popen")
+    mock_communicate = mock_popen.return_value.communicate
+    mocker.patch("shutil.which", return_value="/path/to/fetchtastic")
+
+    # Add an hourly cron job
+    mock_run.return_value = mocker.MagicMock(stdout="", returncode=0)
+    setup_config.setup_cron_job("hourly")
+    mock_communicate.assert_called_once()
+    new_cron_content = mock_communicate.call_args[1]["input"]
+
+    # Check that the cron job contains hourly schedule (0 * * * *)
+    assert "0 * * * * /path/to/fetchtastic download  # fetchtastic" in new_cron_content
+
+
+def test_cron_job_setup_windows(mocker):
+    """Test that cron job setup does nothing on Windows."""
+    mocker.patch("fetchtastic.setup_config.platform.system", return_value="Windows")
+
+    # Should not raise any exceptions and should not attempt to run subprocess
+    setup_config.setup_cron_job("daily")
+
+
+def test_cron_job_setup_invalid_frequency(mocker):
+    """Test cron job setup with invalid frequency parameter."""
+    mock_run = mocker.patch("subprocess.run")
+    mock_popen = mocker.patch("subprocess.Popen")
+    mock_communicate = mock_popen.return_value.communicate
+    mocker.patch("shutil.which", return_value="/path/to/fetchtastic")
+
+    # Add a cron job with invalid frequency
+    mock_run.return_value = mocker.MagicMock(stdout="", returncode=0)
+    setup_config.setup_cron_job("invalid")
+    mock_communicate.assert_called_once()
+    new_cron_content = mock_communicate.call_args[1]["input"]
+
+    # Should default to hourly schedule (0 * * * *)
+    assert "0 * * * * /path/to/fetchtastic download  # fetchtastic" in new_cron_content
+
+
+def test_prompt_for_cron_frequency(mocker):
+    """Test the _prompt_for_cron_frequency function."""
+    mock_input = mocker.patch("builtins.input")
+
+    # Test hourly choice
+    mock_input.return_value = "h"
+    result = setup_config._prompt_for_cron_frequency()
+    assert result == "hourly"
+
+    # Test daily choice
+    mock_input.return_value = "d"
+    result = setup_config._prompt_for_cron_frequency()
+    assert result == "daily"
+
+    # Test none choice
+    mock_input.return_value = "n"
+    result = setup_config._prompt_for_cron_frequency()
+    assert result == "none"
+
+    # Test default (empty input)
+    mock_input.return_value = ""
+    result = setup_config._prompt_for_cron_frequency()
+    assert result == "hourly"
+
+    # Test invalid input followed by valid input
+    mock_input.side_effect = ["x", "h"]
+    result = setup_config._prompt_for_cron_frequency()
+    assert result == "hourly"
+
+
+def test_setup_automation_windows_no_shortcut(mocker, reload_setup_config_module):
+    """Test _setup_automation on Windows without existing startup shortcut."""
+    # Mock platform and inject a mock winshell module into sys.modules
+    mocker.patch("fetchtastic.setup_config.platform.system", return_value="Windows")
+    mock_winshell = mocker.MagicMock()
+    mocker.patch.dict("sys.modules", {"winshell": mock_winshell})
+
+    mocker.patch("os.path.exists", return_value=False)
+    mocker.patch("builtins.input", return_value="y")
+
+    config = {}
+    result = setup_config._setup_automation(config, False, lambda x: True)
+
+    assert result == config
+
+
+def test_setup_automation_termux_new_cron_hourly(mocker):
+    """Test _setup_automation on Termux for new cron job setup with hourly choice."""
+    mocker.patch("fetchtastic.setup_config.platform.system", return_value="Linux")
+    mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
+    mocker.patch("fetchtastic.setup_config.check_cron_job_exists", return_value=False)
+    mocker.patch(
+        "fetchtastic.setup_config.check_boot_script_exists", return_value=False
+    )
+
+    mock_input = mocker.patch("builtins.input")
+    mock_input.side_effect = ["h", "y"]  # hourly cron, boot script
+
+    mock_install_crond = mocker.patch("fetchtastic.setup_config.install_crond")
+    mock_setup_cron = mocker.patch("fetchtastic.setup_config.setup_cron_job")
+    mock_setup_boot = mocker.patch("fetchtastic.setup_config.setup_boot_script")
+
+    config = {}
+    result = setup_config._setup_automation(config, False, lambda x: True)
+
+    mock_install_crond.assert_called_once()
+    mock_setup_cron.assert_called_once_with("hourly")
+    mock_setup_boot.assert_called_once()
+    assert result == config
+
+
+def test_setup_automation_termux_reconfig_cron(mocker):
+    """Test _setup_automation on Termux for existing cron job reconfiguration."""
+    mocker.patch("fetchtastic.setup_config.platform.system", return_value="Linux")
+    mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
+    mocker.patch("fetchtastic.setup_config.check_cron_job_exists", return_value=True)
+    mocker.patch(
+        "fetchtastic.setup_config.check_boot_script_exists", return_value=False
+    )
+
+    mock_input = mocker.patch("builtins.input")
+    mock_input.side_effect = ["y", "d", "n"]  # reconfigure, daily cron, no boot script
+
+    mock_remove_cron = mocker.patch("fetchtastic.setup_config.remove_cron_job")
+    mock_install_crond = mocker.patch("fetchtastic.setup_config.install_crond")
+    mock_setup_cron = mocker.patch("fetchtastic.setup_config.setup_cron_job")
+
+    config = {}
+    result = setup_config._setup_automation(config, False, lambda x: True)
+
+    mock_remove_cron.assert_called_once()
+    mock_install_crond.assert_called_once()
+    mock_setup_cron.assert_called_once_with("daily")
+    assert result == config
+
+
+def test_setup_automation_linux_new_setup(mocker):
+    """Test _setup_automation on Linux for new cron job setup."""
+    mocker.patch("fetchtastic.setup_config.platform.system", return_value="Linux")
+    mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
+    mocker.patch(
+        "fetchtastic.setup_config.check_any_cron_jobs_exist", return_value=False
+    )
+
+    mock_input = mocker.patch("builtins.input")
+    mock_input.side_effect = ["h", "n"]  # hourly cron, no reboot
+
+    mock_setup_cron = mocker.patch("fetchtastic.setup_config.setup_cron_job")
+
+    config = {}
+    result = setup_config._setup_automation(config, False, lambda x: True)
+
+    mock_setup_cron.assert_called_once_with("hourly")
+    assert result == config
+
+
 def test_windows_shortcut_creation(mocker):
     """Test the Windows shortcut creation logic."""
     # Mock platform and inject a mock winshell module into sys.modules
@@ -743,7 +901,7 @@ def test_run_setup_first_run_termux(  # noqa: ARG001
         "n",  # No pre-releases
         "n",  # No auto-extract
         "y",  # wifi only
-        "y",  # cron job
+        "h",  # hourly cron job
         "y",  # boot script
         "n",  # No NTFY notifications
         "n",  # No GitHub token setup
