@@ -565,15 +565,12 @@ def test_prompt_for_cron_frequency(mocker):
     assert result == "hourly"
 
 
-def test_setup_automation_windows_no_shortcut(mocker):
+def test_setup_automation_windows_no_shortcut(mocker, reload_setup_config_module):
     """Test _setup_automation on Windows without existing startup shortcut."""
     # Mock platform and inject a mock winshell module into sys.modules
     mocker.patch("fetchtastic.setup_config.platform.system", return_value="Windows")
     mock_winshell = mocker.MagicMock()
     mocker.patch.dict("sys.modules", {"winshell": mock_winshell})
-
-    # Reload the setup_config module to make it see the mocked environment
-    importlib.reload(setup_config)
 
     mocker.patch("os.path.exists", return_value=False)
     mocker.patch("builtins.input", return_value="y")
