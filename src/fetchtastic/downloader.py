@@ -2821,9 +2821,9 @@ def _enrich_history_from_commit_details(
 ) -> None:
     """
     Enrich prerelease history entries by classifying uncertain commits using file-level changes from their diffs.
-    
+
     Inspects the file changes for each commit in `uncertain_commits`, maps changed paths to prerelease directories for `expected_version`, and updates `entries` in-place to record additions or removals. Fetches commit file details in parallel (bounded by PRERELEASE_DETAIL_FETCH_WORKERS) and stops after classifying a capped number of uncertain commits. Uses `github_token` or an environment-provided token when `allow_env_token` is True.
-    
+
     Parameters:
         entries (dict): Mapping of prerelease directory name -> history entry dict to be updated in-place.
         uncertain_commits (list): Commits that could not be classified by message parsing; each item should include at least a `sha` and `commit` metadata.
@@ -2855,8 +2855,20 @@ def _enrich_history_from_commit_details(
 
     successful_classifications = 0
     futures: Dict[Any, Tuple[str, str]] = {}
+    submitted_count = 0
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        for sha, timestamp in candidates:
+        stop_requested = False
+
+        # Process candidates incrementally to avoid unnecessary API calls
+        candidate_iter = iter(candidates)
+
+        # Submit initial batch of futures (up to max_workers or remaining needed)
+        while (
+            submitted_count < len(candidates)
+            and submitted_count < max_workers
+            and successful_classifications < _MAX_UNCERTAIN_COMMITS_TO_RESOLVE
+        ):
+            sha, timestamp = next(candidate_iter)
             future = executor.submit(
                 _fetch_commit_files,
                 sha,
@@ -2864,14 +2876,10 @@ def _enrich_history_from_commit_details(
                 allow_env_token,
             )
             futures[future] = (sha, timestamp)
+            submitted_count += 1
 
-        stop_requested = False
         for future in as_completed(futures):
             sha, timestamp = futures[future]
-            if stop_requested:
-                future.cancel()
-                continue
-
             try:
                 files = future.result()
             except Exception as exc:  # pragma: no cover - defensive guard
@@ -2951,6 +2959,25 @@ def _enrich_history_from_commit_details(
                         if not pending_future.done():
                             pending_future.cancel()
                     break
+
+            # Submit next candidate if we haven't reached the limit yet
+            if (
+                not stop_requested
+                and submitted_count < len(candidates)
+                and successful_classifications < _MAX_UNCERTAIN_COMMITS_TO_RESOLVE
+            ):
+                try:
+                    sha, timestamp = next(candidate_iter)
+                    future = executor.submit(
+                        _fetch_commit_files,
+                        sha,
+                        github_token,
+                        allow_env_token,
+                    )
+                    futures[future] = (sha, timestamp)
+                    submitted_count += 1
+                except StopIteration:
+                    pass  # No more candidates
 
 
 def _refresh_prerelease_commit_history(
