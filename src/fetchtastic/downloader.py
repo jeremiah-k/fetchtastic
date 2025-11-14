@@ -3165,7 +3165,7 @@ def _get_prerelease_commit_history(
 
     if needs_initial_build or force_refresh:
         logger.info(
-            "Building prerelease history cache for %s (first run may take a couple of minutes)...",
+            "Building prerelease history cache for %s (this may take a couple of minutes on initial builds)...",
             expected_version,
         )
 

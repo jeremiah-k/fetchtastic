@@ -2096,7 +2096,9 @@ def test_cache_build_logging_scenarios(monkeypatch):
 
         with (
             patch.object(
-                downloader, "_refresh_prerelease_commit_history", return_value=[]
+                downloader,
+                "_refresh_prerelease_commit_history",
+                return_value=([], datetime.now()),
             ) as mock_refresh,
             patch.object(downloader.logger, "info") as mock_info,
         ):
@@ -2104,7 +2106,7 @@ def test_cache_build_logging_scenarios(monkeypatch):
             mock_refresh.assert_called_once()
 
         mock_info.assert_called_once_with(
-            "Building prerelease history cache for %s (first run may take a couple of minutes)...",
+            "Building prerelease history cache for %s (this may take a couple of minutes on initial builds)...",
             "2.7.99",
         )
     finally:
@@ -2122,10 +2124,10 @@ def test_cache_build_logging_scenarios(monkeypatch):
         _get_prerelease_commit_history("2.7.99", force_refresh=True)
         mock_refresh.assert_called_once()
 
-    mock_info.assert_called_once_with(
-        "Building prerelease history cache for %s (first run may take a couple of minutes)...",
-        "2.7.99",
-    )
+        mock_info.assert_called_once_with(
+            "Building prerelease history cache for %s (this may take a couple of minutes on initial builds)...",
+            "2.7.99",
+        )
 
     # Test case 3: Cache hit doesn't log build message
     with (
@@ -2174,7 +2176,7 @@ def test_cache_expiry_and_logging():
 
         # Should log info message for cache build
         mock_info.assert_called_once_with(
-            "Building prerelease history cache for %s (first run may take a couple of minutes)...",
+            "Building prerelease history cache for %s (this may take a couple of minutes on initial builds)...",
             "2.7.99",
         )
 
