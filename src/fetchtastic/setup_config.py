@@ -851,6 +851,28 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
     return config
 
 
+def _configure_cron_job(install_crond_needed: bool = False) -> None:
+    """
+    Prompt for cron job frequency and configure it.
+
+    Args:
+        install_crond_needed: Whether to install crond (for Termux)
+    """
+    frequency = _prompt_for_cron_frequency()
+    if frequency == "hourly":
+        if install_crond_needed:
+            install_crond()
+        setup_cron_job("hourly")
+        print("Hourly cron job has been set up.")
+    elif frequency == "daily":
+        if install_crond_needed:
+            install_crond()
+        setup_cron_job("daily")
+        print("Daily cron job has been set up.")
+    else:
+        print("Cron job has not been set up.")
+
+
 def _prompt_for_cron_frequency() -> str:
     """
     Prompt the user for cron job frequency choice.
@@ -975,31 +997,13 @@ def _setup_automation(
                     remove_cron_job()
                     print("Existing cron job removed for reconfiguration.")
 
-                    # Ask about cron job frequency
-                    frequency = _prompt_for_cron_frequency()
-                    if frequency == "hourly":
-                        install_crond()
-                        setup_cron_job("hourly")
-                        print("Hourly cron job has been set up.")
-                    elif frequency == "daily":
-                        install_crond()
-                        setup_cron_job("daily")
-                        print("Daily cron job has been set up.")
-                    else:
-                        print("Cron job will not be set up.")
+                    # Configure cron job
+                    _configure_cron_job(install_crond_needed=True)
                 else:
                     print("Cron job configuration left unchanged.")
             else:
-                # Ask about cron job frequency
-                frequency = _prompt_for_cron_frequency()
-                if frequency == "hourly":
-                    install_crond()
-                    setup_cron_job("hourly")
-                elif frequency == "daily":
-                    install_crond()
-                    setup_cron_job("daily")
-                else:
-                    print("Cron job has not been set up.")
+                # Configure cron job
+                _configure_cron_job(install_crond_needed=True)
 
             # Check if boot script already exists
             boot_script_exists = check_boot_script_exists()
@@ -1056,16 +1060,8 @@ def _setup_automation(
                     remove_reboot_cron_job()
                     print("Existing cron jobs removed for reconfiguration.")
 
-                    # Ask about cron job frequency
-                    frequency = _prompt_for_cron_frequency()
-                    if frequency == "hourly":
-                        setup_cron_job("hourly")
-                        print("Hourly cron job has been set up.")
-                    elif frequency == "daily":
-                        setup_cron_job("daily")
-                        print("Daily cron job has been set up.")
-                    else:
-                        print("Cron job will not be set up.")
+                    # Configure cron job
+                    _configure_cron_job(install_crond_needed=False)
 
                     # Ask if they want to set up a reboot cron job
                     boot_default = "yes"
@@ -1086,14 +1082,8 @@ def _setup_automation(
                     print("Cron job configurations left unchanged.")
             else:
                 # No existing cron jobs, ask if they want to set them up
-                # Ask about cron job frequency
-                frequency = _prompt_for_cron_frequency()
-                if frequency == "hourly":
-                    setup_cron_job("hourly")
-                elif frequency == "daily":
-                    setup_cron_job("daily")
-                else:
-                    print("Cron job has not been set up.")
+                # Configure cron job
+                _configure_cron_job(install_crond_needed=False)
 
                 # Ask if they want to set up a reboot cron job
                 boot_default = "yes"
