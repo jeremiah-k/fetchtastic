@@ -874,6 +874,7 @@ def _prompt_for_cron_frequency() -> str:
     Returns:
         str: 'hourly', 'daily', or 'none'
     """
+    choices = {"h": "hourly", "d": "daily", "n": "none"}
     while True:
         cron_choice = (
             input(
@@ -883,12 +884,8 @@ def _prompt_for_cron_frequency() -> str:
             .lower()
             or "h"
         )
-        if cron_choice == "h":
-            return "hourly"
-        elif cron_choice == "d":
-            return "daily"
-        elif cron_choice == "n":
-            return "none"
+        if cron_choice in choices:
+            return choices[cron_choice]
         else:
             print(f"Invalid choice '{cron_choice}'. Please enter 'h', 'd', or 'n'.")
 
