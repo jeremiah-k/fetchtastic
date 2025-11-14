@@ -21,6 +21,8 @@ NTFY_REQUEST_TIMEOUT = 10
 PRERELEASE_REQUEST_TIMEOUT = 30
 DEFAULT_REQUEST_TIMEOUT = 30
 API_CALL_DELAY = 0.1  # Small delay to be respectful to GitHub API
+GITHUB_MAX_PER_PAGE = 100
+MIN_RATE_LIMIT_FOR_COMMIT_DETAILS = 30
 
 # Download and retry settings
 RELEASE_SCAN_COUNT = 10
@@ -43,8 +45,26 @@ LATEST_FIRMWARE_RELEASE_FILE = "latest_firmware_release.txt"
 LATEST_ANDROID_RELEASE_JSON_FILE = "latest_android_release.json"
 LATEST_FIRMWARE_RELEASE_JSON_FILE = "latest_firmware_release.json"
 PRERELEASE_TRACKING_JSON_FILE = "prerelease_tracking.json"
+PRERELEASE_COMMITS_CACHE_FILE = "prerelease_commits_cache.json"
 PRERELEASE_COMMITS_LEGACY_FILE = "prerelease_commits.txt"
+PRERELEASE_COMMIT_HISTORY_FILE = "prerelease_commit_history.json"
 WINDOWS_SHORTCUT_FILE = "fetchtastic_yaml.lnk"
+
+# Regex patterns for parsing prerelease commit messages
+PRERELEASE_ADD_COMMIT_PATTERN = (
+    r"^(\d+\.\d+\.\d+)\.([a-f0-9]{6,})\s+meshtastic/firmware@(?:[a-f0-9]{6,})"
+)
+PRERELEASE_DELETE_COMMIT_PATTERN = (
+    r"^Delete firmware-(\d+\.\d+\.\d+)\.([a-f0-9]{6,})\s+directory"
+)
+
+# Default values for prerelease entries
+DEFAULT_PRERELEASE_ACTIVE = False
+DEFAULT_PRERELEASE_STATUS = "unknown"
+DEFAULT_PRERELEASE_COMMITS_TO_FETCH = 40
+DEFAULT_FIRMWARE_VERSIONS_TO_KEEP = 2
+DEFAULT_ANDROID_VERSIONS_TO_KEEP = 2
+EXECUTABLE_PERMISSIONS = 0o755
 
 
 # Directories that Fetchtastic manages and can safely clean
@@ -56,15 +76,12 @@ MANAGED_DIRECTORIES = (
 )
 
 # Default configuration values
-DEFAULT_FIRMWARE_VERSIONS_TO_KEEP = 2
-DEFAULT_ANDROID_VERSIONS_TO_KEEP = 2
 DEFAULT_AUTO_EXTRACT = False
 
 # File extensions and patterns
 APK_EXTENSION = ".apk"
 ZIP_EXTENSION = ".zip"
 SHELL_SCRIPT_EXTENSION = ".sh"
-EXECUTABLE_PERMISSIONS = 0o755
 
 # Clean operation messages
 MSG_REMOVED_MANAGED_DIR = "Removed managed directory: {path}"
@@ -128,6 +145,7 @@ DEVICE_HARDWARE_CACHE_HOURS = 24
 COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS = 24
 RELEASES_CACHE_EXPIRY_HOURS = 1 / 60  # 1 minute
 PRERELEASE_DIR_CACHE_EXPIRY_SECONDS = 60  # 1 minute
+PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS = 300  # 5 minutes
 
 # Concurrent operations limits
 MAX_CONCURRENT_TIMESTAMP_FETCHES = 5

@@ -19,11 +19,15 @@ import requests
 from fetchtastic import downloader
 from fetchtastic.downloader import (
     _commit_timestamp_cache,
+    _extract_identifier_from_entry,
+    _format_history_entry,
     _get_commit_cache_file,
     _get_commit_hash_from_dir,
+    _is_entry_deleted,
     _load_commit_cache,
     _normalize_version,
     _save_commit_cache,
+    _sort_key,
     clear_commit_timestamp_cache,
     get_commit_timestamp,
     get_prerelease_tracking_info,
@@ -37,7 +41,21 @@ _BLOCKED_NETWORK_MSG = "Network access is blocked in tests"
 
 @pytest.fixture(autouse=True)
 def _deny_network():
+    """
+    Patch network calls in fetchtastic.downloader and fetchtastic.utils to raise an AssertionError when used.
+    
+    Patches `requests.get` and `requests.post` in both modules so any external network attempt triggers an `AssertionError` with the message `_BLOCKED_NETWORK_MSG`.
+    """
+
     def _no_net(*_args, **_kwargs):
+        """
+        Raise an AssertionError to block any network access during tests.
+        
+        This helper is intended to be used as a replacement for network-call functions so that any attempt to perform network I/O fails immediately.
+        
+        Raises:
+            AssertionError: always raised with the message contained in `_BLOCKED_NETWORK_MSG`.
+        """
         raise AssertionError(_BLOCKED_NETWORK_MSG)
 
     with patch("fetchtastic.downloader.requests.get", _no_net):
@@ -47,34 +65,78 @@ def _deny_network():
                     yield
 
 
+@pytest.fixture
+def mock_commit_history(monkeypatch):
+    """
+    Force prerelease commit history lookups to return an empty list to avoid network access during tests.
+    
+    Patches downloader._get_prerelease_commit_history so it always returns an empty list.
+    """
+
+    monkeypatch.setattr(
+        downloader,
+        "_get_prerelease_commit_history",
+        lambda *_args, **_kwargs: [],
+    )
+
+
+@pytest.fixture(autouse=True)
+def _use_isolated_cache(tmp_path_factory, monkeypatch):
+    """
+    Create an isolated temporary cache directory and configure the downloader to use it for the test.
+    
+    Patches downloader.platformdirs.user_cache_dir to return a fresh temporary directory and resets internal downloader cache-file globals so subsequent cache reads and writes use the isolated path.
+    
+    Returns:
+        pathlib.Path: Path to the temporary isolated cache directory.
+    """
+
+    cache_dir = tmp_path_factory.mktemp("fetchtastic-cache")
+    monkeypatch.setattr(
+        downloader.platformdirs,
+        "user_cache_dir",
+        lambda *_args, **_kwargs: str(cache_dir),
+    )
+
+    # Reset cached file path globals so newly patched cache dir is used
+    downloader._commit_cache_file = None
+    downloader._releases_cache_file = None
+    downloader._prerelease_dir_cache_file = None
+    downloader._prerelease_commit_history_file = None
+    downloader._prerelease_dir_cache_loaded = False
+    downloader._prerelease_commit_history_loaded = False
+    return cache_dir
+
+
 def mock_github_commit_timestamp(commit_timestamps):
     """
-    Create a requests.get-compatible mock that returns commit timestamp data for specified commit hashes.
-
-    When the requested URL contains "commits/{hash}" for a hash present in commit_timestamps, the mock response's json() returns {"commit": {"committer": {"date": "<ISO timestamp>"}}} and raise_for_status() is a no-op. For other URLs the mock response's json() returns an empty dict and raise_for_status() is a no-op.
-
+    Create a requests.get side-effect that returns mock GitHub commit-timestamp responses for specified commit hashes.
+    
+    When the generated callable is invoked with a URL containing "/commits/{hash}" or "/git/commits/{hash}" and that hash exists in `commit_timestamps`, the returned mock's `json()` yields {"commit": {"committer": {"date": "<ISO timestamp>"}}} and `raise_for_status()` is a no-op. For other URLs the mock's `json()` returns an empty dict and `ok` is False.
+    
     Parameters:
         commit_timestamps (dict): Mapping of commit hash (str) to ISO 8601 timestamp string.
-
+    
     Returns:
-        function: A callable suitable for use as a side_effect for mocks of requests.get; it accepts (url, **kwargs) and returns a Mock response object.
+        function: A callable (url, **kwargs) -> unittest.mock.Mock that simulates the described requests.get response.
     """
 
     def mock_get_response(url, **_kwargs):
         """
-        Return a requests-like mock response for GitHub commit timestamp endpoints used in tests.
-
-        When the URL contains "commits/{commit_hash}" for a commit_hash present in
-        the surrounding `commit_timestamps` mapping, the mock's `json()` returns
-        {"commit": {"committer": {"date": <timestamp>}}}. For all other URLs the
-        mock's `json()` returns an empty dict. The mock's `raise_for_status()` is a no-op.
-
+        Create a requests-like mock response for GitHub commit-timestamp endpoints used in tests.
+        
+        When the URL contains "/commits/{commit_hash}" or "/git/commits/{commit_hash}" for a
+        commit_hash present in the surrounding `commit_timestamps` mapping, the mock's
+        json() returns {"commit": {"committer": {"date": <timestamp>}}} and the response
+        appears successful. For all other URLs the mock's json() returns an empty dict
+        and the response appears unsuccessful. The mock's raise_for_status() is a no-op.
+        
         Parameters:
             url (str): The requested URL.
-
+        
         Returns:
-            unittest.mock.Mock: A mock object implementing `json()` and `raise_for_status()`
-            that simulates a GitHub commit-timestamp API response.
+            unittest.mock.Mock: A mock object providing `json()`, `raise_for_status()`,
+            `status_code`, and `ok` to simulate a GitHub commit-timestamp API response.
         """
 
         # Extract commit hash from URL
@@ -165,12 +227,58 @@ def test_cleanup_superseded_prereleases_handles_commit_suffix(tmp_path):
     assert future_dir.exists()
 
 
+# Temporary fix for indentation issues
+def test_fetch_prerelease_directories_uses_token(monkeypatch):
+    """Ensure remote directory listing honours explicit GitHub token settings."""
+
+    captured = {}
+    token = "fake_token_for_tests"
+
+    def _fake_fetch_repo_directories(*, allow_env_token, github_token):
+        """
+        Record the received token parameters into the test `captured` mapping for later inspection.
+
+        This helper mutates the module-level `captured` dictionary by storing the values of `allow_env_token` and `github_token`.
+
+        Parameters:
+            allow_env_token (bool): Whether environment-provided GitHub token is allowed.
+            github_token (str | None): Explicit GitHub token provided to the fetch.
+
+        Returns:
+            list: An empty list.
+        """
+        captured["allow_env_token"] = allow_env_token
+        captured["github_token"] = github_token
+        return []
+
+    monkeypatch.setattr(
+        downloader.menu_repo,
+        "fetch_repo_directories",
+        _fake_fetch_repo_directories,
+    )
+
+    downloader._fetch_prerelease_directories(
+        force_refresh=True,
+        github_token=token,
+        allow_env_token=False,
+    )
+
+    assert captured["github_token"] == token
+    assert captured["allow_env_token"] is False
+
+
 @patch("fetchtastic.menu_repo.fetch_repo_directories")
 @patch("fetchtastic.menu_repo.fetch_directory_contents")
 @patch("fetchtastic.downloader.download_file_with_retry")
 @patch("fetchtastic.downloader.make_github_api_request")
 def test_check_for_prereleases_download_and_cleanup(
-    mock_api, mock_dl, mock_fetch_contents, mock_fetch_dirs, tmp_path, write_dummy_file
+    mock_api,
+    mock_dl,
+    mock_fetch_contents,
+    mock_fetch_dirs,
+    tmp_path,
+    write_dummy_file,
+    mock_commit_history,
 ):
     """Check that prerelease discovery downloads matching assets and cleans stale entries."""
     # Clear any cached prerelease directories to ensure fresh mock data
@@ -231,7 +339,9 @@ def test_check_for_prereleases_download_and_cleanup(
 
 
 @patch("fetchtastic.downloader.menu_repo.fetch_repo_directories")
-def test_check_for_prereleases_no_directories(mock_fetch_dirs, tmp_path):
+def test_check_for_prereleases_no_directories(
+    mock_fetch_dirs, tmp_path, mock_commit_history
+):
     """If repo has no firmware directories, function returns False, []."""
     mock_fetch_dirs.return_value = []
     downloaded, versions = downloader.check_for_prereleases(
@@ -246,7 +356,13 @@ def test_check_for_prereleases_no_directories(mock_fetch_dirs, tmp_path):
 @patch("fetchtastic.downloader.download_file_with_retry")
 @patch("fetchtastic.downloader.make_github_api_request")
 def test_prerelease_tracking_functionality(
-    mock_api, mock_dl, mock_fetch_contents, mock_fetch_dirs, tmp_path, write_dummy_file
+    mock_api,
+    mock_dl,
+    mock_fetch_contents,
+    mock_fetch_dirs,
+    tmp_path,
+    write_dummy_file,
+    mock_commit_history,
 ):
     """Test that prerelease tracking file is created and updated correctly."""
     # Setup mock data
@@ -323,6 +439,7 @@ def test_prerelease_tracking_functionality(
     assert info["release"] == expected_clean_version
     assert info["prerelease_count"] > 0
     assert len(info["commits"]) > 0
+    assert "history" in info
 
 
 def test_prerelease_smart_pattern_matching():
@@ -360,7 +477,7 @@ def test_prerelease_smart_pattern_matching():
             ), f"File {filename} should NOT match patterns {extract_patterns}"
 
 
-def test_prerelease_directory_cleanup(tmp_path, write_dummy_file):
+def test_prerelease_directory_cleanup(tmp_path, write_dummy_file, mock_commit_history):
     """Test that old prerelease directories are cleaned up when new ones arrive."""
     download_dir = tmp_path
     prerelease_dir = download_dir / "firmware" / "prerelease"
@@ -469,6 +586,89 @@ def test_get_prerelease_tracking_info_error_handling():
 
             result = get_prerelease_tracking_info()
             assert result == {}  # Should handle decode errors gracefully
+
+
+def test_get_prerelease_tracking_info_includes_history(monkeypatch, tmp_path):
+    """Ensure commit history data is surfaced even when commits list is empty."""
+
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    tracking_file = cache_dir / "prerelease_tracking.json"
+    tracking_file.write_text(
+        json.dumps(
+            {
+                "version": "2.7.13",
+                "hash": "abc1234",
+                "commits": [],
+                "last_updated": "2025-01-01T00:00:00Z",
+            }
+        )
+    )
+
+    monkeypatch.setattr(downloader, "_ensure_cache_dir", lambda: str(cache_dir))
+
+    sample_history = [
+        {
+            "identifier": "2.7.14.e959000",
+            "dir": "firmware-2.7.14.e959000",
+            "base_version": "2.7.14",
+            "active": True,
+            "added_at": "2025-01-02T00:00:00Z",
+            "removed_at": None,
+        },
+        {
+            "identifier": "2.7.14.1c0c6b2",
+            "dir": "firmware-2.7.14.1c0c6b2",
+            "base_version": "2.7.14",
+            "active": False,
+            "added_at": "2025-01-01T00:00:00Z",
+            "removed_at": "2025-01-03T00:00:00Z",
+        },
+    ]
+
+    def _mock_get_history(*_args, **_kwargs):
+        """
+        Return the predefined sample prerelease commit history from the enclosing test scope.
+        
+        Ignores all positional and keyword arguments.
+        
+        Returns:
+            sample_history: The sample prerelease commit history object supplied by the surrounding test.
+        """
+        return sample_history
+
+    monkeypatch.setattr(downloader, "_get_prerelease_commit_history", _mock_get_history)
+
+    info = downloader.get_prerelease_tracking_info()
+
+    # Check that history entries have new display formatting fields
+    formatted_history = info["history"]
+    assert len(formatted_history) == len(sample_history)
+    assert info.get("expected_version") == "2.7.14"
+
+    # Check first entry (active)
+    first_entry = formatted_history[0]
+    assert first_entry["identifier"] == sample_history[0]["identifier"]
+    assert first_entry["display_name"] == sample_history[0]["identifier"]
+    assert first_entry["markup_label"] == f"[green]{sample_history[0]['identifier']}[/]"
+    assert not first_entry["is_deleted"]
+    assert first_entry["is_newest"]
+
+    # Check second entry (deleted)
+    second_entry = formatted_history[1]
+    assert second_entry["identifier"] == sample_history[1]["identifier"]
+    assert second_entry["display_name"] == sample_history[1]["identifier"]
+    assert (
+        second_entry["markup_label"]
+        == f"[red][strike]{sample_history[1]['identifier']}[/strike][/red]"
+    )
+    assert second_entry["is_deleted"]
+
+    assert info["prerelease_count"] == len(sample_history)
+    assert info["history_created"] == len(sample_history)
+    assert info["history_deleted"] == 1
+    assert info["history_active"] == len(sample_history) - 1
+    assert info["commits"] == []
 
 
 def test_update_prerelease_tracking_error_handling():
@@ -909,12 +1109,13 @@ def test_prerelease_commit_cache_save_only_on_new_entries():
             "fetchtastic.downloader._fetch_prerelease_directories",
             return_value=["firmware-2.7.13.abcdef12"],
         ):
-            with patch(
-                "fetchtastic.downloader.get_commit_timestamp",
-                return_value=cached_timestamp,
-            ) as mock_get_timestamp, patch(
-                "fetchtastic.downloader._save_commit_cache"
-            ) as mock_save_cache:
+            with (
+                patch(
+                    "fetchtastic.downloader.get_commit_timestamp",
+                    return_value=cached_timestamp,
+                ) as mock_get_timestamp,
+                patch("fetchtastic.downloader._save_commit_cache") as mock_save_cache,
+            ):
                 result = downloader._find_latest_remote_prerelease_dir("2.7.13")
                 assert result == "firmware-2.7.13.abcdef12"
                 mock_get_timestamp.assert_called_once()
@@ -936,12 +1137,13 @@ def test_prerelease_commit_cache_save_only_on_new_entries():
             "fetchtastic.downloader._fetch_prerelease_directories",
             return_value=["firmware-2.7.13.abcdef12"],
         ):
-            with patch(
-                "fetchtastic.downloader.get_commit_timestamp",
-                side_effect=_populate_cache,
-            ) as mock_get_timestamp, patch(
-                "fetchtastic.downloader._save_commit_cache"
-            ) as mock_save_cache:
+            with (
+                patch(
+                    "fetchtastic.downloader.get_commit_timestamp",
+                    side_effect=_populate_cache,
+                ) as mock_get_timestamp,
+                patch("fetchtastic.downloader._save_commit_cache") as mock_save_cache,
+            ):
                 result = downloader._find_latest_remote_prerelease_dir("2.7.13")
                 assert result == "firmware-2.7.13.abcdef12"
                 mock_get_timestamp.assert_called_once()
@@ -1070,3 +1272,686 @@ def test_normalize_version():
     # Test invalid versions
     assert _normalize_version("invalid") is None
     assert _normalize_version("v") is None
+
+
+class TestPrereleaseHelperFunctions:
+    """Test helper functions for prerelease tracking."""
+
+    def test_extract_identifier_from_entry(self):
+        """Test identifier extraction from history entries."""
+        # Test with identifier field
+        entry1 = {"identifier": "test-123", "status": "active"}
+        assert _extract_identifier_from_entry(entry1) == "test-123"
+
+        # Test with directory field
+        entry2 = {"directory": "firmware-2.7.9.abc123", "status": "active"}
+        assert _extract_identifier_from_entry(entry2) == "firmware-2.7.9.abc123"
+
+        # Test with dir field
+        entry3 = {"dir": "test-dir", "status": "active"}
+        assert _extract_identifier_from_entry(entry3) == "test-dir"
+
+        # Test with missing all fields
+        entry4 = {"status": "active"}
+        assert _extract_identifier_from_entry(entry4) == ""
+
+        # Test with empty fields
+        entry5 = {"identifier": "", "directory": "", "dir": "", "status": "active"}
+        assert _extract_identifier_from_entry(entry5) == ""
+
+    def test_is_entry_deleted(self):
+        """Test entry deletion detection."""
+        # Test with deleted status
+        entry1 = {"status": "deleted"}
+        assert _is_entry_deleted(entry1) is True
+
+        # Test with removed_at field
+        entry2 = {"removed_at": "2023-01-01T00:00:00Z"}
+        assert _is_entry_deleted(entry2) is True
+
+        # Test with both deleted indicators
+        entry3 = {"status": "deleted", "removed_at": "2023-01-01T00:00:00Z"}
+        assert _is_entry_deleted(entry3) is True
+
+        # Test with active status
+        entry4 = {"status": "active"}
+        assert _is_entry_deleted(entry4) is False
+
+        # Test with empty status
+        entry5 = {"status": ""}
+        assert _is_entry_deleted(entry5) is False
+
+    def test_format_history_entry(self):
+        """Test history entry formatting."""
+        # Test newest entry
+        entry1 = {"identifier": "test-123", "status": "active"}
+        result = _format_history_entry(entry1, 0, "test-123")
+        assert result["display_name"] == "test-123"
+        assert result["is_deleted"] is False
+        assert result["is_newest"] is True
+        assert result["is_latest"] is True
+        assert "[green]" in result["markup_label"]
+
+        # Test deleted entry
+        entry2 = {"identifier": "test-456", "status": "deleted"}
+        result = _format_history_entry(entry2, 1, "test-123")
+        assert result["display_name"] == "test-456"
+        assert result["is_deleted"] is True
+        assert result["is_newest"] is False
+        assert result["is_latest"] is False
+        assert "[red][strike]" in result["markup_label"]
+
+        # Test middle entry (not newest, not latest active)
+        entry3 = {"identifier": "test-789", "status": "active"}
+        result = _format_history_entry(entry3, 2, "test-123")
+        assert result["display_name"] == "test-789"
+        assert result["is_deleted"] is False
+        assert result["is_newest"] is False
+        assert result["is_latest"] is False
+        assert result["markup_label"] == "test-789"
+
+        # Test empty identifier
+        entry4 = {"status": "active"}
+        result = _format_history_entry(entry4, 3, None)
+        assert result == entry4  # Should return unchanged if no identifier
+
+    def test_sort_key_with_max_function(self):
+        """Test the improved _sort_key function using max()."""
+        # Test with added_at more recent
+        entry1 = {
+            "identifier": "test1",
+            "added_at": "2023-12-01T10:00:00Z",
+            "removed_at": "2023-11-01T10:00:00Z",
+        }
+        result = _sort_key(entry1)
+        assert result[0] == "2023-12-01T10:00:00Z"  # max should pick added_at
+
+        # Test with removed_at more recent
+        entry2 = {
+            "identifier": "test2",
+            "added_at": "2023-10-01T10:00:00Z",
+            "removed_at": "2023-12-01T10:00:00Z",
+        }
+        result = _sort_key(entry2)
+        assert result[0] == "2023-12-01T10:00:00Z"  # max should pick removed_at
+
+        # Test with empty timestamps
+        entry3 = {"identifier": "test3", "added_at": "", "removed_at": ""}
+        result = _sort_key(entry3)
+        assert result[0] == ""  # max of empty strings should be empty
+
+        # Test with missing timestamp fields
+        entry4 = {"identifier": "test4"}
+        result = _sort_key(entry4)
+        assert result[0] == ""  # Missing fields should default to empty string
+
+
+def test_create_default_prerelease_entry():
+    """Test the new helper function for creating default prerelease entries."""
+
+    result = downloader._create_default_prerelease_entry(
+        directory="firmware-2.7.14.abc123",
+        identifier="2.7.14.abc123",
+        base_version="2.7.14",
+        commit_hash="abc123",
+    )
+
+    expected = {
+        "directory": "firmware-2.7.14.abc123",
+        "identifier": "2.7.14.abc123",
+        "base_version": "2.7.14",
+        "commit_hash": "abc123",
+        "added_at": None,
+        "removed_at": None,
+        "added_sha": None,
+        "removed_sha": None,
+        "active": False,
+        "status": "unknown",
+    }
+
+    assert result == expected
+
+
+def test_fetch_recent_repo_commits_cache_expiry(tmp_path_factory, monkeypatch):
+    """Test cache expiry logic in _fetch_recent_repo_commits."""
+
+    import json
+    from datetime import datetime, timedelta, timezone
+
+    cache_dir = Path(tmp_path_factory.mktemp("cache-test"))
+    cache_file = cache_dir / "prerelease_commits_cache.json"
+
+    # Create expired cache (older than expiry time)
+    expired_time = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
+    expired_cache = {
+        "cached_at": expired_time,
+        "commits": [{"sha": "test123", "commit": {"message": "test"}}],
+    }
+    cache_file.write_text(json.dumps(expired_cache))
+
+    monkeypatch.setattr(downloader, "_ensure_cache_dir", lambda: str(cache_dir))
+
+    # Mock the API call to return test data
+    mock_commits = [{"sha": "new456", "commit": {"message": "new test"}}]
+
+    # Mock response object with .json() method
+    from unittest.mock import Mock
+
+    mock_response = Mock()
+    mock_response.json.return_value = mock_commits
+
+    with patch("fetchtastic.downloader.make_github_api_request") as mock_api:
+        mock_api.return_value = mock_response
+
+        result = downloader._fetch_recent_repo_commits(10, force_refresh=False)
+
+        # Should fetch from API due to expired cache
+        assert result == mock_commits
+        mock_api.assert_called_once()
+
+
+def test_build_simplified_prerelease_history():
+    """Test the new commit message parsing logic with various scenarios."""
+
+    # Sample commit data that mimics real GitHub API response
+    sample_commits = [
+        {
+            "sha": "abc123def456",
+            "commit": {
+                "message": "2.7.14.e959000 meshtastic/firmware@e959000",
+                "committer": {"date": "2025-01-02T10:00:00Z"},
+            },
+        },
+        {
+            "sha": "def456ghi789",
+            "commit": {
+                "message": "Delete firmware-2.7.13.ffb168b directory",
+                "committer": {"date": "2025-01-03T10:00:00Z"},
+            },
+        },
+        {
+            "sha": "ghi789jkl012",
+            "commit": {
+                "message": "2.7.14.1c0c6b2 meshtastic/firmware@1c0c6b2",
+                "committer": {"date": "2025-01-01T10:00:00Z"},
+            },
+        },
+        {
+            "sha": "unrelated123",
+            "commit": {
+                "message": "Some unrelated commit message",
+                "committer": {"date": "2025-01-04T10:00:00Z"},
+            },
+        },
+    ]
+
+    # Test with expected version "2.7.14"
+    result = downloader._build_simplified_prerelease_history("2.7.14", sample_commits)
+
+    # Should have 2 entries for version 2.7.14 (one added, one deleted)
+    assert len(result) == 2
+
+    # First entry should be the newest active one (e959000)
+    first_entry = result[0]
+    assert first_entry["identifier"] == "2.7.14.e959000"
+    assert first_entry["directory"] == "firmware-2.7.14.e959000"
+    assert first_entry["base_version"] == "2.7.14"
+    assert first_entry["commit_hash"] == "e959000"
+    assert first_entry["status"] == "active"
+    assert first_entry["active"] is True
+    assert first_entry["added_at"] == "2025-01-02T10:00:00Z"
+    assert first_entry["added_sha"] == "abc123def456"
+    assert first_entry["removed_at"] is None
+    assert first_entry["removed_sha"] is None
+
+    # Second entry should be the older one (1c0c6b2)
+    second_entry = result[1]
+    assert second_entry["identifier"] == "2.7.14.1c0c6b2"
+    assert second_entry["directory"] == "firmware-2.7.14.1c0c6b2"
+    assert second_entry["base_version"] == "2.7.14"
+    assert second_entry["commit_hash"] == "1c0c6b2"
+    assert second_entry["status"] == "active"
+    assert second_entry["active"] is True
+    assert second_entry["added_at"] == "2025-01-01T10:00:00Z"
+    assert second_entry["added_sha"] == "ghi789jkl012"
+    assert second_entry["removed_at"] is None
+    assert second_entry["removed_sha"] is None
+
+    # Test with different expected version
+    result_diff = downloader._build_simplified_prerelease_history(
+        "2.7.13", sample_commits
+    )
+
+    # Should have 1 entry for version 2.7.13 (deleted one)
+    assert len(result_diff) == 1
+    deleted_entry = result_diff[0]
+    assert deleted_entry["identifier"] == "2.7.13.ffb168b"
+    assert deleted_entry["status"] == "deleted"
+    assert deleted_entry["active"] is False
+    assert deleted_entry["removed_at"] == "2025-01-03T10:00:00Z"
+    assert deleted_entry["removed_sha"] == "def456ghi789"
+
+    # Test edge cases
+    assert downloader._build_simplified_prerelease_history("", sample_commits) == []
+    assert downloader._build_simplified_prerelease_history("2.7.14", []) == []
+    assert (
+        downloader._build_simplified_prerelease_history("2.7.99", sample_commits) == []
+    )
+
+
+def test_build_simplified_prerelease_history_re_add_scenario():
+    """Test that re-adding a prerelease after deletion properly updates status to active."""
+
+    # Sample commits that add, delete, then re-add the same prerelease
+    # Commits in newest-to-oldest order (as returned by GitHub API)
+    re_add_commits = [
+        {
+            "sha": "readd789ghi012",
+            "commit": {
+                "message": "2.7.15.abc123 meshtastic/firmware@abc123",
+                "committer": {"date": "2025-01-03T10:00:00Z"},
+            },
+        },
+        {
+            "sha": "del456def789",
+            "commit": {
+                "message": "Delete firmware-2.7.15.abc123 directory",
+                "committer": {"date": "2025-01-02T10:00:00Z"},
+            },
+        },
+        {
+            "sha": "add123abc456",
+            "commit": {
+                "message": "2.7.15.abc123 meshtastic/firmware@abc123",
+                "committer": {"date": "2025-01-01T10:00:00Z"},
+            },
+        },
+    ]
+
+    result = downloader._build_simplified_prerelease_history("2.7.15", re_add_commits)
+
+    # Should have 1 entry for version 2.7.15 (re-added, so active)
+    assert len(result) == 1
+
+    entry = result[0]
+    assert entry["identifier"] == "2.7.15.abc123"
+    assert entry["directory"] == "firmware-2.7.15.abc123"
+    assert entry["base_version"] == "2.7.15"
+    assert entry["commit_hash"] == "abc123"
+    # After re-add, status should be active
+    assert entry["status"] == "active"
+    assert entry["active"] is True
+    # added_at should remain the first add time
+    assert entry["added_at"] == "2025-01-01T10:00:00Z"
+    assert entry["added_sha"] == "add123abc456"
+    # removed_at should be cleared after re-add
+    assert entry["removed_at"] is None
+    assert entry["removed_sha"] is None
+
+
+def test_prerelease_history_cache_is_persistent(tmp_path_factory, monkeypatch):
+    """Test that prerelease history cache persists and does not expire by age."""
+
+    import json
+    from datetime import datetime, timedelta, timezone
+
+    cache_dir = Path(tmp_path_factory.mktemp("history-cache-test"))
+    cache_file = cache_dir / "prerelease_commit_history.json"
+
+    # Create expired cache (older than 2 minutes)
+    expired_time = (datetime.now(timezone.utc) - timedelta(minutes=3)).isoformat()
+    expired_cache = {
+        "2.7.15": {
+            "entries": [{"identifier": "2.7.15.test123", "status": "active"}],
+            "cached_at": expired_time,
+        }
+    }
+    cache_file.write_text(json.dumps(expired_cache))
+
+    monkeypatch.setattr(downloader, "_ensure_cache_dir", lambda: str(cache_dir))
+    # Reset the cached file path
+    downloader._prerelease_commit_history_file = None
+
+    # Mock refresh function to return fresh data (matching full entry structure)
+    fresh_entries = [
+        {
+            "directory": "firmware-2.7.15.abc123",
+            "identifier": "2.7.15.abc123",
+            "base_version": "2.7.15",
+            "commit_hash": "abc123",
+            "added_at": "2025-01-03T10:00:00Z",
+            "removed_at": None,
+            "added_sha": "fresh123abc456",
+            "removed_sha": None,
+            "active": True,
+            "status": "active",
+        }
+    ]
+
+    # Reset cache loaded flag to force reload
+    downloader._prerelease_commit_history_loaded = False
+    downloader._prerelease_commit_history_cache.clear()
+
+    # Test 1: When force_refresh=True, should bypass cache and call refresh function
+    with patch.object(downloader, "_refresh_prerelease_commit_history") as mock_refresh:
+        mock_refresh.return_value = fresh_entries
+
+        # Clear all cache state before test
+        downloader._prerelease_commit_history_loaded = False
+        downloader._prerelease_commit_history_cache.clear()
+
+        # Call with force_refresh=True - should bypass cache and call refresh
+        result = downloader._get_prerelease_commit_history("2.7.15", force_refresh=True)
+
+        # Should return fresh data from refresh function
+        assert result == fresh_entries
+        # Verify refresh was called with correct parameters
+        mock_refresh.assert_called_once_with("2.7.15", None, True, 40, True)
+
+    # Test 2: When cache exists and force_refresh=False, cached data should be returned even if old
+    with patch.object(downloader, "_refresh_prerelease_commit_history") as mock_refresh:
+        mock_refresh.return_value = fresh_entries
+
+        # Clear all cache state before test
+        downloader._prerelease_commit_history_loaded = False
+        downloader._prerelease_commit_history_cache.clear()
+
+        result = downloader._get_prerelease_commit_history(
+            "2.7.15", force_refresh=False
+        )
+
+        # Should return cached data without invoking refresh
+        assert result == [{"identifier": "2.7.15.test123", "status": "active"}]
+        mock_refresh.assert_not_called()
+
+
+def test_build_simplified_prerelease_history_edge_cases():
+    """Test edge cases and malformed commit messages."""
+
+    # Test with malformed commit messages
+    malformed_commits = [
+        {
+            "sha": "abc123",
+            "commit": {
+                "message": "2.7.14.e959000",  # Missing firmware part
+                "committer": {"date": "2025-01-02T10:00:00Z"},
+            },
+        },
+        {
+            "sha": "def456",
+            "commit": {
+                "message": "Delete firmware-2.7.14 directory",  # Missing hash
+                "committer": {"date": "2025-01-03T10:00:00Z"},
+            },
+        },
+        {
+            "sha": "ghi789",
+            "commit": {
+                "message": "2.7.99.e959000 meshtastic/firmware@e959000",  # Wrong version
+                "committer": {"date": "2025-01-04T10:00:00Z"},
+            },
+        },
+    ]
+
+    result = downloader._build_simplified_prerelease_history(
+        "2.7.14", malformed_commits
+    )
+
+    # Should handle malformed messages gracefully
+    assert len(result) == 0
+
+
+def test_build_history_fetches_uncertain_commits_when_rate_limit_allows(monkeypatch):
+    """Unmatched commits should be classified via commit-detail fetch when rate limit permits."""
+
+    uncertain_commit = [
+        {
+            "sha": "abc123",
+            "commit": {
+                "message": "Manual prerelease update",
+                "committer": {"date": "2025-02-01T10:00:00Z"},
+            },
+        }
+    ]
+
+    fake_response = Mock()
+    fake_response.json.return_value = {
+        "files": [
+            {
+                "filename": "firmware-2.7.14.deadbeef/device-install.sh",
+                "status": "added",
+            }
+        ]
+    }
+
+    monkeypatch.setattr(
+        downloader,
+        "get_api_request_summary",
+        lambda: {
+            "total_requests": 0,
+            "cache_hits": 0,
+            "cache_misses": 0,
+            "auth_used": False,
+            "rate_limit_remaining": 100,
+        },
+    )
+
+    with patch("fetchtastic.downloader.make_github_api_request") as mock_request:
+        mock_request.return_value = fake_response
+
+        result = downloader._build_simplified_prerelease_history(
+            "2.7.14", uncertain_commit
+        )
+
+        assert len(result) == 1
+        assert result[0]["identifier"] == "2.7.14.deadbeef"
+        mock_request.assert_called_once()
+
+
+def test_build_history_prioritizes_newest_uncertain_commits(monkeypatch):
+    """Newest uncertain commits should be processed first when the enrichment limit applies."""
+
+    call_order = []
+
+    monkeypatch.setattr(downloader, "_should_fetch_uncertain_commits", lambda: True)
+    monkeypatch.setattr(downloader, "_MAX_UNCERTAIN_COMMITS_TO_RESOLVE", 1)
+
+    def fake_fetch(sha, github_token, allow_env_token):
+        """
+        Return a fake list of file changes for a given commit SHA to simulate GitHub commit file listings.
+        
+        Parameters:
+            sha (str): Commit SHA to simulate. If equal to "sha-newest", the response contains a firmware file in a directory with suffix "abc1234"; otherwise it contains an older firmware file with suffix "old9999".
+            github_token: Ignored by this fake; included to match the real function signature.
+            allow_env_token: Ignored by this fake; included to match the real function signature.
+        
+        Returns:
+            list[dict]: A list of file-change dictionaries with keys `filename` (path to the file) and `status` (e.g., `"added"`).
+        """
+        call_order.append(sha)
+        if sha == "sha-newest":
+            return [
+                {
+                    "filename": "firmware-2.7.15.abc1234/new.bin",
+                    "status": "added",
+                }
+            ]
+        return [
+            {
+                "filename": "firmware-2.7.15.old9999/old.bin",
+                "status": "added",
+            }
+        ]
+
+    monkeypatch.setattr(downloader, "_fetch_commit_files", fake_fetch)
+
+    commits = [
+        {
+            "sha": "sha-newest",
+            "commit": {
+                "message": "Manual prerelease update",
+                "committer": {"date": "2025-02-02T10:00:00Z"},
+            },
+        },
+        {
+            "sha": "sha-older",
+            "commit": {
+                "message": "Manual prerelease update",
+                "committer": {"date": "2025-01-30T10:00:00Z"},
+            },
+        },
+    ]
+
+    history = downloader._build_simplified_prerelease_history("2.7.15", commits)
+
+    assert call_order == ["sha-newest"]
+    assert history
+    assert history[0]["identifier"] == "2.7.15.abc1234"
+    assert history[0]["added_sha"] == "sha-newest"
+    assert all(entry["identifier"] != "2.7.15.old9999" for entry in history)
+
+
+def test_build_history_skips_detail_fetch_when_rate_limit_low(monkeypatch):
+    """Ensure we avoid extra API calls for uncertain commits when requests are scarce."""
+
+    uncertain_commit = [
+        {
+            "sha": "abc123",
+            "commit": {
+                "message": "Manual prerelease update",
+                "committer": {"date": "2025-02-01T10:00:00Z"},
+            },
+        }
+    ]
+
+    monkeypatch.setattr(
+        downloader,
+        "get_api_request_summary",
+        lambda: {
+            "total_requests": 0,
+            "cache_hits": 0,
+            "cache_misses": 0,
+            "auth_used": False,
+            "rate_limit_remaining": 10,
+        },
+    )
+
+    with patch("fetchtastic.downloader.make_github_api_request") as mock_request:
+        result = downloader._build_simplified_prerelease_history(
+            "2.7.14", uncertain_commit
+        )
+
+        assert result == []
+        mock_request.assert_not_called()
+
+
+def test_fetch_recent_repo_commits_with_api_mocking(tmp_path_factory, monkeypatch):
+    """Test _fetch_recent_repo_commits with targeted API mocking instead of full function mock."""
+
+    import json
+
+    cache_dir = Path(tmp_path_factory.mktemp("api-mock-test"))
+    cache_file = cache_dir / "prerelease_commits_cache.json"
+
+    # Mock API response with sample commit data
+    sample_commits = [
+        {
+            "sha": "abc123def456",
+            "commit": {
+                "message": "2.7.14.e959000 meshtastic/firmware@e959000",
+                "committer": {"date": "2025-01-02T10:00:00Z"},
+            },
+        },
+        {
+            "sha": "def456ghi789",
+            "commit": {
+                "message": "Delete firmware-2.7.13.ffb168b directory",
+                "committer": {"date": "2025-01-03T10:00:00Z"},
+            },
+        },
+    ]
+
+    # Mock response object
+    from unittest.mock import Mock
+
+    mock_response = Mock()
+    mock_response.json.return_value = sample_commits
+
+    monkeypatch.setattr(downloader, "_ensure_cache_dir", lambda: str(cache_dir))
+
+    with patch("fetchtastic.downloader.make_github_api_request") as mock_api:
+        mock_api.return_value = mock_response
+
+        # Test fresh fetch (no cache)
+        result = downloader._fetch_recent_repo_commits(10, force_refresh=False)
+
+        # Should return the mocked commits
+        assert result == sample_commits
+        mock_api.assert_called_once()
+
+        # Verify cache was created
+        assert cache_file.exists()
+        cached_data = json.loads(cache_file.read_text())
+        assert "commits" in cached_data
+        assert "cached_at" in cached_data
+        assert cached_data["commits"] == sample_commits
+
+
+def test_fetch_recent_repo_commits_force_refresh(tmp_path_factory, monkeypatch):
+    """
+    Verify that _fetch_recent_repo_commits ignores an existing cache when force_refresh=True and fetches fresh commit data from the GitHub API.
+
+    This test creates a cached prerelease commits file, patches the cache directory and the GitHub API call, calls _fetch_recent_repo_commits with force_refresh=True, and asserts that the returned commits come from the API mock and that the API was invoked.
+    """
+
+    import json
+    from datetime import datetime, timedelta, timezone
+
+    cache_dir = Path(tmp_path_factory.mktemp("force-refresh-test"))
+    cache_file = cache_dir / "prerelease_commits_cache.json"
+
+    # Create existing cache
+    existing_time = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
+    existing_cache = {
+        "cached_at": existing_time,
+        "commits": [{"sha": "existing123", "commit": {"message": "existing"}}],
+    }
+    cache_file.write_text(json.dumps(existing_cache))
+
+    # Mock API response
+    fresh_commits = [{"sha": "fresh456", "commit": {"message": "fresh"}}]
+    from unittest.mock import Mock
+
+    mock_response = Mock()
+    mock_response.json.return_value = fresh_commits
+
+    monkeypatch.setattr(downloader, "_ensure_cache_dir", lambda: str(cache_dir))
+
+    with patch("fetchtastic.downloader.make_github_api_request") as mock_api:
+        mock_api.return_value = mock_response
+
+        result = downloader._fetch_recent_repo_commits(10, force_refresh=True)
+
+        # Should fetch fresh data despite existing cache
+        assert result == fresh_commits
+        mock_api.assert_called_once()
+
+
+def test_create_default_prerelease_entry_edge_cases():
+    """Test helper function with various inputs."""
+
+    # Test with different inputs
+    result1 = downloader._create_default_prerelease_entry(
+        "firmware-2.7.14.abc123", "2.7.14.abc123", "2.7.14", "abc123"
+    )
+
+    assert result1["directory"] == "firmware-2.7.14.abc123"
+    assert result1["identifier"] == "2.7.14.abc123"
+    assert result1["base_version"] == "2.7.14"
+    assert result1["commit_hash"] == "abc123"
+    assert result1["added_at"] is None
+    assert result1["removed_at"] is None
+    assert result1["added_sha"] is None
+    assert result1["removed_sha"] is None
+    assert result1["active"] is False
+    assert result1["status"] == "unknown"

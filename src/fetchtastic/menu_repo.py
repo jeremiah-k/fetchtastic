@@ -1,3 +1,5 @@
+from typing import Optional
+
 import requests
 from packaging.version import InvalidVersion
 from packaging.version import parse as parse_version
@@ -9,9 +11,7 @@ from fetchtastic.constants import (
     MESHTASTIC_GITHUB_IO_CONTENTS_URL,
 )
 from fetchtastic.log_utils import logger
-from fetchtastic.utils import (
-    make_github_api_request,
-)
+from fetchtastic.utils import make_github_api_request
 
 # Module-level constants for repository content filtering
 EXCLUDED_DIRS = [".git", ".github", "node_modules", "__pycache__", ".vscode"]
@@ -140,14 +140,29 @@ def fetch_repo_contents(path="", allow_env_token=True, github_token=None):
         return []
 
 
-def fetch_repo_directories():
+def fetch_repo_directories(
+    path: str = "",
+    allow_env_token: bool = True,
+    github_token: Optional[str] = None,
+):
     """
-    Fetches directories from meshtastic.github.io repository.
-    Returns a list of directory names, excluding common hidden directories.
-
-    Note: This function is kept for backward compatibility.
+    List directory names at the given repository path on meshtastic.github.io.
+    
+    Hidden and common excluded directories (e.g., those in EXCLUDED_DIRS) are omitted from the results.
+    
+    Parameters:
+        path (str): Repository-relative path to list (empty string for root).
+        allow_env_token (bool): If True, allow using a GitHub token from the environment when making the API request.
+        github_token (Optional[str]): Explicit GitHub token to use instead of an environment token.
+    
+    Returns:
+        list[str]: Directory names found at the specified path.
     """
-    items = fetch_repo_contents()
+    items = fetch_repo_contents(
+        path=path,
+        allow_env_token=allow_env_token,
+        github_token=github_token,
+    )
     return [item["name"] for item in items if item["type"] == "dir"]
 
 

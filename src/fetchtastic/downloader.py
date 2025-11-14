@@ -12,7 +12,18 @@ import time
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from typing import IO, TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import (
+    IO,
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Set,
+    Tuple,
+    Union,
+)
 
 import platformdirs
 import requests
@@ -34,6 +45,9 @@ from fetchtastic.constants import (
     COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS,
     DEFAULT_ANDROID_VERSIONS_TO_KEEP,
     DEFAULT_FIRMWARE_VERSIONS_TO_KEEP,
+    DEFAULT_PRERELEASE_ACTIVE,
+    DEFAULT_PRERELEASE_COMMITS_TO_FETCH,
+    DEFAULT_PRERELEASE_STATUS,
     DEVICE_HARDWARE_API_URL,
     DEVICE_HARDWARE_CACHE_HOURS,
     EXECUTABLE_PERMISSIONS,
@@ -41,6 +55,7 @@ from fetchtastic.constants import (
     FIRMWARE_DIR_PREFIX,
     GITHUB_API_BASE,
     GITHUB_API_TIMEOUT,
+    GITHUB_MAX_PER_PAGE,
     LATEST_ANDROID_RELEASE_FILE,
     LATEST_ANDROID_RELEASE_JSON_FILE,
     LATEST_FIRMWARE_RELEASE_FILE,
@@ -49,8 +64,14 @@ from fetchtastic.constants import (
     MESHTASTIC_ANDROID_RELEASES_URL,
     MESHTASTIC_FIRMWARE_RELEASES_URL,
     MESHTASTIC_GITHUB_IO_CONTENTS_URL,
+    MIN_RATE_LIMIT_FOR_COMMIT_DETAILS,
     NTFY_REQUEST_TIMEOUT,
+    PRERELEASE_ADD_COMMIT_PATTERN,
+    PRERELEASE_COMMIT_HISTORY_FILE,
+    PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS,
+    PRERELEASE_COMMITS_CACHE_FILE,
     PRERELEASE_COMMITS_LEGACY_FILE,
+    PRERELEASE_DELETE_COMMIT_PATTERN,
     PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
     PRERELEASE_TRACKING_JSON_FILE,
     RELEASE_SCAN_COUNT,
@@ -106,24 +127,28 @@ PRERELEASE_VERSION_RX = re.compile(
 )
 HASH_SUFFIX_VERSION_RX = re.compile(r"^(\d+(?:\.\d+)*)\.([A-Za-z0-9][A-Za-z0-9.-]*)$")
 VERSION_BASE_RX = re.compile(r"^(\d+(?:\.\d+)*)")
+PRERELEASE_ADD_RX = re.compile(PRERELEASE_ADD_COMMIT_PATTERN, re.IGNORECASE)
+PRERELEASE_DELETE_RX = re.compile(PRERELEASE_DELETE_COMMIT_PATTERN, re.IGNORECASE)
+PRERELEASE_DIR_SEGMENT_RX = re.compile(
+    r"(firmware-\d+\.\d+\.\d+\.[a-f0-9]{6,})", re.IGNORECASE
+)
 
 
 def _normalize_version(
     version: Optional[str],
 ) -> Optional[Union[Version, Any]]:  # Use Any when LegacyVersion not available
     """
-    Normalize a version string into a packaging `Version` object when possible.
+    Normalize repository-style version strings into a PEP 440-compatible form.
 
-    Attempts to coerce common repository-style forms into PEP 440-compatible versions:
-    strips a leading "v", recognizes common prerelease markers (e.g. "alpha"/"beta" and numeric fragments),
-    and converts trailing commit/hash-like suffixes into local version identifiers. Returns None when the
-    input is empty, None, or cannot be parsed into a Version.
+    Recognizes and strips a leading "v", converts common prerelease markers (e.g., "alpha"/"beta" with optional numeric fragment)
+    into PEP 440 prerelease forms, and converts trailing commit/hash-like suffixes into local version identifiers when possible.
+    Returns None for empty, missing, or otherwise unparsable inputs.
 
     Parameters:
-        version (Optional[str]): A raw version string (may include leading "v", prerelease words, or hash suffixes).
+        version (Optional[str]): Raw version string that may include a leading "v", prerelease words, or a hash suffix.
 
     Returns:
-        Optional[Union[Version, LegacyVersion]]: A parsed `Version` / `LegacyVersion` if parsing succeeds, otherwise `None`.
+        Optional[Union[Version, Any]]: A parsed `Version` or `LegacyVersion`-like object when parsing succeeds; `None` otherwise.
     """
     if version is None:
         return None
@@ -1190,21 +1215,18 @@ def _update_tracking_with_newest_prerelease(
 
 def matches_extract_patterns(filename, extract_patterns, device_manager=None):
     """
-    Check if a filename matches any configured extract patterns.
+    Determine whether a filename matches any of the configured extract patterns.
 
-    Matching is case-insensitive and supports:
-    - file-type prefix patterns (e.g., entries starting with known FILE_TYPE_PREFIXES),
-    - device patterns (boundary-aware matching for device identifiers; can use device_manager.is_device_pattern),
-    - the special "littlefs-" prefix,
-    - and a simple substring fallback for other patterns.
+    Matching is case-insensitive and supports file-type prefix patterns, device identifier patterns
+    (as identified by an optional device manager), the special "littlefs-" prefix, and a generic
+    substring fallback.
 
     Parameters:
-        filename (str): The filename to test.
-        extract_patterns (Iterable[str]): Patterns from configuration to match against.
-        device_manager (optional): Object providing `is_device_pattern(pattern)` to identify device-style patterns.
+        device_manager (optional): An object exposing is_device_pattern(pattern) used to identify
+            device-style patterns; may be omitted.
 
     Returns:
-        bool: `True` if any pattern matches the filename, `False` otherwise.
+        `true` if any pattern matches the filename, `false` otherwise.
     """
     # Known file type prefixes that indicate this is a file type pattern, not device pattern
     file_type_prefixes = FILE_TYPE_PREFIXES
@@ -1259,32 +1281,208 @@ def matches_extract_patterns(filename, extract_patterns, device_manager=None):
     return False
 
 
-def get_prerelease_tracking_info():
+def _extract_identifier_from_entry(entry: Dict[str, Any]) -> str:
     """
-    Return a summary of prerelease tracking stored in the user's prerelease_tracking.json.
+    Return the identifier for a prerelease history entry.
 
-    Reads normalized prerelease tracking data and returns a dictionary with the tracked official release tag, ordered prerelease identifiers, count, last-updated timestamp, and the most recent prerelease identifier. If no tracking data exists, returns an empty dict.
+    Checks the mapping for keys in priority order: "identifier", "directory", then "dir", and returns the first non-empty value found. If none are present, returns an empty string.
+
+    Parameters:
+        entry (dict): History entry mapping potentially containing identifier fields.
 
     Returns:
-        dict: If data present, a dictionary with keys:
+        identifier (str): The extracted identifier or an empty string if not found.
+    """
+    return entry.get("identifier") or entry.get("directory") or entry.get("dir") or ""
+
+
+def _is_entry_deleted(entry: Dict[str, Any]) -> bool:
+    """
+    Check whether a prerelease history entry is marked as deleted.
+
+    Parameters:
+        entry (dict): History entry mapping; the presence of `"removed_at"` or `"status"` equal to `"deleted"` indicate deletion.
+
+    Returns:
+        `true` if the entry is marked deleted, `false` otherwise.
+    """
+    return entry.get("status") == "deleted" or bool(entry.get("removed_at"))
+
+
+def _format_history_entry(
+    entry: Dict[str, Any],
+    idx: int,
+    latest_active_identifier: Optional[str],
+) -> Dict[str, Any]:
+    """
+    Produce a display-ready prerelease history entry augmented with UI markup and status flags.
+
+    Parameters:
+        entry (dict): Original prerelease history entry; should include an identifier field
+            accessible by keys like "identifier", "directory", or "dir".
+        idx (int): Position of the entry in a sorted history list where 0 denotes the newest entry.
+        latest_active_identifier (str | None): Identifier of the currently active prerelease, or
+            None if there is no active prerelease.
+
+    Returns:
+        dict: A copy of the original entry augmented with:
+            - "display_name": the extracted identifier,
+            - "markup_label": a UI-ready label (may contain markup for deleted/new/latest),
+            - "is_deleted": `True` if the entry is marked deleted,
+            - "is_newest": `True` if idx == 0,
+            - "is_latest": `True` if the entry matches the latest_active_identifier.
+    """
+    identifier = _extract_identifier_from_entry(entry)
+    if not identifier:
+        return entry
+
+    is_deleted = _is_entry_deleted(entry)
+    is_newest = idx == 0
+    is_latest_active = (
+        not is_deleted
+        and latest_active_identifier is not None
+        and identifier == latest_active_identifier
+    )
+
+    if is_deleted:
+        markup_label = f"[red][strike]{identifier}[/strike][/red]"
+    elif is_newest or is_latest_active:
+        markup_label = f"[green]{identifier}[/]"
+    else:
+        markup_label = identifier
+
+    formatted_entry = dict(entry)
+    formatted_entry.update(
+        {
+            "display_name": identifier,
+            "markup_label": markup_label,
+            "is_deleted": is_deleted,
+            "is_newest": is_newest,
+            "is_latest": is_latest_active,
+        }
+    )
+    return formatted_entry
+
+
+def _sort_key(entry: Dict[str, Any]) -> tuple:
+    """
+    Return a sort key that orders prerelease entries by their most recent activity.
+
+    Parameters:
+        entry (Dict[str, Any]): Prerelease entry that may include `added_at`, `removed_at`, and `identifier` keys.
+
+    Returns:
+        tuple: `(most_recent_timestamp, identifier)` where `most_recent_timestamp` is the later of `added_at` and `removed_at` (or `""` if missing) and `identifier` is the entry's `identifier` (or `""` if missing).
+    """
+    added_at = entry.get("added_at") or ""
+    removed_at = entry.get("removed_at") or ""
+    # Use the most recent timestamp for sorting
+    most_recent = max(added_at, removed_at)
+    return (most_recent, entry.get("identifier", ""))
+
+
+def get_prerelease_tracking_info(
+    github_token: Optional[str] = None,
+    force_refresh: bool = False,
+    allow_env_token: bool = True,
+):
+    """
+    Summarizes tracked prerelease metadata and commit-derived prerelease history.
+
+    Reads normalized prerelease tracking from the user's prerelease_tracking.json, augments it with repository-derived prerelease history when available, and returns a consolidated dictionary describing the tracked official release, expected prerelease base version, tracked identifiers, history entries, counts, and timestamps.
+
+    Returns:
+        dict: Empty dict if no tracking data is present; otherwise a dictionary with keys:
             - "release" (str | None): Tracked official release tag or None.
-            - "commits" (list[str]): Ordered list of tracked prerelease identifiers (may be empty).
-            - "prerelease_count" (int): Number of tracked prerelease commits.
-            - "last_updated" (str | None): ISO 8601 timestamp of the last update, or None.
-            - "latest_prerelease" (str | None): Most recent prerelease identifier from `commits`, or None.
-        An empty dict if no tracking data is present.
+            - "expected_version" (str | None): Calculated prerelease base version derived from "release".
+            - "commits" (list[str]): Ordered list of tracked prerelease identifiers from tracking data.
+            - "prerelease_count" (int): Number of prerelease identifiers discovered (from history when available, otherwise from tracking).
+            - "last_updated" (str | None): ISO 8601 timestamp of the last tracking update, or None.
+            - "latest_prerelease" (str | None): Best-effort most recent prerelease identifier (history-active, history-most-recent, or tracked fallback).
+            - "history" (list[dict]): Newest-first list of commit-derived prerelease history entries; each entry includes at least:
+                * "identifier" (str): Prerelease identifier extracted from the entry.
+                * "display_name" (str): Human-friendly identifier text.
+                * "markup_label" (str): Presentation label (used for UI/markup).
+                * "is_deleted" (bool): True if the entry represents a deletion.
+                * "is_newest" (bool): True for the newest history entry.
+                * "is_latest" (bool): True for the most recent active entry when available.
+            - "history_created" (int): Count of history entries discovered.
+            - "history_deleted" (int): Count of history entries flagged as deleted.
+            - "history_active" (int | None): Count of active prereleases according to history, or None when history is unavailable.
     """
     tracking_file = os.path.join(_ensure_cache_dir(), PRERELEASE_TRACKING_JSON_FILE)
     commits, release, last_updated = _read_prerelease_tracking_data(tracking_file)
     if not commits and not release:
         return {}
 
+    history_entries: List[Dict[str, Any]] = []
+    expected_prerelease_version = None
+    if release:
+        expected_prerelease_version = calculate_expected_prerelease_version(release)
+
+    if expected_prerelease_version:
+        try:
+            history_entries = _get_prerelease_commit_history(
+                expected_prerelease_version,
+                github_token=github_token,
+                force_refresh=force_refresh,
+                allow_env_token=allow_env_token,
+            )
+        except (
+            requests.RequestException,
+            ValueError,
+            KeyError,
+            json.JSONDecodeError,
+        ) as exc:  # pragma: no cover - defensive safety
+            logger.debug(
+                "Failed to load prerelease commit history for %s: %s",
+                expected_prerelease_version,
+                exc,
+            )
+
+    # Identify most recent active identifier for highlighting
+    latest_active_identifier: Optional[str] = None
+    for entry in history_entries:
+        identifier = _extract_identifier_from_entry(entry)
+        if not identifier:
+            continue
+        if not _is_entry_deleted(entry):
+            latest_active_identifier = identifier
+            break
+
+    formatted_history: List[Dict[str, Any]] = []
+    deleted_count = 0
+    for idx, entry in enumerate(history_entries):
+        formatted_entry = _format_history_entry(entry, idx, latest_active_identifier)
+        if formatted_entry.get("is_deleted"):
+            deleted_count += 1
+        formatted_history.append(formatted_entry)
+
+    created_count = len(formatted_history)
+    counted_commits = created_count if created_count else len(commits or [])
+    active_count = max(created_count - deleted_count, 0) if created_count else None
+
+    # Fallback logic for latest prerelease identifier:
+    # 1. Use latest active identifier if available.
+    # 2. Otherwise use the most recent entry from history.
+    # 3. Otherwise fall back to the tracked commits list.
+    latest_prerelease_identifier = (
+        latest_active_identifier
+        or (formatted_history[0].get("identifier") if formatted_history else None)
+        or (commits[-1] if commits else None)
+    )
+
     return {
         "release": release,
+        "expected_version": expected_prerelease_version,
         "commits": commits,
-        "prerelease_count": len(commits),
+        "prerelease_count": counted_commits,
         "last_updated": last_updated,
-        "latest_prerelease": commits[-1] if commits else None,
+        "latest_prerelease": latest_prerelease_identifier,
+        "history": formatted_history,
+        "history_created": created_count,
+        "history_deleted": deleted_count,
+        "history_active": active_count,
     }
 
 
@@ -1463,6 +1661,87 @@ def calculate_expected_prerelease_version(latest_version: str) -> str:
     return f"{major}.{minor}.{expected_patch}"
 
 
+def _get_entry_display_label(entry: Dict[str, Any]) -> Optional[str]:
+    """
+    Selects the most user-friendly label available from a prerelease history entry.
+
+    Checks these keys in order and returns the first present and truthy value: "markup_label", "display_name", "identifier", "directory", "dir".
+
+    Parameters:
+        entry (dict): A prerelease history entry mapping that may contain keys used for display.
+
+    Returns:
+        Optional[str]: The chosen display label, or None if no suitable key is present.
+    """
+    return (
+        entry.get("markup_label")
+        or entry.get("display_name")
+        or entry.get("identifier")
+        or entry.get("directory")
+        or entry.get("dir")
+    )
+
+
+def _display_prerelease_summary(tracking_info: Dict[str, Any]) -> None:
+    """
+    Log a concise summary of prerelease tracking counts and recent history labels.
+
+    Inspects the provided tracking_info mapping and, if present, logs:
+    - counts of prereleases created, deleted, and active since the tracked release/version,
+    - a comma-separated list of recent prerelease history labels and the base version those commits target.
+
+    Parameters:
+        tracking_info (dict): Prerelease tracking data. Recognized keys:
+            - "release" (str): reference release/version.
+            - "history" (list[dict]): ordered prerelease history entries; entries may include
+              "markup_label", "display_name", "identifier", "directory"/"dir", and "base_version".
+            - "history_created" (int): number of prereleases created (preferred).
+            - "history_deleted" (int): number of prereleases deleted.
+            - "history_active" (int|None): number of active prereleases (used as-is if present).
+            - "prerelease_count" (int): fallback created count when "history_created" is absent.
+
+    If tracking_info is falsy, the function does nothing.
+    """
+    if not tracking_info:
+        return
+
+    base_version = tracking_info.get("release") or "unknown"
+    history_entries: List[Dict[str, Any]] = tracking_info.get("history") or []
+    created = tracking_info.get("history_created", 0)
+    deleted = tracking_info.get("history_deleted", 0)
+    active = tracking_info.get("history_active")
+
+    created_display = created or tracking_info.get("prerelease_count", 0)
+    if active is None:
+        active = max(created_display - deleted, 0)
+
+    if created_display:
+        logger.info(
+            "Prereleases since %s: %d created, %d deleted, %d active",
+            base_version,
+            created_display,
+            deleted,
+            active,
+        )
+
+    history_labels = [
+        label for entry in history_entries if (label := _get_entry_display_label(entry))
+    ]
+
+    if history_labels:
+        history_base = (
+            history_entries[0].get("base_version")
+            if history_entries
+            else calculate_expected_prerelease_version(base_version)
+        )
+        history_list = ", ".join(history_labels)
+        logger.info(
+            "Prerelease commits for %s: %s",
+            history_base or "next",
+            history_list,
+        )
+
+
 # Global cache for commit timestamps to avoid repeated API calls
 _commit_timestamp_cache: Dict[str, Tuple[datetime, datetime]] = {}
 _commit_cache_loaded = False
@@ -1482,8 +1761,15 @@ _prerelease_dir_cache_file: Optional[str] = None
 _prerelease_dir_cache_loaded = False
 _PRERELEASE_DIR_CACHE_ROOT_KEY = "__root__"
 
+# Global cache for prerelease commit histories (per expected version)
+_prerelease_commit_history_cache: Dict[str, Tuple[List[Dict[str, Any]], datetime]] = {}
+_prerelease_commit_history_file: Optional[str] = None
+_prerelease_commit_history_loaded = False
+
+# Global cache for repository commit change summaries keyed by commit SHA
 # Global flag to track if downloads were skipped due to Wi-Fi requirements
 downloads_skipped = False
+_MAX_UNCERTAIN_COMMITS_TO_RESOLVE = 5
 
 
 def _ensure_cache_dir() -> str:
@@ -1528,7 +1814,7 @@ def _get_releases_cache_file() -> str:
 
 def _get_prerelease_dir_cache_file() -> str:
     """
-    Get the filesystem path for the persistent prerelease directory cache JSON file.
+    Return the filesystem path to the persistent prerelease directory cache JSON file.
 
     Returns:
         str: Path to the prerelease directories cache JSON file.
@@ -1541,9 +1827,27 @@ def _get_prerelease_dir_cache_file() -> str:
     return _prerelease_dir_cache_file
 
 
+def _get_prerelease_commit_history_file() -> str:
+    """
+    Get the filesystem path to the prerelease commit history cache file.
+
+    Creates and caches the path using the module's per-user cache directory on first call.
+
+    Returns:
+        str: Absolute path to the prerelease commit history cache file.
+    """
+
+    global _prerelease_commit_history_file
+    if _prerelease_commit_history_file is None:
+        _prerelease_commit_history_file = os.path.join(
+            _ensure_cache_dir(), PRERELEASE_COMMIT_HISTORY_FILE
+        )
+    return _prerelease_commit_history_file
+
+
 def _load_json_cache_with_expiry(
     cache_file_path: str,
-    expiry_hours: float,
+    expiry_hours: Optional[float],
     cache_entry_validator: Callable[[Dict[str, Any]], bool],
     entry_processor: Callable[[Dict[str, Any], datetime], Any],
     cache_name: str,
@@ -1553,13 +1857,13 @@ def _load_json_cache_with_expiry(
 
     Parameters:
         cache_file_path (str): Filesystem path to the JSON cache file.
-        expiry_hours (float): Maximum age in hours for an entry to be considered valid.
+        expiry_hours (Optional[float]): Maximum age in hours for an entry to be considered valid. When `None`, entries never expire.
         cache_entry_validator (Callable[[Dict[str, Any]], bool]): Predicate that returns `True` for entries that have the expected structure.
         entry_processor (Callable[[Dict[str, Any], datetime], Any]): Function that converts a raw cache entry and its `cached_at` timestamp into the value to be returned for that key.
         cache_name (str): Human-readable name used in debug logs.
 
     Returns:
-        Dict[str, Any]: Mapping of cache keys to processed entries for those entries present in the file, valid according to `cache_entry_validator`, and younger than `expiry_hours`.
+        Dict[str, Any]: Mapping of cache keys to processed entries for those entries present in the file, valid according to `cache_entry_validator`, and younger than `expiry_hours` when an expiry is provided.
     """
     try:
         if not os.path.exists(cache_file_path):
@@ -1589,8 +1893,18 @@ def _load_json_cache_with_expiry(
                     cache_entry["cached_at"].replace("Z", "+00:00")
                 )
                 age = current_time - cached_at
-                if age.total_seconds() < expiry_hours * 60 * 60:
-                    loaded[cache_key] = entry_processor(cache_entry, cached_at)
+                if expiry_hours is not None:
+                    if age.total_seconds() >= expiry_hours * 60 * 60:
+                        logger.debug(
+                            "Skipping expired %s cache entry for %s (age %.0fs exceeds %.0fs)",
+                            cache_name,
+                            cache_key,
+                            age.total_seconds(),
+                            expiry_hours * 60 * 60,
+                        )
+                        continue
+
+                loaded[cache_key] = entry_processor(cache_entry, cached_at)
             except (ValueError, TypeError, KeyError) as e:
                 logger.debug(
                     "Skipping invalid %s cache entry for %s: %s",
@@ -1609,11 +1923,137 @@ def _load_json_cache_with_expiry(
         return {}
 
 
+def _load_single_blob_cache_with_expiry(
+    cache_file_path: str,
+    expiry_seconds: float,
+    force_refresh: bool = False,
+    cache_hit_callback: Optional[Callable[[], None]] = None,
+    cache_miss_callback: Optional[Callable[[], None]] = None,
+    cache_name: str = "cache",
+    data_key: str = "data",
+) -> Optional[Any]:
+    """
+    Load a single-blob JSON cache and return its stored payload when present and not expired.
+
+    Loads a JSON file expected to be a mapping with a "cached_at" ISO timestamp and a payload under `data_key`. If the cached entry is present and its age is less than `expiry_seconds`, returns the stored payload and optionally invokes `cache_hit_callback`. On expiry, parse error, missing keys, absent file, or when `force_refresh` is True, returns None and optionally invokes `cache_miss_callback`.
+
+    Parameters:
+        cache_file_path (str): Path to the on-disk JSON cache file.
+        expiry_seconds (float): Maximum age in seconds for the cached entry to be considered valid.
+        force_refresh (bool): If True, remove the cache file and treat as a cache miss.
+        cache_hit_callback (Callable[[], None], optional): Called when a valid, unexpired cache is used.
+        cache_miss_callback (Callable[[], None], optional): Called when the cache is missing, expired, invalid, or forced to refresh.
+        cache_name (str): Human-readable name for log messages about this cache.
+        data_key (str): JSON key under which the cached payload is stored (defaults to "data").
+
+    Returns:
+        Optional[Any]: The value stored under `data_key` when the cache is valid, or `None` otherwise.
+    """
+    # Handle force refresh by deleting cache file
+    if force_refresh:
+        try:
+            os.remove(cache_file_path)
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            logger.debug(f"Failed to remove {cache_name} cache for refresh: {exc}")
+
+    try:
+        if not force_refresh and os.path.exists(cache_file_path):
+            with open(cache_file_path, "r", encoding="utf-8") as f:
+                cache_data = json.load(f)
+
+            # Check if cache has expected structure
+            if not isinstance(cache_data, dict):
+                logger.debug(f"Invalid {cache_name} cache structure: not a dictionary")
+                if cache_miss_callback:
+                    cache_miss_callback()
+                return None
+
+            # Check if cache is still valid
+            raw_cached_at = cache_data.get("cached_at")
+            if isinstance(raw_cached_at, str):
+                try:
+                    cached_at = datetime.fromisoformat(
+                        raw_cached_at.replace("Z", "+00:00")
+                    )
+                    age = datetime.now(timezone.utc) - cached_at
+
+                    if age.total_seconds() < expiry_seconds:
+                        logger.debug(
+                            f"Using cached {cache_name} data (age: {age.total_seconds():.1f}s)"
+                        )
+                        if cache_hit_callback:
+                            cache_hit_callback()
+                        return cache_data.get(data_key)
+                    else:
+                        logger.debug(
+                            f"{cache_name.capitalize()} cache expired (age: {age.total_seconds():.1f}s)"
+                        )
+                except (ValueError, TypeError):
+                    logger.debug(
+                        f"Invalid cached_at timestamp in {cache_name} cache, treating as expired"
+                    )
+            else:
+                logger.debug(
+                    f"Missing cached_at timestamp in {cache_name} cache, treating as expired"
+                )
+
+            if cache_miss_callback:
+                cache_miss_callback()
+        else:
+            if cache_miss_callback:
+                cache_miss_callback()
+
+    except (json.JSONDecodeError, KeyError, ValueError, OSError, TypeError) as e:
+        logger.debug(f"Error reading {cache_name} cache: {e}")
+        if cache_miss_callback:
+            cache_miss_callback()
+
+    return None
+
+
+def _save_single_blob_cache(
+    cache_file_path: str,
+    data: Any,
+    cache_name: str = "cache",
+    data_key: str = "data",
+) -> bool:
+    """
+    Write a timestamped single-blob JSON cache file containing the provided data.
+
+    The cache JSON will contain an ISO 8601 UTC `cached_at` timestamp and the given `data` under `data_key`. The write is attempted atomically; failures return False.
+
+    Parameters:
+        cache_file_path (str): Filesystem path to write the JSON cache to.
+        data (Any): Value to store under `data_key` in the JSON blob.
+        cache_name (str): Human-readable name for logging and error messages.
+        data_key (str): Key under which `data` is stored in the JSON object.
+
+    Returns:
+        bool: `True` if the cache file was written successfully, `False` otherwise.
+    """
+    try:
+        cache_data = {
+            "cached_at": datetime.now(timezone.utc).isoformat(),
+            data_key: data,
+        }
+        if _atomic_write_json(cache_file_path, cache_data):
+            logger.debug(f"Cached data to {cache_file_path}")
+            return True
+        else:
+            logger.debug(f"Failed to cache data to {cache_file_path}")
+            return False
+    except (OSError, TypeError) as e:
+        logger.debug(f"Failed to cache {cache_name} data: {e}")
+        return False
+
+
 def _load_prerelease_dir_cache() -> None:
     """
-    Load the on-disk prerelease directory cache into memory, validating entries and applying expiry.
+    Load on-disk prerelease directory cache into the module-level in-memory cache.
 
-    If the cache is already loaded this is a no-op. Reads the persistent cache file (performing validation and expiry checks) and merges valid entries into the module-level prerelease directory cache under the module lock to ensure thread safety.
+    If the cache is already loaded this is a no-op. Reads the persistent cache file (performing validation and expiry checks) outside the module lock and merges valid entries into the module-level `_prerelease_dir_cache` while holding the cache lock to ensure thread safety.
     """
     global _prerelease_dir_cache, _prerelease_dir_cache_loaded
 
@@ -1712,7 +2152,9 @@ def _save_prerelease_dir_cache() -> None:
 
 def _clear_prerelease_cache() -> None:
     """
-    Clear the in-memory and on-disk prerelease directory cache.
+    Clears the in-memory and on-disk prerelease directory cache.
+
+    Also resets the internal loaded flag so the prerelease directory cache will be reloaded on next access.
     """
     global _prerelease_dir_cache_loaded
 
@@ -1726,14 +2168,142 @@ def _clear_prerelease_cache() -> None:
         _prerelease_dir_cache_loaded = False
 
 
-def _fetch_prerelease_directories(force_refresh: bool = False) -> List[str]:
+def _load_prerelease_commit_history_cache() -> None:
     """
-    Get the list of prerelease directory names from the meshtastic.github.io repository, using a cached value when fresh.
+    Ensure the on-disk prerelease commit history cache is loaded into the in-memory cache.
 
-    When the cache is missing, expired, or when `force_refresh` is True, fetches the directory list from GitHub and updates the on-disk cache.
+    Loads validated cached prerelease commit histories keyed by base version from the configured cache file
+    and merges them into the in-memory cache if they are not already loaded. Entries must contain an
+    "entries" list and a "cached_at" timestamp; invalid or expired entries are ignored by the underlying
+    loader. This function is idempotent and safe to call concurrently.
+    """
+
+    global _prerelease_commit_history_cache, _prerelease_commit_history_loaded
+
+    if _prerelease_commit_history_loaded:
+        return
+
+    def validate_history_entry(cache_entry: Dict[str, Any]) -> bool:
+        """
+        Check whether an object is a valid prerelease commit history cache entry.
+
+        Parameters:
+            cache_entry (dict): Object to validate; expected to be a mapping that includes the keys `"entries"` and `"cached_at"`.
+
+        Returns:
+            bool: `True` if `cache_entry` is a dict containing both `"entries"` and `"cached_at"`, `False` otherwise.
+        """
+        return (
+            isinstance(cache_entry, dict)
+            and "entries" in cache_entry
+            and "cached_at" in cache_entry
+        )
+
+    def process_history_entry(
+        cache_entry: Dict[str, Any], cached_at: datetime
+    ) -> Tuple[List[Dict[str, Any]], datetime]:
+        """
+        Validate and extract the entries list and its cached timestamp from a prerelease cache entry.
+
+        Parameters:
+            cache_entry (Dict[str, Any]): Cache object expected to contain an "entries" key whose value is a list of dicts.
+            cached_at (datetime): Timestamp when the cache entry was created or saved.
+
+        Returns:
+            tuple: A pair (entries, cached_at) where `entries` is the list of dicts extracted from `cache_entry` and `cached_at` is the same datetime passed in.
+
+        Raises:
+            TypeError: If the "entries" value in `cache_entry` is not a list.
+        """
+        entries = cache_entry["entries"]
+        if not isinstance(entries, list):
+            raise TypeError("entries is not a list")
+        return (entries, cached_at)
+
+    loaded_data = _load_json_cache_with_expiry(
+        cache_file_path=_get_prerelease_commit_history_file(),
+        expiry_hours=None,
+        cache_entry_validator=validate_history_entry,
+        entry_processor=process_history_entry,
+        cache_name="prerelease commit history",
+    )
+
+    with _cache_lock:
+        if _prerelease_commit_history_loaded:
+            return
+        _prerelease_commit_history_cache.update(loaded_data)
+        _prerelease_commit_history_loaded = True
+
+
+def _save_prerelease_commit_history_cache() -> None:
+    """
+    Write the in-memory prerelease commit history cache to its on-disk JSON file.
+
+    The cache is serialized as a mapping from base version to an object with `entries`
+    (the saved history entries) and `cached_at` (an ISO 8601 timestamp). On success
+    the function logs a debug message; on failure it logs a warning and does not
+    raise an exception.
+    """
+
+    cache_file = _get_prerelease_commit_history_file()
+    try:
+        with _cache_lock:
+            cache_data = {
+                version: {
+                    "entries": entries,
+                    "cached_at": cached_at.isoformat(),
+                }
+                for version, (
+                    entries,
+                    cached_at,
+                ) in _prerelease_commit_history_cache.items()
+            }
+
+        if _atomic_write_json(cache_file, cache_data):
+            logger.debug(
+                "Saved %d prerelease commit history entries to cache",
+                len(cache_data),
+            )
+        else:
+            logger.warning(
+                "Failed to save prerelease commit history cache to %s",
+                cache_file,
+            )
+    except (IOError, OSError) as e:
+        logger.warning("Could not save prerelease commit history cache: %s", e)
+
+
+def _clear_prerelease_commit_history_cache() -> None:
+    """
+    Clear the prerelease commit history cache from memory and disk.
+    """
+
+    global _prerelease_commit_history_loaded
+
+    _clear_cache_generic(
+        cache_dict=_prerelease_commit_history_cache,
+        cache_file_getter=_get_prerelease_commit_history_file,
+        cache_name="prerelease commit history",
+    )
+
+    with _cache_lock:
+        _prerelease_commit_history_loaded = False
+
+
+def _fetch_prerelease_directories(
+    force_refresh: bool = False,
+    github_token: Optional[str] = None,
+    allow_env_token: bool = True,
+) -> List[str]:
+    """
+    Retrieve prerelease directory names from the meshtastic.github.io repository, using a cached listing when still fresh.
+
+    If the cache is missing, expired, or `force_refresh` is True, query the repository and update the on-disk cache.
 
     Parameters:
-        force_refresh (bool): If True, bypass the cache and fetch fresh data from GitHub.
+        force_refresh (bool): When True, bypass the cache and refetch the directory list from the remote repository.
+        github_token (Optional[str]): Explicit GitHub token to use for authenticated requests; if None and `allow_env_token` is True, an environment token may be used.
+        allow_env_token (bool): Whether to fall back to the `GITHUB_TOKEN` environment variable when an explicit token is not provided.
 
     Returns:
         List[str]: Directory names found at the repository root.
@@ -1767,7 +2337,10 @@ def _fetch_prerelease_directories(force_refresh: bool = False) -> List[str]:
         f"Cache miss for prerelease directories {MESHTASTIC_GITHUB_IO_CONTENTS_URL} - fetching from API"
     )
     track_api_cache_miss()
-    directories = menu_repo.fetch_repo_directories()
+    directories = menu_repo.fetch_repo_directories(
+        allow_env_token=allow_env_token,
+        github_token=github_token,
+    )
     updated_at = datetime.now(timezone.utc)
 
     with _cache_lock:
@@ -1777,11 +2350,659 @@ def _fetch_prerelease_directories(force_refresh: bool = False) -> List[str]:
     return list(directories)
 
 
+def _fetch_recent_repo_commits(
+    max_commits: int,
+    github_token: Optional[str] = None,
+    allow_env_token: bool = True,
+    force_refresh: bool = False,
+) -> List[Dict[str, Any]]:
+    """
+    Retrieve recent commits from the meshtastic.github.io repository for prerelease tracking.
+
+    This function paginates GitHub API requests and caches the raw commit list on disk. It will return up to `max_commits` commit objects (as decoded JSON dictionaries). On cache hit the cached result is returned (trimmed to `max_commits` if necessary); on cache miss the function fetches pages of commits until the requested count is reached or the repository history is exhausted. Network, HTTP, and parsing errors are caught and result in an empty list.
+
+    Parameters:
+        max_commits (int): Maximum number of commits to return.
+        github_token (Optional[str]): GitHub token to use for authenticated requests; if None and `allow_env_token` is True, an environment-provided token may be used.
+        allow_env_token (bool): Whether using a token from the environment is permitted when `github_token` is not provided.
+        force_refresh (bool): If True, ignore any on-disk cache and fetch fresh data from the API.
+
+    Returns:
+        List[Dict[str, Any]]: A list of commit objects (decoded JSON from the GitHub API), up to `max_commits`; returns an empty list on error or if no commits are available.
+    """
+
+    max_commits = max(1, max_commits)
+
+    # Check cache first using generic helper
+    cache_file = os.path.join(_ensure_cache_dir(), PRERELEASE_COMMITS_CACHE_FILE)
+
+    cached_commits = _load_single_blob_cache_with_expiry(
+        cache_file_path=cache_file,
+        expiry_seconds=PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS,
+        force_refresh=force_refresh,
+        cache_hit_callback=track_api_cache_hit,
+        cache_miss_callback=track_api_cache_miss,
+        cache_name="commits",
+        data_key="commits",
+    )
+
+    commits: List[Dict[str, Any]] = []
+    seen_shas: Set[str] = set()
+    next_page = 1
+
+    if cached_commits is not None:
+        commits.extend(cached_commits)
+        for commit in cached_commits:
+            sha = commit.get("sha")
+            if sha:
+                seen_shas.add(sha)
+
+        if len(commits) >= max_commits:
+            return commits[:max_commits]
+
+        logger.debug(
+            "Commits cache has %d items but %d requested; fetching additional pages",
+            len(commits),
+            max_commits,
+        )
+        next_page = (len(commits) // GITHUB_MAX_PER_PAGE) + 1
+
+    # Cache miss or expired - fetch from API
+    logger.debug("Fetching commits from API (cache miss/expired)")
+
+    all_commits = list(commits)
+    per_page = GITHUB_MAX_PER_PAGE if max_commits > 0 else 1
+    page = max(1, next_page)
+    fetched_from_api = False
+
+    url = f"{GITHUB_API_BASE}/meshtastic/meshtastic.github.io/commits"
+
+    try:
+        while len(all_commits) < max_commits:
+            params = {"per_page": per_page, "page": page}
+
+            response = make_github_api_request(
+                url,
+                github_token=github_token,
+                allow_env_token=allow_env_token,
+                params=params,
+                timeout=GITHUB_API_TIMEOUT,
+            )
+            commits = response.json()
+
+            if not isinstance(commits, list):
+                logger.warning(
+                    "Unexpected response when fetching repo commits: %s",
+                    type(commits).__name__,
+                )
+                break
+
+            if not commits:  # No more commits available
+                break
+
+            fetched_from_api = True
+            for commit in commits:
+                sha = commit.get("sha")
+                if sha and sha in seen_shas:
+                    continue
+                if sha:
+                    seen_shas.add(sha)
+                all_commits.append(commit)
+
+            # If we got fewer than per_page, we've reached the end
+            if len(commits) < per_page:
+                break
+
+            # Stop if we have enough commits
+            if len(all_commits) >= max_commits:
+                break
+
+            page += 1
+
+        logger.debug(
+            "Fetched %d repo commits for prerelease tracking (from %d pages)",
+            len(all_commits),
+            page,
+        )
+
+        # Save to cache using generic helper
+        if fetched_from_api:
+            _save_single_blob_cache(
+                cache_file_path=cache_file,
+                data=all_commits,
+                cache_name="commits",
+                data_key="commits",
+            )
+
+        return all_commits[:max_commits]
+
+    except requests.HTTPError as exc:
+        logger.warning("HTTP error fetching repo commits: %s", exc)
+    except requests.RequestException as exc:
+        logger.warning("Could not fetch repo commits: %s", exc)
+    except (ValueError, KeyError) as exc:
+        logger.error("Error parsing repo commits response: %s", exc)
+
+    return []
+
+
+def _create_default_prerelease_entry(
+    directory: str,
+    identifier: str,
+    base_version: str,
+    commit_hash: str,
+) -> Dict[str, Any]:
+    """
+    Create a canonical prerelease history entry for a given prerelease directory.
+
+    Parameters:
+        directory (str): Directory name of the prerelease asset.
+        identifier (str): Display identifier for the prerelease (e.g., label or tag).
+        base_version (str): Base (official) version this prerelease derives from.
+        commit_hash (str): Commit hash associated with the prerelease.
+
+    Returns:
+        dict: A prerelease entry with keys:
+            - directory: same as `directory`
+            - identifier: same as `identifier`
+            - base_version: same as `base_version`
+            - commit_hash: same as `commit_hash`
+            - added_at: timestamp when added (None if unknown)
+            - removed_at: timestamp when removed (None if not removed)
+            - added_sha: commit hash recorded when added (None if unknown)
+            - removed_sha: commit hash recorded when removed (None if removed)
+            - active: boolean defaulting to DEFAULT_PRERELEASE_ACTIVE
+            - status: status string defaulting to DEFAULT_PRERELEASE_STATUS
+    """
+    return {
+        "directory": directory,
+        "identifier": identifier,
+        "base_version": base_version,
+        "commit_hash": commit_hash,
+        "added_at": None,
+        "removed_at": None,
+        "added_sha": None,
+        "removed_sha": None,
+        "active": DEFAULT_PRERELEASE_ACTIVE,
+        "status": DEFAULT_PRERELEASE_STATUS,
+    }
+
+
+def _record_prerelease_addition(
+    entries: Dict[str, Dict[str, Any]],
+    directory: str,
+    identifier: str,
+    expected_version: str,
+    short_hash: str,
+    timestamp: Optional[str],
+    sha: Optional[str],
+) -> None:
+    """
+    Ensure a prerelease entry exists and mark it as active with the provided metadata.
+    """
+    entry = entries.setdefault(
+        directory,
+        _create_default_prerelease_entry(
+            directory, identifier, expected_version, short_hash
+        ),
+    )
+
+    if timestamp and not entry.get("added_at"):
+        entry["added_at"] = timestamp
+    if sha and not entry.get("added_sha"):
+        entry["added_sha"] = sha
+
+    entry["active"] = True
+    entry["status"] = "active"
+    entry["removed_at"] = None
+    entry["removed_sha"] = None
+
+
+def _record_prerelease_deletion(
+    entries: Dict[str, Dict[str, Any]],
+    directory: str,
+    identifier: str,
+    expected_version: str,
+    short_hash: str,
+    timestamp: Optional[str],
+    sha: Optional[str],
+) -> None:
+    """
+    Ensure a prerelease entry exists for `directory` and mark it deleted.
+
+    If the entry does not exist it is created with defaults. Sets `removed_at` when
+    `timestamp` is provided, `removed_sha` when `sha` is provided, marks the entry
+    inactive (`active` = False) and sets `status` to `"deleted"`.
+
+    Parameters:
+        entries: Mapping of directory names to prerelease entry objects; the entry
+            for `directory` will be created or updated in-place.
+        directory: Prerelease directory name used as the key in `entries`.
+        identifier: Prerelease identifier used when creating a default entry.
+        expected_version: Base prerelease version used when creating a default entry.
+        short_hash: Short commit hash used when creating a default entry.
+        timestamp: ISO-8601 timestamp to record as `removed_at`, or `None` to leave
+            `removed_at` unchanged.
+        sha: Full commit SHA to record as `removed_sha`, or `None` to leave
+            `removed_sha` unchanged.
+    """
+    entry = entries.setdefault(
+        directory,
+        _create_default_prerelease_entry(
+            directory, identifier, expected_version, short_hash
+        ),
+    )
+
+    if timestamp:
+        entry["removed_at"] = timestamp
+    if sha:
+        entry["removed_sha"] = sha
+
+    entry["active"] = False
+    entry["status"] = "deleted"
+
+
+def _build_simplified_prerelease_history(
+    expected_version: str,
+    commits: List[Dict[str, Any]],
+    github_token: Optional[str] = None,
+    allow_env_token: bool = True,
+) -> List[Dict[str, Any]]:
+    """
+    Build a chronological, simplified prerelease history from repository commits for a given expected prerelease version.
+
+    Parameters:
+        expected_version (str): Base prerelease version to filter commits against (e.g., "2.7.14"). If falsy the function returns an empty list.
+        commits (List[Dict[str, Any]]): Commit objects as returned by the GitHub API; each should include `sha`, `commit.committer.date`, and `commit.message`.
+        github_token (Optional[str]): Optional token used when fetching additional commit details for uncertain commits.
+        allow_env_token (bool): Whether to allow falling back to a GitHub token provided via the environment when `github_token` is None.
+
+    Returns:
+        List[Dict[str, Any]]: A list of normalized prerelease entry dictionaries sorted newest-first by creation/deletion time. Each entry may include keys such as `directory`, `identifier`, `added_at`, `added_sha`, `removed_at`, `removed_sha`, `active`, and `status`. Returns an empty list when `expected_version` is falsy or `commits` is empty.
+    """
+
+    if not expected_version or not commits:
+        return []
+
+    entries: Dict[str, Dict[str, Any]] = {}
+    uncertain_commits: List[Dict[str, Any]] = []
+
+    # OPTIMIZATION: Parse commit messages instead of making individual API calls
+    # The meshtastic.github.io repository has structured commit messages that contain
+    # all the information we need: version, operation type, and commit hash
+
+    logger.debug(
+        "Building prerelease history from %d commits by parsing messages",
+        len(commits),
+    )
+
+    # Process oldest first so newer commits override older ones
+    for commit in reversed(commits):
+        sha = commit.get("sha")
+        commit_msg = commit.get("commit", {}).get("message", "").strip()
+        timestamp = commit.get("commit", {}).get("committer", {}).get("date")
+
+        if not sha or not timestamp:
+            continue
+
+        # Pattern 1: Adding a prerelease
+        # Examples: "2.7.14.e959000 meshtastic/firmware@e959000"
+        add_match = PRERELEASE_ADD_RX.match(commit_msg)
+
+        if add_match:
+            version, short_hash = add_match.groups()
+            if version == expected_version:
+                identifier = f"{version}.{short_hash}"
+                directory = f"firmware-{identifier}"
+
+                _record_prerelease_addition(
+                    entries,
+                    directory,
+                    identifier,
+                    expected_version,
+                    short_hash,
+                    timestamp,
+                    sha,
+                )
+                continue
+
+        # Pattern 2: Deleting a prerelease
+        # Examples: "Delete firmware-2.7.13.ffb168b directory"
+        delete_match = PRERELEASE_DELETE_RX.match(commit_msg)
+
+        if delete_match:
+            version, short_hash = delete_match.groups()
+            if version == expected_version:
+                identifier = f"{version}.{short_hash}"
+                directory = f"firmware-{identifier}"
+
+                _record_prerelease_deletion(
+                    entries,
+                    directory,
+                    identifier,
+                    expected_version,
+                    short_hash,
+                    timestamp,
+                    sha,
+                )
+                continue
+
+        # Track commits we could not categorize for optional detail processing
+        uncertain_commits.append(commit)
+
+    if uncertain_commits and _should_fetch_uncertain_commits():
+        _enrich_history_from_commit_details(
+            entries,
+            uncertain_commits,
+            expected_version,
+            github_token=github_token,
+            allow_env_token=allow_env_token,
+        )
+
+    # Convert to list and sort by added_at (newest first), then by removed_at
+    entry_list = list(entries.values())
+    entry_list.sort(key=_sort_key, reverse=True)
+
+    logger.debug(
+        "Built prerelease history with %d entries from commit message parsing",
+        len(entry_list),
+    )
+
+    return entry_list
+
+
+def _extract_prerelease_dir_info(
+    path: str, expected_version: str
+) -> Optional[Tuple[str, str, str]]:
+    """
+    Extract the prerelease directory name, identifier, and short commit hash from a commit file path when it references a prerelease for the expected base version.
+
+    Parameters:
+        path (str): The file path or commit path to inspect.
+        expected_version (str): The base version (e.g., "1.2.3") that the prerelease directory must match.
+
+    Returns:
+        Optional[Tuple[str, str, str]]: A tuple (directory, identifier, short_hash) when `path` contains a prerelease directory of the form `firmware-<version>.<hash>` and the extracted version equals `expected_version`; `None` otherwise.
+    """
+    if not path:
+        return None
+
+    match = PRERELEASE_DIR_SEGMENT_RX.search(path)
+    if not match:
+        return None
+
+    segment = match.group(1).lower()
+    dir_match = re.match(r"firmware-(\d+\.\d+\.\d+)\.([a-f0-9]{6,})", segment)
+    if not dir_match:
+        return None
+
+    version, short_hash = dir_match.groups()
+    if version != expected_version:
+        return None
+
+    identifier = f"{version}.{short_hash}"
+    directory = f"firmware-{identifier}"
+    return directory, identifier, short_hash
+
+
+def _should_fetch_uncertain_commits() -> bool:
+    """
+    Decide whether it is safe to fetch detailed commit data given current GitHub API rate-limit and authentication status.
+
+    Returns:
+        bool: `true` if fetching commit details is allowed (an authenticated token is in use or there are more than the minimum required unauthenticated requests remaining), `false` otherwise.
+    """
+    summary = get_api_request_summary()
+    remaining = summary.get("rate_limit_remaining")
+    auth_used = summary.get("auth_used", False)
+
+    if auth_used:
+        # Authenticated tokens have generous limits; proceed even without a cached remaining value
+        return True
+
+    if remaining is None:
+        logger.debug(
+            "Skipping commit detail fetch: unauthenticated rate-limit data unavailable"
+        )
+        return False
+
+    if remaining <= MIN_RATE_LIMIT_FOR_COMMIT_DETAILS:
+        logger.debug(
+            "Skipping commit detail fetch: only %d unauthenticated GitHub API requests remaining",
+            remaining,
+        )
+        return False
+
+    return True
+
+
+def _fetch_commit_files(
+    sha: str,
+    github_token: Optional[str],
+    allow_env_token: bool,
+) -> List[Dict[str, Any]]:
+    """
+    Retrieve the list of file metadata for a given GitHub commit SHA.
+
+    Parameters:
+        sha (str): Commit SHA to query.
+        github_token (Optional[str]): Explicit GitHub token to use for the request, or None to rely on other token resolution.
+        allow_env_token (bool): If True, allow using a token from the environment when an explicit token is not provided.
+
+    Returns:
+        List[Dict[str, Any]]: A list of file metadata dictionaries as returned by the GitHub commit API, or an empty list if the request or parsing fails.
+    """
+    url = f"{GITHUB_API_BASE}/meshtastic/meshtastic.github.io/commits/{sha}"
+    try:
+        response = make_github_api_request(
+            url,
+            github_token=github_token,
+            allow_env_token=allow_env_token,
+            timeout=GITHUB_API_TIMEOUT,
+        )
+        data = response.json()
+        files = data.get("files")
+        if isinstance(files, list):
+            return files
+    except (requests.HTTPError, requests.RequestException) as exc:
+        logger.debug("HTTP error fetching commit details for %s: %s", sha[:8], exc)
+    except (ValueError, KeyError, TypeError) as exc:
+        logger.debug("Failed to parse commit details for %s: %s", sha[:8], exc)
+    return []
+
+
+def _enrich_history_from_commit_details(
+    entries: Dict[str, Dict[str, Any]],
+    uncertain_commits: List[Dict[str, Any]],
+    expected_version: str,
+    github_token: Optional[str],
+    allow_env_token: bool,
+) -> None:
+    """
+    Enrich prerelease history entries using file-level details from commits that could not be classified by message parsing.
+
+    Parameters:
+        entries (dict): Mapping of prerelease directory -> entry dict that will be updated in-place with additions or deletions.
+        uncertain_commits (list): List of commit dictionaries (expected to include at least a `sha` and `commit` metadata) to inspect for file changes.
+        expected_version (str): Base prerelease version used to interpret directory names found in changed file paths.
+        github_token (Optional[str]): GitHub token to use when fetching commit file details; may be None.
+        allow_env_token (bool): If True, permit using an environment-provided token as a fallback when fetching commit details.
+    """
+
+    processed = 0
+    for commit in reversed(uncertain_commits):
+        if processed >= _MAX_UNCERTAIN_COMMITS_TO_RESOLVE:
+            break
+
+        sha = commit.get("sha")
+        if not sha:
+            continue
+
+        files = _fetch_commit_files(sha, github_token, allow_env_token)
+        if not files:
+            continue
+
+        directory_changes: Dict[str, Dict[str, Any]] = {}
+        for file_info in files:
+            path = str(file_info.get("filename") or "")
+            status = str(file_info.get("status") or "").lower()
+            dir_info = _extract_prerelease_dir_info(path, expected_version)
+            if not dir_info:
+                continue
+
+            directory, identifier, short_hash = dir_info
+            change = directory_changes.setdefault(
+                directory,
+                {
+                    "identifier": identifier,
+                    "short_hash": short_hash,
+                    "added": False,
+                    "removed": False,
+                },
+            )
+
+            if status == "added":
+                change["added"] = True
+            elif status == "removed":
+                change["removed"] = True
+
+        if not directory_changes:
+            continue
+
+        timestamp = commit.get("commit", {}).get("committer", {}).get("date")
+        processed += 1
+        logger.debug(
+            "Fetched commit details for %s to classify %d prerelease directories",
+            sha[:8],
+            len(directory_changes),
+        )
+
+        for directory, change in directory_changes.items():
+            if change["added"] and not change["removed"]:
+                _record_prerelease_addition(
+                    entries,
+                    directory,
+                    change["identifier"],
+                    expected_version,
+                    change["short_hash"],
+                    timestamp,
+                    sha,
+                )
+            elif change["removed"] and not change["added"]:
+                _record_prerelease_deletion(
+                    entries,
+                    directory,
+                    change["identifier"],
+                    expected_version,
+                    change["short_hash"],
+                    timestamp,
+                    sha,
+                )
+
+
+def _refresh_prerelease_commit_history(
+    expected_version: str,
+    github_token: Optional[str],
+    force_refresh: bool,
+    max_commits: int,
+    allow_env_token: bool = True,
+) -> List[Dict[str, Any]]:
+    """
+    Refresh the cached simplified prerelease commit history for the given expected version.
+
+    Fetch recent repository commits (up to `max_commits`), build a simplified prerelease history for `expected_version`, persist the result to the in-memory and on-disk prerelease commit-history cache, and return the history entries.
+
+    Parameters:
+        expected_version (str): Base prerelease version used to filter and normalize history entries (e.g., "1.2.3").
+        github_token (Optional[str]): GitHub API token to use for authenticated requests; if None and allowed, an environment token may be used.
+        force_refresh (bool): If True, bypass any cached data and force a fresh fetch from the remote repository.
+        max_commits (int): Maximum number of recent commits to fetch and consider when building history.
+        allow_env_token (bool): If True, permit using a GitHub token sourced from the environment when `github_token` is not provided.
+
+    Returns:
+        List[Dict[str, Any]]: Simplified prerelease history entry dictionaries; empty list if no commits are available or the fetch fails.
+    """
+    commits = _fetch_recent_repo_commits(
+        max_commits,
+        github_token=github_token,
+        allow_env_token=allow_env_token,
+        force_refresh=force_refresh,
+    )
+    if not commits:
+        return []
+
+    # Build simplified history from commits, preserving auth config for any
+    # optional commit-detail lookups.
+    history_entries = _build_simplified_prerelease_history(
+        expected_version,
+        commits,
+        github_token=github_token,
+        allow_env_token=allow_env_token,
+    )
+
+    with _cache_lock:
+        _prerelease_commit_history_cache[expected_version] = (
+            history_entries,
+            datetime.now(timezone.utc),
+        )
+
+    _save_prerelease_commit_history_cache()
+    return [dict(entry) for entry in history_entries]
+
+
+def _get_prerelease_commit_history(
+    expected_version: str,
+    github_token: Optional[str] = None,
+    force_refresh: bool = False,
+    max_commits: int = DEFAULT_PRERELEASE_COMMITS_TO_FETCH,
+    allow_env_token: bool = True,
+) -> List[Dict[str, Any]]:
+    """
+    Get the prerelease commit history for the provided expected prerelease base version, using a cached copy when available.
+
+    If `expected_version` is falsy an empty list is returned. When `force_refresh` is False the function will attempt to read the on-disk/in-memory cache and return it if present; otherwise it will fetch and rebuild the history. The cache is intentionally persistent (no automatic expiry), so callers must request a force refresh when they need to bypass the cached value.
+
+    Parameters:
+        expected_version (str): The base version string used to identify prerelease commits (for example "1.2.3").
+        github_token (Optional[str]): GitHub API token to use when fetching commits; may be None to use unauthenticated requests or an environment-provided token if allowed.
+        force_refresh (bool): If True, bypass cached data and refresh the history from remote sources.
+        max_commits (int): Maximum number of recent commits to fetch when refreshing history.
+        allow_env_token (bool): If True, permit using a token from the environment when an explicit `github_token` is not provided.
+
+    Returns:
+        list[dict]: A list of prerelease history entry dictionaries for the expected version. Each entry typically includes fields such as `base_version`, `commit_hash`, `display_name`, `markup_label`, `added_at`/`removed_at` (timestamps), and boolean flags like `is_deleted`, `is_newest`, and `is_latest`.
+    """
+
+    if not expected_version:
+        return []
+
+    # Only load cache if we're not forcing a refresh
+    if not force_refresh:
+        _load_prerelease_commit_history_cache()
+
+        with _cache_lock:
+            cached = _prerelease_commit_history_cache.get(expected_version)
+            if cached:
+                entries, cached_at = cached
+                age = datetime.now(timezone.utc) - cached_at
+                track_api_cache_hit()
+                logger.debug(
+                    "Using cached prerelease history for %s (cached %.0fs ago)",
+                    expected_version,
+                    age.total_seconds(),
+                )
+                return [dict(entry) for entry in entries]
+
+    return _refresh_prerelease_commit_history(
+        expected_version, github_token, force_refresh, max_commits, allow_env_token
+    )
+
+
 def _load_commit_cache() -> None:
     """
-    Populate the in-memory commit timestamp cache with non-expired entries from the on-disk cache.
+    Populate the module-level commit timestamp cache from the on-disk cache, loading only well-formed entries whose cached_at is within COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS.
 
-    Reads the commit cache JSON file and loads entries whose cached_at is within COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS into the module-level cache. Malformed or expired entries are ignored. The function uses a module-level lock and a loaded flag to ensure the cache is initialized only once across threads.
+    Skips malformed or expired entries, marks the cache as loaded to avoid repeated initialization across threads, and logs I/O or parsing errors without raising.
     """
     global _commit_timestamp_cache, _commit_cache_loaded
 
@@ -2020,9 +3241,9 @@ def _clear_commit_cache() -> None:
 
 def clear_all_caches() -> None:
     """
-    Clear in-memory and on-disk caches for commit timestamps and release data.
+    Clear all in-memory and on-disk caches used for releases, commit timestamps, and prerelease data.
 
-    This resets the internal caches and their "loaded" flags, then removes the persistent cache files from disk if present. Intended to force subsequent operations to refresh data from remote sources.
+    Resets internal cache dictionaries and their "loaded" flags and removes associated persistent cache files so subsequent operations will fetch fresh data from remote sources.
     """
     global _releases_cache, _releases_cache_loaded
 
@@ -2031,6 +3252,9 @@ def clear_all_caches() -> None:
 
     # Clear prerelease directory cache
     _clear_prerelease_cache()
+
+    # Clear prerelease commit history cache
+    _clear_prerelease_commit_history_cache()
 
     # Clear releases cache using generic helper
     _clear_cache_generic(
@@ -2049,22 +3273,26 @@ def _find_latest_remote_prerelease_dir(
     expected_version: str,
     github_token: Optional[str] = None,
     force_refresh: bool = False,
+    allow_env_token: bool = True,
 ) -> Optional[str]:
     """
-    Select the newest remote prerelease directory that matches an expected prerelease base version.
-
-    Prefers directories with Git commit timestamps (newest first) and falls back to lexicographic ordering of commit hashes when timestamps are unavailable.
+    Select the newest remote prerelease directory that matches the given prerelease base version.
 
     Parameters:
-        expected_version (str): Base prerelease version to match (e.g., "2.7.13").
-        github_token (Optional[str]): GitHub API token to use when fetching commit timestamps; may be None to use no token or an environment-provided token.
-        force_refresh (bool): When True, bypass cached commit timestamps and fetch fresh values.
+        expected_version (str): Base prerelease version to match (for example, "2.7.13").
+        github_token (Optional[str]): GitHub API token to use for fetching commit timestamps; if None and allow_env_token is True, an environment token may be used.
+        force_refresh (bool): If True, bypass cached commit timestamps and fetch fresh values.
+        allow_env_token (bool): If True, allow using a GitHub token sourced from the environment when `github_token` is None.
 
     Returns:
-        Optional[str]: Name of the newest matching prerelease directory (for example "firmware-2.7.13-abcdef"), or None if no matching directory is found.
+        Optional[str]: Name of the newest matching prerelease directory (for example "firmware-2.7.13-abcdef"), or `None` if no matching directory is found or an error occurs.
     """
     try:
-        directories = _fetch_prerelease_directories(force_refresh=force_refresh)
+        directories = _fetch_prerelease_directories(
+            force_refresh=force_refresh,
+            github_token=github_token,
+            allow_env_token=allow_env_token,
+        )
         if not directories:
             logger.info("No firmware directories found in the repository.")
             return None
@@ -2117,14 +3345,15 @@ def _find_latest_remote_prerelease_dir(
             commit_hash: Optional[str],
         ) -> Tuple[Optional[datetime], bool]:
             """
-            Return the commit timestamp for a Meshtastic firmware commit hash along with whether it was freshly fetched.
+            Get the commit timestamp for a Meshtastic firmware commit and indicate whether it was newly cached.
 
             Parameters:
-                commit_hash (str | None): Commit SHA or identifier to look up; if falsy, no lookup is performed.
+                commit_hash (str | None): Commit SHA to look up. If None or empty, no lookup is performed.
 
             Returns:
-                tuple: (timestamp, fetched_new) where `timestamp` is the commit datetime or None and `fetched_new`
-                indicates whether a fresh API fetch populated the cache.
+                tuple: (timestamp, fetched_new)
+                    timestamp (datetime | None): Commit datetime if available, otherwise None.
+                    fetched_new (bool): `true` if a fresh API lookup populated the internal cache for this commit during this call, `false` otherwise.
             """
             if not commit_hash:
                 return None, False
@@ -2134,7 +3363,12 @@ def _find_latest_remote_prerelease_dir(
                 had_entry = cache_key in _commit_timestamp_cache
 
             timestamp = get_commit_timestamp(
-                "meshtastic", "firmware", commit_hash, github_token, force_refresh
+                "meshtastic",
+                "firmware",
+                commit_hash,
+                github_token,
+                force_refresh,
+                allow_env_token,
             )
 
             fetched_new = False
@@ -2345,11 +3579,12 @@ def check_for_prereleases(
     device_manager=None,
     github_token: Optional[str] = None,
     force_refresh: bool = False,
+    allow_env_token: bool = True,
 ) -> Tuple[bool, List[str]]:
     """
     Detect and download matching prerelease firmware assets for the expected prerelease version.
 
-    Computes the expected prerelease version from latest_release_tag, locates a matching remote prerelease directory, downloads assets that match selected_patterns (respecting exclude_patterns and device_manager), updates on-disk prerelease tracking, and prunes older prerelease directories when appropriate.
+    Computes the expected prerelease version from latest_release_tag, locates a matching remote prerelease directory (using commit-history or directory scanning), downloads assets that match selected_patterns (respecting exclude_patterns and device_manager), updates on-disk prerelease tracking, and prunes superseded prerelease directories when appropriate.
 
     Parameters:
         download_dir (str): Base download directory containing firmware/prerelease subdirectory.
@@ -2357,11 +3592,12 @@ def check_for_prereleases(
         selected_patterns (Optional[List[str]]): Asset selection patterns; if None or empty, no prerelease downloads are attempted.
         exclude_patterns (Optional[List[str]]): Patterns to exclude from matching assets.
         device_manager: Optional device pattern resolver used for device-aware matching.
-        github_token (Optional[str]): GitHub API token for querying remote prerelease directories.
+        github_token (Optional[str]): GitHub API token used for remote lookups when available.
         force_refresh (bool): When True, force remote checks and update tracking even if cached data exists.
+        allow_env_token (bool): When True, allow using a token provided via environment variables if an explicit token is not supplied.
 
     Returns:
-        `True` if any new prerelease assets were downloaded, `False` otherwise; and a list of relevant prerelease directory name(s) — the downloaded directory when downloads occurred, otherwise existing/inspected directory names; empty list if none.
+        True if any new prerelease assets were downloaded, False otherwise; and a list of relevant prerelease directory name(s) — the downloaded directory when downloads occurred, otherwise existing/inspected directory names; empty list if none.
     """
     global downloads_skipped
 
@@ -2393,34 +3629,84 @@ def check_for_prereleases(
             logger.error(f"Failed to create prerelease directory: {e}")
             return False, []
 
-    # Check for existing prereleases
+    # Check for existing prereleases locally first
     existing_dirs = _get_existing_prerelease_dirs(prerelease_base_dir)
 
-    # Find the newest matching prerelease directory
-    matching_dirs = [
-        d for d in existing_dirs if extract_version(d).startswith(expected_version)
-    ]
-
-    if matching_dirs:
-        # Sort by numeric version tuple first, fall back to string for tie-break
-        matching_dirs.sort(
-            key=lambda d: (
-                _get_release_tuple(extract_version(d)) or (),
-                extract_version(d),
-            ),
-            reverse=True,
+    # Try to get commit history first (new approach)
+    try:
+        history_entries = _get_prerelease_commit_history(
+            expected_version,
+            github_token=github_token,
+            force_refresh=force_refresh,
+            allow_env_token=allow_env_token,
         )
-        newest_dir = matching_dirs[0]
-        logger.debug(f"Found existing prerelease: {newest_dir}")
-    else:
+
+        # Find the latest active prerelease from commit history
+        latest_active_dir = None
+        for entry in history_entries:
+            if entry.get("status") == "active" and entry.get("directory"):
+                latest_active_dir = entry["directory"]
+                break
+
+        if latest_active_dir:
+            logger.info("Using commit history for prerelease detection")
+
+        # Determine which directory to use
+        if latest_active_dir and latest_active_dir in existing_dirs:
+            # Latest active prerelease already exists locally
+            remote_dir = latest_active_dir
+            newest_dir = latest_active_dir
+            logger.debug(f"Using existing active prerelease: {remote_dir}")
+        elif latest_active_dir:
+            # Latest active prerelease found remotely but not local
+            remote_dir = latest_active_dir
+            newest_dir = None
+            logger.debug(f"Found remote active prerelease: {remote_dir}")
+        else:
+            # No active prerelease found, fall back to directory scanning
+            remote_dir = None
+            newest_dir = None
+            logger.debug("No active prerelease found in commit history")
+    except (
+        requests.RequestException,
+        ValueError,
+        KeyError,
+        json.JSONDecodeError,
+    ) as exc:
+        logger.debug(f"Failed to get prerelease commit history: {exc}")
+        history_entries = []
+        remote_dir = None
         newest_dir = None
 
-    # Find the latest remote prerelease directory
-    remote_dir = _find_latest_remote_prerelease_dir(
-        expected_version, github_token, force_refresh
-    )
+    # Fallback to directory scanning if commit history approach failed
     if not remote_dir:
-        return (False, [newest_dir]) if newest_dir else (False, [])
+        logger.debug("Falling back to directory scanning approach")
+
+        # Find newest matching prerelease directory
+        matching_dirs = [
+            d for d in existing_dirs if extract_version(d).startswith(expected_version)
+        ]
+
+        if matching_dirs:
+            # Sort by numeric version tuple first, fall back to string for tie-break
+            matching_dirs.sort(
+                key=lambda d: (
+                    _get_release_tuple(extract_version(d)) or (),
+                    extract_version(d),
+                ),
+                reverse=True,
+            )
+            newest_dir = matching_dirs[0]
+            logger.debug(f"Found existing prerelease: {newest_dir}")
+        else:
+            newest_dir = None
+
+        # Find the latest remote prerelease directory (old approach)
+        remote_dir = _find_latest_remote_prerelease_dir(
+            expected_version, github_token, force_refresh, allow_env_token
+        )
+        if not remote_dir:
+            return (False, [newest_dir]) if newest_dir else (False, [])
 
     # Download assets for the selected prerelease
     files_downloaded, _ = _download_prerelease_assets(
@@ -2456,9 +3742,9 @@ def check_for_prereleases(
 
     if files_downloaded:
         return True, [remote_dir]
-    elif matching_dirs:
+    elif newest_dir:
         # Existing prerelease found but no new files downloaded
-        return False, [matching_dirs[0]]
+        return False, [newest_dir]
     else:
         return False, []
 
@@ -2695,6 +3981,9 @@ def _get_latest_releases_data(
     track_api_cache_miss()
 
     releases: List[Dict[str, Any]] = []  # Initialize to prevent NameError
+    per_page = max(1, min(GITHUB_MAX_PER_PAGE, scan_count))
+    page = 1
+    seen_release_ids: Set[Any] = set()
     try:
         # Add progress feedback
         if effective_release_type:
@@ -2703,26 +3992,52 @@ def _get_latest_releases_data(
             # Fallback for generic case
             logger.info("Fetching releases from GitHub...")
 
-        # Initialize releases to prevent NameError in error paths
-        releases: List[Dict[str, Any]] = []
+        while len(releases) < scan_count:
+            response: requests.Response = make_github_api_request(
+                url,
+                github_token=github_token,
+                allow_env_token=allow_env_token,
+                params={"per_page": per_page, "page": page},
+                timeout=GITHUB_API_TIMEOUT,
+            )
 
-        # scan_count already clamped above
-        response: requests.Response = make_github_api_request(
-            url,
-            github_token=github_token,
-            allow_env_token=allow_env_token,
-            params={"per_page": scan_count},
-            timeout=GITHUB_API_TIMEOUT,
-        )
+            try:
+                page_releases: List[Dict[str, Any]] = response.json()
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to decode JSON from {url}: {e}")
+                return []
 
-        try:
-            releases: List[Dict[str, Any]] = response.json()
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to decode JSON from {url}: {e}")
-            return []
+            if not isinstance(page_releases, list):
+                logger.warning(
+                    "Unexpected response when fetching releases from %s: %s",
+                    url,
+                    type(page_releases).__name__,
+                )
+                break
+
+            if not page_releases:
+                break
+
+            for release in page_releases:
+                release_id = release.get("id")
+                if release_id is not None and release_id in seen_release_ids:
+                    continue
+                if release_id is not None:
+                    seen_release_ids.add(release_id)
+                releases.append(release)
+
+            if len(releases) >= scan_count:
+                break
+
+            page += 1
 
         # Log how many releases were fetched
-        logger.debug(f"Fetched {len(releases)} releases from GitHub API")
+        logger.debug(
+            "Fetched %d releases from GitHub API (across %d page%s)",
+            len(releases),
+            page,
+            "" if page == 1 else "s",
+        )
 
     except requests.HTTPError as e:
         logger.warning(f"HTTP error fetching releases data from {url}: {e}")
@@ -2873,23 +4188,22 @@ def _process_firmware_downloads(
     config: Dict[str, Any], paths_and_urls: Dict[str, str], force_refresh: bool = False
 ) -> Tuple[List[str], List[str], List[Dict[str, str]], Optional[str], Optional[str]]:
     """
-    Manage firmware release downloads, enforce retention, and optionally discover/download prerelease firmware.
+    Manage firmware release downloads, enforce retention, and optionally discover and download prerelease firmware.
 
-    Downloads configured firmware assets into the download directories, updates the latest-release and prerelease tracking JSON where applicable, and removes superseded prerelease directories when an official release is available.
+    Downloads configured firmware assets into local storage, updates tracking where applicable, prunes superseded prerelease directories when an official release is available, and records download/failure details.
 
     Parameters:
-        config (Dict[str, Any]): Runtime configuration mapping (used for feature flags, selection patterns, retention counts, tokens, and related options).
-        paths_and_urls (Dict[str, str]): Precomputed local paths and remote URLs used for downloads, cache, and storage.
-        force_refresh (bool): When true, bypasses caches and forces remote refreshes.
+        config (Dict[str, Any]): Runtime configuration (feature flags, selection patterns, retention counts, tokens, and related options).
+        paths_and_urls (Dict[str, str]): Precomputed local paths and remote URLs for downloads, caches, and storage.
+        force_refresh (bool): When true, bypass caches and force remote refreshes.
 
     Returns:
-        Tuple[
-            List[str],                # downloaded firmware versions: names of firmware versions that were newly downloaded; prereleases are prefixed with "pre-release ".
-            List[str],                # newly detected release versions: release tags discovered that were not previously tracked.
-            List[Dict[str, str]],     # failed download details: records describing each failed asset download.
-            Optional[str],            # latest firmware release tag: most recent firmware release tag discovered, or None if none found.
-            Optional[str]             # latest prerelease version: currently tracked latest prerelease version, or None if not tracked.
-        ]
+        Tuple[List[str], List[str], List[Dict[str, str]], Optional[str], Optional[str]]:
+            - downloaded firmware versions: names of firmware versions that were newly downloaded; prereleases are prefixed with "pre-release ".
+            - newly detected release versions: release tags discovered that were not previously tracked.
+            - failed download details: records describing each failed asset download.
+            - latest firmware release tag: most recent firmware release tag discovered, or `None` if none found.
+            - latest prerelease version: currently tracked latest prerelease version, or `None` if not tracked.
     """
     global downloads_skipped
 
@@ -2991,6 +4305,7 @@ def _process_firmware_downloads(
                         device_manager=device_manager,
                         github_token=config.get("GITHUB_TOKEN"),
                         force_refresh=force_refresh,
+                        allow_env_token=config.get("ALLOW_ENV_TOKEN", True),
                     )
                 )
                 if prerelease_found:
@@ -3010,17 +4325,17 @@ def _process_firmware_downloads(
                     logger.info("No new pre-release firmware found.")
 
                 # Display prerelease tracking information
-                prerelease_dir = os.path.join(
-                    paths_and_urls["download_dir"], "firmware", "prerelease"
+                tracking_info = get_prerelease_tracking_info(
+                    github_token=config.get("GITHUB_TOKEN"),
+                    force_refresh=force_refresh,
+                    allow_env_token=config.get("ALLOW_ENV_TOKEN", True),
                 )
-                tracking_info = get_prerelease_tracking_info()
-                if tracking_info:
-                    count = tracking_info.get("prerelease_count", 0)
-                    base_version = tracking_info.get("release", "unknown")
-                    latest_prerelease_version = tracking_info.get("latest_prerelease")
-                    # Only show count if there are actually prerelease directories present
-                    if count > 0 and _get_existing_prerelease_dirs(prerelease_dir):
-                        logger.info(f"Total prereleases since {base_version}: {count}")
+                _display_prerelease_summary(tracking_info)
+                latest_prerelease_version = (
+                    tracking_info.get("latest_prerelease")
+                    if isinstance(tracking_info, dict)
+                    else None
+                )
             else:
                 logger.info("No latest release tag found. Skipping pre-release check.")
     elif not config.get("SELECTED_FIRMWARE_ASSETS", []):
@@ -3459,16 +4774,18 @@ def _is_release_complete(
     exclude_patterns: List[str],
 ) -> bool:
     """
-    Check whether a local release directory contains all expected assets that match the include/exclude patterns and pass basic integrity and size checks.
+    Check whether a local release directory contains all expected assets that match the provided include/exclude patterns and pass basic integrity and size checks.
+
+    This evaluates the release metadata's "assets" list against files present in release_dir: it filters assets by selected_patterns and exclude_patterns, requires each expected file to exist, verifies ZIP files are not corrupted, and compares file sizes to the expected sizes when available.
 
     Parameters:
-        release_data (Dict[str, Any]): Release metadata containing an "assets" list; each asset should include "name" and may include "size" for expected file size checks.
-        release_dir (str): Path to the local directory holding downloaded release assets.
-        selected_patterns (Optional[List[str]]): Inclusion patterns used to select which assets are considered expected; when provided, only assets matching these are considered.
+        release_data (Dict[str, Any]): Release metadata containing an "assets" list; each asset should include a "name" and may include "size" for verification.
+        release_dir (str): Filesystem path to the local directory holding the downloaded release assets.
+        selected_patterns (Optional[List[str]]): Inclusion patterns; when provided, only assets matching these patterns are considered expected.
         exclude_patterns (List[str]): fnmatch-style patterns; any asset matching one of these is ignored.
 
     Returns:
-        bool: `True` if all expected assets are present and pass integrity/size checks, `False` otherwise.
+        bool: `True` if every expected asset is present and passes integrity and size checks, `False` otherwise.
     """
     if not os.path.exists(release_dir):
         return False
@@ -3526,11 +4843,12 @@ def _is_release_complete(
                     )
                     if asset_data:
                         expected_size = asset_data.get("size")
-                        if expected_size is not None and actual_size != expected_size:
-                            logger.debug(
-                                f"File size mismatch for {asset_path}: expected {expected_size}, got {actual_size}"
-                            )
-                            return False
+                        if expected_size is not None:
+                            if actual_size != expected_size:
+                                logger.debug(
+                                    f"File size mismatch for {asset_path}: expected {expected_size}, got {actual_size}"
+                                )
+                                return False
                 except (OSError, TypeError):
                     logger.debug(f"Error checking file size for {asset_path}")
                     return False

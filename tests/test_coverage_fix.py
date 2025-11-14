@@ -41,16 +41,13 @@ def populated_releases_cache():
 
 def test_token_warning_lines_coverage(tmp_path):
     """Direct test to cover token warning lines in main function."""
-    with patch("fetchtastic.downloader._initial_setup_and_config") as mock_setup, patch(
-        "fetchtastic.downloader._check_wifi_connection"
-    ) as _, patch(
-        "fetchtastic.downloader._process_firmware_downloads"
-    ) as mock_firmware, patch(
-        "fetchtastic.downloader._process_apk_downloads"
-    ) as mock_apk, patch(
-        "fetchtastic.downloader._finalize_and_notify"
-    ) as _:
-
+    with (
+        patch("fetchtastic.downloader._initial_setup_and_config") as mock_setup,
+        patch("fetchtastic.downloader._check_wifi_connection") as _,
+        patch("fetchtastic.downloader._process_firmware_downloads") as mock_firmware,
+        patch("fetchtastic.downloader._process_apk_downloads") as mock_apk,
+        patch("fetchtastic.downloader._finalize_and_notify") as _,
+    ):
         # Mock setup to return valid config
         mock_setup.return_value = (
             {"GITHUB_TOKEN": None},  # config
@@ -150,8 +147,8 @@ def test_cache_logging_lines_coverage(populated_releases_cache):
 def test_api_fetch_logging_lines_coverage():
     """
     Exercise the API-fetch path of _get_latest_releases_data for the firmware and Android release endpoints.
-
-    Restores the downloader module's releases cache and loaded flag after the test to avoid polluting global state.
+    
+    Mocks GitHub API responses to return a single page containing a release with a `published_at` timestamp, verifies that each call returns the mocked release, and restores the downloader module's releases cache and loaded flag after the test to avoid global state pollution.
     """
     import fetchtastic.downloader as downloader_module
 
@@ -164,12 +161,39 @@ def test_api_fetch_logging_lines_coverage():
         downloader_module._releases_cache = {}
         downloader_module._releases_cache_loaded = True
 
-        with patch("fetchtastic.downloader.make_github_api_request") as mock_request:
-            # Mock successful API response
+        def mock_api_request(_url, **kwargs):
+            """
+            Return a MagicMock response that simulates a paginated GitHub API endpoint.
+            
+            The mock inspects `kwargs.get("params", {}).get("page", 1)` and returns a response
+            whose `json()` yields a list containing a single release object when `page` is 1,
+            and an empty list for any subsequent page.
+            
+            Parameters:
+                _url (str): Ignored; present to match the real request signature.
+                **kwargs: Optional request parameters; expects an optional `params` dict
+                    with a numeric `page` key.
+            
+            Returns:
+                MagicMock: A mock response object whose `json()` method returns the page data
+                    described above.
+            """
             mock_response = MagicMock()
-            mock_response.json.return_value = [{"tag_name": "v2.7.8"}]
-            mock_request.return_value = mock_response
 
+            # Return data only for first page, empty for subsequent pages
+            if kwargs.get("params", {}).get("page", 1) == 1:
+                mock_response.json.return_value = [
+                    {"tag_name": "v2.7.8", "published_at": "2025-01-01T00:00:00Z"}
+                ]
+            else:
+                mock_response.json.return_value = []  # No more pages
+
+            return mock_response
+
+        with patch(
+            "fetchtastic.downloader.make_github_api_request",
+            side_effect=mock_api_request,
+        ):
             from fetchtastic.downloader import _get_latest_releases_data
 
             # This call should go through API fetch path and hit logging lines
@@ -181,8 +205,10 @@ def test_api_fetch_logging_lines_coverage():
                 force_refresh=True,  # Force API fetch
             )
 
-            # Verify call completed successfully
-            assert result == [{"tag_name": "v2.7.8"}]
+            # Verify call completed successfully - should return only the single item
+            assert result == [
+                {"tag_name": "v2.7.8", "published_at": "2025-01-01T00:00:00Z"}
+            ]
 
             # Test Android URL logging too
             result2 = _get_latest_releases_data(
@@ -193,11 +219,99 @@ def test_api_fetch_logging_lines_coverage():
                 force_refresh=True,
             )
 
-            assert result2 == [{"tag_name": "v2.7.8"}]
+            assert result2 == [
+                {"tag_name": "v2.7.8", "published_at": "2025-01-01T00:00:00Z"}
+            ]
     finally:
         # Restore original state to prevent test pollution
         downloader_module._releases_cache = original_cache
         downloader_module._releases_cache_loaded = original_cache_loaded
+
+
+def test_get_latest_releases_data_paginates():
+    """Ensure _get_latest_releases_data fetches additional pages when needed."""
+    import fetchtastic.downloader as downloader_module
+
+    original_cache = downloader_module._releases_cache.copy()
+    original_loaded = downloader_module._releases_cache_loaded
+
+    try:
+        downloader_module._releases_cache = {}
+        downloader_module._releases_cache_loaded = True
+
+        def _make_response(items):
+            """
+            Create a MagicMock response whose .json() method returns the provided items.
+            
+            Parameters:
+                items (Any): The value to be returned when the response's `json()` method is called.
+            
+            Returns:
+                MagicMock: A mock response object with `json()` configured to return `items`.
+            """
+            resp = MagicMock()
+            resp.json.return_value = items
+            return resp
+
+        call_pages = []
+
+        def _fake_request(_url, **kwargs):
+            """
+            Simulate a paginated GitHub releases API request and record which page was requested.
+            
+            Parameters:
+                _url (str): Ignored request URL (present to match the real request signature).
+                **kwargs: Optional request parameters; if present, `params['page']` selects the page number. Recording of requested page is performed by appending to the outer-scope `call_pages` list.
+            
+            Returns:
+                response-like: An object whose JSON payload contains a list of release dictionaries for the requested page. Page 1 returns two release items (ids 1 and 2); subsequent pages return a single release item (id 3).
+            """
+            page = kwargs.get("params", {}).get("page", 1)
+            call_pages.append(page)
+            if page == 1:
+                return _make_response(
+                    [
+                        {
+                            "tag_name": "v2.7.6",
+                            "published_at": "2025-01-01T00:00:00Z",
+                            "id": 1,
+                        },
+                        {
+                            "tag_name": "v2.7.5",
+                            "published_at": "2025-01-02T00:00:00Z",
+                            "id": 2,
+                        },
+                    ]
+                )
+            return _make_response(
+                [
+                    {
+                        "tag_name": "v2.7.4",
+                        "published_at": "2025-01-03T00:00:00Z",
+                        "id": 3,
+                    }
+                ]
+            )
+
+        with patch(
+            "fetchtastic.downloader.make_github_api_request", side_effect=_fake_request
+        ):
+            from fetchtastic.downloader import _get_latest_releases_data
+
+            result = _get_latest_releases_data(
+                "https://api.github.com/repos/meshtastic/firmware/releases",
+                3,
+                None,
+                True,
+                force_refresh=True,
+                release_type="firmware",
+            )
+
+        assert len(result) == 3
+        assert call_pages == [1, 2]
+    finally:
+        downloader_module._releases_cache = original_cache
+        downloader_module._releases_cache_loaded = original_loaded
 
 
 def test_main_function_full_coverage(tmp_path):
@@ -206,20 +320,15 @@ def test_main_function_full_coverage(tmp_path):
 
     Verifies that clear_all_caches is called once and that DeviceHardwareManager is instantiated and its clear_cache method is called once.
     """
-    with patch("fetchtastic.downloader._initial_setup_and_config") as mock_setup, patch(
-        "fetchtastic.downloader._check_wifi_connection"
-    ) as _, patch(
-        "fetchtastic.downloader._process_firmware_downloads"
-    ) as mock_firmware, patch(
-        "fetchtastic.downloader._process_apk_downloads"
-    ) as mock_apk, patch(
-        "fetchtastic.downloader._finalize_and_notify"
-    ) as _, patch(
-        "fetchtastic.downloader.clear_all_caches"
-    ) as mock_clear, patch(
-        "fetchtastic.downloader.DeviceHardwareManager"
-    ) as mock_device_mgr:
-
+    with (
+        patch("fetchtastic.downloader._initial_setup_and_config") as mock_setup,
+        patch("fetchtastic.downloader._check_wifi_connection") as _,
+        patch("fetchtastic.downloader._process_firmware_downloads") as mock_firmware,
+        patch("fetchtastic.downloader._process_apk_downloads") as mock_apk,
+        patch("fetchtastic.downloader._finalize_and_notify") as _,
+        patch("fetchtastic.downloader.clear_all_caches") as mock_clear,
+        patch("fetchtastic.downloader.DeviceHardwareManager") as mock_device_mgr,
+    ):
         # Mock setup to return valid config
         mock_setup.return_value = (
             {"GITHUB_TOKEN": None},  # config
@@ -255,16 +364,13 @@ def test_main_function_basic_coverage(tmp_path):
 
     Mocks initial setup, Wi-Fi check, firmware and APK processing, and finalization; invokes main(force_refresh=False) and asserts that setup, firmware processing, and APK processing were each called once.
     """
-    with patch("fetchtastic.downloader._initial_setup_and_config") as mock_setup, patch(
-        "fetchtastic.downloader._check_wifi_connection"
-    ) as _, patch(
-        "fetchtastic.downloader._process_firmware_downloads"
-    ) as mock_firmware, patch(
-        "fetchtastic.downloader._process_apk_downloads"
-    ) as mock_apk, patch(
-        "fetchtastic.downloader._finalize_and_notify"
-    ) as _:
-
+    with (
+        patch("fetchtastic.downloader._initial_setup_and_config") as mock_setup,
+        patch("fetchtastic.downloader._check_wifi_connection") as _,
+        patch("fetchtastic.downloader._process_firmware_downloads") as mock_firmware,
+        patch("fetchtastic.downloader._process_apk_downloads") as mock_apk,
+        patch("fetchtastic.downloader._finalize_and_notify") as _,
+    ):
         # Mock setup to return valid config with paths
         mock_setup.return_value = (
             {"GITHUB_TOKEN": None},  # config
