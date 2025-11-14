@@ -138,7 +138,7 @@ def _normalize_version(
     version: Optional[str],
 ) -> Optional[Union[Version, Any]]:  # Use Any when LegacyVersion not available
     """
-    Normalize repository-style version strings into a PEP 440–compatible form.
+    Normalize repository-style version strings into a PEP 440-compatible form.
 
     Strips a leading "v", recognizes common prerelease markers (for example "alpha"/"beta" and numeric fragments),
     and converts trailing commit/hash-like suffixes into local version identifiers where possible.
@@ -2870,8 +2870,14 @@ def _refresh_prerelease_commit_history(
     if not commits:
         return []
 
-    # Build simplified history from commits
-    history_entries = _build_simplified_prerelease_history(expected_version, commits)
+    # Build simplified history from commits, preserving auth config for any
+    # optional commit-detail lookups.
+    history_entries = _build_simplified_prerelease_history(
+        expected_version,
+        commits,
+        github_token=github_token,
+        allow_env_token=allow_env_token,
+    )
 
     with _cache_lock:
         _prerelease_commit_history_cache[expected_version] = (
@@ -4264,6 +4270,7 @@ def _process_firmware_downloads(
                 tracking_info = get_prerelease_tracking_info(
                     github_token=config.get("GITHUB_TOKEN"),
                     force_refresh=force_refresh,
+                    allow_env_token=config.get("ALLOW_ENV_TOKEN", True),
                 )
                 _display_prerelease_summary(tracking_info)
             else:

@@ -112,17 +112,6 @@ def mock_github_commit_timestamp(commit_timestamps):
     Returns:
         function: A callable (url, **kwargs) -> unittest.mock.Mock that simulates the requests.get response described above.
     """
-    """
-    Return a mock response for a given URL that simulates GitHub commit-timestamp API responses.
-    
-    If the URL contains a matching "/commits/{commit_hash}" or "/git/commits/{commit_hash}", the mock's json() returns {"commit": {"committer": {"date": "<timestamp>"}}}; otherwise json() returns an empty dict. The mock's raise_for_status() is a no-op.
-    
-    Parameters:
-        url (str): The requested URL.
-    
-    Returns:
-        unittest.mock.Mock: A mock implementing json() and raise_for_status() with status metadata.
-    """
 
     def mock_get_response(url, **_kwargs):
         """

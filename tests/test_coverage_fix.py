@@ -213,7 +213,7 @@ def test_api_fetch_logging_lines_coverage():
         downloader_module._releases_cache_loaded = original_cache_loaded
 
 
-def test_get_latest_releases_data_paginates(monkeypatch):
+def test_get_latest_releases_data_paginates():
     """Ensure _get_latest_releases_data fetches additional pages when needed."""
     import fetchtastic.downloader as downloader_module
 
