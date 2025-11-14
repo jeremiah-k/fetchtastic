@@ -12,7 +12,18 @@ import time
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from typing import IO, TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import (
+    IO,
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Set,
+    Tuple,
+    Union,
+)
 
 import platformdirs
 import requests
@@ -44,6 +55,7 @@ from fetchtastic.constants import (
     FIRMWARE_DIR_PREFIX,
     GITHUB_API_BASE,
     GITHUB_API_TIMEOUT,
+    GITHUB_MAX_PER_PAGE,
     LATEST_ANDROID_RELEASE_FILE,
     LATEST_ANDROID_RELEASE_JSON_FILE,
     LATEST_FIRMWARE_RELEASE_FILE,
@@ -52,6 +64,7 @@ from fetchtastic.constants import (
     MESHTASTIC_ANDROID_RELEASES_URL,
     MESHTASTIC_FIRMWARE_RELEASES_URL,
     MESHTASTIC_GITHUB_IO_CONTENTS_URL,
+    MIN_RATE_LIMIT_FOR_COMMIT_DETAILS,
     NTFY_REQUEST_TIMEOUT,
     PRERELEASE_ADD_COMMIT_PATTERN,
     PRERELEASE_COMMIT_HISTORY_FILE,
@@ -60,7 +73,6 @@ from fetchtastic.constants import (
     PRERELEASE_COMMITS_LEGACY_FILE,
     PRERELEASE_DELETE_COMMIT_PATTERN,
     PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
-    PRERELEASE_HISTORY_CACHE_EXPIRY_SECONDS,
     PRERELEASE_TRACKING_JSON_FILE,
     RELEASE_SCAN_COUNT,
     RELEASES_CACHE_EXPIRY_HOURS,
@@ -117,6 +129,9 @@ HASH_SUFFIX_VERSION_RX = re.compile(r"^(\d+(?:\.\d+)*)\.([A-Za-z0-9][A-Za-z0-9.-
 VERSION_BASE_RX = re.compile(r"^(\d+(?:\.\d+)*)")
 PRERELEASE_ADD_RX = re.compile(PRERELEASE_ADD_COMMIT_PATTERN, re.IGNORECASE)
 PRERELEASE_DELETE_RX = re.compile(PRERELEASE_DELETE_COMMIT_PATTERN, re.IGNORECASE)
+PRERELEASE_DIR_SEGMENT_RX = re.compile(
+    r"(firmware-\d+\.\d+\.\d+\.[a-f0-9]{6,})", re.IGNORECASE
+)
 
 
 def _normalize_version(
@@ -1730,6 +1745,7 @@ _prerelease_commit_history_loaded = False
 # Global cache for repository commit change summaries keyed by commit SHA
 # Global flag to track if downloads were skipped due to Wi-Fi requirements
 downloads_skipped = False
+_MAX_UNCERTAIN_COMMITS_TO_RESOLVE = 5
 
 
 def _ensure_cache_dir() -> str:
@@ -1807,7 +1823,7 @@ def _get_prerelease_commit_history_file() -> str:
 
 def _load_json_cache_with_expiry(
     cache_file_path: str,
-    expiry_hours: float,
+    expiry_hours: Optional[float],
     cache_entry_validator: Callable[[Dict[str, Any]], bool],
     entry_processor: Callable[[Dict[str, Any], datetime], Any],
     cache_name: str,
@@ -1817,13 +1833,13 @@ def _load_json_cache_with_expiry(
 
     Parameters:
         cache_file_path (str): Filesystem path to the JSON cache file.
-        expiry_hours (float): Maximum age in hours for an entry to be considered valid.
+        expiry_hours (Optional[float]): Maximum age in hours for an entry to be considered valid. When `None`, entries never expire.
         cache_entry_validator (Callable[[Dict[str, Any]], bool]): Predicate that returns `True` for entries that have the expected structure.
         entry_processor (Callable[[Dict[str, Any], datetime], Any]): Function that converts a raw cache entry and its `cached_at` timestamp into the value to be returned for that key.
         cache_name (str): Human-readable name used in debug logs.
 
     Returns:
-        Dict[str, Any]: Mapping of cache keys to processed entries for those entries present in the file, valid according to `cache_entry_validator`, and younger than `expiry_hours`.
+        Dict[str, Any]: Mapping of cache keys to processed entries for those entries present in the file, valid according to `cache_entry_validator`, and younger than `expiry_hours` when an expiry is provided.
     """
     try:
         if not os.path.exists(cache_file_path):
@@ -1853,8 +1869,18 @@ def _load_json_cache_with_expiry(
                     cache_entry["cached_at"].replace("Z", "+00:00")
                 )
                 age = current_time - cached_at
-                if age.total_seconds() < expiry_hours * 60 * 60:
-                    loaded[cache_key] = entry_processor(cache_entry, cached_at)
+                if expiry_hours is not None:
+                    if age.total_seconds() >= expiry_hours * 60 * 60:
+                        logger.debug(
+                            "Skipping expired %s cache entry for %s (age %.0fs exceeds %.0fs)",
+                            cache_name,
+                            cache_key,
+                            age.total_seconds(),
+                            expiry_hours * 60 * 60,
+                        )
+                        continue
+
+                loaded[cache_key] = entry_processor(cache_entry, cached_at)
             except (ValueError, TypeError, KeyError) as e:
                 logger.debug(
                     "Skipping invalid %s cache entry for %s: %s",
@@ -2170,7 +2196,7 @@ def _load_prerelease_commit_history_cache() -> None:
 
     loaded_data = _load_json_cache_with_expiry(
         cache_file_path=_get_prerelease_commit_history_file(),
-        expiry_hours=PRERELEASE_HISTORY_CACHE_EXPIRY_SECONDS / 3600,
+        expiry_hours=None,
         cache_entry_validator=validate_history_entry,
         entry_processor=process_history_entry,
         cache_name="prerelease commit history",
@@ -2317,6 +2343,8 @@ def _fetch_recent_repo_commits(
         List[Dict[str, Any]]: A list of commit objects (decoded JSON from the GitHub API), up to `max_commits`; returns an empty list on error or if no commits are available.
     """
 
+    max_commits = max(1, max_commits)
+
     # Check cache first using generic helper
     cache_file = os.path.join(_ensure_cache_dir(), PRERELEASE_COMMITS_CACHE_FILE)
 
@@ -2330,26 +2358,34 @@ def _fetch_recent_repo_commits(
         data_key="commits",
     )
 
+    commits: List[Dict[str, Any]] = []
+    seen_shas: Set[str] = set()
+    next_page = 1
+
     if cached_commits is not None:
-        if len(cached_commits) >= max_commits:
-            return cached_commits[:max_commits]
+        commits.extend(cached_commits)
+        for commit in cached_commits:
+            sha = commit.get("sha")
+            if sha:
+                seen_shas.add(sha)
+
+        if len(commits) >= max_commits:
+            return commits[:max_commits]
+
         logger.debug(
-            "Commits cache has %d items but %d requested; fetching fresh data",
-            len(cached_commits),
+            "Commits cache has %d items but %d requested; fetching additional pages",
+            len(commits),
             max_commits,
         )
-        # TODO: Future optimization could fetch only missing commits by adjusting pagination
-        # instead of refetching all max_commits. For example, if 40 commits are requested
-        # and 39 are cached, we could fetch just the 1 missing commit using page parameter.
-        # Current approach is acceptable given short cache duration and implementation simplicity.
-        # fall through to fetch
+        next_page = (len(commits) // GITHUB_MAX_PER_PAGE) + 1
 
     # Cache miss or expired - fetch from API
     logger.debug("Fetching commits from API (cache miss/expired)")
 
-    all_commits = []
-    per_page = min(100, max_commits)  # GitHub max is 100 per page
-    page = 1
+    all_commits = list(commits)
+    per_page = GITHUB_MAX_PER_PAGE if max_commits > 0 else 1
+    page = max(1, next_page)
+    fetched_from_api = False
 
     url = f"{GITHUB_API_BASE}/meshtastic/meshtastic.github.io/commits"
 
@@ -2376,7 +2412,14 @@ def _fetch_recent_repo_commits(
             if not commits:  # No more commits available
                 break
 
-            all_commits.extend(commits)
+            fetched_from_api = True
+            for commit in commits:
+                sha = commit.get("sha")
+                if sha and sha in seen_shas:
+                    continue
+                if sha:
+                    seen_shas.add(sha)
+                all_commits.append(commit)
 
             # If we got fewer than per_page, we've reached the end
             if len(commits) < per_page:
@@ -2384,7 +2427,6 @@ def _fetch_recent_repo_commits(
 
             # Stop if we have enough commits
             if len(all_commits) >= max_commits:
-                all_commits = all_commits[:max_commits]  # Trim excess
                 break
 
             page += 1
@@ -2396,14 +2438,15 @@ def _fetch_recent_repo_commits(
         )
 
         # Save to cache using generic helper
-        _save_single_blob_cache(
-            cache_file_path=cache_file,
-            data=all_commits,
-            cache_name="commits",
-            data_key="commits",
-        )
+        if fetched_from_api:
+            _save_single_blob_cache(
+                cache_file_path=cache_file,
+                data=all_commits,
+                cache_name="commits",
+                data_key="commits",
+            )
 
-        return all_commits
+        return all_commits[:max_commits]
 
     except requests.HTTPError as exc:
         logger.warning("HTTP error fetching repo commits: %s", exc)
@@ -2457,18 +2500,80 @@ def _create_default_prerelease_entry(
     }
 
 
+def _record_prerelease_addition(
+    entries: Dict[str, Dict[str, Any]],
+    directory: str,
+    identifier: str,
+    expected_version: str,
+    short_hash: str,
+    timestamp: Optional[str],
+    sha: Optional[str],
+) -> None:
+    """
+    Ensure a prerelease entry exists and mark it as active with the provided metadata.
+    """
+    entry = entries.setdefault(
+        directory,
+        _create_default_prerelease_entry(
+            directory, identifier, expected_version, short_hash
+        ),
+    )
+
+    if timestamp and not entry.get("added_at"):
+        entry["added_at"] = timestamp
+    if sha and not entry.get("added_sha"):
+        entry["added_sha"] = sha
+
+    entry["active"] = True
+    entry["status"] = "active"
+    entry["removed_at"] = None
+    entry["removed_sha"] = None
+
+
+def _record_prerelease_deletion(
+    entries: Dict[str, Dict[str, Any]],
+    directory: str,
+    identifier: str,
+    expected_version: str,
+    short_hash: str,
+    timestamp: Optional[str],
+    sha: Optional[str],
+) -> None:
+    """
+    Ensure a prerelease entry exists and mark it as deleted with the provided metadata.
+    """
+    entry = entries.setdefault(
+        directory,
+        _create_default_prerelease_entry(
+            directory, identifier, expected_version, short_hash
+        ),
+    )
+
+    if timestamp:
+        entry["removed_at"] = timestamp
+    if sha:
+        entry["removed_sha"] = sha
+
+    entry["active"] = False
+    entry["status"] = "deleted"
+
+
 def _build_simplified_prerelease_history(
     expected_version: str,
     commits: List[Dict[str, Any]],
+    github_token: Optional[str] = None,
+    allow_env_token: bool = True,
 ) -> List[Dict[str, Any]]:
     """
     Build a simplified prerelease history from a list of repository commits.
 
-    Parses commit messages to derive prerelease add/delete events for the given expected_version and produces a chronological list of prerelease entries with normalized fields such as `directory`, `identifier`, `added_at`, `added_sha`, `removed_at`, `removed_sha`, `active`, and `status`. The function processes commits oldest-first so later commits override earlier ones. Commit messages that do not match the expected add/delete patterns are ignored.
+    Parses commit messages to derive prerelease add/delete events for the given expected_version and produces a chronological list of prerelease entries with normalized fields such as `directory`, `identifier`, `added_at`, `added_sha`, `removed_at`, `removed_sha`, `active`, and `status`. The function processes commits oldest-first so later commits override earlier ones. Commit messages that do not match the expected add/delete patterns are ignored unless commit-detail fetching is permitted and rate-limit conditions allow richer inspection.
 
     Parameters:
         expected_version (str): Base prerelease version to filter commits against (e.g., "2.7.14").
         commits (List[Dict[str, Any]]): Commit objects as returned by the GitHub API; each entry should contain `sha` and a nested `commit.committer.date` and `commit.message`.
+        github_token (Optional[str]): Token used for commit-detail fallbacks; may be None to rely on unauthenticated requests.
+        allow_env_token (bool): Whether to fall back to a token provided in the environment when `github_token` is None.
 
     Returns:
         List[Dict[str, Any]]: A list of normalized prerelease entry dictionaries sorted newest-first by creation/deletion time. Returns an empty list if `expected_version` is falsy or `commits` is empty.
@@ -2481,13 +2586,14 @@ def _build_simplified_prerelease_history(
         return []
 
     entries: Dict[str, Dict[str, Any]] = {}
+    uncertain_commits: List[Dict[str, Any]] = []
 
     # OPTIMIZATION: Parse commit messages instead of making individual API calls
     # The meshtastic.github.io repository has structured commit messages that contain
     # all the information we need: version, operation type, and commit hash
 
     logger.debug(
-        "Building prerelease history from %d commits by parsing messages (no individual API calls)",
+        "Building prerelease history from %d commits by parsing messages",
         len(commits),
     )
 
@@ -2510,25 +2616,15 @@ def _build_simplified_prerelease_history(
                 identifier = f"{version}.{short_hash}"
                 directory = f"firmware-{identifier}"
 
-                entry = entries.setdefault(
+                _record_prerelease_addition(
+                    entries,
                     directory,
-                    _create_default_prerelease_entry(
-                        directory, identifier, expected_version, short_hash
-                    ),
+                    identifier,
+                    expected_version,
+                    short_hash,
+                    timestamp,
+                    sha,
                 )
-
-                # Update entry with addition info
-                # Preserve original creation timestamp when re-adding
-                if not entry.get("added_at"):
-                    entry["added_at"] = timestamp
-                if not entry.get("added_sha"):
-                    entry["added_sha"] = sha
-                entry["active"] = True
-                entry["status"] = "active"
-                # Clear any previous deletion status
-                entry["removed_at"] = None
-                entry["removed_sha"] = None
-
                 continue
 
         # Pattern 2: Deleting a prerelease
@@ -2541,33 +2637,206 @@ def _build_simplified_prerelease_history(
                 identifier = f"{version}.{short_hash}"
                 directory = f"firmware-{identifier}"
 
-                entry = entries.setdefault(
+                _record_prerelease_deletion(
+                    entries,
                     directory,
-                    _create_default_prerelease_entry(
-                        directory, identifier, expected_version, short_hash
-                    ),
+                    identifier,
+                    expected_version,
+                    short_hash,
+                    timestamp,
+                    sha,
                 )
-
-                # Update entry with deletion info
-                entry["removed_at"] = timestamp
-                entry["removed_sha"] = sha
-                entry["active"] = False
-                entry["status"] = "deleted"
-
                 continue
 
-        # Skip other commits that don't relate to prerelease operations
+        # Track commits we could not categorize for optional detail processing
+        uncertain_commits.append(commit)
+
+    if uncertain_commits and _should_fetch_uncertain_commits():
+        _enrich_history_from_commit_details(
+            entries,
+            uncertain_commits,
+            expected_version,
+            github_token=github_token,
+            allow_env_token=allow_env_token,
+        )
 
     # Convert to list and sort by added_at (newest first), then by removed_at
     entry_list = list(entries.values())
     entry_list.sort(key=_sort_key, reverse=True)
 
     logger.debug(
-        "Built prerelease history with %d entries from commit message parsing (0 individual API calls)",
+        "Built prerelease history with %d entries from commit message parsing",
         len(entry_list),
     )
 
     return entry_list
+
+
+def _extract_prerelease_dir_info(
+    path: str, expected_version: str
+) -> Optional[Tuple[str, str, str]]:
+    """
+    Extract prerelease directory information from a commit file path.
+
+    Returns a tuple of (directory_name, identifier, short_hash) when the path
+    references a prerelease directory for the expected base version.
+    """
+    if not path:
+        return None
+
+    match = PRERELEASE_DIR_SEGMENT_RX.search(path)
+    if not match:
+        return None
+
+    segment = match.group(1).lower()
+    dir_match = re.match(r"firmware-(\d+\.\d+\.\d+)\.([a-f0-9]{6,})", segment)
+    if not dir_match:
+        return None
+
+    version, short_hash = dir_match.groups()
+    if version != expected_version:
+        return None
+
+    identifier = f"{version}.{short_hash}"
+    directory = f"firmware-{identifier}"
+    return directory, identifier, short_hash
+
+
+def _should_fetch_uncertain_commits() -> bool:
+    """
+    Determine whether commit-detail fetches are safe based on rate-limit data.
+    """
+    summary = get_api_request_summary()
+    remaining = summary.get("rate_limit_remaining")
+    auth_used = summary.get("auth_used", False)
+
+    if auth_used:
+        # Authenticated tokens have generous limits; proceed even without a cached remaining value
+        return True
+
+    if remaining is None:
+        logger.debug(
+            "Skipping commit detail fetch: unauthenticated rate-limit data unavailable"
+        )
+        return False
+
+    if remaining <= MIN_RATE_LIMIT_FOR_COMMIT_DETAILS:
+        logger.debug(
+            "Skipping commit detail fetch: only %d unauthenticated GitHub API requests remaining",
+            remaining,
+        )
+        return False
+
+    return True
+
+
+def _fetch_commit_files(
+    sha: str,
+    github_token: Optional[str],
+    allow_env_token: bool,
+) -> List[Dict[str, Any]]:
+    """
+    Fetch commit file metadata from the GitHub API and return the decoded JSON list.
+    """
+    url = f"{GITHUB_API_BASE}/meshtastic/meshtastic.github.io/commits/{sha}"
+    try:
+        response = make_github_api_request(
+            url,
+            github_token=github_token,
+            allow_env_token=allow_env_token,
+            timeout=GITHUB_API_TIMEOUT,
+        )
+        data = response.json()
+        files = data.get("files")
+        if isinstance(files, list):
+            return files
+    except (requests.HTTPError, requests.RequestException) as exc:
+        logger.debug("HTTP error fetching commit details for %s: %s", sha[:8], exc)
+    except (ValueError, KeyError, TypeError) as exc:
+        logger.debug("Failed to parse commit details for %s: %s", sha[:8], exc)
+    return []
+
+
+def _enrich_history_from_commit_details(
+    entries: Dict[str, Dict[str, Any]],
+    uncertain_commits: List[Dict[str, Any]],
+    expected_version: str,
+    github_token: Optional[str],
+    allow_env_token: bool,
+) -> None:
+    """
+    Fetch commit details for commits that could not be classified from message parsing and update entries accordingly.
+    """
+
+    processed = 0
+    for commit in uncertain_commits:
+        if processed >= _MAX_UNCERTAIN_COMMITS_TO_RESOLVE:
+            break
+
+        sha = commit.get("sha")
+        if not sha:
+            continue
+
+        files = _fetch_commit_files(sha, github_token, allow_env_token)
+        if not files:
+            continue
+
+        directory_changes: Dict[str, Dict[str, Any]] = {}
+        for file_info in files:
+            path = str(file_info.get("filename") or "")
+            status = str(file_info.get("status") or "").lower()
+            dir_info = _extract_prerelease_dir_info(path, expected_version)
+            if not dir_info:
+                continue
+
+            directory, identifier, short_hash = dir_info
+            change = directory_changes.setdefault(
+                directory,
+                {
+                    "identifier": identifier,
+                    "short_hash": short_hash,
+                    "added": False,
+                    "removed": False,
+                },
+            )
+
+            if status == "added":
+                change["added"] = True
+            elif status == "removed":
+                change["removed"] = True
+
+        if not directory_changes:
+            continue
+
+        timestamp = commit.get("commit", {}).get("committer", {}).get("date")
+        processed += 1
+        logger.debug(
+            "Fetched commit details for %s to classify %d prerelease directories",
+            sha[:8],
+            len(directory_changes),
+        )
+
+        for directory, change in directory_changes.items():
+            if change["added"] and not change["removed"]:
+                _record_prerelease_addition(
+                    entries,
+                    directory,
+                    change["identifier"],
+                    expected_version,
+                    change["short_hash"],
+                    timestamp,
+                    sha,
+                )
+            elif change["removed"] and not change["added"]:
+                _record_prerelease_deletion(
+                    entries,
+                    directory,
+                    change["identifier"],
+                    expected_version,
+                    change["short_hash"],
+                    timestamp,
+                    sha,
+                )
 
 
 def _refresh_prerelease_commit_history(
@@ -2649,17 +2918,13 @@ def _get_prerelease_commit_history(
             if cached:
                 entries, cached_at = cached
                 age = datetime.now(timezone.utc) - cached_at
-                if age.total_seconds() < PRERELEASE_HISTORY_CACHE_EXPIRY_SECONDS:
-                    track_api_cache_hit()
-                    logger.debug(
-                        "Using cached prerelease history for %s (cached %.0fs ago)",
-                        expected_version,
-                        age.total_seconds(),
-                    )
-                    return [dict(entry) for entry in entries]
-                else:
-                    # Cache entry exists but is expired
-                    pass
+                track_api_cache_hit()
+                logger.debug(
+                    "Using cached prerelease history for %s (cached %.0fs ago)",
+                    expected_version,
+                    age.total_seconds(),
+                )
+                return [dict(entry) for entry in entries]
 
     return _refresh_prerelease_commit_history(
         expected_version, github_token, force_refresh, max_commits, allow_env_token
@@ -3651,6 +3916,9 @@ def _get_latest_releases_data(
     track_api_cache_miss()
 
     releases: List[Dict[str, Any]] = []  # Initialize to prevent NameError
+    per_page = max(1, min(GITHUB_MAX_PER_PAGE, scan_count))
+    page = 1
+    seen_release_ids: Set[Any] = set()
     try:
         # Add progress feedback
         if effective_release_type:
@@ -3659,26 +3927,52 @@ def _get_latest_releases_data(
             # Fallback for generic case
             logger.info("Fetching releases from GitHub...")
 
-        # Initialize releases to prevent NameError in error paths
-        releases: List[Dict[str, Any]] = []
+        while len(releases) < scan_count:
+            response: requests.Response = make_github_api_request(
+                url,
+                github_token=github_token,
+                allow_env_token=allow_env_token,
+                params={"per_page": per_page, "page": page},
+                timeout=GITHUB_API_TIMEOUT,
+            )
 
-        # scan_count already clamped above
-        response: requests.Response = make_github_api_request(
-            url,
-            github_token=github_token,
-            allow_env_token=allow_env_token,
-            params={"per_page": scan_count},
-            timeout=GITHUB_API_TIMEOUT,
-        )
+            try:
+                page_releases: List[Dict[str, Any]] = response.json()
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to decode JSON from {url}: {e}")
+                return []
 
-        try:
-            releases: List[Dict[str, Any]] = response.json()
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to decode JSON from {url}: {e}")
-            return []
+            if not isinstance(page_releases, list):
+                logger.warning(
+                    "Unexpected response when fetching releases from %s: %s",
+                    url,
+                    type(page_releases).__name__,
+                )
+                break
+
+            if not page_releases:
+                break
+
+            for release in page_releases:
+                release_id = release.get("id")
+                if release_id is not None and release_id in seen_release_ids:
+                    continue
+                if release_id is not None:
+                    seen_release_ids.add(release_id)
+                releases.append(release)
+
+            if len(releases) >= scan_count:
+                break
+
+            page += 1
 
         # Log how many releases were fetched
-        logger.debug(f"Fetched {len(releases)} releases from GitHub API")
+        logger.debug(
+            "Fetched %d releases from GitHub API (across %d page%s)",
+            len(releases),
+            page,
+            "" if page == 1 else "s",
+        )
 
     except requests.HTTPError as e:
         logger.warning(f"HTTP error fetching releases data from {url}: {e}")

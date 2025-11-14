@@ -1651,7 +1651,7 @@ def test_prerelease_history_cache_expiry(tmp_path_factory, monkeypatch):
         # Verify refresh was called with correct parameters
         mock_refresh.assert_called_once_with("2.7.15", None, True, 40, True)
 
-    # Test 2: When cache is expired and force_refresh=False, should also call refresh
+    # Test 2: When cache exists and force_refresh=False, cached data should be returned even if old
     with patch.object(downloader, "_refresh_prerelease_commit_history") as mock_refresh:
         mock_refresh.return_value = fresh_entries
 
@@ -1659,15 +1659,13 @@ def test_prerelease_history_cache_expiry(tmp_path_factory, monkeypatch):
         downloader._prerelease_commit_history_loaded = False
         downloader._prerelease_commit_history_cache.clear()
 
-        # Call with force_refresh=False - should detect expired cache and call refresh
         result = downloader._get_prerelease_commit_history(
             "2.7.15", force_refresh=False
         )
 
-        # Should return fresh data from refresh function
-        assert result == fresh_entries
-        # Verify refresh was called with correct parameters
-        mock_refresh.assert_called_once_with("2.7.15", None, False, 40, True)
+        # Should return cached data without invoking refresh
+        assert result == [{"identifier": "2.7.15.test123", "status": "active"}]
+        mock_refresh.assert_not_called()
 
 
 def test_build_simplified_prerelease_history_edge_cases():
@@ -1704,6 +1702,87 @@ def test_build_simplified_prerelease_history_edge_cases():
 
     # Should handle malformed messages gracefully
     assert len(result) == 0
+
+
+def test_build_history_fetches_uncertain_commits_when_rate_limit_allows(monkeypatch):
+    """Unmatched commits should be classified via commit-detail fetch when rate limit permits."""
+
+    uncertain_commit = [
+        {
+            "sha": "abc123",
+            "commit": {
+                "message": "Manual prerelease update",
+                "committer": {"date": "2025-02-01T10:00:00Z"},
+            },
+        }
+    ]
+
+    fake_response = Mock()
+    fake_response.json.return_value = {
+        "files": [
+            {
+                "filename": "firmware-2.7.14.deadbeef/device-install.sh",
+                "status": "added",
+            }
+        ]
+    }
+
+    monkeypatch.setattr(
+        downloader,
+        "get_api_request_summary",
+        lambda: {
+            "total_requests": 0,
+            "cache_hits": 0,
+            "cache_misses": 0,
+            "auth_used": False,
+            "rate_limit_remaining": 100,
+        },
+    )
+
+    with patch("fetchtastic.downloader.make_github_api_request") as mock_request:
+        mock_request.return_value = fake_response
+
+        result = downloader._build_simplified_prerelease_history(
+            "2.7.14", uncertain_commit
+        )
+
+        assert len(result) == 1
+        assert result[0]["identifier"] == "2.7.14.deadbeef"
+        mock_request.assert_called_once()
+
+
+def test_build_history_skips_detail_fetch_when_rate_limit_low(monkeypatch):
+    """Ensure we avoid extra API calls for uncertain commits when requests are scarce."""
+
+    uncertain_commit = [
+        {
+            "sha": "abc123",
+            "commit": {
+                "message": "Manual prerelease update",
+                "committer": {"date": "2025-02-01T10:00:00Z"},
+            },
+        }
+    ]
+
+    monkeypatch.setattr(
+        downloader,
+        "get_api_request_summary",
+        lambda: {
+            "total_requests": 0,
+            "cache_hits": 0,
+            "cache_misses": 0,
+            "auth_used": False,
+            "rate_limit_remaining": 10,
+        },
+    )
+
+    with patch("fetchtastic.downloader.make_github_api_request") as mock_request:
+        result = downloader._build_simplified_prerelease_history(
+            "2.7.14", uncertain_commit
+        )
+
+        assert result == []
+        mock_request.assert_not_called()
 
 
 def test_fetch_recent_repo_commits_with_api_mocking(tmp_path_factory, monkeypatch):

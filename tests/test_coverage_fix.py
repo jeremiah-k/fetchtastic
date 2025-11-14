@@ -200,6 +200,72 @@ def test_api_fetch_logging_lines_coverage():
         downloader_module._releases_cache_loaded = original_cache_loaded
 
 
+def test_get_latest_releases_data_paginates(monkeypatch):
+    """Ensure _get_latest_releases_data fetches additional pages when needed."""
+    import fetchtastic.downloader as downloader_module
+
+    original_cache = downloader_module._releases_cache.copy()
+    original_loaded = downloader_module._releases_cache_loaded
+
+    try:
+        downloader_module._releases_cache = {}
+        downloader_module._releases_cache_loaded = True
+
+        def _make_response(items):
+            resp = MagicMock()
+            resp.json.return_value = items
+            return resp
+
+        call_pages = []
+
+        def _fake_request(_url, **kwargs):
+            call_pages.append(kwargs["params"]["page"])
+            if kwargs["params"]["page"] == 1:
+                return _make_response(
+                    [
+                        {
+                            "tag_name": "v2.7.6",
+                            "published_at": "2025-01-01T00:00:00Z",
+                            "id": 1,
+                        },
+                        {
+                            "tag_name": "v2.7.5",
+                            "published_at": "2025-01-02T00:00:00Z",
+                            "id": 2,
+                        },
+                    ]
+                )
+            return _make_response(
+                [
+                    {
+                        "tag_name": "v2.7.4",
+                        "published_at": "2025-01-03T00:00:00Z",
+                        "id": 3,
+                    }
+                ]
+            )
+
+        with patch(
+            "fetchtastic.downloader.make_github_api_request", side_effect=_fake_request
+        ):
+            from fetchtastic.downloader import _get_latest_releases_data
+
+            result = _get_latest_releases_data(
+                "https://api.github.com/repos/meshtastic/firmware/releases",
+                3,
+                None,
+                True,
+                force_refresh=True,
+                release_type="firmware",
+            )
+
+        assert len(result) == 3
+        assert call_pages == [1, 2]
+    finally:
+        downloader_module._releases_cache = original_cache
+        downloader_module._releases_cache_loaded = original_loaded
+
+
 def test_main_function_full_coverage(tmp_path):
     """
     Exercise fetchtastic.downloader.main to cover cache-clearing and device manager cleanup paths.
