@@ -629,6 +629,26 @@ def test_setup_automation_termux_reconfig_cron(mocker):
     assert result == config
 
 
+def test_setup_automation_linux_new_setup(mocker):
+    """Test _setup_automation on Linux for new cron job setup."""
+    mocker.patch("fetchtastic.setup_config.platform.system", return_value="Linux")
+    mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
+    mocker.patch(
+        "fetchtastic.setup_config.check_any_cron_jobs_exist", return_value=False
+    )
+
+    mock_input = mocker.patch("builtins.input")
+    mock_input.side_effect = ["h", "n"]  # hourly cron, no reboot
+
+    mock_setup_cron = mocker.patch("fetchtastic.setup_config.setup_cron_job")
+
+    config = {}
+    result = setup_config._setup_automation(config, False, lambda x: True)
+
+    mock_setup_cron.assert_called_once_with("hourly")
+    assert result == config
+
+
 def test_windows_shortcut_creation(mocker):
     """Test the Windows shortcut creation logic."""
     # Mock platform and inject a mock winshell module into sys.modules
