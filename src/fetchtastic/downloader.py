@@ -2975,6 +2975,12 @@ def _enrich_history_from_commit_details(
                     for pending_future in inflight:
                         if not pending_future.done():
                             pending_future.cancel()
+                    try:
+                        # Python 3.9+: stop accepting work and cancel not-yet-started futures
+                        executor.shutdown(cancel_futures=True, wait=False)
+                    except TypeError:
+                        # Older Python: best-effort via explicit cancellations above
+                        pass
                     inflight.clear()
                     break
 
