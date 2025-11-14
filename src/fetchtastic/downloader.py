@@ -10,7 +10,12 @@ import tempfile
 import threading
 import time
 import zipfile
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import (
+    FIRST_COMPLETED,
+    CancelledError,
+    ThreadPoolExecutor,
+    wait,
+)
 from datetime import datetime, timezone
 from typing import (
     IO,
@@ -2854,13 +2859,15 @@ def _enrich_history_from_commit_details(
         max_workers,
     )
 
-    successful_classifications = 0
     attempt_cap = min(len(candidates), _MAX_UNCERTAIN_COMMITS_TO_RESOLVE * 3)
+    successful_classifications = 0
     attempted = 0
     next_idx = 0
+    next_result_index = 0
+    pending_results: Dict[int, Tuple[str, str, List[Dict[str, Any]]]] = {}
 
     def _submit_more(
-        executor: ThreadPoolExecutor, inflight: Dict["Future", Tuple[str, str]]
+        executor: ThreadPoolExecutor, inflight: Dict["Future", Tuple[int, str, str]]
     ) -> None:
         nonlocal attempted, next_idx
         while (
@@ -2869,6 +2876,7 @@ def _enrich_history_from_commit_details(
             and next_idx < len(candidates)
         ):
             sha, timestamp = candidates[next_idx]
+            idx = next_idx
             next_idx += 1
             future = executor.submit(
                 _fetch_commit_files,
@@ -2876,113 +2884,121 @@ def _enrich_history_from_commit_details(
                 github_token,
                 allow_env_token,
             )
-            inflight[future] = (sha, timestamp)
+            inflight[future] = (idx, sha, timestamp)
             attempted += 1
 
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        inflight: Dict["Future", Tuple[str, str]] = {}
-        _submit_more(executor, inflight)
-
-        while inflight:
-            future = next(as_completed(list(inflight.keys())))
-            sha, timestamp = inflight.pop(future)
-
-            try:
-                files = future.result()
-            except Exception as exc:  # pragma: no cover  # noqa: BLE001
-                logger.debug("Failed to obtain commit details for %s: %s", sha[:8], exc)
-                files = []
-
-            if not files:
-                _submit_more(executor, inflight)
+    def _process_result(sha: str, timestamp: str, files: List[Dict[str, Any]]) -> bool:
+        directory_changes: Dict[str, Dict[str, Any]] = {}
+        for file_info in files:
+            path = str(file_info.get("filename") or "")
+            status = str(file_info.get("status") or "").lower()
+            dir_info = _extract_prerelease_dir_info(path, expected_version)
+            if not dir_info:
                 continue
 
-            directory_changes: Dict[str, Dict[str, Any]] = {}
-            for file_info in files:
-                path = str(file_info.get("filename") or "")
-                status = str(file_info.get("status") or "").lower()
-                dir_info = _extract_prerelease_dir_info(path, expected_version)
-                if not dir_info:
-                    continue
-
-                directory, identifier, short_hash = dir_info
-                change = directory_changes.setdefault(
-                    directory,
-                    {
-                        "identifier": identifier,
-                        "short_hash": short_hash,
-                        "added": False,
-                        "removed": False,
-                    },
-                )
-
-                if status == "added":
-                    change["added"] = True
-                elif status == "removed":
-                    change["removed"] = True
-                elif status == "renamed":
-                    prev_path = str(file_info.get("previous_filename") or "")
-                    prev_info = _extract_prerelease_dir_info(
-                        prev_path, expected_version
-                    )
-                    if prev_info and not dir_info:
-                        change["removed"] = True
-                    elif dir_info and not prev_info:
-                        change["added"] = True
-
-            if not directory_changes:
-                _submit_more(executor, inflight)
-                continue
-
-            logger.debug(
-                "Fetched commit details for %s to classify %d prerelease directories",
-                sha[:8],
-                len(directory_changes),
+            directory, identifier, short_hash = dir_info
+            change = directory_changes.setdefault(
+                directory,
+                {
+                    "identifier": identifier,
+                    "short_hash": short_hash,
+                    "added": False,
+                    "removed": False,
+                },
             )
 
-            made_change = False
-            for directory, change in directory_changes.items():
-                if change["added"] and not change["removed"]:
-                    _record_prerelease_addition(
-                        entries,
-                        directory,
-                        change["identifier"],
-                        expected_version,
-                        change["short_hash"],
-                        timestamp,
-                        sha,
-                    )
-                    made_change = True
-                elif change["removed"] and not change["added"]:
-                    _record_prerelease_deletion(
-                        entries,
-                        directory,
-                        change["identifier"],
-                        expected_version,
-                        change["short_hash"],
-                        timestamp,
-                        sha,
-                    )
-                    made_change = True
+            if status == "added":
+                change["added"] = True
+            elif status == "removed":
+                change["removed"] = True
+            elif status == "renamed":
+                prev_path = str(file_info.get("previous_filename") or "")
+                prev_info = _extract_prerelease_dir_info(prev_path, expected_version)
+                if prev_info and not dir_info:
+                    change["removed"] = True
+                elif dir_info and not prev_info:
+                    change["added"] = True
 
-            if made_change:
-                successful_classifications += 1
-                if successful_classifications >= _MAX_UNCERTAIN_COMMITS_TO_RESOLVE:
+        if not directory_changes:
+            return False
+
+        logger.debug(
+            "Fetched commit details for %s to classify %d prerelease directories",
+            sha[:8],
+            len(directory_changes),
+        )
+
+        made_change = False
+        for directory, change in directory_changes.items():
+            if change["added"] and not change["removed"]:
+                _record_prerelease_addition(
+                    entries,
+                    directory,
+                    change["identifier"],
+                    expected_version,
+                    change["short_hash"],
+                    timestamp,
+                    sha,
+                )
+                made_change = True
+            elif change["removed"] and not change["added"]:
+                _record_prerelease_deletion(
+                    entries,
+                    directory,
+                    change["identifier"],
+                    expected_version,
+                    change["short_hash"],
+                    timestamp,
+                    sha,
+                )
+                made_change = True
+
+        return made_change
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        inflight: Dict["Future", Tuple[int, str, str]] = {}
+        _submit_more(executor, inflight)
+
+        while inflight or pending_results:
+            while (
+                next_result_index in pending_results
+                and successful_classifications < _MAX_UNCERTAIN_COMMITS_TO_RESOLVE
+            ):
+                sha, timestamp, files = pending_results.pop(next_result_index)
+                next_result_index += 1
+                if not files:
+                    continue
+                if _process_result(sha, timestamp, files):
+                    successful_classifications += 1
+                    if successful_classifications >= _MAX_UNCERTAIN_COMMITS_TO_RESOLVE:
+                        logger.debug(
+                            "Reached maximum uncertain commits to resolve (%d), stopping further processing",
+                            _MAX_UNCERTAIN_COMMITS_TO_RESOLVE,
+                        )
+                        for pending_future in inflight:
+                            if not pending_future.done():
+                                pending_future.cancel()
+                        inflight.clear()
+                        break
+            if successful_classifications >= _MAX_UNCERTAIN_COMMITS_TO_RESOLVE:
+                break
+
+            if not inflight:
+                break
+
+            done_futures, _ = wait(inflight.keys(), return_when=FIRST_COMPLETED)
+            for future in done_futures:
+                idx, sha, timestamp = inflight.pop(future)
+                try:
+                    files = future.result()
+                except CancelledError:
+                    files = []
+                except Exception as exc:  # pragma: no cover  # noqa: BLE001
                     logger.debug(
-                        "Reached maximum uncertain commits to resolve (%d), stopping further processing",
-                        _MAX_UNCERTAIN_COMMITS_TO_RESOLVE,
+                        "Failed to obtain commit details for %s: %s", sha[:8], exc
                     )
-                    for pending_future in inflight:
-                        if not pending_future.done():
-                            pending_future.cancel()
-                    try:
-                        # Python 3.9+: stop accepting work and cancel not-yet-started futures
-                        executor.shutdown(cancel_futures=True, wait=False)
-                    except TypeError:
-                        # Older Python: best-effort via explicit cancellations above
-                        pass
-                    inflight.clear()
-                    break
+                    files = []
+                pending_results[idx] = (sha, timestamp, files)
 
             _submit_more(executor, inflight)
 
