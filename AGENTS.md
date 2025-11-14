@@ -46,6 +46,8 @@ pip install -r requirements-dev.txt
 
 ## Running Tests
 
+**Note:** Ensure your virtual environment is activated before running tests (see Environment Setup section above).
+
 ### Basic Test Execution
 
 ```bash
