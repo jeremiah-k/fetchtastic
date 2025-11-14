@@ -2855,10 +2855,7 @@ def _enrich_history_from_commit_details(
     )
 
     successful_classifications = 0
-    attempt_cap = min(
-        len(candidates),
-        max(_MAX_UNCERTAIN_COMMITS_TO_RESOLVE * 3, _MAX_UNCERTAIN_COMMITS_TO_RESOLVE),
-    )
+    attempt_cap = min(len(candidates), _MAX_UNCERTAIN_COMMITS_TO_RESOLVE * 3)
     attempted = 0
     next_idx = 0
 
@@ -2887,7 +2884,7 @@ def _enrich_history_from_commit_details(
         _submit_more(executor, inflight)
 
         while inflight:
-            future = next(as_completed(list(inflight.keys())))
+            future = next(as_completed(inflight))
             sha, timestamp = inflight.pop(future)
 
             try:
