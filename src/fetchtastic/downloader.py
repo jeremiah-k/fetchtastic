@@ -32,6 +32,8 @@ from packaging.version import parse as parse_version
 
 # Try to import LegacyVersion for type annotations (available in older packaging versions)
 if TYPE_CHECKING:
+    from concurrent.futures import Future
+
     try:
         from packaging.version import LegacyVersion  # type: ignore
     except ImportError:
@@ -2854,7 +2856,7 @@ def _enrich_history_from_commit_details(
     )
 
     successful_classifications = 0
-    futures: Dict[Any, Tuple[str, str]] = {}
+    futures: Dict["Future", Tuple[str, str]] = {}
     submitted_count = 0
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         stop_requested = False
@@ -2878,10 +2880,15 @@ def _enrich_history_from_commit_details(
             futures[future] = (sha, timestamp)
             submitted_count += 1
 
-        for future in as_completed(futures):
-            sha, timestamp = futures[future]
+        # Process futures dynamically to handle newly added ones
+        while futures:
+            # Get the next completed future from current set
+            completed_future = next(as_completed(futures))
+            sha, timestamp = futures[completed_future]
+            # Remove from dict to avoid processing again
+            del futures[completed_future]
             try:
-                files = future.result()
+                files = completed_future.result()
             except Exception as exc:  # pragma: no cover - defensive guard
                 logger.debug("Failed to obtain commit details for %s: %s", sha[:8], exc)
                 continue
