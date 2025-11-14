@@ -2848,35 +2848,56 @@ def _enrich_history_from_commit_details(
     if not candidates:
         return
 
-    max_to_attempt = min(len(candidates), _MAX_UNCERTAIN_COMMITS_TO_RESOLVE)
-    max_workers = max(1, min(PRERELEASE_DETAIL_FETCH_WORKERS, max_to_attempt))
+    max_workers = max(1, min(PRERELEASE_DETAIL_FETCH_WORKERS, len(candidates)))
     logger.debug(
-        "Fetching commit details for up to %d uncertain prerelease commits using %d worker(s)",
-        max_to_attempt,
+        "Fetching commit details for uncertain prerelease commits using %d worker(s)",
         max_workers,
     )
 
     successful_classifications = 0
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures: Dict["Future", Tuple[str, str]] = {
-            executor.submit(
+    attempt_cap = min(
+        len(candidates),
+        max(_MAX_UNCERTAIN_COMMITS_TO_RESOLVE * 3, _MAX_UNCERTAIN_COMMITS_TO_RESOLVE),
+    )
+    attempted = 0
+    next_idx = 0
+
+    def _submit_more(
+        executor: ThreadPoolExecutor, inflight: Dict["Future", Tuple[str, str]]
+    ) -> None:
+        nonlocal attempted, next_idx
+        while (
+            len(inflight) < max_workers
+            and attempted < attempt_cap
+            and next_idx < len(candidates)
+        ):
+            sha, timestamp = candidates[next_idx]
+            next_idx += 1
+            future = executor.submit(
                 _fetch_commit_files,
                 sha,
                 github_token,
                 allow_env_token,
-            ): (sha, timestamp)
-            for sha, timestamp in candidates[:max_to_attempt]
-        }
+            )
+            inflight[future] = (sha, timestamp)
+            attempted += 1
 
-        for future in as_completed(futures):
-            sha, timestamp = futures[future]
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        inflight: Dict["Future", Tuple[str, str]] = {}
+        _submit_more(executor, inflight)
+
+        while inflight:
+            future = next(as_completed(list(inflight.keys())))
+            sha, timestamp = inflight.pop(future)
+
             try:
                 files = future.result()
             except Exception as exc:  # pragma: no cover  # noqa: BLE001
                 logger.debug("Failed to obtain commit details for %s: %s", sha[:8], exc)
-                continue
+                files = []
 
             if not files:
+                _submit_more(executor, inflight)
                 continue
 
             directory_changes: Dict[str, Dict[str, Any]] = {}
@@ -2904,6 +2925,7 @@ def _enrich_history_from_commit_details(
                     change["removed"] = True
 
             if not directory_changes:
+                _submit_more(executor, inflight)
                 continue
 
             logger.debug(
@@ -2944,10 +2966,13 @@ def _enrich_history_from_commit_details(
                         "Reached maximum uncertain commits to resolve (%d), stopping further processing",
                         _MAX_UNCERTAIN_COMMITS_TO_RESOLVE,
                     )
-                    for pending_future in futures:
+                    for pending_future in inflight:
                         if not pending_future.done():
                             pending_future.cancel()
                     break
+
+            if attempted < attempt_cap:
+                _submit_more(executor, inflight)
 
 
 def _refresh_prerelease_commit_history(
@@ -3044,15 +3069,9 @@ def _get_prerelease_commit_history(
                     age.total_seconds(),
                 )
                 return [dict(entry) for entry in entries]
-            needs_initial_build = (
-                expected_version not in _prerelease_commit_history_cache
-            )
+            needs_initial_build = True
 
-    # Also log initial build message on force refresh if cache is empty
-    if force_refresh and expected_version not in _prerelease_commit_history_cache:
-        needs_initial_build = True
-
-    if needs_initial_build:
+    if needs_initial_build or force_refresh:
         logger.info(
             "Building prerelease history cache for %s (first run may take a couple of minutes)...",
             expected_version,
