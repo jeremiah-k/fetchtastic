@@ -1872,20 +1872,9 @@ def test_get_prerelease_history_logs_initial_build(monkeypatch):
             downloader._get_prerelease_commit_history("2.7.99")
             mock_refresh.assert_called_once()
 
-        logged_messages = []
-        for call in mock_info.call_args_list:
-            if not call.args:
-                continue
-            template = call.args[0]
-            params = call.args[1:]
-            try:
-                message = template % params if params else template
-            except TypeError:
-                message = template
-            logged_messages.append(message)
-        assert any(
-            "Building prerelease history cache for 2.7.99" in message
-            for message in logged_messages
+        mock_info.assert_called_once_with(
+            "Building prerelease history cache for %s (first run may take a couple of minutes)...",
+            "2.7.99",
         )
     finally:
         downloader._prerelease_commit_history_cache.clear()

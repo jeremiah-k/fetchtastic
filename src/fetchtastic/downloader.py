@@ -2830,19 +2830,22 @@ def _enrich_history_from_commit_details(
         allow_env_token (bool): If True, permit using an environment-provided token as a fallback when fetching commit details.
     """
 
-    commits_to_process: List[Dict[str, Any]] = []
+    successful_classifications = 0
     seen_shas: Set[str] = set()
+    processed_commits = 0
 
+    # Process commits in order, but allow processing more if early ones don't produce results
     for commit in reversed(uncertain_commits):
-        # Allow processing more commits when we have many candidates,
-        # to account for ones that won't produce directory changes
-        effective_limit = _MAX_UNCERTAIN_COMMITS_TO_RESOLVE
-        if len(uncertain_commits) > _MAX_UNCERTAIN_COMMITS_TO_RESOLVE * 2:
-            effective_limit = min(
-                _MAX_UNCERTAIN_COMMITS_TO_RESOLVE * 2, len(uncertain_commits)
-            )
+        # Stop if we've successfully classified enough commits
+        if successful_classifications >= _MAX_UNCERTAIN_COMMITS_TO_RESOLVE:
+            break
 
-        if len(commits_to_process) >= effective_limit:
+        # But allow more attempts if we haven't found enough results yet
+        # and we still have more commits to try
+        if (
+            processed_commits >= _MAX_UNCERTAIN_COMMITS_TO_RESOLVE * 2
+            and successful_classifications < _MAX_UNCERTAIN_COMMITS_TO_RESOLVE
+        ):
             break
 
         sha = commit.get("sha")
@@ -2851,34 +2854,9 @@ def _enrich_history_from_commit_details(
             continue
 
         seen_shas.add(sha)
-        commits_to_process.append(
-            {
-                "sha": sha,
-                "timestamp": timestamp,
-            }
-        )
+        processed_commits += 1
 
-    if not commits_to_process:
-        return
-
-    workers = min(PRERELEASE_DETAIL_FETCH_WORKERS, len(commits_to_process))
-    logger.debug(
-        "Fetching commit details for %d uncertain prerelease commits using %d worker(s)",
-        len(commits_to_process),
-        workers,
-    )
-
-    def _fetch_details(
-        commit_info: Dict[str, Any],
-    ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
-        return commit_info, _fetch_commit_files(
-            commit_info["sha"], github_token, allow_env_token
-        )
-
-    with ThreadPoolExecutor(max_workers=workers) as executor:
-        results = list(executor.map(_fetch_details, commits_to_process))
-
-    for commit_info, files in results:
+        files = _fetch_commit_files(sha, github_token, allow_env_token)
         if not files:
             continue
 
@@ -2909,8 +2887,49 @@ def _enrich_history_from_commit_details(
         if not directory_changes:
             continue
 
-        sha = commit_info["sha"]
-        timestamp = commit_info["timestamp"]
+        successful_classifications += 1
+        if successful_classifications > _MAX_UNCERTAIN_COMMITS_TO_RESOLVE:
+            logger.debug(
+                "Reached maximum uncertain commits to resolve (%d), stopping further processing",
+                _MAX_UNCERTAIN_COMMITS_TO_RESOLVE,
+            )
+            break
+
+        logger.debug(
+            "Fetched commit details for %s to classify %d prerelease directories",
+            sha[:8],
+            len(directory_changes),
+        )
+        if not files:
+            continue
+
+        directory_changes: Dict[str, Dict[str, Any]] = {}
+        for file_info in files:
+            path = str(file_info.get("filename") or "")
+            status = str(file_info.get("status") or "").lower()
+            dir_info = _extract_prerelease_dir_info(path, expected_version)
+            if not dir_info:
+                continue
+
+            directory, identifier, short_hash = dir_info
+            change = directory_changes.setdefault(
+                directory,
+                {
+                    "identifier": identifier,
+                    "short_hash": short_hash,
+                    "added": False,
+                    "removed": False,
+                },
+            )
+
+            if status == "added":
+                change["added"] = True
+            elif status == "removed":
+                change["removed"] = True
+
+        if not directory_changes:
+            continue
+
         logger.debug(
             "Fetched commit details for %s to classify %d prerelease directories",
             sha[:8],
