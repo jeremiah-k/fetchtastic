@@ -147,7 +147,7 @@ def test_cache_logging_lines_coverage(populated_releases_cache):
 def test_api_fetch_logging_lines_coverage():
     """
     Exercise the API-fetch path of _get_latest_releases_data for the firmware and Android release endpoints.
-    
+
     Mocks GitHub API responses to return a single page containing a release with a `published_at` timestamp, verifies that each call returns the mocked release, and restores the downloader module's releases cache and loaded flag after the test to avoid global state pollution.
     """
     import fetchtastic.downloader as downloader_module
@@ -164,16 +164,16 @@ def test_api_fetch_logging_lines_coverage():
         def mock_api_request(_url, **kwargs):
             """
             Return a MagicMock response that simulates a paginated GitHub API endpoint.
-            
+
             The mock inspects `kwargs.get("params", {}).get("page", 1)` and returns a response
             whose `json()` yields a list containing a single release object when `page` is 1,
             and an empty list for any subsequent page.
-            
+
             Parameters:
                 _url (str): Ignored; present to match the real request signature.
                 **kwargs: Optional request parameters; expects an optional `params` dict
                     with a numeric `page` key.
-            
+
             Returns:
                 MagicMock: A mock response object whose `json()` method returns the page data
                     described above.
@@ -242,10 +242,10 @@ def test_get_latest_releases_data_paginates():
         def _make_response(items):
             """
             Create a MagicMock response whose .json() method returns the provided items.
-            
+
             Parameters:
                 items (Any): The value to be returned when the response's `json()` method is called.
-            
+
             Returns:
                 MagicMock: A mock response object with `json()` configured to return `items`.
             """
@@ -258,11 +258,11 @@ def test_get_latest_releases_data_paginates():
         def _fake_request(_url, **kwargs):
             """
             Simulate a paginated GitHub releases API request and record which page was requested.
-            
+
             Parameters:
                 _url (str): Ignored request URL (present to match the real request signature).
                 **kwargs: Optional request parameters; if present, `params['page']` selects the page number. Recording of requested page is performed by appending to the outer-scope `call_pages` list.
-            
+
             Returns:
                 response-like: An object whose JSON payload contains a list of release dictionaries for the requested page. Page 1 returns two release items (ids 1 and 2); subsequent pages return a single release item (id 3).
             """
