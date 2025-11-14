@@ -164,15 +164,15 @@ def test_api_fetch_logging_lines_coverage():
         def mock_api_request(_url, **kwargs):
             """
             Create a MagicMock response that mimics a paginated GitHub releases API.
-            
+
             When the provided request params include page=1, the mock's json() returns a list with a single release
             object (tag_name "v2.7.8" and a published_at timestamp). For any other page number the mock's json()
             returns an empty list.
-            
+
             Parameters:
                 _url (str): Ignored; present to match the real request signature.
                 **kwargs: Optional request arguments; may include a `params` dict with a numeric `page` key.
-            
+
             Returns:
                 MagicMock: A mock response whose `json()` method returns the page data described above.
             """
@@ -256,11 +256,11 @@ def test_get_latest_releases_data_paginates():
         def _fake_request(_url, **kwargs):
             """
             Simulate a paginated GitHub releases API request and record the requested page numbers.
-            
+
             Parameters:
                 _url (str): Ignored; present to match the real request signature.
                 **kwargs: Optional request parameters; if `params['page']` is provided that page number is used and appended to the outer-scope `call_pages` list.
-            
+
             Returns:
                 response-like: An object whose `json()` returns a list of release dictionaries for the requested page. Page 1 returns two releases (ids 1 and 2); subsequent pages return a single release (id 3).
             """

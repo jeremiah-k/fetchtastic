@@ -22,7 +22,7 @@ from fetchtastic import downloader
 def mock_commit_history(monkeypatch):
     """
     Replace the prerelease commit-history fetcher with a stub that always returns an empty list for tests.
-    
+
     Patches fetchtastic.downloader._get_prerelease_commit_history to avoid network or VCS access during testing.
     """
     from fetchtastic import downloader
