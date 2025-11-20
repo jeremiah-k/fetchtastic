@@ -1264,6 +1264,245 @@ def test_cleanup_apk_prereleases(tmp_path):
 
 
 @pytest.mark.core_downloads
+def test_process_apk_downloads_enhanced_with_prereleases_enabled(tmp_path):
+    """Test enhanced _process_apk_downloads with prereleases enabled and mixed releases."""
+    from unittest.mock import MagicMock, patch
+
+    from fetchtastic.downloader import _process_apk_downloads
+
+    # Mock release data with both regular and prerelease
+    mock_releases = [
+        {"tag_name": "v2.7.7", "assets": [{"name": "app-release.apk"}]},
+        {"tag_name": "v2.7.7-open.1", "assets": [{"name": "app-open.apk"}]},
+        {"tag_name": "v2.7.6", "assets": [{"name": "app-older.apk"}]},
+        {"tag_name": "v2.7.7-open.2", "assets": [{"name": "app-open2.apk"}]},
+    ]
+
+    config = {
+        "SAVE_APKS": True,
+        "SELECTED_APK_ASSETS": ["app-release.apk", "app-open.apk"],
+        "ANDROID_VERSIONS_TO_KEEP": 2,
+        "CHECK_APK_PRERELEASES": True,
+    }
+
+    paths_and_urls = {
+        "cache_dir": str(tmp_path / "cache"),
+        "apks_dir": str(tmp_path / "apks"),
+    }
+
+    with (
+        patch(
+            "fetchtastic.downloader._get_latest_releases_data",
+            return_value=mock_releases,
+        ),
+        patch("fetchtastic.downloader.check_and_download") as mock_download,
+        patch("fetchtastic.downloader._summarise_release_scan") as mock_summarise,
+    ):
+        mock_download.return_value = (["v2.7.7"], ["v2.7.7"], [])
+
+        result = _process_apk_downloads(config, paths_and_urls, force_refresh=False)
+
+        # Verify regular releases and prereleases were separated correctly
+        mock_summarise.assert_called_once_with("Android APK", 2, 2)
+
+        # Verify check_and_download was called twice (once for regular, once for prereleases)
+        assert mock_download.call_count == 2
+
+        # Verify calls were made with correct parameters
+        regular_call = mock_download.call_args_list[0]
+        prerelease_call = mock_download.call_args_list[1]
+
+        # Regular releases call should only include regular releases
+        regular_releases_arg = regular_call[0][0]
+        assert len(regular_releases_arg) == 2  # v2.7.7 and v2.7.6
+        assert all(
+            not r["tag_name"].endswith("-open.1") or r["tag_name"].endswith("-open.2")
+            for r in regular_releases_arg
+        )
+
+        # Prereleases call should include only prereleases
+        prerelease_releases_arg = prerelease_call[0][0]
+        assert len(prerelease_releases_arg) == 2  # v2.7.7-open.1 and v2.7.7-open.2
+        assert all(
+            r["tag_name"].endswith("-open.1") or r["tag_name"].endswith("-open.2")
+            for r in prerelease_releases_arg
+        )
+
+        # Verify result includes latest prerelease version
+        downloaded_apks, new_versions, failed, latest_version, latest_prerelease = (
+            result
+        )
+        assert latest_prerelease == "v2.7.7-open.1"
+
+
+@pytest.mark.core_downloads
+def test_process_apk_downloads_enhanced_with_prereleases_disabled(tmp_path):
+    """Test enhanced _process_apk_downloads with prereleases disabled."""
+    from unittest.mock import MagicMock, patch
+
+    from fetchtastic.downloader import _process_apk_downloads
+
+    # Mock release data with both regular and prerelease
+    mock_releases = [
+        {"tag_name": "v2.7.7", "assets": [{"name": "app-release.apk"}]},
+        {"tag_name": "v2.7.7-open.1", "assets": [{"name": "app-open.apk"}]},
+        {"tag_name": "v2.7.6", "assets": [{"name": "app-older.apk"}]},
+    ]
+
+    config = {
+        "SAVE_APKS": True,
+        "SELECTED_APK_ASSETS": ["app-release.apk"],
+        "ANDROID_VERSIONS_TO_KEEP": 2,
+        "CHECK_APK_PRERELEASES": False,  # Disabled
+    }
+
+    paths_and_urls = {
+        "cache_dir": str(tmp_path / "cache"),
+        "apks_dir": str(tmp_path / "apks"),
+    }
+
+    with (
+        patch(
+            "fetchtastic.downloader._get_latest_releases_data",
+            return_value=mock_releases,
+        ),
+        patch("fetchtastic.downloader.check_and_download") as mock_download,
+        patch("fetchtastic.downloader._summarise_release_scan") as mock_summarise,
+    ):
+        mock_download.return_value = (["v2.7.7"], ["v2.7.7"], [])
+
+        result = _process_apk_downloads(config, paths_and_urls, force_refresh=False)
+
+        # Verify regular releases were processed
+        mock_summarise.assert_called_once_with("Android APK", 2, 2)
+
+        # Verify check_and_download was called only once (for regular releases only)
+        assert mock_download.call_count == 1
+
+        # Verify call was made with only regular releases
+        regular_releases_arg = mock_download.call_args_list[0][0][0]
+        assert len(regular_releases_arg) == 2  # v2.7.7 and v2.7.6
+        assert all(not r["tag_name"].endswith("-open.1") for r in regular_releases_arg)
+
+        # Verify result includes no latest prerelease version
+        downloaded_apks, new_versions, failed, latest_version, latest_prerelease = (
+            result
+        )
+        assert latest_prerelease is None
+
+
+@pytest.mark.core_downloads
+def test_process_apk_downloads_enhanced_no_regular_releases(tmp_path):
+    """Test enhanced _process_apk_downloads with only prereleases available."""
+    from unittest.mock import MagicMock, patch
+
+    from fetchtastic.downloader import _process_apk_downloads
+
+    # Mock release data with only prereleases
+    mock_releases = [
+        {"tag_name": "v2.7.7-open.1", "assets": [{"name": "app-open.apk"}]},
+        {"tag_name": "v2.7.7-open.2", "assets": [{"name": "app-open2.apk"}]},
+    ]
+
+    config = {
+        "SAVE_APKS": True,
+        "SELECTED_APK_ASSETS": ["app-open.apk"],
+        "ANDROID_VERSIONS_TO_KEEP": 2,
+        "CHECK_APK_PRERELEASES": True,
+    }
+
+    paths_and_urls = {
+        "cache_dir": str(tmp_path / "cache"),
+        "apks_dir": str(tmp_path / "apks"),
+    }
+
+    with (
+        patch(
+            "fetchtastic.downloader._get_latest_releases_data",
+            return_value=mock_releases,
+        ),
+        patch("fetchtastic.downloader.check_and_download") as mock_download,
+        patch("fetchtastic.downloader._summarise_release_scan") as mock_summarise,
+    ):
+        mock_download.return_value = (["v2.7.7-open.1"], ["v2.7.7-open.1"], [])
+
+        result = _process_apk_downloads(config, paths_and_urls, force_refresh=False)
+
+        # Verify no regular releases summary was called
+        mock_summarise.assert_not_called()
+
+        # Verify check_and_download was called only once (for prereleases only)
+        assert mock_download.call_count == 1
+
+        # Verify call was made with only prereleases
+        prerelease_releases_arg = mock_download.call_args_list[0][0][0]
+        assert len(prerelease_releases_arg) == 2  # Both prereleases
+        assert all(
+            r["tag_name"].endswith("-open.1") or r["tag_name"].endswith("-open.2")
+            for r in prerelease_releases_arg
+        )
+
+        # Verify result includes latest prerelease version but no regular version
+        downloaded_apks, new_versions, failed, latest_version, latest_prerelease = (
+            result
+        )
+        assert latest_version is None  # No regular releases
+        assert latest_prerelease == "v2.7.7-open.1"
+
+
+@pytest.mark.core_downloads
+def test_process_apk_downloads_enhanced_prerelease_cleanup(tmp_path):
+    """Test enhanced _process_apk_downloads calls cleanup when full release available."""
+    from unittest.mock import MagicMock, patch
+
+    from fetchtastic.downloader import _cleanup_apk_prereleases, _process_apk_downloads
+
+    # Mock release data with both regular and prerelease
+    mock_releases = [
+        {"tag_name": "v2.7.7", "assets": [{"name": "app-release.apk"}]},
+        {"tag_name": "v2.7.7-open.1", "assets": [{"name": "app-open.apk"}]},
+        {"tag_name": "v2.7.6", "assets": [{"name": "app-older.apk"}]},
+    ]
+
+    config = {
+        "SAVE_APKS": True,
+        "SELECTED_APK_ASSETS": ["app-release.apk"],
+        "ANDROID_VERSIONS_TO_KEEP": 2,
+        "CHECK_APK_PRERELEASES": True,
+    }
+
+    paths_and_urls = {
+        "cache_dir": str(tmp_path / "cache"),
+        "apks_dir": str(tmp_path / "apks"),
+    }
+
+    with (
+        patch(
+            "fetchtastic.downloader._get_latest_releases_data",
+            return_value=mock_releases,
+        ),
+        patch(
+            "fetchtastic.downloader.check_and_download",
+            return_value=(["v2.7.7"], ["v2.7.7"], []),
+        ),
+        patch("fetchtastic.downloader._summarise_release_scan"),
+        patch("fetchtastic.downloader._cleanup_apk_prereleases") as mock_cleanup,
+    ):
+        result = _process_apk_downloads(config, paths_and_urls, force_refresh=False)
+
+        # Verify cleanup was called because we have full releases
+        mock_cleanup.assert_called_once()
+
+        # Verify cleanup was called with correct parameters
+        cleanup_call_args = mock_cleanup.call_args[0]
+        expected_prerelease_dir = str(tmp_path / "apks" / "prereleases")
+        expected_full_release_tag = "v2.7.7"
+
+        assert cleanup_call_args[0] == expected_prerelease_dir
+        assert cleanup_call_args[1] == expected_full_release_tag
+
+
+@pytest.mark.core_downloads
 def test_parse_json_formats_error_handling():
     """Test JSON parsing functions with error handling."""
     from fetchtastic.downloader import _parse_legacy_json_format, _parse_new_json_format
