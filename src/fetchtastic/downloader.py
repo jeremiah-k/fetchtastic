@@ -52,6 +52,7 @@ from fetchtastic.constants import (
     APK_PRERELEASES_DIR_NAME,
     COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS,
     DEFAULT_ANDROID_VERSIONS_TO_KEEP,
+    DEFAULT_CHECK_APK_PRERELEASES,
     DEFAULT_FIRMWARE_VERSIONS_TO_KEEP,
     DEFAULT_PRERELEASE_ACTIVE,
     DEFAULT_PRERELEASE_COMMITS_TO_FETCH,
@@ -4543,8 +4544,8 @@ def _download_release_type(
     cache_dir: str,
     download_dir: str,
     keep_count: int,
-    exclude_patterns: List[str],
-    selected_patterns: List[str],
+    exclude_patterns: Optional[List[str]],
+    selected_patterns: Optional[List[str]],
     force_refresh: bool = False,
 ) -> Tuple[List[str], List[str], List[Dict[str, str]]]:
     """
@@ -4577,9 +4578,9 @@ def _download_release_type(
         download_dir,
         keep_count,
         [],  # no extract_patterns for APKs
-        selected_patterns=selected_patterns,
+        selected_patterns=selected_patterns or [],
         auto_extract=False,
-        exclude_patterns=exclude_patterns,
+        exclude_patterns=exclude_patterns or [],
         force_refresh=force_refresh,
     )
 
@@ -4653,8 +4654,7 @@ def _process_apk_downloads(
             regular_releases = []
             prerelease_releases = []
             for release in latest_android_releases:
-                tag_name = release.get("tag_name", "")
-                if _is_apk_prerelease(tag_name):
+                if _is_apk_prerelease(release):
                     prerelease_releases.append(release)
                 else:
                     regular_releases.append(release)
@@ -4715,7 +4715,10 @@ def _process_apk_downloads(
             latest_apk_version = None
 
         # Handle prereleases if enabled
-        if config.get("CHECK_APK_PRERELEASES", True) and prerelease_releases:
+        if (
+            config.get("CHECK_APK_PRERELEASES", DEFAULT_CHECK_APK_PRERELEASES)
+            and prerelease_releases
+        ):
             prerelease_dir = os.path.join(
                 paths_and_urls["apks_dir"], APK_PRERELEASES_DIR_NAME
             )
@@ -5122,17 +5125,39 @@ def cleanup_old_versions(directory: str, releases_to_keep: List[str]) -> None:
                 logger.info(f"Removed directory and its contents: {version_path}")
 
 
-def _is_apk_prerelease(tag_name: str) -> bool:
+def _is_apk_prerelease(release: Dict[str, Any]) -> bool:
     """
-    Determine if an APK release tag represents a prerelease.
+    Determine if an APK release represents a prerelease.
 
-    Prereleases are identified by containing '-open' or '-closed' in the tag name.
+    Prereleases are identified by either:
+    1. Containing '-open' or '-closed' in the tag name (legacy pattern)
+    2. GitHub's prerelease flag being True (standard GitHub prereleases)
 
     Parameters:
-        tag_name (str): The release tag name to check.
+        release (Dict[str, Any]): The release object containing tag_name and prerelease fields.
 
     Returns:
-        bool: True if the tag represents a prerelease, False otherwise.
+        bool: True if the release represents a prerelease, False otherwise.
+    """
+    tag_name = release.get("tag_name", "")
+    # Check legacy pattern (-open/-closed) OR GitHub's prerelease flag
+    is_legacy_prerelease = "-open" in tag_name.lower() or "-closed" in tag_name.lower()
+    is_github_prerelease = release.get("prerelease", False)
+    return is_legacy_prerelease or is_github_prerelease
+
+
+def _is_apk_prerelease_by_name(tag_name: str) -> bool:
+    """
+    Determine if an APK tag name represents a prerelease (for directory name checks).
+
+    This function only checks the tag name pattern since directory names don't have
+    the GitHub prerelease flag.
+
+    Parameters:
+        tag_name (str): The tag name to check.
+
+    Returns:
+        bool: True if the tag name represents a prerelease, False otherwise.
     """
     return "-open" in tag_name.lower() or "-closed" in tag_name.lower()
 
@@ -5160,7 +5185,7 @@ def _cleanup_apk_prereleases(
             item_path = os.path.join(prerelease_dir, item)
             if (
                 os.path.isdir(item_path)
-                and _is_apk_prerelease(item)
+                and _is_apk_prerelease_by_name(item)
                 and item.lstrip("v").startswith(f"{base_version}-")
             ):
                 if _safe_rmtree(item_path, prerelease_dir, item):

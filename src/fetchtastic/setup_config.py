@@ -16,7 +16,11 @@ import platformdirs
 import yaml
 
 from fetchtastic import menu_apk, menu_firmware
-from fetchtastic.constants import CONFIG_FILE_NAME, MESHTASTIC_DIR_NAME
+from fetchtastic.constants import (
+    CONFIG_FILE_NAME,
+    DEFAULT_CHECK_APK_PRERELEASES,
+    MESHTASTIC_DIR_NAME,
+)
 
 # Recommended default exclude patterns for firmware extraction
 # These patterns exclude specialized variants and debug files that most users don't need
@@ -555,8 +559,8 @@ def _setup_downloads(
     # --- APK Pre-release Configuration ---
     if save_apks and (not is_partial_run or wants("android")):
         check_apk_prereleases_current = config.get(
-            "CHECK_APK_PRERELEASES", True
-        )  # Default to True for APKs
+            "CHECK_APK_PRERELEASES", DEFAULT_CHECK_APK_PRERELEASES
+        )  # Default to True for APKs (lower risk than firmware prereleases)
         check_apk_prereleases_default = "yes" if check_apk_prereleases_current else "no"
         check_apk_prereleases_input = (
             input(

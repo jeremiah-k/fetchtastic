@@ -1223,20 +1223,29 @@ def test_cleanup_legacy_files(tmp_path):
 
 def test_is_apk_prerelease():
     """Test _is_apk_prerelease function correctly identifies prereleases."""
-    from fetchtastic.downloader import _is_apk_prerelease
+    from fetchtastic.downloader import _is_apk_prerelease, _is_apk_prerelease_by_name
 
-    # Test prerelease tags
-    assert _is_apk_prerelease("v2.7.7-open.1") is True
-    assert _is_apk_prerelease("v2.7.7-open.4") is True
-    assert _is_apk_prerelease("v2.7.7-closed.1") is True
-    assert _is_apk_prerelease("v2.7.7-OPEN.1") is True  # Case insensitive
-    assert _is_apk_prerelease("v2.7.7-CLOSED.1") is True  # Case insensitive
+    # Test legacy prerelease tags with string-based function
+    assert _is_apk_prerelease_by_name("v2.7.7-open.1") is True
+    assert _is_apk_prerelease_by_name("v2.7.7-open.4") is True
+    assert _is_apk_prerelease_by_name("v2.7.7-closed.1") is True
+    assert _is_apk_prerelease_by_name("v2.7.7-OPEN.1") is True  # Case insensitive
+    assert _is_apk_prerelease_by_name("v2.7.7-CLOSED.1") is True  # Case insensitive
 
-    # Test regular releases
-    assert _is_apk_prerelease("v2.7.7") is False
-    assert _is_apk_prerelease("v2.7.6") is False
-    assert _is_apk_prerelease("v2.7.7-beta") is False  # Different suffix
-    assert _is_apk_prerelease("v2.7.7-rc1") is False  # Different suffix
+    # Test regular releases with string-based function
+    assert _is_apk_prerelease_by_name("v2.7.7") is False
+    assert _is_apk_prerelease_by_name("v2.7.6") is False
+    assert _is_apk_prerelease_by_name("v2.7.7-beta") is False  # Different suffix
+    assert _is_apk_prerelease_by_name("v2.7.7-rc1") is False  # Different suffix
+
+    # Test with release objects (new functionality)
+    legacy_prerelease = {"tag_name": "v2.7.7-open.1", "prerelease": False}
+    github_prerelease = {"tag_name": "v2.7.8-beta1", "prerelease": True}
+    regular_release = {"tag_name": "v2.7.7", "prerelease": False}
+
+    assert _is_apk_prerelease(legacy_prerelease) is True  # Legacy pattern
+    assert _is_apk_prerelease(github_prerelease) is True  # GitHub prerelease flag
+    assert _is_apk_prerelease(regular_release) is False  # Regular release
 
 
 def test_cleanup_apk_prereleases(tmp_path):
