@@ -4410,7 +4410,7 @@ def _process_firmware_downloads(
     new_firmware_versions: List[str] = []
     all_failed_firmware_downloads: List[Dict[str, str]] = []
     latest_firmware_version: Optional[str] = None
-    latest_prerelease_version: Optional[str] = None
+    latest_firmware_prerelease_version: Optional[str] = None
 
     if config.get("SAVE_FIRMWARE", False) and config.get(
         "SELECTED_FIRMWARE_ASSETS", []
@@ -4520,7 +4520,7 @@ def _process_firmware_downloads(
                     allow_env_token=config.get("ALLOW_ENV_TOKEN", True),
                 )
                 _display_prerelease_summary(tracking_info)
-                latest_prerelease_version = (
+                latest_firmware_prerelease_version = (
                     tracking_info.get("latest_prerelease")
                     if isinstance(tracking_info, dict)
                     else None
@@ -4535,7 +4535,7 @@ def _process_firmware_downloads(
         new_firmware_versions,
         all_failed_firmware_downloads,
         latest_firmware_version,
-        latest_prerelease_version,
+        latest_firmware_prerelease_version,
     )
 
 
@@ -4731,15 +4731,14 @@ def _process_apk_downloads(
             all_failed_apk_downloads.extend(failed_prerelease_downloads_details)
 
             # Remove prereleases if we have a full release
-            if has_full_release and prerelease_releases:
+            if has_full_release:
                 _cleanup_apk_prereleases(
                     prerelease_dir,
-                    regular_releases[0].get("tag_name") if regular_releases else None,
+                    regular_releases[0].get("tag_name"),
                 )
-
             # Set latest prerelease version
             latest_prerelease_version = prerelease_releases[0].get("tag_name")
-
+            latest_prerelease_version = prerelease_releases[0].get("tag_name")
     elif not config.get("SELECTED_APK_ASSETS", []):
         logger.info("No APK assets selected. Skipping APK download.")
 
@@ -4764,7 +4763,8 @@ def _finalize_and_notify(
     update_available: bool,
     latest_firmware_version: Optional[str] = None,
     latest_apk_version: Optional[str] = None,
-    latest_prerelease_version: Optional[str] = None,
+    latest_firmware_prerelease_version: Optional[str] = None,
+    latest_apk_prerelease_version: Optional[str] = None,
 ) -> None:
     """
     Finalize the run by logging a concise summary, showing upgrade guidance if applicable, and sending NTFY notifications about download results.
@@ -4781,7 +4781,8 @@ def _finalize_and_notify(
         update_available (bool): True when a newer Fetchtastic release is available and an upgrade message should be shown.
         latest_firmware_version (Optional[str]): Canonical latest firmware version discovered, if available.
         latest_apk_version (Optional[str]): Canonical latest APK version discovered, if available.
-        latest_prerelease_version (Optional[str]): Latest prerelease identifier discovered, if available.
+        latest_firmware_prerelease_version (Optional[str]): Latest firmware prerelease identifier discovered, if available.
+        latest_apk_prerelease_version (Optional[str]): Latest APK prerelease identifier discovered, if available.
 
     Side effects:
         - Logs summary and upgrade guidance to the configured logger.
@@ -4803,8 +4804,10 @@ def _finalize_and_notify(
         logger.info(f"Latest firmware: {latest_firmware_version}")
     if latest_apk_version:
         logger.info(f"Latest APK: {latest_apk_version}")
-    if latest_prerelease_version:
-        logger.info(f"Latest prerelease: {latest_prerelease_version}")
+    if latest_firmware_prerelease_version:
+        logger.info(f"Latest firmware prerelease: {latest_firmware_prerelease_version}")
+    if latest_apk_prerelease_version:
+        logger.info(f"Latest APK prerelease: {latest_apk_prerelease_version}")
 
     if update_available and latest_version:
         upgrade_cmd: str = get_upgrade_command()
@@ -6071,14 +6074,14 @@ def main(force_refresh: bool = False) -> None:
         new_firmware_versions,
         failed_firmware_list,
         latest_firmware_version,
-        latest_prerelease_version,
+        latest_firmware_prerelease_version,
     ) = _process_firmware_downloads(config, paths_and_urls, force_refresh)
     (
         downloaded_apks,
         new_apk_versions,
         failed_apk_list,
         latest_apk_version,
-        latest_prerelease_version,
+        latest_apk_prerelease_version,
     ) = _process_apk_downloads(config, paths_and_urls, force_refresh)
 
     # Clean up legacy files - we fetch fresh data instead of migrating old data
@@ -6128,7 +6131,8 @@ def main(force_refresh: bool = False) -> None:
         update_available,
         latest_firmware_version,
         latest_apk_version,
-        latest_prerelease_version,
+        latest_firmware_prerelease_version,
+        latest_apk_prerelease_version,
     )
 
     # Log API request summary at debug level
