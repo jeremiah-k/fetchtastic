@@ -4667,10 +4667,7 @@ def _process_apk_downloads(
             os.makedirs(prerelease_dir, exist_ok=True)
 
             # Check if we have a full release that would make prereleases obsolete
-            has_full_release = any(
-                not _is_apk_prerelease(r.get("tag_name", ""))
-                for r in latest_android_releases[:keep_count_apk]
-            )
+            has_full_release = bool(regular_releases)
 
             (
                 prerelease_downloaded,
