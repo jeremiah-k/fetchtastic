@@ -936,6 +936,7 @@ def test_run_setup_first_run_termux(  # noqa: ARG001
         mock_yaml_dump.assert_called()
         saved_config = mock_yaml_dump.call_args[0][0]
         assert saved_config["WIFI_ONLY"] is True
+        assert saved_config["CHECK_APK_PRERELEASES"] is True
 
 
 @pytest.mark.configuration
@@ -1110,7 +1111,7 @@ def test_run_setup_partial_firmware_section(
     mock_menu_firmware.reset_mock()
     mock_menu_apk.reset_mock()
 
-    mock_input.side_effect = ["y", "y", "4", "y", "esp32- rak4631-", "y", "y", "", "y"]
+    mock_input.side_effect = ["y", "y", "4", "y", "esp32- rak4631-", "y"]
 
     with patch("builtins.open", mock_open()):
         setup_config.run_setup(sections=["firmware"])
