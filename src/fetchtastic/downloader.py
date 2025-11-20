@@ -4724,20 +4724,54 @@ def _process_apk_downloads(
             # Check if we have a full release that would make prereleases obsolete
             has_full_release = bool(regular_releases)
 
+            # Filter out obsolete prereleases before downloading to avoid unnecessary work
+            releases_to_download = prerelease_releases
+            if has_full_release:
+                latest_full_release_tag = regular_releases[0].get("tag_name")
+                if latest_full_release_tag:
+                    base_version = latest_full_release_tag.lstrip("v")
+                    # Filter out prereleases that are superseded by the latest full release
+                    releases_to_download = [
+                        r
+                        for r in prerelease_releases
+                        if not r.get("tag_name", "")
+                        .lstrip("v")
+                        .startswith(f"{base_version}-")
+                    ]
+                    obsolete_count = len(prerelease_releases) - len(
+                        releases_to_download
+                    )
+                    if obsolete_count > 0:
+                        logger.info(
+                            "Skipping download of %d APK prerelease(s) superseded by release %s.",
+                            obsolete_count,
+                            latest_full_release_tag,
+                        )
+
             (
                 prerelease_downloaded,
                 prerelease_new_versions_list,
                 failed_prerelease_downloads_details,
-            ) = _download_release_type(
-                prerelease_releases,
-                "Android APK Prerelease",
-                paths_and_urls["cache_dir"],
-                prerelease_dir,
-                len(prerelease_releases),  # Download all prereleases
-                config.get("EXCLUDE_PATTERNS", []),  # type: ignore[arg-type]
-                selected_patterns=config.get("SELECTED_APK_ASSETS", []),
-                force_refresh=force_refresh,
+            ) = (
+                [],
+                [],
+                [],
             )
+            if releases_to_download:
+                (
+                    prerelease_downloaded,
+                    prerelease_new_versions_list,
+                    failed_prerelease_downloads_details,
+                ) = _download_release_type(
+                    releases_to_download,
+                    "Android APK Prerelease",
+                    paths_and_urls["cache_dir"],
+                    prerelease_dir,
+                    len(releases_to_download),
+                    config.get("EXCLUDE_PATTERNS", []),  # type: ignore[arg-type]
+                    selected_patterns=config.get("SELECTED_APK_ASSETS", []),
+                    force_refresh=force_refresh,
+                )
             downloaded_apks.extend(prerelease_downloaded)
             new_apk_versions.extend(prerelease_new_versions_list)
             all_failed_apk_downloads.extend(failed_prerelease_downloads_details)
@@ -4748,8 +4782,9 @@ def _process_apk_downloads(
                     prerelease_dir,
                     regular_releases[0].get("tag_name"),
                 )
-            # Set latest prerelease version
-            latest_prerelease_version = prerelease_releases[0].get("tag_name")
+            # Set latest prerelease version only if we have prereleases to download
+            if releases_to_download:
+                latest_prerelease_version = releases_to_download[0].get("tag_name")
     elif not config.get("SELECTED_APK_ASSETS", []):
         logger.info("No APK assets selected. Skipping APK download.")
 

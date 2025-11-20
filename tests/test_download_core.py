@@ -1306,12 +1306,11 @@ def test_process_apk_downloads_enhanced_with_prereleases_enabled(tmp_path):
         # Verify regular releases and prereleases were separated correctly
         mock_summarise.assert_called_once_with("Android APK", 2, 2)
 
-        # Verify check_and_download was called twice (once for regular, once for prereleases)
-        assert mock_download.call_count == 2
+        # Verify check_and_download was called once (only for regular releases, prereleases filtered out)
+        assert mock_download.call_count == 1
 
-        # Verify calls were made with correct parameters
+        # Verify call was made with correct parameters
         regular_call = mock_download.call_args_list[0]
-        prerelease_call = mock_download.call_args_list[1]
 
         # Regular releases call should only include non-prerelease tags
         regular_releases_arg = regular_call[0][0]
@@ -1322,15 +1321,7 @@ def test_process_apk_downloads_enhanced_with_prereleases_enabled(tmp_path):
             for r in regular_releases_arg
         )
 
-        # Prereleases call should include only prereleases
-        prerelease_releases_arg = prerelease_call[0][0]
-        assert len(prerelease_releases_arg) == 2  # v2.7.7-open.1 and v2.7.7-open.2
-        assert all(
-            r["tag_name"].endswith("-open.1") or r["tag_name"].endswith("-open.2")
-            for r in prerelease_releases_arg
-        )
-
-        # Verify result includes latest prerelease version
+        # Verify result includes no latest prerelease version (filtered out)
         (
             _downloaded_apks,
             _new_versions,
@@ -1338,7 +1329,7 @@ def test_process_apk_downloads_enhanced_with_prereleases_enabled(tmp_path):
             _latest_version,
             latest_prerelease,
         ) = result
-        assert latest_prerelease == "v2.7.7-open.1"
+        assert latest_prerelease is None
 
 
 @pytest.mark.core_downloads
