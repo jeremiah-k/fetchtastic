@@ -83,10 +83,12 @@ from fetchtastic.constants import (
     PRERELEASE_DELETE_COMMIT_PATTERN,
     PRERELEASE_DETAIL_ATTEMPT_MULTIPLIER,
     PRERELEASE_DETAIL_FETCH_WORKERS,
+    PRERELEASE_DIR,
     PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
     PRERELEASE_TRACKING_JSON_FILE,
     RELEASE_SCAN_COUNT,
     RELEASES_CACHE_EXPIRY_HOURS,
+    REPO_DOWNLOADS_DIR,
     SHELL_SCRIPT_EXTENSION,
     VERSION_REGEX_PATTERN,
     ZIP_EXTENSION,
@@ -820,7 +822,7 @@ def _get_json_release_basename(release_type: str) -> str:
     if "firmware" in release_type_lower:
         return LATEST_FIRMWARE_RELEASE_JSON_FILE
     # Check for APK prerelease
-    if "android prerelease" in release_type_lower:
+    if "android apk prerelease" in release_type_lower:
         return LATEST_ANDROID_PRERELEASE_JSON_FILE
     # Check for APK stable releases
     if "android" in release_type_lower:
@@ -4619,27 +4621,40 @@ def _process_apk_downloads(
         # Increase scan count so prereleases cannot starve stable releases,
         # even when APK prerelease downloads are disabled.
         base_scan_count = config.get("ANDROID_VERSIONS_TO_KEEP", RELEASE_SCAN_COUNT)
-        # Use a larger multiplier to ensure we get enough stable releases
-        # even when there are many prereleases newer than stable releases
-        scan_count = base_scan_count * 4
+        keep_count_apk = base_scan_count
 
-        latest_android_releases: List[Dict[str, Any]] = _get_latest_releases_data(
-            paths_and_urls["android_releases_url"],
-            scan_count,
-            config.get("GITHUB_TOKEN"),
-            force_refresh=force_refresh,
-            release_type="Android APK",
-        )
+        # Use improved scan logic to prevent stable APK starvation
+        scan_count = base_scan_count * 2
+        max_scan = GITHUB_MAX_PER_PAGE
+        latest_android_releases: List[Dict[str, Any]] = []
+        regular_releases: List[Dict[str, Any]] = []
+        prerelease_releases: List[Dict[str, Any]] = []
 
-        # Separate prereleases from regular releases
-        regular_releases = []
-        prerelease_releases = []
-        for release in latest_android_releases:
-            tag_name = release.get("tag_name", "")
-            if _is_apk_prerelease(tag_name):
-                prerelease_releases.append(release)
-            else:
-                regular_releases.append(release)
+        while scan_count <= max_scan:
+            latest_android_releases = _get_latest_releases_data(
+                paths_and_urls["android_releases_url"],
+                scan_count,
+                config.get("GITHUB_TOKEN"),
+                force_refresh=force_refresh,
+                release_type="Android APK",
+            )
+            regular_releases = []
+            prerelease_releases = []
+            for release in latest_android_releases:
+                tag_name = release.get("tag_name", "")
+                if _is_apk_prerelease(tag_name):
+                    prerelease_releases.append(release)
+                else:
+                    regular_releases.append(release)
+
+            if (
+                len(regular_releases) >= keep_count_apk
+                or len(latest_android_releases) < scan_count
+            ):
+                break
+
+            # Not enough stable releases yet and there might be more history; widen the window
+            scan_count = min(max_scan, scan_count * 2)
 
         keep_count_apk = config.get(
             "ANDROID_VERSIONS_TO_KEEP", DEFAULT_ANDROID_VERSIONS_TO_KEEP
@@ -4663,7 +4678,7 @@ def _process_apk_downloads(
                     paths_and_urls["cache_dir"],
                     paths_and_urls["apks_dir"],
                     keep_count_apk,
-                    [],
+                    config.get("EXCLUDE_PATTERNS", []),  # type: ignore[arg-type]
                     selected_patterns=config.get("SELECTED_APK_ASSETS", []),
                     force_refresh=force_refresh,
                 )
@@ -4692,16 +4707,13 @@ def _process_apk_downloads(
                 paths_and_urls["cache_dir"],
                 prerelease_dir,
                 len(prerelease_releases),  # Download all prereleases
-                [],
+                config.get("EXCLUDE_PATTERNS", []),  # type: ignore[arg-type]
                 selected_patterns=config.get("SELECTED_APK_ASSETS", []),
                 force_refresh=force_refresh,
             )
             downloaded_apks.extend(prerelease_downloaded)
             new_apk_versions.extend(prerelease_new_versions_list)
             all_failed_apk_downloads.extend(failed_prerelease_downloads_details)
-
-            # Any non-prerelease in the scanned set is enough to mark prereleases obsolete
-            has_full_release = bool(regular_releases)
 
             # Remove prereleases if we have a full release
             if has_full_release and prerelease_releases:
@@ -5028,7 +5040,7 @@ def cleanup_old_versions(directory: str, releases_to_keep: List[str]) -> None:
         directory (str): Path whose immediate subdirectories represent versioned releases.
         releases_to_keep (List[str]): Basenames of subdirectories that must be preserved.
     """
-    excluded_dirs: List[str] = ["repo-dls", "prerelease", "prereleases"]
+    excluded_dirs: List[str] = [REPO_DOWNLOADS_DIR, PRERELEASE_DIR, "prereleases"]
     versions: List[str] = [
         d for d in os.listdir(directory) if os.path.isdir(os.path.join(directory, d))
     ]

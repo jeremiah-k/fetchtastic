@@ -1106,21 +1106,7 @@ def test_run_setup_partial_firmware_section(
     mock_menu_firmware.reset_mock()
     mock_menu_apk.reset_mock()
 
-    mock_input.side_effect = [
-        "y",
-        "y",
-        "4",
-        "y",
-        "esp32- rak4631-",
-        "y",
-        "y",
-        "",
-        "y",
-        "n",  # Would you like to set up a GitHub token now?
-        "",  # Extra input buffer
-        "",  # Extra input buffer
-        "",  # Extra input buffer
-    ]
+    mock_input.side_effect = ["y", "y", "4", "y", "esp32- rak4631-", "y", "y", "", "y"]
 
     with patch("builtins.open", mock_open()):
         setup_config.run_setup(sections=["firmware"])
