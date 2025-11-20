@@ -2530,6 +2530,8 @@ def test_safe_rmtree():
             "os.path.commonpath",
             side_effect=ValueError("Paths don't have the same drive"),
         ),
+        patch("os.path.isdir", return_value=True),
+        patch("shutil.rmtree") as mock_rmtree,
     ):
         # Setup mock to return different paths (security check failure)
         mock_realpath.side_effect = ["/base", "/malicious/path"]
@@ -2537,6 +2539,7 @@ def test_safe_rmtree():
         # Test security check failure
         result = _safe_rmtree("/test/path", "/base", "test_item")
         assert result is False
+        mock_rmtree.assert_not_called()
 
 
 @pytest.mark.core_downloads
