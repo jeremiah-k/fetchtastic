@@ -6073,9 +6073,13 @@ def main(force_refresh: bool = False) -> None:
         latest_firmware_version,
         latest_prerelease_version,
     ) = _process_firmware_downloads(config, paths_and_urls, force_refresh)
-    downloaded_apks, new_apk_versions, failed_apk_list, latest_apk_version, _ = (
-        _process_apk_downloads(config, paths_and_urls, force_refresh)
-    )
+    (
+        downloaded_apks,
+        new_apk_versions,
+        failed_apk_list,
+        latest_apk_version,
+        latest_prerelease_version,
+    ) = _process_apk_downloads(config, paths_and_urls, force_refresh)
 
     # Clean up legacy files - we fetch fresh data instead of migrating old data
     logger.info("Cleaning up legacy files")

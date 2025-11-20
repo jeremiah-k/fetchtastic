@@ -1111,7 +1111,7 @@ def test_run_setup_partial_firmware_section(
     mock_menu_firmware.reset_mock()
     mock_menu_apk.reset_mock()
 
-    mock_input.side_effect = ["y", "y", "4", "y", "esp32- rak4631-", "y"]
+    mock_input.side_effect = ["y", "3", "y", "y", "esp32- rak4631-", "y"]
 
     with patch("builtins.open", mock_open()):
         setup_config.run_setup(sections=["firmware"])
@@ -1122,7 +1122,7 @@ def test_run_setup_partial_firmware_section(
     saved_configs = [
         copy.deepcopy(args[0][0]) for args in mock_yaml_dump.call_args_list
     ]
-    assert any(cfg.get("FIRMWARE_VERSIONS_TO_KEEP") == 4 for cfg in saved_configs)
+    assert any(cfg.get("FIRMWARE_VERSIONS_TO_KEEP") == 3 for cfg in saved_configs)
     assert any(cfg.get("CHECK_PRERELEASES") is True for cfg in saved_configs)
 
     mock_setup_cron_job.assert_not_called()
