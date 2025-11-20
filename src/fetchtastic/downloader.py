@@ -66,6 +66,7 @@ from fetchtastic.constants import (
     LATEST_ANDROID_PRERELEASE_JSON_FILE,
     LATEST_ANDROID_RELEASE_FILE,
     LATEST_ANDROID_RELEASE_JSON_FILE,
+    LATEST_FIRMWARE_PRERELEASE_JSON_FILE,
     LATEST_FIRMWARE_RELEASE_FILE,
     LATEST_FIRMWARE_RELEASE_JSON_FILE,
     MAX_CONCURRENT_TIMESTAMP_FETCHES,
@@ -812,12 +813,18 @@ def _get_json_release_basename(release_type: str) -> str:
         str: Filename basename to use for the latest-release JSON (e.g., the value of LATEST_ANDROID_RELEASE_JSON_FILE for Android, LATEST_FIRMWARE_RELEASE_JSON_FILE for firmware, or "latest_release.json" for other types).
     """
     release_type_lower = release_type.lower()
-    if "prerelease" in release_type_lower:
-        return LATEST_ANDROID_PRERELEASE_JSON_FILE
-    if "android" in release_type_lower:
-        return LATEST_ANDROID_RELEASE_JSON_FILE
+    # Check for firmware prerelease first (most specific)
+    if "firmware prerelease" in release_type_lower:
+        return LATEST_FIRMWARE_PRERELEASE_JSON_FILE
+    # Check for firmware stable releases
     if "firmware" in release_type_lower:
         return LATEST_FIRMWARE_RELEASE_JSON_FILE
+    # Check for APK prerelease
+    if "android prerelease" in release_type_lower:
+        return LATEST_ANDROID_PRERELEASE_JSON_FILE
+    # Check for APK stable releases
+    if "android" in release_type_lower:
+        return LATEST_ANDROID_RELEASE_JSON_FILE
     return "latest_release.json"
 
 
