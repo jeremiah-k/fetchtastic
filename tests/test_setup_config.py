@@ -1111,7 +1111,7 @@ def test_run_setup_partial_firmware_section(
     mock_menu_firmware.reset_mock()
     mock_menu_apk.reset_mock()
 
-    mock_input.side_effect = ["y", "3", "y", "y", "esp32- rak4631-", "y"]
+    mock_input.side_effect = ["y", "y", "3", "y", "esp32- rak4631-", "y", "n", "y"]
 
     with patch("builtins.open", mock_open()):
         setup_config.run_setup(sections=["firmware"])

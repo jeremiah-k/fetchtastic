@@ -4547,6 +4547,7 @@ def _download_release_type(
     exclude_patterns: Optional[List[str]],
     selected_patterns: Optional[List[str]],
     force_refresh: bool = False,
+    perform_cleanup: bool = True,
 ) -> Tuple[List[str], List[str], List[Dict[str, str]]]:
     """
     Download and process a specific release type (stable or prerelease), returning what was obtained and any failures.
@@ -4560,6 +4561,7 @@ def _download_release_type(
         exclude_patterns (List[str]): Glob/regex patterns for assets to exclude.
         selected_patterns (List[str]): Asset selection patterns to include.
         force_refresh (bool): If true, bypass cached validation and re-download when applicable.
+        perform_cleanup (bool): If true, perform version-based cleanup of old releases. When False, skip cleanup.
 
     Returns:
         Tuple[List[str], List[str], List[Dict[str, str]]]:
@@ -4582,6 +4584,7 @@ def _download_release_type(
         auto_extract=False,
         exclude_patterns=exclude_patterns or [],
         force_refresh=force_refresh,
+        perform_cleanup=perform_cleanup,
     )
 
     if downloaded:
@@ -4774,6 +4777,7 @@ def _process_apk_downloads(
                     config.get("EXCLUDE_PATTERNS", []),  # type: ignore[arg-type]
                     selected_patterns=config.get("SELECTED_APK_ASSETS", []),
                     force_refresh=force_refresh,
+                    perform_cleanup=False,
                 )
             downloaded_apks.extend(prerelease_downloaded)
             new_apk_versions.extend(prerelease_new_versions_list)
@@ -5183,10 +5187,8 @@ def _cleanup_apk_prereleases(
     try:
         for item in os.listdir(prerelease_dir):
             item_path = os.path.join(prerelease_dir, item)
-            if (
-                os.path.isdir(item_path)
-                and _is_apk_prerelease_by_name(item)
-                and item.lstrip("v").startswith(f"{base_version}-")
+            if os.path.isdir(item_path) and item.lstrip("v").startswith(
+                f"{base_version}-"
             ):
                 if _safe_rmtree(item_path, prerelease_dir, item):
                     logger.info(f"Removed obsolete prerelease directory: {item_path}")
@@ -5330,6 +5332,7 @@ def check_and_download(
     auto_extract: bool = False,
     exclude_patterns: Optional[List[str]] = None,
     force_refresh: bool = False,
+    perform_cleanup: bool = True,
 ) -> Tuple[List[str], List[str], List[Dict[str, str]]]:
     """
     Check releases for missing or corrupted assets, download matching assets, optionally extract ZIPs, and prune old release directories.
@@ -5357,6 +5360,7 @@ def check_and_download(
     - auto_extract: When True and `release_type == "Firmware"`, perform extraction of matching ZIP contents.
     - exclude_patterns: Optional list of patterns; matching filenames are excluded from download and extraction.
     - force_refresh: If True, bypass cache and fetch fresh data.
+    - perform_cleanup: When True, perform version-based cleanup of old releases. When False, skip cleanup.
 
     Returns:
     Tuple(downloaded_versions, new_versions_available, failed_downloads_details)
@@ -5808,7 +5812,7 @@ def check_and_download(
             )
 
     # Run cleanup after all downloads are complete, but only if actions were taken
-    if actions_taken:
+    if actions_taken and perform_cleanup:
         try:
             release_tags_to_keep: List[str] = [
                 tag
