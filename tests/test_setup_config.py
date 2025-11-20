@@ -1107,6 +1107,7 @@ def test_run_setup_partial_firmware_section(
     mock_input.side_effect = [
         "y",
         "y",
+        "y",
         "4",
         "y",
         "esp32- rak4631-",
