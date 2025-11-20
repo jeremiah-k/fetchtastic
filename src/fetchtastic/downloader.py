@@ -4526,6 +4526,54 @@ def _process_firmware_downloads(
     )
 
 
+def _download_release_type(
+    releases_to_process: List[Dict[str, Any]],
+    release_type: str,
+    cache_dir: str,
+    download_dir: str,
+    keep_count: int,
+    exclude_patterns: List[str],
+    selected_patterns: List[str],
+    force_refresh: bool = False,
+) -> Tuple[List[str], List[str], List[Dict[str, str]]]:
+    """
+    Helper function to download a specific type of release (regular or prerelease).
+
+    Parameters:
+        releases_to_process: List of release dictionaries to process
+        release_type: Human-readable release type for logging
+        cache_dir: Directory for caching downloads
+        download_dir: Directory to save the downloaded files
+        keep_count: Number of releases to keep/download
+        exclude_patterns: Patterns to exclude from download
+        selected_patterns: Asset patterns to select for download
+        force_refresh: Whether to force refresh of cached data
+
+    Returns:
+        Tuple of (downloaded_versions, new_versions, failed_downloads)
+    """
+    downloaded: List[str]
+    new_versions_list: List[str]
+    failed_downloads_details: List[Dict[str, str]]
+
+    downloaded, new_versions_list, failed_downloads_details = check_and_download(
+        releases_to_process[:keep_count],
+        cache_dir,
+        release_type,
+        download_dir,
+        keep_count,
+        exclude_patterns,
+        selected_patterns=selected_patterns,
+        auto_extract=False,
+        force_refresh=force_refresh,
+    )
+
+    if downloaded:
+        logger.info(f"Downloaded {release_type} versions: {', '.join(downloaded)}")
+
+    return downloaded, new_versions_list, failed_downloads_details
+
+
 def _process_apk_downloads(
     config: Dict[str, Any], paths_and_urls: Dict[str, str], force_refresh: bool = False
 ) -> Tuple[List[str], List[str], List[Dict[str, str]], Optional[str], Optional[str]]:
@@ -4559,11 +4607,18 @@ def _process_apk_downloads(
     if config.get("SAVE_APKS", False) and config.get("SELECTED_APK_ASSETS", []):
         # Increase scan count when prereleases are enabled to ensure we get stable releases too
         base_scan_count = config.get("ANDROID_VERSIONS_TO_KEEP", RELEASE_SCAN_COUNT)
-        scan_count = (
-            base_scan_count * 2
-            if config.get("CHECK_APK_PRERELEASES", True)
-            else base_scan_count
-        )
+        if config.get("CHECK_APK_PRERELEASES", True):
+            # Start with a reasonable estimate and increase if needed
+            # This ensures we get enough stable releases even with many prereleases
+            scan_count = base_scan_count * 3  # Start with 3x the base count
+            # Ensure we have enough to potentially get the required stable releases
+            scan_count = max(
+                scan_count, base_scan_count + 10
+            )  # At least base + 10 more
+            # Cap at GitHub's maximum per page limit
+            scan_count = min(scan_count, 100)
+        else:
+            scan_count = base_scan_count
 
         latest_android_releases: List[Dict[str, Any]] = _get_latest_releases_data(
             paths_and_urls["android_releases_url"],
@@ -4598,31 +4653,21 @@ def _process_apk_downloads(
             # Extract the actual latest APK version
             latest_apk_version = regular_releases[0].get("tag_name")
 
-            apk_downloaded: List[str]
-            apk_new_versions_list: List[str]
-            failed_apk_downloads_details: List[Dict[str, str]]
             apk_downloaded, apk_new_versions_list, failed_apk_downloads_details = (
-                check_and_download(
-                    regular_releases[
-                        :keep_count_apk
-                    ],  # Only keep the specified number of regular releases
-                    paths_and_urls["cache_dir"],
+                _download_release_type(
+                    regular_releases,
                     "Android APK",
+                    paths_and_urls["cache_dir"],
                     paths_and_urls["apks_dir"],
                     keep_count_apk,
                     [],
                     selected_patterns=config.get("SELECTED_APK_ASSETS", []),
-                    auto_extract=False,
                     force_refresh=force_refresh,
                 )
             )
             downloaded_apks.extend(apk_downloaded)
             new_apk_versions.extend(apk_new_versions_list)
             all_failed_apk_downloads.extend(failed_apk_downloads_details)
-            if apk_downloaded:
-                logger.info(
-                    f"Downloaded Android APK versions: {', '.join(apk_downloaded)}"
-                )
         else:
             latest_apk_version = None
 
@@ -4637,32 +4682,23 @@ def _process_apk_downloads(
                 for r in latest_android_releases[:keep_count_apk]
             )
 
-            prerelease_downloaded: List[str]
-            prerelease_new_versions_list: List[str]
-            failed_prerelease_downloads_details: List[Dict[str, str]]
             (
                 prerelease_downloaded,
                 prerelease_new_versions_list,
                 failed_prerelease_downloads_details,
-            ) = check_and_download(
+            ) = _download_release_type(
                 prerelease_releases,
-                paths_and_urls["cache_dir"],
                 "Android APK Prerelease",
+                paths_and_urls["cache_dir"],
                 prerelease_dir,
                 len(prerelease_releases),  # Download all prereleases
                 [],
                 selected_patterns=config.get("SELECTED_APK_ASSETS", []),
-                auto_extract=False,
                 force_refresh=force_refresh,
             )
             downloaded_apks.extend(prerelease_downloaded)
             new_apk_versions.extend(prerelease_new_versions_list)
             all_failed_apk_downloads.extend(failed_prerelease_downloads_details)
-
-            if prerelease_downloaded:
-                logger.info(
-                    f"Downloaded Android APK prerelease versions: {', '.join(prerelease_downloaded)}"
-                )
 
             # Remove prereleases if we have a full release
             if has_full_release and prerelease_releases:
@@ -5042,7 +5078,7 @@ def _cleanup_apk_prereleases(
             if (
                 os.path.isdir(item_path)
                 and _is_apk_prerelease(item)
-                and base_version in item
+                and item.lstrip("v").startswith(f"{base_version}-")
             ):
                 if _safe_rmtree(item_path, prerelease_dir, item):
                     logger.info(f"Removed obsolete prerelease directory: {item_path}")
