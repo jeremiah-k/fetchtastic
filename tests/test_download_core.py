@@ -1313,11 +1313,12 @@ def test_process_apk_downloads_enhanced_with_prereleases_enabled(tmp_path):
         regular_call = mock_download.call_args_list[0]
         prerelease_call = mock_download.call_args_list[1]
 
-        # Regular releases call should only include regular releases
+        # Regular releases call should only include non-prerelease tags
         regular_releases_arg = regular_call[0][0]
         assert len(regular_releases_arg) == 2  # v2.7.7 and v2.7.6
         assert all(
-            not r["tag_name"].endswith("-open.1") or r["tag_name"].endswith("-open.2")
+            not r["tag_name"].endswith("-open.1")
+            and not r["tag_name"].endswith("-open.2")
             for r in regular_releases_arg
         )
 
@@ -1330,9 +1331,13 @@ def test_process_apk_downloads_enhanced_with_prereleases_enabled(tmp_path):
         )
 
         # Verify result includes latest prerelease version
-        downloaded_apks, new_versions, failed, latest_version, latest_prerelease = (
-            result
-        )
+        (
+            _downloaded_apks,
+            _new_versions,
+            _failed,
+            _latest_version,
+            latest_prerelease,
+        ) = result
         assert latest_prerelease == "v2.7.7-open.1"
 
 
@@ -1387,9 +1392,13 @@ def test_process_apk_downloads_enhanced_with_prereleases_disabled(tmp_path):
         assert all(not r["tag_name"].endswith("-open.1") for r in regular_releases_arg)
 
         # Verify result includes no latest prerelease version
-        downloaded_apks, new_versions, failed, latest_version, latest_prerelease = (
-            result
-        )
+        (
+            _downloaded_apks,
+            _new_versions,
+            _failed,
+            _latest_version,
+            latest_prerelease,
+        ) = result
         assert latest_prerelease is None
 
 
@@ -1446,9 +1455,13 @@ def test_process_apk_downloads_enhanced_no_regular_releases(tmp_path):
         )
 
         # Verify result includes latest prerelease version but no regular version
-        downloaded_apks, new_versions, failed, latest_version, latest_prerelease = (
-            result
-        )
+        (
+            _downloaded_apks,
+            _new_versions,
+            _failed,
+            latest_version,
+            latest_prerelease,
+        ) = result
         assert latest_version is None  # No regular releases
         assert latest_prerelease == "v2.7.7-open.1"
 
@@ -1492,7 +1505,7 @@ def test_process_apk_downloads_enhanced_prerelease_cleanup(tmp_path):
         patch("fetchtastic.downloader._summarise_release_scan"),
         patch("fetchtastic.downloader._cleanup_apk_prereleases") as mock_cleanup,
     ):
-        result = _process_apk_downloads(config, paths_and_urls, force_refresh=False)
+        _process_apk_downloads(config, paths_and_urls, force_refresh=False)
 
         # Verify cleanup was called because we have full releases
         mock_cleanup.assert_called_once()

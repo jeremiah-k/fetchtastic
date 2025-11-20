@@ -553,7 +553,7 @@ def _setup_downloads(
                 config["SELECTED_APK_ASSETS"] = apk_selection["selected_assets"]
 
     # --- APK Pre-release Configuration ---
-    if save_apks:
+    if save_apks and (not is_partial_run or wants("android")):
         check_apk_prereleases_current = config.get(
             "CHECK_APK_PRERELEASES", True
         )  # Default to True for APKs

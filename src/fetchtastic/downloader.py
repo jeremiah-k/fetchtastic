@@ -4584,7 +4584,7 @@ def _process_apk_downloads(
 
     Parameters:
         config (Dict[str, Any]): Configuration mapping. Uses keys: `SAVE_APKS`, `SELECTED_APK_ASSETS`, `ANDROID_VERSIONS_TO_KEEP`, `CHECK_APK_PRERELEASES`, and `GITHUB_TOKEN`.
-        paths_and_urls (Dict[str, str]): Paths and endpoints. Uses keys: `"android_releases_url"`, `"latest_android_release_file"`, and `"apks_dir"`.
+        paths_and_urls (Dict[str, str]): Paths and endpoints. Uses keys: `"android_releases_url"`, `"cache_dir"`, and `"apks_dir"`.
         force_refresh (bool): If True, bypass cached release data and fetch fresh metadata.
 
     Returns:
@@ -4593,7 +4593,7 @@ def _process_apk_downloads(
         - new_apk_versions: List of discovered release versions (may include versions not downloaded).
         - failed_downloads: List of dicts describing each failed asset download.
         - latest_apk_version: Tag or name of the most recent release found, or `None` if none available.
-        - latest_prerelease_version: Tag or name of the most recent prerelease found, or `None` if none available or prereleases disabled.
+        - latest_prerelease_version: Tag or name of the most recent APK prerelease found, or `None` if none available or APK prereleases are disabled.
     """
     global downloads_skipped
     downloaded_apks: List[str] = []
@@ -4605,20 +4605,10 @@ def _process_apk_downloads(
     latest_prerelease_version: Optional[str] = None
 
     if config.get("SAVE_APKS", False) and config.get("SELECTED_APK_ASSETS", []):
-        # Increase scan count when prereleases are enabled to ensure we get stable releases too
+        # Increase scan count so prereleases cannot starve stable releases,
+        # even when APK prerelease downloads are disabled.
         base_scan_count = config.get("ANDROID_VERSIONS_TO_KEEP", RELEASE_SCAN_COUNT)
-        if config.get("CHECK_APK_PRERELEASES", True):
-            # Start with a reasonable estimate and increase if needed
-            # This ensures we get enough stable releases even with many prereleases
-            scan_count = base_scan_count * 3  # Start with 3x the base count
-            # Ensure we have enough to potentially get the required stable releases
-            scan_count = max(
-                scan_count, base_scan_count + 10
-            )  # At least base + 10 more
-            # Cap at GitHub's maximum per page limit
-            scan_count = min(scan_count, 100)
-        else:
-            scan_count = base_scan_count
+        scan_count = base_scan_count * 2
 
         latest_android_releases: List[Dict[str, Any]] = _get_latest_releases_data(
             paths_and_urls["android_releases_url"],
@@ -5025,7 +5015,7 @@ def cleanup_old_versions(directory: str, releases_to_keep: List[str]) -> None:
         directory (str): Path whose immediate subdirectories represent versioned releases.
         releases_to_keep (List[str]): Basenames of subdirectories that must be preserved.
     """
-    excluded_dirs: List[str] = ["repo-dls", "prerelease"]
+    excluded_dirs: List[str] = ["repo-dls", "prerelease", "prereleases"]
     versions: List[str] = [
         d for d in os.listdir(directory) if os.path.isdir(os.path.join(directory, d))
     ]
