@@ -4664,18 +4664,14 @@ def _process_apk_downloads(
                 )
 
             # Set latest prerelease version
-            if prerelease_releases:
-                latest_prerelease_version = prerelease_releases[0].get("tag_name")
-            else:
-                latest_prerelease_version = None
+            latest_prerelease_version = (
+                prerelease_releases[0].get("tag_name") if prerelease_releases else None
+            )
         else:
             latest_prerelease_version = None
 
     elif not config.get("SELECTED_APK_ASSETS", []):
         logger.info("No APK assets selected. Skipping APK download.")
-        latest_prerelease_version = None
-    else:
-        latest_prerelease_version = None
 
     return (
         downloaded_apks,

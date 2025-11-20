@@ -727,6 +727,7 @@ def test_run_setup_first_run_linux_simple(
     user_inputs = [
         "",  # Use default base directory
         "b",  # Both APKs and firmware
+        "y",  # Check for APK prereleases
         "2",  # Keep 2 versions of Android app
         "2",  # Keep 2 versions of firmware
         "n",  # No pre-releases
@@ -734,8 +735,9 @@ def test_run_setup_first_run_linux_simple(
         "n",  # No cron job
         "n",  # No reboot cron job
         "n",  # No NTFY notifications
-        "n",  # No GitHub token setup
+        "n",  # Would you like to set up a GitHub token now?
         "n",  # Don't perform first run now
+        "",  # Extra input buffer
     ]
     mock_input.side_effect = user_inputs
 
@@ -808,12 +810,14 @@ def test_run_setup_first_run_windows(
         "",  # Use default base directory
         "y",  # create menu
         "b",  # Both APKs and firmware
+        "y",  # Check for APK prereleases
         "2",  # Keep 2 versions of Android app
         "2",  # Keep 2 versions of firmware
         "n",  # No auto-extract
         "n",  # No pre-releases
         "y",  # create startup shortcut
         "n",  # No NTFY notifications
+        "n",  # Would you like to set up a GitHub token now?
         "n",  # No GitHub token setup
         "",  # press enter to close
     ]
@@ -896,6 +900,7 @@ def test_run_setup_first_run_termux(  # noqa: ARG001
         "n",  # don't migrate to pipx (so setup continues)
         "",  # Use default base directory
         "b",  # Both APKs and firmware
+        "y",  # Check for APK prereleases
         "1",  # Keep 1 version of Android app
         "1",  # Keep 1 version of firmware
         "n",  # No pre-releases
@@ -904,6 +909,7 @@ def test_run_setup_first_run_termux(  # noqa: ARG001
         "h",  # hourly cron job
         "y",  # boot script
         "n",  # No NTFY notifications
+        "n",  # Would you like to set up a GitHub token now?
         "n",  # No GitHub token setup
         "n",  # Don't perform first run now
     ]
@@ -1108,6 +1114,10 @@ def test_run_setup_partial_firmware_section(
         "y",
         "",
         "y",
+        "n",  # Would you like to set up a GitHub token now?
+        "",  # Extra input buffer
+        "",  # Extra input buffer
+        "",  # Extra input buffer
     ]
 
     with patch("builtins.open", mock_open()):
