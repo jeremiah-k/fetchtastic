@@ -4572,9 +4572,10 @@ def _download_release_type(
         release_type,
         download_dir,
         keep_count,
-        exclude_patterns,
+        [],  # no extract_patterns for APKs
         selected_patterns=selected_patterns,
         auto_extract=False,
+        exclude_patterns=exclude_patterns,
         force_refresh=force_refresh,
     )
 
@@ -4618,7 +4619,9 @@ def _process_apk_downloads(
         # Increase scan count so prereleases cannot starve stable releases,
         # even when APK prerelease downloads are disabled.
         base_scan_count = config.get("ANDROID_VERSIONS_TO_KEEP", RELEASE_SCAN_COUNT)
-        scan_count = base_scan_count * 2
+        # Use a larger multiplier to ensure we get enough stable releases
+        # even when there are many prereleases newer than stable releases
+        scan_count = base_scan_count * 4
 
         latest_android_releases: List[Dict[str, Any]] = _get_latest_releases_data(
             paths_and_urls["android_releases_url"],
@@ -4696,6 +4699,9 @@ def _process_apk_downloads(
             downloaded_apks.extend(prerelease_downloaded)
             new_apk_versions.extend(prerelease_new_versions_list)
             all_failed_apk_downloads.extend(failed_prerelease_downloads_details)
+
+            # Any non-prerelease in the scanned set is enough to mark prereleases obsolete
+            has_full_release = bool(regular_releases)
 
             # Remove prereleases if we have a full release
             if has_full_release and prerelease_releases:

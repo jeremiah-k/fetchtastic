@@ -755,6 +755,7 @@ def test_run_setup_first_run_linux_simple(
         assert saved_config["ANDROID_VERSIONS_TO_KEEP"] == 2
         assert saved_config["FIRMWARE_VERSIONS_TO_KEEP"] == 2
         assert saved_config["CHECK_PRERELEASES"] is False
+        assert saved_config["CHECK_APK_PRERELEASES"] is True
         assert saved_config["AUTO_EXTRACT"] is False
         assert saved_config["EXTRACT_PATTERNS"] == []
         assert saved_config["EXCLUDE_PATTERNS"] == []
@@ -842,6 +843,7 @@ def test_run_setup_first_run_windows(
             "GITHUB_TOKEN" not in saved_config
             or saved_config.get("GITHUB_TOKEN") is None
         )
+        assert saved_config["CHECK_APK_PRERELEASES"] is True
 
 
 @pytest.mark.configuration
