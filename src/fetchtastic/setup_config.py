@@ -108,8 +108,6 @@ def is_fetchtastic_installed_via_pip():
         bool: True if installed via pip, False otherwise
     """
     try:
-        import subprocess
-
         # Check if fetchtastic is in pip list
         result = subprocess.run(
             ["pip", "list"], capture_output=True, text=True, check=False
@@ -130,8 +128,6 @@ def is_fetchtastic_installed_via_pipx():
         bool: True if installed via pipx, False otherwise
     """
     try:
-        import subprocess
-
         # Check if fetchtastic is in pipx list
         result = subprocess.run(
             ["pipx", "list"], capture_output=True, text=True, check=False
@@ -196,7 +192,6 @@ def migrate_pip_to_pipx():
 
     try:
         import shutil
-        import subprocess
 
         # Step 1: Backup configuration
         print("1. Backing up configuration...")
