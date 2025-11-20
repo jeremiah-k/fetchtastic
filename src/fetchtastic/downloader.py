@@ -4377,22 +4377,20 @@ def _process_firmware_downloads(
     config: Dict[str, Any], paths_and_urls: Dict[str, str], force_refresh: bool = False
 ) -> Tuple[List[str], List[str], List[Dict[str, str]], Optional[str], Optional[str]]:
     """
-    Manage firmware release downloads, enforce retention, and optionally discover and download prerelease firmware.
-
-    Downloads configured firmware assets into local storage, updates tracking where applicable, prunes superseded prerelease directories when an official release is available, and records download/failure details.
+    Manage firmware release downloads, enforce retention policies, and optionally discover and download firmware prereleases.
 
     Parameters:
-        config (Dict[str, Any]): Runtime configuration (feature flags, selection patterns, retention counts, tokens, and related options).
-        paths_and_urls (Dict[str, str]): Precomputed local paths and remote URLs for downloads, caches, and storage.
-        force_refresh (bool): When true, bypass caches and force remote refreshes.
+        config (Dict[str, Any]): Runtime configuration containing feature flags, selection patterns, retention counts, GitHub/token options, and related behavior toggles.
+        paths_and_urls (Dict[str, str]): Precomputed filesystem paths and remote URLs used for caches, downloads, and storage (keys used include cache_dir, firmware_dir, download_dir, firmware_releases_url).
+        force_refresh (bool): If true, bypass on-disk and remote caches and force fresh remote queries.
 
     Returns:
         Tuple[List[str], List[str], List[Dict[str, str]], Optional[str], Optional[str]]:
-            - downloaded firmware versions: names of firmware versions that were newly downloaded; prereleases are prefixed with "pre-release ".
+            - downloaded firmwares: list of firmware versions that were newly downloaded; prerelease entries are prefixed with "pre-release ".
             - newly detected release versions: release tags discovered that were not previously tracked.
-            - failed download details: records describing each failed asset download.
-            - latest firmware release tag: most recent firmware release tag discovered, or `None` if none found.
-            - latest prerelease version: currently tracked latest prerelease version, or `None` if not tracked.
+            - failed download details: list of records describing each failed asset download (each record is a dict with context and error info).
+            - latest firmware release tag: the most recent firmware release tag discovered, or `None` if none found.
+            - latest prerelease version: the currently tracked latest prerelease version, or `None` if not tracked.
     """
     global downloads_skipped
 
@@ -4550,20 +4548,23 @@ def _download_release_type(
     force_refresh: bool = False,
 ) -> Tuple[List[str], List[str], List[Dict[str, str]]]:
     """
-    Helper function to download a specific type of release (regular or prerelease).
+    Download and process a specific release type (stable or prerelease), returning what was obtained and any failures.
 
     Parameters:
-        releases_to_process: List of release dictionaries to process
-        release_type: Human-readable release type for logging
-        cache_dir: Directory for caching downloads
-        download_dir: Directory to save the downloaded files
-        keep_count: Number of releases to keep/download
-        exclude_patterns: Patterns to exclude from download
-        selected_patterns: Asset patterns to select for download
-        force_refresh: Whether to force refresh of cached data
+        releases_to_process (List[Dict[str, Any]]): Releases considered for download (most recent first).
+        release_type (str): Human-readable label for the release type used in logs.
+        cache_dir (str): Path to the on-disk cache directory.
+        download_dir (str): Path where downloaded release assets will be saved.
+        keep_count (int): Maximum number of releases from `releases_to_process` to attempt.
+        exclude_patterns (List[str]): Glob/regex patterns for assets to exclude.
+        selected_patterns (List[str]): Asset selection patterns to include.
+        force_refresh (bool): If true, bypass cached validation and re-download when applicable.
 
     Returns:
-        Tuple of (downloaded_versions, new_versions, failed_downloads)
+        Tuple[List[str], List[str], List[Dict[str, str]]]:
+            - downloaded: List of version strings successfully downloaded.
+            - new_versions: List of version strings that are newer than the currently recorded/latest versions.
+            - failed_downloads: List of dictionaries describing failures (e.g., contains keys such as `"version"` and `"reason"`).
     """
     downloaded: List[str]
     new_versions_list: List[str]
@@ -4592,22 +4593,31 @@ def _process_apk_downloads(
     config: Dict[str, Any], paths_and_urls: Dict[str, str], force_refresh: bool = False
 ) -> Tuple[List[str], List[str], List[Dict[str, str]], Optional[str], Optional[str]]:
     """
-    Download and prune Android APK releases according to configuration.
+    Download and prune Android APK releases according to the provided configuration.
 
-    When APK saving is enabled and selected APK asset patterns are provided, fetch recent Android release metadata, download matching APK assets into the configured directory, and remove old releases according to the configured retention count. Handles prereleases separately - they are downloaded but do not count against the version limit, and are removed once the full release is available.
+    Fetches Android release metadata, downloads matching APK assets into the configured directory, retains the configured number of stable releases, and manages APK prereleases separately (prereleases are downloaded to a dedicated prerelease directory, do not count against stable retention, and are removed when a corresponding full release exists).
 
     Parameters:
-        config (Dict[str, Any]): Configuration mapping. Uses keys: `SAVE_APKS`, `SELECTED_APK_ASSETS`, `ANDROID_VERSIONS_TO_KEEP`, `CHECK_APK_PRERELEASES`, and `GITHUB_TOKEN`.
-        paths_and_urls (Dict[str, str]): Paths and endpoints. Uses keys: `"android_releases_url"`, `"cache_dir"`, and `"apks_dir"`.
+        config (Dict[str, Any]): Configuration mapping. Relevant keys:
+            - SAVE_APKS: whether to save APKs.
+            - SELECTED_APK_ASSETS: list of asset filename patterns to download.
+            - ANDROID_VERSIONS_TO_KEEP: number of stable APK releases to retain.
+            - CHECK_APK_PRERELEASES: whether to process APK prereleases.
+            - EXCLUDE_PATTERNS: list of filename patterns to exclude.
+            - GITHUB_TOKEN: optional GitHub token for API requests.
+        paths_and_urls (Dict[str, str]): Paths and endpoints. Relevant keys:
+            - "android_releases_url": GitHub API URL for Android releases.
+            - "cache_dir": directory for caching remote metadata/blobs.
+            - "apks_dir": base directory where APKs (and prereleases) are stored.
         force_refresh (bool): If True, bypass cached release data and fetch fresh metadata.
 
     Returns:
         Tuple[List[str], List[str], List[Dict[str, str]], Optional[str], Optional[str]]:
-        - downloaded_apk_versions: List of release versions successfully downloaded during this run.
-        - new_apk_versions: List of discovered release versions (may include versions not downloaded).
-        - failed_downloads: List of dicts describing each failed asset download.
-        - latest_apk_version: Tag or name of the most recent release found, or `None` if none available.
-        - latest_prerelease_version: Tag or name of the most recent APK prerelease found, or `None` if none available or APK prereleases are disabled.
+        - downloaded_apk_versions: List of release tags that had assets downloaded during this run.
+        - new_apk_versions: List of release tags discovered (including prereleases) during scanning.
+        - failed_downloads: List of dicts describing failed asset downloads (each dict contains failure details).
+        - latest_apk_version: Tag of the most recent stable APK release found, or `None` if none available.
+        - latest_prerelease_version: Tag of the most recent APK prerelease found, or `None` if none available or prerelease handling is disabled.
     """
     global downloads_skipped
     downloaded_apks: List[str] = []
@@ -5051,9 +5061,9 @@ def extract_files(
 
 def cleanup_old_versions(directory: str, releases_to_keep: List[str]) -> None:
     """
-    Prune versioned subdirectories under `directory`, keeping only the specified releases.
+    Prune immediate subdirectories of `directory`, preserving only the specified release basenames and a small set of protected internal directories.
 
-    Scans immediate child directories of `directory` and removes any subdirectory whose basename is not in `releases_to_keep` and not one of the internal exclusions ("repo-dls", "prerelease", "apk_prereleases"). Deletion is performed with a safe removal helper that protects against symlink/traversal attacks; failures are logged but not propagated.
+    Removes any child directory whose basename is not in `releases_to_keep` and not one of the protected internal names (REPO_DOWNLOADS_DIR, PRERELEASE_DIR, APK_PRERELEASES_DIR_NAME). Deletion failures are logged and not propagated.
 
     Parameters:
         directory (str): Path whose immediate subdirectories represent versioned releases.
@@ -5096,13 +5106,13 @@ def _cleanup_apk_prereleases(
     prerelease_dir: str, full_release_tag: Optional[str]
 ) -> None:
     """
-    Remove prerelease directories that are now obsolete due to a full release.
+    Remove APK prerelease subdirectories whose base version matches a provided full release tag.
 
-    When a full release is available, remove prerelease directories that match the base version.
+    Does nothing if `full_release_tag` is falsy. Looks for subdirectories in `prerelease_dir` that are identified as APK prereleases and whose name, after stripping a leading `v`, begins with the full release's base version followed by a hyphen (e.g., for `v2.7.7` it matches `2.7.7-open-...`).
 
     Parameters:
-        prerelease_dir (str): Directory containing prerelease subdirectories.
-        full_release_tag (Optional[str]): Tag name of the full release (e.g., "v2.7.7").
+        prerelease_dir (str): Path containing prerelease subdirectories to inspect.
+        full_release_tag (Optional[str]): Full release tag (e.g., "v2.7.7"); used to derive the base version to match.
     """
     if not full_release_tag:
         return
@@ -5126,13 +5136,13 @@ def _cleanup_apk_prereleases(
 
 def strip_unwanted_chars(text: str) -> str:
     """
-    Return a copy of `text` with all non-ASCII characters removed (e.g., emojis, accented letters).
+    Remove all non-ASCII characters from a string.
 
     Parameters:
-        text: String potentially containing non-ASCII characters to be stripped.
+        text (str): Input string that may contain non-ASCII characters (e.g., emojis, accented letters).
 
     Returns:
-        A string containing only ASCII characters from the original input.
+        str: A new string containing only the ASCII characters from the original input.
     """
     return NON_ASCII_RX.sub("", text)
 
