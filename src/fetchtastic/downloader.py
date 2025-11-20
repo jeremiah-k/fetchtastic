@@ -4669,6 +4669,8 @@ def _process_apk_downloads(
 
             scan_count = min(max_scan, scan_count * 2)
 
+        # Reset keep_count_apk to actual config value for download logic
+        # (previous assignment was only for scan-window sizing)
         keep_count_apk = config.get(
             "ANDROID_VERSIONS_TO_KEEP", DEFAULT_ANDROID_VERSIONS_TO_KEEP
         )
@@ -4737,7 +4739,6 @@ def _process_apk_downloads(
                     regular_releases[0].get("tag_name"),
                 )
             # Set latest prerelease version
-            latest_prerelease_version = prerelease_releases[0].get("tag_name")
             latest_prerelease_version = prerelease_releases[0].get("tag_name")
     elif not config.get("SELECTED_APK_ASSETS", []):
         logger.info("No APK assets selected. Skipping APK download.")
@@ -5052,7 +5053,7 @@ def cleanup_old_versions(directory: str, releases_to_keep: List[str]) -> None:
     """
     Prune versioned subdirectories under `directory`, keeping only the specified releases.
 
-    Scans immediate child directories of `directory` and removes any subdirectory whose basename is not in `releases_to_keep` and not one of the internal exclusions ("repo-dls", "prerelease"). Deletion is performed with a safe removal helper that protects against symlink/traversal attacks; failures are logged but not propagated.
+    Scans immediate child directories of `directory` and removes any subdirectory whose basename is not in `releases_to_keep` and not one of the internal exclusions ("repo-dls", "prerelease", "apk_prereleases"). Deletion is performed with a safe removal helper that protects against symlink/traversal attacks; failures are logged but not propagated.
 
     Parameters:
         directory (str): Path whose immediate subdirectories represent versioned releases.
@@ -6111,7 +6112,10 @@ def main(force_refresh: bool = False) -> None:
                 if failure_detail["type"] == "Firmware":
                     if failure_detail["release_tag"] not in downloaded_firmwares:
                         downloaded_firmwares.append(failure_detail["release_tag"])
-                elif failure_detail["type"] == "Android APK":
+                elif failure_detail["type"] in (
+                    "Android APK",
+                    "Android APK Prerelease",
+                ):
                     if failure_detail["release_tag"] not in downloaded_apks:
                         downloaded_apks.append(failure_detail["release_tag"])
             else:
