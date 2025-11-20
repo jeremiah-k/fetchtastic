@@ -1288,6 +1288,7 @@ def test_process_apk_downloads_enhanced_with_prereleases_enabled(tmp_path):
     paths_and_urls = {
         "cache_dir": str(tmp_path / "cache"),
         "apks_dir": str(tmp_path / "apks"),
+        "android_releases_url": "https://api.github.com/repos/meshtastic/meshtastic-android/releases",
     }
 
     with (
@@ -1359,6 +1360,7 @@ def test_process_apk_downloads_enhanced_with_prereleases_disabled(tmp_path):
     paths_and_urls = {
         "cache_dir": str(tmp_path / "cache"),
         "apks_dir": str(tmp_path / "apks"),
+        "android_releases_url": "https://api.github.com/repos/meshtastic/meshtastic-android/releases",
     }
 
     with (
@@ -1414,6 +1416,7 @@ def test_process_apk_downloads_enhanced_no_regular_releases(tmp_path):
     paths_and_urls = {
         "cache_dir": str(tmp_path / "cache"),
         "apks_dir": str(tmp_path / "apks"),
+        "android_releases_url": "https://api.github.com/repos/meshtastic/meshtastic-android/releases",
     }
 
     with (
@@ -1474,6 +1477,7 @@ def test_process_apk_downloads_enhanced_prerelease_cleanup(tmp_path):
     paths_and_urls = {
         "cache_dir": str(tmp_path / "cache"),
         "apks_dir": str(tmp_path / "apks"),
+        "android_releases_url": "https://api.github.com/repos/meshtastic/meshtastic-android/releases",
     }
 
     with (
