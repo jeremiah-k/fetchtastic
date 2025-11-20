@@ -183,6 +183,7 @@ def test_load_config_new_location(tmp_path, mocker):
         yaml.dump(config_data, f)
 
     config = setup_config.load_config()
+    assert config is not None
     assert config["SAVE_APKS"] is True
 
 
@@ -201,6 +202,7 @@ def test_load_config_old_location_suggests_migration(tmp_path, mocker):
         yaml.dump(config_data, f)
 
     config = setup_config.load_config()
+    assert config is not None
     assert config["BASE_DIR"] == TEST_CONFIG["BASE_DIR"]
     # Migration is suggested but not automatic - new file should not exist
     assert not new_config_path.exists()
@@ -403,6 +405,7 @@ def test_load_config_old_location(tmp_path, mocker):
         yaml.dump(config_data, f)
 
     config = setup_config.load_config()
+    assert config is not None
     assert config["SAVE_FIRMWARE"] is True
 
 
@@ -423,6 +426,7 @@ def test_load_config_prefers_new_location(tmp_path, mocker):
         yaml.dump(old_config_data, f)
 
     config = setup_config.load_config()
+    assert config is not None
     assert config["key"] == "new"
 
 

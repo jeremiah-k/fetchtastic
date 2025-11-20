@@ -1266,7 +1266,7 @@ def test_cleanup_apk_prereleases(tmp_path):
 @pytest.mark.core_downloads
 def test_process_apk_downloads_enhanced_with_prereleases_enabled(tmp_path):
     """Test enhanced _process_apk_downloads with prereleases enabled and mixed releases."""
-    from unittest.mock import MagicMock, patch
+    from unittest.mock import patch
 
     from fetchtastic.downloader import _process_apk_downloads
 
@@ -1344,7 +1344,7 @@ def test_process_apk_downloads_enhanced_with_prereleases_enabled(tmp_path):
 @pytest.mark.core_downloads
 def test_process_apk_downloads_enhanced_with_prereleases_disabled(tmp_path):
     """Test enhanced _process_apk_downloads with prereleases disabled."""
-    from unittest.mock import MagicMock, patch
+    from unittest.mock import patch
 
     from fetchtastic.downloader import _process_apk_downloads
 
@@ -1405,7 +1405,7 @@ def test_process_apk_downloads_enhanced_with_prereleases_disabled(tmp_path):
 @pytest.mark.core_downloads
 def test_process_apk_downloads_enhanced_no_regular_releases(tmp_path):
     """Test enhanced _process_apk_downloads with only prereleases available."""
-    from unittest.mock import MagicMock, patch
+    from unittest.mock import patch
 
     from fetchtastic.downloader import _process_apk_downloads
 
@@ -1469,9 +1469,9 @@ def test_process_apk_downloads_enhanced_no_regular_releases(tmp_path):
 @pytest.mark.core_downloads
 def test_process_apk_downloads_enhanced_prerelease_cleanup(tmp_path):
     """Test enhanced _process_apk_downloads calls cleanup when full release available."""
-    from unittest.mock import MagicMock, patch
+    from unittest.mock import patch
 
-    from fetchtastic.downloader import _cleanup_apk_prereleases, _process_apk_downloads
+    from fetchtastic.downloader import _process_apk_downloads
 
     # Mock release data with both regular and prerelease
     mock_releases = [
