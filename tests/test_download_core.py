@@ -1109,12 +1109,11 @@ def test_cleanup_superseded_prereleases_file_removal(tmp_path):
     json_tracking_file.write_text('{"version": "v1.0.0", "commits": ["abc123"]}')
     text_tracking_file.write_text("Release: v1.0.0\nabc123\n")
 
-    with patch(
-        "fetchtastic.downloader._ensure_cache_dir", return_value=str(cache_dir)
-    ), patch("os.remove", side_effect=OSError("Permission denied")), patch(
-        "fetchtastic.downloader.logger"
-    ) as mock_logger:
-
+    with (
+        patch("fetchtastic.downloader._ensure_cache_dir", return_value=str(cache_dir)),
+        patch("os.remove", side_effect=OSError("Permission denied")),
+        patch("fetchtastic.downloader.logger") as mock_logger,
+    ):
         # Should not raise exception, should log warning
         cleanup_superseded_prereleases(str(tmp_path), "v2.0.0")
 
@@ -1220,6 +1219,48 @@ def test_cleanup_legacy_files(tmp_path):
     assert not (prerelease_dir / "prerelease_tracking.json").exists()
     assert not (apks_dir / "latest_android_release.json").exists()
     assert not (firmware_dir / "latest_firmware_release.json").exists()
+
+
+def test_is_apk_prerelease():
+    """Test _is_apk_prerelease function correctly identifies prereleases."""
+    from fetchtastic.downloader import _is_apk_prerelease
+
+    # Test prerelease tags
+    assert _is_apk_prerelease("v2.7.7-open.1") is True
+    assert _is_apk_prerelease("v2.7.7-open.4") is True
+    assert _is_apk_prerelease("v2.7.7-closed.1") is True
+    assert _is_apk_prerelease("v2.7.7-OPEN.1") is True  # Case insensitive
+    assert _is_apk_prerelease("v2.7.7-CLOSED.1") is True  # Case insensitive
+
+    # Test regular releases
+    assert _is_apk_prerelease("v2.7.7") is False
+    assert _is_apk_prerelease("v2.7.6") is False
+    assert _is_apk_prerelease("v2.7.7-beta") is False  # Different suffix
+    assert _is_apk_prerelease("v2.7.7-rc1") is False  # Different suffix
+
+
+def test_cleanup_apk_prereleases(tmp_path):
+    """Test _cleanup_apk_prereleases removes obsolete prerelease directories."""
+    from fetchtastic.downloader import _cleanup_apk_prereleases
+
+    prerelease_dir = tmp_path / "prereleases"
+    prerelease_dir.mkdir()
+
+    # Create prerelease directories
+    (prerelease_dir / "v2.7.7-open.1").mkdir()
+    (prerelease_dir / "v2.7.7-open.2").mkdir()
+    (
+        prerelease_dir / "v2.7.6-open.1"
+    ).mkdir()  # Different version, should not be removed
+
+    # Call cleanup with full release v2.7.7
+    _cleanup_apk_prereleases(str(prerelease_dir), "v2.7.7")
+
+    # Check that v2.7.7 prereleases are removed
+    assert not (prerelease_dir / "v2.7.7-open.1").exists()
+    assert not (prerelease_dir / "v2.7.7-open.2").exists()
+    # v2.7.6 prerelease should still exist
+    assert (prerelease_dir / "v2.7.6-open.1").exists()
 
 
 @pytest.mark.core_downloads
@@ -2213,10 +2254,12 @@ def test_safe_rmtree():
 
     from fetchtastic.downloader import _safe_rmtree
 
-    with patch("os.path.realpath") as mock_realpath, patch(
-        "os.path.commonpath", return_value="/base"
-    ), patch("os.path.isdir", return_value=True), patch("shutil.rmtree") as mock_rmtree:
-
+    with (
+        patch("os.path.realpath") as mock_realpath,
+        patch("os.path.commonpath", return_value="/base"),
+        patch("os.path.isdir", return_value=True),
+        patch("shutil.rmtree") as mock_rmtree,
+    ):
         # Setup mock to return same path for both calls
         mock_realpath.side_effect = lambda x: x
 
@@ -2225,10 +2268,13 @@ def test_safe_rmtree():
         assert result is True
         mock_rmtree.assert_called_once_with("/test/path")
 
-    with patch("os.path.realpath") as mock_realpath, patch(
-        "os.path.commonpath", side_effect=ValueError("Paths don't have the same drive")
+    with (
+        patch("os.path.realpath") as mock_realpath,
+        patch(
+            "os.path.commonpath",
+            side_effect=ValueError("Paths don't have the same drive"),
+        ),
     ):
-
         # Setup mock to return different paths (security check failure)
         mock_realpath.side_effect = ["/base", "/malicious/path"]
 
@@ -2276,7 +2322,6 @@ def test_cache_thread_safety():
     # Test commit cache thread safety
     with patch("fetchtastic.downloader._ensure_cache_dir", return_value="/test/cache"):
         with patch("fetchtastic.downloader._atomic_write_json", return_value=True):
-
             # Reset cache state
             clear_commit_timestamp_cache()
 
@@ -2307,7 +2352,6 @@ def test_cache_thread_safety():
     # Test releases cache thread safety
     with patch("fetchtastic.downloader._ensure_cache_dir", return_value="/test/cache"):
         with patch("fetchtastic.downloader._atomic_write_json", return_value=True):
-
             # Reset cache state using clear_all_caches
             clear_all_caches()
 
@@ -2337,7 +2381,6 @@ def test_cache_thread_safety():
     # Test prerelease cache thread safety
     with patch("fetchtastic.downloader._ensure_cache_dir", return_value="/test/cache"):
         with patch("fetchtastic.downloader._atomic_write_json", return_value=True):
-
             # Reset cache state
             clear_all_caches()
 
