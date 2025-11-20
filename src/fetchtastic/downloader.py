@@ -4557,9 +4557,17 @@ def _process_apk_downloads(
     latest_prerelease_version: Optional[str] = None
 
     if config.get("SAVE_APKS", False) and config.get("SELECTED_APK_ASSETS", []):
+        # Increase scan count when prereleases are enabled to ensure we get stable releases too
+        base_scan_count = config.get("ANDROID_VERSIONS_TO_KEEP", RELEASE_SCAN_COUNT)
+        scan_count = (
+            base_scan_count * 2
+            if config.get("CHECK_APK_PRERELEASES", True)
+            else base_scan_count
+        )
+
         latest_android_releases: List[Dict[str, Any]] = _get_latest_releases_data(
             paths_and_urls["android_releases_url"],
-            config.get("ANDROID_VERSIONS_TO_KEEP", RELEASE_SCAN_COUNT),
+            scan_count,
             config.get("GITHUB_TOKEN"),
             force_refresh=force_refresh,
             release_type="Android APK",
@@ -4664,11 +4672,7 @@ def _process_apk_downloads(
                 )
 
             # Set latest prerelease version
-            latest_prerelease_version = (
-                prerelease_releases[0].get("tag_name") if prerelease_releases else None
-            )
-        else:
-            latest_prerelease_version = None
+            latest_prerelease_version = prerelease_releases[0].get("tag_name")
 
     elif not config.get("SELECTED_APK_ASSETS", []):
         logger.info("No APK assets selected. Skipping APK download.")
