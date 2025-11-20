@@ -733,21 +733,16 @@ def configure_exclude_patterns(config: dict) -> None:
 
 def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> dict:
     """
-    Configure firmware-related settings in the provided config dictionary via interactive prompts.
-
-    Updates config in place with keys related to firmware retention, automatic extraction, extraction/exclusion patterns, and prerelease handling:
-    - FIRMWARE_VERSIONS_TO_KEEP
-    - AUTO_EXTRACT
-    - EXTRACT_PATTERNS
-    - EXCLUDE_PATTERNS
-    - CHECK_PRERELEASES
-    - SELECTED_PRERELEASE_ASSETS
-
+    Configure firmware-related settings in the provided config via interactive prompts.
+    
+    Updates the config in place with keys related to firmware retention, automatic extraction, extraction/exclusion patterns, and prerelease handling:
+    FIRMWARE_VERSIONS_TO_KEEP, AUTO_EXTRACT, EXTRACT_PATTERNS, EXCLUDE_PATTERNS, CHECK_PRERELEASES, SELECTED_PRERELEASE_ASSETS.
+    
     Parameters:
         config (dict): Configuration mapping to read defaults from and write updated values into.
-        is_first_run (bool): When True, use first-run prompt wording and defaults.
+        is_first_run (bool): When True, prompts use first-run wording and defaults.
         default_versions (int): Fallback number of firmware versions to keep when not present in config.
-
+    
     Returns:
         dict: The same config object passed in, updated with firmware-related settings.
     """
@@ -2390,12 +2385,12 @@ def install_crond():
 
 def setup_cron_job(frequency="hourly"):
     """
-    Add or update a cron job to run Fetchtastic on a regular schedule.
-
-    On Windows this is a no-op. The function validates the `frequency` against available CRON_SCHEDULES (defaults to "hourly" on invalid input), removes any existing Fetchtastic cron entries except `@reboot` entries, and writes a new cron entry. On Termux it writes a plain `fetchtastic download` entry; on other platforms it requires the `fetchtastic` executable to be discoverable in PATH.
-
+    Configure or replace a system cron entry to run Fetchtastic on a regular schedule.
+    
+    This function updates the user's crontab by removing existing Fetchtastic entries (except `@reboot` lines) and writing a single scheduled entry that invokes the Fetchtastic downloader. On Windows the function is a no-op. On Termux the entry uses the plain `fetchtastic download` command; on other platforms it uses the `fetchtastic` executable discovered in PATH. If an invalid frequency is provided, the function falls back to the hourly schedule.
+    
     Parameters:
-        frequency (str): Schedule key describing cadence; expected values include `"hourly"` or `"daily"`.
+        frequency (str): Schedule key specifying cadence; commonly `"hourly"` or `"daily"`. Defaults to `"hourly"` when omitted or invalid.
     """
     # Skip cron job setup on Windows
     if platform.system() == "Windows":
