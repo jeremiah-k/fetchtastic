@@ -21,7 +21,13 @@ from urllib3.util.retry import Retry  # type: ignore
 # Import constants from constants module
 from fetchtastic.constants import (
     API_CALL_DELAY,
+    DEFAULT_BACKOFF_FACTOR,
+    DEFAULT_CHUNK_SIZE,
+    DEFAULT_CONNECT_RETRIES,
+    DEFAULT_REQUEST_TIMEOUT,
     GITHUB_API_TIMEOUT,
+    WINDOWS_INITIAL_RETRY_DELAY,
+    WINDOWS_MAX_REPLACE_RETRIES,
     ZIP_EXTENSION,
 )
 from fetchtastic.log_utils import logger  # Import the new logger
@@ -462,7 +468,6 @@ def make_github_api_request(
         requests.HTTPError: For HTTP error responses (including handled 401/403 conditions where a descriptive message is raised).
         requests.RequestException: For lower-level network or request errors.
     """
-    from fetchtastic.constants import API_CALL_DELAY, GITHUB_API_TIMEOUT
     from fetchtastic.log_utils import logger
 
     # Prepare headers with optional authentication
