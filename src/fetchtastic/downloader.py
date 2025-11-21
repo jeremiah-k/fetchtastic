@@ -4680,6 +4680,14 @@ def _process_apk_downloads(
             regular_releases = []
             prerelease_releases = []
             for release in latest_android_releases:
+                tag_name = release.get("tag_name", "")
+                if not _is_supported_android_release(tag_name):
+                    logger.debug(
+                        "Skipping legacy Android release %s (pre-2.7.0 tagging scheme)",
+                        tag_name or "<unknown>",
+                    )
+                    continue
+
                 if _is_apk_prerelease(release):
                     prerelease_releases.append(release)
                 else:
@@ -5151,6 +5159,31 @@ def cleanup_old_versions(directory: str, releases_to_keep: List[str]) -> None:
             version_path: str = os.path.join(directory, version)
             if _safe_rmtree(version_path, directory, version):
                 logger.info(f"Removed directory and its contents: {version_path}")
+
+
+MIN_ANDROID_TRACKED_VERSION = (2, 7, 0)
+
+
+def _is_supported_android_release(tag_name: str) -> bool:
+    """
+    Return True when the tag_name represents an Android release at or beyond the
+    version where the new tagging scheme began (2.7.0+).
+
+    Older prerelease tags (e.g., 2.6.x-open) should be ignored so they are not
+    treated as current prereleases. Unparseable tags are allowed through to
+    avoid blocking future formats.
+    """
+    version_tuple = _get_release_tuple(tag_name)
+    if not version_tuple:
+        return True
+
+    max_len = max(len(version_tuple), len(MIN_ANDROID_TRACKED_VERSION))
+    padded_version = version_tuple + (0,) * (max_len - len(version_tuple))
+    padded_minimum = MIN_ANDROID_TRACKED_VERSION + (0,) * (
+        max_len - len(MIN_ANDROID_TRACKED_VERSION)
+    )
+
+    return padded_version >= padded_minimum
 
 
 def _is_apk_prerelease(release: Dict[str, Any]) -> bool:

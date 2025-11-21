@@ -1342,6 +1342,76 @@ def test_process_apk_downloads_enhanced_with_prereleases_enabled(tmp_path):
 
 
 @pytest.mark.core_downloads
+def test_process_apk_downloads_skips_legacy_prerelease_tags(tmp_path):
+    """Ensure legacy (<2.7.0) tags are ignored entirely and cannot surface as prereleases."""
+    from unittest.mock import patch
+
+    from fetchtastic.downloader import _process_apk_downloads
+
+    mock_releases = [
+        {
+            "tag_name": "v2.7.7",
+            "prerelease": False,
+            "assets": [{"name": "app-google-release.apk"}],
+        },
+        {
+            # Real legacy sample: no leading "v", beta naming, and different asset names
+            "tag_name": "2.6.30",
+            "name": "Meshtastic Android 2.6.30 beta",
+            "prerelease": True,  # even if flagged, we should ignore due to version cutoff
+            "assets": [
+                {"name": "fdroidRelease-2.6.30.apk"},
+                {"name": "googleRelease-2.6.30.aab"},
+                {"name": "googleRelease-2.6.30.apk"},
+                {"name": "version_info.txt"},
+            ],
+        },
+    ]
+
+    config = {
+        "SAVE_APKS": True,
+        "SELECTED_APK_ASSETS": ["app-release.apk"],
+        "ANDROID_VERSIONS_TO_KEEP": 1,
+        "CHECK_APK_PRERELEASES": True,
+    }
+
+    paths_and_urls = {
+        "cache_dir": str(tmp_path / "cache"),
+        "apks_dir": str(tmp_path / "apks"),
+        "android_releases_url": "https://api.github.com/repos/meshtastic/meshtastic-android/releases",
+    }
+
+    with (
+        patch(
+            "fetchtastic.downloader._get_latest_releases_data",
+            return_value=mock_releases,
+        ),
+        patch(
+            "fetchtastic.downloader.check_and_download",
+            return_value=(["v2.7.7"], ["v2.7.7"], []),
+        ) as mock_download,
+        patch("fetchtastic.downloader._summarise_release_scan") as mock_summarise,
+    ):
+        result = _process_apk_downloads(config, paths_and_urls, force_refresh=False)
+
+        mock_summarise.assert_called_once_with("Android APK", 1, 1)
+        mock_download.assert_called_once()
+
+        regular_releases_arg = mock_download.call_args_list[0][0][0]
+        assert len(regular_releases_arg) == 1
+        assert regular_releases_arg[0]["tag_name"] == "v2.7.7"
+
+        (
+            _downloaded,
+            _new_versions,
+            _failed,
+            _latest_version,
+            latest_prerelease,
+        ) = result
+        assert latest_prerelease is None
+
+
+@pytest.mark.core_downloads
 def test_process_apk_downloads_enhanced_with_prereleases_disabled(tmp_path):
     """Test enhanced _process_apk_downloads with prereleases disabled."""
     from unittest.mock import patch
