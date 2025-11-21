@@ -1134,10 +1134,10 @@ def _get_prerelease_patterns(config: dict) -> list[str]:
     """
     # Check for new dedicated configuration key first
     if "SELECTED_PRERELEASE_ASSETS" in config:
-        return config["SELECTED_PRERELEASE_ASSETS"] or []
+        return _get_string_list_from_config(config, "SELECTED_PRERELEASE_ASSETS")
 
     # Fall back to EXTRACT_PATTERNS for backward compatibility
-    extract_patterns = config.get("EXTRACT_PATTERNS", [])
+    extract_patterns = _get_string_list_from_config(config, "EXTRACT_PATTERNS")
     if extract_patterns:
         logger.warning(
             "Using EXTRACT_PATTERNS for prerelease file selection is deprecated. "
@@ -4729,7 +4729,9 @@ def _process_apk_downloads(
                     paths_and_urls["apks_dir"],
                     keep_count_apk,
                     _get_string_list_from_config(config, "EXCLUDE_PATTERNS"),
-                    selected_patterns=config.get("SELECTED_APK_ASSETS", []),
+                    selected_patterns=_get_string_list_from_config(
+                        config, "SELECTED_APK_ASSETS"
+                    ),
                     force_refresh=force_refresh,
                 )
             )
@@ -4801,7 +4803,9 @@ def _process_apk_downloads(
                     prerelease_dir,
                     len(releases_to_download),
                     _get_string_list_from_config(config, "EXCLUDE_PATTERNS"),
-                    selected_patterns=config.get("SELECTED_APK_ASSETS", []),
+                    selected_patterns=_get_string_list_from_config(
+                        config, "SELECTED_APK_ASSETS"
+                    ),
                     force_refresh=force_refresh,
                     perform_cleanup=False,
                 )
@@ -5203,6 +5207,9 @@ def _cleanup_apk_prereleases(
 
     # Extract base version (remove 'v' prefix if present)
     base_version = full_release_tag.lstrip("v")
+
+    if not os.path.isdir(prerelease_dir):
+        return
 
     try:
         for item in os.listdir(prerelease_dir):
