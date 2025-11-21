@@ -20,12 +20,8 @@ from urllib3.util.retry import Retry  # type: ignore
 
 # Import constants from constants module
 from fetchtastic.constants import (
-    DEFAULT_BACKOFF_FACTOR,
-    DEFAULT_CHUNK_SIZE,
-    DEFAULT_CONNECT_RETRIES,
-    DEFAULT_REQUEST_TIMEOUT,
-    WINDOWS_INITIAL_RETRY_DELAY,
-    WINDOWS_MAX_REPLACE_RETRIES,
+    API_CALL_DELAY,
+    GITHUB_API_TIMEOUT,
     ZIP_EXTENSION,
 )
 from fetchtastic.log_utils import logger  # Import the new logger

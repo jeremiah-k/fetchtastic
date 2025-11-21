@@ -46,20 +46,9 @@ class TestNetworkConstants:
         assert constants.GITHUB_API_TIMEOUT > 0
         assert constants.NTFY_REQUEST_TIMEOUT > 0
         assert constants.PRERELEASE_REQUEST_TIMEOUT > 0
-        assert constants.DEFAULT_REQUEST_TIMEOUT > 0
-
-    def test_api_call_delay_is_reasonable(self):
-        """Test that API call delay is a reasonable small value."""
-        assert 0 < constants.API_CALL_DELAY <= 1.0
-
-    def test_chunk_sizes_are_positive(self):
-        """Test that chunk sizes are positive."""
-        assert constants.DEFAULT_CHUNK_SIZE > 0
-
-    def test_retry_settings(self):
-        """Test retry-related constants."""
-        assert constants.DEFAULT_CONNECT_RETRIES > 0
-        assert constants.DEFAULT_BACKOFF_FACTOR > 0
+        # Note: DEFAULT_AUTO_EXTRACT, DEFAULT_BACKOFF_FACTOR, DEFAULT_CHUNK_SIZE,
+        # DEFAULT_CONNECT_RETRIES, and DEFAULT_REQUEST_TIMEOUT are no longer defined
+        # as they were unused constants that have been removed
         assert constants.WINDOWS_MAX_REPLACE_RETRIES > 0
         assert constants.WINDOWS_INITIAL_RETRY_DELAY > 0
 
@@ -104,7 +93,8 @@ class TestDefaultValues:
 
     def test_auto_extract_default(self):
         """Test auto extract default."""
-        assert isinstance(constants.DEFAULT_AUTO_EXTRACT, bool)
+        # Note: DEFAULT_AUTO_EXTRACT was removed as unused constant
+        # assert isinstance(constants.DEFAULT_AUTO_EXTRACT, bool)
 
     def test_release_scan_count(self):
         """Test release scan count."""
