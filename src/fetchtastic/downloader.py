@@ -6075,6 +6075,16 @@ def _format_api_summary(summary: Dict[str, Any]) -> str:
             f"[{cache_hit_rate:.1f}% hit rate]"
         )
 
+    # Highlight API requests that weren't tied to a cache lookup (e.g., pagination)
+    uncached_requests = summary["total_requests"] - summary["cache_misses"]
+    if uncached_requests > 0 and total_cache_lookups > 0:
+        direct_label = (
+            "direct API request" if uncached_requests == 1 else "direct API requests"
+        )
+        log_parts.append(
+            f"{uncached_requests} {direct_label} (pagination/non-cacheable)"
+        )
+
     # Add rate limit info if available
     remaining = summary.get("rate_limit_remaining")
     reset_time = summary.get("rate_limit_reset")
