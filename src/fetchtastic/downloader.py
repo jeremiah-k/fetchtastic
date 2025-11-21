@@ -3538,7 +3538,7 @@ def _find_latest_remote_prerelease_dir(
                 matching_prerelease_dirs.append(dir_name)
 
         if not matching_prerelease_dirs:
-            logger.info(
+            logger.debug(
                 f"No prerelease directories found for expected version {expected_version}"
             )
             return None
