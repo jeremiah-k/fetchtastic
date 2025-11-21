@@ -5199,10 +5199,8 @@ def _cleanup_apk_prereleases(
     try:
         for item in os.listdir(prerelease_dir):
             item_path = os.path.join(prerelease_dir, item)
-            if (
-                os.path.isdir(item_path)
-                and _is_apk_prerelease_by_name(item)
-                and item.lstrip("v").startswith(f"{base_version}-")
+            if os.path.isdir(item_path) and item.lstrip("v").startswith(
+                f"{base_version}-"
             ):
                 if _safe_rmtree(item_path, prerelease_dir, item):
                     logger.info(f"Removed obsolete prerelease directory: {item_path}")
