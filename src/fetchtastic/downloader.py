@@ -649,7 +649,6 @@ def _safe_rmtree(path_to_remove: str, base_dir: str, item_name: str) -> bool:
         logger.error("Error removing %s: %s", path_to_remove, e)
         return False
     else:
-        logger.info("Removed path: %s", path_to_remove)
         return True
 
 
@@ -4766,7 +4765,7 @@ def _process_apk_downloads(
                         releases_to_download
                     )
                     if obsolete_count > 0:
-                        logger.info(
+                        logger.debug(
                             "Skipping download of %d APK prerelease(s) superseded by release %s.",
                             obsolete_count,
                             latest_full_release_tag,
@@ -6172,7 +6171,7 @@ def main(force_refresh: bool = False) -> None:
     ) = _process_apk_downloads(config, paths_and_urls, force_refresh)
 
     # Clean up legacy files - we fetch fresh data instead of migrating old data
-    logger.info("Cleaning up legacy files")
+    logger.debug("Cleaning up legacy files")
     _cleanup_legacy_files(config, paths_and_urls)
 
     if failed_firmware_list:
