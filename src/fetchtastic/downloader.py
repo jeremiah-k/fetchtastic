@@ -5127,11 +5127,11 @@ def cleanup_old_versions(directory: str, releases_to_keep: List[str]) -> None:
         directory (str): Path whose immediate subdirectories represent versioned releases.
         releases_to_keep (List[str]): Basenames of subdirectories that must be preserved.
     """
-    excluded_dirs: List[str] = [
+    excluded_dirs: Set[str] = {
         REPO_DOWNLOADS_DIR,
         FIRMWARE_PRERELEASES_DIR_NAME,
         APK_PRERELEASES_DIR_NAME,
-    ]
+    }
     versions: List[str] = [
         d for d in os.listdir(directory) if os.path.isdir(os.path.join(directory, d))
     ]
@@ -5161,7 +5161,7 @@ def _is_apk_prerelease(release: Dict[str, Any]) -> bool:
     """
     tag_name = release.get("tag_name", "")
     # Check legacy pattern (-open/-closed) OR GitHub's prerelease flag
-    is_legacy_prerelease = "-open" in tag_name.lower() or "-closed" in tag_name.lower()
+    is_legacy_prerelease = _is_apk_prerelease_by_name(tag_name)
     is_github_prerelease = release.get("prerelease", False)
     return is_legacy_prerelease or is_github_prerelease
 

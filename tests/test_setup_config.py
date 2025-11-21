@@ -823,7 +823,6 @@ def test_run_setup_first_run_windows(
         "y",  # create startup shortcut
         "n",  # No NTFY notifications
         "n",  # Would you like to set up a GitHub token now?
-        "n",  # No GitHub token setup
         "",  # press enter to close
     ]
     mock_input.side_effect = user_inputs
