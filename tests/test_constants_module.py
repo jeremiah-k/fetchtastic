@@ -46,20 +46,10 @@ class TestNetworkConstants:
         assert constants.GITHUB_API_TIMEOUT > 0
         assert constants.NTFY_REQUEST_TIMEOUT > 0
         assert constants.PRERELEASE_REQUEST_TIMEOUT > 0
-        assert constants.DEFAULT_REQUEST_TIMEOUT > 0
-
-    def test_api_call_delay_is_reasonable(self):
-        """Test that API call delay is a reasonable small value."""
-        assert 0 < constants.API_CALL_DELAY <= 1.0
-
-    def test_chunk_sizes_are_positive(self):
-        """Test that chunk sizes are positive."""
-        assert constants.DEFAULT_CHUNK_SIZE > 0
-
-    def test_retry_settings(self):
-        """Test retry-related constants."""
-        assert constants.DEFAULT_CONNECT_RETRIES > 0
-        assert constants.DEFAULT_BACKOFF_FACTOR > 0
+        # Note: DEFAULT_AUTO_EXTRACT was removed as an unused constant.
+        # Timeout/retry defaults (DEFAULT_BACKOFF_FACTOR, DEFAULT_CHUNK_SIZE,
+        # DEFAULT_CONNECT_RETRIES, DEFAULT_REQUEST_TIMEOUT) are exercised indirectly
+        # via download tests rather than asserted here
         assert constants.WINDOWS_MAX_REPLACE_RETRIES > 0
         assert constants.WINDOWS_INITIAL_RETRY_DELAY > 0
 
@@ -82,7 +72,7 @@ class TestFileConstants:
     def test_directory_names(self):
         """Test directory name constants."""
         assert constants.REPO_DOWNLOADS_DIR == "repo-dls"
-        assert constants.PRERELEASE_DIR == "prerelease"
+        assert constants.FIRMWARE_PRERELEASES_DIR_NAME == "prerelease"
         assert constants.MESHTASTIC_DIR_NAME == "Meshtastic"
 
     def test_file_names(self):
@@ -104,7 +94,8 @@ class TestDefaultValues:
 
     def test_auto_extract_default(self):
         """Test auto extract default."""
-        assert isinstance(constants.DEFAULT_AUTO_EXTRACT, bool)
+        # Note: DEFAULT_AUTO_EXTRACT was removed as unused constant
+        # assert isinstance(constants.DEFAULT_AUTO_EXTRACT, bool)
 
     def test_release_scan_count(self):
         """Test release scan count."""

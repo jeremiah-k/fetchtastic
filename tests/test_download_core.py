@@ -1109,12 +1109,11 @@ def test_cleanup_superseded_prereleases_file_removal(tmp_path):
     json_tracking_file.write_text('{"version": "v1.0.0", "commits": ["abc123"]}')
     text_tracking_file.write_text("Release: v1.0.0\nabc123\n")
 
-    with patch(
-        "fetchtastic.downloader._ensure_cache_dir", return_value=str(cache_dir)
-    ), patch("os.remove", side_effect=OSError("Permission denied")), patch(
-        "fetchtastic.downloader.logger"
-    ) as mock_logger:
-
+    with (
+        patch("fetchtastic.downloader._ensure_cache_dir", return_value=str(cache_dir)),
+        patch("os.remove", side_effect=OSError("Permission denied")),
+        patch("fetchtastic.downloader.logger") as mock_logger,
+    ):
         # Should not raise exception, should log warning
         cleanup_superseded_prereleases(str(tmp_path), "v2.0.0")
 
@@ -1220,6 +1219,377 @@ def test_cleanup_legacy_files(tmp_path):
     assert not (prerelease_dir / "prerelease_tracking.json").exists()
     assert not (apks_dir / "latest_android_release.json").exists()
     assert not (firmware_dir / "latest_firmware_release.json").exists()
+
+
+def test_is_apk_prerelease():
+    """Test _is_apk_prerelease function correctly identifies prereleases."""
+    from fetchtastic.downloader import _is_apk_prerelease, _is_apk_prerelease_by_name
+
+    # Test legacy prerelease tags with string-based function
+    assert _is_apk_prerelease_by_name("v2.7.7-open.1") is True
+    assert _is_apk_prerelease_by_name("v2.7.7-open.4") is True
+    assert _is_apk_prerelease_by_name("v2.7.7-closed.1") is True
+    assert _is_apk_prerelease_by_name("v2.7.7-OPEN.1") is True  # Case insensitive
+    assert _is_apk_prerelease_by_name("v2.7.7-CLOSED.1") is True  # Case insensitive
+
+    # Test regular releases with string-based function
+    assert _is_apk_prerelease_by_name("v2.7.7") is False
+    assert _is_apk_prerelease_by_name("v2.7.6") is False
+    assert _is_apk_prerelease_by_name("v2.7.7-beta") is False  # Different suffix
+    assert _is_apk_prerelease_by_name("v2.7.7-rc1") is False  # Different suffix
+
+    # Test with release objects (new functionality)
+    legacy_prerelease = {"tag_name": "v2.7.7-open.1", "prerelease": False}
+    github_prerelease = {"tag_name": "v2.7.8-beta1", "prerelease": True}
+    regular_release = {"tag_name": "v2.7.7", "prerelease": False}
+
+    assert _is_apk_prerelease(legacy_prerelease) is True  # Legacy pattern
+    assert _is_apk_prerelease(github_prerelease) is True  # GitHub prerelease flag
+    assert _is_apk_prerelease(regular_release) is False  # Regular release
+
+
+def test_cleanup_apk_prereleases(tmp_path):
+    """Test _cleanup_apk_prereleases removes obsolete prerelease directories."""
+    from fetchtastic.downloader import _cleanup_apk_prereleases
+
+    prerelease_dir = tmp_path / "prereleases"
+    prerelease_dir.mkdir()
+
+    # Create prerelease directories
+    (prerelease_dir / "v2.7.7-open.1").mkdir()
+    (prerelease_dir / "v2.7.7-open.2").mkdir()
+    (prerelease_dir / "v2.7.6-open.1").mkdir()  # Older version
+    (
+        prerelease_dir / "v2.7.7-pr1"
+    ).mkdir()  # GitHub-flagged prerelease name without -open/-closed
+    (prerelease_dir / "v2.8.0-open.1").mkdir()  # Newer version, should remain
+
+    # Call cleanup with full release v2.7.7
+    _cleanup_apk_prereleases(str(prerelease_dir), "v2.7.7")
+
+    # Check that prereleases up to and including 2.7.7 are removed
+    assert not (prerelease_dir / "v2.7.7-open.1").exists()
+    assert not (prerelease_dir / "v2.7.7-open.2").exists()
+    assert not (prerelease_dir / "v2.7.6-open.1").exists()
+    assert not (prerelease_dir / "v2.7.7-pr1").exists()
+    # Newer prerelease should still exist
+    assert (prerelease_dir / "v2.8.0-open.1").exists()
+
+
+@pytest.mark.core_downloads
+def test_process_apk_downloads_enhanced_with_prereleases_enabled(tmp_path):
+    """Prerel enabled with mixed releases should process stable releases and skip superseded prereleases."""
+    from unittest.mock import patch
+
+    from fetchtastic.downloader import _process_apk_downloads
+
+    # Mock release data with both regular and prerelease
+    mock_releases = [
+        {"tag_name": "v2.7.7", "assets": [{"name": "app-release.apk"}]},
+        {"tag_name": "v2.7.7-open.1", "assets": [{"name": "app-open.apk"}]},
+        {"tag_name": "v2.7.6", "assets": [{"name": "app-older.apk"}]},
+        {"tag_name": "v2.7.7-open.2", "assets": [{"name": "app-open2.apk"}]},
+    ]
+
+    config = {
+        "SAVE_APKS": True,
+        "SELECTED_APK_ASSETS": ["app-release.apk", "app-open.apk"],
+        "ANDROID_VERSIONS_TO_KEEP": 2,
+        "CHECK_APK_PRERELEASES": True,
+    }
+
+    paths_and_urls = {
+        "cache_dir": str(tmp_path / "cache"),
+        "apks_dir": str(tmp_path / "apks"),
+        "android_releases_url": "https://api.github.com/repos/meshtastic/meshtastic-android/releases",
+    }
+
+    with (
+        patch(
+            "fetchtastic.downloader._get_latest_releases_data",
+            return_value=mock_releases,
+        ),
+        patch("fetchtastic.downloader.check_and_download") as mock_download,
+        patch("fetchtastic.downloader._summarise_release_scan") as mock_summarise,
+    ):
+        mock_download.return_value = (["v2.7.7"], ["v2.7.7"], [])
+
+        result = _process_apk_downloads(config, paths_and_urls, force_refresh=False)
+
+        # Verify regular releases and prereleases were separated correctly
+        mock_summarise.assert_called_once_with("Android APK", 2, 2)
+
+        # Prereleases are superseded by the latest stable release, so only regular releases are processed
+        assert mock_download.call_count == 1
+
+        regular_call = mock_download.call_args_list[0]
+
+        # Regular releases call should only include non-prerelease tags
+        regular_releases_arg = regular_call[0][0]
+        assert len(regular_releases_arg) == 2  # v2.7.7 and v2.7.6
+        assert all(
+            not r["tag_name"].endswith("-open.1")
+            and not r["tag_name"].endswith("-open.2")
+            for r in regular_releases_arg
+        )
+
+        # Verify result includes no latest prerelease version because they were filtered out
+        (
+            _downloaded_apks,
+            _new_versions,
+            _failed,
+            _latest_version,
+            latest_prerelease,
+        ) = result
+        assert latest_prerelease is None
+
+
+@pytest.mark.core_downloads
+def test_process_apk_downloads_skips_legacy_prerelease_tags(tmp_path):
+    """Ensure legacy (<2.7.0) tags are ignored entirely and cannot surface as prereleases."""
+    from unittest.mock import patch
+
+    from fetchtastic.downloader import _process_apk_downloads
+
+    mock_releases = [
+        {
+            "tag_name": "v2.7.7",
+            "prerelease": False,
+            "assets": [{"name": "app-google-release.apk"}],
+        },
+        {
+            # Real legacy sample: no leading "v", beta naming, and different asset names
+            "tag_name": "2.6.30",
+            "name": "Meshtastic Android 2.6.30 beta",
+            "prerelease": True,  # even if flagged, we should ignore due to version cutoff
+            "assets": [
+                {"name": "fdroidRelease-2.6.30.apk"},
+                {"name": "googleRelease-2.6.30.aab"},
+                {"name": "googleRelease-2.6.30.apk"},
+                {"name": "version_info.txt"},
+            ],
+        },
+    ]
+
+    config = {
+        "SAVE_APKS": True,
+        "SELECTED_APK_ASSETS": ["app-release.apk"],
+        "ANDROID_VERSIONS_TO_KEEP": 1,
+        "CHECK_APK_PRERELEASES": True,
+    }
+
+    paths_and_urls = {
+        "cache_dir": str(tmp_path / "cache"),
+        "apks_dir": str(tmp_path / "apks"),
+        "android_releases_url": "https://api.github.com/repos/meshtastic/meshtastic-android/releases",
+    }
+
+    with (
+        patch(
+            "fetchtastic.downloader._get_latest_releases_data",
+            return_value=mock_releases,
+        ),
+        patch(
+            "fetchtastic.downloader.check_and_download",
+            return_value=(["v2.7.7"], ["v2.7.7"], []),
+        ) as mock_download,
+        patch("fetchtastic.downloader._summarise_release_scan") as mock_summarise,
+    ):
+        result = _process_apk_downloads(config, paths_and_urls, force_refresh=False)
+
+        mock_summarise.assert_called_once_with("Android APK", 1, 1)
+        mock_download.assert_called_once()
+
+        regular_releases_arg = mock_download.call_args_list[0][0][0]
+        assert len(regular_releases_arg) == 1
+        assert regular_releases_arg[0]["tag_name"] == "v2.7.7"
+
+        (
+            _downloaded,
+            _new_versions,
+            _failed,
+            _latest_version,
+            latest_prerelease,
+        ) = result
+        assert latest_prerelease is None
+
+
+@pytest.mark.core_downloads
+def test_process_apk_downloads_enhanced_with_prereleases_disabled(tmp_path):
+    """Test enhanced _process_apk_downloads with prereleases disabled."""
+    from unittest.mock import patch
+
+    from fetchtastic.downloader import _process_apk_downloads
+
+    # Mock release data with both regular and prerelease
+    mock_releases = [
+        {"tag_name": "v2.7.7", "assets": [{"name": "app-release.apk"}]},
+        {"tag_name": "v2.7.7-open.1", "assets": [{"name": "app-open.apk"}]},
+        {"tag_name": "v2.7.6", "assets": [{"name": "app-older.apk"}]},
+    ]
+
+    config = {
+        "SAVE_APKS": True,
+        "SELECTED_APK_ASSETS": ["app-release.apk"],
+        "ANDROID_VERSIONS_TO_KEEP": 2,
+        "CHECK_APK_PRERELEASES": False,  # Disabled
+    }
+
+    paths_and_urls = {
+        "cache_dir": str(tmp_path / "cache"),
+        "apks_dir": str(tmp_path / "apks"),
+        "android_releases_url": "https://api.github.com/repos/meshtastic/meshtastic-android/releases",
+    }
+
+    with (
+        patch(
+            "fetchtastic.downloader._get_latest_releases_data",
+            return_value=mock_releases,
+        ),
+        patch("fetchtastic.downloader.check_and_download") as mock_download,
+        patch("fetchtastic.downloader._summarise_release_scan") as mock_summarise,
+    ):
+        mock_download.return_value = (["v2.7.7"], ["v2.7.7"], [])
+
+        result = _process_apk_downloads(config, paths_and_urls, force_refresh=False)
+
+        # Verify regular releases were processed
+        mock_summarise.assert_called_once_with("Android APK", 2, 2)
+
+        # Verify check_and_download was called only once (for regular releases only)
+        assert mock_download.call_count == 1
+
+        # Verify call was made with only regular releases
+        regular_releases_arg = mock_download.call_args_list[0][0][0]
+        assert len(regular_releases_arg) == 2  # v2.7.7 and v2.7.6
+        assert all(not r["tag_name"].endswith("-open.1") for r in regular_releases_arg)
+
+        # Verify result includes no latest prerelease version
+        (
+            _downloaded_apks,
+            _new_versions,
+            _failed,
+            _latest_version,
+            latest_prerelease,
+        ) = result
+        assert latest_prerelease is None
+
+
+@pytest.mark.core_downloads
+def test_process_apk_downloads_enhanced_no_regular_releases(tmp_path):
+    """Test enhanced _process_apk_downloads with only prereleases available."""
+    from unittest.mock import patch
+
+    from fetchtastic.downloader import _process_apk_downloads
+
+    # Mock release data with only prereleases
+    mock_releases = [
+        {"tag_name": "v2.7.7-open.1", "assets": [{"name": "app-open.apk"}]},
+        {"tag_name": "v2.7.7-open.2", "assets": [{"name": "app-open2.apk"}]},
+    ]
+
+    config = {
+        "SAVE_APKS": True,
+        "SELECTED_APK_ASSETS": ["app-open.apk"],
+        "ANDROID_VERSIONS_TO_KEEP": 2,
+        "CHECK_APK_PRERELEASES": True,
+    }
+
+    paths_and_urls = {
+        "cache_dir": str(tmp_path / "cache"),
+        "apks_dir": str(tmp_path / "apks"),
+        "android_releases_url": "https://api.github.com/repos/meshtastic/meshtastic-android/releases",
+    }
+
+    with (
+        patch(
+            "fetchtastic.downloader._get_latest_releases_data",
+            return_value=mock_releases,
+        ),
+        patch("fetchtastic.downloader.check_and_download") as mock_download,
+        patch("fetchtastic.downloader._summarise_release_scan") as mock_summarise,
+    ):
+        mock_download.return_value = (["v2.7.7-open.1"], ["v2.7.7-open.1"], [])
+
+        result = _process_apk_downloads(config, paths_and_urls, force_refresh=False)
+
+        # Verify no regular releases summary was called
+        mock_summarise.assert_not_called()
+
+        # Verify check_and_download was called only once (for prereleases only)
+        assert mock_download.call_count == 1
+
+        # Verify call was made with only prereleases
+        prerelease_releases_arg = mock_download.call_args_list[0][0][0]
+        assert len(prerelease_releases_arg) == 2  # Both prereleases
+        assert all(
+            r["tag_name"].endswith("-open.1") or r["tag_name"].endswith("-open.2")
+            for r in prerelease_releases_arg
+        )
+
+        # Verify result includes latest prerelease version but no regular version
+        (
+            _downloaded_apks,
+            _new_versions,
+            _failed,
+            latest_version,
+            latest_prerelease,
+        ) = result
+        assert latest_version is None  # No regular releases
+        assert latest_prerelease == "v2.7.7-open.1"
+
+
+@pytest.mark.core_downloads
+def test_process_apk_downloads_enhanced_prerelease_cleanup(tmp_path):
+    """Test enhanced _process_apk_downloads calls cleanup when full release available."""
+    from unittest.mock import patch
+
+    from fetchtastic.downloader import _process_apk_downloads
+
+    # Mock release data with both regular and prerelease
+    mock_releases = [
+        {"tag_name": "v2.7.7", "assets": [{"name": "app-release.apk"}]},
+        {"tag_name": "v2.7.7-open.1", "assets": [{"name": "app-open.apk"}]},
+        {"tag_name": "v2.7.6", "assets": [{"name": "app-older.apk"}]},
+    ]
+
+    config = {
+        "SAVE_APKS": True,
+        "SELECTED_APK_ASSETS": ["app-release.apk"],
+        "ANDROID_VERSIONS_TO_KEEP": 2,
+        "CHECK_APK_PRERELEASES": True,
+    }
+
+    paths_and_urls = {
+        "cache_dir": str(tmp_path / "cache"),
+        "apks_dir": str(tmp_path / "apks"),
+        "android_releases_url": "https://api.github.com/repos/meshtastic/meshtastic-android/releases",
+    }
+
+    with (
+        patch(
+            "fetchtastic.downloader._get_latest_releases_data",
+            return_value=mock_releases,
+        ),
+        patch(
+            "fetchtastic.downloader.check_and_download",
+            return_value=(["v2.7.7"], ["v2.7.7"], []),
+        ),
+        patch("fetchtastic.downloader._summarise_release_scan"),
+        patch("fetchtastic.downloader._cleanup_apk_prereleases") as mock_cleanup,
+    ):
+        _process_apk_downloads(config, paths_and_urls, force_refresh=False)
+
+        # Verify cleanup was called because we have full releases
+        mock_cleanup.assert_called_once()
+
+        # Verify cleanup was called with correct parameters
+        cleanup_call_args = mock_cleanup.call_args[0]
+        expected_prerelease_dir = str(tmp_path / "apks" / "prerelease")
+        expected_full_release_tag = "v2.7.7"
+
+        assert cleanup_call_args[0] == expected_prerelease_dir
+        assert cleanup_call_args[1] == expected_full_release_tag
 
 
 @pytest.mark.core_downloads
@@ -2213,10 +2583,12 @@ def test_safe_rmtree():
 
     from fetchtastic.downloader import _safe_rmtree
 
-    with patch("os.path.realpath") as mock_realpath, patch(
-        "os.path.commonpath", return_value="/base"
-    ), patch("os.path.isdir", return_value=True), patch("shutil.rmtree") as mock_rmtree:
-
+    with (
+        patch("os.path.realpath") as mock_realpath,
+        patch("os.path.commonpath", return_value="/base"),
+        patch("os.path.isdir", return_value=True),
+        patch("shutil.rmtree") as mock_rmtree,
+    ):
         # Setup mock to return same path for both calls
         mock_realpath.side_effect = lambda x: x
 
@@ -2225,16 +2597,22 @@ def test_safe_rmtree():
         assert result is True
         mock_rmtree.assert_called_once_with("/test/path")
 
-    with patch("os.path.realpath") as mock_realpath, patch(
-        "os.path.commonpath", side_effect=ValueError("Paths don't have the same drive")
+    with (
+        patch("os.path.realpath") as mock_realpath,
+        patch(
+            "os.path.commonpath",
+            side_effect=ValueError("Paths don't have the same drive"),
+        ),
+        patch("os.path.isdir", return_value=True),
+        patch("shutil.rmtree") as mock_rmtree,
     ):
-
         # Setup mock to return different paths (security check failure)
         mock_realpath.side_effect = ["/base", "/malicious/path"]
 
         # Test security check failure
         result = _safe_rmtree("/test/path", "/base", "test_item")
         assert result is False
+        mock_rmtree.assert_not_called()
 
 
 @pytest.mark.core_downloads
@@ -2276,7 +2654,6 @@ def test_cache_thread_safety():
     # Test commit cache thread safety
     with patch("fetchtastic.downloader._ensure_cache_dir", return_value="/test/cache"):
         with patch("fetchtastic.downloader._atomic_write_json", return_value=True):
-
             # Reset cache state
             clear_commit_timestamp_cache()
 
@@ -2307,7 +2684,6 @@ def test_cache_thread_safety():
     # Test releases cache thread safety
     with patch("fetchtastic.downloader._ensure_cache_dir", return_value="/test/cache"):
         with patch("fetchtastic.downloader._atomic_write_json", return_value=True):
-
             # Reset cache state using clear_all_caches
             clear_all_caches()
 
@@ -2337,7 +2713,6 @@ def test_cache_thread_safety():
     # Test prerelease cache thread safety
     with patch("fetchtastic.downloader._ensure_cache_dir", return_value="/test/cache"):
         with patch("fetchtastic.downloader._atomic_write_json", return_value=True):
-
             # Reset cache state
             clear_all_caches()
 

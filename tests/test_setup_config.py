@@ -183,6 +183,7 @@ def test_load_config_new_location(tmp_path, mocker):
         yaml.dump(config_data, f)
 
     config = setup_config.load_config()
+    assert config is not None
     assert config["SAVE_APKS"] is True
 
 
@@ -201,6 +202,7 @@ def test_load_config_old_location_suggests_migration(tmp_path, mocker):
         yaml.dump(config_data, f)
 
     config = setup_config.load_config()
+    assert config is not None
     assert config["BASE_DIR"] == TEST_CONFIG["BASE_DIR"]
     # Migration is suggested but not automatic - new file should not exist
     assert not new_config_path.exists()
@@ -403,6 +405,7 @@ def test_load_config_old_location(tmp_path, mocker):
         yaml.dump(config_data, f)
 
     config = setup_config.load_config()
+    assert config is not None
     assert config["SAVE_FIRMWARE"] is True
 
 
@@ -423,6 +426,7 @@ def test_load_config_prefers_new_location(tmp_path, mocker):
         yaml.dump(old_config_data, f)
 
     config = setup_config.load_config()
+    assert config is not None
     assert config["key"] == "new"
 
 
@@ -727,6 +731,7 @@ def test_run_setup_first_run_linux_simple(
     user_inputs = [
         "",  # Use default base directory
         "b",  # Both APKs and firmware
+        "y",  # Check for APK prereleases
         "2",  # Keep 2 versions of Android app
         "2",  # Keep 2 versions of firmware
         "n",  # No pre-releases
@@ -734,8 +739,9 @@ def test_run_setup_first_run_linux_simple(
         "n",  # No cron job
         "n",  # No reboot cron job
         "n",  # No NTFY notifications
-        "n",  # No GitHub token setup
+        "n",  # Would you like to set up a GitHub token now?
         "n",  # Don't perform first run now
+        "",  # Extra input buffer
     ]
     mock_input.side_effect = user_inputs
 
@@ -753,6 +759,7 @@ def test_run_setup_first_run_linux_simple(
         assert saved_config["ANDROID_VERSIONS_TO_KEEP"] == 2
         assert saved_config["FIRMWARE_VERSIONS_TO_KEEP"] == 2
         assert saved_config["CHECK_PRERELEASES"] is False
+        assert saved_config["CHECK_APK_PRERELEASES"] is True
         assert saved_config["AUTO_EXTRACT"] is False
         assert saved_config["EXTRACT_PATTERNS"] == []
         assert saved_config["EXCLUDE_PATTERNS"] == []
@@ -808,13 +815,14 @@ def test_run_setup_first_run_windows(
         "",  # Use default base directory
         "y",  # create menu
         "b",  # Both APKs and firmware
+        "y",  # Check for APK prereleases
         "2",  # Keep 2 versions of Android app
         "2",  # Keep 2 versions of firmware
         "n",  # No auto-extract
         "n",  # No pre-releases
         "y",  # create startup shortcut
         "n",  # No NTFY notifications
-        "n",  # No GitHub token setup
+        "n",  # Would you like to set up a GitHub token now?
         "",  # press enter to close
     ]
     mock_input.side_effect = user_inputs
@@ -838,6 +846,7 @@ def test_run_setup_first_run_windows(
             "GITHUB_TOKEN" not in saved_config
             or saved_config.get("GITHUB_TOKEN") is None
         )
+        assert saved_config["CHECK_APK_PRERELEASES"] is True
 
 
 @pytest.mark.configuration
@@ -896,6 +905,7 @@ def test_run_setup_first_run_termux(  # noqa: ARG001
         "n",  # don't migrate to pipx (so setup continues)
         "",  # Use default base directory
         "b",  # Both APKs and firmware
+        "y",  # Check for APK prereleases
         "1",  # Keep 1 version of Android app
         "1",  # Keep 1 version of firmware
         "n",  # No pre-releases
@@ -904,6 +914,7 @@ def test_run_setup_first_run_termux(  # noqa: ARG001
         "h",  # hourly cron job
         "y",  # boot script
         "n",  # No NTFY notifications
+        "n",  # Would you like to set up a GitHub token now?
         "n",  # No GitHub token setup
         "n",  # Don't perform first run now
     ]
@@ -924,6 +935,7 @@ def test_run_setup_first_run_termux(  # noqa: ARG001
         mock_yaml_dump.assert_called()
         saved_config = mock_yaml_dump.call_args[0][0]
         assert saved_config["WIFI_ONLY"] is True
+        assert saved_config["CHECK_APK_PRERELEASES"] is True
 
 
 @pytest.mark.configuration
@@ -1098,17 +1110,7 @@ def test_run_setup_partial_firmware_section(
     mock_menu_firmware.reset_mock()
     mock_menu_apk.reset_mock()
 
-    mock_input.side_effect = [
-        "y",
-        "y",
-        "4",
-        "y",
-        "esp32- rak4631-",
-        "y",
-        "y",
-        "",
-        "y",
-    ]
+    mock_input.side_effect = ["y", "y", "3", "y", "esp32- rak4631-", "y", "n", "y", "y"]
 
     with patch("builtins.open", mock_open()):
         setup_config.run_setup(sections=["firmware"])
@@ -1119,7 +1121,7 @@ def test_run_setup_partial_firmware_section(
     saved_configs = [
         copy.deepcopy(args[0][0]) for args in mock_yaml_dump.call_args_list
     ]
-    assert any(cfg.get("FIRMWARE_VERSIONS_TO_KEEP") == 4 for cfg in saved_configs)
+    assert any(cfg.get("FIRMWARE_VERSIONS_TO_KEEP") == 3 for cfg in saved_configs)
     assert any(cfg.get("CHECK_PRERELEASES") is True for cfg in saved_configs)
 
     mock_setup_cron_job.assert_not_called()
