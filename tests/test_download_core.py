@@ -1259,6 +1259,9 @@ def test_cleanup_apk_prereleases(tmp_path):
     (prerelease_dir / "v2.7.7-open.1").mkdir()
     (prerelease_dir / "v2.7.7-open.2").mkdir()
     (prerelease_dir / "v2.7.6-open.1").mkdir()  # Older version
+    (
+        prerelease_dir / "v2.7.7-pr1"
+    ).mkdir()  # GitHub-flagged prerelease name without -open/-closed
     (prerelease_dir / "v2.8.0-open.1").mkdir()  # Newer version, should remain
 
     # Call cleanup with full release v2.7.7
@@ -1268,6 +1271,7 @@ def test_cleanup_apk_prereleases(tmp_path):
     assert not (prerelease_dir / "v2.7.7-open.1").exists()
     assert not (prerelease_dir / "v2.7.7-open.2").exists()
     assert not (prerelease_dir / "v2.7.6-open.1").exists()
+    assert not (prerelease_dir / "v2.7.7-pr1").exists()
     # Newer prerelease should still exist
     assert (prerelease_dir / "v2.8.0-open.1").exists()
 

@@ -5257,14 +5257,16 @@ def _cleanup_apk_prereleases(
     try:
         for item in os.listdir(prerelease_dir):
             item_path = os.path.join(prerelease_dir, item)
-            if os.path.isdir(item_path) and _is_apk_prerelease_by_name(item):
-                prerelease_tuple = _get_release_tuple(item)
-                # Cleanup if the prerelease version is less than or equal to the full release version
-                if prerelease_tuple and prerelease_tuple <= latest_release_tuple:
-                    if _safe_rmtree(item_path, prerelease_dir, item):
-                        logger.info(
-                            f"Removed obsolete prerelease directory: {item_path}"
-                        )
+            if not os.path.isdir(item_path):
+                continue
+
+            # We only write prereleases into this directory, but guard with a version
+            # tuple check to avoid deleting unexpected contents.
+            prerelease_tuple = _get_release_tuple(item)
+            # Cleanup if the prerelease version is less than or equal to the full release version
+            if prerelease_tuple and prerelease_tuple <= latest_release_tuple:
+                if _safe_rmtree(item_path, prerelease_dir, item):
+                    logger.info(f"Removed obsolete prerelease directory: {item_path}")
     except OSError as e:
         logger.warning(f"Error cleaning up prerelease directories: {e}")
 
@@ -6076,7 +6078,7 @@ def _format_api_summary(summary: Dict[str, Any]) -> str:
         )
 
     # Highlight API requests that weren't tied to a cache lookup (e.g., pagination)
-    uncached_requests = summary["total_requests"] - summary["cache_misses"]
+    uncached_requests = max(0, summary["total_requests"] - summary["cache_misses"])
     if uncached_requests > 0 and total_cache_lookups > 0:
         direct_label = (
             "direct API request" if uncached_requests == 1 else "direct API requests"
