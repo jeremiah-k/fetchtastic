@@ -4657,13 +4657,14 @@ def _process_apk_downloads(
     if config.get("SAVE_APKS", False) and config.get("SELECTED_APK_ASSETS", []):
         # Increase scan count so prereleases cannot starve stable releases,
         # even when APK prerelease downloads are disabled.
-        base_scan_count = config.get("ANDROID_VERSIONS_TO_KEEP", RELEASE_SCAN_COUNT)
-        keep_count_apk = base_scan_count
+        min_stable_releases_to_find = config.get(
+            "ANDROID_VERSIONS_TO_KEEP", RELEASE_SCAN_COUNT
+        )
 
         # Use improved scan logic to prevent stable APK starvation.
         # Start with a window twice the keep count but never exceed the per-page cap.
         max_scan = GITHUB_MAX_PER_PAGE
-        scan_count = min(max_scan, base_scan_count * 2)
+        scan_count = min(max_scan, min_stable_releases_to_find * 2)
         latest_android_releases: List[Dict[str, Any]] = []
         regular_releases: List[Dict[str, Any]] = []
         prerelease_releases: List[Dict[str, Any]] = []
@@ -4685,7 +4686,7 @@ def _process_apk_downloads(
                     regular_releases.append(release)
 
             if (
-                len(regular_releases) >= keep_count_apk
+                len(regular_releases) >= min_stable_releases_to_find
                 or len(latest_android_releases) < scan_count
             ):
                 # Either we have enough stable releases, or we hit the end of history.
@@ -4697,15 +4698,14 @@ def _process_apk_downloads(
                     "Reached maximum APK scan window (%d) without finding %d stable "
                     "releases; proceeding with %d stable release(s).",
                     max_scan,
-                    keep_count_apk,
+                    min_stable_releases_to_find,
                     len(regular_releases),
                 )
                 break
 
             scan_count = min(max_scan, scan_count * 2)
 
-        # Reset keep_count_apk to actual config value for download logic
-        # (previous assignment was only for scan-window sizing)
+        # Set keep_count_apk to actual config value for download logic
         keep_count_apk = config.get(
             "ANDROID_VERSIONS_TO_KEEP", DEFAULT_ANDROID_VERSIONS_TO_KEEP
         )

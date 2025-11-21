@@ -80,7 +80,6 @@ DEFAULT_CHUNK_SIZE = 8192
 # Directories that Fetchtastic manages and can safely clean
 MANAGED_DIRECTORIES = (
     REPO_DOWNLOADS_DIR,
-    FIRMWARE_PRERELEASES_DIR_NAME,
     FIRMWARE_DIR_NAME,
     APKS_DIR_NAME,
 )
