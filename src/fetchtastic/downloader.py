@@ -4451,7 +4451,11 @@ def _process_firmware_downloads(
                 config.get("EXTRACT_PATTERNS", []),
                 selected_patterns=config.get("SELECTED_FIRMWARE_ASSETS", []),  # type: ignore
                 auto_extract=config.get("AUTO_EXTRACT", False),
-                exclude_patterns=config.get("EXCLUDE_PATTERNS", []),  # type: ignore
+                exclude_patterns=[
+                    str(p)
+                    for p in config.get("EXCLUDE_PATTERNS", [])
+                    if isinstance(p, (str, bytes))
+                ],
                 force_refresh=force_refresh,
             )
         )
@@ -4489,7 +4493,11 @@ def _process_firmware_downloads(
                         paths_and_urls["download_dir"],
                         latest_release_tag,
                         _get_prerelease_patterns(config),
-                        exclude_patterns=config.get("EXCLUDE_PATTERNS", []),  # type: ignore
+                        exclude_patterns=[
+                            str(p)
+                            for p in config.get("EXCLUDE_PATTERNS", [])
+                            if isinstance(p, (str, bytes))
+                        ],
                         device_manager=device_manager,
                         github_token=config.get("GITHUB_TOKEN"),
                         force_refresh=force_refresh,
@@ -4706,7 +4714,11 @@ def _process_apk_downloads(
                     paths_and_urls["cache_dir"],
                     paths_and_urls["apks_dir"],
                     keep_count_apk,
-                    config.get("EXCLUDE_PATTERNS", []),  # type: ignore[arg-type]
+                    [
+                        str(p)
+                        for p in config.get("EXCLUDE_PATTERNS", [])
+                        if isinstance(p, (str, bytes))
+                    ],
                     selected_patterns=config.get("SELECTED_APK_ASSETS", []),
                     force_refresh=force_refresh,
                 )
