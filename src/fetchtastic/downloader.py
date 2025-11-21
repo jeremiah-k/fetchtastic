@@ -4739,6 +4739,19 @@ def _process_apk_downloads(
         else:
             latest_apk_version = None
 
+        # Check if we have a full release that would make prereleases obsolete
+        has_full_release = bool(regular_releases)
+
+        # Clean up APK prereleases if we have full releases, regardless of prerelease setting
+        if has_full_release:
+            prerelease_dir = os.path.join(
+                paths_and_urls["apks_dir"], APK_PRERELEASES_DIR_NAME
+            )
+            _cleanup_apk_prereleases(
+                prerelease_dir,
+                regular_releases[0].get("tag_name"),
+            )
+
         # Handle prereleases if enabled
         if (
             config.get("CHECK_APK_PRERELEASES", DEFAULT_CHECK_APK_PRERELEASES)
@@ -4748,9 +4761,6 @@ def _process_apk_downloads(
                 paths_and_urls["apks_dir"], APK_PRERELEASES_DIR_NAME
             )
             os.makedirs(prerelease_dir, exist_ok=True)
-
-            # Check if we have a full release that would make prereleases obsolete
-            has_full_release = bool(regular_releases)
 
             # Filter out obsolete prereleases before downloading to avoid unnecessary work
             releases_to_download = prerelease_releases
@@ -4799,12 +4809,6 @@ def _process_apk_downloads(
             new_apk_versions.extend(prerelease_new_versions_list)
             all_failed_apk_downloads.extend(failed_prerelease_downloads_details)
 
-            # Remove prereleases if we have a full release
-            if has_full_release:
-                _cleanup_apk_prereleases(
-                    prerelease_dir,
-                    regular_releases[0].get("tag_name"),
-                )
             # Set latest prerelease version only if we have prereleases to download
             if releases_to_download:
                 latest_prerelease_version = releases_to_download[0].get("tag_name")
