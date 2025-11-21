@@ -1099,6 +1099,20 @@ def _get_existing_prerelease_dirs(prerelease_dir: str) -> list[str]:
     return entries
 
 
+def _get_string_list_from_config(config: Dict[str, Any], key: str) -> List[str]:
+    """
+    Safely retrieves a list of strings from the configuration.
+
+    Parameters:
+        config (Dict[str, Any]): Configuration mapping.
+        key (str): The key to retrieve from the configuration.
+
+    Returns:
+        List[str]: A list of strings extracted from the configuration.
+    """
+    return [str(p) for p in config.get(key, []) if isinstance(p, (str, bytes))]
+
+
 def _get_prerelease_patterns(config: dict) -> list[str]:
     """
     Get the file-selection patterns used to identify prerelease assets.
@@ -4451,11 +4465,9 @@ def _process_firmware_downloads(
                 config.get("EXTRACT_PATTERNS", []),
                 selected_patterns=config.get("SELECTED_FIRMWARE_ASSETS", []),  # type: ignore
                 auto_extract=config.get("AUTO_EXTRACT", False),
-                exclude_patterns=[
-                    str(p)
-                    for p in config.get("EXCLUDE_PATTERNS", [])
-                    if isinstance(p, (str, bytes))
-                ],
+                exclude_patterns=_get_string_list_from_config(
+                    config, "EXCLUDE_PATTERNS"
+                ),
                 force_refresh=force_refresh,
             )
         )
@@ -4493,11 +4505,9 @@ def _process_firmware_downloads(
                         paths_and_urls["download_dir"],
                         latest_release_tag,
                         _get_prerelease_patterns(config),
-                        exclude_patterns=[
-                            str(p)
-                            for p in config.get("EXCLUDE_PATTERNS", [])
-                            if isinstance(p, (str, bytes))
-                        ],
+                        exclude_patterns=_get_string_list_from_config(
+                            config, "EXCLUDE_PATTERNS"
+                        ),
                         device_manager=device_manager,
                         github_token=config.get("GITHUB_TOKEN"),
                         force_refresh=force_refresh,
@@ -4714,11 +4724,7 @@ def _process_apk_downloads(
                     paths_and_urls["cache_dir"],
                     paths_and_urls["apks_dir"],
                     keep_count_apk,
-                    [
-                        str(p)
-                        for p in config.get("EXCLUDE_PATTERNS", [])
-                        if isinstance(p, (str, bytes))
-                    ],
+                    _get_string_list_from_config(config, "EXCLUDE_PATTERNS"),
                     selected_patterns=config.get("SELECTED_APK_ASSETS", []),
                     force_refresh=force_refresh,
                 )
@@ -4780,11 +4786,7 @@ def _process_apk_downloads(
                     paths_and_urls["cache_dir"],
                     prerelease_dir,
                     len(releases_to_download),
-                    [
-                        str(pattern)
-                        for pattern in config.get("EXCLUDE_PATTERNS", [])
-                        if isinstance(pattern, (str, bytes))
-                    ],
+                    _get_string_list_from_config(config, "EXCLUDE_PATTERNS"),
                     selected_patterns=config.get("SELECTED_APK_ASSETS", []),
                     force_refresh=force_refresh,
                     perform_cleanup=False,

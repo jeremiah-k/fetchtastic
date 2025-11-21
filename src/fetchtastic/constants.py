@@ -39,7 +39,7 @@ WINDOWS_INITIAL_RETRY_DELAY = 1.0  # seconds
 # File and directory names
 REPO_DOWNLOADS_DIR = "repo-dls"
 PRERELEASE_DIR = "prerelease"
-APK_PRERELEASES_DIR_NAME = "prereleases"
+APK_PRERELEASES_DIR_NAME = "prerelease"
 FIRMWARE_DIR_PREFIX = "firmware-"
 FIRMWARE_DIR_NAME = "firmware"
 APKS_DIR_NAME = "apks"

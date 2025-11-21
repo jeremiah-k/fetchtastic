@@ -1512,7 +1512,7 @@ def test_process_apk_downloads_enhanced_prerelease_cleanup(tmp_path):
 
         # Verify cleanup was called with correct parameters
         cleanup_call_args = mock_cleanup.call_args[0]
-        expected_prerelease_dir = str(tmp_path / "apks" / "prereleases")
+        expected_prerelease_dir = str(tmp_path / "apks" / "prerelease")
         expected_full_release_tag = "v2.7.7"
 
         assert cleanup_call_args[0] == expected_prerelease_dir
