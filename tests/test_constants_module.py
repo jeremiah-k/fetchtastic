@@ -82,7 +82,7 @@ class TestFileConstants:
     def test_directory_names(self):
         """Test directory name constants."""
         assert constants.REPO_DOWNLOADS_DIR == "repo-dls"
-        assert constants.PRERELEASE_DIR == "prerelease"
+        assert constants.FIRMWARE_PRERELEASES_DIR_NAME == "prerelease"
         assert constants.MESHTASTIC_DIR_NAME == "Meshtastic"
 
     def test_file_names(self):

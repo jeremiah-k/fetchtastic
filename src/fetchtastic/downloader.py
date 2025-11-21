@@ -49,19 +49,30 @@ else:
 
 from fetchtastic import menu_repo, setup_config
 from fetchtastic.constants import (
+    APK_EXTENSION,
     APK_PRERELEASES_DIR_NAME,
+    APKS_DIR_NAME,
     COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS,
+    CONFIG_FILE_NAME,
     DEFAULT_ANDROID_VERSIONS_TO_KEEP,
+    DEFAULT_AUTO_EXTRACT,
+    DEFAULT_BACKOFF_FACTOR,
     DEFAULT_CHECK_APK_PRERELEASES,
+    DEFAULT_CHUNK_SIZE,
+    DEFAULT_CONNECT_RETRIES,
     DEFAULT_FIRMWARE_VERSIONS_TO_KEEP,
     DEFAULT_PRERELEASE_ACTIVE,
     DEFAULT_PRERELEASE_COMMITS_TO_FETCH,
     DEFAULT_PRERELEASE_STATUS,
+    DEFAULT_REQUEST_TIMEOUT,
     DEVICE_HARDWARE_API_URL,
     DEVICE_HARDWARE_CACHE_HOURS,
     EXECUTABLE_PERMISSIONS,
     FILE_TYPE_PREFIXES,
+    FIRMWARE_DIR_NAME,
     FIRMWARE_DIR_PREFIX,
+    FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
+    FIRMWARE_PRERELEASES_DIR_NAME,
     GITHUB_API_BASE,
     GITHUB_API_TIMEOUT,
     GITHUB_MAX_PER_PAGE,
@@ -85,8 +96,6 @@ from fetchtastic.constants import (
     PRERELEASE_DELETE_COMMIT_PATTERN,
     PRERELEASE_DETAIL_ATTEMPT_MULTIPLIER,
     PRERELEASE_DETAIL_FETCH_WORKERS,
-    PRERELEASE_DIR,
-    PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
     PRERELEASE_TRACKING_JSON_FILE,
     RELEASE_SCAN_COUNT,
     RELEASES_CACHE_EXPIRY_HOURS,
@@ -2140,7 +2149,7 @@ def _load_prerelease_dir_cache() -> None:
 
     loaded_data = _load_json_cache_with_expiry(
         cache_file_path=_get_prerelease_dir_cache_file(),
-        expiry_hours=PRERELEASE_DIR_CACHE_EXPIRY_SECONDS / 3600,
+        expiry_hours=FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS / 3600,
         cache_entry_validator=validate_prerelease_entry,
         entry_processor=process_prerelease_entry,
         cache_name="prerelease directory",
@@ -2354,7 +2363,7 @@ def _fetch_prerelease_directories(
         if not force_refresh and cache_key in _prerelease_dir_cache:
             directories, cached_at = _prerelease_dir_cache[cache_key]
             age = now - cached_at
-            if age.total_seconds() < PRERELEASE_DIR_CACHE_EXPIRY_SECONDS:
+            if age.total_seconds() < FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS:
                 track_api_cache_hit()
                 logger.debug(
                     "Using cached prerelease directories (cached %.0fs ago)",
@@ -2365,7 +2374,7 @@ def _fetch_prerelease_directories(
             logger.debug(
                 "Prerelease directory cache expired (age %.0fs, limit %ds) - refreshing",
                 age.total_seconds(),
-                PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
+                FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
             )
             del _prerelease_dir_cache[cache_key]
 
@@ -5124,7 +5133,7 @@ def cleanup_old_versions(directory: str, releases_to_keep: List[str]) -> None:
     """
     excluded_dirs: List[str] = [
         REPO_DOWNLOADS_DIR,
-        PRERELEASE_DIR,
+        FIRMWARE_PRERELEASES_DIR_NAME,
         APK_PRERELEASES_DIR_NAME,
     ]
     versions: List[str] = [
@@ -6054,7 +6063,7 @@ def _cleanup_legacy_files(
             return
 
         # Support both config-based and direct path approaches for prerelease dir
-        prerelease_dir = config.get("PRERELEASE_DIR") or os.path.join(
+        prerelease_dir = config.get("FIRMWARE_PRERELEASES_DIR_NAME") or os.path.join(
             download_dir, "firmware", "prerelease"
         )
         if prerelease_dir and os.path.exists(prerelease_dir):
