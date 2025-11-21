@@ -555,7 +555,7 @@ def _setup_downloads(
     if save_apks and (not is_partial_run or wants("android")):
         check_apk_prereleases_current = config.get(
             "CHECK_APK_PRERELEASES", DEFAULT_CHECK_APK_PRERELEASES
-        )  # Default follows DEFAULT_CHECK_APK_PRERELEASES (currently True for APKs, lower risk than firmware prereleases)
+        )  # Default: True. APK prereleases are typically more stable than firmware prereleases and safer to enable by default.
         check_apk_prereleases_default = "yes" if check_apk_prereleases_current else "no"
         check_apk_prereleases_input = (
             input(

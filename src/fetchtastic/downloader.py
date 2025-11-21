@@ -4754,15 +4754,9 @@ def _process_apk_downloads(
                             latest_full_release_tag,
                         )
 
-            (
-                prerelease_downloaded,
-                prerelease_new_versions_list,
-                failed_prerelease_downloads_details,
-            ) = (
-                [],
-                [],
-                [],
-            )
+            prerelease_downloaded: List[str] = []
+            prerelease_new_versions_list: List[str] = []
+            failed_prerelease_downloads_details: List[Dict[str, str]] = []
             if releases_to_download:
                 (
                     prerelease_downloaded,
@@ -4774,7 +4768,11 @@ def _process_apk_downloads(
                     paths_and_urls["cache_dir"],
                     prerelease_dir,
                     len(releases_to_download),
-                    config.get("EXCLUDE_PATTERNS", []),  # type: ignore[arg-type]
+                    [
+                        str(pattern)
+                        for pattern in config.get("EXCLUDE_PATTERNS", [])
+                        if isinstance(pattern, (str, bytes))
+                    ],
                     selected_patterns=config.get("SELECTED_APK_ASSETS", []),
                     force_refresh=force_refresh,
                     perform_cleanup=False,
@@ -5187,8 +5185,10 @@ def _cleanup_apk_prereleases(
     try:
         for item in os.listdir(prerelease_dir):
             item_path = os.path.join(prerelease_dir, item)
-            if os.path.isdir(item_path) and item.lstrip("v").startswith(
-                f"{base_version}-"
+            if (
+                os.path.isdir(item_path)
+                and _is_apk_prerelease_by_name(item)
+                and item.lstrip("v").startswith(f"{base_version}-")
             ):
                 if _safe_rmtree(item_path, prerelease_dir, item):
                     logger.info(f"Removed obsolete prerelease directory: {item_path}")
