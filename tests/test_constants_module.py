@@ -46,9 +46,10 @@ class TestNetworkConstants:
         assert constants.GITHUB_API_TIMEOUT > 0
         assert constants.NTFY_REQUEST_TIMEOUT > 0
         assert constants.PRERELEASE_REQUEST_TIMEOUT > 0
-        # Note: DEFAULT_AUTO_EXTRACT, DEFAULT_BACKOFF_FACTOR, DEFAULT_CHUNK_SIZE,
-        # DEFAULT_CONNECT_RETRIES, and DEFAULT_REQUEST_TIMEOUT are no longer defined
-        # as they were unused constants that have been removed
+        # Note: DEFAULT_AUTO_EXTRACT was removed as an unused constant.
+        # Timeout/retry defaults (DEFAULT_BACKOFF_FACTOR, DEFAULT_CHUNK_SIZE,
+        # DEFAULT_CONNECT_RETRIES, DEFAULT_REQUEST_TIMEOUT) are exercised indirectly
+        # via download tests rather than asserted here
         assert constants.WINDOWS_MAX_REPLACE_RETRIES > 0
         assert constants.WINDOWS_INITIAL_RETRY_DELAY > 0
 

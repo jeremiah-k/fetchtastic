@@ -1109,7 +1109,12 @@ def _get_string_list_from_config(config: Dict[str, Any], key: str) -> List[str]:
     Returns:
         List[str]: A list of strings extracted from the configuration.
     """
-    return [str(p) for p in config.get(key, []) if isinstance(p, (str, bytes))]
+    value = config.get(key, [])
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, list):
+        return []
+    return [str(p) for p in value if isinstance(p, (str, bytes))]
 
 
 def _get_prerelease_patterns(config: dict) -> list[str]:
@@ -6053,9 +6058,9 @@ def _cleanup_legacy_files(
         if not download_dir:
             return
 
-        # Support both config-based and direct path approaches for prerelease dir
-        prerelease_dir = config.get("FIRMWARE_PRERELEASES_DIR_NAME") or os.path.join(
-            download_dir, "firmware", "prerelease"
+        # Support both legacy config-based and direct path approaches for prerelease dir
+        prerelease_dir = config.get("PRERELEASE_DIR") or os.path.join(
+            download_dir, "firmware", FIRMWARE_PRERELEASES_DIR_NAME
         )
         if prerelease_dir and os.path.exists(prerelease_dir):
             # Remove specific legacy text tracking files
