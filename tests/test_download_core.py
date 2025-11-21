@@ -1258,23 +1258,23 @@ def test_cleanup_apk_prereleases(tmp_path):
     # Create prerelease directories
     (prerelease_dir / "v2.7.7-open.1").mkdir()
     (prerelease_dir / "v2.7.7-open.2").mkdir()
-    (
-        prerelease_dir / "v2.7.6-open.1"
-    ).mkdir()  # Different version, should not be removed
+    (prerelease_dir / "v2.7.6-open.1").mkdir()  # Older version
+    (prerelease_dir / "v2.8.0-open.1").mkdir()  # Newer version, should remain
 
     # Call cleanup with full release v2.7.7
     _cleanup_apk_prereleases(str(prerelease_dir), "v2.7.7")
 
-    # Check that v2.7.7 prereleases are removed
+    # Check that prereleases up to and including 2.7.7 are removed
     assert not (prerelease_dir / "v2.7.7-open.1").exists()
     assert not (prerelease_dir / "v2.7.7-open.2").exists()
-    # v2.7.6 prerelease should still exist
-    assert (prerelease_dir / "v2.7.6-open.1").exists()
+    assert not (prerelease_dir / "v2.7.6-open.1").exists()
+    # Newer prerelease should still exist
+    assert (prerelease_dir / "v2.8.0-open.1").exists()
 
 
 @pytest.mark.core_downloads
 def test_process_apk_downloads_enhanced_with_prereleases_enabled(tmp_path):
-    """Test enhanced _process_apk_downloads with prereleases enabled and mixed releases."""
+    """Prerel enabled with mixed releases should process stable releases and skip superseded prereleases."""
     from unittest.mock import patch
 
     from fetchtastic.downloader import _process_apk_downloads
@@ -1315,10 +1315,9 @@ def test_process_apk_downloads_enhanced_with_prereleases_enabled(tmp_path):
         # Verify regular releases and prereleases were separated correctly
         mock_summarise.assert_called_once_with("Android APK", 2, 2)
 
-        # Verify check_and_download was called once (only for regular releases, prereleases filtered out)
+        # Prereleases are superseded by the latest stable release, so only regular releases are processed
         assert mock_download.call_count == 1
 
-        # Verify call was made with correct parameters
         regular_call = mock_download.call_args_list[0]
 
         # Regular releases call should only include non-prerelease tags
@@ -1330,7 +1329,7 @@ def test_process_apk_downloads_enhanced_with_prereleases_enabled(tmp_path):
             for r in regular_releases_arg
         )
 
-        # Verify result includes no latest prerelease version (filtered out)
+        # Verify result includes no latest prerelease version because they were filtered out
         (
             _downloaded_apks,
             _new_versions,

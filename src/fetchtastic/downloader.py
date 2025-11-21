@@ -813,7 +813,7 @@ def _get_json_release_basename(release_type: str) -> str:
         release_type (str): Human-readable release type (for example "Android APK" or "Firmware").
 
     Returns:
-        str: Filename basename to use for the latest-release JSON (e.g., the value of LATEST_ANDROID_RELEASE_JSON_FILE for Android, LATEST_FIRMWARE_RELEASE_JSON_FILE for firmware, or "latest_release.json" for other types).
+        str: Filename basename to use for the latest-release JSON (e.g., the value of LATEST_ANDROID_RELEASE_JSON_FILE/LATEST_ANDROID_PRERELEASE_JSON_FILE for APKs, LATEST_FIRMWARE_RELEASE_JSON_FILE/LATEST_FIRMWARE_PRERELEASE_JSON_FILE for firmware, or "latest_release.json" for other types).
     """
     release_type_lower = release_type.lower()
     # Check for firmware prerelease first (most specific)
@@ -4777,24 +4777,27 @@ def _process_apk_downloads(
             if has_full_release:
                 latest_full_release_tag = regular_releases[0].get("tag_name")
                 if latest_full_release_tag:
-                    base_version = latest_full_release_tag.lstrip("v")
-                    # Filter out prereleases that are superseded by the latest full release
-                    releases_to_download = [
-                        r
-                        for r in prerelease_releases
-                        if not r.get("tag_name", "")
-                        .lstrip("v")
-                        .startswith(f"{base_version}-")
-                    ]
-                    obsolete_count = len(prerelease_releases) - len(
-                        releases_to_download
-                    )
-                    if obsolete_count > 0:
-                        logger.debug(
-                            "Skipping download of %d APK prerelease(s) superseded by release %s.",
-                            obsolete_count,
-                            latest_full_release_tag,
+                    latest_release_tuple = _get_release_tuple(latest_full_release_tag)
+                    if latest_release_tuple:
+                        releases_to_download = []
+                        for r in prerelease_releases:
+                            prerelease_tuple = _get_release_tuple(r.get("tag_name", ""))
+                            if (
+                                prerelease_tuple
+                                and prerelease_tuple <= latest_release_tuple
+                            ):
+                                continue
+                            releases_to_download.append(r)
+
+                        obsolete_count = len(prerelease_releases) - len(
+                            releases_to_download
                         )
+                        if obsolete_count > 0:
+                            logger.debug(
+                                "Skipping download of %d APK prerelease(s) superseded by release %s.",
+                                obsolete_count,
+                                latest_full_release_tag,
+                            )
 
             prerelease_downloaded: List[str] = []
             prerelease_new_versions_list: List[str] = []
@@ -5137,7 +5140,7 @@ def cleanup_old_versions(directory: str, releases_to_keep: List[str]) -> None:
     """
     Prune immediate subdirectories of `directory`, preserving only the specified release basenames and a small set of protected internal directories.
 
-    Removes any child directory whose basename is not in `releases_to_keep` and not one of the protected internal names (REPO_DOWNLOADS_DIR, PRERELEASE_DIR, APK_PRERELEASES_DIR_NAME). Deletion failures are logged and not propagated.
+    Removes any child directory whose basename is not in `releases_to_keep` and not one of the protected internal names (REPO_DOWNLOADS_DIR, FIRMWARE_PRERELEASES_DIR_NAME, APK_PRERELEASES_DIR_NAME). Deletion failures are logged and not propagated.
 
     Parameters:
         directory (str): Path whose immediate subdirectories represent versioned releases.
@@ -5227,19 +5230,26 @@ def _cleanup_apk_prereleases(
     prerelease_dir: str, full_release_tag: Optional[str]
 ) -> None:
     """
-    Remove APK prerelease subdirectories whose base version matches a provided full release tag.
+    Remove APK prerelease subdirectories that are superseded by a provided full release tag.
 
-    Does nothing if `full_release_tag` is falsy. Looks for subdirectories in `prerelease_dir` that are identified as APK prereleases and whose name, after stripping a leading `v`, begins with the full release's base version followed by a hyphen (e.g., for `v2.7.7` it matches `2.7.7-open-...`).
+    Does nothing if `full_release_tag` is falsy. Looks for subdirectories in `prerelease_dir`
+    that are identified as APK prereleases and removes them if their version is less than or
+    equal to the version of the `full_release_tag`.
 
     Parameters:
         prerelease_dir (str): Path containing prerelease subdirectories to inspect.
-        full_release_tag (Optional[str]): Full release tag (e.g., "v2.7.7"); used to derive the base version to match.
+        full_release_tag (Optional[str]): Full release tag (e.g., "v2.7.7"); used for version comparison.
     """
     if not full_release_tag:
         return
 
-    # Extract base version (remove 'v' prefix if present)
-    base_version = full_release_tag.lstrip("v")
+    latest_release_tuple = _get_release_tuple(full_release_tag)
+    if not latest_release_tuple:
+        logger.debug(
+            "Could not parse latest full release tag '%s' for APK prerelease cleanup.",
+            full_release_tag,
+        )
+        return
 
     if not os.path.isdir(prerelease_dir):
         return
@@ -5247,11 +5257,14 @@ def _cleanup_apk_prereleases(
     try:
         for item in os.listdir(prerelease_dir):
             item_path = os.path.join(prerelease_dir, item)
-            if os.path.isdir(item_path) and item.lstrip("v").startswith(
-                f"{base_version}-"
-            ):
-                if _safe_rmtree(item_path, prerelease_dir, item):
-                    logger.info(f"Removed obsolete prerelease directory: {item_path}")
+            if os.path.isdir(item_path) and _is_apk_prerelease_by_name(item):
+                prerelease_tuple = _get_release_tuple(item)
+                # Cleanup if the prerelease version is less than or equal to the full release version
+                if prerelease_tuple and prerelease_tuple <= latest_release_tuple:
+                    if _safe_rmtree(item_path, prerelease_dir, item):
+                        logger.info(
+                            f"Removed obsolete prerelease directory: {item_path}"
+                        )
     except OSError as e:
         logger.warning(f"Error cleaning up prerelease directories: {e}")
 
