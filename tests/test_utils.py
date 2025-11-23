@@ -1346,3 +1346,21 @@ def test_format_api_summary_debug_coverage():
     assert (
         "📊 GitHub API Summary: 0 API requests (🔐 authenticated)" in result_no_requests
     )
+
+
+def test_matches_selected_patterns_nrf52_zip_extraction():
+    """
+    Test that `matches_selected_patterns` correctly handles `rak4631-`
+    patterns for files inside `nrf52` zip archives. This is a regression
+    test to ensure the fix for issue #123 is working correctly.
+    """
+    from fetchtastic.utils import matches_selected_patterns
+
+    # This filename is from a real nrf52 zip archive
+    filename = "firmware-rak4631-2.7.15.567b8ea.uf2"
+
+    # The pattern 'rak4631-' should match the filename
+    assert matches_selected_patterns(filename, ["rak4631-"]) is True
+
+    # The pattern 'rak4631_' should NOT match the filename
+    assert matches_selected_patterns(filename, ["rak4631_"]) is False
