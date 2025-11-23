@@ -5057,7 +5057,7 @@ def extract_files(
             file_info: zipfile.ZipInfo
             for file_info in zip_ref.infolist():
                 # Skip directory entries in archives
-                if hasattr(file_info, "is_dir") and file_info.is_dir():
+                if file_info.is_dir():
                     continue
                 file_name: str = file_info.filename  # may include subdirectories
                 base_name: str = os.path.basename(file_name)
@@ -5976,7 +5976,7 @@ def _validate_extraction_patterns(
     Parameters:
         zip_path (str): Path to the ZIP archive to validate.
         patterns (List[str]): Inclusion patterns to validate.
-        exclude_patterns (List[str]): Exclusion patterns (not validated but passed for consistency).
+        exclude_patterns (List[str]): Exclusion patterns applied during validation to match extraction behavior.
         release_tag (str): Release tag for logging purposes.
 
     Returns:
@@ -5992,7 +5992,7 @@ def _validate_extraction_patterns(
             file_info: zipfile.ZipInfo
             for file_info in zip_ref.infolist():
                 # Skip directory entries in archives
-                if hasattr(file_info, "is_dir") and file_info.is_dir():
+                if file_info.is_dir():
                     continue
                 file_name: str = file_info.filename
                 base_name: str = os.path.basename(file_name)
@@ -6073,7 +6073,7 @@ def check_extraction_needed(
             file_info: zipfile.ZipInfo
             for file_info in zip_ref.infolist():
                 # Skip directory entries in archives
-                if hasattr(file_info, "is_dir") and file_info.is_dir():
+                if file_info.is_dir():
                     continue
                 file_name: str = file_info.filename  # may include subdirectories
                 base_name: str = os.path.basename(file_name)
