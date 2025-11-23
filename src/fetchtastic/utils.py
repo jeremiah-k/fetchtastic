@@ -1130,21 +1130,16 @@ def matches_selected_patterns(
     filename: str, selected_patterns: Optional[List[str]]
 ) -> bool:
     """
-    Determine whether a filename matches any of the provided patterns after normalization.
+    Determine whether a filename matches any of the provided selection patterns after normalization.
 
-    Compares the filename's normalized base forms (modern and legacy normalization) against each
-    pattern. Matching is case-insensitive and additionally supports punctuation-stripped comparisons
-    for patterns that are mixed-case, contain dots, or include keywords like "release", "apk",
-    "aab", or "fdroid". If `selected_patterns` is None or empty, the function matches all filenames.
+    Compares the filename's normalized base forms (modern and legacy) against each non-empty pattern case-insensitively. For patterns that end with a separator ("-" or "_"), the legacy base is preferred; otherwise both bases are checked. If a pattern uses mixed case, contains a dot, or includes keywords like "release", "apk", "aab", or "fdroid", a punctuation-stripped fallback comparison is attempted. Very short patterns (≤3 characters) are also matched against the punctuation-stripped bases as a last-chance fallback. If `selected_patterns` is None or empty, all filenames match.
 
     Parameters:
         filename (str): The filename to test.
-        selected_patterns (Optional[List[str]]): Iterable of substring patterns to search for;
-            empty or None means match all.
+        selected_patterns (Optional[List[str]]): Iterable of substring patterns to search for; empty or None means match all.
 
     Returns:
-        bool: `true` if any non-empty pattern appears in either normalized base name (including
-        punctuation-stripped fallbacks), `false` otherwise.
+        bool: `true` if any non-empty pattern matches according to the above rules, `false` otherwise.
     """
 
     if not selected_patterns:
@@ -1166,7 +1161,18 @@ def matches_selected_patterns(
         if not pat:
             continue
         pat_lower = pat.lower()
-        if pat_lower in base_modern_lower or pat_lower in base_legacy_lower:
+        # For patterns ending with a separator, the legacy form is more reliable
+        # because it preserves the separator, which is critical for matching.
+        match_found = False
+        if pat_lower.endswith(("-", "_")):
+            match_found = pat_lower in base_legacy_lower
+        else:
+            # For other patterns, the modern form is generally preferred,
+            # but we check both for backward compatibility.
+            match_found = (
+                pat_lower in base_modern_lower or pat_lower in base_legacy_lower
+            )
+        if match_found:
             return True
 
         # Fall back to punctuation-stripped matching when the pattern appears to target

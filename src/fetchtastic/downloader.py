@@ -5173,7 +5173,7 @@ def _is_supported_android_release(tag_name: str) -> bool:
     version where the new tagging scheme began (2.7.0+).
 
     Older prerelease tags (e.g., 2.6.x-open) should be ignored so they are not
-    treated as current prereleases. Unparseable tags are allowed through to
+    treated as current prereleases. Unparsable tags are allowed through to
     avoid blocking future formats.
     """
     version_tuple = _get_release_tuple(tag_name)
