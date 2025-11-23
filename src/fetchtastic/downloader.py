@@ -6004,9 +6004,7 @@ def _validate_extraction_patterns(
                 # Check which patterns match this file using the same logic as extraction
                 for pattern in patterns:
                     if matches_selected_patterns(base_name, [pattern]):
-                        if pattern not in pattern_matches:
-                            pattern_matches[pattern] = []
-                        pattern_matches[pattern].append(base_name)
+                        pattern_matches.setdefault(pattern, []).append(base_name)
 
         # Log validation results
         if pattern_matches:
@@ -6021,7 +6019,7 @@ def _validate_extraction_patterns(
                     pattern,
                     len(matched_files),
                     (
-                        matched_files[:3] + ["..."]
+                        [*matched_files[:3], "..."]
                         if len(matched_files) > 3
                         else matched_files
                     ),
@@ -6037,7 +6035,7 @@ def _validate_extraction_patterns(
         logger.error(
             "Cannot validate patterns for %s: %s is corrupted", release_tag, zip_path
         )
-    except Exception as e:
+    except (OSError, IOError, ValueError, RuntimeError) as e:
         logger.error("Error validating patterns for %s: %s", release_tag, e)
 
 

@@ -506,8 +506,6 @@ def test_validate_extraction_patterns(tmp_path):
     """Test the _validate_extraction_patterns function."""
     # Create a test ZIP file with various firmware files
     zip_file = tmp_path / "test_firmware.zip"
-    extract_dir = tmp_path / "extract"
-    extract_dir.mkdir()
 
     with zipfile.ZipFile(str(zip_file), "w") as zf:
         # Add files that should match patterns
