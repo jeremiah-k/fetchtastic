@@ -5803,6 +5803,13 @@ def check_and_download(
                             continue
                         zip_path: str = os.path.join(release_dir, safe_zip_name)
                         if os.path.exists(zip_path):
+                            # Validate extraction patterns are working correctly
+                            _validate_extraction_patterns(
+                                zip_path,
+                                extract_patterns,
+                                exclude_patterns_list,
+                                raw_release_tag,
+                            )
                             extraction_needed: bool = check_extraction_needed(
                                 zip_path,
                                 release_dir,
@@ -5954,6 +5961,84 @@ def set_permissions_on_sh_files(directory: str) -> None:
         logger.warning(
             f"Error walking directory {directory} to set permissions: {e_walk}"
         )
+
+
+def _validate_extraction_patterns(
+    zip_path: str, patterns: List[str], exclude_patterns: List[str], release_tag: str
+) -> None:
+    """
+    Validate that extraction patterns are correctly matching files in a ZIP archive.
+
+    Logs which patterns successfully match files and which patterns don't match any files.
+    This helps identify issues with pattern matching, especially for patterns with trailing
+    separators that were fixed in PR #116.
+
+    Parameters:
+        zip_path (str): Path to the ZIP archive to validate.
+        patterns (List[str]): Inclusion patterns to validate.
+        exclude_patterns (List[str]): Exclusion patterns (not validated but passed for consistency).
+        release_tag (str): Release tag for logging purposes.
+
+    Returns:
+        None: Results are logged, no return value.
+    """
+    if not patterns:
+        logger.debug("No extraction patterns to validate for %s", release_tag)
+        return
+
+    try:
+        pattern_matches: Dict[str, List[str]] = {}
+        with zipfile.ZipFile(zip_path, "r") as zip_ref:
+            file_info: zipfile.ZipInfo
+            for file_info in zip_ref.infolist():
+                # Skip directory entries in archives
+                if hasattr(file_info, "is_dir") and file_info.is_dir():
+                    continue
+                file_name: str = file_info.filename
+                base_name: str = os.path.basename(file_name)
+                if not base_name:
+                    continue
+                if _matches_exclude(base_name, exclude_patterns):
+                    continue
+
+                # Check which patterns match this file using the same logic as extraction
+                for pattern in patterns:
+                    if matches_selected_patterns(base_name, [pattern]):
+                        if pattern not in pattern_matches:
+                            pattern_matches[pattern] = []
+                        pattern_matches[pattern].append(base_name)
+
+        # Log validation results
+        if pattern_matches:
+            logger.info(
+                "Pattern validation for %s: %d patterns matched files",
+                release_tag,
+                len(pattern_matches),
+            )
+            for pattern, matched_files in pattern_matches.items():
+                logger.debug(
+                    "Pattern '%s' matched %d files: %s",
+                    pattern,
+                    len(matched_files),
+                    (
+                        matched_files[:3] + ["..."]
+                        if len(matched_files) > 3
+                        else matched_files
+                    ),
+                )
+        else:
+            logger.warning(
+                "Pattern validation for %s: No patterns matched any files in ZIP archive",
+                release_tag,
+            )
+            logger.debug("Available patterns: %s", patterns)
+
+    except zipfile.BadZipFile:
+        logger.error(
+            "Cannot validate patterns for %s: %s is corrupted", release_tag, zip_path
+        )
+    except Exception as e:
+        logger.error("Error validating patterns for %s: %s", release_tag, e)
 
 
 def check_extraction_needed(
