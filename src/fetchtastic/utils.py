@@ -1168,14 +1168,17 @@ def matches_selected_patterns(
         pat_lower = pat.lower()
         # For patterns ending with a separator, the legacy form is more reliable
         # because it preserves the separator, which is critical for matching.
+        match_found = False
         if pat_lower.endswith(("-", "_")):
-            if pat_lower in base_legacy_lower:
-                return True
+            match_found = pat_lower in base_legacy_lower
         else:
             # For other patterns, the modern form is generally preferred,
             # but we check both for backward compatibility.
-            if pat_lower in base_modern_lower or pat_lower in base_legacy_lower:
-                return True
+            match_found = (
+                pat_lower in base_modern_lower or pat_lower in base_legacy_lower
+            )
+        if match_found:
+            return True
 
         # Fall back to punctuation-stripped matching when the pattern appears to target
         # mixed-case or dotted segments (e.g., fdroidRelease-, *.zip), or when it contains

@@ -1352,7 +1352,7 @@ def test_matches_selected_patterns_nrf52_zip_extraction():
     """
     Test that `matches_selected_patterns` correctly handles `rak4631-`
     patterns for files inside `nrf52` zip archives. This is a regression
-    test to ensure the fix for issue #123 is working correctly.
+    test to ensure the fix for trailing separator patterns is working correctly.
     """
     from fetchtastic.utils import matches_selected_patterns
 
