@@ -1131,13 +1131,13 @@ def matches_selected_patterns(
 ) -> bool:
     """
     Determine whether a filename matches any of the provided selection patterns after normalization.
-    
+
     Compares the filename's normalized base forms (modern and legacy) against each non-empty pattern case-insensitively. For patterns that end with a separator ("-" or "_"), the legacy base is preferred; otherwise both bases are checked. If a pattern uses mixed case, contains a dot, or includes keywords like "release", "apk", "aab", or "fdroid", a punctuation-stripped fallback comparison is attempted. Very short patterns (≤3 characters) are also matched against the punctuation-stripped bases as a last-chance fallback. If `selected_patterns` is None or empty, all filenames match.
-    
+
     Parameters:
         filename (str): The filename to test.
         selected_patterns (Optional[List[str]]): Iterable of substring patterns to search for; empty or None means match all.
-    
+
     Returns:
         bool: `true` if any non-empty pattern matches according to the above rules, `false` otherwise.
     """
