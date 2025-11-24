@@ -3200,30 +3200,51 @@ def _refresh_prerelease_commit_history(
         allow_env_token=allow_env_token,
     )
 
-    new_keys = {
-        key
-        for entry in history_new
-        if (
-            key := (
-                entry.get("identifier") or entry.get("directory") or entry.get("dir")
-            )
-        )
-    }
+    # Create a mapping of new entries by identifier for efficient lookup
+    new_entries_by_key = {}
+    for entry in history_new:
+        key = entry.get("identifier") or entry.get("directory") or entry.get("dir")
+        if key:
+            new_entries_by_key[key] = entry
 
-    merged_history: List[Dict[str, Any]] = list(history_new)
+    merged_history: List[Dict[str, Any]] = []
+    processed_keys = set()
+
+    # First, add existing entries, merging with new entries when necessary
     if existing_entries:
-        merged_history.extend(
-            entry
-            for entry in existing_entries
-            if not (
-                (
-                    key := entry.get("identifier")
-                    or entry.get("directory")
-                    or entry.get("dir")
-                )
-                and key in new_keys
+        for existing_entry in existing_entries:
+            key = (
+                existing_entry.get("identifier")
+                or existing_entry.get("directory")
+                or existing_entry.get("dir")
             )
-        )
+
+            if key and key in new_entries_by_key:
+                # Merge metadata from existing and new entries
+                new_entry = new_entries_by_key[key]
+                merged_entry = dict(existing_entry)  # Start with existing metadata
+
+                # Update with new information, but preserve creation metadata if missing
+                for field, value in new_entry.items():
+                    if value is not None:  # Only update if new entry has a value
+                        # Preserve creation metadata if new entry doesn't have it
+                        if field in ("added_at", "added_sha") and field in merged_entry:
+                            continue  # Keep existing creation metadata
+                        merged_entry[field] = value
+
+                merged_history.append(merged_entry)
+                processed_keys.add(key)
+            elif key:
+                # No new entry for this key, keep existing as-is
+                merged_history.append(existing_entry)
+                processed_keys.add(key)
+
+    # Then, add any new entries that weren't merged with existing ones
+    for entry in history_new:
+        key = entry.get("identifier") or entry.get("directory") or entry.get("dir")
+        if key and key not in processed_keys:
+            merged_history.append(entry)
+            processed_keys.add(key)
 
     with _cache_lock:
         final_shas: Set[str] = seen_shas.union(
