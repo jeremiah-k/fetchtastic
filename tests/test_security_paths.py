@@ -326,7 +326,7 @@ class TestSecurityPathTraversal:
         ]
 
         for malicious_path in malicious_paths:
-            with pytest.raises(ValueError, match="Unsafe path detected"):
+            with pytest.raises(ValueError, match="Unsafe extraction path"):
                 safe_extract_path(extract_dir, malicious_path)
 
         # Test absolute paths (should be blocked)
@@ -337,7 +337,7 @@ class TestSecurityPathTraversal:
         ]
 
         for absolute_path in absolute_paths:
-            with pytest.raises(ValueError, match="Unsafe path detected"):
+            with pytest.raises(ValueError, match="Unsafe extraction path"):
                 safe_extract_path(extract_dir, absolute_path)
 
         # Test Windows-style paths on Unix (behavior depends on platform)

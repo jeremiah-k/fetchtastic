@@ -3162,6 +3162,34 @@ def _refresh_prerelease_commit_history(
     return [dict(entry) for entry in history_entries]
 
 
+def _get_latest_active_prerelease_from_history(
+    expected_version: str,
+    github_token: Optional[str] = None,
+    force_refresh: bool = False,
+    allow_env_token: bool = True,
+) -> Tuple[Optional[str], List[Dict[str, Any]]]:
+    """
+    Return the latest active prerelease directory derived from commit history plus the history entries.
+
+    Centralizes history fetching and selection so callers share the same rules.
+    """
+
+    history_entries = _get_prerelease_commit_history(
+        expected_version,
+        github_token=github_token,
+        force_refresh=force_refresh,
+        allow_env_token=allow_env_token,
+    )
+
+    latest_active_dir = None
+    for entry in history_entries:
+        if entry.get("status") == "active" and entry.get("directory"):
+            latest_active_dir = entry["directory"]
+            break
+
+    return latest_active_dir, history_entries
+
+
 def _get_prerelease_commit_history(
     expected_version: str,
     github_token: Optional[str] = None,
@@ -3510,28 +3538,17 @@ def _find_latest_remote_prerelease_dir(
     """
     # First attempt: use commit history (cheap and cached, no per-directory API calls)
     try:
-        recent_commits = _fetch_recent_repo_commits(
-            max_commits=DEFAULT_PRERELEASE_COMMITS_TO_FETCH,
+        latest_dir, _history = _get_latest_active_prerelease_from_history(
+            expected_version,
             github_token=github_token,
-            allow_env_token=allow_env_token,
             force_refresh=force_refresh,
+            allow_env_token=allow_env_token,
         )
-
-        if recent_commits:
-            history = _build_simplified_prerelease_history(
-                expected_version,
-                recent_commits,
-                github_token=github_token,
-                allow_env_token=allow_env_token,
+        if latest_dir:
+            logger.debug(
+                "Latest prerelease %s resolved from commit history", latest_dir
             )
-
-            for entry in history:
-                if entry.get("status") == "active" and entry.get("directory"):
-                    logger.debug(
-                        "Latest prerelease %s resolved from commit history",
-                        entry["directory"],
-                    )
-                    return entry["directory"]
+            return latest_dir
     except (requests.RequestException, ValueError, KeyError, json.JSONDecodeError) as e:
         logger.debug(f"Commit-history prerelease lookup failed: {e}")
 
@@ -3883,19 +3900,12 @@ def check_for_prereleases(
 
     # Try to get commit history first (new approach)
     try:
-        history_entries = _get_prerelease_commit_history(
+        latest_active_dir, history_entries = _get_latest_active_prerelease_from_history(
             expected_version,
             github_token=github_token,
             force_refresh=force_refresh,
             allow_env_token=allow_env_token,
         )
-
-        # Find the latest active prerelease from commit history
-        latest_active_dir = None
-        for entry in history_entries:
-            if entry.get("status") == "active" and entry.get("directory"):
-                latest_active_dir = entry["directory"]
-                break
 
         if latest_active_dir:
             logger.info("Using commit history for prerelease detection")
@@ -5072,7 +5082,7 @@ def safe_extract_path(extract_dir: str, file_path: str) -> str:
             pass
         else:
             raise ValueError(
-                f"Unsafe path detected: '{file_path}' attempts to write outside of '{extract_dir}'"
+                f"Unsafe extraction path '{file_path}' is outside base '{extract_dir}'"
             )
 
     return normalized_path
