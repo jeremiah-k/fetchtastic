@@ -9,7 +9,6 @@ This module contains tests for:
 - Subdirectory preservation
 """
 
-import logging
 import os
 import tempfile
 import zipfile

@@ -4027,7 +4027,6 @@ def check_for_prereleases(
         json.JSONDecodeError,
     ) as exc:
         logger.debug(f"Failed to get prerelease commit history: {exc}")
-        history_entries = []
         remote_dir = None
         newest_dir = None
 

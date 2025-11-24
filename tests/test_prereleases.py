@@ -2203,6 +2203,8 @@ def test_cache_build_logging_scenarios(monkeypatch):
         downloader._prerelease_commit_history_cache["2.7.99"] = (
             [],
             datetime.now(timezone.utc),
+            datetime.now(timezone.utc),
+            set(),
         )
 
         _get_prerelease_commit_history("2.7.99")
