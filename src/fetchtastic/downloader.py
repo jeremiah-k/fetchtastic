@@ -1545,6 +1545,8 @@ def _iter_matching_prerelease_files(
     selected_patterns: list,
     exclude_patterns_list: list,
     device_manager,
+    github_token: Optional[str] = None,
+    allow_env_token: bool = True,
 ) -> List[Dict[str, str]]:
     """
     Return prerelease assets in a remote directory that match selection patterns and do not match any exclusion patterns.
@@ -1564,7 +1566,12 @@ def _iter_matching_prerelease_files(
             - "path": repository-relative path of the asset
     """
 
-    files = menu_repo.fetch_directory_contents(dir_name) or []
+    files = (
+        menu_repo.fetch_directory_contents(
+            dir_name, allow_env_token=allow_env_token, github_token=github_token
+        )
+        or []
+    )
     matching: List[Dict[str, str]] = []
     for entry in files:
         file_name = entry.get("name")
@@ -3216,10 +3223,10 @@ def _get_prerelease_commit_history(
     if not expected_version:
         return []
 
-    needs_initial_build = False
+    needs_refresh = force_refresh
 
     # Only load cache if we're not forcing a refresh
-    if not force_refresh:
+    if not needs_refresh:
         _load_prerelease_commit_history_cache()
 
         with _cache_lock:
@@ -3227,23 +3234,32 @@ def _get_prerelease_commit_history(
             if cached:
                 entries, cached_at = cached
                 age = datetime.now(timezone.utc) - cached_at
-                track_api_cache_hit()
+                if age.total_seconds() < PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS:
+                    track_api_cache_hit()
+                    logger.debug(
+                        "Using cached prerelease history for %s (cached %.0fs ago)",
+                        expected_version,
+                        age.total_seconds(),
+                    )
+                    return [dict(entry) for entry in entries]
                 logger.debug(
-                    "Using cached prerelease history for %s (cached %.0fs ago)",
+                    "Prerelease history cache expired for %s (age %.0fs >= %ss); refreshing",
                     expected_version,
                     age.total_seconds(),
+                    PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS,
                 )
-                return [dict(entry) for entry in entries]
-            needs_initial_build = True
+                needs_refresh = True
+            else:
+                needs_refresh = True
 
-    if needs_initial_build or force_refresh:
+    if needs_refresh:
         logger.info(
             "Building prerelease history cache for %s (this may take a couple of minutes on initial builds)...",
             expected_version,
         )
 
     return _refresh_prerelease_commit_history(
-        expected_version, github_token, force_refresh, max_commits, allow_env_token
+        expected_version, github_token, needs_refresh, max_commits, allow_env_token
     )
 
 
@@ -3708,6 +3724,8 @@ def _download_prerelease_assets(
     exclude_patterns_list: List[str],
     device_manager,
     force_refresh: bool = False,
+    github_token: Optional[str] = None,
+    allow_env_token: bool = True,
 ) -> Tuple[bool, List[str]]:
     """
     Download assets for a specific prerelease directory.
@@ -3725,7 +3743,12 @@ def _download_prerelease_assets(
         downloaded_files (List[str]): List of filenames that were downloaded.
     """
     remote_files = _iter_matching_prerelease_files(
-        remote_dir, selected_patterns, exclude_patterns_list, device_manager
+        remote_dir,
+        selected_patterns,
+        exclude_patterns_list,
+        device_manager,
+        github_token=github_token,
+        allow_env_token=allow_env_token,
     )
 
     if not remote_files:
@@ -3975,6 +3998,8 @@ def check_for_prereleases(
         exclude_patterns_list,
         device_manager,
         force_refresh,
+        github_token=github_token,
+        allow_env_token=allow_env_token,
     )
 
     # Update tracking information if files were downloaded

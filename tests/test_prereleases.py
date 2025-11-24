@@ -335,7 +335,9 @@ def test_check_for_prereleases_download_and_cleanup(
     assert downloaded is True
     assert versions == ["firmware-2.7.7.abcdef"]
     assert mock_dl.call_count == 1
-    mock_fetch_contents.assert_called_once_with("firmware-2.7.7.abcdef")
+    mock_fetch_contents.assert_called_once_with(
+        "firmware-2.7.7.abcdef", allow_env_token=True, github_token=None
+    )
     assert not stale_dir.exists()  # Verify stale prerelease was cleaned up
 
 
@@ -506,7 +508,7 @@ def test_prerelease_directory_cleanup(tmp_path, write_dummy_file, mock_commit_hi
         with patch("fetchtastic.menu_repo.fetch_directory_contents") as mock_contents:
             mock_dirs.return_value = ["firmware-2.7.7.789abc"]
 
-            def _dir_aware_contents(dir_name: str):
+            def _dir_aware_contents(dir_name: str, **_kwargs):
                 """
                 Return a mock directory listing containing a single prerelease firmware asset whose path and download_url incorporate the provided directory name.
 
@@ -1696,7 +1698,7 @@ def test_prerelease_history_cache_is_persistent(tmp_path_factory, monkeypatch):
         # Verify refresh was called with correct parameters
         mock_refresh.assert_called_once_with("2.7.15", None, True, 40, True)
 
-    # Test 2: When cache exists and force_refresh=False, cached data should be returned even if old
+    # Test 2: When cache exists but is expired and force_refresh=False, refresh should be invoked
     with patch.object(downloader, "_refresh_prerelease_commit_history") as mock_refresh:
         mock_refresh.return_value = fresh_entries
 
@@ -1708,9 +1710,9 @@ def test_prerelease_history_cache_is_persistent(tmp_path_factory, monkeypatch):
             "2.7.15", force_refresh=False
         )
 
-        # Should return cached data without invoking refresh
-        assert result == [{"identifier": "2.7.15.test123", "status": "active"}]
-        mock_refresh.assert_not_called()
+        # Cache is expired, so refresh should be called and fresh data returned
+        assert result == fresh_entries
+        mock_refresh.assert_called_once()
 
 
 def test_build_simplified_prerelease_history_edge_cases():
