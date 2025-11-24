@@ -3646,6 +3646,7 @@ def _find_latest_remote_prerelease_dir(
     github_token: Optional[str] = None,
     force_refresh: bool = False,
     allow_env_token: bool = True,
+    skip_history_lookup: bool = False,
 ) -> Optional[str]:
     """
     Select the newest remote prerelease directory that matches the given prerelease base version.
@@ -3655,25 +3656,29 @@ def _find_latest_remote_prerelease_dir(
         github_token (Optional[str]): GitHub API token to use for fetching commit timestamps; if None and allow_env_token is True, an environment token may be used.
         force_refresh (bool): If True, bypass cached commit timestamps and fetch fresh values.
         allow_env_token (bool): If True, allow using a GitHub token sourced from the environment when `github_token` is None.
+        skip_history_lookup (bool): If True, skip the commit history lookup and go directly to directory scanning fallback.
 
     Returns:
         Optional[str]: Name of the newest matching prerelease directory (for example "firmware-2.7.13-abcdef"), or `None` if no matching directory is found or an error occurs.
     """
     # First attempt: use commit history (cheap and cached, no per-directory API calls)
-    try:
-        latest_dir, _history = _get_latest_active_prerelease_from_history(
-            expected_version,
-            github_token=github_token,
-            force_refresh=True,
-            allow_env_token=allow_env_token,
-        )
-        if latest_dir:
-            logger.debug(
-                "Latest prerelease %s resolved from commit history", latest_dir
+    if not skip_history_lookup:
+        try:
+            latest_dir, _history = _get_latest_active_prerelease_from_history(
+                expected_version,
+                github_token=github_token,
+                force_refresh=force_refresh,
+                allow_env_token=allow_env_token,
             )
-            return latest_dir
-    except (requests.RequestException, ValueError, KeyError, json.JSONDecodeError) as e:
-        logger.debug(f"Commit-history prerelease lookup failed: {e}")
+            if latest_dir:
+                logger.debug(
+                    "Latest prerelease %s resolved from commit history", latest_dir
+                )
+                return latest_dir
+        except Exception as e:
+            logger.debug(f"Commit-history prerelease lookup failed: {e}")
+    else:
+        logger.debug("Skipping commit history lookup as requested")
 
     # Fallback: legacy directory scan that may need commit timestamp lookups
     try:
@@ -4090,8 +4095,13 @@ def check_for_prereleases(
             newest_dir = None
 
         # Find the latest remote prerelease directory (old approach)
+        # Skip history lookup since we already tried it above
         remote_dir = _find_latest_remote_prerelease_dir(
-            expected_version, github_token, force_refresh, allow_env_token
+            expected_version,
+            github_token,
+            force_refresh,
+            allow_env_token,
+            skip_history_lookup=True,
         )
         if not remote_dir:
             return (False, [newest_dir]) if newest_dir else (False, [])
