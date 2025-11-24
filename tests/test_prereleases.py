@@ -523,6 +523,9 @@ def test_prerelease_directory_cleanup(tmp_path, write_dummy_file, mock_commit_hi
                 Returns:
                     list[dict]: A list with one asset mapping containing the keys `name`, `path`, and `download_url`. The `path` and `download_url` reflect a hierarchical prerelease location that includes `dir_name`.
                 """
+                # Mark unused parameters to avoid warnings
+                _ = allow_env_token
+                _ = github_token
                 asset_name = "firmware-rak4631-2.7.7.789abc.uf2"
                 return [
                     {

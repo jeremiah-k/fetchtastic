@@ -3304,6 +3304,7 @@ def _get_prerelease_commit_history(
     if not expected_version:
         return []
 
+    cached = None
     if not force_refresh:
         _load_prerelease_commit_history_cache()
 
@@ -3333,9 +3334,8 @@ def _get_prerelease_commit_history(
         expected_version,
     )
     refresh_kwargs: Dict[str, Any] = {}
-    cached_entry = locals().get("cached")
-    if cached_entry:
-        entries, _, _, shas = cached_entry
+    if cached:
+        entries, _, _, shas = cached
         refresh_kwargs["existing_entries"] = entries
         refresh_kwargs["existing_shas"] = shas
 
