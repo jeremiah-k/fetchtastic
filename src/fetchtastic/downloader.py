@@ -5056,7 +5056,7 @@ def safe_extract_path(extract_dir: str, file_path: str) -> str:
     """
     real_extract_dir = os.path.realpath(extract_dir)
     prospective_path = os.path.join(real_extract_dir, file_path)
-    normalized_path = os.path.realpath(os.path.normpath(prospective_path))
+    normalized_path = os.path.realpath(prospective_path)
 
     try:
         within_base = (
@@ -6016,7 +6016,7 @@ def _validate_extraction_patterns(
     """
     Validate that extraction patterns are correctly matching files in a ZIP archive.
 
-    Logs which patterns successfully match files and which patterns don't match any files.
+    Logs which patterns successfully match files and warns when no patterns match.
     This helps identify issues with pattern matching, especially for patterns with trailing
     separators that were fixed in PR #116.
 
@@ -6082,7 +6082,7 @@ def _validate_extraction_patterns(
         logger.error(
             "Cannot validate patterns for %s: %s is corrupted", release_tag, zip_path
         )
-    except (OSError, IOError, ValueError, RuntimeError) as e:
+    except (OSError, ValueError) as e:
         logger.error("Error validating patterns for %s: %s", release_tag, e)
 
 
