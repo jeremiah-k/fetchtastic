@@ -3672,13 +3672,12 @@ def _find_latest_remote_prerelease_dir(
                     "Latest prerelease %s resolved from commit history", latest_dir
                 )
                 return latest_dir
-        except (
-            requests.RequestException,
-            ValueError,
-            KeyError,
-            json.JSONDecodeError,
-        ) as e:
-            logger.debug(f"Commit-history prerelease lookup failed: {e}")
+        except requests.RequestException as e:
+            logger.warning(
+                "Commit-history prerelease lookup failed due to a network error; "
+                "falling back to prerelease directory scan: %s",
+                e,
+            )
     else:
         logger.debug("Skipping commit history lookup as requested")
 
