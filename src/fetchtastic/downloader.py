@@ -1815,7 +1815,9 @@ _prerelease_dir_cache_loaded = False
 _PRERELEASE_DIR_CACHE_ROOT_KEY = "__root__"
 
 # Global cache for prerelease commit histories (per expected version)
-_prerelease_commit_history_cache: Dict[str, Tuple[List[Dict[str, Any]], datetime]] = {}
+_prerelease_commit_history_cache: Dict[
+    str, Tuple[List[Dict[str, Any]], datetime, datetime, Set[str]]
+] = {}
 _prerelease_commit_history_file: Optional[str] = None
 _prerelease_commit_history_loaded = False
 
@@ -2254,7 +2256,7 @@ def _load_prerelease_commit_history_cache() -> None:
 
     def process_history_entry(
         cache_entry: Dict[str, Any], cached_at: datetime
-    ) -> Tuple[List[Dict[str, Any]], datetime]:
+    ) -> Tuple[List[Dict[str, Any]], datetime, datetime, Set[str]]:
         """
         Validate and extract the entries list and its cached timestamp from a prerelease cache entry.
 
@@ -2263,7 +2265,7 @@ def _load_prerelease_commit_history_cache() -> None:
             cached_at (datetime): Timestamp when the cache entry was created or saved.
 
         Returns:
-            tuple: A pair (entries, cached_at) where `entries` is the list of dicts extracted from `cache_entry` and `cached_at` is the same datetime passed in.
+            tuple: (entries, cached_at, last_checked, shas)
 
         Raises:
             TypeError: If the "entries" value in `cache_entry` is not a list.
@@ -2271,7 +2273,33 @@ def _load_prerelease_commit_history_cache() -> None:
         entries = cache_entry["entries"]
         if not isinstance(entries, list):
             raise TypeError("entries is not a list")
-        return (entries, cached_at)
+        last_checked_raw = cache_entry.get("last_checked") or cache_entry.get(
+            "cached_at"
+        )
+        try:
+            last_checked = datetime.fromisoformat(str(last_checked_raw))
+        except Exception:
+            last_checked = cached_at
+
+        def _extract_shas(entry: Dict[str, Any]) -> Optional[str]:
+            return (
+                entry.get("added_sha")
+                or entry.get("commit_sha")
+                or entry.get("commit_hash")
+            )
+
+        shas: Set[str] = set()
+        for entry in entries:
+            sha = _extract_shas(entry)
+            if sha:
+                shas.add(str(sha))
+
+        if "shas" in cache_entry and isinstance(cache_entry["shas"], list):
+            for sha in cache_entry["shas"]:
+                if sha:
+                    shas.add(str(sha))
+
+        return (entries, cached_at, last_checked, shas)
 
     loaded_data = _load_json_cache_with_expiry(
         cache_file_path=_get_prerelease_commit_history_file(),
@@ -2305,10 +2333,14 @@ def _save_prerelease_commit_history_cache() -> None:
                 version: {
                     "entries": entries,
                     "cached_at": cached_at.isoformat(),
+                    "last_checked": last_checked.isoformat(),
+                    "shas": sorted(shas),
                 }
                 for version, (
                     entries,
                     cached_at,
+                    last_checked,
+                    shas,
                 ) in _prerelease_commit_history_cache.items()
             }
 
@@ -2464,7 +2496,7 @@ def _fetch_recent_repo_commits(
     logger.debug("Fetching commits from API (cache miss/expired)")
 
     all_commits = list(commits)
-    per_page = GITHUB_MAX_PER_PAGE if max_commits > 0 else 1
+    per_page = min(GITHUB_MAX_PER_PAGE, max_commits) if max_commits > 0 else 1
     page = max(1, next_page)
     fetched_from_api = False
 
@@ -3117,6 +3149,8 @@ def _refresh_prerelease_commit_history(
     force_refresh: bool,
     max_commits: int,
     allow_env_token: bool = True,
+    existing_entries: Optional[List[Dict[str, Any]]] = None,
+    existing_shas: Optional[Set[str]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Refresh the cached simplified prerelease commit history for the given expected version.
@@ -3139,26 +3173,57 @@ def _refresh_prerelease_commit_history(
         allow_env_token=allow_env_token,
         force_refresh=force_refresh,
     )
-    if not commits:
-        return []
+    if not commits and existing_entries is not None:
+        return list(existing_entries)
 
-    # Build simplified history from commits, preserving auth config for any
+    seen_shas: Set[str] = set(existing_shas or [])
+    new_commits = [c for c in commits or [] if c.get("sha") not in seen_shas]
+
+    if not new_commits and existing_entries is not None:
+        # Nothing new; just bump last_checked
+        with _cache_lock:
+            _prerelease_commit_history_cache[expected_version] = (
+                list(existing_entries),
+                datetime.now(timezone.utc),
+                datetime.now(timezone.utc),
+                seen_shas,
+            )
+        _save_prerelease_commit_history_cache()
+        return list(existing_entries)
+
+    # Build simplified history from new commits, preserving auth config for any
     # optional commit-detail lookups.
-    history_entries = _build_simplified_prerelease_history(
+    history_new = _build_simplified_prerelease_history(
         expected_version,
-        commits,
+        new_commits,
         github_token=github_token,
         allow_env_token=allow_env_token,
     )
 
+    new_keys = set()
+    for entry in history_new:
+        key = entry.get("identifier") or entry.get("directory") or entry.get("dir")
+        if key:
+            new_keys.add(key)
+
+    merged_history: List[Dict[str, Any]] = list(history_new)
+    if existing_entries:
+        for entry in existing_entries:
+            key = entry.get("identifier") or entry.get("directory") or entry.get("dir")
+            if key and key in new_keys:
+                continue
+            merged_history.append(entry)
+
     with _cache_lock:
         _prerelease_commit_history_cache[expected_version] = (
-            history_entries,
+            merged_history,
             datetime.now(timezone.utc),
+            datetime.now(timezone.utc),
+            seen_shas.union({c.get("sha") for c in commits or [] if c.get("sha")}),
         )
 
     _save_prerelease_commit_history_cache()
-    return [dict(entry) for entry in history_entries]
+    return [dict(entry) for entry in merged_history]
 
 
 def _is_within_base(real_base_dir: str, candidate: str) -> bool:
@@ -3209,7 +3274,7 @@ def _get_prerelease_commit_history(
     """
     Get the prerelease commit history for the provided expected prerelease base version, using a cached copy when available.
 
-    If `expected_version` is falsy an empty list is returned. When `force_refresh` is False the function will attempt to read the on-disk/in-memory cache and return it if present; otherwise it will fetch and rebuild the history. The cache is intentionally persistent (no automatic expiry), so callers must request a force refresh when they need to bypass the cached value.
+    If `expected_version` is falsy an empty list is returned. When `force_refresh` is False the function will attempt to read the on-disk/in-memory cache and return it if present and not older than `PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS`; otherwise it will fetch and extend the history by adding new commits.
 
     Parameters:
         expected_version (str): The base version string used to identify prerelease commits (for example "1.2.3").
@@ -3232,8 +3297,8 @@ def _get_prerelease_commit_history(
             cached = _prerelease_commit_history_cache.get(expected_version)
 
         if cached:
-            entries, cached_at = cached
-            age = datetime.now(timezone.utc) - cached_at
+            entries, cached_at, last_checked, shas = cached
+            age = datetime.now(timezone.utc) - last_checked
             if age.total_seconds() < PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS:
                 track_api_cache_hit()
                 logger.debug(
@@ -3243,7 +3308,7 @@ def _get_prerelease_commit_history(
                 )
                 return [dict(entry) for entry in entries]
             logger.debug(
-                "Prerelease history cache expired for %s (age %.0fs >= %ss); refreshing",
+                "Prerelease history cache stale for %s (age %.0fs >= %ss); extending cache",
                 expected_version,
                 age.total_seconds(),
                 PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS,
@@ -3253,8 +3318,19 @@ def _get_prerelease_commit_history(
         "Building prerelease history cache for %s (this may take a couple of minutes on initial builds)...",
         expected_version,
     )
+    refresh_kwargs: Dict[str, Any] = {}
+    if "entries" in locals():
+        refresh_kwargs["existing_entries"] = entries
+    if "shas" in locals():
+        refresh_kwargs["existing_shas"] = shas
+
     return _refresh_prerelease_commit_history(
-        expected_version, github_token, True, max_commits, allow_env_token
+        expected_version,
+        github_token,
+        True,
+        max_commits,
+        allow_env_token,
+        **refresh_kwargs,
     )
 
 
@@ -3552,7 +3628,7 @@ def _find_latest_remote_prerelease_dir(
         latest_dir, _history = _get_latest_active_prerelease_from_history(
             expected_version,
             github_token=github_token,
-            force_refresh=force_refresh,
+            force_refresh=True,
             allow_env_token=allow_env_token,
         )
         if latest_dir:
