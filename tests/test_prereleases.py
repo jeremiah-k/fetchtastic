@@ -515,8 +515,7 @@ def test_prerelease_directory_cleanup(tmp_path, write_dummy_file, mock_commit_hi
 
             def _dir_aware_contents(
                 dir_name: str,
-                _allow_env_token: bool = True,
-                _github_token: Optional[str] = None,
+                **_kwargs,
             ):
                 """
                 Return a mock directory listing containing a single prerelease firmware asset whose path and download_url incorporate the provided directory name.
