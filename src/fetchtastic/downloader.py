@@ -3182,10 +3182,11 @@ def _refresh_prerelease_commit_history(
     if not new_commits and existing_entries is not None:
         # Nothing new; just bump last_checked
         with _cache_lock:
+            now = datetime.now(timezone.utc)
             _prerelease_commit_history_cache[expected_version] = (
                 list(existing_entries),
-                datetime.now(timezone.utc),
-                datetime.now(timezone.utc),
+                now,
+                now,
                 seen_shas,
             )
         _save_prerelease_commit_history_cache()
@@ -3200,65 +3201,64 @@ def _refresh_prerelease_commit_history(
         allow_env_token=allow_env_token,
     )
 
+    def _get_entry_key(entry: Dict[str, Any]) -> Optional[str]:
+        return entry.get("identifier") or entry.get("directory") or entry.get("dir")
+
     # Create a mapping of new entries by identifier for efficient lookup
     new_entries_by_key = {}
     for entry in history_new:
-        key = entry.get("identifier") or entry.get("directory") or entry.get("dir")
+        key = _get_entry_key(entry)
         if key:
             new_entries_by_key[key] = entry
 
     merged_history: List[Dict[str, Any]] = []
     processed_keys = set()
 
-    # First, add existing entries, merging with new entries when necessary
+    # Build merged history newest-first: start with new entries, merging with existing,
+    # then append any existing-only entries that were not updated.
+    for new_entry in history_new:
+        key = _get_entry_key(new_entry)
+        if not key or key in processed_keys:
+            continue
+
+        existing_entry = None
+        if existing_entries:
+            for candidate in existing_entries:
+                if _get_entry_key(candidate) == key:
+                    existing_entry = candidate
+                    break
+
+        merged_entry = dict(existing_entry or {})
+        for field, value in new_entry.items():
+            if value is None:
+                continue
+            if field in ("added_at", "added_sha") and merged_entry.get(field):
+                continue
+            merged_entry[field] = value
+
+        if new_entry.get("status") == "active":
+            merged_entry["removed_at"] = None
+            merged_entry["removed_sha"] = None
+
+        merged_history.append(merged_entry if merged_entry else new_entry)
+        processed_keys.add(key)
+
     if existing_entries:
         for existing_entry in existing_entries:
-            key = (
-                existing_entry.get("identifier")
-                or existing_entry.get("directory")
-                or existing_entry.get("dir")
-            )
-
-            if key and key in new_entries_by_key:
-                new_entry = new_entries_by_key[key]
-                merged_entry = dict(existing_entry)
-
-                # Update with new information, but preserve creation metadata when present
-                for field, value in new_entry.items():
-                    if value is not None:
-                        if field in ("added_at", "added_sha") and merged_entry.get(
-                            field
-                        ):
-                            continue
-                        merged_entry[field] = value
-
-                # If the new entry is active, clear any stale deletion markers from a prior removal
-                if new_entry.get("status") == "active":
-                    merged_entry["removed_at"] = None
-                    merged_entry["removed_sha"] = None
-
-                merged_history.append(merged_entry)
-                processed_keys.add(key)
-            elif key:
-                # No new entry for this key, keep existing as-is
+            key = _get_entry_key(existing_entry)
+            if key and key not in processed_keys:
                 merged_history.append(existing_entry)
                 processed_keys.add(key)
-
-    # Then, add any new entries that weren't merged with existing ones
-    for entry in history_new:
-        key = entry.get("identifier") or entry.get("directory") or entry.get("dir")
-        if key and key not in processed_keys:
-            merged_history.append(entry)
-            processed_keys.add(key)
 
     with _cache_lock:
         final_shas: Set[str] = seen_shas.union(
             {str(c.get("sha")) for c in commits or [] if c.get("sha") is not None}
         )
+        now = datetime.now(timezone.utc)
         _prerelease_commit_history_cache[expected_version] = (
             merged_history,
-            datetime.now(timezone.utc),
-            datetime.now(timezone.utc),
+            now,
+            now,
             final_shas,
         )
 
@@ -3338,7 +3338,7 @@ def _get_prerelease_commit_history(
             cached = _prerelease_commit_history_cache.get(expected_version)
 
         if cached:
-            entries, cached_at, last_checked, shas = cached
+            entries, _cached_at, last_checked, shas = cached
             age = datetime.now(timezone.utc) - last_checked
             if age.total_seconds() < PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS:
                 track_api_cache_hit()
@@ -3368,7 +3368,7 @@ def _get_prerelease_commit_history(
     return _refresh_prerelease_commit_history(
         expected_version,
         github_token,
-        True,
+        force_refresh,
         max_commits,
         allow_env_token,
         **refresh_kwargs,
@@ -4045,11 +4045,13 @@ def check_for_prereleases(
 
     # Try to get commit history first (new approach)
     try:
-        latest_active_dir, history_entries = _get_latest_active_prerelease_from_history(
-            expected_version,
-            github_token=github_token,
-            force_refresh=force_refresh,
-            allow_env_token=allow_env_token,
+        latest_active_dir, _history_entries = (
+            _get_latest_active_prerelease_from_history(
+                expected_version,
+                github_token=github_token,
+                force_refresh=force_refresh,
+                allow_env_token=allow_env_token,
+            )
         )
 
         if latest_active_dir:

@@ -515,8 +515,8 @@ def test_prerelease_directory_cleanup(tmp_path, write_dummy_file, mock_commit_hi
 
             def _dir_aware_contents(
                 dir_name: str,
-                allow_env_token: bool = True,
-                github_token: Optional[str] = None,
+                _allow_env_token: bool = True,
+                _github_token: Optional[str] = None,
             ):
                 """
                 Return a mock directory listing containing a single prerelease firmware asset whose path and download_url incorporate the provided directory name.
@@ -527,9 +527,6 @@ def test_prerelease_directory_cleanup(tmp_path, write_dummy_file, mock_commit_hi
                 Returns:
                     list[dict]: A list with one asset mapping containing the keys `name`, `path`, and `download_url`. The `path` and `download_url` reflect a hierarchical prerelease location that includes `dir_name`.
                 """
-                # Mark unused parameters to avoid warnings
-                _ = allow_env_token
-                _ = github_token
                 asset_name = "firmware-rak4631-2.7.7.789abc.uf2"
                 return [
                     {
@@ -2234,7 +2231,12 @@ def test_cache_expiry_and_logging():
     try:
         # Create cache entry
         cache_time = datetime.now(timezone.utc) - timedelta(hours=1)
-        downloader._prerelease_commit_history_cache["2.7.99"] = ([], cache_time)
+        downloader._prerelease_commit_history_cache["2.7.99"] = (
+            [],
+            cache_time,
+            cache_time,
+            set(),
+        )
         downloader._prerelease_commit_history_loaded = True
 
         with (
