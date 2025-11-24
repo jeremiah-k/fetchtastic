@@ -3173,8 +3173,14 @@ def _refresh_prerelease_commit_history(
         allow_env_token=allow_env_token,
         force_refresh=force_refresh,
     )
-    if not commits and existing_entries is not None:
-        return list(existing_entries)
+    if not commits:
+        if existing_entries is not None:
+            return list(existing_entries)
+        logger.debug(
+            "No commits returned while refreshing prerelease history for %s; skipping cache update",
+            expected_version,
+        )
+        return []
 
     seen_shas: Set[str] = {sha for sha in (existing_shas or []) if sha is not None}
     new_commits = [c for c in commits or [] if c.get("sha") not in seen_shas]
