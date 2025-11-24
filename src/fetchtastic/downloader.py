@@ -2277,7 +2277,8 @@ def _load_prerelease_commit_history_cache() -> None:
             "cached_at"
         )
         try:
-            last_checked = datetime.fromisoformat(str(last_checked_raw))
+            ts = str(last_checked_raw)
+            last_checked = datetime.fromisoformat(ts.replace("Z", "+00:00"))
         except (ValueError, TypeError):
             last_checked = cached_at
 
@@ -2496,7 +2497,7 @@ def _fetch_recent_repo_commits(
     logger.debug("Fetching commits from API (cache miss/expired)")
 
     all_commits = list(commits)
-    per_page = min(GITHUB_MAX_PER_PAGE, max_commits) if max_commits > 0 else 1
+    per_page = min(GITHUB_MAX_PER_PAGE, max_commits)
     page = max(1, next_page)
     fetched_from_api = False
 
@@ -3210,31 +3211,19 @@ def _refresh_prerelease_commit_history(
     def _get_entry_key(entry: Dict[str, Any]) -> Optional[str]:
         return entry.get("identifier") or entry.get("directory") or entry.get("dir")
 
-    # Create a mapping of new entries by identifier for efficient lookup
-    new_entries_by_key = {}
-    for entry in history_new:
-        key = _get_entry_key(entry)
-        if key:
-            new_entries_by_key[key] = entry
+    existing_map: Dict[str, Dict[str, Any]] = (
+        {_get_entry_key(e): e for e in existing_entries if _get_entry_key(e)}
+        if existing_entries
+        else {}
+    )
 
-    merged_history: List[Dict[str, Any]] = []
-    processed_keys = set()
-
-    # Build merged history newest-first: start with new entries, merging with existing,
-    # then append any existing-only entries that were not updated.
+    # Merge new entries into existing_map (newest-first list already from history_new)
     for new_entry in history_new:
         key = _get_entry_key(new_entry)
-        if not key or key in processed_keys:
+        if not key:
             continue
 
-        existing_entry = None
-        if existing_entries:
-            for candidate in existing_entries:
-                if _get_entry_key(candidate) == key:
-                    existing_entry = candidate
-                    break
-
-        merged_entry = dict(existing_entry or {})
+        merged_entry = dict(existing_map.get(key, {}))
         for field, value in new_entry.items():
             if value is None:
                 continue
@@ -3246,15 +3235,12 @@ def _refresh_prerelease_commit_history(
             merged_entry["removed_at"] = None
             merged_entry["removed_sha"] = None
 
-        merged_history.append(merged_entry if merged_entry else new_entry)
-        processed_keys.add(key)
+        existing_map[key] = merged_entry or new_entry
 
-    if existing_entries:
-        for existing_entry in existing_entries:
-            key = _get_entry_key(existing_entry)
-            if key and key not in processed_keys:
-                merged_history.append(existing_entry)
-                processed_keys.add(key)
+    # Preserve newest-first ordering using the shared sort key
+    merged_history: List[Dict[str, Any]] = sorted(
+        existing_map.values(), key=_sort_key, reverse=True
+    )
 
     with _cache_lock:
         final_shas: Set[str] = seen_shas.union(
@@ -3664,8 +3650,8 @@ def _find_latest_remote_prerelease_dir(
 
     Parameters:
         expected_version (str): Base prerelease version to match (for example, "2.7.13").
-        github_token (Optional[str]): GitHub API token to use for fetching commit timestamps; if None and allow_env_token is True, an environment token may be used.
-        force_refresh (bool): If True, bypass cached commit timestamps and fetch fresh values.
+        github_token (Optional[str]): GitHub API token to use for fetching commit timestamps and prerelease history; if None and allow_env_token is True, an environment token may be used.
+        force_refresh (bool): If True, bypass cached prerelease history and commit timestamps and fetch fresh values.
         allow_env_token (bool): If True, allow using a GitHub token sourced from the environment when `github_token` is None.
         skip_history_lookup (bool): If True, skip the commit history lookup and go directly to directory scanning fallback.
 
@@ -3924,11 +3910,7 @@ def _download_prerelease_assets(
         # Security: Prevent path traversal using robust path validation
         real_prerelease_dir = os.path.realpath(prerelease_dir)
         real_target = os.path.realpath(file_path)
-        try:
-            common_base = os.path.commonpath([real_prerelease_dir, real_target])
-        except ValueError:
-            common_base = None
-        if common_base != real_prerelease_dir:
+        if not _is_within_base(real_prerelease_dir, real_target):
             logger.warning(
                 f"Skipping asset with unsafe path that escapes base directory: {file_path}"
             )
@@ -5227,20 +5209,10 @@ def safe_extract_path(extract_dir: str, file_path: str) -> str:
     prospective_path = os.path.join(real_extract_dir, file_path)
     normalized_path = os.path.realpath(prospective_path)
 
-    try:
-        within_base = _is_within_base(real_extract_dir, normalized_path)
-    except ValueError:
-        within_base = False
-
-    if not within_base:
-        if normalized_path == real_extract_dir and (
-            file_path == "" or file_path == "."
-        ):
-            pass
-        else:
-            raise ValueError(
-                f"Unsafe extraction path '{file_path}' is outside base '{extract_dir}'"
-            )
+    if not _is_within_base(real_extract_dir, normalized_path):
+        raise ValueError(
+            f"Unsafe extraction path '{file_path}' is outside base '{extract_dir}'"
+        )
 
     return normalized_path
 
