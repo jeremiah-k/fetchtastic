@@ -3183,12 +3183,18 @@ def _get_latest_active_prerelease_from_history(
     Centralizes history fetching and selection so callers share the same rules.
     """
 
-    latest_active_dir, history_entries = _get_latest_active_prerelease_from_history(
+    history_entries = _get_prerelease_commit_history(
         expected_version,
         github_token=github_token,
         force_refresh=force_refresh,
         allow_env_token=allow_env_token,
     )
+
+    latest_active_dir = None
+    for entry in history_entries:
+        if entry.get("status") == "active" and entry.get("directory"):
+            latest_active_dir = entry["directory"]
+            break
 
     return latest_active_dir, history_entries
 
