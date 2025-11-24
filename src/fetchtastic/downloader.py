@@ -3220,17 +3220,22 @@ def _refresh_prerelease_commit_history(
             )
 
             if key and key in new_entries_by_key:
-                # Merge metadata from existing and new entries
                 new_entry = new_entries_by_key[key]
-                merged_entry = dict(existing_entry)  # Start with existing metadata
+                merged_entry = dict(existing_entry)
 
-                # Update with new information, but preserve creation metadata if missing
+                # Update with new information, but preserve creation metadata when present
                 for field, value in new_entry.items():
-                    if value is not None:  # Only update if new entry has a value
-                        # Preserve creation metadata if new entry doesn't have it
-                        if field in ("added_at", "added_sha") and field in merged_entry:
-                            continue  # Keep existing creation metadata
+                    if value is not None:
+                        if field in ("added_at", "added_sha") and merged_entry.get(
+                            field
+                        ):
+                            continue
                         merged_entry[field] = value
+
+                # If the new entry is active, clear any stale deletion markers from a prior removal
+                if new_entry.get("status") == "active":
+                    merged_entry["removed_at"] = None
+                    merged_entry["removed_sha"] = None
 
                 merged_history.append(merged_entry)
                 processed_keys.add(key)
@@ -3675,7 +3680,12 @@ def _find_latest_remote_prerelease_dir(
                     "Latest prerelease %s resolved from commit history", latest_dir
                 )
                 return latest_dir
-        except Exception as e:
+        except (
+            requests.RequestException,
+            ValueError,
+            KeyError,
+            json.JSONDecodeError,
+        ) as e:
             logger.debug(f"Commit-history prerelease lookup failed: {e}")
     else:
         logger.debug("Skipping commit history lookup as requested")
