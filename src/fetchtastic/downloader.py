@@ -2278,7 +2278,7 @@ def _load_prerelease_commit_history_cache() -> None:
         )
         try:
             last_checked = datetime.fromisoformat(str(last_checked_raw))
-        except Exception:
+        except (ValueError, TypeError):
             last_checked = cached_at
 
         def _extract_shas(entry: Dict[str, Any]) -> Optional[str]:
@@ -3176,7 +3176,7 @@ def _refresh_prerelease_commit_history(
     if not commits and existing_entries is not None:
         return list(existing_entries)
 
-    seen_shas: Set[str] = set(existing_shas or [])
+    seen_shas: Set[str] = {sha for sha in (existing_shas or []) if sha is not None}
     new_commits = [c for c in commits or [] if c.get("sha") not in seen_shas]
 
     if not new_commits and existing_entries is not None:
@@ -3200,26 +3200,40 @@ def _refresh_prerelease_commit_history(
         allow_env_token=allow_env_token,
     )
 
-    new_keys = set()
-    for entry in history_new:
-        key = entry.get("identifier") or entry.get("directory") or entry.get("dir")
-        if key:
-            new_keys.add(key)
+    new_keys = {
+        key
+        for entry in history_new
+        if (
+            key := (
+                entry.get("identifier") or entry.get("directory") or entry.get("dir")
+            )
+        )
+    }
 
     merged_history: List[Dict[str, Any]] = list(history_new)
     if existing_entries:
-        for entry in existing_entries:
-            key = entry.get("identifier") or entry.get("directory") or entry.get("dir")
-            if key and key in new_keys:
-                continue
-            merged_history.append(entry)
+        merged_history.extend(
+            entry
+            for entry in existing_entries
+            if not (
+                (
+                    key := entry.get("identifier")
+                    or entry.get("directory")
+                    or entry.get("dir")
+                )
+                and key in new_keys
+            )
+        )
 
     with _cache_lock:
+        final_shas: Set[str] = seen_shas.union(
+            {str(c.get("sha")) for c in commits or [] if c.get("sha") is not None}
+        )
         _prerelease_commit_history_cache[expected_version] = (
             merged_history,
             datetime.now(timezone.utc),
             datetime.now(timezone.utc),
-            seen_shas.union({c.get("sha") for c in commits or [] if c.get("sha")}),
+            final_shas,
         )
 
     _save_prerelease_commit_history_cache()
@@ -3319,9 +3333,10 @@ def _get_prerelease_commit_history(
         expected_version,
     )
     refresh_kwargs: Dict[str, Any] = {}
-    if "entries" in locals():
+    cached_entry = locals().get("cached")
+    if cached_entry:
+        entries, _, _, shas = cached_entry
         refresh_kwargs["existing_entries"] = entries
-    if "shas" in locals():
         refresh_kwargs["existing_shas"] = shas
 
     return _refresh_prerelease_commit_history(
