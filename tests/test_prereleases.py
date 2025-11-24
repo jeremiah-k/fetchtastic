@@ -1149,6 +1149,44 @@ def test_prerelease_commit_cache_save_only_on_new_entries():
         downloader._commit_cache_loaded = original_cache_loaded
 
 
+@patch("fetchtastic.downloader._fetch_recent_repo_commits")
+def test_find_latest_remote_prerelease_prefers_commit_history(mock_fetch_commits):
+    """_find_latest_remote_prerelease_dir should use commit history without directory/timestamp lookups when available."""
+    commit_list = [
+        {
+            "sha": "abc123",
+            "commit": {
+                "message": "2.7.13.abc123 meshtastic/firmware@abc123",
+                "committer": {"date": "2025-02-01T12:00:00Z"},
+            },
+        }
+    ]
+    mock_fetch_commits.return_value = commit_list
+
+    with (
+        patch(
+            "fetchtastic.downloader._build_simplified_prerelease_history"
+        ) as mock_history,
+        patch("fetchtastic.downloader._fetch_prerelease_directories") as mock_dirs,
+        patch("fetchtastic.downloader.get_commit_timestamp") as mock_get_ts,
+    ):
+        mock_history.return_value = [
+            {"status": "active", "directory": "firmware-2.7.13.abc123"}
+        ]
+        mock_dirs.side_effect = AssertionError("directory fetch should not be called")
+        mock_get_ts.side_effect = AssertionError(
+            "commit timestamp should not be called"
+        )
+
+        result = downloader._find_latest_remote_prerelease_dir("2.7.13")
+
+    assert result == "firmware-2.7.13.abc123"
+    mock_fetch_commits.assert_called_once()
+    mock_history.assert_called_once_with(
+        "2.7.13", commit_list, github_token=None, allow_env_token=True
+    )
+
+
 @pytest.mark.core_downloads
 def test_get_commit_timestamp_error_handling():
     """Test error handling in get_commit_timestamp."""

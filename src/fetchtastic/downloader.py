@@ -3508,6 +3508,34 @@ def _find_latest_remote_prerelease_dir(
     Returns:
         Optional[str]: Name of the newest matching prerelease directory (for example "firmware-2.7.13-abcdef"), or `None` if no matching directory is found or an error occurs.
     """
+    # First attempt: use commit history (cheap and cached, no per-directory API calls)
+    try:
+        recent_commits = _fetch_recent_repo_commits(
+            max_commits=DEFAULT_PRERELEASE_COMMITS_TO_FETCH,
+            github_token=github_token,
+            allow_env_token=allow_env_token,
+            force_refresh=force_refresh,
+        )
+
+        if recent_commits:
+            history = _build_simplified_prerelease_history(
+                expected_version,
+                recent_commits,
+                github_token=github_token,
+                allow_env_token=allow_env_token,
+            )
+
+            for entry in history:
+                if entry.get("status") == "active" and entry.get("directory"):
+                    logger.debug(
+                        "Latest prerelease %s resolved from commit history",
+                        entry["directory"],
+                    )
+                    return entry["directory"]
+    except (requests.RequestException, ValueError, KeyError, json.JSONDecodeError) as e:
+        logger.debug(f"Commit-history prerelease lookup failed: {e}")
+
+    # Fallback: legacy directory scan that may need commit timestamp lookups
     try:
         directories = _fetch_prerelease_directories(
             force_refresh=force_refresh,
