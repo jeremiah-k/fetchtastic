@@ -621,20 +621,33 @@ def _safe_rmtree(path_to_remove: str, base_dir: str, item_name: str) -> bool:
         bool: `True` if the path was removed successfully; `False` on error or if the resolved path is outside `base_dir`.
     """
     try:
+        real_base_dir = os.path.realpath(base_dir)
+
+        def _is_within_base(resolved_path: str) -> bool:
+            try:
+                return (
+                    os.path.commonpath([real_base_dir, resolved_path]) == real_base_dir
+                )
+            except ValueError:
+                return False
+
         if os.path.islink(path_to_remove):
+            link_dir = os.path.dirname(os.path.abspath(path_to_remove))
+            real_link_dir = os.path.realpath(link_dir)
+
+            if not _is_within_base(real_link_dir):
+                logger.warning(
+                    "Skipping removal of symlink %s because its location is outside the base directory",
+                    path_to_remove,
+                )
+                return False
+
             logger.info("Removing symlink: %s", item_name)
             os.unlink(path_to_remove)
             return True
 
         real_target = os.path.realpath(path_to_remove)
-        real_base_dir = os.path.realpath(base_dir)
-
-        try:
-            common_base = os.path.commonpath([real_base_dir, real_target])
-        except ValueError:
-            common_base = None
-
-        if common_base != real_base_dir:
+        if not _is_within_base(real_target):
             logger.warning(
                 "Skipping removal of %s because it resolves outside the base directory",
                 path_to_remove,
@@ -5013,22 +5026,28 @@ def safe_extract_path(extract_dir: str, file_path: str) -> str:
     Raises:
         ValueError: If the resolved path is outside the `extract_dir`.
     """
-    abs_extract_dir: str = os.path.abspath(extract_dir)
-    prospective_path: str = os.path.join(abs_extract_dir, file_path)
-    safe_path: str = os.path.normpath(prospective_path)
+    real_extract_dir = os.path.realpath(extract_dir)
+    prospective_path = os.path.join(real_extract_dir, file_path)
+    normalized_path = os.path.realpath(os.path.normpath(prospective_path))
 
     try:
-        common = os.path.commonpath([abs_extract_dir, safe_path])
+        within_base = (
+            os.path.commonpath([real_extract_dir, normalized_path]) == real_extract_dir
+        )
     except ValueError:
-        common = None
-    if common != abs_extract_dir:
-        if safe_path == abs_extract_dir and (file_path == "" or file_path == "."):
+        within_base = False
+
+    if not within_base:
+        if normalized_path == real_extract_dir and (
+            file_path == "" or file_path == "."
+        ):
             pass
         else:
             raise ValueError(
                 f"Unsafe path detected: '{file_path}' attempts to write outside of '{extract_dir}'"
             )
-    return safe_path
+
+    return normalized_path
 
 
 def extract_files(
