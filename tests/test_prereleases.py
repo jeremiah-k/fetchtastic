@@ -70,12 +70,18 @@ def mock_commit_history(monkeypatch):
     """
     Force prerelease commit history lookups to return an empty list for tests.
 
-    Replaces downloader._get_prerelease_commit_history with a stub that returns [] to prevent network access during tests.
+    Replaces downloader._get_prerelease_commit_history and commit-history fetchers with stubs
+    that return [] to prevent network access during tests.
     """
 
     monkeypatch.setattr(
         downloader,
         "_get_prerelease_commit_history",
+        lambda *_args, **_kwargs: [],
+    )
+    monkeypatch.setattr(
+        downloader,
+        "_fetch_recent_repo_commits",
         lambda *_args, **_kwargs: [],
     )
 
@@ -1106,6 +1112,10 @@ def test_prerelease_commit_cache_save_only_on_new_entries():
         ):
             with (
                 patch(
+                    "fetchtastic.downloader._fetch_recent_repo_commits",
+                    return_value=[],
+                ),
+                patch(
                     "fetchtastic.downloader.get_commit_timestamp",
                     return_value=cached_timestamp,
                 ) as mock_get_timestamp,
@@ -1133,6 +1143,10 @@ def test_prerelease_commit_cache_save_only_on_new_entries():
             return_value=["firmware-2.7.13.abcdef12"],
         ):
             with (
+                patch(
+                    "fetchtastic.downloader._fetch_recent_repo_commits",
+                    return_value=[],
+                ),
                 patch(
                     "fetchtastic.downloader.get_commit_timestamp",
                     side_effect=_populate_cache,
@@ -1483,7 +1497,8 @@ def test_fetch_recent_repo_commits_cache_expiry(tmp_path_factory, monkeypatch):
         mock_api.assert_called_once()
 
 
-def test_build_simplified_prerelease_history():
+@patch("fetchtastic.downloader._enrich_history_from_commit_details", return_value=None)
+def test_build_simplified_prerelease_history(_mock_enrich):
     """Test the new commit message parsing logic with various scenarios."""
 
     # Sample commit data that mimics real GitHub API response
@@ -1726,9 +1741,13 @@ def test_build_simplified_prerelease_history_edge_cases():
         },
     ]
 
-    result = downloader._build_simplified_prerelease_history(
-        "2.7.14", malformed_commits
-    )
+    with patch(
+        "fetchtastic.downloader._enrich_history_from_commit_details",
+        return_value=None,
+    ):
+        result = downloader._build_simplified_prerelease_history(
+            "2.7.14", malformed_commits
+        )
 
     # Should handle malformed messages gracefully
     assert len(result) == 0
