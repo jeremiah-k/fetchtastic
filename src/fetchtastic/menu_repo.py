@@ -167,17 +167,25 @@ def fetch_repo_directories(
 
 
 # Backward compatibility alias
-def fetch_directory_contents(path=""):
+def fetch_directory_contents(
+    path: str = "", allow_env_token: bool = True, github_token: Optional[str] = None
+):
     """
     Fetch only files from directory contents for backward compatibility.
 
     Parameters:
         path (str): Optional repository-relative path to list.
+        allow_env_token (bool): If True, allow using a GitHub token from the environment when making the API request.
+        github_token (Optional[str]): Explicit GitHub token to use instead of an environment token.
 
     Returns:
         list: A list of dictionaries representing files only (directories filtered out).
     """
-    all_items = fetch_repo_contents(path)
+    all_items = fetch_repo_contents(
+        path=path,
+        allow_env_token=allow_env_token,
+        github_token=github_token,
+    )
 
     # Filter to return only files, not directories
     return [item for item in all_items if item.get("type") == "file"]

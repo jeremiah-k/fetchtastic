@@ -621,20 +621,25 @@ def _safe_rmtree(path_to_remove: str, base_dir: str, item_name: str) -> bool:
         bool: `True` if the path was removed successfully; `False` on error or if the resolved path is outside `base_dir`.
     """
     try:
+        real_base_dir = os.path.realpath(base_dir)
+
         if os.path.islink(path_to_remove):
+            link_dir = os.path.dirname(os.path.abspath(path_to_remove))
+            real_link_dir = os.path.realpath(link_dir)
+
+            if not _is_within_base(real_base_dir, real_link_dir):
+                logger.warning(
+                    "Skipping removal of symlink %s because its location is outside the base directory",
+                    path_to_remove,
+                )
+                return False
+
             logger.info("Removing symlink: %s", item_name)
             os.unlink(path_to_remove)
             return True
 
         real_target = os.path.realpath(path_to_remove)
-        real_base_dir = os.path.realpath(base_dir)
-
-        try:
-            common_base = os.path.commonpath([real_base_dir, real_target])
-        except ValueError:
-            common_base = None
-
-        if common_base != real_base_dir:
+        if not _is_within_base(real_base_dir, real_target):
             logger.warning(
                 "Skipping removal of %s because it resolves outside the base directory",
                 path_to_remove,
@@ -1532,6 +1537,8 @@ def _iter_matching_prerelease_files(
     selected_patterns: list,
     exclude_patterns_list: list,
     device_manager,
+    github_token: Optional[str] = None,
+    allow_env_token: bool = True,
 ) -> List[Dict[str, str]]:
     """
     Return prerelease assets in a remote directory that match selection patterns and do not match any exclusion patterns.
@@ -1551,7 +1558,12 @@ def _iter_matching_prerelease_files(
             - "path": repository-relative path of the asset
     """
 
-    files = menu_repo.fetch_directory_contents(dir_name) or []
+    files = (
+        menu_repo.fetch_directory_contents(
+            dir_name, allow_env_token=allow_env_token, github_token=github_token
+        )
+        or []
+    )
     matching: List[Dict[str, str]] = []
     for entry in files:
         file_name = entry.get("name")
@@ -1803,7 +1815,9 @@ _prerelease_dir_cache_loaded = False
 _PRERELEASE_DIR_CACHE_ROOT_KEY = "__root__"
 
 # Global cache for prerelease commit histories (per expected version)
-_prerelease_commit_history_cache: Dict[str, Tuple[List[Dict[str, Any]], datetime]] = {}
+_prerelease_commit_history_cache: Dict[
+    str, Tuple[List[Dict[str, Any]], datetime, datetime, Set[str]]
+] = {}
 _prerelease_commit_history_file: Optional[str] = None
 _prerelease_commit_history_loaded = False
 
@@ -2242,7 +2256,7 @@ def _load_prerelease_commit_history_cache() -> None:
 
     def process_history_entry(
         cache_entry: Dict[str, Any], cached_at: datetime
-    ) -> Tuple[List[Dict[str, Any]], datetime]:
+    ) -> Tuple[List[Dict[str, Any]], datetime, datetime, Set[str]]:
         """
         Validate and extract the entries list and its cached timestamp from a prerelease cache entry.
 
@@ -2251,7 +2265,7 @@ def _load_prerelease_commit_history_cache() -> None:
             cached_at (datetime): Timestamp when the cache entry was created or saved.
 
         Returns:
-            tuple: A pair (entries, cached_at) where `entries` is the list of dicts extracted from `cache_entry` and `cached_at` is the same datetime passed in.
+            tuple: (entries, cached_at, last_checked, shas)
 
         Raises:
             TypeError: If the "entries" value in `cache_entry` is not a list.
@@ -2259,7 +2273,34 @@ def _load_prerelease_commit_history_cache() -> None:
         entries = cache_entry["entries"]
         if not isinstance(entries, list):
             raise TypeError("entries is not a list")
-        return (entries, cached_at)
+        last_checked_raw = cache_entry.get("last_checked") or cache_entry.get(
+            "cached_at"
+        )
+        try:
+            ts = str(last_checked_raw)
+            last_checked = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            last_checked = cached_at
+
+        def _extract_shas(entry: Dict[str, Any]) -> Optional[str]:
+            return (
+                entry.get("added_sha")
+                or entry.get("commit_sha")
+                or entry.get("commit_hash")
+            )
+
+        shas: Set[str] = set()
+        for entry in entries:
+            sha = _extract_shas(entry)
+            if sha:
+                shas.add(str(sha))
+
+        if "shas" in cache_entry and isinstance(cache_entry["shas"], list):
+            for sha in cache_entry["shas"]:
+                if sha:
+                    shas.add(str(sha))
+
+        return (entries, cached_at, last_checked, shas)
 
     loaded_data = _load_json_cache_with_expiry(
         cache_file_path=_get_prerelease_commit_history_file(),
@@ -2293,10 +2334,14 @@ def _save_prerelease_commit_history_cache() -> None:
                 version: {
                     "entries": entries,
                     "cached_at": cached_at.isoformat(),
+                    "last_checked": last_checked.isoformat(),
+                    "shas": sorted(shas),
                 }
                 for version, (
                     entries,
                     cached_at,
+                    last_checked,
+                    shas,
                 ) in _prerelease_commit_history_cache.items()
             }
 
@@ -2452,7 +2497,7 @@ def _fetch_recent_repo_commits(
     logger.debug("Fetching commits from API (cache miss/expired)")
 
     all_commits = list(commits)
-    per_page = GITHUB_MAX_PER_PAGE if max_commits > 0 else 1
+    per_page = min(GITHUB_MAX_PER_PAGE, max_commits)
     page = max(1, next_page)
     fetched_from_api = False
 
@@ -3105,6 +3150,8 @@ def _refresh_prerelease_commit_history(
     force_refresh: bool,
     max_commits: int,
     allow_env_token: bool = True,
+    existing_entries: Optional[List[Dict[str, Any]]] = None,
+    existing_shas: Optional[Set[str]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Refresh the cached simplified prerelease commit history for the given expected version.
@@ -3128,25 +3175,125 @@ def _refresh_prerelease_commit_history(
         force_refresh=force_refresh,
     )
     if not commits:
+        if existing_entries is not None:
+            return list(existing_entries)
+        logger.debug(
+            "No commits returned while refreshing prerelease history for %s; skipping cache update",
+            expected_version,
+        )
         return []
 
-    # Build simplified history from commits, preserving auth config for any
+    seen_shas: Set[str] = {sha for sha in (existing_shas or []) if sha is not None}
+    new_commits = [c for c in commits or [] if c.get("sha") not in seen_shas]
+
+    if not new_commits and existing_entries is not None:
+        # Nothing new; just bump last_checked
+        with _cache_lock:
+            now = datetime.now(timezone.utc)
+            _prerelease_commit_history_cache[expected_version] = (
+                list(existing_entries),
+                now,
+                now,
+                seen_shas,
+            )
+        _save_prerelease_commit_history_cache()
+        return list(existing_entries)
+
+    # Build simplified history from new commits, preserving auth config for any
     # optional commit-detail lookups.
-    history_entries = _build_simplified_prerelease_history(
+    history_new = _build_simplified_prerelease_history(
         expected_version,
-        commits,
+        new_commits,
         github_token=github_token,
         allow_env_token=allow_env_token,
     )
 
+    def _get_entry_key(entry: Dict[str, Any]) -> Optional[str]:
+        return entry.get("identifier") or entry.get("directory") or entry.get("dir")
+
+    existing_map: Dict[str, Dict[str, Any]] = (
+        {_get_entry_key(e): e for e in existing_entries if _get_entry_key(e)}
+        if existing_entries
+        else {}
+    )
+
+    # Merge new entries into existing_map (newest-first list already from history_new)
+    for new_entry in history_new:
+        key = _get_entry_key(new_entry)
+        if not key:
+            continue
+
+        merged_entry = dict(existing_map.get(key, {}))
+        for field, value in new_entry.items():
+            if value is None:
+                continue
+            if field in ("added_at", "added_sha") and merged_entry.get(field):
+                continue
+            merged_entry[field] = value
+
+        if new_entry.get("status") == "active":
+            merged_entry["removed_at"] = None
+            merged_entry["removed_sha"] = None
+
+        existing_map[key] = merged_entry or new_entry
+
+    # Preserve newest-first ordering using the shared sort key
+    merged_history: List[Dict[str, Any]] = sorted(
+        existing_map.values(), key=_sort_key, reverse=True
+    )
+
     with _cache_lock:
+        final_shas: Set[str] = seen_shas.union(
+            {str(c.get("sha")) for c in commits or [] if c.get("sha") is not None}
+        )
+        now = datetime.now(timezone.utc)
         _prerelease_commit_history_cache[expected_version] = (
-            history_entries,
-            datetime.now(timezone.utc),
+            merged_history,
+            now,
+            now,
+            final_shas,
         )
 
     _save_prerelease_commit_history_cache()
-    return [dict(entry) for entry in history_entries]
+    return [dict(entry) for entry in merged_history]
+
+
+def _is_within_base(real_base_dir: str, candidate: str) -> bool:
+    """
+    Return True if candidate is contained within real_base_dir using commonpath.
+    """
+    try:
+        return os.path.commonpath([real_base_dir, candidate]) == real_base_dir
+    except ValueError:
+        return False
+
+
+def _get_latest_active_prerelease_from_history(
+    expected_version: str,
+    github_token: Optional[str] = None,
+    force_refresh: bool = False,
+    allow_env_token: bool = True,
+) -> Tuple[Optional[str], List[Dict[str, Any]]]:
+    """
+    Return the latest active prerelease directory derived from commit history plus the history entries.
+
+    Centralizes history fetching and selection so callers share the same rules.
+    """
+
+    history_entries = _get_prerelease_commit_history(
+        expected_version,
+        github_token=github_token,
+        force_refresh=force_refresh,
+        allow_env_token=allow_env_token,
+    )
+
+    latest_active_dir = None
+    for entry in history_entries:
+        if entry.get("status") == "active" and entry.get("directory"):
+            latest_active_dir = entry["directory"]
+            break
+
+    return latest_active_dir, history_entries
 
 
 def _get_prerelease_commit_history(
@@ -3159,7 +3306,7 @@ def _get_prerelease_commit_history(
     """
     Get the prerelease commit history for the provided expected prerelease base version, using a cached copy when available.
 
-    If `expected_version` is falsy an empty list is returned. When `force_refresh` is False the function will attempt to read the on-disk/in-memory cache and return it if present; otherwise it will fetch and rebuild the history. The cache is intentionally persistent (no automatic expiry), so callers must request a force refresh when they need to bypass the cached value.
+    If `expected_version` is falsy an empty list is returned. When `force_refresh` is False the function will attempt to read the on-disk/in-memory cache and return it if present and not older than `PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS`; otherwise it will fetch and extend the history by adding new commits.
 
     Parameters:
         expected_version (str): The base version string used to identify prerelease commits (for example "1.2.3").
@@ -3175,17 +3322,17 @@ def _get_prerelease_commit_history(
     if not expected_version:
         return []
 
-    needs_initial_build = False
-
-    # Only load cache if we're not forcing a refresh
+    cached = None
     if not force_refresh:
         _load_prerelease_commit_history_cache()
 
         with _cache_lock:
             cached = _prerelease_commit_history_cache.get(expected_version)
-            if cached:
-                entries, cached_at = cached
-                age = datetime.now(timezone.utc) - cached_at
+
+        if cached:
+            entries, _cached_at, last_checked, shas = cached
+            age = datetime.now(timezone.utc) - last_checked
+            if age.total_seconds() < PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS:
                 track_api_cache_hit()
                 logger.debug(
                     "Using cached prerelease history for %s (cached %.0fs ago)",
@@ -3193,16 +3340,30 @@ def _get_prerelease_commit_history(
                     age.total_seconds(),
                 )
                 return [dict(entry) for entry in entries]
-            needs_initial_build = True
+            logger.debug(
+                "Prerelease history cache stale for %s (age %.0fs >= %ss); extending cache",
+                expected_version,
+                age.total_seconds(),
+                PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS,
+            )
 
-    if needs_initial_build or force_refresh:
-        logger.info(
-            "Building prerelease history cache for %s (this may take a couple of minutes on initial builds)...",
-            expected_version,
-        )
+    logger.info(
+        "Building prerelease history cache for %s (this may take a couple of minutes on initial builds)...",
+        expected_version,
+    )
+    refresh_kwargs: Dict[str, Any] = {}
+    if cached:
+        entries, _, _, shas = cached
+        refresh_kwargs["existing_entries"] = entries
+        refresh_kwargs["existing_shas"] = shas
 
     return _refresh_prerelease_commit_history(
-        expected_version, github_token, force_refresh, max_commits, allow_env_token
+        expected_version,
+        github_token,
+        force_refresh,
+        max_commits,
+        allow_env_token,
+        **refresh_kwargs,
     )
 
 
@@ -3482,19 +3643,45 @@ def _find_latest_remote_prerelease_dir(
     github_token: Optional[str] = None,
     force_refresh: bool = False,
     allow_env_token: bool = True,
+    skip_history_lookup: bool = False,
 ) -> Optional[str]:
     """
     Select the newest remote prerelease directory that matches the given prerelease base version.
 
     Parameters:
         expected_version (str): Base prerelease version to match (for example, "2.7.13").
-        github_token (Optional[str]): GitHub API token to use for fetching commit timestamps; if None and allow_env_token is True, an environment token may be used.
-        force_refresh (bool): If True, bypass cached commit timestamps and fetch fresh values.
+        github_token (Optional[str]): GitHub API token to use for fetching commit timestamps and prerelease history; if None and allow_env_token is True, an environment token may be used.
+        force_refresh (bool): If True, bypass cached prerelease history and commit timestamps and fetch fresh values.
         allow_env_token (bool): If True, allow using a GitHub token sourced from the environment when `github_token` is None.
+        skip_history_lookup (bool): If True, skip the commit history lookup and go directly to directory scanning fallback.
 
     Returns:
         Optional[str]: Name of the newest matching prerelease directory (for example "firmware-2.7.13-abcdef"), or `None` if no matching directory is found or an error occurs.
     """
+    # First attempt: use commit history (cheap and cached, no per-directory API calls)
+    if not skip_history_lookup:
+        try:
+            latest_dir, _history = _get_latest_active_prerelease_from_history(
+                expected_version,
+                github_token=github_token,
+                force_refresh=force_refresh,
+                allow_env_token=allow_env_token,
+            )
+            if latest_dir:
+                logger.debug(
+                    "Latest prerelease %s resolved from commit history", latest_dir
+                )
+                return latest_dir
+        except requests.RequestException as e:
+            logger.warning(
+                "Commit-history prerelease lookup failed due to a network error; "
+                "falling back to prerelease directory scan: %s",
+                e,
+            )
+    else:
+        logger.debug("Skipping commit history lookup as requested")
+
+    # Fallback: legacy directory scan that may need commit timestamp lookups
     try:
         directories = _fetch_prerelease_directories(
             force_refresh=force_refresh,
@@ -3650,6 +3837,8 @@ def _download_prerelease_assets(
     exclude_patterns_list: List[str],
     device_manager,
     force_refresh: bool = False,
+    github_token: Optional[str] = None,
+    allow_env_token: bool = True,
 ) -> Tuple[bool, List[str]]:
     """
     Download assets for a specific prerelease directory.
@@ -3667,7 +3856,12 @@ def _download_prerelease_assets(
         downloaded_files (List[str]): List of filenames that were downloaded.
     """
     remote_files = _iter_matching_prerelease_files(
-        remote_dir, selected_patterns, exclude_patterns_list, device_manager
+        remote_dir,
+        selected_patterns,
+        exclude_patterns_list,
+        device_manager,
+        github_token=github_token,
+        allow_env_token=allow_env_token,
     )
 
     if not remote_files:
@@ -3715,11 +3909,7 @@ def _download_prerelease_assets(
         # Security: Prevent path traversal using robust path validation
         real_prerelease_dir = os.path.realpath(prerelease_dir)
         real_target = os.path.realpath(file_path)
-        try:
-            common_base = os.path.commonpath([real_prerelease_dir, real_target])
-        except ValueError:
-            common_base = None
-        if common_base != real_prerelease_dir:
+        if not _is_within_base(real_prerelease_dir, real_target):
             logger.warning(
                 f"Skipping asset with unsafe path that escapes base directory: {file_path}"
             )
@@ -3842,19 +4032,14 @@ def check_for_prereleases(
 
     # Try to get commit history first (new approach)
     try:
-        history_entries = _get_prerelease_commit_history(
-            expected_version,
-            github_token=github_token,
-            force_refresh=force_refresh,
-            allow_env_token=allow_env_token,
+        latest_active_dir, _history_entries = (
+            _get_latest_active_prerelease_from_history(
+                expected_version,
+                github_token=github_token,
+                force_refresh=force_refresh,
+                allow_env_token=allow_env_token,
+            )
         )
-
-        # Find the latest active prerelease from commit history
-        latest_active_dir = None
-        for entry in history_entries:
-            if entry.get("status") == "active" and entry.get("directory"):
-                latest_active_dir = entry["directory"]
-                break
 
         if latest_active_dir:
             logger.info("Using commit history for prerelease detection")
@@ -3882,7 +4067,6 @@ def check_for_prereleases(
         json.JSONDecodeError,
     ) as exc:
         logger.debug(f"Failed to get prerelease commit history: {exc}")
-        history_entries = []
         remote_dir = None
         newest_dir = None
 
@@ -3910,8 +4094,13 @@ def check_for_prereleases(
             newest_dir = None
 
         # Find the latest remote prerelease directory (old approach)
+        # Skip history lookup since we already tried it above
         remote_dir = _find_latest_remote_prerelease_dir(
-            expected_version, github_token, force_refresh, allow_env_token
+            expected_version,
+            github_token,
+            force_refresh,
+            allow_env_token,
+            skip_history_lookup=True,
         )
         if not remote_dir:
             return (False, [newest_dir]) if newest_dir else (False, [])
@@ -3924,6 +4113,8 @@ def check_for_prereleases(
         exclude_patterns_list,
         device_manager,
         force_refresh,
+        github_token=github_token,
+        allow_env_token=allow_env_token,
     )
 
     # Update tracking information if files were downloaded
@@ -5013,22 +5204,16 @@ def safe_extract_path(extract_dir: str, file_path: str) -> str:
     Raises:
         ValueError: If the resolved path is outside the `extract_dir`.
     """
-    abs_extract_dir: str = os.path.abspath(extract_dir)
-    prospective_path: str = os.path.join(abs_extract_dir, file_path)
-    safe_path: str = os.path.normpath(prospective_path)
+    real_extract_dir = os.path.realpath(extract_dir)
+    prospective_path = os.path.join(real_extract_dir, file_path)
+    normalized_path = os.path.realpath(prospective_path)
 
-    try:
-        common = os.path.commonpath([abs_extract_dir, safe_path])
-    except ValueError:
-        common = None
-    if common != abs_extract_dir:
-        if safe_path == abs_extract_dir and (file_path == "" or file_path == "."):
-            pass
-        else:
-            raise ValueError(
-                f"Unsafe path detected: '{file_path}' attempts to write outside of '{extract_dir}'"
-            )
-    return safe_path
+    if not _is_within_base(real_extract_dir, normalized_path):
+        raise ValueError(
+            f"Unsafe extraction path '{file_path}' is outside base '{extract_dir}'"
+        )
+
+    return normalized_path
 
 
 def extract_files(
@@ -5057,7 +5242,7 @@ def extract_files(
             file_info: zipfile.ZipInfo
             for file_info in zip_ref.infolist():
                 # Skip directory entries in archives
-                if hasattr(file_info, "is_dir") and file_info.is_dir():
+                if file_info.is_dir():
                     continue
                 file_name: str = file_info.filename  # may include subdirectories
                 base_name: str = os.path.basename(file_name)
@@ -5803,6 +5988,13 @@ def check_and_download(
                             continue
                         zip_path: str = os.path.join(release_dir, safe_zip_name)
                         if os.path.exists(zip_path):
+                            # Validate extraction patterns are working correctly
+                            _validate_extraction_patterns(
+                                zip_path,
+                                extract_patterns,
+                                exclude_patterns_list,
+                                raw_release_tag,
+                            )
                             extraction_needed: bool = check_extraction_needed(
                                 zip_path,
                                 release_dir,
@@ -5956,6 +6148,85 @@ def set_permissions_on_sh_files(directory: str) -> None:
         )
 
 
+def _validate_extraction_patterns(
+    zip_path: str, patterns: List[str], exclude_patterns: List[str], release_tag: str
+) -> None:
+    """
+    Validate that extraction patterns are correctly matching files in a ZIP archive.
+
+    Logs which patterns successfully match files and warns when no patterns match.
+    This helps identify issues with pattern matching, especially for patterns with trailing
+    separators that were fixed in PR #116.
+
+    Parameters:
+        zip_path (str): Path to the ZIP archive to validate.
+        patterns (List[str]): Inclusion patterns to validate.
+        exclude_patterns (List[str]): Exclusion patterns applied during validation to match extraction behavior.
+        release_tag (str): Release tag for logging purposes.
+
+    Returns:
+        None: Results are logged, no return value.
+    """
+    if not patterns:
+        logger.debug("No extraction patterns to validate for %s", release_tag)
+        return
+
+    try:
+        pattern_matches: Dict[str, List[str]] = {}
+        with zipfile.ZipFile(zip_path, "r") as zip_ref:
+            file_info: zipfile.ZipInfo
+            for file_info in zip_ref.infolist():
+                # Skip directory entries in archives
+                if file_info.is_dir():
+                    continue
+                file_name: str = file_info.filename
+                base_name: str = os.path.basename(file_name)
+                if not base_name:
+                    continue
+                if _matches_exclude(base_name, exclude_patterns):
+                    continue
+
+                # Check which patterns match this file using the same logic as extraction
+                for pattern in patterns:
+                    trimmed = pattern.strip()
+                    if not trimmed:
+                        continue
+                    if matches_selected_patterns(base_name, [trimmed]):
+                        pattern_matches.setdefault(trimmed, []).append(base_name)
+
+        # Log validation results
+        if pattern_matches:
+            logger.info(
+                "Pattern validation for %s: %d patterns matched files",
+                release_tag,
+                len(pattern_matches),
+            )
+            for pattern, matched_files in pattern_matches.items():
+                logger.debug(
+                    "Pattern '%s' matched %d files: %s",
+                    pattern,
+                    len(matched_files),
+                    (
+                        [*matched_files[:3], "..."]
+                        if len(matched_files) > 3
+                        else matched_files
+                    ),
+                )
+        else:
+            logger.warning(
+                "Pattern validation for %s: No patterns matched any files in ZIP archive",
+                release_tag,
+            )
+            logger.debug("Available patterns: %s", patterns)
+
+    except zipfile.BadZipFile:
+        logger.error(
+            "Cannot validate patterns for %s: %s is corrupted", release_tag, zip_path
+        )
+    except (OSError, ValueError) as e:
+        logger.error("Error validating patterns for %s: %s", release_tag, e)
+
+
 def check_extraction_needed(
     zip_path: str, extract_dir: str, patterns: List[str], exclude_patterns: List[str]
 ) -> bool:
@@ -5990,7 +6261,7 @@ def check_extraction_needed(
             file_info: zipfile.ZipInfo
             for file_info in zip_ref.infolist():
                 # Skip directory entries in archives
-                if hasattr(file_info, "is_dir") and file_info.is_dir():
+                if file_info.is_dir():
                     continue
                 file_name: str = file_info.filename  # may include subdirectories
                 base_name: str = os.path.basename(file_name)

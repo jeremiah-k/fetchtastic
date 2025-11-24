@@ -500,3 +500,46 @@ class TestExtractionAndPermissionSetting:
             assert (extract_dir / "firmware-tbeam.bin").exists()
             assert (extract_dir / "firmware-canary.bin").exists()
             assert not (extract_dir / "script.sh").exists()
+
+
+def test_validate_extraction_patterns(tmp_path, capsys):
+    """Test the _validate_extraction_patterns function."""
+    # Create a test ZIP file with various firmware files
+    zip_file = tmp_path / "test_firmware.zip"
+
+    with zipfile.ZipFile(str(zip_file), "w") as zf:
+        # Add files that should match patterns
+        zf.writestr("firmware-rak4631-2.7.15.567b8ea.uf2", "firmware data")
+        zf.writestr("littlefs-rak4631-2.7.15.567b8ea.bin", "littlefs data")
+        zf.writestr("device-install.sh", "script data")
+        zf.writestr("firmware-tbeam-2.7.15.bin", "tbeam firmware")
+        # Add file that shouldn't match
+        zf.writestr("random-file.txt", "random data")
+
+    # Test with patterns that should match - should not raise any exceptions
+    patterns = ["rak4631-", "device-"]
+    downloader._validate_extraction_patterns(str(zip_file), patterns, [], "v2.7.15")
+
+    # Test with patterns that won't match - should log a warning
+    patterns_no_match = ["nonexistent-", "invalid-"]
+    captured_before = capsys.readouterr()
+    _ = captured_before  # avoid lint about unused
+    # Capture stdout/stderr since logging handler writes to console
+    downloader._validate_extraction_patterns(
+        str(zip_file), patterns_no_match, [], "v2.7.15"
+    )
+    output = capsys.readouterr().out + capsys.readouterr().err
+    assert "No patterns matched" in output
+    assert "files in ZIP archive" in output
+
+    # Test with empty patterns - should not raise any exceptions
+    downloader._validate_extraction_patterns(str(zip_file), [], [], "v2.7.15")
+
+    # Test with corrupted ZIP - should handle gracefully
+    corrupted_zip = tmp_path / "corrupted.zip"
+    corrupted_zip.write_text("not a zip file")
+
+    # Should not raise exception, just log error
+    downloader._validate_extraction_patterns(
+        str(corrupted_zip), ["test-"], [], "v2.7.15"
+    )

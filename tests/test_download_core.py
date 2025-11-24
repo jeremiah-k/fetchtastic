@@ -2541,6 +2541,37 @@ def test_strip_unwanted_chars():
 
 
 @pytest.mark.core_downloads
+def test_get_string_list_from_config():
+    """Test _get_string_list_from_config function."""
+    from fetchtastic.downloader import _get_string_list_from_config
+
+    # Test with list of strings
+    config = {"patterns": ["*.bin", "*.hex"]}
+    result = _get_string_list_from_config(config, "patterns")
+    assert result == ["*.bin", "*.hex"]
+
+    # Test with single string (should convert to list)
+    config = {"patterns": "*.bin"}
+    result = _get_string_list_from_config(config, "patterns")
+    assert result == ["*.bin"]
+
+    # Test with mixed types (should filter to strings only)
+    config = {"patterns": ["*.bin", 123, "*.hex", None, b"bytes"]}
+    result = _get_string_list_from_config(config, "patterns")
+    assert result == ["*.bin", "*.hex", "b'bytes'"]
+
+    # Test with non-list, non-string (should return empty list)
+    config = {"patterns": 123}
+    result = _get_string_list_from_config(config, "patterns")
+    assert result == []
+
+    # Test with missing key (should return empty list)
+    config = {}
+    result = _get_string_list_from_config(config, "patterns")
+    assert result == []
+
+
+@pytest.mark.core_downloads
 def test_is_release_complete(tmp_path):
     """Test _is_release_complete function."""
     from fetchtastic.downloader import _is_release_complete
@@ -2574,6 +2605,100 @@ def test_is_release_complete(tmp_path):
     # Test incomplete release (missing assets key)
     incomplete_release3 = {"name": "Test Release", "tag_name": "v1.0.0"}
     assert _is_release_complete(incomplete_release3, str(test_dir), None, []) is False
+
+
+@pytest.mark.core_downloads
+def test_prepare_for_redownload(tmp_path):
+    """Test _prepare_for_redownload function."""
+    from fetchtastic.downloader import _prepare_for_redownload
+
+    # Create test files
+    test_file = tmp_path / "test.bin"
+    test_file.write_text("test content")
+
+    hash_file = tmp_path / "test.bin.sha256"
+    hash_file.write_text("hash content")
+
+    temp_file1 = tmp_path / "test.bin.tmp.123"
+    temp_file1.write_text("temp1")
+
+    temp_file2 = tmp_path / "test.bin.tmp.456"
+    temp_file2.write_text("temp2")
+
+    # Test successful cleanup
+    result = _prepare_for_redownload(str(test_file))
+    assert result is True
+    assert not test_file.exists()
+    assert not hash_file.exists()
+    assert not temp_file1.exists()
+    assert not temp_file2.exists()
+
+    # Test with non-existent file (should still succeed)
+    result = _prepare_for_redownload(str(tmp_path / "nonexistent.bin"))
+    assert result is True
+
+    # Test with only some files existing
+    test_file.write_text("content")
+    temp_file1.write_text("temp")
+    result = _prepare_for_redownload(str(test_file))
+    assert result is True
+    assert not test_file.exists()
+    assert not temp_file1.exists()
+
+
+@pytest.mark.core_downloads
+def test_prerelease_needs_download(tmp_path):
+    """Test _prerelease_needs_download function."""
+    from unittest.mock import patch
+
+    from fetchtastic.downloader import _prerelease_needs_download
+
+    test_file = tmp_path / "test.bin"
+
+    # Test file doesn't exist - should return True
+    result = _prerelease_needs_download(str(test_file))
+    assert result is True
+
+    # Test file exists and integrity check passes - should return False
+    test_file.write_text("content")
+    with patch("fetchtastic.downloader.verify_file_integrity", return_value=True):
+        result = _prerelease_needs_download(str(test_file))
+        assert result is False
+
+    # Test file exists but integrity check fails and cleanup succeeds - should return True
+    with (
+        patch("fetchtastic.downloader.verify_file_integrity", return_value=False),
+        patch("fetchtastic.downloader._prepare_for_redownload", return_value=True),
+    ):
+        result = _prerelease_needs_download(str(test_file))
+        assert result is True
+
+    # Test file exists but integrity check fails and cleanup fails - should return False
+    with (
+        patch("fetchtastic.downloader.verify_file_integrity", return_value=False),
+        patch("fetchtastic.downloader._prepare_for_redownload", return_value=False),
+    ):
+        result = _prerelease_needs_download(str(test_file))
+        assert result is False
+
+
+@pytest.mark.core_downloads
+def test_is_within_base():
+    """Test _is_within_base function."""
+    from fetchtastic.downloader import _is_within_base
+
+    # Test candidate within base directory
+    assert _is_within_base("/base", "/base/file.txt") is True
+    assert _is_within_base("/base", "/base/subdir/file.txt") is True
+
+    # Test candidate outside base directory
+    assert _is_within_base("/base", "/other/file.txt") is False
+
+    # Test candidate is the base directory itself
+    assert _is_within_base("/base", "/base") is True
+
+    # Test with different drives (should return False on error)
+    assert _is_within_base("C:/base", "D:/file.txt") is False
 
 
 @pytest.mark.core_downloads

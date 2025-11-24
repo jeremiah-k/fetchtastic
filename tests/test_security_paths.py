@@ -174,6 +174,43 @@ class TestSecuritySymlinkAttacks:
 
         assert not test_dir.exists()
 
+    def test_safe_rmtree_rejects_paths_outside_base(self, tmp_path):
+        """_safe_rmtree should not touch paths that are outside the permitted base dir."""
+        from fetchtastic.downloader import _safe_rmtree
+
+        base_dir = tmp_path / "base"
+        base_dir.mkdir()
+        outside_dir = tmp_path / "base_alt"
+        outside_dir.mkdir()
+        stray_file = outside_dir / "file.txt"
+        stray_file.write_text("data")
+
+        result = _safe_rmtree(str(stray_file), str(base_dir), "file.txt")
+
+        assert result is False
+        assert stray_file.exists()
+
+    @pytest.mark.skipif(
+        platform.system() == "Windows",
+        reason="Symlink creation requires administrator privileges on Windows",
+    )
+    def test_safe_rmtree_skips_symlinks_outside_base(self, tmp_path):
+        """Symlinks that live outside the base directory should be left alone."""
+        from fetchtastic.downloader import _safe_rmtree
+
+        base_dir = tmp_path / "base"
+        base_dir.mkdir()
+        outside_dir = tmp_path / "outside"
+        outside_dir.mkdir()
+
+        link_path = outside_dir / "link_to_base"
+        link_path.symlink_to(base_dir, target_is_directory=True)
+
+        result = _safe_rmtree(str(link_path), str(base_dir), "link_to_base")
+
+        assert result is False
+        assert link_path.exists()
+
 
 class TestSecurityPathTraversal:
     """Test security measures against path traversal attacks."""
@@ -289,17 +326,18 @@ class TestSecurityPathTraversal:
         ]
 
         for malicious_path in malicious_paths:
-            with pytest.raises(ValueError, match="Unsafe path detected"):
+            with pytest.raises(ValueError, match="Unsafe extraction path"):
                 safe_extract_path(extract_dir, malicious_path)
 
         # Test absolute paths (should be blocked)
         absolute_paths = [
             "/etc/passwd",
             "/absolute/path/file.txt",
+            os.path.join(os.path.abspath(extract_dir) + "-evil", "payload.bin"),
         ]
 
         for absolute_path in absolute_paths:
-            with pytest.raises(ValueError, match="Unsafe path detected"):
+            with pytest.raises(ValueError, match="Unsafe extraction path"):
                 safe_extract_path(extract_dir, absolute_path)
 
         # Test Windows-style paths on Unix (behavior depends on platform)

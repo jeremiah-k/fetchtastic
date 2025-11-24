@@ -11,6 +11,7 @@ import re
 import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Optional
 from unittest.mock import Mock, patch
 
 import pytest
@@ -70,12 +71,18 @@ def mock_commit_history(monkeypatch):
     """
     Force prerelease commit history lookups to return an empty list for tests.
 
-    Replaces downloader._get_prerelease_commit_history with a stub that returns [] to prevent network access during tests.
+    Replaces downloader._get_prerelease_commit_history and commit-history fetchers with stubs
+    that return [] to prevent network access during tests.
     """
 
     monkeypatch.setattr(
         downloader,
         "_get_prerelease_commit_history",
+        lambda *_args, **_kwargs: [],
+    )
+    monkeypatch.setattr(
+        downloader,
+        "_fetch_recent_repo_commits",
         lambda *_args, **_kwargs: [],
     )
 
@@ -98,6 +105,9 @@ def _use_isolated_cache(tmp_path_factory, monkeypatch):
         lambda *_args, **_kwargs: str(cache_dir),
     )
 
+    # Ensure each test starts with clean in-memory and on-disk caches
+    downloader.clear_all_caches()
+
     # Reset cached file path globals so newly patched cache dir is used
     downloader._commit_cache_file = None
     downloader._releases_cache_file = None
@@ -105,6 +115,7 @@ def _use_isolated_cache(tmp_path_factory, monkeypatch):
     downloader._prerelease_commit_history_file = None
     downloader._prerelease_dir_cache_loaded = False
     downloader._prerelease_commit_history_loaded = False
+    downloader._commit_cache_loaded = False
     return cache_dir
 
 
@@ -329,7 +340,9 @@ def test_check_for_prereleases_download_and_cleanup(
     assert downloaded is True
     assert versions == ["firmware-2.7.7.abcdef"]
     assert mock_dl.call_count == 1
-    mock_fetch_contents.assert_called_once_with("firmware-2.7.7.abcdef")
+    mock_fetch_contents.assert_called_once_with(
+        "firmware-2.7.7.abcdef", allow_env_token=True, github_token=None
+    )
     assert not stale_dir.exists()  # Verify stale prerelease was cleaned up
 
 
@@ -500,7 +513,10 @@ def test_prerelease_directory_cleanup(tmp_path, write_dummy_file, mock_commit_hi
         with patch("fetchtastic.menu_repo.fetch_directory_contents") as mock_contents:
             mock_dirs.return_value = ["firmware-2.7.7.789abc"]
 
-            def _dir_aware_contents(dir_name: str):
+            def _dir_aware_contents(
+                dir_name: str,
+                **_kwargs,
+            ):
                 """
                 Return a mock directory listing containing a single prerelease firmware asset whose path and download_url incorporate the provided directory name.
 
@@ -1106,6 +1122,10 @@ def test_prerelease_commit_cache_save_only_on_new_entries():
         ):
             with (
                 patch(
+                    "fetchtastic.downloader._fetch_recent_repo_commits",
+                    return_value=[],
+                ),
+                patch(
                     "fetchtastic.downloader.get_commit_timestamp",
                     return_value=cached_timestamp,
                 ) as mock_get_timestamp,
@@ -1134,6 +1154,10 @@ def test_prerelease_commit_cache_save_only_on_new_entries():
         ):
             with (
                 patch(
+                    "fetchtastic.downloader._fetch_recent_repo_commits",
+                    return_value=[],
+                ),
+                patch(
                     "fetchtastic.downloader.get_commit_timestamp",
                     side_effect=_populate_cache,
                 ) as mock_get_timestamp,
@@ -1147,6 +1171,46 @@ def test_prerelease_commit_cache_save_only_on_new_entries():
         with downloader._cache_lock:
             downloader._commit_timestamp_cache.pop(cache_key, None)
         downloader._commit_cache_loaded = original_cache_loaded
+
+
+@patch("fetchtastic.downloader._fetch_recent_repo_commits")
+def test_find_latest_remote_prerelease_prefers_commit_history(mock_fetch_commits):
+    """_find_latest_remote_prerelease_dir should use commit history without directory/timestamp lookups when available."""
+    commit_list = [
+        {
+            "sha": "abc123",
+            "commit": {
+                "message": "2.7.13.abc123 meshtastic/firmware@abc123",
+                "committer": {"date": "2025-02-01T12:00:00Z"},
+            },
+        }
+    ]
+    mock_fetch_commits.return_value = commit_list
+
+    with (
+        patch(
+            "fetchtastic.downloader._build_simplified_prerelease_history"
+        ) as mock_history,
+        patch("fetchtastic.downloader._fetch_prerelease_directories") as mock_dirs,
+        patch("fetchtastic.downloader.get_commit_timestamp") as mock_get_ts,
+    ):
+        mock_history.return_value = [
+            {"status": "active", "directory": "firmware-2.7.13.abc123"}
+        ]
+        mock_dirs.side_effect = AssertionError(
+            "_fetch_prerelease_directories should not be called when history resolves"
+        )
+        mock_get_ts.side_effect = AssertionError(
+            "commit timestamp should not be called"
+        )
+
+        result = downloader._find_latest_remote_prerelease_dir("2.7.13")
+
+    assert result == "firmware-2.7.13.abc123"
+    mock_fetch_commits.assert_called_once()
+    mock_history.assert_called_once_with(
+        "2.7.13", commit_list, github_token=None, allow_env_token=True
+    )
 
 
 @pytest.mark.core_downloads
@@ -1445,7 +1509,8 @@ def test_fetch_recent_repo_commits_cache_expiry(tmp_path_factory, monkeypatch):
         mock_api.assert_called_once()
 
 
-def test_build_simplified_prerelease_history():
+@patch("fetchtastic.downloader._enrich_history_from_commit_details", return_value=None)
+def test_build_simplified_prerelease_history(_mock_enrich):
     """Test the new commit message parsing logic with various scenarios."""
 
     # Sample commit data that mimics real GitHub API response
@@ -1643,7 +1708,7 @@ def test_prerelease_history_cache_is_persistent(tmp_path_factory, monkeypatch):
         # Verify refresh was called with correct parameters
         mock_refresh.assert_called_once_with("2.7.15", None, True, 40, True)
 
-    # Test 2: When cache exists and force_refresh=False, cached data should be returned even if old
+    # Test 2: When cache exists but is expired and force_refresh=False, refresh should be invoked
     with patch.object(downloader, "_refresh_prerelease_commit_history") as mock_refresh:
         mock_refresh.return_value = fresh_entries
 
@@ -1655,9 +1720,9 @@ def test_prerelease_history_cache_is_persistent(tmp_path_factory, monkeypatch):
             "2.7.15", force_refresh=False
         )
 
-        # Should return cached data without invoking refresh
-        assert result == [{"identifier": "2.7.15.test123", "status": "active"}]
-        mock_refresh.assert_not_called()
+        # Cache is expired, so refresh should be called and fresh data returned
+        assert result == fresh_entries
+        mock_refresh.assert_called_once()
 
 
 def test_build_simplified_prerelease_history_edge_cases():
@@ -1688,9 +1753,13 @@ def test_build_simplified_prerelease_history_edge_cases():
         },
     ]
 
-    result = downloader._build_simplified_prerelease_history(
-        "2.7.14", malformed_commits
-    )
+    with patch(
+        "fetchtastic.downloader._enrich_history_from_commit_details",
+        return_value=None,
+    ):
+        result = downloader._build_simplified_prerelease_history(
+            "2.7.14", malformed_commits
+        )
 
     # Should handle malformed messages gracefully
     assert len(result) == 0
@@ -2139,6 +2208,8 @@ def test_cache_build_logging_scenarios(monkeypatch):
         downloader._prerelease_commit_history_cache["2.7.99"] = (
             [],
             datetime.now(timezone.utc),
+            datetime.now(timezone.utc),
+            set(),
         )
 
         _get_prerelease_commit_history("2.7.99")
@@ -2159,7 +2230,12 @@ def test_cache_expiry_and_logging():
     try:
         # Create cache entry
         cache_time = datetime.now(timezone.utc) - timedelta(hours=1)
-        downloader._prerelease_commit_history_cache["2.7.99"] = ([], cache_time)
+        downloader._prerelease_commit_history_cache["2.7.99"] = (
+            [],
+            cache_time,
+            cache_time,
+            set(),
+        )
         downloader._prerelease_commit_history_loaded = True
 
         with (
