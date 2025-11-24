@@ -9,6 +9,7 @@ This module contains tests for:
 - Subdirectory preservation
 """
 
+import logging
 import os
 import tempfile
 import zipfile
@@ -502,7 +503,7 @@ class TestExtractionAndPermissionSetting:
             assert not (extract_dir / "script.sh").exists()
 
 
-def test_validate_extraction_patterns(tmp_path):
+def test_validate_extraction_patterns(tmp_path, capsys):
     """Test the _validate_extraction_patterns function."""
     # Create a test ZIP file with various firmware files
     zip_file = tmp_path / "test_firmware.zip"
@@ -520,11 +521,17 @@ def test_validate_extraction_patterns(tmp_path):
     patterns = ["rak4631-", "device-"]
     downloader._validate_extraction_patterns(str(zip_file), patterns, [], "v2.7.15")
 
-    # Test with patterns that won't match - should not raise any exceptions
+    # Test with patterns that won't match - should log a warning
     patterns_no_match = ["nonexistent-", "invalid-"]
+    captured_before = capsys.readouterr()
+    _ = captured_before  # avoid lint about unused
+    # Capture stdout/stderr since logging handler writes to console
     downloader._validate_extraction_patterns(
         str(zip_file), patterns_no_match, [], "v2.7.15"
     )
+    output = capsys.readouterr().out + capsys.readouterr().err
+    assert "No patterns matched" in output
+    assert "files in ZIP archive" in output
 
     # Test with empty patterns - should not raise any exceptions
     downloader._validate_extraction_patterns(str(zip_file), [], [], "v2.7.15")

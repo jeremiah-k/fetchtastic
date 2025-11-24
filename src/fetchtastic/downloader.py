@@ -623,19 +623,11 @@ def _safe_rmtree(path_to_remove: str, base_dir: str, item_name: str) -> bool:
     try:
         real_base_dir = os.path.realpath(base_dir)
 
-        def _is_within_base(resolved_path: str) -> bool:
-            try:
-                return (
-                    os.path.commonpath([real_base_dir, resolved_path]) == real_base_dir
-                )
-            except ValueError:
-                return False
-
         if os.path.islink(path_to_remove):
             link_dir = os.path.dirname(os.path.abspath(path_to_remove))
             real_link_dir = os.path.realpath(link_dir)
 
-            if not _is_within_base(real_link_dir):
+            if not _is_within_base(real_base_dir, real_link_dir):
                 logger.warning(
                     "Skipping removal of symlink %s because its location is outside the base directory",
                     path_to_remove,
@@ -647,7 +639,7 @@ def _safe_rmtree(path_to_remove: str, base_dir: str, item_name: str) -> bool:
             return True
 
         real_target = os.path.realpath(path_to_remove)
-        if not _is_within_base(real_target):
+        if not _is_within_base(real_base_dir, real_target):
             logger.warning(
                 "Skipping removal of %s because it resolves outside the base directory",
                 path_to_remove,
@@ -3169,6 +3161,16 @@ def _refresh_prerelease_commit_history(
     return [dict(entry) for entry in history_entries]
 
 
+def _is_within_base(real_base_dir: str, candidate: str) -> bool:
+    """
+    Return True if candidate is contained within real_base_dir using commonpath.
+    """
+    try:
+        return os.path.commonpath([real_base_dir, candidate]) == real_base_dir
+    except ValueError:
+        return False
+
+
 def _get_latest_active_prerelease_from_history(
     expected_version: str,
     github_token: Optional[str] = None,
@@ -3181,18 +3183,12 @@ def _get_latest_active_prerelease_from_history(
     Centralizes history fetching and selection so callers share the same rules.
     """
 
-    history_entries = _get_prerelease_commit_history(
+    latest_active_dir, history_entries = _get_latest_active_prerelease_from_history(
         expected_version,
         github_token=github_token,
         force_refresh=force_refresh,
         allow_env_token=allow_env_token,
     )
-
-    latest_active_dir = None
-    for entry in history_entries:
-        if entry.get("status") == "active" and entry.get("directory"):
-            latest_active_dir = entry["directory"]
-            break
 
     return latest_active_dir, history_entries
 
@@ -3223,43 +3219,36 @@ def _get_prerelease_commit_history(
     if not expected_version:
         return []
 
-    needs_refresh = force_refresh
-
-    # Only load cache if we're not forcing a refresh
-    if not needs_refresh:
+    if not force_refresh:
         _load_prerelease_commit_history_cache()
 
         with _cache_lock:
             cached = _prerelease_commit_history_cache.get(expected_version)
-            if cached:
-                entries, cached_at = cached
-                age = datetime.now(timezone.utc) - cached_at
-                if age.total_seconds() < PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS:
-                    track_api_cache_hit()
-                    logger.debug(
-                        "Using cached prerelease history for %s (cached %.0fs ago)",
-                        expected_version,
-                        age.total_seconds(),
-                    )
-                    return [dict(entry) for entry in entries]
+
+        if cached:
+            entries, cached_at = cached
+            age = datetime.now(timezone.utc) - cached_at
+            if age.total_seconds() < PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS:
+                track_api_cache_hit()
                 logger.debug(
-                    "Prerelease history cache expired for %s (age %.0fs >= %ss); refreshing",
+                    "Using cached prerelease history for %s (cached %.0fs ago)",
                     expected_version,
                     age.total_seconds(),
-                    PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS,
                 )
-                needs_refresh = True
-            else:
-                needs_refresh = True
+                return [dict(entry) for entry in entries]
+            logger.debug(
+                "Prerelease history cache expired for %s (age %.0fs >= %ss); refreshing",
+                expected_version,
+                age.total_seconds(),
+                PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS,
+            )
 
-    if needs_refresh:
-        logger.info(
-            "Building prerelease history cache for %s (this may take a couple of minutes on initial builds)...",
-            expected_version,
-        )
-
+    logger.info(
+        "Building prerelease history cache for %s (this may take a couple of minutes on initial builds)...",
+        expected_version,
+    )
     return _refresh_prerelease_commit_history(
-        expected_version, github_token, needs_refresh, max_commits, allow_env_token
+        expected_version, github_token, True, max_commits, allow_env_token
     )
 
 
@@ -5094,9 +5083,7 @@ def safe_extract_path(extract_dir: str, file_path: str) -> str:
     normalized_path = os.path.realpath(prospective_path)
 
     try:
-        within_base = (
-            os.path.commonpath([real_extract_dir, normalized_path]) == real_extract_dir
-        )
+        within_base = _is_within_base(real_extract_dir, normalized_path)
     except ValueError:
         within_base = False
 
@@ -6085,8 +6072,11 @@ def _validate_extraction_patterns(
 
                 # Check which patterns match this file using the same logic as extraction
                 for pattern in patterns:
-                    if matches_selected_patterns(base_name, [pattern]):
-                        pattern_matches.setdefault(pattern, []).append(base_name)
+                    trimmed = pattern.strip()
+                    if not trimmed:
+                        continue
+                    if matches_selected_patterns(base_name, [trimmed]):
+                        pattern_matches.setdefault(trimmed, []).append(base_name)
 
         # Log validation results
         if pattern_matches:

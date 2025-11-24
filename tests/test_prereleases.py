@@ -508,7 +508,11 @@ def test_prerelease_directory_cleanup(tmp_path, write_dummy_file, mock_commit_hi
         with patch("fetchtastic.menu_repo.fetch_directory_contents") as mock_contents:
             mock_dirs.return_value = ["firmware-2.7.7.789abc"]
 
-            def _dir_aware_contents(dir_name: str, **_kwargs):
+            def _dir_aware_contents(
+                dir_name: str,
+                allow_env_token: bool = True,
+                github_token: Optional[str] = None,
+            ):
                 """
                 Return a mock directory listing containing a single prerelease firmware asset whose path and download_url incorporate the provided directory name.
 
