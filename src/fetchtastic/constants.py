@@ -41,15 +41,12 @@ APK_PRERELEASES_DIR_NAME = "prerelease"
 FIRMWARE_DIR_PREFIX = "firmware-"
 FIRMWARE_DIR_NAME = "firmware"
 APKS_DIR_NAME = "apks"
-LATEST_ANDROID_RELEASE_FILE = "latest_android_release.txt"
-LATEST_FIRMWARE_RELEASE_FILE = "latest_firmware_release.txt"
 LATEST_ANDROID_RELEASE_JSON_FILE = "latest_android_release.json"
 LATEST_ANDROID_PRERELEASE_JSON_FILE = "latest_android_prerelease.json"
 LATEST_FIRMWARE_PRERELEASE_JSON_FILE = "latest_firmware_prerelease.json"
 LATEST_FIRMWARE_RELEASE_JSON_FILE = "latest_firmware_release.json"
 PRERELEASE_TRACKING_JSON_FILE = "prerelease_tracking.json"
 PRERELEASE_COMMITS_CACHE_FILE = "prerelease_commits_cache.json"
-PRERELEASE_COMMITS_LEGACY_FILE = "prerelease_commits.txt"
 PRERELEASE_COMMIT_HISTORY_FILE = "prerelease_commit_history.json"
 WINDOWS_SHORTCUT_FILE = "fetchtastic_yaml.lnk"
 
@@ -137,8 +134,6 @@ MESHTASTIC_DIR_NAME = "Meshtastic"
 # Files that Fetchtastic manages and can safely clean
 # Note: CONFIG_FILE_NAME is included for safety, though it's typically in CONFIG_DIR
 MANAGED_FILES = (
-    LATEST_ANDROID_RELEASE_FILE,
-    LATEST_FIRMWARE_RELEASE_FILE,
     CONFIG_FILE_NAME,
     WINDOWS_SHORTCUT_FILE,
 )

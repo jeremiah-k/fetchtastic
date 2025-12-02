@@ -68,10 +68,8 @@ from fetchtastic.constants import (
     GITHUB_API_TIMEOUT,
     GITHUB_MAX_PER_PAGE,
     LATEST_ANDROID_PRERELEASE_JSON_FILE,
-    LATEST_ANDROID_RELEASE_FILE,
     LATEST_ANDROID_RELEASE_JSON_FILE,
     LATEST_FIRMWARE_PRERELEASE_JSON_FILE,
-    LATEST_FIRMWARE_RELEASE_FILE,
     LATEST_FIRMWARE_RELEASE_JSON_FILE,
     MAX_CONCURRENT_TIMESTAMP_FETCHES,
     MESHTASTIC_ANDROID_RELEASES_URL,
@@ -83,7 +81,6 @@ from fetchtastic.constants import (
     PRERELEASE_COMMIT_HISTORY_FILE,
     PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS,
     PRERELEASE_COMMITS_CACHE_FILE,
-    PRERELEASE_COMMITS_LEGACY_FILE,
     PRERELEASE_DELETE_COMMIT_PATTERN,
     PRERELEASE_DETAIL_ATTEMPT_MULTIPLIER,
     PRERELEASE_DETAIL_FETCH_WORKERS,
@@ -487,15 +484,14 @@ def cleanup_superseded_prereleases(
                     cleaned_up = True
                 continue
 
-    # Reset tracking info if no prerelease directories exist
+    # Reset tracking info when appropriate
     if os.path.exists(prerelease_dir):
-        # Check if any prerelease directories remain
         remaining_prereleases = bool(_get_existing_prerelease_dirs(prerelease_dir))
         if not remaining_prereleases:
-            _reset_prerelease_tracking(latest_release_version)
+            _reset_prerelease_tracking(latest_release_version, prerelease_dir)
         elif assume_latest_is_official:
             # Even if prerelease dirs remain (e.g., newer base version), reset counts for the new release.
-            _reset_prerelease_tracking(latest_release_version)
+            _reset_prerelease_tracking(latest_release_version, prerelease_dir)
 
     return cleaned_up
 
@@ -565,7 +561,9 @@ def _atomic_write_json(file_path: str, data: dict) -> bool:
     )
 
 
-def _reset_prerelease_tracking(latest_release_version: str) -> None:
+def _reset_prerelease_tracking(
+    latest_release_version: str, prerelease_dir: Optional[str] = None
+) -> None:
     """
     Reset prerelease tracking state to reflect a new official release.
 
@@ -978,65 +976,11 @@ def _parse_new_json_format(
     return commits, current_release, last_updated
 
 
-def _parse_legacy_json_format(
-    tracking_data: Dict[str, Any],
-) -> tuple[list[str], str | None, str | None]:
-    """
-    Parse legacy prerelease tracking JSON that uses top-level `release`, `commits`, and optional timestamp keys.
-
-    This normalizes commit identifiers into `version+hash` form, pairing bare commit hashes with an inferred next-prerelease base when possible, and preserves the original release string (ensuring a leading "v" if missing).
-
-    Parameters:
-        tracking_data (dict): Parsed JSON object expected to contain:
-            - "release": optional release string (e.g., "v1.2.3" or "1.2.3")
-            - "commits": optional list of commit identifiers (hashes or version+hash)
-            - "last_updated" or "timestamp": optional timestamp string
-
-    Returns:
-        tuple: (commits, current_release, last_updated)
-            - commits (list[str]): Ordered, deduplicated list of normalized `version+hash` commit identifiers.
-            - current_release (str | None): Release string from the tracking data with a leading "v" ensured, or None.
-            - last_updated (str | None): Timestamp string from "last_updated" or "timestamp", or None.
-    """
-    current_release = _ensure_v_prefix_if_missing(tracking_data.get("release"))
-    commits_raw = tracking_data.get("commits", [])
-
-    # Validate commits_raw is a list to prevent data corruption
-    if not isinstance(commits_raw, list):
-        logger.warning(
-            "Invalid commits format in legacy tracking file: expected list, got %s. Resetting commits.",
-            type(commits_raw).__name__,
-        )
-        commits_raw = []
-
-    # Normalize commits to version+hash; pair bare hashes with expected next patch base
-    commits: list[str] = []
-    expected_base_v: Optional[str] = None
-    if current_release:
-        expected = calculate_expected_prerelease_version(current_release)
-        if expected:
-            expected_base_v = f"v{expected}"
-    for commit in commits_raw or []:
-        c = commit.lower()
-        # If it's a bare hash, use expected next patch base; otherwise use saved release
-        base_for_norm = (
-            expected_base_v if re.fullmatch(r"[a-f0-9]{6,40}", c) else current_release
-        )
-        normalized = _normalize_commit_identifier(c, base_for_norm)
-        if normalized:
-            commits.append(normalized)
-
-    # Ensure uniqueness while preserving order
-    commits = list(dict.fromkeys(commits))
-    last_updated = tracking_data.get("last_updated") or tracking_data.get("timestamp")
-    return commits, current_release, last_updated
-
-
 def _read_prerelease_tracking_data(tracking_file):
     """
     Parse prerelease tracking JSON and normalize it to a (commits, current_release, last_updated) tuple.
 
-    Supports the current JSON schema (contains "version" and either "hash" or "commits", optional "last_updated" or "timestamp") and a legacy JSON schema (keys like "release" and "commits"). If the file contains non-dict JSON or cannot be read/decoded, returns empty/None values.
+    Supports the current JSON schema (contains "version" and either "hash" or "commits", optional "last_updated" or "timestamp"). If the file contains non-dict JSON or cannot be read/decoded, returns empty/None values.
 
     Returns:
         tuple: (commits, current_release, last_updated)
@@ -1061,18 +1005,10 @@ def _read_prerelease_tracking_data(tracking_file):
                     )
                     return commits, current_release, last_updated
 
-                # Check for new format (version, hash, count)
-                # Note: "count" is not used; reserved for future aggregation.
                 if "version" in tracking_data and (
                     "hash" in tracking_data or "commits" in tracking_data
                 ):
-                    # New format: parse into standard internal representation.
                     commits, current_release, last_updated = _parse_new_json_format(
-                        tracking_data
-                    )
-                else:
-                    # Legacy JSON format
-                    commits, current_release, last_updated = _parse_legacy_json_format(
                         tracking_data
                     )
 
@@ -6431,78 +6367,9 @@ def _format_api_summary(summary: Dict[str, Any]) -> str:
     return ", ".join(log_parts)
 
 
-def _cleanup_legacy_files(
-    config: Dict[str, Any], paths_and_urls: Dict[str, str]
-) -> None:
-    """
-    Remove legacy tracking and release files left in download directories after JSON-based tracking is used.
-
-    Deletes legacy prerelease tracking text files from the prerelease directory and legacy latest-release files from the firmware and apks download subdirectories. No on-disk migration is performed; missing paths are ignored and failures are logged as warnings.
-
-    Parameters:
-        config (Dict[str, Any]): Configuration mapping; may provide "PRERELEASE_DIR" to locate prerelease files.
-        paths_and_urls (Dict[str, str]): Mapping that must include "download_dir" to locate firmware and apks directories.
-    """
-    try:
-        # Clean up legacy files from download directories
-        download_dir = paths_and_urls.get("download_dir")
-        if not download_dir:
-            return
-
-        # Support both legacy config-based and direct path approaches for prerelease dir
-        prerelease_dir = config.get("PRERELEASE_DIR") or os.path.join(
-            download_dir, "firmware", FIRMWARE_PRERELEASES_DIR_NAME
-        )
-        if prerelease_dir and os.path.exists(prerelease_dir):
-            # Remove specific legacy text tracking files
-            legacy_files = [
-                PRERELEASE_COMMITS_LEGACY_FILE,
-                PRERELEASE_TRACKING_JSON_FILE,
-            ]
-            for filename in legacy_files:
-                legacy_file = os.path.join(prerelease_dir, filename)
-                if os.path.exists(legacy_file):
-                    try:
-                        os.remove(legacy_file)
-                        logger.debug(
-                            "Removed legacy prerelease tracking file: %s", legacy_file
-                        )
-                    except OSError as e:
-                        logger.warning(
-                            "Could not remove legacy file %s: %s", legacy_file, e
-                        )
-
-        # Remove legacy release files from download directories (not cache)
-        firmware_dir = os.path.join(download_dir, "firmware")
-        apks_dir = os.path.join(download_dir, "apks")
-        legacy_files_to_remove = {
-            "firmware": os.path.join(firmware_dir, LATEST_FIRMWARE_RELEASE_FILE),
-            "android": os.path.join(apks_dir, LATEST_ANDROID_RELEASE_FILE),
-        }
-        for release_type, legacy_file in legacy_files_to_remove.items():
-            if legacy_file and os.path.exists(legacy_file):
-                try:
-                    os.remove(legacy_file)
-                    logger.debug(
-                        "Removed legacy %s release file: %s",
-                        release_type,
-                        legacy_file,
-                    )
-                except OSError as e:
-                    logger.warning(
-                        "Could not remove legacy %s file %s: %s",
-                        release_type,
-                        legacy_file,
-                        e,
-                    )
-
-    except OSError as e:
-        logger.warning("Error removing legacy files: %s", e)
-
-
 def main(force_refresh: bool = False) -> None:
     """
-    Run the main Fetchtastic workflow: perform startup/configuration, optionally clear caches, process firmware and APK downloads with a retry pass for failures, clean legacy files, and send final notifications.
+    Run the main Fetchtastic workflow: perform startup/configuration, optionally clear caches, process firmware and APK downloads with a retry pass for failures, and send final notifications.
 
     Parameters:
         force_refresh (bool): If True, clear all persistent caches and the device hardware cache before fetching remote data.
@@ -6565,10 +6432,6 @@ def main(force_refresh: bool = False) -> None:
         latest_apk_version,
         latest_apk_prerelease_version,
     ) = _process_apk_downloads(config, paths_and_urls, force_refresh)
-
-    # Clean up legacy files - we fetch fresh data instead of migrating old data
-    logger.debug("Cleaning up legacy files")
-    _cleanup_legacy_files(config, paths_and_urls)
 
     if failed_firmware_list:
         logger.debug(f"Collected failed firmware downloads: {failed_firmware_list}")

@@ -1082,6 +1082,7 @@ def test_cleanup_superseded_prereleases_file_removal(tmp_path):
     """Test file removal logic in cleanup_superseded_prereleases with various scenarios."""
     from unittest.mock import patch
 
+    from fetchtastic.constants import PRERELEASE_TRACKING_JSON_FILE
     from fetchtastic.downloader import cleanup_superseded_prereleases
 
     # Create directory structure
@@ -1092,35 +1093,17 @@ def test_cleanup_superseded_prereleases_file_removal(tmp_path):
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
 
-    # Test successful removal of both files
-    # JSON tracking file is now in cache directory, text file in prerelease dir
-    json_tracking_file = cache_dir / "prerelease_tracking.json"
-    text_tracking_file = prerelease_dir / "prerelease_commits.txt"
+    # Test reset of tracking file in cache directory
+    json_tracking_file = cache_dir / PRERELEASE_TRACKING_JSON_FILE
 
     json_tracking_file.write_text('{"version": "v1.0.0", "commits": ["abc123"]}')
-    text_tracking_file.write_text("Release: v1.0.0\nabc123\n")
 
     with patch("fetchtastic.downloader._ensure_cache_dir", return_value=str(cache_dir)):
         cleanup_superseded_prereleases(str(tmp_path), "v2.0.0")
 
-    # Both files should be removed
-    assert not json_tracking_file.exists()
-    assert not text_tracking_file.exists()
-
-    # Test OSError during file removal
-    json_tracking_file.write_text('{"version": "v1.0.0", "commits": ["abc123"]}')
-    text_tracking_file.write_text("Release: v1.0.0\nabc123\n")
-
-    with (
-        patch("fetchtastic.downloader._ensure_cache_dir", return_value=str(cache_dir)),
-        patch("os.remove", side_effect=OSError("Permission denied")),
-        patch("fetchtastic.downloader.logger") as mock_logger,
-    ):
-        # Should not raise exception, should log warning
-        cleanup_superseded_prereleases(str(tmp_path), "v2.0.0")
-
-        # Should log warnings for file removal failures
-        assert mock_logger.warning.call_count >= 1
+    assert json_tracking_file.exists()
+    contents = json_tracking_file.read_text()
+    assert '"commits": []' in contents
 
     # Test with no tracking files
     with patch("fetchtastic.downloader._ensure_cache_dir", return_value=str(cache_dir)):
@@ -1132,6 +1115,7 @@ def test_cleanup_superseded_prereleases_file_removal(tmp_path):
 def test_cleanup_superseded_prereleases_file_removal_edge_cases(tmp_path):
     """Test edge cases for file removal in cleanup_superseded_prereleases."""
 
+    from fetchtastic.constants import PRERELEASE_TRACKING_JSON_FILE
     from fetchtastic.downloader import cleanup_superseded_prereleases
 
     # Create directory structure
@@ -1143,84 +1127,13 @@ def test_cleanup_superseded_prereleases_file_removal_edge_cases(tmp_path):
     cache_dir.mkdir()
 
     # Test with only JSON file exists
-    json_tracking_file = cache_dir / "prerelease_tracking.json"
+    json_tracking_file = cache_dir / PRERELEASE_TRACKING_JSON_FILE
     json_tracking_file.write_text('{"version": "v1.0.0", "commits": ["abc123"]}')
 
     with patch("fetchtastic.downloader._ensure_cache_dir", return_value=str(cache_dir)):
         cleanup_superseded_prereleases(str(tmp_path), "v2.0.0")
-    assert not json_tracking_file.exists()
-
-    # Recreate for next test
-    json_tracking_file.write_text('{"version": "v1.0.0", "commits": ["abc123"]}')
-
-    # Test with only text file exists
-    text_tracking_file = prerelease_dir / "prerelease_commits.txt"
-    text_tracking_file.write_text("Release: v1.0.0\nabc123\n")
-
-    with patch("fetchtastic.downloader._ensure_cache_dir", return_value=str(cache_dir)):
-        cleanup_superseded_prereleases(str(tmp_path), "v2.0.0")
-    assert not text_tracking_file.exists()
-    assert not json_tracking_file.exists()  # Should be removed from cache
-
-    # Test with no tracking files
-    with patch("fetchtastic.downloader._ensure_cache_dir", return_value=str(cache_dir)):
-        cleanup_superseded_prereleases(str(tmp_path), "v2.0.0")
-    # Should not raise any exceptions
-
-
-@pytest.mark.core_downloads
-def test_cleanup_legacy_files(tmp_path):
-    """Test _cleanup_legacy_files removes legacy files without migration."""
-    from fetchtastic.downloader import _cleanup_legacy_files
-
-    # Create mock config and paths_and_urls
-    config = {
-        "PRERELEASE_DIR": str(tmp_path / "firmware" / "prerelease"),
-        "APK_DIR": str(tmp_path / "apks"),
-        "FIRMWARE_DIR": str(tmp_path / "firmware"),
-    }
-
-    # Create directory structure
-    prerelease_dir = tmp_path / "firmware" / "prerelease"
-    prerelease_dir.mkdir(parents=True)
-    apks_dir = tmp_path / "apks"
-    apks_dir.mkdir(parents=True)
-    firmware_dir = tmp_path / "firmware"
-
-    # Create legacy files
-    prerelease_text = prerelease_dir / "prerelease_commits.txt"
-    prerelease_text.write_text("Release: v1.5.0\nabc123\ndef456\n")
-
-    android_legacy = apks_dir / "latest_android_release.txt"
-    android_legacy.write_text("v2.3.0")
-
-    firmware_legacy = firmware_dir / "latest_firmware_release.txt"
-    firmware_legacy.write_text("v1.8.0")
-
-    # Create paths_and_urls with actual paths
-    paths_and_urls = {
-        "latest_firmware_release_file": str(firmware_legacy),
-        "latest_android_release_file": str(android_legacy),
-        "download_dir": str(tmp_path),
-    }
-
-    # Verify files exist before cleanup
-    assert prerelease_text.exists()
-    assert android_legacy.exists()
-    assert firmware_legacy.exists()
-
-    # Run cleanup
-    _cleanup_legacy_files(config, paths_and_urls)
-
-    # Verify all legacy files are removed
-    assert not prerelease_text.exists()
-    assert not android_legacy.exists()
-    assert not firmware_legacy.exists()
-
-    # Verify no JSON files were created (since we don't migrate)
-    assert not (prerelease_dir / "prerelease_tracking.json").exists()
-    assert not (apks_dir / "latest_android_release.json").exists()
-    assert not (firmware_dir / "latest_firmware_release.json").exists()
+    assert json_tracking_file.exists()
+    assert '"commits": []' in json_tracking_file.read_text()
 
 
 def test_is_apk_prerelease():
@@ -1642,7 +1555,7 @@ def test_process_apk_downloads_logs_when_no_prereleases(tmp_path, capsys):
 @pytest.mark.core_downloads
 def test_parse_json_formats_error_handling():
     """Test JSON parsing functions with error handling."""
-    from fetchtastic.downloader import _parse_legacy_json_format, _parse_new_json_format
+    from fetchtastic.downloader import _parse_new_json_format
 
     # Test _parse_new_json_format with invalid data
     invalid_data = {
@@ -1662,17 +1575,10 @@ def test_parse_json_formats_error_handling():
     assert commits == ["valid"]  # Should filter out invalid entries
     assert release == "v1.0.0"
 
-    # Test _parse_legacy_json_format with missing keys
-    legacy_data = {}  # Empty dict
-    commits, release, _last_updated = _parse_legacy_json_format(legacy_data)
+    # Missing expected keys should yield empty data
+    commits, release, _last_updated = _parse_new_json_format({})
     assert commits == []
     assert release is None
-
-    # Test with invalid commits type
-    legacy_data2 = {"release": "v1.0.0", "commits": "not_a_list"}
-    commits, release, _last_updated = _parse_legacy_json_format(legacy_data2)
-    assert commits == []  # Should handle gracefully
-    assert release == "v1.0.0"
 
 
 @pytest.mark.core_downloads
@@ -2316,7 +2222,11 @@ def test_process_firmware_downloads_updates_latest_release_and_cleans(
         cleanup_calls.append(tag)
         return True
 
-    monkeypatch.setattr(downloader, "cleanup_superseded_prereleases", _fake_cleanup)
+    monkeypatch.setattr(
+        downloader,
+        "cleanup_superseded_prereleases",
+        lambda *a, **k: _fake_cleanup(a[0], a[1]),
+    )
 
     (
         downloaded_firmwares,
@@ -2398,7 +2308,11 @@ def test_process_firmware_downloads_does_not_update_when_write_fails(
         cleanup_calls.append(tag)
         return True
 
-    monkeypatch.setattr(downloader, "cleanup_superseded_prereleases", _fake_cleanup)
+    monkeypatch.setattr(
+        downloader,
+        "cleanup_superseded_prereleases",
+        lambda *a, **k: _fake_cleanup(a[0], a[1]),
+    )
 
     downloader._process_firmware_downloads(config, paths_and_urls, force_refresh=True)
 
