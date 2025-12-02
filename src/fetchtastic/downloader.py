@@ -223,18 +223,29 @@ def _get_release_tuple(version: Optional[str]) -> Optional[tuple[int, ...]]:
     if not version_stripped:
         return None
 
-    normalized = _normalize_version(version_stripped)
-    if isinstance(normalized, Version) and normalized.release:
-        return normalized.release
-
+    # Capture numeric components directly from the raw string so we can
+    # fall back to the longest digit sequence when normalization drops
+    # trailing parts (e.g., Android prerelease tags like "2.7.8-open.1").
     base = (
         version_stripped[1:]
         if version_stripped.lower().startswith("v")
         else version_stripped
     )
     match = VERSION_BASE_RX.match(base)
-    if match:
-        return tuple(int(part) for part in match.group(1).split("."))
+    base_tuple = (
+        tuple(int(part) for part in match.group(1).split(".")) if match else None
+    )
+
+    normalized = _normalize_version(version_stripped)
+    if isinstance(normalized, Version) and normalized.release:
+        # Prefer the longer tuple when normalization collapses parts of
+        # nonstandard tags (e.g., "-open.#" prereleases).
+        if base_tuple and len(base_tuple) > len(normalized.release):
+            return base_tuple
+        return normalized.release
+
+    if base_tuple:
+        return base_tuple
 
     return None
 
@@ -4679,6 +4690,32 @@ def _process_firmware_downloads(
             paths_and_urls["cache_dir"], LATEST_FIRMWARE_RELEASE_JSON_FILE
         )
         latest_release_tag = _read_latest_release_tag(firmware_json_file)
+
+        # Fall back to the newest release we just fetched if the cache is missing
+        # or stale, and persist it so cleanup logic always has an up-to-date tag.
+        safe_latest_firmware = (
+            _sanitize_path_component(latest_firmware_version)
+            if latest_firmware_version
+            else None
+        )
+        if safe_latest_firmware:
+            if (
+                not latest_release_tag
+                or compare_versions(safe_latest_firmware, latest_release_tag) > 0
+            ):
+                if _write_latest_release_tag(
+                    firmware_json_file, safe_latest_firmware, "Firmware"
+                ):
+                    logger.debug(
+                        "Updated latest firmware release tag to %s from scan results",
+                        safe_latest_firmware,
+                    )
+                latest_release_tag = safe_latest_firmware
+        elif latest_firmware_version:
+            logger.warning(
+                "Skipping write of unsafe firmware release tag: %s",
+                latest_firmware_version,
+            )
 
         if latest_release_tag:
             cleaned_up: bool = cleanup_superseded_prereleases(
