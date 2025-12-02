@@ -2888,7 +2888,7 @@ def _enrich_history_from_commit_details(
 
     attempt_cap = min(
         len(candidates),
-        _MAX_UNCERTAIN_COMMITS_TO_RESOLVE * PRERELEASE_DETAIL_ATTEMPT_MULTIPLIER,
+        _MAX_UNCERTAIN_COMMITS_TO_RESOLVE,
     )
     summary = get_api_request_summary()
     remaining = summary.get("rate_limit_remaining")
