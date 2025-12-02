@@ -237,15 +237,21 @@ def _get_release_tuple(version: Optional[str]) -> Optional[tuple[int, ...]]:
     )
 
     normalized = _normalize_version(version_stripped)
-    if isinstance(normalized, Version) and normalized.release:
+    normalized_tuple = (
+        normalized.release
+        if isinstance(normalized, Version) and normalized.release
+        else None
+    )
+
+    if base_tuple and normalized_tuple:
         # Prefer the longer tuple when normalization collapses parts of
         # nonstandard tags (e.g., "-open.#" prereleases).
-        if base_tuple and len(base_tuple) > len(normalized.release):
-            return base_tuple
-        return normalized.release
+        return (
+            base_tuple if len(base_tuple) > len(normalized_tuple) else normalized_tuple
+        )
 
-    if base_tuple:
-        return base_tuple
+    if base_tuple or normalized_tuple:
+        return base_tuple or normalized_tuple
 
     return None
 
@@ -4710,7 +4716,7 @@ def _process_firmware_downloads(
                         "Updated latest firmware release tag to %s from scan results",
                         safe_latest_firmware,
                     )
-                latest_release_tag = safe_latest_firmware
+                    latest_release_tag = safe_latest_firmware
         elif latest_firmware_version:
             logger.warning(
                 "Skipping write of unsafe firmware release tag: %s",
