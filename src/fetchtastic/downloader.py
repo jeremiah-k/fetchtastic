@@ -363,7 +363,7 @@ def compare_versions(version1, version2):
 
 
 def cleanup_superseded_prereleases(
-    download_dir, latest_release_tag
+    download_dir, latest_release_tag, assume_latest_is_official: bool = False
 ):  # log_message_func parameter removed
     """
     Remove prerelease firmware directories that are superseded by an official release.
@@ -396,8 +396,10 @@ def cleanup_superseded_prereleases(
     v_latest_norm = _normalize_version(latest_release_version)
 
     # This function cleans up prereleases superseded by an official release.
-    # If the latest release is itself a prerelease, no superseding has occurred.
-    if getattr(v_latest_norm, "is_prerelease", False):
+    # If the latest release is itself a prerelease, no superseding has occurred
+    # unless the caller explicitly indicates the tag comes from the stable
+    # firmware releases (assume_latest_is_official=True).
+    if getattr(v_latest_norm, "is_prerelease", False) and not assume_latest_is_official:
         return False
 
     # Path to prerelease directory
@@ -490,31 +492,10 @@ def cleanup_superseded_prereleases(
         # Check if any prerelease directories remain
         remaining_prereleases = bool(_get_existing_prerelease_dirs(prerelease_dir))
         if not remaining_prereleases:
-            # Remove tracking files since no prereleases remain
-            # JSON tracking file is stored in the cache directory
-            json_tracking_file = os.path.join(
-                _ensure_cache_dir(), PRERELEASE_TRACKING_JSON_FILE
-            )
-
-            # Remove tracking files (both JSON and legacy text)
-            for file_path, is_legacy in [
-                (json_tracking_file, False),
-                (os.path.join(prerelease_dir, PRERELEASE_COMMITS_LEGACY_FILE), True),
-            ]:
-                if os.path.exists(file_path):
-                    file_type = "legacy prerelease" if is_legacy else "prerelease"
-                    try:
-                        os.remove(file_path)
-                        logger.debug(
-                            "Removed %s tracking file: %s", file_type, file_path
-                        )
-                    except OSError as e:
-                        logger.warning(
-                            "Could not remove %s tracking file %s: %s",
-                            file_type,
-                            file_path,
-                            e,
-                        )
+            _reset_prerelease_tracking(latest_release_version)
+        elif assume_latest_is_official:
+            # Even if prerelease dirs remain (e.g., newer base version), reset counts for the new release.
+            _reset_prerelease_tracking(latest_release_version)
 
     return cleaned_up
 
@@ -582,6 +563,24 @@ def _atomic_write_json(file_path: str, data: dict) -> bool:
     return _atomic_write(
         file_path, lambda f: json.dump(data, f, indent=2), suffix=".json"
     )
+
+
+def _reset_prerelease_tracking(latest_release_version: str) -> None:
+    """
+    Reset prerelease tracking state to reflect a new official release.
+
+    Writes an empty commits list and the provided release into the tracking JSON,
+    preserving the file for future increments while clearing prior counts.
+    """
+    cache_dir = _ensure_cache_dir()
+    tracking_path = os.path.join(cache_dir, PRERELEASE_TRACKING_JSON_FILE)
+    data = {
+        "release": _ensure_v_prefix_if_missing(latest_release_version),
+        "commits": [],
+        "last_updated": datetime.now(timezone.utc).isoformat(),
+    }
+    if not _atomic_write_json(tracking_path, data):
+        logger.warning("Could not reset prerelease tracking file: %s", tracking_path)
 
 
 def _sanitize_path_component(component: Optional[str]) -> Optional[str]:
@@ -4016,6 +4015,15 @@ def check_for_prereleases(
     if downloads_skipped:
         return False, []
 
+    # Remove any prereleases superseded by the current stable release so we start fresh.
+    cleaned_superseded = cleanup_superseded_prereleases(
+        download_dir, latest_release_tag, assume_latest_is_official=True
+    )
+    if cleaned_superseded:
+        logger.debug(
+            "Removed superseded prerelease(s) before checking for new prereleases."
+        )
+
     if not selected_patterns:
         logger.debug("No patterns selected for prerelease downloads")
         return False, []
@@ -4724,6 +4732,7 @@ def _process_firmware_downloads(
             cleaned_up: bool = cleanup_superseded_prereleases(
                 paths_and_urls["download_dir"],
                 latest_release_tag,  # logger.info removed
+                assume_latest_is_official=True,
             )
             if cleaned_up:
                 logger.info(
@@ -5058,6 +5067,8 @@ def _process_apk_downloads(
             # Set latest prerelease version only if we have prereleases to download
             if releases_to_download:
                 latest_prerelease_version = releases_to_download[0].get("tag_name")
+        elif config.get("CHECK_APK_PRERELEASES", DEFAULT_CHECK_APK_PRERELEASES):
+            logger.info("No Android APK prereleases available.")
     elif not config.get("SELECTED_APK_ASSETS", []):
         logger.info("No APK assets selected. Skipping APK download.")
 

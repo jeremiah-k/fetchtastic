@@ -1595,6 +1595,51 @@ def test_process_apk_downloads_enhanced_prerelease_cleanup(tmp_path):
 
 
 @pytest.mark.core_downloads
+def test_process_apk_downloads_logs_when_no_prereleases(tmp_path, capsys):
+    """When prerelease checks are enabled but none exist, we log the absence."""
+    from unittest.mock import patch
+
+    from fetchtastic.downloader import _process_apk_downloads
+
+    # Only stable releases returned from the API.
+    mock_releases = [
+        {"tag_name": "v2.7.8", "assets": [{"name": "app-release.apk"}]},
+        {"tag_name": "v2.7.7", "assets": [{"name": "app-release.apk"}]},
+    ]
+
+    config = {
+        "SAVE_APKS": True,
+        "SELECTED_APK_ASSETS": ["app-release.apk"],
+        "ANDROID_VERSIONS_TO_KEEP": 2,
+        "CHECK_APK_PRERELEASES": True,
+    }
+
+    paths_and_urls = {
+        "cache_dir": str(tmp_path / "cache"),
+        "apks_dir": str(tmp_path / "apks"),
+        "android_releases_url": "https://api.github.com/repos/meshtastic/meshtastic-android/releases",
+    }
+
+    with (
+        patch(
+            "fetchtastic.downloader._get_latest_releases_data",
+            return_value=mock_releases,
+        ),
+        patch(
+            "fetchtastic.downloader.check_and_download",
+            return_value=(["v2.7.8", "v2.7.7"], ["v2.7.8", "v2.7.7"], []),
+        ),
+        patch("fetchtastic.downloader._summarise_release_scan") as mock_summarise,
+    ):
+        _process_apk_downloads(config, paths_and_urls, force_refresh=False)
+
+        mock_summarise.assert_called_once_with("Android APK", 2, 2)
+
+    out = capsys.readouterr().out
+    assert "No Android APK prereleases available" in out
+
+
+@pytest.mark.core_downloads
 def test_parse_json_formats_error_handling():
     """Test JSON parsing functions with error handling."""
     from fetchtastic.downloader import _parse_legacy_json_format, _parse_new_json_format

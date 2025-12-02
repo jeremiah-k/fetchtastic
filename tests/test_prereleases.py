@@ -18,6 +18,7 @@ import pytest
 import requests
 
 from fetchtastic import downloader
+from fetchtastic.constants import PRERELEASE_TRACKING_JSON_FILE
 from fetchtastic.downloader import (
     _commit_timestamp_cache,
     _extract_identifier_from_entry,
@@ -231,6 +232,67 @@ def test_cleanup_superseded_prereleases_handles_commit_suffix(tmp_path):
     assert removed is True
     assert not promoted_dir.exists()
     assert future_dir.exists()
+
+
+@pytest.mark.core_downloads
+def test_check_for_prereleases_cleans_superseded_and_resets_tracking(
+    tmp_path, monkeypatch
+):
+    """Old prereleases and tracking are removed when a matching full release exists."""
+
+    download_dir = tmp_path
+    prerelease_dir = download_dir / "firmware" / "prerelease"
+    prerelease_dir.mkdir(parents=True)
+    stale_dir = prerelease_dir / "firmware-2.7.16.a597230"
+    stale_dir.mkdir()
+
+    cache_dir = Path(downloader._ensure_cache_dir())
+    tracking_file = cache_dir / PRERELEASE_TRACKING_JSON_FILE
+    tracking_file.write_text(
+        json.dumps({"release": "v2.7.16", "commits": ["2.7.16.a597230"]}),
+        encoding="utf-8",
+    )
+
+    # Avoid any network or remote lookups.
+    monkeypatch.setattr(
+        downloader,
+        "_get_latest_active_prerelease_from_history",
+        lambda *args, **kwargs: (None, []),
+    )
+    monkeypatch.setattr(
+        downloader,
+        "_find_latest_remote_prerelease_dir",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        downloader,
+        "_download_prerelease_assets",
+        lambda *args, **kwargs: (False, []),
+    )
+    monkeypatch.setattr(
+        downloader,
+        "_fetch_prerelease_directories",
+        lambda *args, **kwargs: [],
+    )
+
+    found, versions = downloader.check_for_prereleases(
+        str(download_dir),
+        "v2.7.16.a597230",
+        selected_patterns=["*"],
+        exclude_patterns=[],
+        device_manager=None,
+        github_token=None,
+        force_refresh=True,
+        allow_env_token=False,
+    )
+
+    assert found is False
+    assert versions == []
+    assert not stale_dir.exists()
+    assert tracking_file.exists()
+    persisted = json.loads(tracking_file.read_text(encoding="utf-8"))
+    assert persisted.get("release") == "v2.7.16.a597230"
+    assert persisted.get("commits") == []
 
 
 # Temporary fix for indentation issues
