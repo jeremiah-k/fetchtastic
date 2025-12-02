@@ -250,10 +250,7 @@ def _get_release_tuple(version: Optional[str]) -> Optional[tuple[int, ...]]:
             base_tuple if len(base_tuple) > len(normalized_tuple) else normalized_tuple
         )
 
-    if base_tuple or normalized_tuple:
-        return base_tuple or normalized_tuple
-
-    return None
+    return base_tuple or normalized_tuple
 
 
 def _summarise_release_scan(kind: str, total_found: int, keep_limit: int) -> str:

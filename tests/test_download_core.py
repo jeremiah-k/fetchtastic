@@ -2202,6 +2202,15 @@ def test_get_release_tuple_preserves_patch_for_apk_prereleases():
 
 
 @pytest.mark.core_downloads
+def test_get_release_tuple_base_only_path():
+    """Base tuple should be used when normalization fails."""
+    from fetchtastic.downloader import _get_release_tuple
+
+    # Invalid suffix prevents normalization, but the leading digits are still captured.
+    assert _get_release_tuple("1.2.a") == (1, 2)
+
+
+@pytest.mark.core_downloads
 def test_get_release_tuple_invalid_versions():
     """Test _get_release_tuple with invalid version strings."""
     from fetchtastic.downloader import _get_release_tuple
@@ -2287,6 +2296,73 @@ def test_process_firmware_downloads_updates_latest_release_and_cleans(
 
     # Cleanup should have been invoked with the newly persisted tag.
     assert cleanup_calls == [latest_tag]
+
+
+@pytest.mark.core_downloads
+def test_process_firmware_downloads_does_not_update_when_write_fails(
+    tmp_path, monkeypatch
+):
+    """When writing the latest tag fails, keep using the prior persisted tag for cleanup."""
+
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    firmware_dir = tmp_path / "firmware"
+    firmware_dir.mkdir(parents=True)
+
+    # Seed an existing latest release value that should remain if the write fails.
+    persisted_tag = "v2.7.15"
+    json_file = cache_dir / LATEST_FIRMWARE_RELEASE_JSON_FILE
+    json_file.write_text(
+        json.dumps({"latest_version": persisted_tag}), encoding="utf-8"
+    )
+
+    config = {
+        "SAVE_FIRMWARE": True,
+        "SELECTED_FIRMWARE_ASSETS": ["firmware.bin"],
+        "EXTRACT_PATTERNS": [],
+        "FIRMWARE_VERSIONS_TO_KEEP": 1,
+        "CHECK_PRERELEASES": False,
+    }
+
+    paths_and_urls = {
+        "cache_dir": str(cache_dir),
+        "download_dir": str(tmp_path),
+        "firmware_dir": str(firmware_dir),
+        "firmware_releases_url": "https://example.invalid/firmware",
+    }
+
+    latest_tag = "v2.7.16"
+    monkeypatch.setattr(
+        downloader,
+        "_get_latest_releases_data",
+        lambda *args, **kwargs: [{"tag_name": latest_tag}],
+    )
+    monkeypatch.setattr(
+        downloader,
+        "check_and_download",
+        lambda *args, **kwargs: ([], [], []),
+    )
+    # Simulate a failed write so we should fall back to the persisted tag.
+    monkeypatch.setattr(
+        downloader, "_write_latest_release_tag", lambda *args, **kwargs: False
+    )
+
+    cleanup_calls = []
+
+    def _fake_cleanup(download_dir, tag):
+        cleanup_calls.append(tag)
+        return True
+
+    monkeypatch.setattr(downloader, "cleanup_superseded_prereleases", _fake_cleanup)
+
+    downloader._process_firmware_downloads(config, paths_and_urls, force_refresh=True)
+
+    # Cleanup should use the persisted tag, not the newer one we failed to write.
+    assert cleanup_calls == [persisted_tag]
+    # File content remains unchanged because the write failed.
+    with json_file.open(encoding="utf-8") as f:
+        persisted = json.load(f)
+    assert persisted.get("latest_version") == persisted_tag
 
 
 @pytest.mark.core_downloads
