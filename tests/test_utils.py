@@ -1352,15 +1352,403 @@ def test_matches_selected_patterns_nrf52_zip_extraction():
     """
     Test that `matches_selected_patterns` correctly handles `rak4631-`
     patterns for files inside `nrf52` zip archives. This is a regression
-    test to ensure the fix for trailing separator patterns is working correctly.
+    test to ensure that fix for trailing separator patterns is working correctly.
     """
-    from fetchtastic.utils import matches_selected_patterns
-
     # This filename is from a real nrf52 zip archive
     filename = "firmware-rak4631-2.7.15.567b8ea.uf2"
 
-    # The pattern 'rak4631-' should match the filename
-    assert matches_selected_patterns(filename, ["rak4631-"]) is True
+    # The pattern 'rak4631-' should match to filename
+    assert utils.matches_selected_patterns(filename, ["rak4631-"]) is True
 
-    # The pattern 'rak4631_' should NOT match the filename
-    assert matches_selected_patterns(filename, ["rak4631_"]) is False
+    # The pattern 'rak4631_' should NOT match to filename
+    assert utils.matches_selected_patterns(filename, ["rak4631_"]) is False
+
+
+@pytest.mark.infrastructure
+@pytest.mark.unit
+def test_get_rate_limit_info_basic():
+    """Test get_rate_limit_info function with cache operations."""
+    from datetime import datetime, timezone
+
+    # Test with empty cache
+    result = utils.get_rate_limit_info("nonexistent_token")
+    assert result is None
+
+    # Test caching and retrieval
+    test_token = "test_token_hash"
+    test_remaining = 42
+    test_reset = datetime.now(timezone.utc)
+
+    utils.cache_rate_limit_info(test_token, test_remaining, test_reset)
+    result = utils.get_rate_limit_info(test_token)
+
+    assert result == (test_remaining, test_reset)
+
+
+@pytest.mark.infrastructure
+@pytest.mark.unit
+def test_cache_rate_limit_info_function():
+    """Test cache_rate_limit_info function."""
+    from datetime import datetime, timezone
+
+    test_token = "test_token_hash"
+    test_remaining = 100
+    test_reset = datetime.now(timezone.utc)
+
+    # Cache to info
+    utils.cache_rate_limit_info(test_token, test_remaining, test_reset)
+
+    # Verify it was cached
+    result = utils.get_rate_limit_info(test_token)
+    assert result == (test_remaining, test_reset)
+
+
+@pytest.mark.infrastructure
+@pytest.mark.unit
+def test_clear_rate_limit_cache_function():
+    """Test clear_rate_limit_cache function behavior."""
+    from datetime import datetime, timezone
+
+    test_token = "test_token_hash"
+    test_remaining = 100
+    test_reset = datetime.now(timezone.utc)
+
+    # Cache some info first
+    utils.cache_rate_limit_info(test_token, test_remaining, test_reset)
+    assert utils.get_rate_limit_info(test_token) is not None
+
+    # Clear cache
+    utils.clear_rate_limit_cache()
+
+    # Verify cache is cleared
+    result = utils.get_rate_limit_info(test_token)
+    assert result is None
+
+
+@pytest.mark.infrastructure
+@pytest.mark.unit
+def test_get_api_request_summary_with_rate_limit():
+    """Test get_api_request_summary includes rate limit info when available."""
+    from datetime import datetime, timedelta, timezone
+
+    # Reset tracking
+    utils.reset_api_tracking()
+
+    # Make some requests and cache rate limit info
+    utils.track_api_request()
+    utils.track_api_request()
+
+    test_token = "test_token_hash"
+    test_remaining = 50
+    test_reset = datetime.now(timezone.utc) + timedelta(hours=1)
+    utils.cache_rate_limit_info(test_token, test_remaining, test_reset)
+
+    # Get summary
+    summary = utils.get_api_request_summary()
+
+    assert summary["total_requests"] == 2
+    assert summary["cache_hits"] == 0
+    assert summary["cache_misses"] == 0
+    assert summary["auth_used"] is False
+    assert summary["rate_limit_remaining"] == 50
+    assert summary["rate_limit_reset"] == test_reset
+
+
+@pytest.mark.infrastructure
+@pytest.mark.unit
+def test_get_api_request_summary_with_auth():
+    """Test get_api_request_summary tracks authentication usage."""
+    # Reset tracking
+    utils.reset_api_tracking()
+
+    # Track auth usage
+    utils.track_api_auth_usage()
+
+    # Get summary
+    summary = utils.get_api_request_summary()
+
+    assert summary["total_requests"] == 0
+    assert summary["cache_hits"] == 0
+    assert summary["cache_misses"] == 0
+    assert summary["auth_used"] is True
+
+
+@pytest.mark.infrastructure
+@pytest.mark.unit
+def test_get_api_request_summary_comprehensive():
+    """Test get_api_request_summary with all tracking features."""
+    from datetime import datetime, timedelta, timezone
+
+    # Reset tracking
+    utils.reset_api_tracking()
+
+    # Track various activities
+    utils.track_api_request()
+    utils.track_api_request()
+    utils.track_api_request()
+    utils.track_api_cache_hit()
+    utils.track_api_cache_hit()
+    utils.track_api_cache_miss()
+    utils.track_api_auth_usage()
+
+    # Add rate limit info
+    test_token = "test_token_hash"
+    test_remaining = 25
+    test_reset = datetime.now(timezone.utc) + timedelta(hours=2)
+    utils.cache_rate_limit_info(test_token, test_remaining, test_reset)
+
+    # Get comprehensive summary
+    summary = utils.get_api_request_summary()
+
+    assert summary["total_requests"] == 3
+    assert summary["cache_hits"] == 2
+    assert summary["cache_misses"] == 1
+    assert summary["auth_used"] is True
+    assert summary["rate_limit_remaining"] == 25
+    assert summary["rate_limit_reset"] == test_reset
+
+
+@pytest.mark.infrastructure
+@pytest.mark.unit
+def test_get_rate_limit_info_basic():
+    """Test get_rate_limit_info function with cache operations."""
+    from datetime import datetime, timezone
+
+    # Test with empty cache
+    result = utils.get_rate_limit_info("nonexistent_token")
+    assert result is None
+
+    # Test caching and retrieval
+    test_token = "test_token_hash"
+    test_remaining = 42
+    test_reset = datetime.now(timezone.utc)
+
+    utils.cache_rate_limit_info(test_token, test_remaining, test_reset)
+    result = utils.get_rate_limit_info(test_token)
+
+    assert result == (test_remaining, test_reset)
+
+
+@pytest.mark.infrastructure
+@pytest.mark.unit
+def test_cache_rate_limit_info_function():
+    """Test cache_rate_limit_info function."""
+    from datetime import datetime, timezone
+
+    test_token = "test_token_hash"
+    test_remaining = 100
+    test_reset = datetime.now(timezone.utc)
+
+    # Cache the info
+    utils.cache_rate_limit_info(test_token, test_remaining, test_reset)
+
+    # Verify it was cached
+    result = utils.get_rate_limit_info(test_token)
+    assert result == (test_remaining, test_reset)
+
+
+@pytest.mark.infrastructure
+@pytest.mark.unit
+def test_clear_rate_limit_cache_function():
+    """Test clear_rate_limit_cache function behavior."""
+    from datetime import datetime, timezone
+
+    test_token = "test_token_hash"
+    test_remaining = 100
+    test_reset = datetime.now(timezone.utc)
+
+    # Cache some info first
+    utils.cache_rate_limit_info(test_token, test_remaining, test_reset)
+    assert utils.get_rate_limit_info(test_token) is not None
+
+    # Clear cache
+    utils.clear_rate_limit_cache()
+
+    # Verify cache is cleared
+    result = utils.get_rate_limit_info(test_token)
+    assert result is None
+
+
+@pytest.mark.infrastructure
+@pytest.mark.unit
+def test_get_api_request_summary_with_rate_limit():
+    """Test get_api_request_summary includes rate limit info when available."""
+    from datetime import datetime, timedelta, timezone
+
+    # Reset tracking
+    utils.reset_api_tracking()
+
+    # Make some requests and cache rate limit info
+    utils.track_api_request()
+    utils.track_api_request()
+
+    test_token = "test_token_hash"
+    test_remaining = 50
+    test_reset = datetime.now(timezone.utc) + timedelta(hours=1)
+    utils.cache_rate_limit_info(test_token, test_remaining, test_reset)
+
+    # Get summary
+    summary = utils.get_api_request_summary()
+
+    assert summary["total_requests"] == 2
+    assert summary["cache_hits"] == 0
+    assert summary["cache_misses"] == 0
+    assert summary["auth_used"] is False
+    assert summary["rate_limit_remaining"] == 50
+    assert summary["rate_limit_reset"] == test_reset
+
+
+@pytest.mark.infrastructure
+@pytest.mark.unit
+def test_get_api_request_summary_with_auth():
+    """Test get_api_request_summary tracks authentication usage."""
+    # Reset tracking
+    utils.reset_api_tracking()
+
+    # Track auth usage
+    utils.track_api_auth_usage()
+
+    # Get summary
+    summary = utils.get_api_request_summary()
+
+    assert summary["total_requests"] == 0
+    assert summary["cache_hits"] == 0
+    assert summary["cache_misses"] == 0
+    assert summary["auth_used"] is True
+
+
+@pytest.mark.infrastructure
+@pytest.mark.unit
+def test_get_api_request_summary_comprehensive():
+    """Test get_api_request_summary with all tracking features."""
+    from datetime import datetime, timedelta, timezone
+
+    # Reset tracking
+    utils.reset_api_tracking()
+
+    # Track various activities
+    utils.track_api_request()
+    utils.track_api_request()
+    utils.track_api_request()
+    utils.track_api_cache_hit()
+    utils.track_api_cache_hit()
+    utils.track_api_cache_miss()
+    utils.track_api_auth_usage()
+
+    # Add rate limit info
+    test_token = "test_token_hash"
+    test_remaining = 25
+    test_reset = datetime.now(timezone.utc) + timedelta(hours=2)
+    utils.cache_rate_limit_info(test_token, test_remaining, test_reset)
+
+    # Get comprehensive summary
+    summary = utils.get_api_request_summary()
+
+    assert summary["total_requests"] == 3
+    assert summary["cache_hits"] == 2
+    assert summary["cache_misses"] == 1
+    assert summary["auth_used"] is True
+    assert summary["rate_limit_remaining"] == 25
+    assert summary["rate_limit_reset"] == test_reset
+
+
+@pytest.mark.infrastructure
+@pytest.mark.unit
+def test_get_api_request_summary_with_auth():
+    """Test get_api_request_summary tracks authentication usage."""
+    from fetchtastic.utils import (
+        get_api_request_summary,
+        reset_api_tracking,
+        track_api_auth_usage,
+    )
+
+    # Reset tracking
+    reset_api_tracking()
+
+    # Track auth usage
+    track_api_auth_usage()
+
+    # Get summary
+    summary = get_api_request_summary()
+
+    assert summary["total_requests"] == 0
+    assert summary["cache_hits"] == 0
+    assert summary["cache_misses"] == 0
+    assert summary["auth_used"] is True
+
+
+@pytest.mark.infrastructure
+@pytest.mark.unit
+def test_get_api_request_summary_comprehensive():
+    """Test get_api_request_summary with all tracking features."""
+    from datetime import datetime, timedelta, timezone
+
+    from fetchtastic.utils import (
+        cache_rate_limit_info,
+        get_api_request_summary,
+        reset_api_tracking,
+        track_api_auth_usage,
+        track_api_cache_hit,
+        track_api_cache_miss,
+        track_api_request,
+    )
+
+    # Reset tracking
+    reset_api_tracking()
+
+    # Track various activities
+    track_api_request()
+    track_api_request()
+    track_api_request()
+    track_api_cache_hit()
+    track_api_cache_hit()
+    track_api_cache_miss()
+    track_api_auth_usage()
+
+    # Add rate limit info
+    test_token = "test_token_hash"
+    test_remaining = 25
+    test_reset = datetime.now(timezone.utc) + timedelta(hours=2)
+    cache_rate_limit_info(test_token, test_remaining, test_reset)
+
+    # Get comprehensive summary
+    summary = get_api_request_summary()
+
+    assert summary["total_requests"] == 3
+    assert summary["cache_hits"] == 2
+    assert summary["cache_misses"] == 1
+    assert summary["auth_used"] is True
+    assert summary["rate_limit_remaining"] == 25
+    assert summary["rate_limit_reset"] == test_reset
+
+
+@pytest.mark.infrastructure
+@pytest.mark.unit
+def test_utils_coverage_additional():
+    """Additional test to improve utils coverage."""
+    from datetime import datetime, timedelta, timezone
+
+    # Reset tracking
+    utils.reset_api_tracking()
+
+    # Track various activities
+    utils.track_api_cache_hit()
+    utils.track_api_cache_miss()
+    utils.track_api_cache_hit()
+    utils.track_api_cache_miss()
+
+    # Add rate limit info
+    test_token = "test_token_hash"
+    test_remaining = 25
+    test_reset = datetime.now(timezone.utc) + timedelta(hours=2)
+    utils.cache_rate_limit_info(test_token, test_remaining, test_reset)
+
+    # Get summary
+    summary = utils.get_api_request_summary()
+
+    assert summary["total_requests"] == 0  # No track_api_request function
+    assert summary["cache_hits"] == 2
+    assert summary["cache_misses"] == 2
+    assert summary["auth_used"] is False
+    assert summary["rate_limit_remaining"] == 25
+    assert summary["rate_limit_reset"] == test_reset

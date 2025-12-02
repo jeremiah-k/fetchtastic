@@ -3139,3 +3139,207 @@ def test_download_repo_files_path_traversal(tmp_path):
     assert (
         str(safe_dir / "safe_file.txt") in safe_downloaded_files
     ), "Safe file not in returned paths!"
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
+def test_check_and_download_handles_corrupted_zip_removal_error(tmp_path, monkeypatch):
+    """Test check_and_download handles errors when removing corrupted zip files."""
+    from fetchtastic import downloader
+
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    download_dir = tmp_path / "downloads"
+    download_dir.mkdir()
+
+    # Create a fake corrupted zip file
+    asset_path = download_dir / "v1.0.0" / "corrupted.zip"
+    asset_path.parent.mkdir(parents=True)
+    asset_path.write_text("not a zip file")
+
+    # Mock os.remove to raise an exception
+    def mock_remove_error(path):
+        if "corrupted.zip" in str(path):
+            raise OSError("Permission denied")
+        return os.remove(path)  # Call original for other paths
+
+    monkeypatch.setattr("os.remove", mock_remove_error)
+
+    # Mock other functions to avoid real downloads
+    monkeypatch.setattr(
+        downloader,
+        "_get_latest_releases_data",
+        lambda *args, **kwargs: [
+            {
+                "tag_name": "v1.0.0",
+                "assets": [
+                    {
+                        "name": "corrupted.zip",
+                        "browser_download_url": "http://example.com",
+                    }
+                ],
+            }
+        ],
+    )
+
+    # This should handle to removal error gracefully and continue
+    downloaded, new_versions, failures = downloader.check_and_download(
+        [
+            {
+                "tag_name": "v1.0.0",
+                "assets": [
+                    {
+                        "name": "corrupted.zip",
+                        "browser_download_url": "http://example.com",
+                    }
+                ],
+            }
+        ],
+        str(cache_dir),
+        "Test",
+        str(download_dir),
+        1,
+        [],
+        selected_patterns=["corrupted.zip"],
+    )
+
+    # Should complete despite removal error
+    assert isinstance(downloaded, list)
+    assert isinstance(new_versions, list)
+    assert isinstance(failures, list)
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
+def test_check_and_download_handles_missing_download_url(tmp_path, monkeypatch):
+    """Test check_and_download handles assets with missing download URLs."""
+    from fetchtastic import downloader
+
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    download_dir = tmp_path / "downloads"
+    download_dir.mkdir()
+
+    # Mock release data with missing download URL
+    releases = [
+        {
+            "tag_name": "v1.0.0",
+            "assets": [
+                {
+                    "name": "valid.bin",
+                    "browser_download_url": "http://example.com/valid.bin",
+                },
+                {"name": "missing_url.bin"},  # No download URL
+            ],
+        }
+    ]
+
+    # Mock other functions to avoid real downloads
+    monkeypatch.setattr(
+        downloader,
+        "_get_latest_releases_data",
+        lambda *args, **kwargs: releases,
+    )
+
+    # Mock download_file_with_retry to succeed for valid asset
+    def mock_download_success(url, *args, **kwargs):
+        if "valid.bin" in url:
+            return "/tmp/downloaded_valid.bin"
+        return None
+
+    monkeypatch.setattr(
+        "fetchtastic.repo_downloader.download_file_with_retry",
+        mock_download_success,
+    )
+
+    downloaded, new_versions, failures = downloader.check_and_download(
+        releases,
+        str(cache_dir),
+        "Test",
+        str(download_dir),
+        1,
+        [],
+        selected_patterns=["*.bin"],
+    )
+
+    # Should download valid asset and record failure for missing URL
+    assert len(downloaded) == 1
+    assert "valid.bin" in downloaded[0]
+    assert len(failures) == 1
+    assert "missing_url.bin" in failures[0]["asset"]
+    assert "no download URL" in failures[0]["error"]
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
+def test_check_and_download_all_assets_filtered(tmp_path, monkeypatch):
+    """Test check_and_download when all assets are filtered out."""
+    from fetchtastic import downloader
+
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    download_dir = tmp_path / "downloads"
+    download_dir.mkdir()
+
+    # Mock release data with assets that don't match patterns
+    releases = [
+        {
+            "tag_name": "v1.0.0",
+            "assets": [
+                {
+                    "name": "firmware.bin",
+                    "browser_download_url": "http://example.com/firmware.bin",
+                },
+                {
+                    "name": "bootloader.bin",
+                    "browser_download_url": "http://example.com/bootloader.bin",
+                },
+            ],
+        }
+    ]
+
+    # Mock other functions to avoid real downloads
+    monkeypatch.setattr(
+        downloader,
+        "_get_latest_releases_data",
+        lambda *args, **kwargs: releases,
+    )
+
+    downloaded, new_versions, failures = downloader.check_and_download(
+        releases,
+        str(cache_dir),
+        "Test",
+        str(download_dir),
+        1,
+        [],
+        selected_patterns=["*.txt"],  # No assets match this pattern
+    )
+
+    # Should return no downloads but still track to release
+    assert downloaded == []
+    assert new_versions == ["v1.0.0"]  # Release is still considered new
+    assert failures == []
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
+def test_check_and_download_error_handling_coverage():
+    """Test additional error handling paths in check_and_download to improve coverage."""
+    # Test empty release data
+    downloaded, new_versions, failures = downloader.check_and_download(
+        [],
+        "/tmp/cache",
+        "Test",
+        "/tmp/downloads",
+        1,
+        [],
+        selected_patterns=["*.bin"],
+    )
+
+    # Should handle empty data gracefully
+    assert isinstance(downloaded, list)
+    assert isinstance(new_versions, list)
+    assert isinstance(failures, list)
+    assert downloaded == []
+    assert new_versions == []
+    assert failures == []
