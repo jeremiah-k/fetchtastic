@@ -6007,6 +6007,7 @@ def check_and_download(
             # If this is a newer release than what we've saved but no assets
             # matched the user's patterns, surface a helpful note.
             try:
+                original_saved_tag = saved_release_tag
                 if saved_release_tag is None or release_tag != saved_release_tag:
                     logger.info(
                         f"Release {raw_release_tag} found, but no assets matched the current selection/exclude filters."
@@ -6022,6 +6023,39 @@ def check_and_download(
                                 logger.debug(
                                     f"Updated latest release tag to {release_tag} (no matching assets)"
                                 )
+                                # Also add to new_versions_available if this is a newer release than what was saved
+                                if (
+                                    original_saved_tag is None
+                                    or compare_versions(release_tag, original_saved_tag)
+                                    > 0
+                                ):
+                                    new_versions_available.append(release_tag)
+                            else:
+                                logger.warning(
+                                    f"Could not record latest release tag {release_tag}: atomic write failed"
+                                )
+                    except IOError as e:
+                        logger.debug(
+                            f"Could not record latest release tag {release_tag}: {e}"
+                        )
+                    # Consider the latest release processed even without downloads to avoid re-scanning
+                    try:
+                        if idx == 1:
+                            # Use json_file calculated at function start
+                            if _write_latest_release_tag(
+                                json_file, release_tag, release_type
+                            ):
+                                saved_release_tag = release_tag
+                                logger.debug(
+                                    f"Updated latest release tag to {release_tag} (no matching assets)"
+                                )
+                                # Also add to new_versions_available if this is a newer release than what was saved
+                                if (
+                                    saved_release_tag is None
+                                    or compare_versions(release_tag, saved_release_tag)
+                                    > 0
+                                ):
+                                    new_versions_available.append(release_tag)
                             else:
                                 logger.warning(
                                     f"Could not record latest release tag {release_tag}: atomic write failed"

@@ -138,28 +138,50 @@ def get_api_request_summary() -> Dict[str, Any]:
         if rate_limit_info:
             remaining, reset_timestamp = rate_limit_info
             summary["rate_limit_remaining"] = remaining
-            summary["rate_limit_reset"] = (
-                int(reset_timestamp.timestamp())
-                if isinstance(reset_timestamp, datetime)
-                else reset_timestamp
-            )
+            summary["rate_limit_reset"] = reset_timestamp
 
     return summary
 
 
 def reset_api_tracking() -> None:
-    """
-    Reset session-wide API request tracking counters and flags.
-
-    Resets request count, cache hit and miss counters, and authentication-used flag
-    while holding the module's tracking lock to ensure thread-safety.
-    """
+    """Reset all API request tracking counters to zero."""
     global _api_request_count, _api_cache_hits, _api_cache_misses, _api_auth_used
     with _api_tracking_lock:
         _api_request_count = 0
         _api_cache_hits = 0
         _api_cache_misses = 0
         _api_auth_used = False
+
+
+def track_api_request() -> None:
+    """Track a single API request."""
+    global _api_request_count
+    with _api_tracking_lock:
+        _api_request_count += 1
+
+
+def track_api_auth_usage() -> None:
+    """Track that an API request used authentication."""
+    global _api_auth_used
+    with _api_tracking_lock:
+        _api_auth_used = True
+
+
+def cache_rate_limit_info(
+    token_hash: str, remaining: int, reset_timestamp: datetime
+) -> None:
+    """Cache rate limit information for a token.
+
+    This is a convenience wrapper around _update_rate_limit for external use.
+
+    Parameters:
+        token_hash (str): Hash of the token to cache rate limit for
+        remaining (int): Number of remaining requests
+        reset_timestamp (datetime): When the rate limit resets
+    """
+    global _last_rate_limit_token_hash
+    _last_rate_limit_token_hash = token_hash
+    _update_rate_limit(token_hash, remaining, reset_timestamp)
 
 
 def get_effective_github_token(

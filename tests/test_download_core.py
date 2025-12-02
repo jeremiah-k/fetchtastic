@@ -2207,13 +2207,13 @@ def test_process_firmware_downloads_updates_latest_release_and_cleans(
     monkeypatch.setattr(
         downloader,
         "_get_latest_releases_data",
-        lambda *args, **kwargs: [{"tag_name": latest_tag}],
+        lambda *_args, **_kwargs: [{"tag_name": latest_tag}],
     )
     # Avoid real downloads.
     monkeypatch.setattr(
         downloader,
         "check_and_download",
-        lambda *args, **kwargs: ([], [], []),
+        lambda *_args, **_kwargs: ([], [], []),
     )
 
     cleanup_calls = []
@@ -2290,16 +2290,16 @@ def test_process_firmware_downloads_does_not_update_when_write_fails(
     monkeypatch.setattr(
         downloader,
         "_get_latest_releases_data",
-        lambda *args, **kwargs: [{"tag_name": latest_tag}],
+        lambda *_args, **_kwargs: [{"tag_name": latest_tag}],
     )
     monkeypatch.setattr(
         downloader,
         "check_and_download",
-        lambda *args, **kwargs: ([], [], []),
+        lambda *_args, **_kwargs: ([], [], []),
     )
     # Simulate a failed write so we should fall back to the persisted tag.
     monkeypatch.setattr(
-        downloader, "_write_latest_release_tag", lambda *args, **kwargs: False
+        downloader, "_write_latest_release_tag", lambda *_args, **_kwargs: False
     )
 
     cleanup_calls = []
@@ -3244,11 +3244,20 @@ def test_check_and_download_handles_missing_download_url(tmp_path, monkeypatch):
     # Mock download_file_with_retry to succeed for valid asset
     def mock_download_success(url, *args, **kwargs):
         if "valid.bin" in url:
-            return "/tmp/downloaded_valid.bin"
-        return None
+            # Create the actual file so the download appears successful
+            download_path = (
+                args[0]
+                if args
+                else kwargs.get("file_path", "/tmp/downloaded_valid.bin")
+            )
+            os.makedirs(os.path.dirname(download_path), exist_ok=True)
+            with open(download_path, "w") as f:
+                f.write("mock content")
+            return True
+        return False
 
     monkeypatch.setattr(
-        "fetchtastic.repo_downloader.download_file_with_retry",
+        "fetchtastic.downloader.download_file_with_retry",
         mock_download_success,
     )
 
@@ -3264,10 +3273,10 @@ def test_check_and_download_handles_missing_download_url(tmp_path, monkeypatch):
 
     # Should download valid asset and record failure for missing URL
     assert len(downloaded) == 1
-    assert "valid.bin" in downloaded[0]
+    assert "v1.0.0" in downloaded  # downloaded contains release tags, not filenames
     assert len(failures) == 1
-    assert "missing_url.bin" in failures[0]["asset"]
-    assert "no download URL" in failures[0]["error"]
+    assert "missing_url.bin" in failures[0]["file_name"]
+    assert "Missing browser_download_url" in failures[0]["reason"]
 
 
 @pytest.mark.core_downloads
