@@ -2218,14 +2218,14 @@ def test_process_firmware_downloads_updates_latest_release_and_cleans(
 
     cleanup_calls = []
 
-    def _fake_cleanup(download_dir, tag):
+    def _fake_cleanup(_download_dir, tag, assume_latest_is_official=False):
         cleanup_calls.append(tag)
         return True
 
     monkeypatch.setattr(
         downloader,
         "cleanup_superseded_prereleases",
-        lambda *a, **k: _fake_cleanup(a[0], a[1]),
+        _fake_cleanup,
     )
 
     (
@@ -2304,14 +2304,14 @@ def test_process_firmware_downloads_does_not_update_when_write_fails(
 
     cleanup_calls = []
 
-    def _fake_cleanup(download_dir, tag):
+    def _fake_cleanup(_download_dir, tag, assume_latest_is_official=False):
         cleanup_calls.append(tag)
         return True
 
     monkeypatch.setattr(
         downloader,
         "cleanup_superseded_prereleases",
-        lambda *a, **k: _fake_cleanup(a[0], a[1]),
+        _fake_cleanup,
     )
 
     downloader._process_firmware_downloads(config, paths_and_urls, force_refresh=True)

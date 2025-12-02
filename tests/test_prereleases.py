@@ -256,22 +256,22 @@ def test_check_for_prereleases_cleans_superseded_and_resets_tracking(
     monkeypatch.setattr(
         downloader,
         "_get_latest_active_prerelease_from_history",
-        lambda *args, **kwargs: (None, []),
+        lambda *_args, **_kwargs: (None, []),
     )
     monkeypatch.setattr(
         downloader,
         "_find_latest_remote_prerelease_dir",
-        lambda *args, **kwargs: None,
+        lambda *_args, **_kwargs: None,
     )
     monkeypatch.setattr(
         downloader,
         "_download_prerelease_assets",
-        lambda *args, **kwargs: (False, []),
+        lambda *_args, **_kwargs: (False, []),
     )
     monkeypatch.setattr(
         downloader,
         "_fetch_prerelease_directories",
-        lambda *args, **kwargs: [],
+        lambda *_args, **_kwargs: [],
     )
 
     found, versions = downloader.check_for_prereleases(

@@ -450,8 +450,12 @@ def test_run_clean(
         mock_popen.assert_called_once()
 
     # Check that config files are removed
-    mock_os_remove.assert_any_call("/tmp/config/fetchtastic.yaml")  # nosec B108
-    mock_os_remove.assert_any_call("/tmp/old_config/fetchtastic.yaml")  # nosec B108
+    mock_os_remove.assert_any_call(
+        "/tmp/config/fetchtastic.yaml"
+    )  # noqa: S108  # nosec B108
+    mock_os_remove.assert_any_call(
+        "/tmp/old_config/fetchtastic.yaml"
+    )  # noqa: S108  # nosec B108
 
     # Check that only managed directories are cleaned
     # "repo-dls" is in MANAGED_DIRECTORIES, "firmware-2.7.4" starts with FIRMWARE_DIR_PREFIX
@@ -466,8 +470,8 @@ def test_run_clean(
     # Check that managed files are removed but unmanaged files are not
     # "fetchtastic_yaml.lnk" is in MANAGED_FILES, so should be removed
     mock_os_remove.assert_any_call(
-        "/tmp/test_base_dir/fetchtastic_yaml.lnk"
-    )  # nosec B108
+        "/tmp/test_base_dir/fetchtastic_yaml.lnk"  # noqa: S108  # nosec B108
+    )
     # "unmanaged.txt" is not managed, so should not be removed
     # Total removes: 2 config files + 1 managed file + boot script + log file = 5
     assert mock_os_remove.call_count == 5

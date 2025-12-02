@@ -373,6 +373,7 @@ def cleanup_superseded_prereleases(
     Parameters:
         download_dir (str): Base download directory containing firmware/prerelease.
         latest_release_tag (str): Latest official release tag (may include a leading 'v').
+        assume_latest_is_official (bool): If True, treats the latest_release_tag as an official release even if it appears to be a prerelease. This allows cleanup when the caller knows the tag comes from stable firmware releases. Default is False.
 
     Returns:
         bool: `True` if one or more prerelease directories were removed, `False` otherwise.
@@ -562,7 +563,7 @@ def _atomic_write_json(file_path: str, data: dict) -> bool:
 
 
 def _reset_prerelease_tracking(
-    latest_release_version: str, prerelease_dir: Optional[str] = None
+    latest_release_version: str, _prerelease_dir: Optional[str] = None
 ) -> None:
     """
     Reset prerelease tracking state to reflect a new official release.
@@ -6090,14 +6091,16 @@ def check_and_download(
         for rd in releases_to_download
         if (tag := _sanitize_path_component(rd.get("tag_name"))) is not None
     ]
-    newer_tags: List[str] = _newer_tags_since_saved(tags_order, saved_release_tag)
+    newer_tags: List[str] = _newer_tags_since_saved(
+        cleanup_tags_order, saved_release_tag
+    )
 
     # Report all newer releases that were not successfully downloaded as newly available.
     # This ensures users are notified about new versions even if download failed.
     # Exclude releases that were already complete to avoid showing already-downloaded releases as "new"
     new_candidates: List[str] = [
         t
-        for t in newer_cleanup_tags
+        for t in newer_tags
         if t not in downloaded_versions and t not in already_complete_releases
     ]
 
