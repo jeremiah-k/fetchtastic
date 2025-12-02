@@ -138,7 +138,11 @@ def get_api_request_summary() -> Dict[str, Any]:
         if rate_limit_info:
             remaining, reset_timestamp = rate_limit_info
             summary["rate_limit_remaining"] = remaining
-            summary["rate_limit_reset"] = reset_timestamp
+            summary["rate_limit_reset"] = (
+                int(reset_timestamp.timestamp())
+                if isinstance(reset_timestamp, datetime)
+                else reset_timestamp
+            )
 
     return summary
 

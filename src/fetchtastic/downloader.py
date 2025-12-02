@@ -572,7 +572,7 @@ def _reset_prerelease_tracking(
     """
     cache_dir = _ensure_cache_dir()
     tracking_path = os.path.join(cache_dir, PRERELEASE_TRACKING_JSON_FILE)
-    data = {
+    data: Dict[str, Any] = {
         "release": _ensure_v_prefix_if_missing(latest_release_version),
         "commits": [],
         "last_updated": datetime.now(timezone.utc).isoformat(),
@@ -3159,11 +3159,12 @@ def _refresh_prerelease_commit_history(
     def _get_entry_key(entry: Dict[str, Any]) -> Optional[str]:
         return entry.get("identifier") or entry.get("directory") or entry.get("dir")
 
-    existing_map: Dict[str, Dict[str, Any]] = (
-        {_get_entry_key(e): e for e in existing_entries if _get_entry_key(e)}
-        if existing_entries
-        else {}
-    )
+    existing_map: Dict[str, Dict[str, Any]] = {}
+    if existing_entries:
+        for e in existing_entries:
+            key = _get_entry_key(e)
+            if key:
+                existing_map[key] = e
 
     # Merge new entries into existing_map (newest-first list already from history_new)
     for new_entry in history_new:
@@ -5130,13 +5131,16 @@ def _finalize_and_notify(
             title="Fetchtastic Download Completed",
         )
     else:
-        message: str = (
+        up_to_date_message: str = (
             f"All assets are up to date.\n{datetime.now().astimezone().isoformat(timespec='seconds')}"
         )
-        logger.info(message)
+        logger.info(up_to_date_message)
         if not notify_on_download_only:
             _send_ntfy_notification(
-                ntfy_server, ntfy_topic, message, title="Fetchtastic Up to Date"
+                ntfy_server,
+                ntfy_topic,
+                up_to_date_message,
+                title="Fetchtastic Up to Date",
             )
 
 
@@ -5646,14 +5650,16 @@ def check_and_download(
     logger.info(_summarise_scan_window(release_type, total_to_scan))
 
     if downloads_skipped:
-        # Mirror the “newer than saved” computation used later (newest-first list).
+        # Mirror the "newer than saved" computation used later (newest-first list).
         tags_order: List[str] = [
             tag
             for rd in releases_to_download
             if (tag := _sanitize_path_component(rd.get("tag_name"))) is not None
         ]
-        newer_tags: List[str] = _newer_tags_since_saved(tags_order, saved_release_tag)
-        new_versions_available = list(dict.fromkeys(newer_tags))
+        newer_cleanup_tags: List[str] = _newer_tags_since_saved(
+            tags_order, saved_release_tag
+        )
+        new_versions_available = list(dict.fromkeys(newer_cleanup_tags))
         return (downloaded_versions, new_versions_available, failed_downloads_details)
 
     release_data: Dict[str, Any]
@@ -6079,7 +6085,7 @@ def check_and_download(
             )
 
     # Determine tags newer than saved tag by position (list is newest-first)
-    tags_order: List[str] = [
+    cleanup_tags_order: List[str] = [
         tag
         for rd in releases_to_download
         if (tag := _sanitize_path_component(rd.get("tag_name"))) is not None
@@ -6091,7 +6097,7 @@ def check_and_download(
     # Exclude releases that were already complete to avoid showing already-downloaded releases as "new"
     new_candidates: List[str] = [
         t
-        for t in newer_tags
+        for t in newer_cleanup_tags
         if t not in downloaded_versions and t not in already_complete_releases
     ]
 

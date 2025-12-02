@@ -54,6 +54,7 @@ if platform.system() == "Windows":
 
         WINDOWS_MODULES_AVAILABLE = True
     except ImportError:
+        winshell = None
         WINDOWS_MODULES_AVAILABLE = False
         print(
             "Windows detected. For full Windows integration, install optional dependencies:"
@@ -927,7 +928,7 @@ def _setup_automation(
     if not is_partial_run or wants("automation"):
         if platform.system() == "Windows":
             # Windows doesn't support cron jobs, but we can offer to create a startup shortcut
-            if WINDOWS_MODULES_AVAILABLE:
+            if WINDOWS_MODULES_AVAILABLE and winshell:
                 # Check if startup shortcut already exists
                 startup_folder = winshell.startup()
                 startup_shortcut_path = os.path.join(startup_folder, "Fetchtastic.lnk")
@@ -1194,7 +1195,7 @@ def _setup_notifications(config: dict) -> dict:
 
         copy_to_clipboard = input(copy_prompt_text).strip().lower() or "y"
         if copy_to_clipboard == "y":
-            success = copy_to_clipboard_func(text_to_copy)
+            success = copy_to_clipboard_func(str(text_to_copy))
             if success:
                 if is_termux():
                     print("Topic name copied to clipboard.")
@@ -1443,7 +1444,7 @@ def _setup_base(
 
     if exists:
         # Load existing configuration
-        config = load_config()
+        config = load_config() or {}
         print(
             "Existing configuration found. You can keep current settings or change them."
         )
@@ -1471,7 +1472,7 @@ def _setup_base(
             if exists_in_dir and base_dir != BASE_DIR:
                 print(f"Found existing configuration in {base_dir}")
                 # Load the configuration from the specified directory
-                config = load_config(base_dir)
+                config = load_config(base_dir) or {}
             else:
                 # No config in the specified directory or it's the same as current
                 BASE_DIR = base_dir
@@ -1573,7 +1574,7 @@ def run_setup(sections: Optional[Sequence[str]] = None):
         return partial_sections is None or section in partial_sections
 
     if is_partial_run:
-        section_list = ", ".join(sorted(partial_sections))
+        section_list = ", ".join(sorted(partial_sections or []))
         print(f"Updating Fetchtastic setup sections: {section_list}")
     else:
         print("Running Fetchtastic Setup...")
@@ -1631,7 +1632,7 @@ def run_setup(sections: Optional[Sequence[str]] = None):
         current_version = version("fetchtastic")
         config["LAST_SETUP_VERSION"] = current_version
         config["LAST_SETUP_DATE"] = datetime.now().isoformat()
-    except PackageNotFoundError:
+    except Exception as e:
         # If we can't get the version, just record the date
         config["LAST_SETUP_DATE"] = datetime.now().isoformat()
 
@@ -2258,7 +2259,7 @@ def create_startup_shortcut():
         return False
 
 
-def copy_to_clipboard_func(text):
+def copy_to_clipboard_func(text: str) -> bool:
     """
     Copies the provided text to the clipboard, depending on the platform.
     """
