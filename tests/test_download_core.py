@@ -3157,13 +3157,17 @@ def test_check_and_download_handles_corrupted_zip_removal_error(tmp_path, monkey
     asset_path.parent.mkdir(parents=True)
     asset_path.write_text("not a zip file")
 
-    # Mock os.remove to raise an exception
+    # Capture the original remover so our mock can delegate safely.
+    original_remove = os.remove
+
+    # Mock os.remove to raise an exception only for the corrupted ZIP.
     def mock_remove_error(path):
         if "corrupted.zip" in str(path):
             raise OSError("Permission denied")
-        return os.remove(path)  # Call original for other paths
+        return original_remove(path)
 
-    monkeypatch.setattr("os.remove", mock_remove_error)
+    # Patch the downloader module's os.remove, leaving the global os untouched.
+    monkeypatch.setattr(downloader.os, "remove", mock_remove_error)
 
     # Mock other functions to avoid real downloads
     monkeypatch.setattr(
@@ -3238,17 +3242,17 @@ def test_check_and_download_handles_missing_download_url(tmp_path, monkeypatch):
     monkeypatch.setattr(
         downloader,
         "_get_latest_releases_data",
-        lambda *args, **kwargs: releases,
+        lambda *_args, **_kwargs: releases,
     )
 
     # Mock download_file_with_retry to succeed for valid asset
+    default_download_path = tmp_path / "downloaded_valid.bin"
+
     def mock_download_success(url, *args, **kwargs):
         if "valid.bin" in url:
             # Create the actual file so the download appears successful
             download_path = (
-                args[0]
-                if args
-                else kwargs.get("file_path", "/tmp/downloaded_valid.bin")
+                args[0] if args else kwargs.get("file_path", str(default_download_path))
             )
             os.makedirs(os.path.dirname(download_path), exist_ok=True)
             with open(download_path, "w") as f:
@@ -3273,7 +3277,8 @@ def test_check_and_download_handles_missing_download_url(tmp_path, monkeypatch):
 
     # Should download valid asset and record failure for missing URL
     assert len(downloaded) == 1
-    assert "v1.0.0" in downloaded  # downloaded contains release tags, not filenames
+    assert downloaded == ["v1.0.0"]
+    assert new_versions == ["v1.0.0"]
     assert len(failures) == 1
     assert "missing_url.bin" in failures[0]["file_name"]
     assert "Missing browser_download_url" in failures[0]["reason"]
@@ -3311,7 +3316,7 @@ def test_check_and_download_all_assets_filtered(tmp_path, monkeypatch):
     monkeypatch.setattr(
         downloader,
         "_get_latest_releases_data",
-        lambda *args, **kwargs: releases,
+        lambda *_args, **_kwargs: releases,
     )
 
     downloaded, new_versions, failures = downloader.check_and_download(
@@ -3332,14 +3337,14 @@ def test_check_and_download_all_assets_filtered(tmp_path, monkeypatch):
 
 @pytest.mark.core_downloads
 @pytest.mark.unit
-def test_check_and_download_error_handling_coverage():
+def test_check_and_download_error_handling_coverage(tmp_path):
     """Test additional error handling paths in check_and_download to improve coverage."""
     # Test empty release data
     downloaded, new_versions, failures = downloader.check_and_download(
         [],
-        "/tmp/cache",
+        str(tmp_path / "cache"),
         "Test",
-        "/tmp/downloads",
+        str(tmp_path / "downloads"),
         1,
         [],
         selected_patterns=["*.bin"],

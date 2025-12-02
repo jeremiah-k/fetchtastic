@@ -290,7 +290,7 @@ def test_check_for_prereleases_cleans_superseded_and_resets_tracking(
     assert not stale_dir.exists()
     assert tracking_file.exists()
     persisted = json.loads(tracking_file.read_text(encoding="utf-8"))
-    assert persisted.get("release") == "v2.7.16.a597230"
+    assert persisted.get("version") == "v2.7.16.a597230"
     assert persisted.get("commits") == []
 
 
@@ -1471,7 +1471,7 @@ class TestPrereleaseHelperFunctions:
         assert result["is_deleted"] is False
         assert result["is_newest"] is False
         assert result["is_latest"] is False
-        assert result["markup_label"] == "[green]test-789[/]"
+        assert result["markup_label"] == "test-789"
 
         # Test empty identifier
         entry4 = {"status": "active"}

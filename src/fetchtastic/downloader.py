@@ -573,7 +573,7 @@ def _reset_prerelease_tracking(
     cache_dir = _ensure_cache_dir()
     tracking_path = os.path.join(cache_dir, PRERELEASE_TRACKING_JSON_FILE)
     data: Dict[str, Any] = {
-        "release": _ensure_v_prefix_if_missing(latest_release_version),
+        "version": _ensure_v_prefix_if_missing(latest_release_version),
         "commits": [],
         "last_updated": datetime.now(timezone.utc).isoformat(),
     }
@@ -1344,7 +1344,7 @@ def _format_history_entry(
     elif is_newest or is_latest_active:
         markup_label = f"[green][bold]{identifier}[/][/green]"
     else:
-        markup_label = f"[green]{identifier}[/]"
+        markup_label = identifier
 
     formatted_entry = dict(entry)
     formatted_entry.update(
