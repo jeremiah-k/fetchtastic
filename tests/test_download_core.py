@@ -3324,9 +3324,9 @@ def test_check_and_download_all_assets_filtered(tmp_path, monkeypatch):
         selected_patterns=["*.txt"],  # No assets match this pattern
     )
 
-    # Should return no downloads but still track to release
+    # Should return no downloads and no new versions since no assets matched
     assert downloaded == []
-    assert new_versions == ["v1.0.0"]  # Release is still considered new
+    assert new_versions == []
     assert failures == []
 
 

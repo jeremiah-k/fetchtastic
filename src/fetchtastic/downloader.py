@@ -82,7 +82,6 @@ from fetchtastic.constants import (
     PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS,
     PRERELEASE_COMMITS_CACHE_FILE,
     PRERELEASE_DELETE_COMMIT_PATTERN,
-    PRERELEASE_DETAIL_ATTEMPT_MULTIPLIER,
     PRERELEASE_DETAIL_FETCH_WORKERS,
     PRERELEASE_TRACKING_JSON_FILE,
     RELEASE_SCAN_COUNT,
@@ -5815,6 +5814,7 @@ def check_and_download(
                                 )
 
             assets_to_download: List[Tuple[str, str]] = []
+            any_assets_matched: bool = False
             for asset in release_data.get("assets", []):
                 file_name = asset.get("name", "")
                 if not file_name:
@@ -5865,6 +5865,9 @@ def check_and_download(
                         file_name,
                     )
                     continue
+
+                # Asset matched selection criteria
+                any_assets_matched = True
                 asset_download_path = os.path.join(release_dir, safe_file_name)
                 if not os.path.exists(asset_download_path):
                     assets_to_download.append(
@@ -6009,34 +6012,15 @@ def check_and_download(
             try:
                 original_saved_tag = saved_release_tag
                 if saved_release_tag is None or release_tag != saved_release_tag:
-                    logger.info(
-                        f"Release {raw_release_tag} found, but no assets matched the current selection/exclude filters."
-                    )
-                    # Consider the latest release processed even without downloads to avoid re-scanning
-                    try:
-                        if idx == 1:
-                            # Use json_file calculated at function start
-                            if _write_latest_release_tag(
-                                json_file, release_tag, release_type
-                            ):
-                                saved_release_tag = release_tag
-                                logger.debug(
-                                    f"Updated latest release tag to {release_tag} (no matching assets)"
-                                )
-                                # Also add to new_versions_available if this is a newer release than what was saved
-                                if (
-                                    original_saved_tag is None
-                                    or compare_versions(release_tag, original_saved_tag)
-                                    > 0
-                                ):
-                                    new_versions_available.append(release_tag)
-                            else:
-                                logger.warning(
-                                    f"Could not record latest release tag {release_tag}: atomic write failed"
-                                )
-                    except IOError as e:
-                        logger.debug(
-                            f"Could not record latest release tag {release_tag}: {e}"
+                    if any_assets_matched:
+                        # Assets matched but couldn't be downloaded - still consider as new version
+                        logger.info(
+                            f"Release {raw_release_tag} found, but no assets could be downloaded."
+                        )
+                    else:
+                        # No assets matched patterns - don't consider as new version
+                        logger.info(
+                            f"Release {raw_release_tag} found, but no assets matched the current selection/exclude filters."
                         )
                     # Consider the latest release processed even without downloads to avoid re-scanning
                     try:
@@ -6047,12 +6031,12 @@ def check_and_download(
                             ):
                                 saved_release_tag = release_tag
                                 logger.debug(
-                                    f"Updated latest release tag to {release_tag} (no matching assets)"
+                                    f"Updated latest release tag to {release_tag} (no downloadable assets)"
                                 )
-                                # Also add to new_versions_available if this is a newer release than what was saved
-                                if (
-                                    saved_release_tag is None
-                                    or compare_versions(release_tag, saved_release_tag)
+                                # Only add to new_versions_available if assets actually matched patterns
+                                if any_assets_matched and (
+                                    original_saved_tag is None
+                                    or compare_versions(release_tag, original_saved_tag)
                                     > 0
                                 ):
                                     new_versions_available.append(release_tag)

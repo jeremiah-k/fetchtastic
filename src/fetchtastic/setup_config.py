@@ -1627,12 +1627,12 @@ def run_setup(sections: Optional[Sequence[str]] = None):
 
     # Record the version at which setup was last run
     try:
-        from importlib.metadata import PackageNotFoundError, version
+        from importlib.metadata import version
 
         current_version = version("fetchtastic")
         config["LAST_SETUP_VERSION"] = current_version
         config["LAST_SETUP_DATE"] = datetime.now().isoformat()
-    except Exception as e:
+    except Exception:
         # If we can't get the version, just record the date
         config["LAST_SETUP_DATE"] = datetime.now().isoformat()
 
