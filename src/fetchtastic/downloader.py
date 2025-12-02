@@ -381,11 +381,6 @@ def cleanup_superseded_prereleases(
     latest_release_tuple = _get_release_tuple(latest_release_version)
     v_latest_norm = _normalize_version(latest_release_version)
 
-    # This function cleans up prereleases superseded by an official release.
-    # If the latest release is itself a prerelease, no superseding has occurred.
-    if getattr(v_latest_norm, "is_prerelease", False):
-        return False
-
     # Path to prerelease directory
     prerelease_dir = os.path.join(download_dir, "firmware", "prerelease")
     if not os.path.exists(prerelease_dir):
@@ -435,17 +430,7 @@ def cleanup_superseded_prereleases(
             should_cleanup = False
             cleanup_reason = ""
 
-            can_compare_tuples = (
-                latest_release_tuple
-                and dir_release_tuple
-                and not getattr(v_latest_norm, "is_prerelease", False)
-            )
-
-            if can_compare_tuples:
-                # Both tuples are guaranteed non-None by can_compare_tuples check
-                assert (
-                    dir_release_tuple is not None and latest_release_tuple is not None
-                )
+            if latest_release_tuple and dir_release_tuple:
                 if dir_release_tuple > latest_release_tuple:
                     continue
                 # Prerelease is older or same version, so it's superseded.
@@ -453,15 +438,6 @@ def cleanup_superseded_prereleases(
                 cleanup_reason = (
                     f"it is superseded by release {safe_latest_release_tag}"
                 )
-            elif dir_version == latest_release_version:
-                # Fallback to exact string match if we can't compare tuples.
-                should_cleanup = True
-                cleanup_reason = (
-                    f"it has the same version as release {safe_latest_release_tag}"
-                )
-            else:
-                # Can't compare and versions are not identical, so we keep it to be safe.
-                continue
 
             if should_cleanup:
                 logger.info(
@@ -4973,13 +4949,12 @@ def _process_apk_downloads(
                         releases_to_download = []
                         for r in prerelease_releases:
                             prerelease_tuple = _get_release_tuple(r.get("tag_name", ""))
-                            if (
-                                prerelease_tuple
-                                and prerelease_tuple <= latest_release_tuple
-                            ):
+                            if prerelease_tuple is None:
+                                # Keep pre-releases with non-standard versioning
+                                releases_to_download.append(r)
                                 continue
-                            releases_to_download.append(r)
-
+                            if prerelease_tuple > latest_release_tuple:
+                                releases_to_download.append(r)
                         obsolete_count = len(prerelease_releases) - len(
                             releases_to_download
                         )
@@ -5445,10 +5420,8 @@ def _cleanup_apk_prereleases(
             if not os.path.isdir(item_path):
                 continue
 
-            # We only write prereleases into this directory, but guard with a version
-            # tuple check to avoid deleting unexpected contents.
-            prerelease_tuple = _get_release_tuple(item)
             # Cleanup if the prerelease version is less than or equal to the full release version
+            prerelease_tuple = _get_release_tuple(item)
             if prerelease_tuple and prerelease_tuple <= latest_release_tuple:
                 if _safe_rmtree(item_path, prerelease_dir, item):
                     logger.info(f"Removed obsolete prerelease directory: {item_path}")
