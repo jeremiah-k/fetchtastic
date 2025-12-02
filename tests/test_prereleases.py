@@ -722,7 +722,10 @@ def test_get_prerelease_tracking_info_includes_history(monkeypatch, tmp_path):
     first_entry = formatted_history[0]
     assert first_entry["identifier"] == sample_history[0]["identifier"]
     assert first_entry["display_name"] == sample_history[0]["identifier"]
-    assert first_entry["markup_label"] == f"[green]{sample_history[0]['identifier']}[/]"
+    assert (
+        first_entry["markup_label"]
+        == f"[green][bold]{sample_history[0]['identifier']}[/][/green]"
+    )
     assert not first_entry["is_deleted"]
     assert first_entry["is_newest"]
 
@@ -1468,7 +1471,7 @@ class TestPrereleaseHelperFunctions:
         assert result["is_deleted"] is False
         assert result["is_newest"] is False
         assert result["is_latest"] is False
-        assert result["markup_label"] == "test-789"
+        assert result["markup_label"] == "[green]test-789[/]"
 
         # Test empty identifier
         entry4 = {"status": "active"}

@@ -1342,9 +1342,9 @@ def _format_history_entry(
     if is_deleted:
         markup_label = f"[red][strike]{identifier}[/strike][/red]"
     elif is_newest or is_latest_active:
-        markup_label = f"[green]{identifier}[/]"
+        markup_label = f"[green][bold]{identifier}[/][/green]"
     else:
-        markup_label = identifier
+        markup_label = f"[green]{identifier}[/]"
 
     formatted_entry = dict(entry)
     formatted_entry.update(
@@ -1726,22 +1726,21 @@ def _display_prerelease_summary(tracking_info: Dict[str, Any]) -> None:
             active,
         )
 
-    history_labels = [
-        label for entry in history_entries if (label := _get_entry_display_label(entry))
-    ]
-
-    if history_labels:
+    if history_entries:
+        # Reverse order to show oldest first, newest last
+        reversed_entries = list(reversed(history_entries))
         history_base = (
-            history_entries[0].get("base_version")
-            if history_entries
+            reversed_entries[0].get("base_version")
+            if reversed_entries
             else calculate_expected_prerelease_version(base_version)
         )
-        history_list = ", ".join(history_labels)
-        logger.info(
-            "Prerelease commits for %s: %s",
-            history_base or "next",
-            history_list,
-        )
+
+        # Display each commit on a new line
+        logger.info("Prerelease commits for %s:", history_base or "next")
+        for entry in reversed_entries:
+            label = _get_entry_display_label(entry)
+            if label:
+                logger.info("  %s", label)
 
 
 # Global cache for commit timestamps to avoid repeated API calls
