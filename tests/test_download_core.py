@@ -9,6 +9,7 @@ This module contains tests for:
 - File integrity verification
 """
 
+import json
 import os
 import zipfile
 from pathlib import Path
@@ -17,6 +18,7 @@ from unittest.mock import patch
 import pytest
 
 from fetchtastic import downloader
+from fetchtastic.constants import LATEST_FIRMWARE_RELEASE_JSON_FILE
 
 
 @pytest.fixture
@@ -2191,6 +2193,15 @@ def test_get_release_tuple_valid_versions():
 
 
 @pytest.mark.core_downloads
+def test_get_release_tuple_preserves_patch_for_apk_prereleases():
+    """Ensure nonstandard APK prerelease tags keep the full numeric prefix."""
+    from fetchtastic.downloader import _get_release_tuple
+
+    assert _get_release_tuple("v2.7.8-open.1") == (2, 7, 8)
+    assert _get_release_tuple("2.7.10-open.3") == (2, 7, 10)
+
+
+@pytest.mark.core_downloads
 def test_get_release_tuple_invalid_versions():
     """Test _get_release_tuple with invalid version strings."""
     from fetchtastic.downloader import _get_release_tuple
@@ -2202,6 +2213,80 @@ def test_get_release_tuple_invalid_versions():
     # Test empty string
     result = _get_release_tuple("")
     assert result is None
+
+
+@pytest.mark.core_downloads
+def test_process_firmware_downloads_updates_latest_release_and_cleans(
+    tmp_path, monkeypatch
+):
+    """Latest firmware tag from the scan should be persisted and used for cleanup when cache is empty."""
+
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    firmware_dir = tmp_path / "firmware"
+    firmware_dir.mkdir(parents=True)
+
+    # Minimal config to exercise the firmware path without prerelease checks.
+    config = {
+        "SAVE_FIRMWARE": True,
+        "SELECTED_FIRMWARE_ASSETS": ["firmware.bin"],
+        "EXTRACT_PATTERNS": [],
+        "FIRMWARE_VERSIONS_TO_KEEP": 1,
+        "CHECK_PRERELEASES": False,
+    }
+
+    paths_and_urls = {
+        "cache_dir": str(cache_dir),
+        "download_dir": str(tmp_path),
+        "firmware_dir": str(firmware_dir),
+        "firmware_releases_url": "https://example.invalid/firmware",
+    }
+
+    # Mock release scan to return a single latest tag.
+    latest_tag = "v2.7.16"
+    monkeypatch.setattr(
+        downloader,
+        "_get_latest_releases_data",
+        lambda *args, **kwargs: [{"tag_name": latest_tag}],
+    )
+    # Avoid real downloads.
+    monkeypatch.setattr(
+        downloader,
+        "check_and_download",
+        lambda *args, **kwargs: ([], [], []),
+    )
+
+    cleanup_calls = []
+
+    def _fake_cleanup(download_dir, tag):
+        cleanup_calls.append(tag)
+        return True
+
+    monkeypatch.setattr(downloader, "cleanup_superseded_prereleases", _fake_cleanup)
+
+    (
+        downloaded_firmwares,
+        _new_fw_versions,
+        _failed_fw_downloads,
+        latest_fw_version,
+        _latest_fw_prerelease,
+    ) = downloader._process_firmware_downloads(
+        config, paths_and_urls, force_refresh=True
+    )
+
+    # No downloads were requested, but latest firmware should still reflect the scan.
+    assert downloaded_firmwares == []
+    assert latest_fw_version == latest_tag
+
+    # The latest release tag should be persisted for subsequent runs.
+    json_file = cache_dir / LATEST_FIRMWARE_RELEASE_JSON_FILE
+    assert json_file.exists()
+    with json_file.open(encoding="utf-8") as f:
+        persisted = json.load(f)
+    assert persisted.get("latest_version") == latest_tag
+
+    # Cleanup should have been invoked with the newly persisted tag.
+    assert cleanup_calls == [latest_tag]
 
 
 @pytest.mark.core_downloads
