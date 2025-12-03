@@ -941,15 +941,20 @@ def _parse_new_json_format(
 
 def _read_prerelease_tracking_data(tracking_file):
     """
-    Parse prerelease tracking JSON and normalize it to a (commits, current_release, last_updated) tuple.
-
-    Supports the current JSON schema (contains "version" and either "hash" or "commits", optional "last_updated" or "timestamp"). If the file contains non-dict JSON or cannot be read/decoded, returns empty/None values.
-
+    Normalize and parse a prerelease tracking JSON file into commits, the associated release tag, and the tracking timestamp.
+    
+    Parameters:
+        tracking_file (str): Path to the prerelease tracking JSON file.
+    
     Returns:
         tuple: (commits, current_release, last_updated)
             commits (list[str]): Ordered list of prerelease identifiers (may be empty).
-            current_release (str | None): Release tag associated with the commits, or None if not present.
-            last_updated (str | None): ISO timestamp from the tracking JSON, or None if unavailable.
+            current_release (str | None): Release tag from the tracking data (e.g., "vX.Y.Z") or None if absent.
+            last_updated (str | None): ISO-8601 timestamp string from the tracking JSON (or `timestamp` key) or None if unavailable.
+    
+    Notes:
+        - Supports the current tracking schema containing a "version" key and either "hash" or "commits".
+        - If the file is missing, unreadable, or contains unexpected/malformed JSON, the function returns ([], None, None).
     """
     commits = []
     current_release = None
@@ -4507,20 +4512,34 @@ def _process_firmware_downloads(
     config: Dict[str, Any], paths_and_urls: Dict[str, str], force_refresh: bool = False
 ) -> Tuple[List[str], List[str], List[Dict[str, str]], Optional[str], Optional[str]]:
     """
-    Manage firmware release downloads, enforce retention policies, and optionally discover and download firmware prereleases.
-
+    Download and manage firmware releases and optional prereleases according to configuration and retention policies.
+    
+    This function:
+    - Fetches available firmware release metadata, applies retention limits, and downloads selected firmware assets.
+    - Updates the latest-release tracking file when a newer release is discovered.
+    - Cleans up prerelease directories superseded by an official release.
+    - Optionally checks for and downloads prerelease firmware when enabled.
+    - Returns summaries of what was downloaded, newly discovered releases, failures, and latest tracked tags.
+    
     Parameters:
-        config (Dict[str, Any]): Runtime configuration containing feature flags, selection patterns, retention counts, GitHub/token options, and related behavior toggles.
-        paths_and_urls (Dict[str, str]): Precomputed filesystem paths and remote URLs used for caches, downloads, and storage (keys used include cache_dir, firmware_dir, download_dir, firmware_releases_url).
-        force_refresh (bool): If true, bypass on-disk and remote caches and force fresh remote queries.
-
+        config (Dict[str, Any]): Runtime configuration. Relevant keys include:
+            - SAVE_FIRMWARE, SELECTED_FIRMWARE_ASSETS
+            - FIRMWARE_VERSIONS_TO_KEEP (or FIRMWARE_VERSIONS_TO_KEEP)
+            - CHECK_PRERELEASES, AUTO_EXTRACT
+            - EXTRACT_PATTERNS, EXCLUDE_PATTERNS
+            - GITHUB_TOKEN, ALLOW_ENV_TOKEN
+            - DEVICE_HARDWARE_API (subkeys: enabled, cache_hours, api_url)
+        paths_and_urls (Dict[str, str]): Precomputed filesystem paths and remote URLs. Required keys:
+            - cache_dir, firmware_dir, download_dir, firmware_releases_url
+        force_refresh (bool): If true, bypass cache expiry and force fresh remote queries.
+    
     Returns:
         Tuple[List[str], List[str], List[Dict[str, str]], Optional[str], Optional[str]]:
-            - downloaded firmwares: list of firmware versions that were newly downloaded; prerelease entries are prefixed with "pre-release ".
-            - newly detected release versions: release tags discovered that were not previously tracked.
-            - failed download details: list of records describing each failed asset download (each record is a dict with context and error info).
-            - latest firmware release tag: the most recent firmware release tag discovered, or `None` if none found.
-            - latest prerelease version: the currently tracked latest prerelease version, or `None` if not tracked.
+            - downloaded firmwares: List of firmware versions that were newly downloaded; prerelease entries are prefixed with "pre-release ".
+            - newly detected release versions: Release tags discovered during the scan that were not previously tracked.
+            - failed download details: List of dicts describing each failed asset download (context and error information).
+            - latest firmware release tag: Most recent firmware release tag discovered, or `None` if none found.
+            - latest prerelease version: Currently tracked latest prerelease version, or `None` if not tracked.
     """
     global downloads_skipped
 
@@ -4755,31 +4774,31 @@ def _process_apk_downloads(
     config: Dict[str, Any], paths_and_urls: Dict[str, str], force_refresh: bool = False
 ) -> Tuple[List[str], List[str], List[Dict[str, str]], Optional[str], Optional[str]]:
     """
-    Download and prune Android APK releases according to the provided configuration.
-
-    Fetches Android release metadata, downloads matching APK assets into the configured directory, retains the configured number of stable releases, and manages APK prereleases separately (prereleases are downloaded to a dedicated prerelease directory, do not count against stable retention, and are removed when a corresponding full release exists).
-
+    Orchestrates discovery, download, retention, and cleanup of Android APK releases and optional APK prereleases.
+    
+    Downloads selected APK assets from discovered Android releases into the configured directories, retains the configured number of stable releases, places prereleases into a dedicated prerelease directory (which do not count against stable retention), and removes prerelease directories superseded by a corresponding stable release. If enabled, scans for APK prereleases and downloads only prereleases that are not older than the latest stable release.
+    
     Parameters:
-        config (Dict[str, Any]): Configuration mapping. Relevant keys:
-            - SAVE_APKS: whether to save APKs.
-            - SELECTED_APK_ASSETS: list of asset filename patterns to download.
-            - ANDROID_VERSIONS_TO_KEEP: number of stable APK releases to retain.
-            - CHECK_APK_PRERELEASES: whether to process APK prereleases.
+        config (Dict[str, Any]): Runtime configuration. Relevant keys:
+            - SAVE_APKS: whether APK saving is enabled.
+            - SELECTED_APK_ASSETS: list of filename patterns to include.
+            - ANDROID_VERSIONS_TO_KEEP: number of stable releases to retain.
+            - CHECK_APK_PRERELEASES: whether to scan and download prereleases.
             - EXCLUDE_PATTERNS: list of filename patterns to exclude.
-            - GITHUB_TOKEN: optional GitHub token for API requests.
-        paths_and_urls (Dict[str, str]): Paths and endpoints. Relevant keys:
-            - "android_releases_url": GitHub API URL for Android releases.
-            - "cache_dir": directory for caching remote metadata/blobs.
-            - "apks_dir": base directory where APKs (and prereleases) are stored.
-        force_refresh (bool): If True, bypass cached release data and fetch fresh metadata.
-
+            - GITHUB_TOKEN: optional token for GitHub API requests.
+        paths_and_urls (Dict[str, str]): Paths and endpoints. Must include:
+            - "android_releases_url": URL for fetching Android release metadata.
+            - "cache_dir": local cache directory path.
+            - "apks_dir": base directory where APKs and prerelease subdirectory are stored.
+        force_refresh (bool): When true, bypasses cached release metadata and forces a fresh fetch.
+    
     Returns:
         Tuple[List[str], List[str], List[Dict[str, str]], Optional[str], Optional[str]]:
-        - downloaded_apk_versions: List of release tags that had assets downloaded during this run.
-        - new_apk_versions: List of release tags discovered (including prereleases) during scanning.
-        - failed_downloads: List of dicts describing failed asset downloads (each dict contains failure details).
-        - latest_apk_version: Tag of the most recent stable APK release found, or `None` if none available.
-        - latest_prerelease_version: Tag of the most recent APK prerelease found, or `None` if none available or prerelease handling is disabled.
+        - downloaded_apk_versions: list of release tags for which assets were downloaded during this run.
+        - new_apk_versions: list of release tags discovered during scanning (includes prereleases discovered).
+        - failed_downloads: list of dictionaries describing failed asset downloads (each dict contains failure details).
+        - latest_apk_version: tag of the most recent stable APK release found, or `None` if none found.
+        - latest_prerelease_version: tag of the most recent APK prerelease downloaded/considered, or `None` if none or prerelease handling is disabled.
     """
     global downloads_skipped
     downloaded_apks: List[str] = []
