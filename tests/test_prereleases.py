@@ -2345,11 +2345,6 @@ def test_firmware_prerelease_cleanup_explicit_none_checks(tmp_path):
     assert removed, "Should have removed old prerelease"
     assert not old_prerelease.exists(), "Old prerelease directory should be removed"
 
-
-def test_apk_prerelease_base_version_regex_constant():
-    """Test that APK_PRERELEASE_BASE_VERSION_RX constant is properly defined and functional."""
-    from fetchtastic.downloader import APK_PRERELEASE_BASE_VERSION_RX
-
     # Test the regex constant directly
     assert APK_PRERELEASE_BASE_VERSION_RX is not None
     assert APK_PRERELEASE_BASE_VERSION_RX.pattern == r"^v?(\d+\.\d+\.\d+)"
@@ -2396,7 +2391,7 @@ def test_firmware_cleanup_explicit_none_checks_path(tmp_path):
 
 
 def test_apk_cleanup_regex_usage_path(tmp_path):
-    """Test APK cleanup specifically exercises the APK_PRERELEASE_BASE_VERSION_RX usage."""
+    """Test APK cleanup logic with various version formats and edge cases."""
     from fetchtastic.downloader import _cleanup_apk_prereleases
 
     prerelease_dir = tmp_path / "prereleases"

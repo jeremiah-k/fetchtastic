@@ -142,7 +142,6 @@ PRERELEASE_VERSION_RX = re.compile(
 )
 HASH_SUFFIX_VERSION_RX = re.compile(r"^(\d+(?:\.\d+)*)\.([A-Za-z0-9][A-Za-z0-9.-]*)$")
 VERSION_BASE_RX = re.compile(r"^(\d+(?:\.\d+)*)")
-APK_PRERELEASE_BASE_VERSION_RX = re.compile(r"^v?(\d+\.\d+\.\d+)")
 PRERELEASE_ADD_RX = re.compile(PRERELEASE_ADD_COMMIT_PATTERN, re.IGNORECASE)
 PRERELEASE_DELETE_RX = re.compile(PRERELEASE_DELETE_COMMIT_PATTERN, re.IGNORECASE)
 PRERELEASE_DIR_SEGMENT_RX = re.compile(
