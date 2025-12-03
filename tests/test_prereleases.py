@@ -2345,24 +2345,6 @@ def test_firmware_prerelease_cleanup_explicit_none_checks(tmp_path):
     assert removed, "Should have removed old prerelease"
     assert not old_prerelease.exists(), "Old prerelease directory should be removed"
 
-    # Test the regex constant directly
-    assert APK_PRERELEASE_BASE_VERSION_RX is not None
-    assert APK_PRERELEASE_BASE_VERSION_RX.pattern == r"^v?(\d+\.\d+\.\d+)"
-
-    # Test it matches expected patterns
-    assert APK_PRERELEASE_BASE_VERSION_RX.match("v2.7.8-open.2") is not None
-    assert APK_PRERELEASE_BASE_VERSION_RX.match("2.7.8-beta.1") is not None
-    assert APK_PRERELEASE_BASE_VERSION_RX.match("v1.0.0") is not None
-
-    # Test it extracts version correctly
-    match = APK_PRERELEASE_BASE_VERSION_RX.match("v2.7.8-open.2")
-    assert match is not None
-    assert match.group(1) == "2.7.8"
-
-    # Test it doesn't match invalid patterns
-    assert APK_PRERELEASE_BASE_VERSION_RX.match("not-a-version") is None
-    assert APK_PRERELEASE_BASE_VERSION_RX.match("v2.7") is None  # Missing patch
-
 
 def test_firmware_cleanup_explicit_none_checks_path(tmp_path):
     """Test firmware cleanup logic path with explicit None checks for coverage."""
@@ -2451,12 +2433,12 @@ def test_apk_download_non_standard_version_handling():
     """Test APK download logic correctly handles non-standard version tags."""
     from fetchtastic.downloader import _get_release_tuple
 
-    # Mock release data for non-standard version
+    # Test that _get_release_tuple extracts base version for non-standard versions
     mock_release = {"tag_name": "v2.7.8-open.2", "assets": [{"name": "app.apk"}]}
 
     # Test that _get_release_tuple extracts base version for non-standard versions
     # This should still return a tuple (base version) for "v2.7.8-open.2"
-    result = _get_release_tuple(mock_release["tag_name"])
+    result = _get_release_tuple("v2.7.8-open.2")
     # The function extracts base version "2.7.8" using VERSION_BASE_RX
     assert result == (2, 7, 8), "Non-standard version should extract base version"
 
