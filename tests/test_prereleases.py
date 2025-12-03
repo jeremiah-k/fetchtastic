@@ -2487,13 +2487,10 @@ def test_apk_download_prerelease_filtering_logic():
         latest_release_tuple = _get_release_tuple(case["latest"])
 
         # Simulate the logic from _process_apk_downloads
-        should_download = False
-        if prerelease_tuple is None:
-            should_download = True  # Non-standard versions are kept
-        elif (
-            latest_release_tuple is not None and prerelease_tuple > latest_release_tuple
-        ):
-            should_download = True  # Newer prereleases are kept
+        # The implementation in `_process_apk_downloads` ensures `latest_release_tuple` is not None here.
+        should_download = (
+            prerelease_tuple is None or prerelease_tuple > latest_release_tuple
+        )
 
         assert (
             should_download == case["should_download"]
