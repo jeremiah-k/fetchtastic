@@ -247,8 +247,6 @@ def _get_release_tuple(version: Optional[str]) -> Optional[tuple[int, ...]]:
         )
     return base_tuple or normalized_tuple
 
-    return None
-
 
 def _summarise_release_scan(kind: str, total_found: int, keep_limit: int) -> str:
     """
@@ -390,7 +388,7 @@ def cleanup_superseded_prereleases(
 
     latest_release_version = safe_latest_release_tag.lstrip("v")
     latest_release_tuple = _get_release_tuple(latest_release_version)
-    v_latest_norm = _normalize_version(latest_release_version)
+    _normalize_version(latest_release_version)
 
     # Path to prerelease directory
     prerelease_dir = os.path.join(download_dir, "firmware", "prerelease")

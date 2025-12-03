@@ -11,7 +11,6 @@ import re
 import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional
 from unittest.mock import Mock, patch
 
 import pytest
@@ -2260,3 +2259,88 @@ def test_cache_expiry_and_logging():
         downloader._prerelease_commit_history_cache.clear()
         downloader._prerelease_commit_history_cache.update(original_cache)
         downloader._prerelease_commit_history_loaded = original_loaded
+
+
+def test_cleanup_apk_prereleases_non_standard_versioning(tmp_path):
+    """Test _cleanup_apk_prereleases handles non-standard version tags like v2.7.8-open.2."""
+    from fetchtastic.downloader import _cleanup_apk_prereleases
+
+    # Create prerelease directory with non-standard versioning
+    prerelease_dir = tmp_path / "prereleases"
+    prerelease_dir.mkdir()
+
+    # Create directories with non-standard versioning that should be cleaned up
+    old_prerelease = prerelease_dir / "v2.7.8-open.2"
+    old_prerelease.mkdir()
+    (old_prerelease / "app.apk").touch()
+
+    # Create directory with newer non-standard versioning that should be kept
+    new_prerelease = prerelease_dir / "v2.8.0-open.1"
+    new_prerelease.mkdir()
+    (new_prerelease / "app.apk").touch()
+
+    # Create directory with standard versioning that should be cleaned up
+    standard_old = prerelease_dir / "v2.7.8"
+    standard_old.mkdir()
+    (standard_old / "app.apk").touch()
+
+    # Run cleanup with release v2.7.8 - should remove old versions but keep newer ones
+    _cleanup_apk_prereleases(str(prerelease_dir), "v2.7.8")
+
+    # Check that old versions were removed
+    assert (
+        not old_prerelease.exists()
+    ), "Old non-standard prerelease should be cleaned up"
+    assert not standard_old.exists(), "Old standard prerelease should be cleaned up"
+
+    # Check that newer version was kept
+    assert new_prerelease.exists(), "Newer non-standard prerelease should be kept"
+
+
+def test_cleanup_apk_prereleases_edge_cases(tmp_path):
+    """Test _cleanup_apk_prereleases with edge cases and malformed version strings."""
+    from fetchtastic.downloader import _cleanup_apk_prereleases
+
+    prerelease_dir = tmp_path / "prereleases"
+    prerelease_dir.mkdir()
+
+    # Create directories with various edge cases
+    valid_old = prerelease_dir / "v2.7.8-beta.1"
+    valid_old.mkdir()
+
+    invalid_version = prerelease_dir / "not-a-version"
+    invalid_version.mkdir()
+
+    no_version = prerelease_dir / "v"
+    no_version.mkdir()
+
+    # Run cleanup
+    _cleanup_apk_prereleases(str(prerelease_dir), "v2.7.8")
+
+    # Valid old version should be cleaned up
+    assert not valid_old.exists()
+
+    # Invalid versions should remain (they can't be parsed for comparison)
+    assert invalid_version.exists()
+    assert no_version.exists()
+
+
+def test_firmware_prerelease_cleanup_explicit_none_checks(tmp_path):
+    """Test firmware prerelease cleanup logic with explicit None checks for clarity."""
+    from fetchtastic.downloader import cleanup_superseded_prereleases
+
+    # Create directory structure
+    firmware_dir = tmp_path / "firmware"
+    prerelease_dir = firmware_dir / "prerelease"
+    prerelease_dir.mkdir(parents=True)
+
+    # Create a prerelease directory that should be cleaned up
+    old_prerelease = prerelease_dir / "firmware-2.7.8.abcdef12"
+    old_prerelease.mkdir()
+
+    # Run cleanup
+    removed = cleanup_superseded_prereleases(str(tmp_path), "v2.7.8")
+
+    # Should have removed old prerelease
+    assert removed, "Should have removed old prerelease"
+    assert not old_prerelease.exists(), "Old prerelease directory should be removed"
