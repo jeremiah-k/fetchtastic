@@ -429,11 +429,11 @@ def test_run_clean(
 
     def isfile_side_effect(path):
         """
-        Determine whether the provided filesystem path should be treated as a file for test side effects.
-
+        Determine whether a filesystem path should be treated as an existing file for test side effects based on its basename.
+        
         Parameters:
-            path (str): The filesystem path to examine.
-
+            path (str): Filesystem path to check.
+        
         Returns:
             True if the path's basename is "fetchtastic_yaml.lnk" or "unmanaged.txt", False otherwise.
         """
