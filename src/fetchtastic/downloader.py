@@ -142,6 +142,7 @@ PRERELEASE_VERSION_RX = re.compile(
 )
 HASH_SUFFIX_VERSION_RX = re.compile(r"^(\d+(?:\.\d+)*)\.([A-Za-z0-9][A-Za-z0-9.-]*)$")
 VERSION_BASE_RX = re.compile(r"^(\d+(?:\.\d+)*)")
+APK_PRERELEASE_BASE_VERSION_RX = re.compile(r"^v?(\d+\.\d+\.\d+)")
 PRERELEASE_ADD_RX = re.compile(PRERELEASE_ADD_COMMIT_PATTERN, re.IGNORECASE)
 PRERELEASE_DELETE_RX = re.compile(PRERELEASE_DELETE_COMMIT_PATTERN, re.IGNORECASE)
 PRERELEASE_DIR_SEGMENT_RX = re.compile(
@@ -440,7 +441,7 @@ def cleanup_superseded_prereleases(
             should_cleanup = False
             cleanup_reason = ""
 
-            if latest_release_tuple and dir_release_tuple:
+            if latest_release_tuple is not None and dir_release_tuple is not None:
                 if dir_release_tuple > latest_release_tuple:
                     continue
                 # Prerelease is older or same version, so it's superseded.
@@ -5436,7 +5437,7 @@ def _cleanup_apk_prereleases(
 
             if prerelease_tuple is None:
                 # For non-standard versioning (like v2.7.8-open.2), extract base version for comparison
-                base_match = re.match(r"^v?(\d+\.\d+\.\d+)", item.lower())
+                base_match = APK_PRERELEASE_BASE_VERSION_RX.match(item.lower())
                 if base_match:
                     base_version = base_match.group(1)
                     base_tuple = tuple(int(part) for part in base_version.split("."))
