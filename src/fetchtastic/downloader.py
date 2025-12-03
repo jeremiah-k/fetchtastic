@@ -3,6 +3,7 @@
 import fnmatch
 import glob
 import json
+import logging
 import os
 import re
 import shutil
@@ -4968,9 +4969,11 @@ def _process_apk_downloads(
             if releases_to_download:
                 latest_prerelease_version = releases_to_download[0].get("tag_name")
         elif config.get("CHECK_APK_PRERELEASES", DEFAULT_CHECK_APK_PRERELEASES):
-            logger.info(
+            message = (
                 "APK prerelease downloads are enabled, but none are available yet."
             )
+            logger.info(message)
+            logging.getLogger().info(message)
     elif not config.get("SELECTED_APK_ASSETS", []):
         logger.info("No APK assets selected. Skipping APK download.")
 
