@@ -223,18 +223,28 @@ def _get_release_tuple(version: Optional[str]) -> Optional[tuple[int, ...]]:
     if not version_stripped:
         return None
 
-    normalized = _normalize_version(version_stripped)
-    if isinstance(normalized, Version) and normalized.release:
-        return normalized.release
-
     base = (
         version_stripped[1:]
         if version_stripped.lower().startswith("v")
         else version_stripped
     )
     match = VERSION_BASE_RX.match(base)
-    if match:
-        return tuple(int(part) for part in match.group(1).split("."))
+    base_tuple = (
+        tuple(int(part) for part in match.group(1).split(".")) if match else None
+    )
+
+    normalized = _normalize_version(version_stripped)
+    normalized_tuple = (
+        normalized.release
+        if isinstance(normalized, Version) and normalized.release
+        else None
+    )
+
+    if base_tuple and normalized_tuple:
+        return (
+            base_tuple if len(base_tuple) > len(normalized_tuple) else normalized_tuple
+        )
+    return base_tuple or normalized_tuple
 
     return None
 
