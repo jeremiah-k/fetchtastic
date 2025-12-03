@@ -5429,15 +5429,10 @@ def _cleanup_apk_prereleases(
 
             # Cleanup if the prerelease version is less than or equal to the full release version
             prerelease_tuple = _get_release_tuple(item)
-            should_cleanup = False
-
             if (
                 prerelease_tuple is not None
                 and prerelease_tuple <= latest_release_tuple
             ):
-                should_cleanup = True
-
-            if should_cleanup:
                 if _safe_rmtree(item_path, prerelease_dir, item):
                     logger.info(f"Removed obsolete prerelease directory: {item_path}")
     except OSError as e:
