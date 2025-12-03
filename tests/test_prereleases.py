@@ -2344,3 +2344,80 @@ def test_firmware_prerelease_cleanup_explicit_none_checks(tmp_path):
     # Should have removed old prerelease
     assert removed, "Should have removed old prerelease"
     assert not old_prerelease.exists(), "Old prerelease directory should be removed"
+
+
+def test_apk_prerelease_base_version_regex_constant():
+    """Test that APK_PRERELEASE_BASE_VERSION_RX constant is properly defined and functional."""
+    from fetchtastic.downloader import APK_PRERELEASE_BASE_VERSION_RX
+
+    # Test the regex constant directly
+    assert APK_PRERELEASE_BASE_VERSION_RX is not None
+    assert APK_PRERELEASE_BASE_VERSION_RX.pattern == r"^v?(\d+\.\d+\.\d+)"
+
+    # Test it matches expected patterns
+    assert APK_PRERELEASE_BASE_VERSION_RX.match("v2.7.8-open.2") is not None
+    assert APK_PRERELEASE_BASE_VERSION_RX.match("2.7.8-beta.1") is not None
+    assert APK_PRERELEASE_BASE_VERSION_RX.match("v1.0.0") is not None
+
+    # Test it extracts version correctly
+    match = APK_PRERELEASE_BASE_VERSION_RX.match("v2.7.8-open.2")
+    assert match is not None
+    assert match.group(1) == "2.7.8"
+
+    # Test it doesn't match invalid patterns
+    assert APK_PRERELEASE_BASE_VERSION_RX.match("not-a-version") is None
+    assert APK_PRERELEASE_BASE_VERSION_RX.match("v2.7") is None  # Missing patch
+
+
+def test_firmware_cleanup_explicit_none_checks_path(tmp_path):
+    """Test firmware cleanup logic path with explicit None checks for coverage."""
+    from fetchtastic.downloader import cleanup_superseded_prereleases
+
+    # Create directory structure
+    firmware_dir = tmp_path / "firmware"
+    prerelease_dir = firmware_dir / "prerelease"
+    prerelease_dir.mkdir(parents=True)
+
+    # Create a prerelease directory that should be kept (newer)
+    new_prerelease = prerelease_dir / "firmware-2.8.0.abcdef12"
+    new_prerelease.mkdir()
+
+    # Create a prerelease directory that should be cleaned up (older)
+    old_prerelease = prerelease_dir / "firmware-2.7.8.abcdef12"
+    old_prerelease.mkdir()
+
+    # Run cleanup with explicit None check path
+    removed = cleanup_superseded_prereleases(str(tmp_path), "v2.7.8")
+
+    # Should have removed old prerelease but kept new one
+    assert removed, "Should have removed old prerelease"
+    assert not old_prerelease.exists(), "Old prerelease directory should be removed"
+    assert new_prerelease.exists(), "New prerelease directory should be kept"
+
+
+def test_apk_cleanup_regex_usage_path(tmp_path):
+    """Test APK cleanup specifically exercises the APK_PRERELEASE_BASE_VERSION_RX usage."""
+    from fetchtastic.downloader import _cleanup_apk_prereleases
+
+    prerelease_dir = tmp_path / "prereleases"
+    prerelease_dir.mkdir()
+
+    # Create directories that exercise the regex matching path
+    exact_match = prerelease_dir / "v2.7.8-open.2"
+    exact_match.mkdir()
+
+    no_v_prefix = prerelease_dir / "2.7.8-beta.1"
+    no_v_prefix.mkdir()
+
+    invalid_format = prerelease_dir / "v2.7-open.2"  # Missing patch version
+    invalid_format.mkdir()
+
+    # Run cleanup to exercise the regex matching code path
+    _cleanup_apk_prereleases(str(prerelease_dir), "v2.7.8")
+
+    # Should clean up matching versions
+    assert not exact_match.exists(), "Exact match should be cleaned up"
+    assert not no_v_prefix.exists(), "No-v-prefix match should be cleaned up"
+
+    # Invalid format should also be cleaned up (base version 2.7 <= 2.7.8)
+    assert not invalid_format.exists(), "Invalid format should be cleaned up"
