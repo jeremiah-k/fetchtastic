@@ -208,13 +208,13 @@ def _normalize_version(
 
 def _get_release_tuple(version: Optional[str]) -> Optional[tuple[int, ...]]:
     """
-    Get the numeric release tuple (major, minor, patch, ...) from a version string.
-
+    Return the numeric release components (major, minor, patch, ...) extracted from a version string.
+    
     Parameters:
-        version (Optional[str]): Version string to parse (may include a leading "v").
-
+        version (Optional[str]): Version string to parse. May include a leading "v" and additional metadata; only the numeric leading segments are considered.
+    
     Returns:
-        Optional[tuple[int, ...]]: A tuple of integer release components (e.g., (1, 2, 3)) when the version can be interpreted as a numeric release, or `None` if the input is empty or cannot be parsed.
+        Optional[tuple[int, ...]]: Tuple of integer release components (e.g., (1, 2, 3)) when a numeric release can be determined, or `None` if the input is empty or no numeric release segments can be parsed.
     """
     if version is None:
         return None
@@ -361,18 +361,15 @@ def cleanup_superseded_prereleases(
 ):  # log_message_func parameter removed
     """
     Remove prerelease firmware directories that are superseded by an official release.
-
-    Scans download_dir/firmware/prerelease for directories named "firmware-<version>" (optionally with a commit/hash suffix).
-    If a prerelease's base version matches or is older than the provided latest official release tag, the prerelease directory
-    (or unsafe symlink) is removed. Invalidly formatted names are skipped. If no prerelease directories remain, associated
-    prerelease tracking files are also removed.
-
+    
+    Scans the firmware/prerelease directory under download_dir and removes prerelease directories or unsafe symlinks whose base version is less than or equal to latest_release_tag. If no prerelease directories remain, associated prerelease tracking files are also removed.
+    
     Parameters:
         download_dir (str): Base download directory containing firmware/prerelease.
         latest_release_tag (str): Latest official release tag (may include a leading 'v').
-
+    
     Returns:
-        bool: `True` if one or more prerelease directories were removed, `False` otherwise.
+        bool: `True` if one or more prerelease directories or symlinks were removed, `False` otherwise.
     """
     # Removed local log_message_func definition
 

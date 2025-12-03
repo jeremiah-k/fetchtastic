@@ -2217,7 +2217,12 @@ def test_cache_build_logging_scenarios(monkeypatch):
 
 
 def test_cache_expiry_and_logging():
-    """Test cache behavior and associated logging."""
+    """
+    Verify that forcing a prerelease commit history refresh rebuilds the cache and emits an info log entry.
+    
+    This test sets up a cached entry, invokes _get_prerelease_commit_history with force_refresh=True, and asserts
+    that the underlying refresh function is called and that an informational log message about building the cache is emitted.
+    """
     from datetime import datetime, timedelta, timezone
 
     from fetchtastic.downloader import _get_prerelease_commit_history
