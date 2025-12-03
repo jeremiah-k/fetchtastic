@@ -2439,7 +2439,6 @@ def test_apk_download_non_standard_version_handling():
     from fetchtastic.downloader import _get_release_tuple
 
     # Test that _get_release_tuple extracts base version for non-standard versions
-    # Test that _get_release_tuple extracts base version for non-standard versions
     # This should still return a tuple (base version) for "v2.7.8-open.2"
     result = _get_release_tuple("v2.7.8-open.2")
     # The function extracts base version "2.7.8" using VERSION_BASE_RX
@@ -2481,6 +2480,16 @@ def test_apk_download_prerelease_filtering_logic():
             "reason": "base_tuple <= latest_release_tuple",
         },
     ]
+
+    # Add case where tag is unparseable (returns None)
+    test_cases.append(
+        {
+            "tag": "invalid-tag",
+            "latest": "2.0.0",
+            "should_download": True,
+            "reason": "unparseable tag should be kept",
+        }
+    )
 
     for case in test_cases:
         prerelease_tuple = _get_release_tuple(case["tag"])
