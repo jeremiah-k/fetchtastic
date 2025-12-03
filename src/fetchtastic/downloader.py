@@ -388,7 +388,6 @@ def cleanup_superseded_prereleases(
 
     latest_release_version = safe_latest_release_tag.lstrip("v")
     latest_release_tuple = _get_release_tuple(latest_release_version)
-    _normalize_version(latest_release_version)
 
     # Path to prerelease directory
     prerelease_dir = os.path.join(download_dir, "firmware", "prerelease")
