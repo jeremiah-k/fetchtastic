@@ -1562,6 +1562,7 @@ def test_process_apk_downloads_logs_when_no_prereleases(tmp_path, caplog, monkey
     """When prerelease checks are enabled but none exist, a clear log is emitted."""
 
     from fetchtastic import downloader
+    from fetchtastic.log_utils import logger as ft_logger
 
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
@@ -1583,14 +1584,19 @@ def test_process_apk_downloads_logs_when_no_prereleases(tmp_path, caplog, monkey
     monkeypatch.setattr(
         downloader,
         "_get_latest_releases_data",
-        lambda *args, **kwargs: [{"tag_name": "v2.7.8", "prerelease": False}],
+        lambda *_args, **_kwargs: [{"tag_name": "v2.7.8", "prerelease": False}],
     )
     monkeypatch.setattr(
-        downloader, "_download_release_type", lambda *args, **kwargs: ([], [], [])
+        downloader, "_download_release_type", lambda *_args, **_kwargs: ([], [], [])
     )
 
-    caplog.set_level(logging.INFO, downloader.logger.name)
-    downloader._process_apk_downloads(config, paths_and_urls, force_refresh=False)
+    old_propagate = ft_logger.propagate
+    ft_logger.propagate = True
+    caplog.set_level(logging.INFO, logger="fetchtastic")
+    try:
+        downloader._process_apk_downloads(config, paths_and_urls, force_refresh=False)
+    finally:
+        ft_logger.propagate = old_propagate
 
     assert any(
         "APK prerelease downloads are enabled" in record.message

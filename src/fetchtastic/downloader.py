@@ -357,9 +357,9 @@ def cleanup_superseded_prereleases(
     download_dir, latest_release_tag
 ):  # log_message_func parameter removed
     """
-    Remove prerelease firmware directories that are superseded by an official release.
+    Remove prerelease firmware directories that are superseded by an official release and refresh tracking.
 
-    Scans the firmware/prerelease directory under download_dir and removes prerelease directories or unsafe symlinks whose base version is less than or equal to latest_release_tag. If no prerelease directories remain, associated prerelease tracking files are also removed.
+    Scans the firmware/prerelease directory under download_dir and removes prerelease directories or unsafe symlinks whose base version is less than or equal to latest_release_tag. After cleanup, prerelease_tracking.json is rewritten to reflect the latest release and only newer prerelease identifiers (older ones are pruned).
 
     Parameters:
         download_dir (str): Base download directory containing firmware/prerelease.
@@ -4605,24 +4605,25 @@ def _process_firmware_downloads(
             if latest_firmware_version
             else None
         )
-        if safe_latest_firmware:
-            if (
+        if not safe_latest_firmware:
+            if latest_firmware_version:
+                logger.warning(
+                    "Skipping write of unsafe firmware release tag: %s",
+                    latest_firmware_version,
+                )
+        else:
+            is_newer = (
                 not latest_release_tag
                 or compare_versions(safe_latest_firmware, latest_release_tag) > 0
-            ):
-                if _write_latest_release_tag(
-                    firmware_json_file, safe_latest_firmware, "Firmware"
-                ):
-                    logger.debug(
-                        "Updated latest firmware release tag to %s from scan results",
-                        safe_latest_firmware,
-                    )
-                    latest_release_tag = safe_latest_firmware
-        elif latest_firmware_version:
-            logger.warning(
-                "Skipping write of unsafe firmware release tag: %s",
-                latest_firmware_version,
             )
+            if is_newer and _write_latest_release_tag(
+                firmware_json_file, safe_latest_firmware, "Firmware"
+            ):
+                logger.debug(
+                    "Updated latest firmware release tag to %s from scan results",
+                    safe_latest_firmware,
+                )
+                latest_release_tag = safe_latest_firmware
 
         if latest_release_tag:
             cleaned_up: bool = cleanup_superseded_prereleases(
