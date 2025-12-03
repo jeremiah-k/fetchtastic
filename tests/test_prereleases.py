@@ -2452,7 +2452,7 @@ def test_get_release_tuple_fix():
     assert result == (2, 7, 8, 0)
 
 
-def test_apk_download_non_standard_version_handling(tmp_path):
+def test_apk_download_non_standard_version_handling():
     """Test APK download logic correctly handles non-standard version tags."""
     from fetchtastic.downloader import _get_release_tuple
 

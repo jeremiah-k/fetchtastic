@@ -4957,11 +4957,11 @@ def _process_apk_downloads(
                         releases_to_download = []
                         for r in prerelease_releases:
                             prerelease_tuple = _get_release_tuple(r.get("tag_name", ""))
-                            if prerelease_tuple is None:
-                                # Keep pre-releases with non-standard versioning
-                                releases_to_download.append(r)
-                                continue
-                            if prerelease_tuple > latest_release_tuple:
+                            if (
+                                prerelease_tuple is None
+                                or prerelease_tuple > latest_release_tuple
+                            ):
+                                # Keep pre-releases with non-standard versioning or newer than latest release
                                 releases_to_download.append(r)
                         obsolete_count = len(prerelease_releases) - len(
                             releases_to_download
@@ -5432,15 +5432,10 @@ def _cleanup_apk_prereleases(
             prerelease_tuple = _get_release_tuple(item)
             should_cleanup = False
 
-            if prerelease_tuple is None:
-                # For non-standard versioning (like v2.7.8-open.2), extract base version for comparison
-                base_match = APK_PRERELEASE_BASE_VERSION_RX.match(item.lower())
-                if base_match:
-                    base_version = base_match.group(1)
-                    base_tuple = tuple(int(part) for part in base_version.split("."))
-                    if len(base_tuple) >= 3 and base_tuple <= latest_release_tuple:
-                        should_cleanup = True
-            elif prerelease_tuple <= latest_release_tuple:
+            if (
+                prerelease_tuple is not None
+                and prerelease_tuple <= latest_release_tuple
+            ):
                 should_cleanup = True
 
             if should_cleanup:
