@@ -2219,7 +2219,7 @@ def test_cache_build_logging_scenarios(monkeypatch):
 def test_cache_expiry_and_logging():
     """
     Verify that forcing a prerelease commit history refresh rebuilds the cache and emits an info log entry.
-    
+
     This test sets up a cached entry, invokes _get_prerelease_commit_history with force_refresh=True, and asserts
     that the underlying refresh function is called and that an informational log message about building the cache is emitted.
     """
@@ -2439,8 +2439,6 @@ def test_apk_download_non_standard_version_handling():
     from fetchtastic.downloader import _get_release_tuple
 
     # Test that _get_release_tuple extracts base version for non-standard versions
-    mock_release = {"tag_name": "v2.7.8-open.2", "assets": [{"name": "app.apk"}]}
-
     # Test that _get_release_tuple extracts base version for non-standard versions
     # This should still return a tuple (base version) for "v2.7.8-open.2"
     result = _get_release_tuple("v2.7.8-open.2")

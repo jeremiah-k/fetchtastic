@@ -209,10 +209,10 @@ def _normalize_version(
 def _get_release_tuple(version: Optional[str]) -> Optional[tuple[int, ...]]:
     """
     Return the numeric release components (major, minor, patch, ...) extracted from a version string.
-    
+
     Parameters:
         version (Optional[str]): Version string to parse. May include a leading "v" and additional metadata; only the numeric leading segments are considered.
-    
+
     Returns:
         Optional[tuple[int, ...]]: Tuple of integer release components (e.g., (1, 2, 3)) when a numeric release can be determined, or `None` if the input is empty or no numeric release segments can be parsed.
     """
@@ -361,13 +361,13 @@ def cleanup_superseded_prereleases(
 ):  # log_message_func parameter removed
     """
     Remove prerelease firmware directories that are superseded by an official release.
-    
+
     Scans the firmware/prerelease directory under download_dir and removes prerelease directories or unsafe symlinks whose base version is less than or equal to latest_release_tag. If no prerelease directories remain, associated prerelease tracking files are also removed.
-    
+
     Parameters:
         download_dir (str): Base download directory containing firmware/prerelease.
         latest_release_tag (str): Latest official release tag (may include a leading 'v').
-    
+
     Returns:
         bool: `True` if one or more prerelease directories or symlinks were removed, `False` otherwise.
     """
