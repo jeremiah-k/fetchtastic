@@ -379,10 +379,10 @@ def test_main_function_basic_coverage(tmp_path):
                 "firmware_releases_url": "https://api.github.com/repos/meshtastic/firmware/releases",
                 "download_dir": str(tmp_path / "download"),
                 "latest_firmware_release_file": str(
-                    tmp_path / "latest_firmware_release.txt"
+                    tmp_path / "latest_firmware_release.json"
                 ),
                 "latest_android_release_file": str(
-                    tmp_path / "latest_android_release.txt"
+                    tmp_path / "latest_android_release.json"
                 ),
             },
         )
