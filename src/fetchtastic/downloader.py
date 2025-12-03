@@ -208,13 +208,13 @@ def _normalize_version(
 
 def _get_release_tuple(version: Optional[str]) -> Optional[tuple[int, ...]]:
     """
-    Get the numeric release tuple (major, minor, patch, ...) from a version string.
+    Return the numeric release components (major, minor, patch, ...) extracted from a version string.
 
     Parameters:
-        version (Optional[str]): Version string to parse (may include a leading "v").
+        version (Optional[str]): Version string to parse. May include a leading "v" and additional metadata; only the numeric leading segments are considered.
 
     Returns:
-        Optional[tuple[int, ...]]: A tuple of integer release components (e.g., (1, 2, 3)) when the version can be interpreted as a numeric release, or `None` if the input is empty or cannot be parsed.
+        Optional[tuple[int, ...]]: Tuple of integer release components (e.g., (1, 2, 3)) when a numeric release can be determined, or `None` if the input is empty or no numeric release segments can be parsed.
     """
     if version is None:
         return None
@@ -223,20 +223,28 @@ def _get_release_tuple(version: Optional[str]) -> Optional[tuple[int, ...]]:
     if not version_stripped:
         return None
 
-    normalized = _normalize_version(version_stripped)
-    if isinstance(normalized, Version) and normalized.release:
-        return normalized.release
-
     base = (
         version_stripped[1:]
         if version_stripped.lower().startswith("v")
         else version_stripped
     )
     match = VERSION_BASE_RX.match(base)
-    if match:
-        return tuple(int(part) for part in match.group(1).split("."))
+    base_tuple = (
+        tuple(int(part) for part in match.group(1).split(".")) if match else None
+    )
 
-    return None
+    normalized = _normalize_version(version_stripped)
+    normalized_tuple = (
+        normalized.release
+        if isinstance(normalized, Version) and normalized.release
+        else None
+    )
+
+    if base_tuple and normalized_tuple:
+        return (
+            base_tuple if len(base_tuple) > len(normalized_tuple) else normalized_tuple
+        )
+    return base_tuple or normalized_tuple
 
 
 def _summarise_release_scan(kind: str, total_found: int, keep_limit: int) -> str:
@@ -354,17 +362,14 @@ def cleanup_superseded_prereleases(
     """
     Remove prerelease firmware directories that are superseded by an official release.
 
-    Scans download_dir/firmware/prerelease for directories named "firmware-<version>" (optionally with a commit/hash suffix).
-    If a prerelease's base version matches or is older than the provided latest official release tag, the prerelease directory
-    (or unsafe symlink) is removed. Invalidly formatted names are skipped. If no prerelease directories remain, associated
-    prerelease tracking files are also removed.
+    Scans the firmware/prerelease directory under download_dir and removes prerelease directories or unsafe symlinks whose base version is less than or equal to latest_release_tag. If no prerelease directories remain, associated prerelease tracking files are also removed.
 
     Parameters:
         download_dir (str): Base download directory containing firmware/prerelease.
         latest_release_tag (str): Latest official release tag (may include a leading 'v').
 
     Returns:
-        bool: `True` if one or more prerelease directories were removed, `False` otherwise.
+        bool: `True` if one or more prerelease directories or symlinks were removed, `False` otherwise.
     """
     # Removed local log_message_func definition
 
@@ -379,12 +384,6 @@ def cleanup_superseded_prereleases(
 
     latest_release_version = safe_latest_release_tag.lstrip("v")
     latest_release_tuple = _get_release_tuple(latest_release_version)
-    v_latest_norm = _normalize_version(latest_release_version)
-
-    # This function cleans up prereleases superseded by an official release.
-    # If the latest release is itself a prerelease, no superseding has occurred.
-    if getattr(v_latest_norm, "is_prerelease", False):
-        return False
 
     # Path to prerelease directory
     prerelease_dir = os.path.join(download_dir, "firmware", "prerelease")
@@ -435,17 +434,7 @@ def cleanup_superseded_prereleases(
             should_cleanup = False
             cleanup_reason = ""
 
-            can_compare_tuples = (
-                latest_release_tuple
-                and dir_release_tuple
-                and not getattr(v_latest_norm, "is_prerelease", False)
-            )
-
-            if can_compare_tuples:
-                # Both tuples are guaranteed non-None by can_compare_tuples check
-                assert (
-                    dir_release_tuple is not None and latest_release_tuple is not None
-                )
+            if latest_release_tuple is not None and dir_release_tuple is not None:
                 if dir_release_tuple > latest_release_tuple:
                     continue
                 # Prerelease is older or same version, so it's superseded.
@@ -453,15 +442,6 @@ def cleanup_superseded_prereleases(
                 cleanup_reason = (
                     f"it is superseded by release {safe_latest_release_tag}"
                 )
-            elif dir_version == latest_release_version:
-                # Fallback to exact string match if we can't compare tuples.
-                should_cleanup = True
-                cleanup_reason = (
-                    f"it has the same version as release {safe_latest_release_tag}"
-                )
-            else:
-                # Can't compare and versions are not identical, so we keep it to be safe.
-                continue
 
             if should_cleanup:
                 logger.info(
@@ -4974,12 +4954,11 @@ def _process_apk_downloads(
                         for r in prerelease_releases:
                             prerelease_tuple = _get_release_tuple(r.get("tag_name", ""))
                             if (
-                                prerelease_tuple
-                                and prerelease_tuple <= latest_release_tuple
+                                prerelease_tuple is None
+                                or prerelease_tuple > latest_release_tuple
                             ):
-                                continue
-                            releases_to_download.append(r)
-
+                                # Keep pre-releases with non-standard versioning or newer than latest release
+                                releases_to_download.append(r)
                         obsolete_count = len(prerelease_releases) - len(
                             releases_to_download
                         )
@@ -5445,11 +5424,12 @@ def _cleanup_apk_prereleases(
             if not os.path.isdir(item_path):
                 continue
 
-            # We only write prereleases into this directory, but guard with a version
-            # tuple check to avoid deleting unexpected contents.
-            prerelease_tuple = _get_release_tuple(item)
             # Cleanup if the prerelease version is less than or equal to the full release version
-            if prerelease_tuple and prerelease_tuple <= latest_release_tuple:
+            prerelease_tuple = _get_release_tuple(item)
+            if (
+                prerelease_tuple is not None
+                and prerelease_tuple <= latest_release_tuple
+            ):
                 if _safe_rmtree(item_path, prerelease_dir, item):
                     logger.info(f"Removed obsolete prerelease directory: {item_path}")
     except OSError as e:
