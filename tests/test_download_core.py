@@ -10,6 +10,7 @@ This module contains tests for:
 """
 
 import json
+import logging
 import os
 import zipfile
 from pathlib import Path
@@ -1140,6 +1141,51 @@ def test_cleanup_superseded_prereleases_initializes_tracking(tmp_path, monkeypat
     assert data["count"] == 0
 
 
+@pytest.mark.core_downloads
+def test_cleanup_superseded_prereleases_filters_old_commits_same_release(
+    tmp_path, monkeypatch
+):
+    """Tracked commits at or below the current release are pruned, newer ones remain."""
+
+    from fetchtastic.downloader import cleanup_superseded_prereleases
+
+    prerelease_dir = tmp_path / "firmware" / "prerelease"
+    prerelease_dir.mkdir(parents=True)
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+
+    old_dir = prerelease_dir / "firmware-2.7.16.b2"
+    old_dir.mkdir()
+    future_dir = prerelease_dir / "firmware-2.7.17.c3"
+    future_dir.mkdir()
+
+    tracking_file = cache_dir / "prerelease_tracking.json"
+    tracking_file.write_text(
+        json.dumps(
+            {
+                "version": "v2.7.16",
+                "commits": ["2.7.15.a1", "2.7.16.b2", "2.7.17.c3"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "fetchtastic.downloader._ensure_cache_dir", lambda: str(cache_dir)
+    )
+
+    cleaned = cleanup_superseded_prereleases(str(tmp_path), "v2.7.16")
+
+    assert cleaned is True
+    assert not old_dir.exists()
+    assert future_dir.exists()
+
+    data = json.loads(tracking_file.read_text(encoding="utf-8"))
+    assert data["version"] == "v2.7.16"
+    assert data["commits"] == ["2.7.17.c3"]
+    assert data["count"] == 1
+
+
 def test_is_apk_prerelease():
     """Test _is_apk_prerelease function correctly identifies prereleases."""
     from fetchtastic.downloader import _is_apk_prerelease, _is_apk_prerelease_by_name
@@ -1543,7 +1589,7 @@ def test_process_apk_downloads_logs_when_no_prereleases(tmp_path, caplog, monkey
         downloader, "_download_release_type", lambda *args, **kwargs: ([], [], [])
     )
 
-    caplog.set_level("INFO")
+    caplog.set_level(logging.INFO, downloader.logger.name)
     downloader._process_apk_downloads(config, paths_and_urls, force_refresh=False)
 
     assert any(

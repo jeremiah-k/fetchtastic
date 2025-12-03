@@ -3,7 +3,6 @@
 import fnmatch
 import glob
 import json
-import logging
 import os
 import re
 import shutil
@@ -453,12 +452,6 @@ def cleanup_superseded_prereleases(
                 if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
                     cleaned_up = True
                 continue
-
-    remaining_prereleases = (
-        _get_existing_prerelease_dirs(prerelease_dir)
-        if os.path.exists(prerelease_dir)
-        else []
-    )
 
     if clean_release and latest_release_tuple:
         filtered_commits = [
@@ -4969,11 +4962,9 @@ def _process_apk_downloads(
             if releases_to_download:
                 latest_prerelease_version = releases_to_download[0].get("tag_name")
         elif config.get("CHECK_APK_PRERELEASES", DEFAULT_CHECK_APK_PRERELEASES):
-            message = (
+            logger.info(
                 "APK prerelease downloads are enabled, but none are available yet."
             )
-            logger.info(message)
-            logging.getLogger().info(message)
     elif not config.get("SELECTED_APK_ASSETS", []):
         logger.info("No APK assets selected. Skipping APK download.")
 
