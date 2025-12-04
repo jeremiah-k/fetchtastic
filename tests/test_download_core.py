@@ -1886,10 +1886,20 @@ def test_process_firmware_downloads_skips_unsafe_latest_tag(tmp_path, monkeypatc
         lambda *_args, **_kwargs: cleanup_calls.append(_args),
     )
 
-    downloader._process_firmware_downloads(config, paths_and_urls, force_refresh=True)
+    (
+        downloaded_firmwares,
+        _new_fw_versions,
+        _failed_fw_downloads,
+        latest_fw_version,
+        _latest_fw_prerelease,
+    ) = downloader._process_firmware_downloads(
+        config, paths_and_urls, force_refresh=True
+    )
 
     assert write_calls == []
     assert cleanup_calls == []
+    assert downloaded_firmwares == []
+    assert latest_fw_version == "v2.7.8/bad"
 
 
 @pytest.mark.core_downloads
