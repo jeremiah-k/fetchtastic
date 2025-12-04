@@ -1237,7 +1237,12 @@ def test_cleanup_superseded_prereleases_handles_invalid_commit_versions(
         json.dumps(
             {
                 "version": "v2.7.14",
-                "commits": ["invalid", "2.7.16.valid", "not-a-version"],
+                "commits": [
+                    "invalid",
+                    "2.7.14.old",
+                    "2.7.16.valid",
+                    "not-a-version",
+                ],
             }
         ),
         encoding="utf-8",
@@ -1250,9 +1255,8 @@ def test_cleanup_superseded_prereleases_handles_invalid_commit_versions(
     cleanup_superseded_prereleases(str(tmp_path), "v2.7.15")
 
     data = json.loads(tracking_file.read_text(encoding="utf-8"))
-    assert "2.7.16.valid" in data["commits"]
-    assert "invalid" in data["commits"]
-    assert "not-a-version" in data["commits"]
+    expected_commits = {"invalid", "2.7.16.valid", "not-a-version"}
+    assert set(data["commits"]) == expected_commits
 
 
 @pytest.mark.core_downloads
