@@ -1594,7 +1594,15 @@ def test_process_apk_downloads_logs_when_no_prereleases(tmp_path, caplog, monkey
     ft_logger.propagate = True
     caplog.set_level(logging.INFO, logger="fetchtastic")
     try:
-        downloader._process_apk_downloads(config, paths_and_urls, force_refresh=False)
+        (
+            downloaded,
+            new_versions,
+            failures,
+            latest_version,
+            latest_prerelease,
+        ) = downloader._process_apk_downloads(
+            config, paths_and_urls, force_refresh=False
+        )
     finally:
         ft_logger.propagate = old_propagate
 
@@ -1602,6 +1610,68 @@ def test_process_apk_downloads_logs_when_no_prereleases(tmp_path, caplog, monkey
         "APK prerelease downloads are enabled" in record.message
         for record in caplog.records
     )
+    assert downloaded == []
+    assert new_versions == []
+    assert failures == []
+    assert latest_prerelease is None
+    assert latest_version == "v2.7.8"
+
+
+@pytest.mark.core_downloads
+def test_process_firmware_downloads_skips_unsafe_latest_tag(tmp_path, monkeypatch):
+    """If the latest firmware tag is unsafe, it should not be written or used for cleanup."""
+
+    from fetchtastic import downloader
+
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    firmware_dir = tmp_path / "firmware"
+    firmware_dir.mkdir(parents=True)
+
+    config = {
+        "SAVE_FIRMWARE": True,
+        "SELECTED_FIRMWARE_ASSETS": ["firmware.bin"],
+        "EXTRACT_PATTERNS": [],
+        "FIRMWARE_VERSIONS_TO_KEEP": 1,
+        "CHECK_PRERELEASES": False,
+    }
+    paths_and_urls = {
+        "cache_dir": str(cache_dir),
+        "download_dir": str(tmp_path),
+        "firmware_dir": str(firmware_dir),
+        "firmware_releases_url": "https://example.invalid/firmware",
+    }
+
+    # Unsafe tag contains a path separator which _sanitize_path_component rejects.
+    monkeypatch.setattr(
+        downloader,
+        "_get_latest_releases_data",
+        lambda *_args, **_kwargs: [{"tag_name": "v2.7.8/bad"}],
+    )
+    monkeypatch.setattr(
+        downloader,
+        "check_and_download",
+        lambda *_args, **_kwargs: ([], [], []),
+    )
+
+    write_calls = []
+
+    def _fake_write(*_args, **_kwargs):
+        write_calls.append(_args)
+        return True
+
+    cleanup_calls = []
+    monkeypatch.setattr(downloader, "_write_latest_release_tag", _fake_write)
+    monkeypatch.setattr(
+        downloader,
+        "cleanup_superseded_prereleases",
+        lambda *args, **kwargs: cleanup_calls.append(args),
+    )
+
+    downloader._process_firmware_downloads(config, paths_and_urls, force_refresh=True)
+
+    assert write_calls == []
+    assert cleanup_calls == []
 
 
 @pytest.mark.core_downloads
