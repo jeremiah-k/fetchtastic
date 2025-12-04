@@ -237,7 +237,7 @@ def test_fetch_prerelease_directories_uses_token(monkeypatch):
     """Ensure remote directory listing honours explicit GitHub token settings."""
 
     captured = {}
-    token = "fake_token_for_tests"
+    token = "test_token_placeholder"  # Not a secret; avoids B105 false positive
 
     def _fake_fetch_repo_directories(*, allow_env_token, github_token):
         """
@@ -2481,13 +2481,13 @@ def test_apk_download_prerelease_filtering_logic():
         },
     ]
 
-    # Add case where tag is unparseable (returns None)
+    # Add case where tag is unparsable (returns None)
     test_cases.append(
         {
             "tag": "invalid-tag",
             "latest": "2.0.0",
             "should_download": True,
-            "reason": "unparseable tag should be kept",
+            "reason": "unparsable tag should be kept",
         }
     )
 

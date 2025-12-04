@@ -1812,7 +1812,7 @@ def test_process_firmware_downloads_persists_latest_and_cleans(tmp_path, monkeyp
     monkeypatch.setattr(
         downloader,
         "cleanup_superseded_prereleases",
-        lambda *args, **kwargs: cleanup_calls.append(args) or True,
+        lambda *args, **_kwargs: cleanup_calls.append(args) or True,
     )
 
     (
@@ -1879,7 +1879,7 @@ def test_process_firmware_downloads_skips_unsafe_latest_tag(tmp_path, monkeypatc
     monkeypatch.setattr(
         downloader,
         "cleanup_superseded_prereleases",
-        lambda *args, **kwargs: cleanup_calls.append(args),
+        lambda *_args, **_kwargs: cleanup_calls.append(_args),
     )
 
     downloader._process_firmware_downloads(config, paths_and_urls, force_refresh=True)

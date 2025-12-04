@@ -4524,7 +4524,7 @@ def _process_firmware_downloads(
     Parameters:
         config (Dict[str, Any]): Runtime configuration. Relevant keys include:
             - SAVE_FIRMWARE, SELECTED_FIRMWARE_ASSETS
-            - FIRMWARE_VERSIONS_TO_KEEP
+            - FIRMWARE_VERSIONS_TO_KEEP (defaults to DEFAULT_FIRMWARE_VERSIONS_TO_KEEP)
             - CHECK_PRERELEASES, AUTO_EXTRACT
             - EXTRACT_PATTERNS, EXCLUDE_PATTERNS
             - GITHUB_TOKEN, ALLOW_ENV_TOKEN
