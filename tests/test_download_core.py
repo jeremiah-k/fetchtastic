@@ -1186,6 +1186,115 @@ def test_cleanup_superseded_prereleases_filters_old_commits_same_release(
     assert data["count"] == 1
 
 
+@pytest.mark.core_downloads
+def test_cleanup_superseded_prereleases_tracking_refresh_with_empty_commits(
+    tmp_path, monkeypatch
+):
+    """When no tracking exists, cleanup initializes tracking with the latest release."""
+
+    from fetchtastic.downloader import cleanup_superseded_prereleases
+
+    prerelease_dir = tmp_path / "firmware" / "prerelease"
+    prerelease_dir.mkdir(parents=True)
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+
+    old_prerelease = prerelease_dir / "firmware-2.7.14.abc123"
+    old_prerelease.mkdir()
+
+    monkeypatch.setattr(
+        "fetchtastic.downloader._ensure_cache_dir", lambda: str(cache_dir)
+    )
+
+    cleaned = cleanup_superseded_prereleases(str(tmp_path), "v2.7.15")
+
+    assert cleaned is True
+    assert not old_prerelease.exists()
+
+    tracking_file = cache_dir / "prerelease_tracking.json"
+    data = json.loads(tracking_file.read_text(encoding="utf-8"))
+    assert data["version"] == "v2.7.15"
+    assert data["commits"] == []
+    assert data["count"] == 0
+    assert "last_updated" in data
+
+
+@pytest.mark.core_downloads
+def test_cleanup_superseded_prereleases_handles_invalid_commit_versions(
+    tmp_path, monkeypatch
+):
+    """Invalid commit identifiers should be retained while valid newer ones survive filtering."""
+
+    from fetchtastic.downloader import cleanup_superseded_prereleases
+
+    prerelease_dir = tmp_path / "firmware" / "prerelease"
+    prerelease_dir.mkdir(parents=True)
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+
+    tracking_file = cache_dir / "prerelease_tracking.json"
+    tracking_file.write_text(
+        json.dumps(
+            {
+                "version": "v2.7.14",
+                "commits": ["invalid", "2.7.16.valid", "not-a-version"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "fetchtastic.downloader._ensure_cache_dir", lambda: str(cache_dir)
+    )
+
+    cleanup_superseded_prereleases(str(tmp_path), "v2.7.15")
+
+    data = json.loads(tracking_file.read_text(encoding="utf-8"))
+    assert "2.7.16.valid" in data["commits"]
+    assert "invalid" in data["commits"]
+    assert "not-a-version" in data["commits"]
+
+
+@pytest.mark.core_downloads
+def test_cleanup_superseded_prereleases_no_update_when_tracking_unchanged(
+    tmp_path, monkeypatch
+):
+    """Tracking file is left untouched when release and commits are unchanged."""
+
+    from fetchtastic.downloader import cleanup_superseded_prereleases
+
+    prerelease_dir = tmp_path / "firmware" / "prerelease"
+    prerelease_dir.mkdir(parents=True)
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+
+    future_prerelease = prerelease_dir / "firmware-2.7.16.abc"
+    future_prerelease.mkdir()
+
+    tracking_file = cache_dir / "prerelease_tracking.json"
+    initial_timestamp = "2024-01-01T00:00:00+00:00"
+    tracking_file.write_text(
+        json.dumps(
+            {
+                "version": "v2.7.15",
+                "commits": ["2.7.16.abc"],
+                "count": 1,
+                "last_updated": initial_timestamp,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "fetchtastic.downloader._ensure_cache_dir", lambda: str(cache_dir)
+    )
+
+    cleanup_superseded_prereleases(str(tmp_path), "v2.7.15")
+
+    data = json.loads(tracking_file.read_text(encoding="utf-8"))
+    assert data["last_updated"] == initial_timestamp
+
+
 def test_is_apk_prerelease():
     """Test _is_apk_prerelease function correctly identifies prereleases."""
     from fetchtastic.downloader import _is_apk_prerelease, _is_apk_prerelease_by_name
@@ -1780,6 +1889,36 @@ def test_process_firmware_downloads_skips_unsafe_latest_tag(tmp_path, monkeypatc
 
 
 @pytest.mark.core_downloads
+def test_cleanup_superseded_prereleases_atomic_write_failure_logs_warning(
+    tmp_path, monkeypatch, caplog
+):
+    """When tracking cannot be written, a warning is emitted instead of crashing."""
+
+    from fetchtastic.downloader import cleanup_superseded_prereleases
+
+    caplog.set_level("WARNING", logger="fetchtastic")
+
+    prerelease_dir = tmp_path / "firmware" / "prerelease"
+    prerelease_dir.mkdir(parents=True)
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    cache_dir.chmod(0o555)  # read/execute only to trigger write failure
+
+    monkeypatch.setattr(
+        "fetchtastic.downloader._ensure_cache_dir", lambda: str(cache_dir)
+    )
+
+    try:
+        cleanup_superseded_prereleases(str(tmp_path), "v2.7.15")
+        assert any(
+            "Could not refresh prerelease tracking" in record.message
+            for record in caplog.records
+        )
+    finally:
+        cache_dir.chmod(0o755)
+
+
+@pytest.mark.core_downloads
 def test_parse_json_formats_error_handling(tmp_path):
     """Test JSON parsing functions with error handling."""
     from fetchtastic.downloader import (
@@ -1812,6 +1951,94 @@ def test_parse_json_formats_error_handling(tmp_path):
     assert commits == []
     assert release is None
     assert last_updated is None
+
+
+@pytest.mark.core_downloads
+def test_read_prerelease_tracking_data_with_corrupted_json(tmp_path):
+    """Invalid JSON content should be handled gracefully."""
+
+    from fetchtastic.downloader import _read_prerelease_tracking_data
+
+    tracking_file = tmp_path / "tracking.json"
+    tracking_file.write_text("{ invalid json }", encoding="utf-8")
+
+    commits, release, last_updated = _read_prerelease_tracking_data(str(tracking_file))
+
+    assert commits == []
+    assert release is None
+    assert last_updated is None
+
+
+@pytest.mark.core_downloads
+def test_read_prerelease_tracking_handles_unicode_decode_error(tmp_path):
+    """Unreadable/invalid UTF-8 tracking file returns empty values."""
+
+    from fetchtastic.downloader import _read_prerelease_tracking_data
+
+    tracking_file = tmp_path / "tracking.json"
+    tracking_file.write_bytes(b"\xff\xfe Invalid UTF-8")
+
+    commits, release, last_updated = _read_prerelease_tracking_data(str(tracking_file))
+
+    assert commits == []
+    assert release is None
+    assert last_updated is None
+
+
+@pytest.mark.core_downloads
+def test_parse_new_json_format_with_hash_field():
+    """Hash-only tracking should create a commit using the expected prerelease version."""
+
+    from fetchtastic.downloader import _parse_new_json_format
+
+    tracking_data = {
+        "version": "v2.7.15",
+        "hash": "abc123",
+        "last_updated": "2024-01-01T00:00:00+00:00",
+    }
+
+    commits, release, last_updated = _parse_new_json_format(tracking_data)
+
+    assert release == "v2.7.15"
+    assert commits == ["2.7.16.abc123"]
+    assert last_updated == "2024-01-01T00:00:00+00:00"
+
+
+@pytest.mark.core_downloads
+def test_parse_new_json_format_hash_without_version():
+    """If no version is present, hash should still be recorded."""
+
+    from fetchtastic.downloader import _parse_new_json_format
+
+    tracking_data = {
+        "version": None,
+        "hash": "abc123",
+    }
+
+    commits, release, last_updated = _parse_new_json_format(tracking_data)
+
+    assert release is None
+    assert commits == ["abc123"]
+    assert last_updated is None
+
+
+@pytest.mark.core_downloads
+def test_parse_new_json_format_with_empty_commits():
+    """Empty commit list is preserved."""
+
+    from fetchtastic.downloader import _parse_new_json_format
+
+    tracking_data = {
+        "version": "v2.7.15",
+        "commits": [],
+        "last_updated": "2024-01-01T00:00:00+00:00",
+    }
+
+    commits, release, last_updated = _parse_new_json_format(tracking_data)
+
+    assert commits == []
+    assert release == "v2.7.15"
+    assert last_updated == "2024-01-01T00:00:00+00:00"
 
 
 @pytest.mark.core_downloads
