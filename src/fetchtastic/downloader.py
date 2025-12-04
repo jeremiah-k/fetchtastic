@@ -377,8 +377,7 @@ def cleanup_superseded_prereleases(
         )
         return False
 
-    latest_release_version = safe_latest_release_tag.lstrip("v")
-    latest_release_tuple = _get_release_tuple(latest_release_version)
+    latest_release_tuple = _get_release_tuple(safe_latest_release_tag)
     clean_release = _extract_clean_version(safe_latest_release_tag)
 
     # Path to prerelease directory
