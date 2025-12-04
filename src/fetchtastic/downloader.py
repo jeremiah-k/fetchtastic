@@ -463,7 +463,7 @@ def cleanup_superseded_prereleases(
 
         release_changed = tracked_release_tuple != latest_release_tuple
         commits_changed = filtered_commits != tracked_commits
-        if release_changed or commits_changed or not tracked_commits:
+        if release_changed or commits_changed:
             tracking_payload = {
                 "version": clean_release,
                 "commits": filtered_commits,
@@ -942,16 +942,16 @@ def _parse_new_json_format(
 def _read_prerelease_tracking_data(tracking_file):
     """
     Normalize and parse a prerelease tracking JSON file into commits, the associated release tag, and the tracking timestamp.
-    
+
     Parameters:
         tracking_file (str): Path to the prerelease tracking JSON file.
-    
+
     Returns:
         tuple: (commits, current_release, last_updated)
             commits (list[str]): Ordered list of prerelease identifiers (may be empty).
             current_release (str | None): Release tag from the tracking data (e.g., "vX.Y.Z") or None if absent.
             last_updated (str | None): ISO-8601 timestamp string from the tracking JSON (or `timestamp` key) or None if unavailable.
-    
+
     Notes:
         - Supports the current tracking schema containing a "version" key and either "hash" or "commits".
         - If the file is missing, unreadable, or contains unexpected/malformed JSON, the function returns ([], None, None).
@@ -4513,18 +4513,18 @@ def _process_firmware_downloads(
 ) -> Tuple[List[str], List[str], List[Dict[str, str]], Optional[str], Optional[str]]:
     """
     Download and manage firmware releases and optional prereleases according to configuration and retention policies.
-    
+
     This function:
     - Fetches available firmware release metadata, applies retention limits, and downloads selected firmware assets.
     - Updates the latest-release tracking file when a newer release is discovered.
     - Cleans up prerelease directories superseded by an official release.
     - Optionally checks for and downloads prerelease firmware when enabled.
     - Returns summaries of what was downloaded, newly discovered releases, failures, and latest tracked tags.
-    
+
     Parameters:
         config (Dict[str, Any]): Runtime configuration. Relevant keys include:
             - SAVE_FIRMWARE, SELECTED_FIRMWARE_ASSETS
-            - FIRMWARE_VERSIONS_TO_KEEP (or FIRMWARE_VERSIONS_TO_KEEP)
+            - FIRMWARE_VERSIONS_TO_KEEP
             - CHECK_PRERELEASES, AUTO_EXTRACT
             - EXTRACT_PATTERNS, EXCLUDE_PATTERNS
             - GITHUB_TOKEN, ALLOW_ENV_TOKEN
@@ -4532,7 +4532,7 @@ def _process_firmware_downloads(
         paths_and_urls (Dict[str, str]): Precomputed filesystem paths and remote URLs. Required keys:
             - cache_dir, firmware_dir, download_dir, firmware_releases_url
         force_refresh (bool): If true, bypass cache expiry and force fresh remote queries.
-    
+
     Returns:
         Tuple[List[str], List[str], List[Dict[str, str]], Optional[str], Optional[str]]:
             - downloaded firmwares: List of firmware versions that were newly downloaded; prerelease entries are prefixed with "pre-release ".
@@ -4619,30 +4619,26 @@ def _process_firmware_downloads(
         )
         latest_release_tag = _read_latest_release_tag(firmware_json_file)
 
-        safe_latest_firmware = (
-            _sanitize_path_component(latest_firmware_version)
-            if latest_firmware_version
-            else None
-        )
-        if not safe_latest_firmware:
-            if latest_firmware_version:
+        if latest_firmware_version:
+            safe_latest_firmware = _sanitize_path_component(latest_firmware_version)
+            if safe_latest_firmware:
+                is_newer = (
+                    not latest_release_tag
+                    or compare_versions(safe_latest_firmware, latest_release_tag) > 0
+                )
+                if is_newer and _write_latest_release_tag(
+                    firmware_json_file, safe_latest_firmware, "Firmware"
+                ):
+                    logger.debug(
+                        "Updated latest firmware release tag to %s from scan results",
+                        safe_latest_firmware,
+                    )
+                    latest_release_tag = safe_latest_firmware
+            else:
                 logger.warning(
                     "Skipping write of unsafe firmware release tag: %s",
                     latest_firmware_version,
                 )
-        else:
-            is_newer = (
-                not latest_release_tag
-                or compare_versions(safe_latest_firmware, latest_release_tag) > 0
-            )
-            if is_newer and _write_latest_release_tag(
-                firmware_json_file, safe_latest_firmware, "Firmware"
-            ):
-                logger.debug(
-                    "Updated latest firmware release tag to %s from scan results",
-                    safe_latest_firmware,
-                )
-                latest_release_tag = safe_latest_firmware
 
         if latest_release_tag:
             cleaned_up: bool = cleanup_superseded_prereleases(
@@ -4775,9 +4771,9 @@ def _process_apk_downloads(
 ) -> Tuple[List[str], List[str], List[Dict[str, str]], Optional[str], Optional[str]]:
     """
     Orchestrates discovery, download, retention, and cleanup of Android APK releases and optional APK prereleases.
-    
+
     Downloads selected APK assets from discovered Android releases into the configured directories, retains the configured number of stable releases, places prereleases into a dedicated prerelease directory (which do not count against stable retention), and removes prerelease directories superseded by a corresponding stable release. If enabled, scans for APK prereleases and downloads only prereleases that are not older than the latest stable release.
-    
+
     Parameters:
         config (Dict[str, Any]): Runtime configuration. Relevant keys:
             - SAVE_APKS: whether APK saving is enabled.
@@ -4791,7 +4787,7 @@ def _process_apk_downloads(
             - "cache_dir": local cache directory path.
             - "apks_dir": base directory where APKs and prerelease subdirectory are stored.
         force_refresh (bool): When true, bypasses cached release metadata and forces a fresh fetch.
-    
+
     Returns:
         Tuple[List[str], List[str], List[Dict[str, str]], Optional[str], Optional[str]]:
         - downloaded_apk_versions: list of release tags for which assets were downloaded during this run.
