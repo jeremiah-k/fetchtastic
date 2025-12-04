@@ -1897,6 +1897,9 @@ def test_cleanup_superseded_prereleases_atomic_write_failure_logs_warning(
     from fetchtastic.downloader import cleanup_superseded_prereleases
     from fetchtastic.log_utils import logger as ft_logger
 
+    if os.name == "nt":
+        pytest.skip("chmod-based write failure is not reliable on Windows")
+
     caplog.set_level("WARNING", logger="fetchtastic")
     old_propagate = ft_logger.propagate
     ft_logger.propagate = True
