@@ -1618,6 +1618,111 @@ def test_process_apk_downloads_logs_when_no_prereleases(tmp_path, caplog, monkey
 
 
 @pytest.mark.core_downloads
+def test_cleanup_superseded_prereleases_refreshes_on_release_change(
+    tmp_path, monkeypatch
+):
+    """Tracking is refreshed when a new official release arrives, pruning older commits."""
+
+    from fetchtastic.downloader import cleanup_superseded_prereleases
+
+    prerelease_dir = tmp_path / "firmware" / "prerelease"
+    prerelease_dir.mkdir(parents=True)
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+
+    tracking_file = cache_dir / "prerelease_tracking.json"
+    tracking_file.write_text(
+        json.dumps(
+            {
+                "version": "v2.7.15",
+                "commits": ["2.7.15.a1", "2.7.16.a2"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "fetchtastic.downloader._ensure_cache_dir", lambda: str(cache_dir)
+    )
+
+    cleaned = cleanup_superseded_prereleases(str(tmp_path), "v2.7.16")
+
+    # No directories removed, but tracking should be rewritten for the new release.
+    assert cleaned is False
+    data = json.loads(tracking_file.read_text(encoding="utf-8"))
+    assert data["version"] == "v2.7.16"
+    assert data["commits"] == []
+    assert data["count"] == 0
+
+
+@pytest.mark.core_downloads
+def test_process_firmware_downloads_persists_latest_and_cleans(tmp_path, monkeypatch):
+    """Safe newest firmware tag is persisted and used for cleanup."""
+
+    from fetchtastic import downloader
+
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    firmware_dir = tmp_path / "firmware"
+    firmware_dir.mkdir(parents=True)
+
+    config = {
+        "SAVE_FIRMWARE": True,
+        "SELECTED_FIRMWARE_ASSETS": ["firmware.bin"],
+        "EXTRACT_PATTERNS": [],
+        "FIRMWARE_VERSIONS_TO_KEEP": 1,
+        "CHECK_PRERELEASES": False,
+    }
+    paths_and_urls = {
+        "cache_dir": str(cache_dir),
+        "download_dir": str(tmp_path),
+        "firmware_dir": str(firmware_dir),
+        "firmware_releases_url": "https://example.invalid/firmware",
+    }
+
+    latest_tag = "v2.7.18"
+    monkeypatch.setattr(
+        downloader,
+        "_get_latest_releases_data",
+        lambda *_args, **_kwargs: [{"tag_name": latest_tag}],
+    )
+    monkeypatch.setattr(
+        downloader,
+        "check_and_download",
+        lambda *_args, **_kwargs: ([], [], []),
+    )
+
+    writes = []
+
+    def _fake_write(path, tag, release_type):
+        writes.append((path, tag, release_type))
+        return True
+
+    cleanup_calls = []
+    monkeypatch.setattr(downloader, "_write_latest_release_tag", _fake_write)
+    monkeypatch.setattr(
+        downloader,
+        "cleanup_superseded_prereleases",
+        lambda *args, **kwargs: cleanup_calls.append(args) or True,
+    )
+
+    (
+        downloaded_firmwares,
+        _new_fw_versions,
+        _failed_fw_downloads,
+        latest_fw_version,
+        _latest_fw_prerelease,
+    ) = downloader._process_firmware_downloads(
+        config, paths_and_urls, force_refresh=True
+    )
+
+    assert downloaded_firmwares == []
+    assert latest_fw_version == latest_tag
+    assert writes and writes[0][1] == latest_tag
+    assert cleanup_calls and cleanup_calls[0][1] == latest_tag
+
+
+@pytest.mark.core_downloads
 def test_process_firmware_downloads_skips_unsafe_latest_tag(tmp_path, monkeypatch):
     """If the latest firmware tag is unsafe, it should not be written or used for cleanup."""
 
