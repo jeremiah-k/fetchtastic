@@ -380,77 +380,76 @@ def cleanup_superseded_prereleases(
     latest_release_tuple = _get_release_tuple(safe_latest_release_tag)
     clean_release = _extract_clean_version(safe_latest_release_tag)
 
-    # Path to prerelease directory
-    prerelease_dir = os.path.join(download_dir, "firmware", "prerelease")
-    if not os.path.exists(prerelease_dir):
-        return False
-
     tracking_file = os.path.join(_ensure_cache_dir(), PRERELEASE_TRACKING_JSON_FILE)
     tracked_commits, tracked_release, _ = _read_prerelease_tracking_data(tracking_file)
     tracked_release_tuple = (
         _get_release_tuple(tracked_release) if tracked_release else None
     )
 
+    # Path to prerelease directory
+    prerelease_dir = os.path.join(download_dir, "firmware", "prerelease")
+
     # Check for matching pre-release directories
     cleaned_up = False
-    for raw_dir_name in os.listdir(prerelease_dir):
-        if raw_dir_name.startswith(FIRMWARE_DIR_PREFIX):
-            dir_name = _sanitize_path_component(raw_dir_name)
-            if dir_name is None:
-                logger.warning(
-                    "Skipping unsafe prerelease directory encountered during cleanup: %s",
-                    raw_dir_name,
-                )
-                continue
-
-            dir_version = extract_version(dir_name)
-
-            # Validate version format before processing (hash part is optional)
-            if not re.match(VERSION_REGEX_PATTERN, dir_version):
-                logger.warning(
-                    f"Invalid version format in prerelease directory {dir_name}, skipping"
-                )
-                continue
-
-            # If this pre-release matches the latest release version
-            prerelease_path = os.path.join(prerelease_dir, dir_name)
-
-            # Check if this is a symlink and remove it for security
-            if os.path.islink(prerelease_path):
-                logger.warning(
-                    "Removing symlink in prerelease dir to prevent traversal: %s",
-                    dir_name,
-                )
-                if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
-                    cleaned_up = True
-                else:
-                    logger.error(
-                        "Failed to remove symlink %s in prerelease dir", dir_name
+    if os.path.exists(prerelease_dir):
+        for raw_dir_name in os.listdir(prerelease_dir):
+            if raw_dir_name.startswith(FIRMWARE_DIR_PREFIX):
+                dir_name = _sanitize_path_component(raw_dir_name)
+                if dir_name is None:
+                    logger.warning(
+                        "Skipping unsafe prerelease directory encountered during cleanup: %s",
+                        raw_dir_name,
                     )
-                    return False
-                continue
-            dir_release_tuple = _get_release_tuple(dir_version)
-
-            # Determine if this prerelease should be cleaned up
-            should_cleanup = False
-            cleanup_reason = ""
-
-            if latest_release_tuple is not None and dir_release_tuple is not None:
-                if dir_release_tuple > latest_release_tuple:
                     continue
-                # Prerelease is older or same version, so it's superseded.
-                should_cleanup = True
-                cleanup_reason = (
-                    f"it is superseded by release {safe_latest_release_tag}"
-                )
 
-            if should_cleanup:
-                logger.info(
-                    "Removing prerelease %s because %s.", dir_name, cleanup_reason
-                )
-                if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
-                    cleaned_up = True
-                continue
+                dir_version = extract_version(dir_name)
+
+                # Validate version format before processing (hash part is optional)
+                if not re.match(VERSION_REGEX_PATTERN, dir_version):
+                    logger.warning(
+                        f"Invalid version format in prerelease directory {dir_name}, skipping"
+                    )
+                    continue
+
+                # If this pre-release matches the latest release version
+                prerelease_path = os.path.join(prerelease_dir, dir_name)
+
+                # Check if this is a symlink and remove it for security
+                if os.path.islink(prerelease_path):
+                    logger.warning(
+                        "Removing symlink in prerelease dir to prevent traversal: %s",
+                        dir_name,
+                    )
+                    if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
+                        cleaned_up = True
+                    else:
+                        logger.error(
+                            "Failed to remove symlink %s in prerelease dir", dir_name
+                        )
+                        return False
+                    continue
+                dir_release_tuple = _get_release_tuple(dir_version)
+
+                # Determine if this prerelease should be cleaned up
+                should_cleanup = False
+                cleanup_reason = ""
+
+                if latest_release_tuple is not None and dir_release_tuple is not None:
+                    if dir_release_tuple > latest_release_tuple:
+                        continue
+                    # Prerelease is older or same version, so it's superseded.
+                    should_cleanup = True
+                    cleanup_reason = (
+                        f"it is superseded by release {safe_latest_release_tag}"
+                    )
+
+                if should_cleanup:
+                    logger.info(
+                        "Removing prerelease %s because %s.", dir_name, cleanup_reason
+                    )
+                    if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
+                        cleaned_up = True
+                    continue
 
     if clean_release and latest_release_tuple:
         filtered_commits = [
