@@ -4976,7 +4976,10 @@ def _process_apk_downloads(
             # Set latest prerelease version only if we have prereleases to download
             if releases_to_download:
                 latest_prerelease_version = releases_to_download[0].get("tag_name")
-        elif config.get("CHECK_APK_PRERELEASES", DEFAULT_CHECK_APK_PRERELEASES):
+        elif (
+            config.get("CHECK_APK_PRERELEASES", DEFAULT_CHECK_APK_PRERELEASES)
+            and latest_android_releases
+        ):
             logger.info(
                 "APK prerelease downloads are enabled, but none are available yet."
             )

@@ -1897,9 +1897,6 @@ def test_cleanup_superseded_prereleases_atomic_write_failure_logs_warning(
     from fetchtastic.downloader import cleanup_superseded_prereleases
     from fetchtastic.log_utils import logger as ft_logger
 
-    if os.name == "nt":
-        pytest.skip("chmod-based write failure is not reliable on Windows")
-
     caplog.set_level("WARNING", logger="fetchtastic")
     old_propagate = ft_logger.propagate
     ft_logger.propagate = True
@@ -1908,10 +1905,12 @@ def test_cleanup_superseded_prereleases_atomic_write_failure_logs_warning(
     prerelease_dir.mkdir(parents=True)
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
-    cache_dir.chmod(0o555)  # read/execute only to trigger write failure
 
     monkeypatch.setattr(
         "fetchtastic.downloader._ensure_cache_dir", lambda: str(cache_dir)
+    )
+    monkeypatch.setattr(
+        "fetchtastic.downloader._atomic_write_json", lambda *_args, **_kwargs: False
     )
 
     try:
@@ -1921,7 +1920,6 @@ def test_cleanup_superseded_prereleases_atomic_write_failure_logs_warning(
             for record in caplog.records
         )
     finally:
-        cache_dir.chmod(0o755)
         ft_logger.propagate = old_propagate
 
 
