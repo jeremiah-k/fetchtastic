@@ -1895,8 +1895,11 @@ def test_cleanup_superseded_prereleases_atomic_write_failure_logs_warning(
     """When tracking cannot be written, a warning is emitted instead of crashing."""
 
     from fetchtastic.downloader import cleanup_superseded_prereleases
+    from fetchtastic.log_utils import logger as ft_logger
 
     caplog.set_level("WARNING", logger="fetchtastic")
+    old_propagate = ft_logger.propagate
+    ft_logger.propagate = True
 
     prerelease_dir = tmp_path / "firmware" / "prerelease"
     prerelease_dir.mkdir(parents=True)
@@ -1916,6 +1919,7 @@ def test_cleanup_superseded_prereleases_atomic_write_failure_logs_warning(
         )
     finally:
         cache_dir.chmod(0o755)
+        ft_logger.propagate = old_propagate
 
 
 @pytest.mark.core_downloads
