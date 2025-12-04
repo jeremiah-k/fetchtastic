@@ -411,7 +411,7 @@ def test_run_clean(
         "some_dir",  # unmanaged dir
         "repo-dls",  # managed dir
         "firmware-2.7.4",  # managed dir (starts with FIRMWARE_DIR_PREFIX)
-        "latest_android_release.txt",  # managed file
+        "fetchtastic_yaml.lnk",  # managed file
         "unmanaged.txt",  # unmanaged file
     ]
 
@@ -429,15 +429,15 @@ def test_run_clean(
 
     def isfile_side_effect(path):
         """
-        Determine whether the provided filesystem path should be treated as a file for test side effects.
+        Determine whether a filesystem path should be treated as an existing file for test side effects based on its basename.
 
         Parameters:
-            path (str): The filesystem path to examine.
+            path (str): Filesystem path to check.
 
         Returns:
-            True if the path's basename is "latest_android_release.txt" or "unmanaged.txt", False otherwise.
+            True if the path's basename is "fetchtastic_yaml.lnk" or "unmanaged.txt", False otherwise.
         """
-        return os.path.basename(path) in ["latest_android_release.txt", "unmanaged.txt"]
+        return os.path.basename(path) in ["fetchtastic_yaml.lnk", "unmanaged.txt"]
 
     mock_isdir.side_effect = isdir_side_effect
     mock_isfile.side_effect = isfile_side_effect
@@ -464,9 +464,9 @@ def test_run_clean(
     assert mock_rmtree.call_count == 3
 
     # Check that managed files are removed but unmanaged files are not
-    # "latest_android_release.txt" is in MANAGED_FILES, so should be removed
+    # "fetchtastic_yaml.lnk" is in MANAGED_FILES, so should be removed
     mock_os_remove.assert_any_call(
-        "/tmp/test_base_dir/latest_android_release.txt"
+        "/tmp/test_base_dir/fetchtastic_yaml.lnk"
     )  # nosec B108
     # "unmanaged.txt" is not managed, so should not be removed
     # Total removes: 2 config files + 1 managed file + boot script + log file = 5

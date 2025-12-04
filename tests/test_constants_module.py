@@ -77,8 +77,6 @@ class TestFileConstants:
 
     def test_file_names(self):
         """Test file name constants."""
-        assert constants.LATEST_ANDROID_RELEASE_FILE == "latest_android_release.txt"
-        assert constants.LATEST_FIRMWARE_RELEASE_FILE == "latest_firmware_release.txt"
         assert constants.CONFIG_FILE_NAME == "fetchtastic.yaml"
 
 

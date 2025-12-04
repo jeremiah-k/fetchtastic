@@ -68,10 +68,8 @@ from fetchtastic.constants import (
     GITHUB_API_TIMEOUT,
     GITHUB_MAX_PER_PAGE,
     LATEST_ANDROID_PRERELEASE_JSON_FILE,
-    LATEST_ANDROID_RELEASE_FILE,
     LATEST_ANDROID_RELEASE_JSON_FILE,
     LATEST_FIRMWARE_PRERELEASE_JSON_FILE,
-    LATEST_FIRMWARE_RELEASE_FILE,
     LATEST_FIRMWARE_RELEASE_JSON_FILE,
     MAX_CONCURRENT_TIMESTAMP_FETCHES,
     MESHTASTIC_ANDROID_RELEASES_URL,
@@ -83,7 +81,6 @@ from fetchtastic.constants import (
     PRERELEASE_COMMIT_HISTORY_FILE,
     PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS,
     PRERELEASE_COMMITS_CACHE_FILE,
-    PRERELEASE_COMMITS_LEGACY_FILE,
     PRERELEASE_DELETE_COMMIT_PATTERN,
     PRERELEASE_DETAIL_ATTEMPT_MULTIPLIER,
     PRERELEASE_DETAIL_FETCH_WORKERS,
@@ -360,9 +357,9 @@ def cleanup_superseded_prereleases(
     download_dir, latest_release_tag
 ):  # log_message_func parameter removed
     """
-    Remove prerelease firmware directories that are superseded by an official release.
+    Remove prerelease firmware directories that are superseded by an official release and refresh tracking.
 
-    Scans the firmware/prerelease directory under download_dir and removes prerelease directories or unsafe symlinks whose base version is less than or equal to latest_release_tag. If no prerelease directories remain, associated prerelease tracking files are also removed.
+    Scans the firmware/prerelease directory under download_dir and removes prerelease directories or unsafe symlinks whose base version is less than or equal to latest_release_tag. After cleanup, prerelease_tracking.json is rewritten to reflect the latest release and only newer prerelease identifiers (older ones are pruned).
 
     Parameters:
         download_dir (str): Base download directory containing firmware/prerelease.
@@ -371,8 +368,6 @@ def cleanup_superseded_prereleases(
     Returns:
         bool: `True` if one or more prerelease directories or symlinks were removed, `False` otherwise.
     """
-    # Removed local log_message_func definition
-
     # Strip the 'v' prefix if present
     safe_latest_release_tag = _sanitize_path_component(latest_release_tag)
     if safe_latest_release_tag is None:
@@ -382,105 +377,102 @@ def cleanup_superseded_prereleases(
         )
         return False
 
-    latest_release_version = safe_latest_release_tag.lstrip("v")
-    latest_release_tuple = _get_release_tuple(latest_release_version)
+    latest_release_tuple = _get_release_tuple(safe_latest_release_tag)
+    clean_release = _extract_clean_version(safe_latest_release_tag)
+
+    tracking_file = os.path.join(_ensure_cache_dir(), PRERELEASE_TRACKING_JSON_FILE)
+    tracked_commits, tracked_release, _ = _read_prerelease_tracking_data(tracking_file)
+    tracked_release_tuple = (
+        _get_release_tuple(tracked_release) if tracked_release else None
+    )
 
     # Path to prerelease directory
     prerelease_dir = os.path.join(download_dir, "firmware", "prerelease")
-    if not os.path.exists(prerelease_dir):
-        return False
 
     # Check for matching pre-release directories
     cleaned_up = False
-    for raw_dir_name in os.listdir(prerelease_dir):
-        if raw_dir_name.startswith(FIRMWARE_DIR_PREFIX):
-            dir_name = _sanitize_path_component(raw_dir_name)
-            if dir_name is None:
-                logger.warning(
-                    "Skipping unsafe prerelease directory encountered during cleanup: %s",
-                    raw_dir_name,
-                )
-                continue
-
-            dir_version = extract_version(dir_name)
-
-            # Validate version format before processing (hash part is optional)
-            if not re.match(VERSION_REGEX_PATTERN, dir_version):
-                logger.warning(
-                    f"Invalid version format in prerelease directory {dir_name}, skipping"
-                )
-                continue
-
-            # If this pre-release matches the latest release version
-            prerelease_path = os.path.join(prerelease_dir, dir_name)
-
-            # Check if this is a symlink and remove it for security
-            if os.path.islink(prerelease_path):
-                logger.warning(
-                    "Removing symlink in prerelease dir to prevent traversal: %s",
-                    dir_name,
-                )
-                if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
-                    cleaned_up = True
-                else:
-                    logger.error(
-                        "Failed to remove symlink %s in prerelease dir", dir_name
-                    )
-                    return False
-                continue
-            dir_release_tuple = _get_release_tuple(dir_version)
-
-            # Determine if this prerelease should be cleaned up
-            should_cleanup = False
-            cleanup_reason = ""
-
-            if latest_release_tuple is not None and dir_release_tuple is not None:
-                if dir_release_tuple > latest_release_tuple:
-                    continue
-                # Prerelease is older or same version, so it's superseded.
-                should_cleanup = True
-                cleanup_reason = (
-                    f"it is superseded by release {safe_latest_release_tag}"
-                )
-
-            if should_cleanup:
-                logger.info(
-                    "Removing prerelease %s because %s.", dir_name, cleanup_reason
-                )
-                if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
-                    cleaned_up = True
-                continue
-
-    # Reset tracking info if no prerelease directories exist
     if os.path.exists(prerelease_dir):
-        # Check if any prerelease directories remain
-        remaining_prereleases = bool(_get_existing_prerelease_dirs(prerelease_dir))
-        if not remaining_prereleases:
-            # Remove tracking files since no prereleases remain
-            # JSON tracking file is stored in the cache directory
-            json_tracking_file = os.path.join(
-                _ensure_cache_dir(), PRERELEASE_TRACKING_JSON_FILE
-            )
+        for raw_dir_name in os.listdir(prerelease_dir):
+            if raw_dir_name.startswith(FIRMWARE_DIR_PREFIX):
+                dir_name = _sanitize_path_component(raw_dir_name)
+                if dir_name is None:
+                    logger.warning(
+                        "Skipping unsafe prerelease directory encountered during cleanup: %s",
+                        raw_dir_name,
+                    )
+                    continue
 
-            # Remove tracking files (both JSON and legacy text)
-            for file_path, is_legacy in [
-                (json_tracking_file, False),
-                (os.path.join(prerelease_dir, PRERELEASE_COMMITS_LEGACY_FILE), True),
-            ]:
-                if os.path.exists(file_path):
-                    file_type = "legacy prerelease" if is_legacy else "prerelease"
-                    try:
-                        os.remove(file_path)
-                        logger.debug(
-                            "Removed %s tracking file: %s", file_type, file_path
+                dir_version = extract_version(dir_name)
+
+                # Validate version format before processing (hash part is optional)
+                if not re.match(VERSION_REGEX_PATTERN, dir_version):
+                    logger.warning(
+                        f"Invalid version format in prerelease directory {dir_name}, skipping"
+                    )
+                    continue
+
+                # If this pre-release matches the latest release version
+                prerelease_path = os.path.join(prerelease_dir, dir_name)
+
+                # Check if this is a symlink and remove it for security
+                if os.path.islink(prerelease_path):
+                    logger.warning(
+                        "Removing symlink in prerelease dir to prevent traversal: %s",
+                        dir_name,
+                    )
+                    if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
+                        cleaned_up = True
+                    else:
+                        logger.error(
+                            "Failed to remove symlink %s in prerelease dir", dir_name
                         )
-                    except OSError as e:
-                        logger.warning(
-                            "Could not remove %s tracking file %s: %s",
-                            file_type,
-                            file_path,
-                            e,
-                        )
+                        return False
+                    continue
+                dir_release_tuple = _get_release_tuple(dir_version)
+
+                # Determine if this prerelease should be cleaned up
+                should_cleanup = False
+                cleanup_reason = ""
+
+                if latest_release_tuple is not None and dir_release_tuple is not None:
+                    if dir_release_tuple > latest_release_tuple:
+                        continue
+                    # Prerelease is older or same version, so it's superseded.
+                    should_cleanup = True
+                    cleanup_reason = (
+                        f"it is superseded by release {safe_latest_release_tag}"
+                    )
+
+                if should_cleanup:
+                    logger.info(
+                        "Removing prerelease %s because %s.", dir_name, cleanup_reason
+                    )
+                    if _safe_rmtree(prerelease_path, prerelease_dir, dir_name):
+                        cleaned_up = True
+                    continue
+
+    if clean_release and latest_release_tuple:
+        filtered_commits = [
+            commit
+            for commit in tracked_commits
+            if (commit_tuple := _get_release_tuple(commit)) is None
+            or commit_tuple > latest_release_tuple
+        ]
+
+        release_changed = tracked_release_tuple != latest_release_tuple
+        commits_changed = filtered_commits != tracked_commits
+        if release_changed or commits_changed:
+            tracking_payload = {
+                "version": clean_release,
+                "commits": filtered_commits,
+                "count": len(filtered_commits),
+                "last_updated": datetime.now(timezone.utc).isoformat(),
+            }
+            if not _atomic_write_json(tracking_file, tracking_payload):
+                logger.warning(
+                    "Could not refresh prerelease tracking after release %s",
+                    clean_release,
+                )
 
     return cleaned_up
 
@@ -945,71 +937,22 @@ def _parse_new_json_format(
     return commits, current_release, last_updated
 
 
-def _parse_legacy_json_format(
-    tracking_data: Dict[str, Any],
-) -> tuple[list[str], str | None, str | None]:
-    """
-    Parse legacy prerelease tracking JSON that uses top-level `release`, `commits`, and optional timestamp keys.
-
-    This normalizes commit identifiers into `version+hash` form, pairing bare commit hashes with an inferred next-prerelease base when possible, and preserves the original release string (ensuring a leading "v" if missing).
-
-    Parameters:
-        tracking_data (dict): Parsed JSON object expected to contain:
-            - "release": optional release string (e.g., "v1.2.3" or "1.2.3")
-            - "commits": optional list of commit identifiers (hashes or version+hash)
-            - "last_updated" or "timestamp": optional timestamp string
-
-    Returns:
-        tuple: (commits, current_release, last_updated)
-            - commits (list[str]): Ordered, deduplicated list of normalized `version+hash` commit identifiers.
-            - current_release (str | None): Release string from the tracking data with a leading "v" ensured, or None.
-            - last_updated (str | None): Timestamp string from "last_updated" or "timestamp", or None.
-    """
-    current_release = _ensure_v_prefix_if_missing(tracking_data.get("release"))
-    commits_raw = tracking_data.get("commits", [])
-
-    # Validate commits_raw is a list to prevent data corruption
-    if not isinstance(commits_raw, list):
-        logger.warning(
-            "Invalid commits format in legacy tracking file: expected list, got %s. Resetting commits.",
-            type(commits_raw).__name__,
-        )
-        commits_raw = []
-
-    # Normalize commits to version+hash; pair bare hashes with expected next patch base
-    commits: list[str] = []
-    expected_base_v: Optional[str] = None
-    if current_release:
-        expected = calculate_expected_prerelease_version(current_release)
-        if expected:
-            expected_base_v = f"v{expected}"
-    for commit in commits_raw or []:
-        c = commit.lower()
-        # If it's a bare hash, use expected next patch base; otherwise use saved release
-        base_for_norm = (
-            expected_base_v if re.fullmatch(r"[a-f0-9]{6,40}", c) else current_release
-        )
-        normalized = _normalize_commit_identifier(c, base_for_norm)
-        if normalized:
-            commits.append(normalized)
-
-    # Ensure uniqueness while preserving order
-    commits = list(dict.fromkeys(commits))
-    last_updated = tracking_data.get("last_updated") or tracking_data.get("timestamp")
-    return commits, current_release, last_updated
-
-
 def _read_prerelease_tracking_data(tracking_file):
     """
-    Parse prerelease tracking JSON and normalize it to a (commits, current_release, last_updated) tuple.
+    Normalize and parse a prerelease tracking JSON file into commits, the associated release tag, and the tracking timestamp.
 
-    Supports the current JSON schema (contains "version" and either "hash" or "commits", optional "last_updated" or "timestamp") and a legacy JSON schema (keys like "release" and "commits"). If the file contains non-dict JSON or cannot be read/decoded, returns empty/None values.
+    Parameters:
+        tracking_file (str): Path to the prerelease tracking JSON file.
 
     Returns:
         tuple: (commits, current_release, last_updated)
             commits (list[str]): Ordered list of prerelease identifiers (may be empty).
-            current_release (str | None): Release tag associated with the commits, or None if not present.
-            last_updated (str | None): ISO timestamp from the tracking JSON, or None if unavailable.
+            current_release (str | None): Release tag from the tracking data (e.g., "vX.Y.Z") or None if absent.
+            last_updated (str | None): ISO-8601 timestamp string from the tracking JSON (or `timestamp` key) or None if unavailable.
+
+    Notes:
+        - Supports the current tracking schema containing a "version" key and either "hash" or "commits".
+        - If the file is missing, unreadable, or contains unexpected/malformed JSON, the function returns ([], None, None).
     """
     commits = []
     current_release = None
@@ -1038,9 +981,9 @@ def _read_prerelease_tracking_data(tracking_file):
                         tracking_data
                     )
                 else:
-                    # Legacy JSON format
-                    commits, current_release, last_updated = _parse_legacy_json_format(
-                        tracking_data
+                    logger.warning(
+                        "Unexpected prerelease tracking format in %s; ignoring file.",
+                        tracking_file,
                     )
 
         except (IOError, json.JSONDecodeError, UnicodeDecodeError) as e:
@@ -4567,20 +4510,34 @@ def _process_firmware_downloads(
     config: Dict[str, Any], paths_and_urls: Dict[str, str], force_refresh: bool = False
 ) -> Tuple[List[str], List[str], List[Dict[str, str]], Optional[str], Optional[str]]:
     """
-    Manage firmware release downloads, enforce retention policies, and optionally discover and download firmware prereleases.
+    Download and manage firmware releases and optional prereleases according to configuration and retention policies.
+
+    This function:
+    - Fetches available firmware release metadata, applies retention limits, and downloads selected firmware assets.
+    - Updates the latest-release tracking file when a newer release is discovered.
+    - Cleans up prerelease directories superseded by an official release.
+    - Optionally checks for and downloads prerelease firmware when enabled.
+    - Returns summaries of what was downloaded, newly discovered releases, failures, and latest tracked tags.
 
     Parameters:
-        config (Dict[str, Any]): Runtime configuration containing feature flags, selection patterns, retention counts, GitHub/token options, and related behavior toggles.
-        paths_and_urls (Dict[str, str]): Precomputed filesystem paths and remote URLs used for caches, downloads, and storage (keys used include cache_dir, firmware_dir, download_dir, firmware_releases_url).
-        force_refresh (bool): If true, bypass on-disk and remote caches and force fresh remote queries.
+        config (Dict[str, Any]): Runtime configuration. Relevant keys include:
+            - SAVE_FIRMWARE, SELECTED_FIRMWARE_ASSETS
+            - FIRMWARE_VERSIONS_TO_KEEP (defaults to DEFAULT_FIRMWARE_VERSIONS_TO_KEEP)
+            - CHECK_PRERELEASES, AUTO_EXTRACT
+            - EXTRACT_PATTERNS, EXCLUDE_PATTERNS
+            - GITHUB_TOKEN, ALLOW_ENV_TOKEN
+            - DEVICE_HARDWARE_API (subkeys: enabled, cache_hours, api_url)
+        paths_and_urls (Dict[str, str]): Precomputed filesystem paths and remote URLs. Required keys:
+            - cache_dir, firmware_dir, download_dir, firmware_releases_url
+        force_refresh (bool): If true, bypass cache expiry and force fresh remote queries.
 
     Returns:
         Tuple[List[str], List[str], List[Dict[str, str]], Optional[str], Optional[str]]:
-            - downloaded firmwares: list of firmware versions that were newly downloaded; prerelease entries are prefixed with "pre-release ".
-            - newly detected release versions: release tags discovered that were not previously tracked.
-            - failed download details: list of records describing each failed asset download (each record is a dict with context and error info).
-            - latest firmware release tag: the most recent firmware release tag discovered, or `None` if none found.
-            - latest prerelease version: the currently tracked latest prerelease version, or `None` if not tracked.
+            - downloaded firmwares: List of firmware versions that were newly downloaded; prerelease entries are prefixed with "pre-release ".
+            - newly detected release versions: Release tags discovered during the scan that were not previously tracked.
+            - failed download details: List of dicts describing each failed asset download (context and error information).
+            - latest firmware release tag: Most recent firmware release tag discovered, or `None` if none found.
+            - latest prerelease version: Currently tracked latest prerelease version, or `None` if not tracked.
     """
     global downloads_skipped
 
@@ -4659,6 +4616,27 @@ def _process_firmware_downloads(
             paths_and_urls["cache_dir"], LATEST_FIRMWARE_RELEASE_JSON_FILE
         )
         latest_release_tag = _read_latest_release_tag(firmware_json_file)
+
+        if latest_firmware_version:
+            safe_latest_firmware = _sanitize_path_component(latest_firmware_version)
+            if safe_latest_firmware:
+                is_newer = (
+                    not latest_release_tag
+                    or compare_versions(safe_latest_firmware, latest_release_tag) > 0
+                )
+                if is_newer and _write_latest_release_tag(
+                    firmware_json_file, safe_latest_firmware, "Firmware"
+                ):
+                    logger.debug(
+                        "Updated latest firmware release tag to %s from scan results",
+                        safe_latest_firmware,
+                    )
+                    latest_release_tag = safe_latest_firmware
+            else:
+                logger.warning(
+                    "Skipping write of unsafe firmware release tag: %s",
+                    latest_firmware_version,
+                )
 
         if latest_release_tag:
             cleaned_up: bool = cleanup_superseded_prereleases(
@@ -4790,31 +4768,31 @@ def _process_apk_downloads(
     config: Dict[str, Any], paths_and_urls: Dict[str, str], force_refresh: bool = False
 ) -> Tuple[List[str], List[str], List[Dict[str, str]], Optional[str], Optional[str]]:
     """
-    Download and prune Android APK releases according to the provided configuration.
+    Orchestrates discovery, download, retention, and cleanup of Android APK releases and optional APK prereleases.
 
-    Fetches Android release metadata, downloads matching APK assets into the configured directory, retains the configured number of stable releases, and manages APK prereleases separately (prereleases are downloaded to a dedicated prerelease directory, do not count against stable retention, and are removed when a corresponding full release exists).
+    Downloads selected APK assets from discovered Android releases into the configured directories, retains the configured number of stable releases, places prereleases into a dedicated prerelease directory (which do not count against stable retention), and removes prerelease directories superseded by a corresponding stable release. If enabled, scans for APK prereleases and downloads only prereleases that are not older than the latest stable release.
 
     Parameters:
-        config (Dict[str, Any]): Configuration mapping. Relevant keys:
-            - SAVE_APKS: whether to save APKs.
-            - SELECTED_APK_ASSETS: list of asset filename patterns to download.
-            - ANDROID_VERSIONS_TO_KEEP: number of stable APK releases to retain.
-            - CHECK_APK_PRERELEASES: whether to process APK prereleases.
+        config (Dict[str, Any]): Runtime configuration. Relevant keys:
+            - SAVE_APKS: whether APK saving is enabled.
+            - SELECTED_APK_ASSETS: list of filename patterns to include.
+            - ANDROID_VERSIONS_TO_KEEP: number of stable releases to retain.
+            - CHECK_APK_PRERELEASES: whether to scan and download prereleases.
             - EXCLUDE_PATTERNS: list of filename patterns to exclude.
-            - GITHUB_TOKEN: optional GitHub token for API requests.
-        paths_and_urls (Dict[str, str]): Paths and endpoints. Relevant keys:
-            - "android_releases_url": GitHub API URL for Android releases.
-            - "cache_dir": directory for caching remote metadata/blobs.
-            - "apks_dir": base directory where APKs (and prereleases) are stored.
-        force_refresh (bool): If True, bypass cached release data and fetch fresh metadata.
+            - GITHUB_TOKEN: optional token for GitHub API requests.
+        paths_and_urls (Dict[str, str]): Paths and endpoints. Must include:
+            - "android_releases_url": URL for fetching Android release metadata.
+            - "cache_dir": local cache directory path.
+            - "apks_dir": base directory where APKs and prerelease subdirectory are stored.
+        force_refresh (bool): When true, bypasses cached release metadata and forces a fresh fetch.
 
     Returns:
         Tuple[List[str], List[str], List[Dict[str, str]], Optional[str], Optional[str]]:
-        - downloaded_apk_versions: List of release tags that had assets downloaded during this run.
-        - new_apk_versions: List of release tags discovered (including prereleases) during scanning.
-        - failed_downloads: List of dicts describing failed asset downloads (each dict contains failure details).
-        - latest_apk_version: Tag of the most recent stable APK release found, or `None` if none available.
-        - latest_prerelease_version: Tag of the most recent APK prerelease found, or `None` if none available or prerelease handling is disabled.
+        - downloaded_apk_versions: list of release tags for which assets were downloaded during this run.
+        - new_apk_versions: list of release tags discovered during scanning (includes prereleases discovered).
+        - failed_downloads: list of dictionaries describing failed asset downloads (each dict contains failure details).
+        - latest_apk_version: tag of the most recent stable APK release found, or `None` if none found.
+        - latest_prerelease_version: tag of the most recent APK prerelease downloaded/considered, or `None` if none or prerelease handling is disabled.
     """
     global downloads_skipped
     downloaded_apks: List[str] = []
@@ -4997,6 +4975,13 @@ def _process_apk_downloads(
             # Set latest prerelease version only if we have prereleases to download
             if releases_to_download:
                 latest_prerelease_version = releases_to_download[0].get("tag_name")
+        elif (
+            config.get("CHECK_APK_PRERELEASES", DEFAULT_CHECK_APK_PRERELEASES)
+            and latest_android_releases
+        ):
+            logger.info(
+                "APK prerelease downloads are enabled, but none are available yet."
+            )
     elif not config.get("SELECTED_APK_ASSETS", []):
         logger.info("No APK assets selected. Skipping APK download.")
 
@@ -6360,78 +6345,9 @@ def _format_api_summary(summary: Dict[str, Any]) -> str:
     return ", ".join(log_parts)
 
 
-def _cleanup_legacy_files(
-    config: Dict[str, Any], paths_and_urls: Dict[str, str]
-) -> None:
-    """
-    Remove legacy tracking and release files left in download directories after JSON-based tracking is used.
-
-    Deletes legacy prerelease tracking text files from the prerelease directory and legacy latest-release files from the firmware and apks download subdirectories. No on-disk migration is performed; missing paths are ignored and failures are logged as warnings.
-
-    Parameters:
-        config (Dict[str, Any]): Configuration mapping; may provide "PRERELEASE_DIR" to locate prerelease files.
-        paths_and_urls (Dict[str, str]): Mapping that must include "download_dir" to locate firmware and apks directories.
-    """
-    try:
-        # Clean up legacy files from download directories
-        download_dir = paths_and_urls.get("download_dir")
-        if not download_dir:
-            return
-
-        # Support both legacy config-based and direct path approaches for prerelease dir
-        prerelease_dir = config.get("PRERELEASE_DIR") or os.path.join(
-            download_dir, "firmware", FIRMWARE_PRERELEASES_DIR_NAME
-        )
-        if prerelease_dir and os.path.exists(prerelease_dir):
-            # Remove specific legacy text tracking files
-            legacy_files = [
-                PRERELEASE_COMMITS_LEGACY_FILE,
-                PRERELEASE_TRACKING_JSON_FILE,
-            ]
-            for filename in legacy_files:
-                legacy_file = os.path.join(prerelease_dir, filename)
-                if os.path.exists(legacy_file):
-                    try:
-                        os.remove(legacy_file)
-                        logger.debug(
-                            "Removed legacy prerelease tracking file: %s", legacy_file
-                        )
-                    except OSError as e:
-                        logger.warning(
-                            "Could not remove legacy file %s: %s", legacy_file, e
-                        )
-
-        # Remove legacy release files from download directories (not cache)
-        firmware_dir = os.path.join(download_dir, "firmware")
-        apks_dir = os.path.join(download_dir, "apks")
-        legacy_files_to_remove = {
-            "firmware": os.path.join(firmware_dir, LATEST_FIRMWARE_RELEASE_FILE),
-            "android": os.path.join(apks_dir, LATEST_ANDROID_RELEASE_FILE),
-        }
-        for release_type, legacy_file in legacy_files_to_remove.items():
-            if legacy_file and os.path.exists(legacy_file):
-                try:
-                    os.remove(legacy_file)
-                    logger.debug(
-                        "Removed legacy %s release file: %s",
-                        release_type,
-                        legacy_file,
-                    )
-                except OSError as e:
-                    logger.warning(
-                        "Could not remove legacy %s file %s: %s",
-                        release_type,
-                        legacy_file,
-                        e,
-                    )
-
-    except OSError as e:
-        logger.warning("Error removing legacy files: %s", e)
-
-
 def main(force_refresh: bool = False) -> None:
     """
-    Run the main Fetchtastic workflow: perform startup/configuration, optionally clear caches, process firmware and APK downloads with a retry pass for failures, clean legacy files, and send final notifications.
+    Run the main Fetchtastic workflow: perform startup/configuration, optionally clear caches, process firmware and APK downloads with a retry pass for failures, and send final notifications.
 
     Parameters:
         force_refresh (bool): If True, clear all persistent caches and the device hardware cache before fetching remote data.
@@ -6494,10 +6410,6 @@ def main(force_refresh: bool = False) -> None:
         latest_apk_version,
         latest_apk_prerelease_version,
     ) = _process_apk_downloads(config, paths_and_urls, force_refresh)
-
-    # Clean up legacy files - we fetch fresh data instead of migrating old data
-    logger.debug("Cleaning up legacy files")
-    _cleanup_legacy_files(config, paths_and_urls)
 
     if failed_firmware_list:
         logger.debug(f"Collected failed firmware downloads: {failed_firmware_list}")
