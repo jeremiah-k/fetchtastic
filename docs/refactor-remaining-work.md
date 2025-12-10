@@ -11,13 +11,12 @@ Status: living checklist for completing parity and clean-up of the modular downl
    - Paths remain under `firmware/repo-dls`; shell scripts keep executable handling.
    - Follow-up: verify CLI summaries surface repo counts/failures and include download URLs.
 2. Prerelease handling for firmware/APK
-   - Port commit-history and directory-scan logic (expected version computation, commit hash suffix handling).
-   - Recreate prerelease tracking JSONs (fields, expiry) and superseded-prerelease cleanup.
-   - Honor `CHECK_APK_PRERELEASES` / `CHECK_FIRMWARE_PRERELEASES` with pattern-aware selection.
+   - Commit-history and directory scan helpers added (expected version, directory matching, tracking creation/cleanup).
+   - Tracking write/cleanup unified via VersionManager; tracking files include metadata and expiry.
+   - TODO: Wire commit-history fetch and cache expiry into downloader flow; ensure commit hashes populate prerelease names.
 3. Version tracking + cache parity
-   - Align latest-release/prerelease JSON write format and locations with legacy (atomic writes, timestamps).
-   - Migrate existing tracking files safely; add backward-compatible readers.
-   - Cache expiry semantics for releases/commit timestamps (respect legacy constants and timing).
+   - Added backward-compatible readers/writers and legacy key support; expiry-aware cache reads.
+   - TODO: Plug release cache expiry into release fetch paths; migrate existing tracking files on disk.
 4. Extraction parity & safety
    - Implement `_validate_extraction_patterns` / `check_extraction_needed` equivalents.
    - Ensure extraction produces hash/sidecar behavior consistent with legacy (if applicable) and applies excludes.

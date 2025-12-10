@@ -12,6 +12,12 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from packaging.version import InvalidVersion, Version
 from packaging.version import parse as parse_version
 
+from fetchtastic.constants import (
+    COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS,
+    PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS,
+    PRERELEASE_COMMITS_CACHE_FILE,
+)
+
 # Import for type annotations only (available in older packaging versions)
 try:
     from packaging.version import LegacyVersion  # type: ignore
@@ -39,6 +45,9 @@ class VersionManager:
         r"^(\d+(?:\.\d+)*)\.([A-Za-z0-9][A-Za-z0-9.-]*)$"
     )
     VERSION_BASE_RX = re.compile(r"^(\d+(?:\.\d+)*)")
+    PRERELEASE_DIR_SEGMENT_RX = re.compile(
+        r"(firmware-\d+\.\d+\.\d+\.[a-f0-9]{6,})", re.IGNORECASE
+    )
 
     def normalize_version(
         self, version: Optional[str]
@@ -285,22 +294,43 @@ class VersionManager:
         if not commit_history or not base_version:
             return None
 
-        # Look for version bump patterns in commit history
-        version_bump_patterns = [
-            r"bump.*version.*to.*(\d+\.\d+\.\d+)",
-            r"version.*(\d+\.\d+\.\d+)",
-            r"release.*(\d+\.\d+\.\d+)",
-            r"v(\d+\.\d+\.\d+)",
-        ]
+        # Extract prerelease-like versions from commits that include the base version
+        version_pattern = re.compile(rf"{re.escape(base_version)}\.(\w+)")
+        for commit in commit_history:
+            match = version_pattern.search(commit)
+            if match:
+                return f"{base_version}.{match.group(1)}"
 
-        for pattern in version_bump_patterns:
-            for commit in commit_history:
-                match = re.search(pattern, commit.lower())
-                if match:
-                    return match.group(1)
-
-        # If no explicit version found, calculate from base version
+        # If no explicit match, fall back to incremented patch
         return self.calculate_expected_prerelease_version(base_version)
+
+    def scan_prerelease_directories(
+        self, directories: List[str], expected_version: str
+    ) -> List[str]:
+        """
+        Scan prerelease directories (meshtastic.github.io style) to collect prerelease identifiers.
+
+        Args:
+            directories: List of directory names
+            expected_version: Base version to match (e.g., 2.7.15)
+
+        Returns:
+            List of prerelease identifiers matching the expected version.
+        """
+        matching = []
+        for raw_dir_name in directories:
+            if not raw_dir_name.startswith("firmware-"):
+                continue
+            dir_name = raw_dir_name[len("firmware-") :]
+            if not re.match(r"\d+\.\d+\.\d+\.[a-f0-9]{6,}", dir_name, re.IGNORECASE):
+                continue
+            parts = dir_name.split(".")
+            if len(parts) < 4:
+                continue
+            base_version = ".".join(parts[:3])
+            if base_version == expected_version:
+                matching.append(dir_name)
+        return matching
 
     def get_commit_hash_suffix(self, commit_hash: str) -> str:
         """
@@ -535,59 +565,73 @@ class VersionManager:
             current_prereleases: List of current prerelease tracking data
             cache_manager: CacheManager instance for file operations
         """
-        import os
-
         if not os.path.exists(tracking_dir):
             return
 
         # Get existing tracking files
-        existing_files = []
-        for filename in os.listdir(tracking_dir):
-            if filename.endswith(".json"):
-                existing_files.append(os.path.join(tracking_dir, filename))
+        tracking_files = [
+            os.path.join(tracking_dir, f)
+            for f in os.listdir(tracking_dir)
+            if f.startswith("prerelease_") and f.endswith(".json")
+        ]
 
         # Read existing prerelease tracking data
         existing_prereleases = []
-        for file_path in existing_files:
+        for file_path in tracking_files:
             tracking_data = cache_manager.read_json(file_path)
-            if (
-                tracking_data
-                and "prerelease_version" in tracking_data
-                and "base_version" in tracking_data
-                and "expiry_timestamp" in tracking_data
+            if tracking_data and self.validate_version_tracking_data(
+                tracking_data, ["prerelease_version", "base_version"]
             ):
                 existing_prereleases.append(tracking_data)
 
-        # Check for superseded prereleases that need cleanup
+        # Cleanup superseded/expired prereleases by comparing to current set
         for existing in existing_prereleases:
             should_cleanup = False
-
-            # Check against all current prereleases
             for current in current_prereleases:
                 if self.should_cleanup_superseded_prerelease(existing, current):
                     should_cleanup = True
                     break
 
             if should_cleanup:
-                # Find and remove the tracking file
                 prerelease_version = existing.get("prerelease_version", "")
-                if prerelease_version:
-                    # Create expected filename pattern
-                    safe_version = re.sub(r"[^a-zA-Z0-9.-]", "_", prerelease_version)
-                    filename_pattern = f"prerelease_{safe_version}_*.json"
+                if not prerelease_version:
+                    continue
+                safe_version = re.sub(r"[^a-zA-Z0-9.-]", "_", prerelease_version)
+                filename_pattern = f"prerelease_{safe_version}_*.json"
 
-                    for filename in os.listdir(tracking_dir):
-                        if re.match(filename_pattern, filename):
-                            file_path = os.path.join(tracking_dir, filename)
-                            try:
-                                os.remove(file_path)
-                                print(
-                                    f"Cleaned up superseded prerelease tracking: {filename}"
-                                )
-                            except OSError as e:
-                                print(
-                                    f"Error cleaning up prerelease tracking {filename}: {e}"
-                                )
+                for filename in os.listdir(tracking_dir):
+                    if re.fullmatch(filename_pattern, filename):
+                        try:
+                            os.remove(os.path.join(tracking_dir, filename))
+                            logger.info(
+                                f"Cleaned up superseded prerelease tracking: {filename}"
+                            )
+                        except OSError as e:
+                            logger.error(
+                                f"Error cleaning up prerelease tracking {filename}: {e}"
+                            )
+
+        # Write/update tracking files for current prereleases
+        for current in current_prereleases:
+            if not self.validate_version_tracking_data(
+                current, ["prerelease_version", "base_version"]
+            ):
+                logger.warning(
+                    f"Invalid prerelease tracking data skipped: {current.get('prerelease_version')}"
+                )
+                continue
+
+            prerelease_version = current.get("prerelease_version")
+            base_version = current.get("base_version")
+            if not prerelease_version or not base_version:
+                continue
+
+            safe_version = re.sub(r"[^a-zA-Z0-9.-]", "_", prerelease_version)
+            safe_base = re.sub(r"[^a-zA-Z0-9.-]", "_", base_version)
+            filename = f"prerelease_{safe_version}_{safe_base}.json"
+            file_path = os.path.join(tracking_dir, filename)
+
+            cache_manager.atomic_write_json(file_path, current)
 
     def create_version_tracking_json(
         self,
@@ -595,6 +639,7 @@ class VersionManager:
         release_type: str,
         timestamp: Optional[str] = None,
         additional_data: Optional[Dict[str, Any]] = None,
+        include_latest_key: bool = True,
     ) -> Dict[str, Any]:
         """
         Create a version tracking JSON structure matching legacy format.
@@ -604,6 +649,7 @@ class VersionManager:
             release_type: Type of release (e.g., 'latest', 'prerelease')
             timestamp: Optional timestamp, uses current time if None
             additional_data: Optional additional data to include
+            include_latest_key: When True, also include legacy "latest_version" key
 
         Returns:
             Dict: Version tracking JSON structure
@@ -614,6 +660,11 @@ class VersionManager:
             "timestamp": timestamp or datetime.now(timezone.utc).isoformat(),
             "source": "fetchtastic-downloader",
         }
+
+        # Legacy compatibility fields
+        if include_latest_key:
+            tracking_data["latest_version"] = version
+            tracking_data["last_updated"] = tracking_data["timestamp"]
 
         if additional_data:
             tracking_data.update(additional_data)
@@ -665,7 +716,12 @@ class VersionManager:
             Optional[Dict]: Version tracking data or None if file doesn't exist
         """
         return cache_manager.read_json_with_backward_compatibility(
-            file_path, backward_compatible_keys
+            file_path,
+            backward_compatible_keys
+            or {
+                "version": "latest_version",
+                "last_updated": "timestamp",
+            },
         )
 
     def migrate_legacy_version_tracking(
@@ -806,3 +862,6 @@ class VersionManager:
                 pass
 
         return False
+
+
+import os

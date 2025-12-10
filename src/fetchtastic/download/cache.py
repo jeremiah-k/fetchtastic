@@ -137,6 +137,29 @@ class CacheManager:
             logger.error(f"Could not read JSON file {file_path}: {e}")
             return None
 
+    def read_json_with_backward_compatibility(
+        self, file_path: str, key_mapping: Optional[Dict[str, str]] = None
+    ) -> Optional[Dict]:
+        """
+        Read JSON and map legacy keys to new keys for backward compatibility.
+
+        Args:
+            file_path: Path to JSON file
+            key_mapping: Optional mapping of legacy_key -> new_key
+
+        Returns:
+            Optional[Dict]: Parsed and normalized JSON data
+        """
+        data = self.read_json(file_path)
+        if data is None or not key_mapping:
+            return data
+
+        normalized = data.copy()
+        for legacy_key, new_key in key_mapping.items():
+            if legacy_key in data and new_key not in data:
+                normalized[new_key] = data[legacy_key]
+        return normalized
+
     def cache_with_expiry(
         self, cache_file: str, data: Dict, expiry_hours: float
     ) -> bool:
@@ -258,6 +281,34 @@ class CacheManager:
 
         return self.atomic_write_json(file_path, data_with_timestamp)
 
+    def read_with_expiry(self, file_path: str, expiry_hours: float) -> Optional[Dict]:
+        """
+        Read cached data and return None if expired.
+
+        Args:
+            file_path: Path to cache file
+            expiry_hours: Number of hours before data is considered stale
+        """
+        cache_data = self.read_json(file_path)
+        if not cache_data:
+            return None
+
+        ts_key = None
+        for candidate in ("last_updated", "timestamp", "cached_at"):
+            if candidate in cache_data:
+                ts_key = candidate
+                break
+
+        if ts_key:
+            try:
+                ts_val = datetime.fromisoformat(cache_data[ts_key])
+                if datetime.now(timezone.utc) - ts_val > timedelta(hours=expiry_hours):
+                    return None
+            except ValueError:
+                return None
+
+        return cache_data
+
     def read_json_with_backward_compatibility(
         self, file_path: str, legacy_keys: Optional[Dict[str, str]] = None
     ) -> Optional[Dict]:
@@ -307,9 +358,9 @@ class CacheManager:
                 return False
 
             # Apply mapping
-            new_data = {}
+            new_data = legacy_data.copy()
             for legacy_key, new_key in legacy_to_new_mapping.items():
-                if legacy_key in legacy_data:
+                if legacy_key in legacy_data and new_key not in new_data:
                     new_data[new_key] = legacy_data[legacy_key]
 
             # Write new file atomically
@@ -359,3 +410,18 @@ class CacheManager:
                 logger.warning(f"Missing required key in cache data: {key}")
                 return False
         return True
+
+    def read_commit_timestamp_cache(self) -> Dict[str, Any]:
+        """
+        Read the commit timestamp cache with expiry.
+
+        Returns:
+            Dict: Cached commit timestamps that are still valid.
+        """
+        cache_file = os.path.join(self.cache_dir, PRERELEASE_COMMITS_CACHE_FILE)
+        cache_data = self.read_with_expiry(
+            cache_file, PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS / 3600
+        )
+        if not cache_data or "data" not in cache_data:
+            return {}
+        return cache_data.get("data", {})

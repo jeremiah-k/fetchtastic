@@ -171,6 +171,7 @@ class DownloadCLIIntegration:
             "configuration_valid": False,
             "download_directory_exists": False,
             "statistics": self.get_download_statistics(),
+            "repository_support": False,
         }
 
     def fallback_to_legacy(self) -> bool:
@@ -198,6 +199,7 @@ class DownloadCLIIntegration:
             "return_format_compatibility": True,
             "error_handling_compatibility": True,
             "configuration_compatibility": True,
+            "repository_reporting": True,
             "statistics": self.get_download_statistics(),
         }
 
@@ -230,6 +232,11 @@ class DownloadCLIIntegration:
         logger.info(f"Total Downloads: {stats.get('total_downloads', 0)}")
         logger.info(f"Failed Downloads: {stats.get('failed_downloads', 0)}")
         logger.info(f"Success Rate: {stats.get('success_rate', 0):.1f}%")
+        logger.info(
+            f"Android downloads: {stats.get('android_downloads', 0)}, "
+            f"Firmware downloads: {stats.get('firmware_downloads', 0)}, "
+            f"Repository downloads: {stats.get('repository_downloads', 0)}"
+        )
 
     def handle_cli_error(self, error: Exception) -> None:
         """

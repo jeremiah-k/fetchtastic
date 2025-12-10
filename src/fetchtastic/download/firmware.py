@@ -540,29 +540,22 @@ class FirmwareReleaseDownloader(BaseDownloader):
         """
         # Check if we have a tracking file
         tracking_file = self.get_prerelease_tracking_file()
-        if not os.path.exists(tracking_file):
-            return True
-
-        # Check if this is a newer prerelease than what we have
-        try:
-            import json
-
-            with open(tracking_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
+        if os.path.exists(tracking_file):
+            try:
+                data = self.cache_manager.read_json(tracking_file) or {}
                 current_prerelease = data.get("latest_version")
 
-                if not current_prerelease:
-                    return True
+                if current_prerelease:
+                    version_manager = VersionManager()
+                    comparison = version_manager.compare_versions(
+                        prerelease_tag, current_prerelease
+                    )
+                    return comparison > 0  # Download if newer
+            except Exception:
+                return True
 
-                # Compare versions
-                version_manager = VersionManager()
-                comparison = version_manager.compare_versions(
-                    prerelease_tag, current_prerelease
-                )
-                return comparison > 0  # Download if newer
-
-        except (IOError, json.JSONDecodeError):
-            return True
+        # No tracking file or unreadable; default to download
+        return True
 
     def manage_prerelease_tracking_files(self) -> None:
         """
@@ -602,22 +595,20 @@ class FirmwareReleaseDownloader(BaseDownloader):
         current_prereleases = self.handle_prereleases(current_releases)
 
         # Create tracking data for current prereleases
-        current_tracking_data = []
-        for prerelease in current_prereleases:
-            metadata = version_manager.get_prerelease_metadata_from_version(
-                prerelease.tag_name
+        current_tracking_data = [
+            version_manager.create_prerelease_tracking_data(
+                prerelease_version=prerelease.tag_name,
+                base_version=version_manager.extract_clean_version(prerelease.tag_name)
+                or "",
+                expiry_hours=24,
+                commit_hash=version_manager.get_prerelease_metadata_from_version(
+                    prerelease.tag_name
+                ).get("commit_hash", ""),
             )
-            tracking_data = {
-                "latest_version": prerelease.tag_name,
-                "base_version": metadata.get("base_version", ""),
-                "prerelease_type": metadata.get("prerelease_type", ""),
-                "prerelease_number": metadata.get("prerelease_number", ""),
-                "commit_hash": metadata.get("commit_hash", ""),
-                "expiry_timestamp": self._get_expiry_timestamp(),
-            }
-            current_tracking_data.append(tracking_data)
+            for prerelease in current_prereleases
+        ]
 
-        # Clean up superseded prereleases
+        # Clean up superseded/expired prereleases using shared helper
         version_manager.manage_prerelease_tracking_files(
             tracking_dir, current_tracking_data, self.cache_manager
         )
