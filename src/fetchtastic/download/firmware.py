@@ -417,9 +417,15 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
         return datetime.now(timezone.utc).isoformat()
 
+    def _get_expiry_timestamp(self) -> str:
+        """Get expiry timestamp (24 hours from now) in ISO 8601 format."""
+        from datetime import datetime, timedelta, timezone
+
+        return (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
+
     def handle_prereleases(self, releases: List[Release]) -> List[Release]:
         """
-        Filter and manage firmware prereleases.
+        Filter and manage firmware prereleases with enhanced functionality.
 
         Args:
             releases: List of all releases
@@ -439,6 +445,18 @@ class FirmwareReleaseDownloader(BaseDownloader):
         # Sort by published date (newest first)
         prereleases.sort(key=lambda r: r.published_at or "", reverse=True)
 
+        # Apply pattern filtering if configured
+        include_patterns = self.config.get("FIRMWARE_PRERELEASE_INCLUDE_PATTERNS", [])
+        exclude_patterns = self.config.get("FIRMWARE_PRERELEASE_EXCLUDE_PATTERNS", [])
+
+        if include_patterns or exclude_patterns:
+            version_manager = VersionManager()
+            prerelease_tags = [r.tag_name for r in prereleases]
+            filtered_tags = version_manager.filter_prereleases_by_pattern(
+                prerelease_tags, include_patterns, exclude_patterns
+            )
+            prereleases = [r for r in prereleases if r.tag_name in filtered_tags]
+
         return prereleases
 
     def get_prerelease_tracking_file(self) -> str:
@@ -452,7 +470,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
     def update_prerelease_tracking(self, prerelease_tag: str) -> bool:
         """
-        Update the firmware prerelease tracking information.
+        Update the firmware prerelease tracking information with enhanced metadata.
 
         Args:
             prerelease_tag: The prerelease tag to record
@@ -461,11 +479,22 @@ class FirmwareReleaseDownloader(BaseDownloader):
             bool: True if update succeeded, False otherwise
         """
         tracking_file = self.get_prerelease_tracking_file()
+
+        # Extract metadata from prerelease tag
+        version_manager = VersionManager()
+        metadata = version_manager.get_prerelease_metadata_from_version(prerelease_tag)
+
+        # Create tracking data with enhanced metadata
         data = {
             "latest_version": prerelease_tag,
             "file_type": "firmware_prerelease",
             "last_updated": self._get_current_iso_timestamp(),
+            "base_version": metadata.get("base_version", ""),
+            "prerelease_type": metadata.get("prerelease_type", ""),
+            "prerelease_number": metadata.get("prerelease_number", ""),
+            "commit_hash": metadata.get("commit_hash", ""),
         }
+
         return self.cache_manager.atomic_write_json(tracking_file, data)
 
     def should_download_prerelease(self, prerelease_tag: str) -> bool:
@@ -503,6 +532,64 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
         except (IOError, json.JSONDecodeError):
             return True
+
+    def manage_prerelease_tracking_files(self) -> None:
+        """
+        Manage firmware prerelease tracking files including cleanup of superseded prereleases.
+
+        This method scans the prerelease tracking directory and cleans up any superseded
+        or expired prerelease tracking files.
+        """
+        tracking_dir = os.path.dirname(self.get_prerelease_tracking_file())
+        if not os.path.exists(tracking_dir):
+            return
+
+        # Get all prerelease tracking files
+        tracking_files = []
+        for filename in os.listdir(tracking_dir):
+            if filename.startswith("prerelease_") and filename.endswith(".json"):
+                tracking_files.append(os.path.join(tracking_dir, filename))
+
+        # Read all existing prerelease tracking data
+        existing_prereleases = []
+        version_manager = VersionManager()
+
+        for file_path in tracking_files:
+            try:
+                tracking_data = self.cache_manager.read_json(file_path)
+                if (
+                    tracking_data
+                    and "latest_version" in tracking_data
+                    and "base_version" in tracking_data
+                ):
+                    existing_prereleases.append(tracking_data)
+            except Exception:
+                continue
+
+        # Get current prereleases from GitHub (if available)
+        current_releases = self.get_releases(limit=10)
+        current_prereleases = self.handle_prereleases(current_releases)
+
+        # Create tracking data for current prereleases
+        current_tracking_data = []
+        for prerelease in current_prereleases:
+            metadata = version_manager.get_prerelease_metadata_from_version(
+                prerelease.tag_name
+            )
+            tracking_data = {
+                "latest_version": prerelease.tag_name,
+                "base_version": metadata.get("base_version", ""),
+                "prerelease_type": metadata.get("prerelease_type", ""),
+                "prerelease_number": metadata.get("prerelease_number", ""),
+                "commit_hash": metadata.get("commit_hash", ""),
+                "expiry_timestamp": self._get_expiry_timestamp(),
+            }
+            current_tracking_data.append(tracking_data)
+
+        # Clean up superseded prereleases
+        version_manager.manage_prerelease_tracking_files(
+            tracking_dir, current_tracking_data, self.cache_manager
+        )
 
     def cleanup_superseded_prereleases(self, latest_release_tag: str) -> bool:
         """
