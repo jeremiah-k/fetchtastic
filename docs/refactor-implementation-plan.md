@@ -16,6 +16,13 @@ This document provides a comprehensive, prioritized implementation plan for comp
 - ✅ Migration compatibility layer
 - ✅ Basic version management and caching
 
+### P1 Functional Parity Gaps - COMPLETED ✅
+
+- ✅ **P1.1: Repository Downloader Integration** - Fully integrated with selection/exclude semantics
+- ✅ **P1.2: Prerelease Handling** - Complete commit-history logic and tracking implementation
+- ✅ **P1.3: Version Tracking + Cache Parity** - Atomic writes and backward compatibility
+- ✅ **P1.4: Extraction Parity & Safety** - Traversal-safe extraction with validation
+
 ### Remaining Gaps (from refactor-remaining-work.md)
 
 #### P1 - Functional Parity Gaps
@@ -456,11 +463,11 @@ This document provides a comprehensive, prioritized implementation plan for comp
 
 | Priority | Task Group             | Estimated Effort | Risk Level | Dependencies            | Status           |
 | -------- | ---------------------- | ---------------- | ---------- | ----------------------- | ---------------- |
-| P1       | Repository Integration | Medium           | Medium     | GitHub API, Path Safety | ⏳ Pending       |
-| P1       | Prerelease Handling    | High             | High       | Version Manager, Cache  | 🚧 Next Priority |
+| P1       | Repository Integration | Medium           | Medium     | GitHub API, Path Safety | ✅ Completed     |
+| P1       | Prerelease Handling    | High             | High       | Version Manager, Cache  | ✅ Completed     |
 | P1       | Version Tracking       | Medium           | Medium     | Cache Manager           | ✅ Completed     |
 | P1       | Extraction Parity      | High             | High       | Files Module            | ✅ Completed     |
-| P2       | Retry Logic            | Medium           | Low        | Orchestrator            | ⏳ Pending       |
+| P2       | Retry Logic            | Medium           | Low        | Orchestrator            | 🚧 Next Priority |
 | P2       | Cache Enhancements     | Low              | Low        | Cache Manager           | ⏳ Pending       |
 | P2       | Menu Alignment         | Low              | Low        | Menu Systems            | ⏳ Pending       |
 | P3       | CLI Simplification     | Low              | Low        | Test Analysis           | ⏳ Pending       |
@@ -496,8 +503,8 @@ This document provides a comprehensive, prioritized implementation plan for comp
 
 ### Validation Checklist
 
-- [ ] Repository downloads work with correct directory structure
-- [ ] Prerelease handling matches legacy behavior
+- [x] Repository downloads work with correct directory structure ✅
+- [x] Prerelease handling matches legacy behavior ✅
 - [x] Version tracking JSONs are backward compatible ✅
 - [x] Extraction is safe and matches legacy patterns ✅
 - [ ] Retry logic works with proper metadata
@@ -542,6 +549,8 @@ This document provides a comprehensive, prioritized implementation plan for comp
 3. **✅ Environment Setup**: Ensure development environment is ready - COMPLETED
 4. **✅ Incremental Implementation**: Start with P1.4 (Extraction Parity) as foundation - COMPLETED
 5. **✅ Continue Implementation**: Proceed with P1.3 (Version Tracking + Cache Parity) - COMPLETED
-6. **🚧 Proceed with Prerelease Handling**: Implement P1.2 (Prerelease Handling for Firmware/APK) - IN PROGRESS
-7. **⏳ Test and Validate**: Ensure all functionality works correctly
-8. **⏳ Document and Cleanup**: Update documentation and remove legacy code
+6. **✅ Complete Prerelease Handling**: Implement P1.2 (Prerelease Handling for Firmware/APK) - COMPLETED
+7. **✅ Finalize Repository Integration**: Implement P1.1 (Repository Downloader Integration) - COMPLETED
+8. **🚧 Proceed with P2 Tasks**: Implement P2.1 (Retry and Failure Metadata) - NEXT PRIORITY
+9. **⏳ Test and Validate**: Ensure all functionality works correctly
+10. **⏳ Document and Cleanup**: Update documentation and remove legacy code
