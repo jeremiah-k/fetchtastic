@@ -32,6 +32,7 @@ from .interfaces import (
 )
 from .migration import DownloadMigration
 from .orchestrator import DownloadOrchestrator
+from .repository import RepositoryDownloader
 from .version import VersionManager
 
 __all__ = [
@@ -47,6 +48,7 @@ __all__ = [
     # Downloaders
     "MeshtasticAndroidAppDownloader",
     "FirmwareReleaseDownloader",
+    "RepositoryDownloader",
     # Orchestration
     "DownloadOrchestrator",
     # Migration

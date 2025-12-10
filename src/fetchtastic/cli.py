@@ -9,7 +9,7 @@ from typing import List
 
 import platformdirs
 
-from fetchtastic import repo_downloader, setup_config
+from fetchtastic import setup_config
 from fetchtastic.constants import (
     FIRMWARE_DIR_PREFIX,
     MANAGED_DIRECTORIES,
@@ -22,6 +22,7 @@ from fetchtastic.constants import (
     MSG_REMOVED_MANAGED_FILE,
 )
 from fetchtastic.download.cli_integration import DownloadCLIIntegration
+from fetchtastic.download.repository import RepositoryDownloader
 from fetchtastic.log_utils import logger, set_log_level
 from fetchtastic.setup_config import (
     copy_to_clipboard_func,
@@ -632,7 +633,7 @@ def run_clean():
 
 def run_repo_clean(config):
     """
-    Cleans the repository download directory.
+    Cleans the repository download directory using the new RepositoryDownloader.
     """
     print(
         "This will remove all files downloaded from the meshtastic.github.io repository."
@@ -645,13 +646,9 @@ def run_repo_clean(config):
         print("Clean operation cancelled.")
         return
 
-    # Clean the repo directory
-    download_dir = config.get("DOWNLOAD_DIR")
-    if not download_dir:
-        print("Download directory not configured.")
-        return
-
-    success = repo_downloader.clean_repo_directory(download_dir)
+    # Clean the repo directory using the new downloader
+    repo_downloader = RepositoryDownloader(config)
+    success = repo_downloader.clean_repository_directory()
     if success:
         print("Repository directory cleaned successfully.")
     else:

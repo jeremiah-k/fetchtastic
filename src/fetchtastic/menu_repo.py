@@ -10,6 +10,9 @@ from fetchtastic.constants import (
     GITHUB_API_TIMEOUT,
     MESHTASTIC_GITHUB_IO_CONTENTS_URL,
 )
+
+# Import the new RepositoryDownloader for integration
+from fetchtastic.download.repository import RepositoryDownloader
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import make_github_api_request
 
@@ -362,4 +365,63 @@ def run_menu():
         return {"directory": directory, "files": selected_files}
     except Exception as e:
         print(f"An error occurred: {e}")
+        return None
+
+
+def run_repository_downloader_menu(config):
+    """
+    Run the complete repository downloader workflow using the new modular architecture.
+
+    This function integrates the menu system with the new RepositoryDownloader class
+    to provide a complete user experience for downloading repository files.
+
+    Args:
+        config (dict): Configuration dictionary containing download settings
+
+    Returns:
+        List[str]: List of paths to successfully downloaded files, or None if cancelled
+    """
+    try:
+        # Get user selection from the menu
+        selected_files = run_menu()
+        if not selected_files:
+            logger.info("No files selected for download.")
+            return None
+
+        # Create repository downloader instance
+        repo_downloader = RepositoryDownloader(config)
+
+        # Convert selected files to the format expected by the new downloader
+        files_to_download = []
+        for file_info in selected_files["files"]:
+            file_data = {
+                "name": file_info["name"],
+                "download_url": file_info["download_url"],
+                "size": file_info.get("size", 0),
+            }
+            files_to_download.append(file_data)
+
+        # Download the files using the new downloader
+        download_results = repo_downloader.download_repository_files_batch(
+            files_to_download, selected_files["directory"]
+        )
+
+        # Process results
+        successful_downloads = []
+        for result in download_results:
+            if result.success:
+                successful_downloads.append(str(result.file_path))
+                logger.info(f"Successfully downloaded: {result.file_path}")
+            else:
+                logger.error(f"Failed to download: {result.error_message}")
+
+        if successful_downloads:
+            logger.info(f"Successfully downloaded {len(successful_downloads)} files.")
+            return successful_downloads
+        else:
+            logger.info("No files were downloaded successfully.")
+            return None
+
+    except Exception as e:
+        logger.error(f"Error in repository downloader workflow: {e}")
         return None
