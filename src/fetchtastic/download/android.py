@@ -352,6 +352,52 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         }
         return self.cache_manager.atomic_write_json(tracking_file, data)
 
+    def validate_extraction_patterns(
+        self, patterns: List[str], exclude_patterns: List[str]
+    ) -> bool:
+        """
+        Validate extraction patterns for Android APK files.
+
+        Since APK files are not extracted in this downloader, this method
+        always returns False to indicate that extraction is not supported.
+
+        Args:
+            patterns: List of filename patterns for extraction
+            exclude_patterns: List of filename patterns to exclude
+
+        Returns:
+            bool: False (extraction not supported for APK files)
+        """
+        # APK files are not extracted, so patterns are not applicable
+        logger.debug("Extraction validation called for Android APK - not applicable")
+        return False
+
+    def check_extraction_needed(
+        self,
+        file_path: str,
+        extract_dir: str,
+        patterns: List[str],
+        exclude_patterns: List[str],
+    ) -> bool:
+        """
+        Check if extraction is needed for Android APK files.
+
+        Since APK files are not extracted in this downloader, this method
+        always returns False to indicate that extraction is not needed.
+
+        Args:
+            file_path: Path to the APK file
+            extract_dir: Directory where files would be extracted
+            patterns: List of filename patterns for extraction
+            exclude_patterns: List of filename patterns to exclude
+
+        Returns:
+            bool: False (extraction not needed for APK files)
+        """
+        # APK files are not extracted, so extraction is never needed
+        logger.debug("Extraction need check called for Android APK - not applicable")
+        return False
+
     def should_download_prerelease(self, prerelease_tag: str) -> bool:
         """
         Determine if a prerelease should be downloaded.

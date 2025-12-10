@@ -8,7 +8,11 @@ the foundation of the modular download architecture.
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, List, Optional
+
+if TYPE_CHECKING:
+    from .cache import CacheManager
+    from .version import VersionManager
 
 
 @dataclass
@@ -217,6 +221,42 @@ class Downloader(ABC):
 
         Returns:
             List[Path]: List of paths to extracted files
+        """
+
+    @abstractmethod
+    def validate_extraction_patterns(
+        self, patterns: List[str], exclude_patterns: List[str]
+    ) -> bool:
+        """
+        Validate extraction patterns to ensure they are safe and well-formed.
+
+        Args:
+            patterns: List of filename patterns for extraction
+            exclude_patterns: List of filename patterns to exclude
+
+        Returns:
+            bool: True if patterns are valid, False otherwise
+        """
+
+    @abstractmethod
+    def check_extraction_needed(
+        self,
+        file_path: str,
+        extract_dir: str,
+        patterns: List[str],
+        exclude_patterns: List[str],
+    ) -> bool:
+        """
+        Check if extraction is needed by examining existing files.
+
+        Args:
+            file_path: Path to the archive file
+            extract_dir: Directory where files would be extracted
+            patterns: List of filename patterns for extraction
+            exclude_patterns: List of filename patterns to exclude
+
+        Returns:
+            bool: True if extraction is needed, False if files already exist
         """
 
     @abstractmethod

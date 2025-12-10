@@ -361,6 +361,55 @@ class RepositoryDownloader(BaseDownloader):
         # Repository downloads don't use version tracking
         return True
 
+    def validate_extraction_patterns(
+        self, patterns: List[str], exclude_patterns: List[str]
+    ) -> bool:
+        """
+        Validate extraction patterns for repository files.
+
+        Since repository files are typically not archives that need extraction,
+        this method validates patterns but may return False for safety.
+
+        Args:
+            patterns: List of filename patterns for extraction
+            exclude_patterns: List of filename patterns to exclude
+
+        Returns:
+            bool: True if patterns are valid, False otherwise
+        """
+        # Repository files are typically not extracted, but validate patterns for safety
+        return self.file_operations.validate_extraction_patterns(
+            patterns, exclude_patterns
+        )
+
+    def check_extraction_needed(
+        self,
+        file_path: str,
+        extract_dir: str,
+        patterns: List[str],
+        exclude_patterns: List[str],
+    ) -> bool:
+        """
+        Check if extraction is needed for repository files.
+
+        Since repository files are typically not archives, this method
+        always returns False to indicate that extraction is not needed.
+
+        Args:
+            file_path: Path to the repository file
+            extract_dir: Directory where files would be extracted
+            patterns: List of filename patterns for extraction
+            exclude_patterns: List of filename patterns to exclude
+
+        Returns:
+            bool: False (extraction not needed for repository files)
+        """
+        # Repository files are typically not archives, so extraction is never needed
+        logger.debug(
+            "Extraction need check called for repository file - not applicable"
+        )
+        return False
+
     def should_download_release(self, release_tag: str, asset_name: str) -> bool:
         """
         Determine if a repository release should be downloaded.

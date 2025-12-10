@@ -206,6 +206,46 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 error_message=str(e),
             )
 
+    def validate_extraction_patterns(
+        self, patterns: List[str], exclude_patterns: List[str]
+    ) -> bool:
+        """
+        Validate extraction patterns to ensure they are safe and well-formed.
+
+        Args:
+            patterns: List of filename patterns for extraction
+            exclude_patterns: List of filename patterns to exclude
+
+        Returns:
+            bool: True if patterns are valid, False otherwise
+        """
+        return self.file_operations.validate_extraction_patterns(
+            patterns, exclude_patterns
+        )
+
+    def check_extraction_needed(
+        self,
+        file_path: str,
+        extract_dir: str,
+        patterns: List[str],
+        exclude_patterns: List[str],
+    ) -> bool:
+        """
+        Check if extraction is needed by examining existing files.
+
+        Args:
+            file_path: Path to the archive file
+            extract_dir: Directory where files would be extracted
+            patterns: List of filename patterns for extraction
+            exclude_patterns: List of filename patterns to exclude
+
+        Returns:
+            bool: True if extraction is needed, False if files already exist
+        """
+        return self.file_operations.check_extraction_needed(
+            file_path, extract_dir, patterns, exclude_patterns
+        )
+
     def extract_firmware(
         self,
         release: Release,
@@ -236,11 +276,25 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     error_message="ZIP file not found",
                 )
 
-            # Extract files matching patterns
-            extracted_files = self.extract(zip_path, patterns, exclude_patterns or [])
+            # Get the directory where files will be extracted
+            extract_dir = os.path.dirname(zip_path)
+
+            # Use the enhanced extraction with validation
+            extracted_files = self.file_operations.extract_with_validation(
+                zip_path, extract_dir, patterns, exclude_patterns or []
+            )
 
             if extracted_files:
                 logger.info(f"Extracted {len(extracted_files)} files from {asset.name}")
+
+                # Generate hash files for extracted files (legacy sidecar behavior)
+                hash_results = self.file_operations.generate_hash_for_extracted_files(
+                    extracted_files
+                )
+                logger.debug(
+                    f"Generated hashes for {len(hash_results)} extracted files"
+                )
+
                 return self.create_download_result(
                     success=True,
                     release_tag=release.tag_name,
