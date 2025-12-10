@@ -27,7 +27,7 @@ Status: living checklist for completing parity and clean-up of the modular downl
 
 5. Retry and failure metadata **(metadata captured; real retries pending)**
    - URLs/sizes/types now flow into `DownloadResult`; reporting uses file_type.
-   - Implement actual retry using stored metadata instead of simulated success paths.
+   - Implement actual retry using stored metadata instead of simulated success paths. **(Done – orchestration retries now call downloaders with stored URL/path and verification)**
 6. Cache manager enhancements
    - Port commit timestamp caching and rate-limit tracking hooks from legacy utils.
    - Add cache invalidation/refresh switches (force_refresh) matching monolith.
@@ -45,7 +45,7 @@ Status: living checklist for completing parity and clean-up of the modular downl
 10. Documentation/tests
 
 - Port high-value legacy tests (prerelease, repo downloads, extraction validation, cleanup, hash verification).
-- Expand modular test suites for new retry/reporting behaviors.
+- Expand modular test suites for new retry/reporting behaviors. **(retry path covered in test_orchestrator_retry.py)**
 - Keep this document updated as tasks complete.
 
 ## How to Update This File

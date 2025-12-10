@@ -427,36 +427,9 @@ class DownloadOrchestrator:
                 logger.info(f"  - Error: {failed_result.error_type}")
                 logger.info(f"  - Attempt: {failed_result.retry_count}/{max_retries}")
 
-                # Determine which downloader to use based on file type
-                if failed_result.file_type == "android":
-                    logger.info(
-                        f"Retrying Android download: {failed_result.release_tag}"
-                    )
-                    # In a real implementation, we would reconstruct and retry the Android download
-                    # For now, we'll simulate a retry by creating a new result
-                    retry_result = self._simulate_retry(failed_result, "android")
-                    self._handle_download_result(retry_result, "android_retry")
-
-                elif failed_result.file_type == "firmware":
-                    logger.info(
-                        f"Retrying firmware download: {failed_result.release_tag}"
-                    )
-                    # In a real implementation, we would reconstruct and retry the firmware download
-                    retry_result = self._simulate_retry(failed_result, "firmware")
-                    self._handle_download_result(retry_result, "firmware_retry")
-
-                elif failed_result.file_type == "repository":
-                    logger.info(
-                        f"Retrying repository download: {failed_result.release_tag}"
-                    )
-                    # In a real implementation, we would reconstruct and retry the repository download
-                    retry_result = self._simulate_retry(failed_result, "repository")
-                    self._handle_download_result(retry_result, "repository_retry")
-
-                else:
-                    logger.warning(
-                        f"Unknown file type '{failed_result.file_type}' for retry"
-                    )
+                retry_result = self._retry_single_failure(failed_result)
+                operation = f"{retry_result.file_type or 'unknown'}_retry"
+                self._handle_download_result(retry_result, operation)
 
             except Exception as e:
                 logger.error(f"Retry failed for {failed_result.release_tag}: {e}")
@@ -471,53 +444,111 @@ class DownloadOrchestrator:
         # Generate detailed retry report
         self._generate_retry_report(retryable_failures, non_retryable_failures)
 
-    def _simulate_retry(
-        self, failed_result: DownloadResult, file_type: str
-    ) -> DownloadResult:
+    def _retry_single_failure(self, failed_result: DownloadResult) -> DownloadResult:
         """
-        Simulate a retry operation for testing purposes.
-
-        In a real implementation, this would actually retry the download operation.
-        For now, we simulate success for testing the retry logic.
-
-        Args:
-            failed_result: The original failed download result
-            file_type: Type of file being retried
+        Retry a single failed download using stored metadata.
 
         Returns:
-            DownloadResult: New result with retry metadata
+            DownloadResult: Updated result after retry attempt.
         """
-        # Simulate a successful retry (in real implementation, this would actually retry)
-        retry_success = True  # For testing, we'll assume retries succeed
+        url = failed_result.download_url
+        target_path = str(failed_result.file_path) if failed_result.file_path else None
+        file_type = failed_result.file_type or "unknown"
 
-        if retry_success:
-            logger.info(f"✅ Retry successful for {failed_result.release_tag}")
-            return DownloadResult(
-                success=True,
-                release_tag=failed_result.release_tag,
-                file_path=failed_result.file_path,
-                download_url=failed_result.download_url,
-                file_size=failed_result.file_size,
-                file_type=file_type,
-                retry_count=failed_result.retry_count,
-                retry_timestamp=failed_result.retry_timestamp,
-                error_message=f"Successfully retried after {failed_result.retry_count} attempts",
-                is_retryable=False,  # Success means no more retries needed
-            )
-        else:
-            logger.warning(f"❌ Retry failed for {failed_result.release_tag}")
+        if not url or not target_path:
             return DownloadResult(
                 success=False,
                 release_tag=failed_result.release_tag,
                 file_path=failed_result.file_path,
-                download_url=failed_result.download_url,
+                download_url=url,
                 file_size=failed_result.file_size,
                 file_type=file_type,
                 retry_count=failed_result.retry_count,
                 retry_timestamp=failed_result.retry_timestamp,
-                error_message=f"Retry attempt {failed_result.retry_count} failed",
+                error_message="Retry skipped: missing URL or target path",
                 error_type="retry_failure",
-                is_retryable=failed_result.retry_count < 3,  # Can retry up to 3 times
+                is_retryable=False,
+            )
+
+        try:
+            if file_type == "android":
+                ok = self.android_downloader.download(url, target_path)
+                if ok and self.android_downloader.verify(target_path):
+                    return DownloadResult(
+                        success=True,
+                        release_tag=failed_result.release_tag,
+                        file_path=Path(target_path),
+                        download_url=url,
+                        file_size=failed_result.file_size,
+                        file_type=file_type,
+                        retry_count=failed_result.retry_count,
+                        retry_timestamp=failed_result.retry_timestamp,
+                        error_message=None,
+                        is_retryable=False,
+                    )
+
+            elif file_type == "firmware":
+                ok = self.firmware_downloader.download(url, target_path)
+                if ok and self.firmware_downloader.verify(target_path):
+                    return DownloadResult(
+                        success=True,
+                        release_tag=failed_result.release_tag,
+                        file_path=Path(target_path),
+                        download_url=url,
+                        file_size=failed_result.file_size,
+                        file_type=file_type,
+                        retry_count=failed_result.retry_count,
+                        retry_timestamp=failed_result.retry_timestamp,
+                        error_message=None,
+                        is_retryable=False,
+                    )
+
+            elif file_type == "repository":
+                ok = self.repository_downloader.download(url, target_path)
+                if ok and self.repository_downloader.verify(target_path):
+                    return DownloadResult(
+                        success=True,
+                        release_tag=failed_result.release_tag,
+                        file_path=Path(target_path),
+                        download_url=url,
+                        file_size=failed_result.file_size,
+                        file_type=file_type,
+                        retry_count=failed_result.retry_count,
+                        retry_timestamp=failed_result.retry_timestamp,
+                        error_message=None,
+                        is_retryable=False,
+                    )
+
+            # If we reach here, retry failed verification or download
+            return DownloadResult(
+                success=False,
+                release_tag=failed_result.release_tag,
+                file_path=Path(target_path),
+                download_url=url,
+                file_size=failed_result.file_size,
+                file_type=file_type,
+                retry_count=failed_result.retry_count,
+                retry_timestamp=failed_result.retry_timestamp,
+                error_message="Retry attempt failed",
+                error_type="retry_failure",
+                is_retryable=failed_result.retry_count
+                < self.config.get("MAX_RETRIES", 3),
+            )
+
+        except Exception as exc:
+            logger.error(f"Retry exception for {failed_result.release_tag}: {exc}")
+            return DownloadResult(
+                success=False,
+                release_tag=failed_result.release_tag,
+                file_path=Path(target_path),
+                download_url=url,
+                file_size=failed_result.file_size,
+                file_type=file_type,
+                retry_count=failed_result.retry_count,
+                retry_timestamp=failed_result.retry_timestamp,
+                error_message=str(exc),
+                error_type="retry_failure",
+                is_retryable=False,
             )
 
     def _generate_retry_report(
