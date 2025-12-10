@@ -14,6 +14,7 @@ MESHTASTIC_FIRMWARE_RELEASES_URL = f"{GITHUB_API_BASE}/meshtastic/firmware/relea
 MESHTASTIC_GITHUB_IO_CONTENTS_URL = (
     f"{GITHUB_API_BASE}/meshtastic/meshtastic.github.io/contents"
 )
+MESHTASTIC_REPO_URL = "https://meshtastic.github.io"
 
 # Network timeouts and delays (in seconds)
 GITHUB_API_TIMEOUT = 10

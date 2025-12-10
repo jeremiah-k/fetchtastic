@@ -191,7 +191,7 @@ class RepositoryDownloader(BaseDownloader):
             bool: True if the subdirectory is safe, False otherwise
         """
         # Check for path traversal patterns
-        if re.search(r"(\.\./|\.\.\\|~|/|\\|\.\.)", subdirectory):
+        if re.search(r"(\.\./|\.\.\\|~|\\|\.\.)", subdirectory):
             return False
 
         # Check for absolute paths
