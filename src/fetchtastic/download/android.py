@@ -14,6 +14,7 @@ from fetchtastic.constants import (
     LATEST_ANDROID_PRERELEASE_JSON_FILE,
     LATEST_ANDROID_RELEASE_JSON_FILE,
     MESHTASTIC_ANDROID_RELEASES_URL,
+    RELEASES_CACHE_EXPIRY_HOURS,
 )
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import make_github_api_request
@@ -72,12 +73,26 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             List[Release]: List of available Android releases
         """
         try:
-            # Use the existing GitHub API request utility
-            releases_data = make_github_api_request(
-                f"{self.android_releases_url}",
-                self.config.get("GITHUB_TOKEN"),
-                allow_env_token=True,
+            cache_file = os.path.join(
+                self.cache_manager.cache_dir, "android_releases.json"
             )
+
+            releases_data = self.cache_manager.read_with_expiry(
+                cache_file, RELEASES_CACHE_EXPIRY_HOURS
+            )
+
+            if not releases_data:
+                releases_data = make_github_api_request(
+                    f"{self.android_releases_url}",
+                    self.config.get("GITHUB_TOKEN"),
+                    allow_env_token=True,
+                )
+                # persist cache if request returns a response object
+                if hasattr(releases_data, "json"):
+                    releases_data = releases_data.json()
+                self.cache_manager.cache_with_expiry(
+                    cache_file, releases_data, RELEASES_CACHE_EXPIRY_HOURS
+                )
 
             if not releases_data or not isinstance(releases_data, list):
                 logger.error("Invalid releases data received from GitHub API")

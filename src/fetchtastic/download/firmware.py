@@ -13,6 +13,7 @@ from fetchtastic.constants import (
     LATEST_FIRMWARE_PRERELEASE_JSON_FILE,
     LATEST_FIRMWARE_RELEASE_JSON_FILE,
     MESHTASTIC_FIRMWARE_RELEASES_URL,
+    RELEASES_CACHE_EXPIRY_HOURS,
 )
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import make_github_api_request
@@ -72,12 +73,25 @@ class FirmwareReleaseDownloader(BaseDownloader):
             List[Release]: List of available firmware releases
         """
         try:
-            # Use the existing GitHub API request utility
-            releases_data = make_github_api_request(
-                f"{self.firmware_releases_url}",
-                self.config.get("GITHUB_TOKEN"),
-                allow_env_token=True,
+            cache_file = os.path.join(
+                self.cache_manager.cache_dir, "firmware_releases.json"
             )
+
+            releases_data = self.cache_manager.read_with_expiry(
+                cache_file, RELEASES_CACHE_EXPIRY_HOURS
+            )
+
+            if not releases_data:
+                releases_data = make_github_api_request(
+                    f"{self.firmware_releases_url}",
+                    self.config.get("GITHUB_TOKEN"),
+                    allow_env_token=True,
+                )
+                if hasattr(releases_data, "json"):
+                    releases_data = releases_data.json()
+                self.cache_manager.cache_with_expiry(
+                    cache_file, releases_data, RELEASES_CACHE_EXPIRY_HOURS
+                )
 
             if not releases_data or not isinstance(releases_data, list):
                 logger.error("Invalid releases data received from GitHub API")
@@ -487,6 +501,24 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 prerelease_tags, include_patterns, exclude_patterns
             )
             prereleases = [r for r in prereleases if r.tag_name in filtered_tags]
+
+        # Further restrict to prereleases that match expected base version
+        expected_base = None
+        latest_release = next((r for r in releases if not r.prerelease), None)
+        if latest_release:
+            expected_base = version_manager.calculate_expected_prerelease_version(
+                latest_release.tag_name
+            )
+
+        if expected_base:
+            prereleases = [
+                pr
+                for pr in prereleases
+                if version_manager.extract_clean_version(pr.tag_name)
+                and version_manager.extract_clean_version(pr.tag_name)
+                .lstrip("vV")
+                .startswith(expected_base)
+            ]
 
         return prereleases
 
