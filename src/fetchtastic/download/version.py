@@ -266,6 +266,329 @@ class VersionManager:
         # If we can't parse it, just return empty string
         return ""
 
+    def parse_commit_history_for_prerelease_version(
+        self, commit_history: List[str], base_version: str
+    ) -> Optional[str]:
+        """
+        Parse commit history to determine expected prerelease version.
+
+        This method analyzes commit messages and history to determine what the
+        expected prerelease version should be based on commit patterns.
+
+        Args:
+            commit_history: List of commit messages/history entries
+            base_version: Base version to use as starting point
+
+        Returns:
+            Optional[str]: Expected prerelease version or None if cannot be determined
+        """
+        if not commit_history or not base_version:
+            return None
+
+        # Look for version bump patterns in commit history
+        version_bump_patterns = [
+            r"bump.*version.*to.*(\d+\.\d+\.\d+)",
+            r"version.*(\d+\.\d+\.\d+)",
+            r"release.*(\d+\.\d+\.\d+)",
+            r"v(\d+\.\d+\.\d+)",
+        ]
+
+        for pattern in version_bump_patterns:
+            for commit in commit_history:
+                match = re.search(pattern, commit.lower())
+                if match:
+                    return match.group(1)
+
+        # If no explicit version found, calculate from base version
+        return self.calculate_expected_prerelease_version(base_version)
+
+    def get_commit_hash_suffix(self, commit_hash: str) -> str:
+        """
+        Extract and format commit hash suffix for version strings.
+
+        Args:
+            commit_hash: Full commit hash
+
+        Returns:
+            str: Formatted commit hash suffix (e.g., short hash)
+        """
+        if not commit_hash:
+            return ""
+
+        # Use short hash (first 7 characters) for version suffix
+        short_hash = commit_hash[:7] if len(commit_hash) >= 7 else commit_hash
+
+        # Clean hash (remove non-alphanumeric characters)
+        clean_hash = re.sub(r"[^a-zA-Z0-9]", "", short_hash)
+
+        return clean_hash
+
+    def create_prerelease_version_with_hash(
+        self, base_version: str, commit_hash: str, prerelease_type: str = "rc"
+    ) -> str:
+        """
+        Create a prerelease version string with commit hash suffix.
+
+        Args:
+            base_version: Base version (e.g., "1.2.3")
+            commit_hash: Commit hash for suffix
+            prerelease_type: Type of prerelease (rc, alpha, beta, etc.)
+
+        Returns:
+            str: Full prerelease version with hash suffix
+        """
+        if not base_version:
+            return ""
+
+        # Get clean base version without leading 'v'
+        clean_base = base_version.lstrip("vV")
+
+        # Get commit hash suffix
+        hash_suffix = self.get_commit_hash_suffix(commit_hash)
+        if hash_suffix:
+            return f"{clean_base}-{prerelease_type}.1+{hash_suffix}"
+        else:
+            return f"{clean_base}-{prerelease_type}.1"
+
+    def scan_directory_for_prerelease_versions(
+        self, directory_path: str, pattern: str = "*"
+    ) -> List[str]:
+        """
+        Scan directory for prerelease version files.
+
+        Args:
+            directory_path: Path to directory to scan
+            pattern: File pattern to match
+
+        Returns:
+            List[str]: List of found prerelease versions
+        """
+        import glob
+        import os
+
+        if not os.path.exists(directory_path):
+            return []
+
+        found_versions = []
+        pattern_with_path = os.path.join(directory_path, pattern)
+
+        for file_path in glob.glob(pattern_with_path):
+            try:
+                # Extract version from filename
+                filename = os.path.basename(file_path)
+                # Look for version patterns in filename
+                version_match = re.search(
+                    r"(?:v|version|release)?[_-]?(\d+\.\d+\.\d+[^\/]*)",
+                    filename,
+                    re.IGNORECASE,
+                )
+                if version_match:
+                    version = version_match.group(1)
+                    # Check if it's a prerelease
+                    if self.is_prerelease_version(version):
+                        found_versions.append(version)
+            except Exception:
+                continue
+
+        return found_versions
+
+    def is_prerelease_version(self, version: str) -> bool:
+        """
+        Check if a version string represents a prerelease.
+
+        Args:
+            version: Version string to check
+
+        Returns:
+            bool: True if version is a prerelease, False otherwise
+        """
+        if not version:
+            return False
+
+        # Check for prerelease indicators
+        prerelease_indicators = [
+            "-rc",
+            "-alpha",
+            "-beta",
+            "-dev",
+            "rc",
+            "alpha",
+            "beta",
+            "dev",
+        ]
+
+        version_lower = version.lower()
+        return any(indicator in version_lower for indicator in prerelease_indicators)
+
+    def get_prerelease_metadata_from_version(self, version: str) -> Dict[str, Any]:
+        """
+        Extract prerelease metadata from a version string.
+
+        Args:
+            version: Version string to parse
+
+        Returns:
+            Dict: Prerelease metadata including base version, prerelease type, etc.
+        """
+        if not version:
+            return {}
+
+        metadata = {
+            "original_version": version,
+            "is_prerelease": False,
+            "base_version": "",
+            "prerelease_type": "",
+            "prerelease_number": "",
+            "commit_hash": "",
+        }
+
+        # Check if it's a prerelease
+        if not self.is_prerelease_version(version):
+            return metadata
+
+        metadata["is_prerelease"] = True
+
+        # Remove leading 'v'/'V' for processing
+        clean_version = version.lstrip("vV")
+
+        # Parse version to extract components
+        normalized = self.normalize_version(version)
+        if isinstance(normalized, Version):
+            # Extract base version
+            if normalized.release:
+                metadata["base_version"] = ".".join(
+                    str(part) for part in normalized.release
+                )
+
+            # Extract prerelease information
+            if normalized.pre:
+                pre_parts = [str(part) for part in normalized.pre]
+                if pre_parts:
+                    metadata["prerelease_type"] = pre_parts[0]
+                    if len(pre_parts) > 1:
+                        metadata["prerelease_number"] = pre_parts[1]
+
+            # Extract local version (commit hash)
+            if normalized.local:
+                # Join local parts without dots to get the full hash
+                metadata["commit_hash"] = "".join(
+                    str(part) for part in normalized.local
+                )
+
+        return metadata
+
+    def filter_prereleases_by_pattern(
+        self,
+        prereleases: List[str],
+        include_patterns: List[str],
+        exclude_patterns: List[str],
+    ) -> List[str]:
+        """
+        Filter prereleases based on include/exclude patterns.
+
+        Args:
+            prereleases: List of prerelease versions
+            include_patterns: Patterns to include
+            exclude_patterns: Patterns to exclude
+
+        Returns:
+            List[str]: Filtered list of prerelease versions
+        """
+        filtered = []
+
+        for prerelease in prereleases:
+            version_lower = prerelease.lower()
+
+            # Check include patterns
+            include_match = False
+            if not include_patterns:
+                include_match = True
+            else:
+                for pattern in include_patterns:
+                    if pattern.lower() in version_lower:
+                        include_match = True
+                        break
+
+            # Check exclude patterns
+            exclude_match = False
+            for pattern in exclude_patterns:
+                if pattern.lower() in version_lower:
+                    exclude_match = True
+                    break
+
+            if include_match and not exclude_match:
+                filtered.append(prerelease)
+
+        return filtered
+
+    def manage_prerelease_tracking_files(
+        self,
+        tracking_dir: str,
+        current_prereleases: List[Dict[str, Any]],
+        cache_manager: Any,
+    ) -> None:
+        """
+        Manage prerelease tracking files including cleanup of superseded prereleases.
+
+        Args:
+            tracking_dir: Directory where tracking files are stored
+            current_prereleases: List of current prerelease tracking data
+            cache_manager: CacheManager instance for file operations
+        """
+        import os
+
+        if not os.path.exists(tracking_dir):
+            return
+
+        # Get existing tracking files
+        existing_files = []
+        for filename in os.listdir(tracking_dir):
+            if filename.endswith(".json"):
+                existing_files.append(os.path.join(tracking_dir, filename))
+
+        # Read existing prerelease tracking data
+        existing_prereleases = []
+        for file_path in existing_files:
+            tracking_data = cache_manager.read_json(file_path)
+            if (
+                tracking_data
+                and "prerelease_version" in tracking_data
+                and "base_version" in tracking_data
+                and "expiry_timestamp" in tracking_data
+            ):
+                existing_prereleases.append(tracking_data)
+
+        # Check for superseded prereleases that need cleanup
+        for existing in existing_prereleases:
+            should_cleanup = False
+
+            # Check against all current prereleases
+            for current in current_prereleases:
+                if self.should_cleanup_superseded_prerelease(existing, current):
+                    should_cleanup = True
+                    break
+
+            if should_cleanup:
+                # Find and remove the tracking file
+                prerelease_version = existing.get("prerelease_version", "")
+                if prerelease_version:
+                    # Create expected filename pattern
+                    safe_version = re.sub(r"[^a-zA-Z0-9.-]", "_", prerelease_version)
+                    filename_pattern = f"prerelease_{safe_version}_*.json"
+
+                    for filename in os.listdir(tracking_dir):
+                        if re.match(filename_pattern, filename):
+                            file_path = os.path.join(tracking_dir, filename)
+                            try:
+                                os.remove(file_path)
+                                print(
+                                    f"Cleaned up superseded prerelease tracking: {filename}"
+                                )
+                            except OSError as e:
+                                print(
+                                    f"Error cleaning up prerelease tracking {filename}: {e}"
+                                )
+
     def create_version_tracking_json(
         self,
         version: str,
