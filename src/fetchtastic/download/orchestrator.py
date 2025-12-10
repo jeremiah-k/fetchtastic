@@ -14,6 +14,7 @@ from fetchtastic.log_utils import logger
 from .android import MeshtasticAndroidAppDownloader
 from .firmware import FirmwareReleaseDownloader
 from .interfaces import Asset, DownloadResult, Release
+from .repository import RepositoryDownloader
 from .version import VersionManager
 
 
@@ -42,6 +43,7 @@ class DownloadOrchestrator:
         # Initialize downloaders
         self.android_downloader = MeshtasticAndroidAppDownloader(config)
         self.firmware_downloader = FirmwareReleaseDownloader(config)
+        self.repository_downloader = RepositoryDownloader(config)
 
         # Track results
         self.download_results: List[DownloadResult] = []
@@ -64,6 +66,9 @@ class DownloadOrchestrator:
 
         # Process firmware downloads
         self._process_firmware_downloads()
+
+        # Process repository downloads
+        self._process_repository_downloads()
 
         # Retry failed downloads
         self._retry_failed_downloads()
@@ -114,6 +119,65 @@ class DownloadOrchestrator:
 
         except Exception as e:
             logger.error(f"Error processing firmware downloads: {e}")
+
+    def _process_repository_downloads(self) -> None:
+        """Process repository downloads."""
+        try:
+            logger.info("Processing repository downloads...")
+
+            # Get repository files
+            repository_files = self.repository_downloader.get_repository_files()
+            if not repository_files:
+                logger.info("No repository files found")
+                return
+
+            # Filter files based on configuration
+            files_to_download = self._filter_repository_files(repository_files)
+
+            # Download each file
+            for file_info in files_to_download:
+                self._download_repository_file(file_info)
+
+        except Exception as e:
+            logger.error(f"Error processing repository downloads: {e}")
+
+    def _filter_repository_files(
+        self, files: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """
+        Filter repository files based on configuration.
+
+        Args:
+            files: List of available repository files
+
+        Returns:
+            List[Dict[str, Any]]: Filtered list of files to download
+        """
+        filtered_files = []
+
+        # Get selection and exclude patterns from configuration
+        select_patterns = self.config.get("SELECTED_PATTERNS", [])
+        exclude_patterns = self.config.get("EXCLUDE_PATTERNS", [])
+
+        for file_info in files:
+            file_name = file_info.get("name", "")
+
+            # Skip if file matches exclude patterns
+            if exclude_patterns and any(
+                pattern in file_name for pattern in exclude_patterns
+            ):
+                logger.debug(
+                    f"Skipping repository file {file_name} - matches exclude pattern"
+                )
+                continue
+
+            # Include if no selection patterns or if file matches selection patterns
+            if not select_patterns or any(
+                pattern in file_name for pattern in select_patterns
+            ):
+                filtered_files.append(file_info)
+
+        return filtered_files
 
     def _filter_releases(
         self, releases: List[Release], artifact_type: str
@@ -190,6 +254,26 @@ class DownloadOrchestrator:
                 return False
 
         return True
+
+    def _download_repository_file(self, file_info: Dict[str, Any]) -> None:
+        """
+        Download a repository file.
+
+        Args:
+            file_info: Dictionary containing file information
+        """
+        try:
+            file_name = file_info.get("name", "unknown")
+            logger.info(f"Downloading repository file {file_name}")
+
+            # Download the file
+            result = self.repository_downloader.download_repository_file(file_info)
+            self._handle_download_result(result, "repository")
+
+        except Exception as e:
+            logger.error(
+                f"Error downloading repository file {file_info.get('name', 'unknown')}: {e}"
+            )
 
     def _download_android_release(self, release: Release) -> None:
         """
@@ -357,6 +441,7 @@ class DownloadOrchestrator:
             "success_rate": self._calculate_success_rate(),
             "android_downloads": self._count_artifact_downloads("android"),
             "firmware_downloads": self._count_artifact_downloads("firmware"),
+            "repository_downloads": self._count_artifact_downloads("repository"),
         }
 
     def _calculate_success_rate(self) -> float:
@@ -392,6 +477,9 @@ class DownloadOrchestrator:
             # Clean up firmware versions
             firmware_keep = self.config.get("FIRMWARE_VERSIONS_TO_KEEP", 5)
             self.firmware_downloader.cleanup_old_versions(firmware_keep)
+
+            # Clean up repository versions
+            self.repository_downloader.cleanup_old_versions(5)
 
             logger.info("Old version cleanup completed")
 
