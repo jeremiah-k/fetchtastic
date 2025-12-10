@@ -178,15 +178,24 @@ class DownloadMigration:
                         else "unknown"
                     ),
                     "release_tag": result.release_tag or "unknown",
-                    "url": "unknown",  # Would need to be tracked in real implementation
+                    "url": result.download_url or "unknown",
                     "type": (
                         "Firmware"
                         if result.file_path and "firmware" in str(result.file_path)
-                        else "Android APK"
+                        else (
+                            "Repository"
+                            if result.file_path
+                            and (
+                                "repository" in str(result.file_path)
+                                or "repo-dls" in str(result.file_path)
+                            )
+                            else "Android APK"
+                        )
                     ),
                     "path_to_download": (
                         str(result.file_path) if result.file_path else "unknown"
                     ),
+                    "error": result.error_message or "",
                 }
             )
 

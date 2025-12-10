@@ -374,6 +374,24 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             )
             prereleases = [r for r in prereleases if r.tag_name in filtered_tags]
 
+        # Restrict to prereleases matching expected base version of latest stable
+        expected_base = None
+        latest_release = next((r for r in releases if not r.prerelease), None)
+        if latest_release:
+            expected_base = version_manager.calculate_expected_prerelease_version(
+                latest_release.tag_name
+            )
+
+        if expected_base:
+            prereleases = [
+                pr
+                for pr in prereleases
+                if version_manager.extract_clean_version(pr.tag_name)
+                and version_manager.extract_clean_version(pr.tag_name)
+                .lstrip("vV")
+                .startswith(expected_base)
+            ]
+
         return prereleases
 
     def get_prerelease_tracking_file(self) -> str:
