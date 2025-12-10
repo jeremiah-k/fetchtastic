@@ -120,6 +120,9 @@ class RepositoryDownloader(BaseDownloader):
                     success=True,
                     release_tag="repository",
                     file_path=target_path,
+                    download_url=download_url,
+                    file_size=file_info.get("size"),
+                    file_type="repository",
                 )
             else:
                 error_msg = f"Failed to download repository file: {file_name}"
@@ -129,6 +132,11 @@ class RepositoryDownloader(BaseDownloader):
                     release_tag="repository",
                     file_path=target_path,
                     error_message=error_msg,
+                    download_url=download_url,
+                    file_size=file_info.get("size"),
+                    file_type="repository",
+                    is_retryable=True,
+                    error_type="network_error",
                 )
 
         except Exception as e:
@@ -139,6 +147,11 @@ class RepositoryDownloader(BaseDownloader):
                 release_tag="repository",
                 file_path="",
                 error_message=error_msg,
+                download_url=file_info.get("download_url"),
+                file_size=file_info.get("size"),
+                file_type="repository",
+                is_retryable=True,
+                error_type="network_error",
             )
 
     def _get_safe_target_directory(self, subdirectory: str) -> Optional[str]:

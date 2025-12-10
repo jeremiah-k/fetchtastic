@@ -163,7 +163,12 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             if not self.needs_download(release.tag_name, asset.name, asset.size):
                 logger.info(f"APK {asset.name} already exists and is valid")
                 return self.create_download_result(
-                    success=True, release_tag=release.tag_name, file_path=target_path
+                    success=True,
+                    release_tag=release.tag_name,
+                    file_path=target_path,
+                    download_url=asset.download_url,
+                    file_size=asset.size,
+                    file_type="android",
                 )
 
             # Download the APK
@@ -177,6 +182,9 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                         success=True,
                         release_tag=release.tag_name,
                         file_path=target_path,
+                        download_url=asset.download_url,
+                        file_size=asset.size,
+                        file_type="android",
                     )
                 else:
                     logger.error(f"Verification failed for {asset.name}")
@@ -186,6 +194,11 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                         release_tag=release.tag_name,
                         file_path=target_path,
                         error_message="Verification failed",
+                        download_url=asset.download_url,
+                        file_size=asset.size,
+                        file_type="android",
+                        is_retryable=True,
+                        error_type="validation_error",
                     )
             else:
                 logger.error(f"Download failed for {asset.name}")
@@ -194,6 +207,11 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                     release_tag=release.tag_name,
                     file_path=target_path,
                     error_message="Download failed",
+                    download_url=asset.download_url,
+                    file_size=asset.size,
+                    file_type="android",
+                    is_retryable=True,
+                    error_type="network_error",
                 )
 
         except Exception as e:
@@ -204,6 +222,11 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                 release_tag=release.tag_name,
                 file_path=str(Path(safe_path)),
                 error_message=str(e),
+                download_url=getattr(asset, "download_url", None),
+                file_size=getattr(asset, "size", None),
+                file_type="android",
+                is_retryable=True,
+                error_type="network_error",
             )
 
     def cleanup_old_versions(self, keep_limit: int) -> None:

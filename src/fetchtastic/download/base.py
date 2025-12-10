@@ -293,6 +293,12 @@ class BaseDownloader(Downloader, ABC):
         release_tag: str,
         file_path: str,
         error_message: Optional[str] = None,
+        *,
+        download_url: Optional[str] = None,
+        file_size: Optional[int] = None,
+        file_type: Optional[str] = None,
+        is_retryable: bool = False,
+        error_type: Optional[str] = None,
     ) -> DownloadResult:
         """
         Create a DownloadResult object.
@@ -302,6 +308,11 @@ class BaseDownloader(Downloader, ABC):
             release_tag: The release tag
             file_path: Path to the downloaded file
             error_message: Optional error message
+            download_url: URL used to fetch the asset
+            file_size: Size of the asset in bytes
+            file_type: Asset type hint (android/firmware/repository)
+            is_retryable: Whether this failure can be retried
+            error_type: Optional error classification
 
         Returns:
             DownloadResult: The download result object
@@ -311,6 +322,11 @@ class BaseDownloader(Downloader, ABC):
             release_tag=release_tag,
             file_path=Path(file_path),
             error_message=error_message,
+            download_url=download_url,
+            file_size=file_size,
+            file_type=file_type,
+            is_retryable=is_retryable,
+            error_type=error_type,
         )
 
     def get_existing_file_path(self, release_tag: str, file_name: str) -> Optional[str]:

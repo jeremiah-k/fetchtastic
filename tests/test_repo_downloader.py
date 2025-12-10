@@ -120,6 +120,8 @@ def test_download_repository_file_success(
     assert result.success is True
     assert result.release_tag == "repository"
     assert "test-firmware.bin" in str(result.file_path)
+    assert result.file_type == "repository"
+    assert result.download_url == mock_file_info["download_url"]
     # Note: File existence check removed since download is mocked
     # The mock returns True but doesn't actually create the file
 
@@ -141,6 +143,7 @@ def test_download_repository_file_failure(
     assert (
         result.error_message == "Failed to download repository file: test-firmware.bin"
     )
+    assert result.file_type == "repository"
 
 
 def test_download_repository_file_invalid_info(repository_downloader, tmp_path):

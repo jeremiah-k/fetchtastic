@@ -158,25 +158,11 @@ class DownloadOrchestrator:
         """
         filtered_files = []
 
-        # Get selection and exclude patterns from configuration
-        select_patterns = self.config.get("SELECTED_PATTERNS", [])
-        exclude_patterns = self.config.get("EXCLUDE_PATTERNS", [])
-
         for file_info in files:
             file_name = file_info.get("name", "")
 
-            # Skip if file matches exclude patterns
-            if exclude_patterns and any(
-                pattern in file_name for pattern in exclude_patterns
-            ):
-                logger.debug(
-                    f"Skipping repository file {file_name} - matches exclude pattern"
-                )
-                continue
-
-            # Include if no selection patterns or if file matches selection patterns
-            if not select_patterns or any(
-                pattern in file_name for pattern in select_patterns
+            if self.repository_downloader.should_download_release(
+                release_tag="repository", asset_name=file_name
             ):
                 filtered_files.append(file_info)
 
@@ -622,7 +608,7 @@ class DownloadOrchestrator:
                     result.file_type = "android"
                 elif "firmware" in file_path_str:
                     result.file_type = "firmware"
-                elif "repository" in file_path_str:
+                elif "repository" in file_path_str or "repo-dls" in file_path_str:
                     result.file_type = "repository"
                 else:
                     result.file_type = "unknown"
@@ -723,7 +709,10 @@ class DownloadOrchestrator:
         return sum(
             1
             for result in self.download_results
-            if result.file_path and artifact_type in str(result.file_path)
+            if (
+                result.file_type == artifact_type
+                or (result.file_path and artifact_type in str(result.file_path))
+            )
         )
 
     def cleanup_old_versions(self) -> None:

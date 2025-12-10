@@ -6,10 +6,10 @@ Status: living checklist for completing parity and clean-up of the modular downl
 
 ### P1 – Functional Parity Gaps
 
-1. Wire `RepositoryDownloader` into `DownloadOrchestrator`
-   - Add repo registration + execution with selection/exclude semantics matching legacy repo-dls.
-   - Mirror legacy repo directory layout (`repo-dls` under firmware path) and executable bit handling for shell scripts.
-   - Ensure results are classified so CLI reporting identifies repo downloads/failures.
+1. Wire `RepositoryDownloader` into `DownloadOrchestrator` **(Done – integrated)**
+   - Repo execution now runs in the pipeline with include/exclude semantics and metadata for retry/reporting.
+   - Paths remain under `firmware/repo-dls`; shell scripts keep executable handling.
+   - Follow-up: verify CLI summaries surface repo counts/failures and include download URLs.
 2. Prerelease handling for firmware/APK
    - Port commit-history and directory-scan logic (expected version computation, commit hash suffix handling).
    - Recreate prerelease tracking JSONs (fields, expiry) and superseded-prerelease cleanup.
@@ -25,9 +25,9 @@ Status: living checklist for completing parity and clean-up of the modular downl
 
 ### P2 – Reliability & Reporting
 
-5. Retry and failure metadata
-   - Capture per-asset URL, size, and type in `DownloadResult` for retries and CLI summaries.
-   - Implement real retry loop using stored metadata (not just logging).
+5. Retry and failure metadata **(metadata captured; real retries pending)**
+   - URLs/sizes/types now flow into `DownloadResult`; reporting uses file_type.
+   - Implement actual retry using stored metadata instead of simulated success paths.
 6. Cache manager enhancements
    - Port commit timestamp caching and rate-limit tracking hooks from legacy utils.
    - Add cache invalidation/refresh switches (force_refresh) matching monolith.

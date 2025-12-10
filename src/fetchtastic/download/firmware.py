@@ -163,7 +163,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
             if not self.needs_download(release.tag_name, asset.name, asset.size):
                 logger.info(f"Firmware {asset.name} already exists and is valid")
                 return self.create_download_result(
-                    success=True, release_tag=release.tag_name, file_path=target_path
+                    success=True,
+                    release_tag=release.tag_name,
+                    file_path=target_path,
+                    download_url=asset.download_url,
+                    file_size=asset.size,
+                    file_type="firmware",
                 )
 
             # Download the firmware ZIP
@@ -177,6 +182,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         success=True,
                         release_tag=release.tag_name,
                         file_path=target_path,
+                        download_url=asset.download_url,
+                        file_size=asset.size,
+                        file_type="firmware",
                     )
                 else:
                     logger.error(f"Verification failed for {asset.name}")
@@ -186,6 +194,11 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         release_tag=release.tag_name,
                         file_path=target_path,
                         error_message="Verification failed",
+                        download_url=asset.download_url,
+                        file_size=asset.size,
+                        file_type="firmware",
+                        is_retryable=True,
+                        error_type="validation_error",
                     )
             else:
                 logger.error(f"Download failed for {asset.name}")
@@ -194,6 +207,11 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     release_tag=release.tag_name,
                     file_path=target_path,
                     error_message="Download failed",
+                    download_url=asset.download_url,
+                    file_size=asset.size,
+                    file_type="firmware",
+                    is_retryable=True,
+                    error_type="network_error",
                 )
 
         except Exception as e:
@@ -204,6 +222,11 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 release_tag=release.tag_name,
                 file_path=str(Path(safe_path)),
                 error_message=str(e),
+                download_url=getattr(asset, "download_url", None),
+                file_size=getattr(asset, "size", None),
+                file_type="firmware",
+                is_retryable=True,
+                error_type="network_error",
             )
 
     def validate_extraction_patterns(
@@ -274,6 +297,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     release_tag=release.tag_name,
                     file_path=Path(zip_path),
                     error_message="ZIP file not found",
+                    file_type="firmware",
+                    error_type="validation_error",
                 )
 
             # Get the directory where files will be extracted
@@ -300,6 +325,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     release_tag=release.tag_name,
                     file_path=Path(zip_path),
                     extracted_files=extracted_files,
+                    file_type="firmware",
                 )
             else:
                 logger.warning(
@@ -310,6 +336,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     release_tag=release.tag_name,
                     file_path=Path(zip_path),
                     error_message="No files matched extraction patterns",
+                    file_type="firmware",
+                    error_type="validation_error",
+                    is_retryable=False,
                 )
 
         except Exception as e:
@@ -319,6 +348,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 release_tag=release.tag_name,
                 file_path=Path(zip_path),
                 error_message=str(e),
+                file_type="firmware",
+                error_type="extraction_error",
             )
 
     def cleanup_old_versions(self, keep_limit: int) -> None:
