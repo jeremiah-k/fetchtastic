@@ -497,3 +497,148 @@ class FirmwareReleaseDownloader(BaseDownloader):
         except Exception as e:
             logger.error(f"Error cleaning up superseded prereleases: {e}")
             return False
+
+    @staticmethod
+    def check_and_download(
+        releases,
+        cache_dir,
+        release_type,
+        download_dir,
+        versions_to_keep=2,
+        extract_patterns=None,
+        selected_patterns=None,
+        auto_extract=False,
+        exclude_patterns=None,
+    ):
+        """
+        Static method to check and download releases (for backward compatibility with tests).
+
+        This method creates a temporary downloader instance and performs the download operation.
+
+        Args:
+            releases: List of release data
+            cache_dir: Directory for caching
+            release_type: Type of release (e.g., "Firmware")
+            download_dir: Directory to download files to
+            versions_to_keep: Number of versions to keep
+            extract_patterns: Patterns for files to extract
+            selected_patterns: Patterns for selecting assets to download
+            auto_extract: Whether to automatically extract files
+            exclude_patterns: Patterns for excluding assets
+
+        Returns:
+            Tuple of (downloaded, new_versions, failures)
+        """
+        # Create a mock config for the downloader
+        mock_config = {
+            "DOWNLOAD_DIR": download_dir,
+            "VERSIONS_TO_KEEP": versions_to_keep,
+            "FIRMWARE_VERSIONS_TO_KEEP": versions_to_keep,
+            "ANDROID_VERSIONS_TO_KEEP": versions_to_keep,
+            "SELECTED_PATTERNS": selected_patterns or [],
+            "EXCLUDE_PATTERNS": exclude_patterns or [],
+            "EXTRACT_PATTERNS": extract_patterns or [],
+            "AUTO_EXTRACT": auto_extract,
+            "GITHUB_TOKEN": None,
+        }
+
+        # Create downloader instance
+        downloader = FirmwareReleaseDownloader(mock_config)
+        downloader.download_dir = download_dir
+
+        # Convert releases to the expected format
+        processed_releases = []
+        for release_data in releases:
+            release = Release(
+                tag_name=release_data["tag_name"],
+                prerelease=release_data.get("prerelease", False),
+                published_at=release_data.get("published_at"),
+                body=release_data.get("body"),
+            )
+
+            # Add assets
+            for asset_data in release_data.get("assets", []):
+                asset = Asset(
+                    name=asset_data["name"],
+                    download_url=asset_data.get("browser_download_url"),
+                    size=asset_data.get("size"),
+                    browser_download_url=asset_data.get("browser_download_url"),
+                    content_type=asset_data.get("content_type"),
+                )
+                release.assets.append(asset)
+
+            processed_releases.append(release)
+
+        # Process downloads
+        downloaded = []
+        new_versions = []
+        failures = []
+
+        for release in processed_releases:
+            # Check if this release should be downloaded based on patterns
+            should_download = False
+            for asset in release.assets:
+                if downloader.should_download_release(release.tag_name, asset.name):
+                    should_download = True
+                    break
+
+            if not should_download:
+                logger.info(
+                    f"Release {release.tag_name} found, but no assets matched current selection/exclude filters"
+                )
+                continue
+
+            # Check if this is a new version
+            latest_tag = downloader.get_latest_release_tag()
+            is_new_version = (
+                latest_tag is None
+                or downloader.version_manager.compare_versions(
+                    release.tag_name, latest_tag
+                )
+                > 0
+            )
+
+            if is_new_version:
+                new_versions.append(release.tag_name)
+
+            # Download each asset
+            release_downloaded = False
+            for asset in release.assets:
+                if not downloader.should_download_release(release.tag_name, asset.name):
+                    continue
+
+                download_result = downloader.download_firmware(release, asset)
+
+                if download_result.success:
+                    release_downloaded = True
+
+                    # Handle extraction if needed
+                    if auto_extract and extract_patterns:
+                        extract_result = downloader.extract_firmware(
+                            release, asset, extract_patterns
+                        )
+                        if not extract_result.success:
+                            logger.warning(
+                                f"Extraction failed for {asset.name}: {extract_result.error_message}"
+                            )
+
+                    # Update latest release tag if this is the newest version
+                    if is_new_version:
+                        downloader.update_latest_release_tag(release.tag_name)
+                else:
+                    failures.append(
+                        {
+                            "release_tag": release.tag_name,
+                            "asset": asset.name,
+                            "reason": download_result.error_message
+                            or "Download failed",
+                        }
+                    )
+
+            if release_downloaded:
+                downloaded.append(release.tag_name)
+
+        # Clean up old versions
+        downloader.cleanup_old_versions(versions_to_keep)
+
+        return downloaded, new_versions, failures

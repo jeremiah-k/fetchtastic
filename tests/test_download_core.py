@@ -63,7 +63,14 @@ def test_cleanup_old_versions(tmp_path):
     from unittest.mock import Mock
 
     mock_config = Mock()
-    mock_config.get = Mock(return_value=None)  # Mock config.get method
+    mock_config.get = Mock(
+        side_effect=lambda key, default=None: {
+            "VERSIONS_TO_KEEP": 5,
+            "FIRMWARE_VERSIONS_TO_KEEP": 5,
+            "ANDROID_VERSIONS_TO_KEEP": 5,
+            "GITHUB_TOKEN": None,
+        }.get(key, default)
+    )  # Mock config.get method with proper defaults
     downloader = FirmwareReleaseDownloader(mock_config)
     downloader.download_dir = str(tmp_path)  # Set download_dir to tmp_path
     downloader.cleanup_old_versions(releases_to_keep)
@@ -261,7 +268,7 @@ def test_check_and_download_happy_path_with_extraction(tmp_path, caplog):
             zf.writestr("device-install.sh", "echo hi")
         return True
 
-    with patch("fetchtastic.downloader.download_file_with_retry", side_effect=_mock_dl):
+    with patch("fetchtastic.utils.download_file_with_retry", side_effect=_mock_dl):
         downloaded, _new_versions, failures = (
             FirmwareReleaseDownloader.check_and_download(
                 releases,
@@ -666,7 +673,7 @@ class TestDownloadCoreIntegration:
         download_dir = str(tmp_path / "downloads")
 
         with patch(
-            "fetchtastic.downloaders.firmware.download_file_with_retry",
+            "fetchtastic.utils.download_file_with_retry",
             return_value=True,
         ):
             # Only select rak4631 and tbeam patterns
@@ -714,7 +721,7 @@ class TestDownloadCoreIntegration:
         download_dir = str(tmp_path / "downloads")
 
         with patch(
-            "fetchtastic.downloaders.firmware.download_file_with_retry",
+            "fetchtastic.utils.download_file_with_retry",
             return_value=True,
         ):
             # Select rak4631 but exclude eink variants
@@ -771,7 +778,7 @@ class TestDownloadCoreIntegration:
             return False
 
         with patch(
-            "fetchtastic.downloader.download_file_with_retry", side_effect=mock_download
+            "fetchtastic.utils.download_file_with_retry", side_effect=mock_download
         ):
             downloaded, new, failed = FirmwareReleaseDownloader.check_and_download(
                 releases,
@@ -814,9 +821,7 @@ class TestDownloadCoreIntegration:
             }
         ]
 
-        with patch(
-            "fetchtastic.downloader.download_file_with_retry", return_value=True
-        ):
+        with patch("fetchtastic.utils.download_file_with_retry", return_value=True):
             downloaded, new, failed = FirmwareReleaseDownloader.check_and_download(
                 releases_v1,
                 cache_dir,
@@ -840,7 +845,7 @@ class TestDownloadCoreIntegration:
             return True
 
         with patch(
-            "fetchtastic.downloader.download_file_with_retry",
+            "fetchtastic.utils.download_file_with_retry",
             side_effect=mock_download_second_run,
         ):
             downloaded, new, failed = FirmwareReleaseDownloader.check_and_download(
@@ -878,7 +883,7 @@ class TestDownloadCoreIntegration:
         ]
 
         with patch(
-            "fetchtastic.downloaders.firmware.download_file_with_retry",
+            "fetchtastic.utils.download_file_with_retry",
             return_value=True,
         ):
             downloaded, new, failed = FirmwareReleaseDownloader.check_and_download(
@@ -939,7 +944,7 @@ class TestDownloadCoreIntegration:
                 return False  # v1.1.0 fails
 
         with patch(
-            "fetchtastic.downloader.download_file_with_retry", side_effect=mock_download
+            "fetchtastic.utils.download_file_with_retry", side_effect=mock_download
         ):
             downloaded, new, failed = FirmwareReleaseDownloader.check_and_download(
                 releases,
