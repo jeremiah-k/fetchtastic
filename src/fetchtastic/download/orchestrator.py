@@ -428,5 +428,30 @@ class DownloadOrchestrator:
                     firmware_releases[0].tag_name
                 )
 
+            # Manage prerelease tracking files
+            self._manage_prerelease_tracking()
+
         except Exception as e:
             logger.error(f"Error updating version tracking: {e}")
+
+    def _manage_prerelease_tracking(self) -> None:
+        """
+        Manage prerelease tracking files for all artifact types.
+
+        This method calls the prerelease management functions for both
+        Android and firmware downloaders to clean up superseded prereleases
+        and maintain tracking file consistency.
+        """
+        try:
+            logger.info("Managing prerelease tracking files...")
+
+            # Manage Android prerelease tracking
+            self.android_downloader.manage_prerelease_tracking_files()
+
+            # Manage firmware prerelease tracking
+            self.firmware_downloader.manage_prerelease_tracking_files()
+
+            logger.info("Prerelease tracking management completed")
+
+        except Exception as e:
+            logger.error(f"Error managing prerelease tracking: {e}")
