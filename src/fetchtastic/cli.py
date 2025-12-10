@@ -314,8 +314,10 @@ def main():
             return
 
         if args.repo_command == "browse":
-            # Run the repository downloader
-            repo_downloader.main(config)
+            # Run the repository downloader using the new menu integration
+            from fetchtastic.menu_repo import run_repository_downloader_menu
+
+            run_repository_downloader_menu(config)
 
             # Remind about updates at the end if available
             if update_available:
