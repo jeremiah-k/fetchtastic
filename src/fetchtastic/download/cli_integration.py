@@ -237,6 +237,16 @@ class DownloadCLIIntegration:
             f"Firmware downloads: {stats.get('firmware_downloads', 0)}, "
             f"Repository downloads: {stats.get('repository_downloads', 0)}"
         )
+        if self.migration and self.migration.orchestrator.failed_downloads:
+            logger.info("Failed downloads with URLs:")
+            for failure in self.migration.orchestrator.failed_downloads:
+                logger.info(
+                    f"- {failure.file_type or 'unknown'} "
+                    f"{failure.release_tag or ''} "
+                    f"URL: {failure.download_url or 'unknown'} "
+                    f"Error: {failure.error_message or 'unknown'} "
+                    f"Retryable: {failure.is_retryable}"
+                )
 
     def handle_cli_error(self, error: Exception) -> None:
         """

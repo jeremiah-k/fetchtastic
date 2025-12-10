@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from fetchtastic.log_utils import logger
 
 from .android import MeshtasticAndroidAppDownloader
+from .cache import CacheManager
 from .firmware import FirmwareReleaseDownloader
 from .interfaces import Asset, DownloadResult, Release
 from .repository import RepositoryDownloader
@@ -39,6 +40,7 @@ class DownloadOrchestrator:
         """
         self.config = config
         self.version_manager = VersionManager()
+        self.cache_manager = CacheManager()
 
         # Initialize downloaders
         self.android_downloader = MeshtasticAndroidAppDownloader(config)
@@ -800,6 +802,9 @@ class DownloadOrchestrator:
             # Manage prerelease tracking files
             self._manage_prerelease_tracking()
 
+            # Fetch and cache recent repo commits for prerelease expected-version computation
+            self._refresh_commit_history_cache()
+
         except Exception as e:
             logger.error(f"Error updating version tracking: {e}")
 
@@ -824,3 +829,12 @@ class DownloadOrchestrator:
 
         except Exception as e:
             logger.error(f"Error managing prerelease tracking: {e}")
+
+    def _refresh_commit_history_cache(self) -> None:
+        """Refresh commit history cache used for prerelease expected-version selection."""
+        try:
+            self.version_manager.fetch_recent_repo_commits(
+                limit=10, cache_manager=self.cache_manager, force_refresh=False
+            )
+        except Exception as e:
+            logger.debug(f"Skipping commit history refresh: {e}")

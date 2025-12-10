@@ -17,6 +17,7 @@ from fetchtastic.constants import (
     PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS,
     PRERELEASE_COMMITS_CACHE_FILE,
 )
+from fetchtastic.utils import make_github_api_request
 
 # Import for type annotations only (available in older packaging versions)
 try:
@@ -331,6 +332,47 @@ class VersionManager:
             if base_version == expected_version:
                 matching.append(dir_name)
         return matching
+
+    def fetch_recent_repo_commits(
+        self, limit: int, cache_manager: Any, force_refresh: bool = False
+    ) -> List[Dict[str, Any]]:
+        """
+        Fetch recent commits from meshtastic.github.io with caching and expiry.
+
+        Args:
+            limit: Maximum commits to fetch
+            cache_manager: CacheManager for reading/writing cache
+            force_refresh: Whether to bypass cache
+
+        Returns:
+            List of commit dicts
+        """
+        cache_file = os.path.join(
+            cache_manager.cache_dir, PRERELEASE_COMMITS_CACHE_FILE
+        )
+        if not force_refresh:
+            cached = cache_manager.read_with_expiry(
+                cache_file, PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS / 3600
+            )
+            if cached and "data" in cached:
+                return cached["data"]
+
+        try:
+            response = make_github_api_request(
+                "https://api.github.com/repos/meshtastic/meshtastic.github.io/commits",
+                allow_env_token=True,
+            )
+            commits = response.json() if hasattr(response, "json") else response
+            commits = commits[:limit] if isinstance(commits, list) else []
+            cache_manager.cache_with_expiry(
+                cache_file,
+                {"data": commits},
+                PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS / 3600,
+            )
+            return commits
+        except Exception as e:
+            logger.warning(f"Could not fetch repo commits: {e}")
+            return []
 
     def get_commit_hash_suffix(self, commit_hash: str) -> str:
         """

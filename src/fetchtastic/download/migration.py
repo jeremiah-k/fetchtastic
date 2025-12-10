@@ -196,6 +196,8 @@ class DownloadMigration:
                         str(result.file_path) if result.file_path else "unknown"
                     ),
                     "error": result.error_message or "",
+                    "retryable": result.is_retryable,
+                    "http_status": result.http_status_code,
                 }
             )
 
