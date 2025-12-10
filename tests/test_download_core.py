@@ -46,6 +46,34 @@ def write_dummy_file():
 
 
 @pytest.mark.core_downloads
+def test_firmware_target_path_uses_subdir(tmp_path):
+    """Firmware downloads should be stored under download_dir/firmware/<tag>."""
+    downloader = FirmwareReleaseDownloader({"DOWNLOAD_DIR": str(tmp_path)})
+
+    target = downloader.get_target_path_for_release("v1.0.0", "firmware.zip")
+
+    assert Path(target).parent.name == "v1.0.0"
+    assert Path(target).parent.parent.name == "firmware"
+    assert Path(target).parent.exists()
+
+
+@pytest.mark.core_downloads
+def test_should_download_release_respects_selection_and_excludes(tmp_path):
+    """Asset selection should honor configured include and exclude patterns."""
+    downloader = FirmwareReleaseDownloader(
+        {
+            "DOWNLOAD_DIR": str(tmp_path),
+            "SELECTED_FIRMWARE_ASSETS": ["rak4631"],
+            "EXCLUDE_PATTERNS": ["debug", "*_oled*"],
+        }
+    )
+
+    assert downloader.should_download_release("v1.0.0", "rak4631-fw.zip") is True
+    assert downloader.should_download_release("v1.0.0", "rak4631-debug-fw.zip") is False
+    assert downloader.should_download_release("v1.0.0", "heltec-oled-fw.zip") is False
+
+
+@pytest.mark.core_downloads
 def test_cleanup_old_versions(tmp_path):
     """Test the logic for cleaning up old version directories."""
     firmware_dir = tmp_path / "firmware"

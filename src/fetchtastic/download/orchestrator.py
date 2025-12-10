@@ -222,8 +222,24 @@ class DownloadOrchestrator:
             # Get extraction patterns from configuration
             extract_patterns = self._get_extraction_patterns()
 
+            # Filter assets based on selection/exclude rules
+            assets_to_download = [
+                asset
+                for asset in release.assets
+                if self.firmware_downloader.should_download_release(
+                    release.tag_name, asset.name
+                )
+            ]
+
+            if not assets_to_download:
+                logger.info(
+                    "Release %s found, but no assets matched current selection/exclude filters",
+                    release.tag_name,
+                )
+                return
+
             # Download each asset in the release
-            for asset in release.assets:
+            for asset in assets_to_download:
                 # Download the firmware ZIP
                 download_result = self.firmware_downloader.download_firmware(
                     release, asset

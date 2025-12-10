@@ -2380,6 +2380,20 @@ def install_crond():
         pass
 
 
+def _crontab_available() -> bool:
+    """
+    Check whether the system has crontab available for scheduling.
+
+    Returns:
+        bool: True if crontab is available, False otherwise.
+    """
+    if shutil.which("crontab"):
+        return True
+
+    print("Cron configuration skipped: 'crontab' command not found on this system.")
+    return False
+
+
 def setup_cron_job(frequency="hourly"):
     """
     Configure or replace a system cron entry to run Fetchtastic on a regular schedule.
@@ -2392,6 +2406,9 @@ def setup_cron_job(frequency="hourly"):
     # Skip cron job setup on Windows
     if platform.system() == "Windows":
         print("Cron jobs are not supported on Windows.")
+        return
+
+    if not _crontab_available():
         return
 
     # Validate frequency and get schedule info
@@ -2463,6 +2480,9 @@ def remove_cron_job():
     # Skip cron job removal on Windows
     if platform.system() == "Windows":
         print("Cron jobs are not supported on Windows.")
+        return
+
+    if not _crontab_available():
         return
 
     try:
@@ -2544,6 +2564,9 @@ def setup_reboot_cron_job():
         print("Cron jobs are not supported on Windows.")
         return
 
+    if not _crontab_available():
+        return
+
     try:
         # Get current crontab entries
         result = subprocess.run(
@@ -2599,6 +2622,9 @@ def remove_reboot_cron_job():
     if platform.system() == "Windows":
         print("Cron jobs are not supported on Windows.")
         return
+
+    if not _crontab_available():
+        return
     try:
         # Get current crontab entries
         result = subprocess.run(
@@ -2643,6 +2669,9 @@ def check_cron_job_exists():
     if platform.system() == "Windows":
         return False
 
+    if not _crontab_available():
+        return False
+
     try:
         result = subprocess.run(
             ["crontab", "-l"],
@@ -2678,6 +2707,9 @@ def check_any_cron_jobs_exist():
     """
     # Skip cron job check on Windows
     if platform.system() == "Windows":
+        return False
+
+    if not _crontab_available():
         return False
 
     try:

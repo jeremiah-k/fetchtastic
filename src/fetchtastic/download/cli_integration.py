@@ -6,7 +6,7 @@ This module provides integration between the new download subsystem and the exis
 
 import os
 import sys
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from fetchtastic.log_utils import logger
 
@@ -88,6 +88,40 @@ class DownloadCLIIntegration:
         except Exception as e:
             logger.error(f"Error in CLI integration: {e}")
             # Return empty results and error information
+            return [], [], [], [], [], "", ""
+
+    def main(
+        self,
+        force_refresh: bool = False,
+        config: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[
+        List[str], List[str], List[str], List[str], List[Dict[str, str]], str, str
+    ]:
+        """
+        Entry point for CLI commands and setup workflows.
+
+        Loads configuration when not provided, runs the download pipeline, and
+        returns legacy-compatible results for downstream reporting.
+        """
+        try:
+            if config is None:
+                from fetchtastic import setup_config
+
+                exists, _config_path = setup_config.config_exists()
+                if not exists:
+                    logger.error(
+                        "No configuration found. Please run 'fetchtastic setup' first."
+                    )
+                    return [], [], [], [], [], "", ""
+
+                config = setup_config.load_config()
+
+            results = self.run_download(config, force_refresh)
+            self.log_integration_summary()
+            return results
+
+        except Exception as error:
+            self.handle_cli_error(error)
             return [], [], [], [], [], "", ""
 
     def get_download_statistics(self) -> Dict[str, Any]:

@@ -191,7 +191,15 @@ class BaseDownloader(Downloader, ABC):
 
     def _get_selected_patterns(self) -> List[str]:
         """Get the selected patterns from configuration."""
-        patterns = self.config.get("SELECTED_PATTERNS", [])
+        patterns = self.config.get("SELECTED_PATTERNS")
+
+        # Backward compatibility with existing config keys
+        if not patterns:
+            patterns = self.config.get("SELECTED_FIRMWARE_ASSETS")
+        if not patterns:
+            patterns = self.config.get("SELECTED_PRERELEASE_ASSETS")
+
+        patterns = patterns or []
         return patterns if isinstance(patterns, list) else [patterns]
 
     def _get_exclude_patterns(self) -> List[str]:

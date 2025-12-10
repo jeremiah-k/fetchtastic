@@ -46,6 +46,17 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         self.latest_release_file = LATEST_ANDROID_RELEASE_JSON_FILE
         self.latest_prerelease_file = LATEST_ANDROID_PRERELEASE_JSON_FILE
 
+    def get_target_path_for_release(self, release_tag: str, file_name: str) -> str:
+        """
+        Get the target path for an Android asset under the android directory.
+
+        Keeping platform-specific subdirectories matches the legacy layout and
+        allows result reporting to correctly classify download types.
+        """
+        version_dir = os.path.join(self.download_dir, "android", release_tag)
+        os.makedirs(version_dir, exist_ok=True)
+        return os.path.join(version_dir, file_name)
+
     def get_releases(self, limit: Optional[int] = None) -> List[Release]:
         """
         Get available Android APK releases from GitHub.

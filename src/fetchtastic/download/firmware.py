@@ -47,6 +47,17 @@ class FirmwareReleaseDownloader(BaseDownloader):
         self.latest_release_file = LATEST_FIRMWARE_RELEASE_JSON_FILE
         self.latest_prerelease_file = LATEST_FIRMWARE_PRERELEASE_JSON_FILE
 
+    def get_target_path_for_release(self, release_tag: str, file_name: str) -> str:
+        """
+        Get the target path for a firmware asset under the firmware directory.
+
+        The legacy layout keeps firmware files in a firmware-specific subdirectory;
+        preserve that structure so cleanup and reporting can detect firmware assets.
+        """
+        version_dir = os.path.join(self.download_dir, "firmware", release_tag)
+        os.makedirs(version_dir, exist_ok=True)
+        return os.path.join(version_dir, file_name)
+
     def get_releases(self, limit: Optional[int] = None) -> List[Release]:
         """
         Get available firmware releases from GitHub.

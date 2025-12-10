@@ -476,6 +476,7 @@ def test_get_upgrade_command(mocker, is_termux_val, install_method, expected):
 
 def test_cron_job_setup(mocker):
     """Test the cron job setup and removal logic."""
+    mocker.patch("fetchtastic.setup_config._crontab_available", return_value=True)
     mock_run = mocker.patch("subprocess.run")
     mock_popen = mocker.patch("subprocess.Popen")
     mock_communicate = mock_popen.return_value.communicate
@@ -499,6 +500,7 @@ def test_cron_job_setup(mocker):
 
 def test_cron_job_setup_hourly(mocker):
     """Test the cron job setup for hourly frequency."""
+    mocker.patch("fetchtastic.setup_config._crontab_available", return_value=True)
     mock_run = mocker.patch("subprocess.run")
     mock_popen = mocker.patch("subprocess.Popen")
     mock_communicate = mock_popen.return_value.communicate
@@ -524,6 +526,7 @@ def test_cron_job_setup_windows(mocker):
 
 def test_cron_job_setup_invalid_frequency(mocker):
     """Test cron job setup with invalid frequency parameter."""
+    mocker.patch("fetchtastic.setup_config._crontab_available", return_value=True)
     mock_run = mocker.patch("subprocess.run")
     mock_popen = mocker.patch("subprocess.Popen")
     mock_communicate = mock_popen.return_value.communicate
