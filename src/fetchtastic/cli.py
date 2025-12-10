@@ -9,7 +9,7 @@ from typing import List
 
 import platformdirs
 
-from fetchtastic import downloader, repo_downloader, setup_config
+from fetchtastic import repo_downloader, setup_config
 from fetchtastic.constants import (
     FIRMWARE_DIR_PREFIX,
     MANAGED_DIRECTORIES,
@@ -21,6 +21,7 @@ from fetchtastic.constants import (
     MSG_REMOVED_MANAGED_DIR,
     MSG_REMOVED_MANAGED_FILE,
 )
+from fetchtastic.download.cli_integration import DownloadCLIIntegration
 from fetchtastic.log_utils import logger, set_log_level
 from fetchtastic.setup_config import (
     copy_to_clipboard_func,
@@ -231,7 +232,7 @@ def main():
                 set_log_level(config["LOG_LEVEL"])
 
             # Run the downloader
-            downloader.main(force_refresh=args.force)
+            DownloadCLIIntegration().main(force_refresh=args.force)
     elif args.command == "topic":
         # Display the NTFY topic and prompt to copy to clipboard
         config = setup_config.load_config()

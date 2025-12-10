@@ -1683,14 +1683,12 @@ def run_setup(sections: Optional[Sequence[str]] = None):
                 or "y"
             )
             if perform_first_run == "y":
-                from fetchtastic import (
-                    downloader,  # Local import to break circular dependency
-                )
+                from fetchtastic.download.cli_integration import DownloadCLIIntegration
 
                 print(
                     "Setup complete. Starting first run, this may take a few minutes..."
                 )
-                downloader.main()
+                DownloadCLIIntegration().main()
             else:
                 print(
                     "Setup complete. Run 'fetchtastic download' to start downloading."
