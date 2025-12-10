@@ -6,8 +6,8 @@ that are used across all downloaders for consistent version handling.
 """
 
 import re
-from datetime import datetime, timezone
-from typing import Any, List, Optional, Tuple, Union
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from packaging.version import InvalidVersion, Version
 from packaging.version import parse as parse_version
@@ -265,3 +265,221 @@ class VersionManager:
 
         # If we can't parse it, just return empty string
         return ""
+
+    def create_version_tracking_json(
+        self,
+        version: str,
+        release_type: str,
+        timestamp: Optional[str] = None,
+        additional_data: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Create a version tracking JSON structure matching legacy format.
+
+        Args:
+            version: Version string to track
+            release_type: Type of release (e.g., 'latest', 'prerelease')
+            timestamp: Optional timestamp, uses current time if None
+            additional_data: Optional additional data to include
+
+        Returns:
+            Dict: Version tracking JSON structure
+        """
+        tracking_data = {
+            "version": version,
+            "type": release_type,
+            "timestamp": timestamp or datetime.now(timezone.utc).isoformat(),
+            "source": "fetchtastic-downloader",
+        }
+
+        if additional_data:
+            tracking_data.update(additional_data)
+
+        return tracking_data
+
+    def write_version_tracking_file(
+        self,
+        file_path: str,
+        version: str,
+        release_type: str,
+        cache_manager: Any,
+        additional_data: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """
+        Write a version tracking file with atomic write and timestamp.
+
+        Args:
+            file_path: Path to write the tracking file
+            version: Version string to track
+            release_type: Type of release
+            cache_manager: CacheManager instance for atomic writes
+            additional_data: Optional additional data
+
+        Returns:
+            bool: True if write succeeded, False otherwise
+        """
+        tracking_data = self.create_version_tracking_json(
+            version, release_type, additional_data=additional_data
+        )
+
+        return cache_manager.atomic_write_json(file_path, tracking_data)
+
+    def read_version_tracking_file(
+        self,
+        file_path: str,
+        cache_manager: Any,
+        backward_compatible_keys: Optional[Dict[str, str]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Read a version tracking file with backward compatibility.
+
+        Args:
+            file_path: Path to the tracking file
+            cache_manager: CacheManager instance for reading
+            backward_compatible_keys: Optional legacy key mapping
+
+        Returns:
+            Optional[Dict]: Version tracking data or None if file doesn't exist
+        """
+        return cache_manager.read_json_with_backward_compatibility(
+            file_path, backward_compatible_keys
+        )
+
+    def migrate_legacy_version_tracking(
+        self,
+        legacy_file_path: str,
+        new_file_path: str,
+        legacy_to_new_mapping: Dict[str, str],
+        cache_manager: Any,
+    ) -> bool:
+        """
+        Migrate legacy version tracking file to new format.
+
+        Args:
+            legacy_file_path: Path to legacy tracking file
+            new_file_path: Path for new tracking file
+            legacy_to_new_mapping: Mapping of legacy keys to new keys
+            cache_manager: CacheManager instance for migration
+
+        Returns:
+            bool: True if migration succeeded, False otherwise
+        """
+        return cache_manager.migrate_legacy_cache_file(
+            legacy_file_path, new_file_path, legacy_to_new_mapping
+        )
+
+    def validate_version_tracking_data(
+        self, tracking_data: Dict[str, Any], required_keys: List[str]
+    ) -> bool:
+        """
+        Validate version tracking data structure.
+
+        Args:
+            tracking_data: Version tracking data to validate
+            required_keys: List of required keys
+
+        Returns:
+            bool: True if data is valid, False otherwise
+        """
+        for key in required_keys:
+            if key not in tracking_data:
+                return False
+        return True
+
+    def get_latest_version_from_tracking_files(
+        self, tracking_files: List[str], cache_manager: Any
+    ) -> Optional[str]:
+        """
+        Get the latest version from multiple tracking files.
+
+        Args:
+            tracking_files: List of tracking file paths
+            cache_manager: CacheManager instance for reading
+
+        Returns:
+            Optional[str]: Latest version found, or None if no valid tracking files
+        """
+        latest_version = None
+
+        for file_path in tracking_files:
+            tracking_data = self.read_version_tracking_file(file_path, cache_manager)
+            if tracking_data and self.validate_version_tracking_data(
+                tracking_data, ["version"]
+            ):
+                current_version = tracking_data["version"]
+                if (
+                    latest_version is None
+                    or self.compare_versions(current_version, latest_version) > 0
+                ):
+                    latest_version = current_version
+
+        return latest_version
+
+    def create_prerelease_tracking_data(
+        self,
+        prerelease_version: str,
+        base_version: str,
+        expiry_hours: float,
+        commit_hash: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Create prerelease tracking data structure.
+
+        Args:
+            prerelease_version: Full prerelease version string
+            base_version: Base version this prerelease is based on
+            expiry_hours: Hours until this prerelease tracking expires
+            commit_hash: Optional commit hash
+
+        Returns:
+            Dict: Prerelease tracking data structure
+        """
+        expiry_timestamp = (
+            datetime.now(timezone.utc) + timedelta(hours=expiry_hours)
+        ).isoformat()
+
+        tracking_data = {
+            "prerelease_version": prerelease_version,
+            "base_version": base_version,
+            "expiry_timestamp": expiry_timestamp,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        if commit_hash:
+            tracking_data["commit_hash"] = commit_hash
+
+        return tracking_data
+
+    def should_cleanup_superseded_prerelease(
+        self, current_prerelease: Dict[str, Any], new_prerelease: Dict[str, Any]
+    ) -> bool:
+        """
+        Determine if a current prerelease should be cleaned up as superseded.
+
+        Args:
+            current_prerelease: Current prerelease tracking data
+            new_prerelease: New prerelease tracking data
+
+        Returns:
+            bool: True if current should be cleaned up, False otherwise
+        """
+        # Check if new prerelease is based on a newer version
+        current_base = current_prerelease.get("base_version")
+        new_base = new_prerelease.get("base_version")
+
+        if current_base and new_base:
+            comparison = self.compare_versions(new_base, current_base)
+            if comparison > 0:  # New base version is newer
+                return True
+
+        # Check if current prerelease has expired
+        expiry_str = current_prerelease.get("expiry_timestamp")
+        if expiry_str:
+            try:
+                expiry_time = datetime.fromisoformat(expiry_str)
+                if datetime.now(timezone.utc) > expiry_time:
+                    return True
+            except ValueError:
+                pass
+
+        return False

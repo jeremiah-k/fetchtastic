@@ -9,7 +9,7 @@ import json
 import os
 import tempfile
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from fetchtastic.log_utils import logger
 
@@ -237,3 +237,125 @@ class CacheManager:
         except OSError as e:
             logger.error(f"Could not clear cache directory {self.cache_dir}: {e}")
             return False
+
+    def atomic_write_with_timestamp(
+        self, file_path: str, data: Dict, timestamp_key: str = "last_updated"
+    ) -> bool:
+        """
+        Atomically write data to a JSON file with timestamp tracking.
+
+        Args:
+            file_path: Destination path for the JSON file
+            data: Data dictionary to write
+            timestamp_key: Key to use for timestamp in the data
+
+        Returns:
+            bool: True on successful write, False on error
+        """
+        # Add timestamp to data
+        data_with_timestamp = data.copy()
+        data_with_timestamp[timestamp_key] = datetime.now(timezone.utc).isoformat()
+
+        return self.atomic_write_json(file_path, data_with_timestamp)
+
+    def read_json_with_backward_compatibility(
+        self, file_path: str, legacy_keys: Optional[Dict[str, str]] = None
+    ) -> Optional[Dict]:
+        """
+        Read JSON file with backward compatibility for legacy formats.
+
+        Args:
+            file_path: Path to the JSON file to read
+            legacy_keys: Optional mapping of legacy keys to new keys
+
+        Returns:
+            Optional[Dict]: Parsed JSON data with legacy keys mapped, or None if file doesn't exist or can't be read
+        """
+        data = self.read_json(file_path)
+        if not data:
+            return None
+
+        # Apply backward compatibility mapping if provided
+        if legacy_keys:
+            for legacy_key, new_key in legacy_keys.items():
+                if legacy_key in data and new_key not in data:
+                    data[new_key] = data[legacy_key]
+
+        return data
+
+    def migrate_legacy_cache_file(
+        self,
+        legacy_file_path: str,
+        new_file_path: str,
+        legacy_to_new_mapping: Dict[str, str],
+    ) -> bool:
+        """
+        Migrate a legacy cache file to the new format.
+
+        Args:
+            legacy_file_path: Path to the legacy cache file
+            new_file_path: Path for the new cache file
+            legacy_to_new_mapping: Mapping of legacy keys to new keys
+
+        Returns:
+            bool: True if migration succeeded, False otherwise
+        """
+        try:
+            # Read legacy file
+            legacy_data = self.read_json(legacy_file_path)
+            if not legacy_data:
+                return False
+
+            # Apply mapping
+            new_data = {}
+            for legacy_key, new_key in legacy_to_new_mapping.items():
+                if legacy_key in legacy_data:
+                    new_data[new_key] = legacy_data[legacy_key]
+
+            # Write new file atomically
+            success = self.atomic_write_with_timestamp(new_file_path, new_data)
+
+            if success:
+                logger.info(
+                    f"Successfully migrated legacy cache from {legacy_file_path} to {new_file_path}"
+                )
+            else:
+                logger.error(
+                    f"Failed to migrate cache from {legacy_file_path} to {new_file_path}"
+                )
+
+            return success
+
+        except Exception as e:
+            logger.error(f"Error migrating legacy cache file: {e}")
+            return False
+
+    def get_cache_expiry_timestamp(self, cache_file: str, expiry_hours: float) -> str:
+        """
+        Calculate the expiry timestamp for a cache file.
+
+        Args:
+            cache_file: Path to the cache file
+            expiry_hours: Number of hours until cache expires
+
+        Returns:
+            str: ISO 8601 formatted expiry timestamp
+        """
+        return (datetime.now(timezone.utc) + timedelta(hours=expiry_hours)).isoformat()
+
+    def validate_cache_format(self, cache_data: Dict, required_keys: List[str]) -> bool:
+        """
+        Validate that cache data contains required keys.
+
+        Args:
+            cache_data: Cache data to validate
+            required_keys: List of required keys
+
+        Returns:
+            bool: True if cache data is valid, False otherwise
+        """
+        for key in required_keys:
+            if key not in cache_data:
+                logger.warning(f"Missing required key in cache data: {key}")
+                return False
+        return True
