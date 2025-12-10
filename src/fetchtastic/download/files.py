@@ -5,6 +5,7 @@ This module provides file operations utilities including atomic writes,
 hash verification, and archive extraction.
 """
 
+import fnmatch
 import hashlib
 import os
 import shutil
@@ -13,6 +14,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from fetchtastic.log_utils import logger
+from fetchtastic.utils import matches_selected_patterns
 
 
 class FileOperations:
@@ -93,7 +95,11 @@ class FileOperations:
             return False
 
     def extract_archive(
-        self, zip_path: str, extract_dir: str, patterns: List[str]
+        self,
+        zip_path: str,
+        extract_dir: str,
+        patterns: List[str],
+        exclude_patterns: List[str],
     ) -> List[Path]:
         """
         Extract files from a ZIP archive matching specific patterns.
@@ -102,13 +108,14 @@ class FileOperations:
             zip_path: Path to the ZIP archive
             extract_dir: Directory to extract files to
             patterns: List of filename patterns to extract (empty list extracts all)
+            exclude_patterns: List of filename patterns to skip (case-insensitive glob)
 
         Returns:
             List[Path]: List of paths to extracted files
         """
         if not patterns:
-            # Extract all files if no patterns specified
-            patterns = ["*"]
+            # Legacy behavior: empty pattern list means do not extract anything
+            return []
 
         extracted_files = []
 
@@ -120,10 +127,19 @@ class FileOperations:
                         continue
 
                     file_name = file_info.filename
+                    if not self._is_safe_archive_member(file_name):
+                        logger.warning(
+                            "Skipping unsafe archive member %s (possible traversal)",
+                            file_name,
+                        )
+                        continue
+
                     base_name = os.path.basename(file_name)
+                    if self._matches_exclude(base_name, exclude_patterns):
+                        continue
 
                     # Check if file matches any pattern
-                    if self._matches_pattern(base_name, patterns):
+                    if matches_selected_patterns(base_name, patterns):
                         # Extract the file
                         extract_path = os.path.join(extract_dir, file_name)
 
@@ -144,34 +160,30 @@ class FileOperations:
             logger.error(f"Error extracting archive {zip_path}: {e}")
             return []
 
-    def _matches_pattern(self, filename: str, patterns: List[str]) -> bool:
-        """
-        Check if a filename matches any of the given patterns.
+    def _matches_exclude(self, filename: str, patterns: List[str]) -> bool:
+        """Case-insensitive glob match for exclusion."""
+        if not patterns:
+            return False
+        name_lower = filename.lower()
+        return any(fnmatch.fnmatch(name_lower, pat.lower()) for pat in patterns)
 
-        Args:
-            filename: The filename to check
-            patterns: List of patterns to match against
-
-        Returns:
-            bool: True if filename matches any pattern, False otherwise
+    def _is_safe_archive_member(self, member_name: str) -> bool:
         """
-        filename_lower = filename.lower()
-        for pattern in patterns:
-            pattern_lower = pattern.lower()
-            if pattern_lower == "*":
-                return True
-            if pattern_lower in filename_lower:
-                return True
-            # Simple glob-style matching
-            if pattern_lower.endswith("*") and filename_lower.startswith(
-                pattern_lower[:-1]
-            ):
-                return True
-            if pattern_lower.startswith("*") and filename_lower.endswith(
-                pattern_lower[1:]
-            ):
-                return True
-        return False
+        Validate archive member names to prevent path traversal during extraction.
+        """
+        if (
+            not member_name
+            or member_name.startswith("/")
+            or member_name.startswith("\\")
+        ):
+            return False
+        normalized = os.path.normpath(member_name)
+        if normalized.startswith("..") or normalized.startswith(f"..{os.sep}"):
+            return False
+        # Explicit null byte check
+        if "\x00" in normalized:
+            return False
+        return True
 
     def cleanup_file(self, file_path: str) -> bool:
         """

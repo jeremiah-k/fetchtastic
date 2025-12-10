@@ -474,6 +474,25 @@ class DownloadOrchestrator:
 - [ ] **Test Updates** - Update tests for new architecture
 - [ ] **Verification** - Ensure all existing functionality is preserved
 
+## Progress Update (rf-spectre-1)
+
+- Implemented modular Android, firmware, and repository downloaders; orchestrator currently runs Android and firmware paths with include/exclude filtering and extraction.
+- Restored key legacy safeguards: path-component sanitization, glob-based exclude handling, legacy pattern matching, safe ZIP extraction (no traversal), and platform-specific download directories for correct cleanup/reporting.
+- CLI first-run/download flows now call `DownloadCLIIntegration.main`, matching legacy return shapes and logging; cron setup gracefully skips when `crontab` is absent.
+- Configuration compatibility preserved for legacy keys (`SELECTED_FIRMWARE_ASSETS`, `SELECTED_PRERELEASE_ASSETS`, etc.) and selection/exclude prompts.
+
+## Remaining Work / Handoff Notes
+
+- **Repository orchestration**: Wire `RepositoryDownloader` into `DownloadOrchestrator` with selection/exclude semantics and parity with legacy repo-dls handling.
+- **Extraction parity**: Align extraction with legacy validation (`_validate_extraction_patterns`, `check_extraction_needed`), hash/sidecar handling, and exclude-aware behavior.
+- **Prerelease flow**: Port commit-history/prerelease tracking (JSON cache, directory scanning, expected-version matching) for firmware/APK; add cache expiry and superseded-prerelease cleanup.
+- **Version tracking**: Mirror legacy latest/prerelease JSON writes, retention, and cache invalidation; migrate existing tracking files safely.
+- **Retry/error metadata**: Capture per-asset URLs and metadata in results for robust retries and CLI reporting (legacy exposed detailed failed_downloads).
+- **Cache manager**: Bring forward cache expiry, commit timestamp caching, and rate-limit tracking from legacy downloader/utils.
+- **Menu integration**: Ensure menu selections map cleanly to new config keys without duplication; keep backward-compatible key handling.
+- **Migration module**: Currently a compatibility wrapper for CLI; plan to retire by routing CLI directly to orchestrator once parity is verified and legacy code removed.
+- **Testing**: Migrate high-value legacy tests (prerelease handling, extraction validation, superseded-prerelease cleanup, hash verification, repo downloads) to modular suites.
+
 ## Appendix
 
 ### Key Files to Modify

@@ -99,20 +99,28 @@ class BaseDownloader(Downloader, ABC):
         """
         return self.file_operations.verify_file_hash(file_path, expected_hash)
 
-    def extract(self, file_path: str, patterns: List[str]) -> List[Path]:
+    def extract(
+        self,
+        file_path: str,
+        patterns: List[str],
+        exclude_patterns: Optional[List[str]] = None,
+    ) -> List[Path]:
         """
         Extract files from an archive matching specific patterns.
 
         Args:
             file_path: Path to the archive file
             patterns: List of filename patterns to extract
+            exclude_patterns: Optional list of filename patterns to skip
 
         Returns:
             List[Path]: List of paths to extracted files
         """
         # Get the directory where the archive is located
         archive_dir = os.path.dirname(file_path)
-        return self.file_operations.extract_archive(file_path, archive_dir, patterns)
+        return self.file_operations.extract_archive(
+            file_path, archive_dir, patterns, exclude_patterns or []
+        )
 
     def cleanup_old_versions(self, keep_limit: int) -> None:
         """

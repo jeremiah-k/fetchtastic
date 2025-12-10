@@ -201,13 +201,19 @@ class Downloader(ABC):
         """
 
     @abstractmethod
-    def extract(self, file_path: Path, patterns: List[str]) -> List[Path]:
+    def extract(
+        self,
+        file_path: Path,
+        patterns: List[str],
+        exclude_patterns: Optional[List[str]],
+    ) -> List[Path]:
         """
         Extract files from an archive matching specific patterns.
 
         Args:
             file_path: Path to the archive file
             patterns: List of filename patterns to extract
+            exclude_patterns: List of filename patterns to exclude during extraction
 
         Returns:
             List[Path]: List of paths to extracted files

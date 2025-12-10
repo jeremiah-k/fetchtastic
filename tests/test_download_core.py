@@ -85,6 +85,37 @@ def test_get_target_path_rejects_path_traversal(tmp_path):
 
 
 @pytest.mark.core_downloads
+def test_extract_archive_respects_exclude_and_safety(tmp_path):
+    """Extraction should honor exclude patterns and skip unsafe archive members."""
+    from fetchtastic.download.files import FileOperations
+
+    zip_path = tmp_path / "fw.zip"
+    extract_dir = tmp_path / "extract"
+    extract_dir.mkdir()
+
+    # Build a zip with safe, excluded, and unsafe entries
+    import zipfile
+
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("good.bin", b"ok")
+        zf.writestr("debug.bin", b"skip-me")
+        zf.writestr("../evil.bin", b"evil")  # path traversal attempt
+
+    ops = FileOperations()
+    extracted = ops.extract_archive(
+        str(zip_path),
+        str(extract_dir),
+        patterns=["*.bin"],
+        exclude_patterns=["*debug*"],
+    )
+
+    extracted_names = {p.name for p in extracted}
+    assert "good.bin" in extracted_names
+    assert "debug.bin" not in extracted_names
+    assert not (extract_dir / ".." / "evil.bin").exists()
+
+
+@pytest.mark.core_downloads
 def test_cleanup_old_versions(tmp_path):
     """Test the logic for cleaning up old version directories."""
     firmware_dir = tmp_path / "firmware"

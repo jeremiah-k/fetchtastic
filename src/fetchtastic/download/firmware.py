@@ -207,7 +207,11 @@ class FirmwareReleaseDownloader(BaseDownloader):
             )
 
     def extract_firmware(
-        self, release: Release, asset: Asset, patterns: List[str]
+        self,
+        release: Release,
+        asset: Asset,
+        patterns: List[str],
+        exclude_patterns: Optional[List[str]] = None,
     ) -> DownloadResult:
         """
         Extract firmware files from a downloaded ZIP archive.
@@ -216,6 +220,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
             release: The release containing the firmware
             asset: The firmware asset that was downloaded
             patterns: List of filename patterns to extract
+            exclude_patterns: Optional list of patterns to skip during extraction
 
         Returns:
             DownloadResult: Result of the extraction operation
@@ -232,7 +237,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 )
 
             # Extract files matching patterns
-            extracted_files = self.extract(zip_path, patterns)
+            extracted_files = self.extract(zip_path, patterns, exclude_patterns or [])
 
             if extracted_files:
                 logger.info(f"Extracted {len(extracted_files)} files from {asset.name}")
@@ -631,7 +636,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     # Handle extraction if needed
                     if auto_extract and extract_patterns:
                         extract_result = downloader.extract_firmware(
-                            release, asset, extract_patterns
+                            release, asset, extract_patterns, exclude_patterns
                         )
                         if not extract_result.success:
                             logger.warning(

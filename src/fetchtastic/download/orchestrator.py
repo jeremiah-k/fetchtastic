@@ -221,6 +221,7 @@ class DownloadOrchestrator:
 
             # Get extraction patterns from configuration
             extract_patterns = self._get_extraction_patterns()
+            exclude_patterns = self._get_exclude_patterns()
 
             # Filter assets based on selection/exclude rules
             assets_to_download = [
@@ -249,7 +250,7 @@ class DownloadOrchestrator:
                 # If download succeeded, extract files
                 if download_result.success:
                     extract_result = self.firmware_downloader.extract_firmware(
-                        release, asset, extract_patterns
+                        release, asset, extract_patterns, exclude_patterns
                     )
                     self._handle_download_result(extract_result, "firmware_extraction")
 
@@ -264,6 +265,16 @@ class DownloadOrchestrator:
             List[str]: List of filename patterns to extract
         """
         patterns = self.config.get("EXTRACT_PATTERNS", [])
+        return patterns if isinstance(patterns, list) else [patterns]
+
+    def _get_exclude_patterns(self) -> List[str]:
+        """
+        Get exclude patterns from configuration.
+
+        Returns:
+            List[str]: List of filename patterns to exclude
+        """
+        patterns = self.config.get("EXCLUDE_PATTERNS", [])
         return patterns if isinstance(patterns, list) else [patterns]
 
     def _handle_download_result(
