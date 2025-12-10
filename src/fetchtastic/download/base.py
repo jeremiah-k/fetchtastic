@@ -5,6 +5,7 @@ This module provides the base implementation of the Downloader interface
 that can be extended by specific artifact downloaders.
 """
 
+import fnmatch
 import os
 import re
 from abc import ABC, abstractmethod
@@ -12,7 +13,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fetchtastic.log_utils import logger
-from fetchtastic.utils import download_file_with_retry
+from fetchtastic.utils import download_file_with_retry, matches_selected_patterns
 
 from .cache import CacheManager
 from .files import FileOperations
@@ -152,11 +153,14 @@ class BaseDownloader(Downloader, ABC):
         Returns:
             str: Full path where the file should be saved
         """
+        safe_release = self._sanitize_required(release_tag, "release tag")
+        safe_name = self._sanitize_required(file_name, "file name")
+
         # Create version-specific directory
-        version_dir = os.path.join(self.download_dir, release_tag)
+        version_dir = os.path.join(self.download_dir, safe_release)
         os.makedirs(version_dir, exist_ok=True)
 
-        return os.path.join(version_dir, file_name)
+        return os.path.join(version_dir, safe_name)
 
     def should_download_release(self, release_tag: str, asset_name: str) -> bool:
         """
@@ -218,15 +222,7 @@ class BaseDownloader(Downloader, ABC):
         Returns:
             bool: True if filename matches any pattern, False otherwise
         """
-        if not patterns:
-            return True  # No patterns means download everything
-
-        filename_lower = filename.lower()
-        for pattern in patterns:
-            pattern_lower = pattern.lower()
-            if pattern_lower in filename_lower:
-                return True
-        return False
+        return matches_selected_patterns(filename, patterns)
 
     def _matches_exclude_patterns(self, filename: str, patterns: List[str]) -> bool:
         """
@@ -243,11 +239,45 @@ class BaseDownloader(Downloader, ABC):
             return False  # No exclude patterns means don't exclude anything
 
         filename_lower = filename.lower()
-        for pattern in patterns:
-            pattern_lower = pattern.lower()
-            if pattern_lower in filename_lower:
-                return True
-        return False
+        return any(
+            fnmatch.fnmatch(filename_lower, pattern.lower()) for pattern in patterns
+        )
+
+    @staticmethod
+    def _sanitize_path_component(component: Optional[str]) -> Optional[str]:
+        """
+        Return a filesystem-safe single path component or None if the input is unsafe.
+
+        Mirrors the legacy downloader's safeguards against path traversal and invalid
+        components.
+        """
+        if component is None:
+            return None
+
+        sanitized = component.strip()
+        if not sanitized or sanitized in {".", ".."}:
+            return None
+
+        if os.path.isabs(sanitized):
+            return None
+
+        if "\x00" in sanitized:
+            return None
+
+        for separator in (os.sep, os.altsep):
+            if separator and separator in sanitized:
+                return None
+
+        return sanitized
+
+    def _sanitize_required(self, component: str, label: str) -> str:
+        """Sanitize a required component or raise ValueError with a helpful message."""
+        safe = self._sanitize_path_component(component)
+        if safe is None:
+            raise ValueError(
+                f"Unsafe {label} provided; aborting to avoid path traversal"
+            )
+        return safe
 
     def create_download_result(
         self,

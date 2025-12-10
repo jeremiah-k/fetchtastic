@@ -64,13 +64,24 @@ def test_should_download_release_respects_selection_and_excludes(tmp_path):
         {
             "DOWNLOAD_DIR": str(tmp_path),
             "SELECTED_FIRMWARE_ASSETS": ["rak4631"],
-            "EXCLUDE_PATTERNS": ["debug", "*_oled*"],
+            "EXCLUDE_PATTERNS": ["*debug*", "*_oled*"],
         }
     )
 
     assert downloader.should_download_release("v1.0.0", "rak4631-fw.zip") is True
     assert downloader.should_download_release("v1.0.0", "rak4631-debug-fw.zip") is False
     assert downloader.should_download_release("v1.0.0", "heltec-oled-fw.zip") is False
+
+
+@pytest.mark.core_downloads
+def test_get_target_path_rejects_path_traversal(tmp_path):
+    """Release tags and filenames must be sanitized before building paths."""
+    downloader = FirmwareReleaseDownloader({"DOWNLOAD_DIR": str(tmp_path)})
+
+    with pytest.raises(ValueError):
+        downloader.get_target_path_for_release("../bad", "firmware.zip")
+    with pytest.raises(ValueError):
+        downloader.get_target_path_for_release("v1.0.0", "../../firmware.zip")
 
 
 @pytest.mark.core_downloads

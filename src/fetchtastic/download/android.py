@@ -53,9 +53,12 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         Keeping platform-specific subdirectories matches the legacy layout and
         allows result reporting to correctly classify download types.
         """
-        version_dir = os.path.join(self.download_dir, "android", release_tag)
+        safe_release = self._sanitize_required(release_tag, "release tag")
+        safe_name = self._sanitize_required(file_name, "file name")
+
+        version_dir = os.path.join(self.download_dir, "android", safe_release)
         os.makedirs(version_dir, exist_ok=True)
-        return os.path.join(version_dir, file_name)
+        return os.path.join(version_dir, safe_name)
 
     def get_releases(self, limit: Optional[int] = None) -> List[Release]:
         """
@@ -150,6 +153,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         Returns:
             DownloadResult: Result of the download operation
         """
+        target_path: Optional[str] = None
         try:
             # Get target path for the APK
             target_path = self.get_target_path_for_release(release.tag_name, asset.name)
@@ -193,10 +197,11 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
         except Exception as e:
             logger.error(f"Error downloading APK {asset.name}: {e}")
+            safe_path = target_path or os.path.join(self.download_dir, "android")
             return self.create_download_result(
                 success=False,
                 release_tag=release.tag_name,
-                file_path=str(Path(target_path)),
+                file_path=str(Path(safe_path)),
                 error_message=str(e),
             )
 
