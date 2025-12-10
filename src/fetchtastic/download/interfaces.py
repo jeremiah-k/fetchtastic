@@ -79,6 +79,34 @@ class DownloadResult:
     extracted_files: Optional[List[Path]] = None
     """List of files extracted from archives"""
 
+    # Enhanced retry and failure metadata for P2.1
+    download_url: Optional[str] = None
+    """URL of the downloaded asset (for retry and reporting)"""
+
+    file_size: Optional[int] = None
+    """Size of the file in bytes (for retry and reporting)"""
+
+    file_type: Optional[str] = None
+    """Type of the file (APK, firmware, repository, etc.)"""
+
+    retry_count: int = 0
+    """Number of retry attempts made"""
+
+    retry_timestamp: Optional[str] = None
+    """Timestamp of the last retry attempt"""
+
+    error_type: Optional[str] = None
+    """Type/category of error (network, permission, validation, etc.)"""
+
+    error_details: Optional[dict] = None
+    """Detailed error information for debugging"""
+
+    http_status_code: Optional[int] = None
+    """HTTP status code if download failed due to HTTP error"""
+
+    is_retryable: bool = False
+    """Whether this failure is retryable"""
+
 
 class DownloadTask(ABC):
     """
