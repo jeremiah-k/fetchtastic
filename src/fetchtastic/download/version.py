@@ -377,6 +377,25 @@ class VersionManager:
             logger.warning(f"Could not fetch repo commits: {e}")
             return []
 
+    def summarize_rate_limit(self, response: Any) -> Optional[Dict[str, Any]]:
+        """
+        Extract rate-limit info from a GitHub API response for logging/reporting.
+        """
+        try:
+            headers = response.headers
+            remaining = headers.get("X-RateLimit-Remaining")
+            reset = headers.get("X-RateLimit-Reset")
+            limit = headers.get("X-RateLimit-Limit")
+            if remaining and reset:
+                return {
+                    "remaining": int(remaining),
+                    "reset": int(reset),
+                    "limit": int(limit) if limit else None,
+                }
+        except Exception:
+            return None
+        return None
+
     def get_commit_hash_suffix(self, commit_hash: str) -> str:
         """
         Extract and format commit hash suffix for version strings.

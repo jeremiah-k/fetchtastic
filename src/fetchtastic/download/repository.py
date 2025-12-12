@@ -108,15 +108,9 @@ class RepositoryDownloader(BaseDownloader):
             target_path = os.path.join(target_dir, file_name)
 
             # Skip if already complete
-            fake_asset = type("AssetLike", (), {})()
-            fake_asset.name = file_name
-            fake_asset.size = file_info.get("size") or 0
+            size = file_info.get("size")
             if os.path.exists(target_path) and self.verify(target_path):
-                if (
-                    fake_asset.size
-                    and self.file_operations.get_file_size(target_path)
-                    == fake_asset.size
-                ):
+                if not size or self.file_operations.get_file_size(target_path) == size:
                     logger.info(
                         f"Repository file {file_name} already exists and is valid"
                     )
@@ -125,7 +119,7 @@ class RepositoryDownloader(BaseDownloader):
                         release_tag="repository",
                         file_path=target_path,
                         download_url=download_url,
-                        file_size=fake_asset.size,
+                        file_size=size,
                         file_type="repository",
                     )
 

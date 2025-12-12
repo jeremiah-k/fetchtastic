@@ -536,6 +536,23 @@ class FirmwareReleaseDownloader(BaseDownloader):
             if filtered_by_commits:
                 prereleases = filtered_by_commits
 
+        # Repo directory scan: ensure prerelease tag exists in repo listing
+        try:
+            from fetchtastic import menu_repo
+
+            directories = menu_repo.fetch_repo_directories()
+            repo_matches = version_manager.scan_prerelease_directories(
+                directories, expected_base or ""
+            )
+            if repo_matches:
+                prereleases = [
+                    pr
+                    for pr in prereleases
+                    if any(match in pr.tag_name for match in repo_matches)
+                ] or prereleases
+        except Exception:
+            pass
+
         return prereleases
 
     def get_prerelease_tracking_file(self) -> str:

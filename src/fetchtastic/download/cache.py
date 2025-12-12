@@ -160,6 +160,12 @@ class CacheManager:
                 normalized[new_key] = data[legacy_key]
         return normalized
 
+    def read_rate_limit_summary(self, cache_file: str) -> Optional[Dict[str, Any]]:
+        """
+        Read cached rate-limit summary if present.
+        """
+        return self.read_json(cache_file)
+
     def cache_with_expiry(
         self, cache_file: str, data: Dict, expiry_hours: float
     ) -> bool:
