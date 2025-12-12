@@ -342,7 +342,15 @@ class FileOperations:
             return []
 
         # Perform the actual extraction
-        return self.extract_archive(zip_path, extract_dir, patterns, exclude_patterns)
+        extracted = self.extract_archive(
+            zip_path, extract_dir, patterns, exclude_patterns
+        )
+
+        # Generate sidecar hashes for extracted files
+        if extracted:
+            self.generate_hash_for_extracted_files(extracted)
+
+        return extracted
 
     def generate_hash_for_extracted_files(
         self, extracted_files: List[Path], algorithm: str = "sha256"

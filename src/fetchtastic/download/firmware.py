@@ -82,13 +82,13 @@ class FirmwareReleaseDownloader(BaseDownloader):
             )
 
             if not releases_data:
-                releases_data = make_github_api_request(
+                response = make_github_api_request(
                     f"{self.firmware_releases_url}",
                     self.config.get("GITHUB_TOKEN"),
                     allow_env_token=True,
+                    params={"per_page": 8},
                 )
-                if hasattr(releases_data, "json"):
-                    releases_data = releases_data.json()
+                releases_data = response.json() if hasattr(response, "json") else []
                 self.cache_manager.cache_with_expiry(
                     cache_file, releases_data, RELEASES_CACHE_EXPIRY_HOURS
                 )

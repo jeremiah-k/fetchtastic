@@ -212,13 +212,24 @@ class DownloadOrchestrator:
         Returns:
             List[str]: List of existing release tags
         """
+        existing: List[str] = []
         if artifact_type == "android":
-            existing = self.android_downloader.get_latest_release_tag()
-            return [existing] if existing else []
+            latest = self.android_downloader.get_latest_release_tag()
+            if latest:
+                existing.append(latest)
+            android_dir = Path(self.android_downloader.download_dir) / "android"
+            if android_dir.exists():
+                existing.extend([p.name for p in android_dir.iterdir() if p.is_dir()])
         elif artifact_type == "firmware":
-            existing = self.firmware_downloader.get_latest_release_tag()
-            return [existing] if existing else []
-        return []
+            latest = self.firmware_downloader.get_latest_release_tag()
+            if latest:
+                existing.append(latest)
+            fw_dir = Path(self.firmware_downloader.download_dir) / "firmware"
+            if fw_dir.exists():
+                existing.extend([p.name for p in fw_dir.iterdir() if p.is_dir()])
+
+        # Deduplicate
+        return list(dict.fromkeys(existing))
 
     def _should_download_release(self, release: Release, artifact_type: str) -> bool:
         """
@@ -234,9 +245,15 @@ class DownloadOrchestrator:
         # Check prerelease settings
         if release.prerelease:
             if artifact_type == "android":
-                check_prereleases = self.config.get("CHECK_APK_PRERELEASES", False)
+                check_prereleases = self.config.get(
+                    "CHECK_APK_PRERELEASES",
+                    self.config.get("CHECK_PRERELEASES", False),
+                )
             else:
-                check_prereleases = self.config.get("CHECK_FIRMWARE_PRERELEASES", False)
+                check_prereleases = self.config.get(
+                    "CHECK_FIRMWARE_PRERELEASES",
+                    self.config.get("CHECK_PRERELEASES", False),
+                )
 
             if not check_prereleases:
                 logger.debug(
@@ -278,6 +295,8 @@ class DownloadOrchestrator:
 
             # Download each asset in the release
             for asset in release.assets:
+                if not self.android_downloader.should_download_asset(asset.name):
+                    continue
                 result = self.android_downloader.download_apk(release, asset)
                 self._handle_download_result(result, "android")
 

@@ -210,6 +210,8 @@ class BaseDownloader(Downloader, ABC):
             patterns = self.config.get("SELECTED_FIRMWARE_ASSETS")
         if not patterns:
             patterns = self.config.get("SELECTED_PRERELEASE_ASSETS")
+        if not patterns:
+            patterns = self.config.get("SELECTED_APK_ASSETS")
 
         patterns = patterns or []
         return patterns if isinstance(patterns, list) else [patterns]

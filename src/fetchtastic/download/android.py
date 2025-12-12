@@ -82,14 +82,13 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             )
 
             if not releases_data:
-                releases_data = make_github_api_request(
+                response = make_github_api_request(
                     f"{self.android_releases_url}",
                     self.config.get("GITHUB_TOKEN"),
                     allow_env_token=True,
+                    params={"per_page": 10},
                 )
-                # persist cache if request returns a response object
-                if hasattr(releases_data, "json"):
-                    releases_data = releases_data.json()
+                releases_data = response.json() if hasattr(response, "json") else []
                 self.cache_manager.cache_with_expiry(
                     cache_file, releases_data, RELEASES_CACHE_EXPIRY_HOURS
                 )
@@ -157,6 +156,23 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             str: Direct download URL for the asset
         """
         return asset.download_url
+
+    def should_download_asset(self, asset_name: str) -> bool:
+        """
+        Determine if an Android asset should be downloaded based on config selections.
+        """
+        selected = self.config.get("SELECTED_APK_ASSETS") or []
+        exclude = self._get_exclude_patterns()
+
+        if exclude and any(
+            fnmatch.fnmatch(asset_name.lower(), pat.lower()) for pat in exclude
+        ):
+            return False
+
+        if not selected:
+            return True
+
+        return any(sel.lower() in asset_name.lower() for sel in selected)
 
     def download_apk(self, release: Release, asset: Asset) -> DownloadResult:
         """
