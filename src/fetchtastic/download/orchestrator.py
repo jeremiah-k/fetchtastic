@@ -101,6 +101,15 @@ class DownloadOrchestrator:
             for release in releases_to_download:
                 self._download_android_release(release)
 
+            # Handle Android prereleases
+            prereleases = self.android_downloader.handle_prereleases(android_releases)
+            for prerelease in prereleases:
+                for asset in prerelease.assets:
+                    if not self.android_downloader.should_download_asset(asset.name):
+                        continue
+                    result = self.android_downloader.download_apk(prerelease, asset)
+                    self._handle_download_result(result, "android_prerelease")
+
         except Exception as e:
             logger.error(f"Error processing Android downloads: {e}")
 
@@ -121,6 +130,28 @@ class DownloadOrchestrator:
             # Download each release
             for release in releases_to_download:
                 self._download_firmware_release(release)
+
+            # Handle prerelease selection based on commit history + expected version
+            prereleases = self.firmware_downloader.handle_prereleases(firmware_releases)
+            for prerelease in prereleases:
+                for asset in prerelease.assets:
+                    if not self.firmware_downloader.should_download_release(
+                        prerelease.tag_name, asset.name
+                    ):
+                        continue
+                    download_result = self.firmware_downloader.download_firmware(
+                        prerelease, asset
+                    )
+                    self._handle_download_result(download_result, "firmware_prerelease")
+                    if download_result.success:
+                        extract_patterns = self._get_extraction_patterns()
+                        exclude_patterns = self._get_exclude_patterns()
+                        extract_result = self.firmware_downloader.extract_firmware(
+                            prerelease, asset, extract_patterns, exclude_patterns
+                        )
+                        self._handle_download_result(
+                            extract_result, "firmware_prerelease_extraction"
+                        )
 
         except Exception as e:
             logger.error(f"Error processing firmware downloads: {e}")
@@ -390,6 +421,8 @@ class DownloadOrchestrator:
             logger.error(
                 f"Failed {operation_type} for {result.release_tag}: {error_msg}"
             )
+            if result.download_url:
+                logger.error(f"URL: {result.download_url}")
 
     def _retry_failed_downloads(self) -> None:
         """Retry failed downloads with enhanced metadata and retry logic."""
@@ -821,11 +854,11 @@ class DownloadOrchestrator:
             # Manage prerelease tracking files
             self._manage_prerelease_tracking()
 
-            # Fetch and cache recent repo commits for prerelease expected-version computation
-            self._refresh_commit_history_cache()
-
         except Exception as e:
             logger.error(f"Error updating version tracking: {e}")
+
+        # Fetch and cache recent repo commits for prerelease expected-version computation
+        self._refresh_commit_history_cache()
 
     def _manage_prerelease_tracking(self) -> None:
         """
@@ -837,6 +870,11 @@ class DownloadOrchestrator:
         """
         try:
             logger.info("Managing prerelease tracking files...")
+
+            # Share recent commits with downloaders for prerelease filtering
+            if hasattr(self, "_recent_commits"):
+                self.android_downloader._recent_commits = self._recent_commits
+                self.firmware_downloader._recent_commits = self._recent_commits
 
             # Manage Android prerelease tracking
             self.android_downloader.manage_prerelease_tracking_files()
@@ -852,7 +890,7 @@ class DownloadOrchestrator:
     def _refresh_commit_history_cache(self) -> None:
         """Refresh commit history cache used for prerelease expected-version selection."""
         try:
-            self.version_manager.fetch_recent_repo_commits(
+            self._recent_commits = self.version_manager.fetch_recent_repo_commits(
                 limit=10, cache_manager=self.cache_manager, force_refresh=False
             )
         except Exception as e:

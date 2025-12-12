@@ -354,8 +354,11 @@ class VersionManager:
             cached = cache_manager.read_with_expiry(
                 cache_file, PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS / 3600
             )
-            if cached and "data" in cached:
-                return cached["data"]
+            if cached:
+                data = cached.get("data") if isinstance(cached, dict) else cached
+                if data:
+                    logger.debug("Using cached prerelease commit history")
+                    return data
 
         try:
             response = make_github_api_request(

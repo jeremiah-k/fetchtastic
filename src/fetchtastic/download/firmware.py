@@ -174,8 +174,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
             target_path = self.get_target_path_for_release(release.tag_name, asset.name)
 
             # Check if we need to download
-            if not self.needs_download(release.tag_name, asset.name, asset.size):
-                logger.info(f"Firmware {asset.name} already exists and is valid")
+            if self.is_asset_complete(release.tag_name, asset):
+                logger.info(f"Firmware {asset.name} already exists and is complete")
                 return self.create_download_result(
                     success=True,
                     release_tag=release.tag_name,
@@ -519,6 +519,22 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 .lstrip("vV")
                 .startswith(expected_base)
             ]
+
+        # Further restrict using commit history cache if available
+        commit_cache = getattr(self, "_recent_commits", None)
+        if commit_cache and expected_base:
+            commit_hashes = []
+            for commit in commit_cache:
+                sha = commit.get("sha")
+                if sha:
+                    commit_hashes.append(sha[:7])
+            filtered_by_commits = [
+                pr
+                for pr in prereleases
+                if any(hash_part in pr.tag_name for hash_part in commit_hashes)
+            ]
+            if filtered_by_commits:
+                prereleases = filtered_by_commits
 
         return prereleases
 

@@ -345,6 +345,42 @@ class BaseDownloader(Downloader, ABC):
         target_path = self.get_target_path_for_release(release_tag, file_name)
         return target_path if os.path.exists(target_path) else None
 
+    def _is_zip_intact(self, file_path: str) -> bool:
+        """Quick integrity check for zip archives."""
+        import zipfile
+
+        try:
+            with zipfile.ZipFile(file_path, "r") as zf:
+                return zf.testzip() is None
+        except (IOError, zipfile.BadZipFile):
+            return False
+
+    def is_asset_complete(self, release_tag: str, asset: Asset) -> bool:
+        """
+        Determine if an asset is already downloaded and valid.
+
+        Checks existence, size match, hash/verify, and zip integrity.
+        """
+        target_path = self.get_target_path_for_release(release_tag, asset.name)
+        if not os.path.exists(target_path):
+            return False
+
+        # Size check
+        if asset.size and self.file_operations.get_file_size(target_path) != asset.size:
+            return False
+
+        # Hash/verify (when expected_hash is provided, verify handles None as exists)
+        if not self.verify(target_path):
+            return False
+
+        # Zip integrity check
+        if target_path.lower().endswith(".zip") and not self._is_zip_intact(
+            target_path
+        ):
+            return False
+
+        return True
+
     def needs_download(
         self, release_tag: str, file_name: str, expected_size: int
     ) -> bool:
