@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from fetchtastic.constants import PRERELEASE_TRACKING_JSON_FILE
 from fetchtastic.log_utils import logger
 
 from .android import MeshtasticAndroidAppDownloader
@@ -124,6 +125,10 @@ class DownloadOrchestrator:
                 logger.info("No firmware releases found")
                 return
 
+            latest_stable = next(
+                (r for r in firmware_releases if not r.prerelease), None
+            )
+
             # Filter releases based on configuration
             releases_to_download = self._filter_releases(firmware_releases, "firmware")
 
@@ -152,6 +157,18 @@ class DownloadOrchestrator:
                         self._handle_download_result(
                             extract_result, "firmware_prerelease_extraction"
                         )
+
+            # Legacy: firmware prereleases from meshtastic.github.io directories
+            if latest_stable:
+                successes, failures, _active_dir = (
+                    self.firmware_downloader.download_repo_prerelease_firmware(
+                        latest_stable.tag_name, force_refresh=False
+                    )
+                )
+                for result in successes:
+                    self._handle_download_result(result, "firmware_prerelease_repo")
+                for result in failures:
+                    self._handle_download_result(result, "firmware_prerelease_repo")
 
         except Exception as e:
             logger.error(f"Error processing firmware downloads: {e}")
@@ -828,9 +845,24 @@ class DownloadOrchestrator:
         Returns:
             Dict[str, Optional[str]]: Dictionary mapping artifact types to latest versions
         """
+        firmware_prerelease = None
+        tracking_path = (
+            Path(self.cache_manager.cache_dir) / PRERELEASE_TRACKING_JSON_FILE
+        )
+        if tracking_path.exists():
+            try:
+                data = self.cache_manager.read_json(str(tracking_path))
+                commits = data.get("commits") if isinstance(data, dict) else None
+                if isinstance(commits, list) and commits:
+                    firmware_prerelease = str(commits[-1])
+            except Exception:
+                firmware_prerelease = None
+
         return {
             "android": self.android_downloader.get_latest_release_tag(),
             "firmware": self.firmware_downloader.get_latest_release_tag(),
+            "firmware_prerelease": firmware_prerelease,
+            "android_prerelease": None,
         }
 
     def update_version_tracking(self) -> None:

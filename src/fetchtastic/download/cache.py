@@ -10,8 +10,19 @@ import os
 import tempfile
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional
+from urllib.parse import urlencode
 
+from fetchtastic.constants import (
+    COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS,
+    GITHUB_API_BASE,
+    GITHUB_API_TIMEOUT,
+)
 from fetchtastic.log_utils import logger
+from fetchtastic.utils import (
+    make_github_api_request,
+    track_api_cache_hit,
+    track_api_cache_miss,
+)
 
 
 class CacheManager:
@@ -36,7 +47,9 @@ class CacheManager:
         """Get the default cache directory path."""
         import platformdirs
 
-        return platformdirs.user_cache_dir("fetchtastic", "meshtastic")
+        # Legacy fetchtastic uses platformdirs.user_cache_dir("fetchtastic")
+        # and older cache/tracking files live there; keep parity.
+        return platformdirs.user_cache_dir("fetchtastic")
 
     def _ensure_cache_dir_exists(self) -> None:
         """Ensure the cache directory exists."""
@@ -247,6 +260,100 @@ class CacheManager:
         """
         return os.path.join(self.cache_dir, f"{cache_name}{suffix}")
 
+    @staticmethod
+    def build_url_cache_key(url: str, params: Optional[Dict[str, Any]] = None) -> str:
+        """Build a stable cache key matching legacy url?param=value formatting."""
+        if not params:
+            return url
+        filtered = {k: v for k, v in params.items() if v is not None}
+        if not filtered:
+            return url
+        return f"{url}?{urlencode(filtered)}"
+
+    def _get_releases_cache_file(self) -> str:
+        return os.path.join(self.cache_dir, "releases_cache.json")
+
+    def read_releases_cache_entry(
+        self, url_cache_key: str, *, expiry_seconds: int
+    ) -> Optional[List[Dict[str, Any]]]:
+        """
+        Read a cached GitHub releases entry (legacy multi-entry cache file).
+
+        Cache file schema:
+          { "<url>?per_page=n": { "releases": [...], "cached_at": "<iso>" }, ... }
+        """
+        cache_file = self._get_releases_cache_file()
+        cache = self.read_json(cache_file)
+        if not isinstance(cache, dict):
+            track_api_cache_miss()
+            return None
+
+        now = datetime.now(timezone.utc)
+
+        # Log any expired entries we notice (parity with legacy logs)
+        for key, entry in list(cache.items()):
+            if not isinstance(entry, dict):
+                continue
+            cached_at_raw = entry.get("cached_at")
+            if not cached_at_raw:
+                continue
+            try:
+                cached_at = datetime.fromisoformat(
+                    str(cached_at_raw).replace("Z", "+00:00")
+                )
+            except ValueError:
+                continue
+            age_s = (now - cached_at).total_seconds()
+            if age_s >= expiry_seconds:
+                logger.debug(
+                    "Skipping expired releases cache entry for %s (age %.0fs exceeds %ss)",
+                    key,
+                    age_s,
+                    expiry_seconds,
+                )
+
+        entry = cache.get(url_cache_key)
+        if not isinstance(entry, dict):
+            track_api_cache_miss()
+            return None
+
+        cached_at_raw = entry.get("cached_at")
+        releases = entry.get("releases")
+        if not cached_at_raw or not isinstance(releases, list):
+            track_api_cache_miss()
+            return None
+
+        try:
+            cached_at = datetime.fromisoformat(
+                str(cached_at_raw).replace("Z", "+00:00")
+            )
+        except ValueError:
+            track_api_cache_miss()
+            return None
+
+        age_s = (now - cached_at).total_seconds()
+        if age_s >= expiry_seconds:
+            track_api_cache_miss()
+            return None
+
+        track_api_cache_hit()
+        return releases
+
+    def write_releases_cache_entry(
+        self, url_cache_key: str, releases: List[Dict[str, Any]]
+    ) -> None:
+        cache_file = self._get_releases_cache_file()
+        cache = self.read_json(cache_file)
+        if not isinstance(cache, dict):
+            cache = {}
+
+        cache[url_cache_key] = {
+            "releases": releases,
+            "cached_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if self.atomic_write_json(cache_file, cache):
+            logger.debug("Saved %d releases entries to cache", len(cache))
+
     def clear_all_caches(self) -> bool:
         """
         Clear all cache files in the cache directory.
@@ -424,10 +531,97 @@ class CacheManager:
         Returns:
             Dict: Cached commit timestamps that are still valid.
         """
-        cache_file = os.path.join(self.cache_dir, PRERELEASE_COMMITS_CACHE_FILE)
-        cache_data = self.read_with_expiry(
-            cache_file, PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS / 3600
-        )
-        if not cache_data or "data" not in cache_data:
+        cache_file = os.path.join(self.cache_dir, "commit_timestamps.json")
+        cache_data = self.read_json(cache_file)
+        if not isinstance(cache_data, dict):
             return {}
-        return cache_data.get("data", {})
+
+        now = datetime.now(timezone.utc)
+        keep: Dict[str, Any] = {}
+        for cache_key, cache_value in cache_data.items():
+            if (
+                not isinstance(cache_value, (list, tuple))
+                or len(cache_value) != 2
+                or not cache_value[0]
+                or not cache_value[1]
+            ):
+                continue
+            try:
+                _timestamp_str, cached_at_str = cache_value
+                cached_at = datetime.fromisoformat(
+                    str(cached_at_str).replace("Z", "+00:00")
+                )
+                age = now - cached_at
+                if age.total_seconds() < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 60 * 60:
+                    keep[cache_key] = cache_value
+            except ValueError:
+                continue
+        return keep
+
+    def get_commit_timestamp(
+        self,
+        owner: str,
+        repo: str,
+        commit_hash: str,
+        *,
+        github_token: Optional[str] = None,
+        allow_env_token: bool = True,
+        force_refresh: bool = False,
+    ) -> Optional[datetime]:
+        """
+        Get a commit timestamp with on-disk cache parity to legacy.
+        """
+        cache_key = f"{owner}/{repo}/{commit_hash}"
+        cache_file = os.path.join(self.cache_dir, "commit_timestamps.json")
+        cache = self.read_json(cache_file)
+        if not isinstance(cache, dict):
+            cache = {}
+
+        now = datetime.now(timezone.utc)
+
+        if not force_refresh and cache_key in cache:
+            try:
+                timestamp_str, cached_at_str = cache[cache_key]
+                cached_at = datetime.fromisoformat(
+                    str(cached_at_str).replace("Z", "+00:00")
+                )
+                age = now - cached_at
+                if age.total_seconds() < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 60 * 60:
+                    track_api_cache_hit()
+                    logger.debug(
+                        "Using cached commit timestamp for %s (cached %.0fs ago)",
+                        commit_hash,
+                        age.total_seconds(),
+                    )
+                    return datetime.fromisoformat(
+                        str(timestamp_str).replace("Z", "+00:00")
+                    )
+            except Exception:
+                pass
+
+        track_api_cache_miss()
+        url = f"{GITHUB_API_BASE}/{owner}/{repo}/commits/{commit_hash}"
+        try:
+            response = make_github_api_request(
+                url,
+                github_token=github_token,
+                allow_env_token=allow_env_token,
+                timeout=GITHUB_API_TIMEOUT,
+            )
+            commit_data = response.json()
+            timestamp_str = (
+                commit_data.get("commit", {}).get("committer", {}).get("date")
+            )
+            if not timestamp_str:
+                return None
+            timestamp = datetime.fromisoformat(
+                str(timestamp_str).replace("Z", "+00:00")
+            )
+            cache[cache_key] = (timestamp.isoformat(), now.isoformat())
+            self.atomic_write_json(cache_file, cache)
+            return timestamp
+        except Exception as exc:
+            logger.debug(
+                "Could not fetch commit timestamp for %s: %s", commit_hash, exc
+            )
+            return None

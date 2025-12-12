@@ -4,6 +4,7 @@ Meshtastic Android App Downloader
 This module implements the specific downloader for Meshtastic Android APK files.
 """
 
+import fnmatch
 import os
 import re
 from datetime import datetime, timedelta, timezone
@@ -17,7 +18,7 @@ from fetchtastic.constants import (
     RELEASES_CACHE_EXPIRY_HOURS,
 )
 from fetchtastic.log_utils import logger
-from fetchtastic.utils import make_github_api_request
+from fetchtastic.utils import make_github_api_request, matches_selected_patterns
 
 from .base import BaseDownloader
 from .interfaces import Asset, DownloadResult, Release
@@ -73,24 +74,30 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             List[Release]: List of available Android releases
         """
         try:
-            cache_file = os.path.join(
-                self.cache_manager.cache_dir, "android_releases.json"
+            params = {"per_page": 10}
+            url_key = self.cache_manager.build_url_cache_key(
+                self.android_releases_url, params
+            )
+            releases_data = self.cache_manager.read_releases_cache_entry(
+                url_key, expiry_seconds=int(RELEASES_CACHE_EXPIRY_HOURS * 3600)
             )
 
-            releases_data = self.cache_manager.read_with_expiry(
-                cache_file, RELEASES_CACHE_EXPIRY_HOURS
-            )
-
-            if not releases_data:
+            if releases_data is None:
                 response = make_github_api_request(
-                    f"{self.android_releases_url}",
+                    self.android_releases_url,
                     self.config.get("GITHUB_TOKEN"),
                     allow_env_token=True,
-                    params={"per_page": 10},
+                    params=params,
                 )
                 releases_data = response.json() if hasattr(response, "json") else []
-                self.cache_manager.cache_with_expiry(
-                    cache_file, releases_data, RELEASES_CACHE_EXPIRY_HOURS
+                if isinstance(releases_data, list):
+                    logger.debug(
+                        "Cached %d releases for %s (fetched from API)",
+                        len(releases_data),
+                        self.android_releases_url,
+                    )
+                self.cache_manager.write_releases_cache_entry(
+                    url_key, releases_data if isinstance(releases_data, list) else []
                 )
 
             if not releases_data or not isinstance(releases_data, list):
@@ -172,7 +179,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         if not selected:
             return True
 
-        return any(sel.lower() in asset_name.lower() for sel in selected)
+        return matches_selected_patterns(asset_name, selected)
 
     def download_apk(self, release: Release, asset: Asset) -> DownloadResult:
         """
@@ -367,10 +374,14 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             List[Release]: Filtered list of prereleases
         """
         # Check if prereleases are enabled in config
-        check_prereleases = self.config.get("CHECK_APK_PRERELEASES", False)
+        check_prereleases = self.config.get(
+            "CHECK_APK_PRERELEASES", self.config.get("CHECK_PRERELEASES", False)
+        )
 
         if not check_prereleases:
             return []
+
+        version_manager = VersionManager()
 
         # Filter prereleases
         prereleases = [r for r in releases if r.prerelease]
@@ -383,7 +394,6 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         exclude_patterns = self.config.get("APK_PRERELEASE_EXCLUDE_PATTERNS", [])
 
         if include_patterns or exclude_patterns:
-            version_manager = VersionManager()
             prerelease_tags = [r.tag_name for r in prereleases]
             filtered_tags = version_manager.filter_prereleases_by_pattern(
                 prerelease_tags, include_patterns, exclude_patterns

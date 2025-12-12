@@ -5,6 +5,7 @@ import os
 import platform
 import shutil
 import subprocess
+import time
 from typing import List
 
 import platformdirs
@@ -28,6 +29,11 @@ from fetchtastic.setup_config import (
     copy_to_clipboard_func,
     display_version_info,
     get_upgrade_command,
+)
+from fetchtastic.utils import (
+    format_api_summary,
+    get_api_request_summary,
+    reset_api_tracking,
 )
 
 
@@ -233,7 +239,68 @@ def main():
                 set_log_level(config["LOG_LEVEL"])
 
             # Run the downloader
-            DownloadCLIIntegration().main(force_refresh=args.force)
+            reset_api_tracking()
+            start_time = time.time()
+            integration = DownloadCLIIntegration()
+            (
+                downloaded_firmwares,
+                new_firmware_versions,
+                downloaded_apks,
+                new_apk_versions,
+                failed_downloads,
+                latest_firmware_version,
+                latest_apk_version,
+            ) = integration.main(force_refresh=args.force, config=config)
+
+            elapsed = time.time() - start_time
+            logger.info(f"\nCompleted in {elapsed:.1f}s")
+
+            downloaded_count = len(downloaded_firmwares) + len(downloaded_apks)
+            if downloaded_count > 0:
+                logger.info(f"Downloaded {downloaded_count} new versions")
+
+            if latest_firmware_version:
+                logger.info(f"Latest firmware: {latest_firmware_version}")
+            if latest_apk_version:
+                logger.info(f"Latest APK: {latest_apk_version}")
+
+            latest_versions = (
+                integration.migration.get_latest_versions()
+                if integration.migration
+                else {}
+            )
+            latest_firmware_prerelease = latest_versions.get("firmware_prerelease")
+            latest_apk_prerelease = latest_versions.get("android_prerelease")
+            if latest_firmware_prerelease:
+                logger.info(f"Latest firmware prerelease: {latest_firmware_prerelease}")
+            if latest_apk_prerelease:
+                logger.info(f"Latest APK prerelease: {latest_apk_prerelease}")
+
+            if failed_downloads:
+                logger.info(f"{len(failed_downloads)} downloads failed:")
+                for failure in failed_downloads:
+                    url = failure.get("url", "unknown")
+                    retryable = failure.get("retryable")
+                    http_status = failure.get("http_status")
+                    logger.info(
+                        f"- {failure.get('type','Unknown')} {failure.get('release_tag','')}: "
+                        f"{failure.get('file_name','unknown')} "
+                        f"URL={url} retryable={retryable} http_status={http_status}"
+                    )
+
+            if downloaded_count == 0 and not failed_downloads:
+                logger.info(
+                    "All assets are up to date.\n%s",
+                    time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                )
+
+            summary = get_api_request_summary()
+            if summary.get("total_requests", 0) > 0:
+                logger.debug(format_api_summary(summary))
+            else:
+                logger.debug(
+                    "📊 GitHub API Summary: No API requests made (all data served from cache)"
+                )
     elif args.command == "topic":
         # Display the NTFY topic and prompt to copy to clipboard
         config = setup_config.load_config()

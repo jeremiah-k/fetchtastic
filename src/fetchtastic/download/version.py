@@ -5,6 +5,7 @@ This module provides version parsing, comparison, and tracking utilities
 that are used across all downloaders for consistent version handling.
 """
 
+import os
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -14,9 +15,21 @@ from packaging.version import parse as parse_version
 
 from fetchtastic.constants import (
     COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS,
+    DEFAULT_PRERELEASE_ACTIVE,
+    DEFAULT_PRERELEASE_COMMITS_TO_FETCH,
+    DEFAULT_PRERELEASE_STATUS,
+    FIRMWARE_DIR_PREFIX,
+    GITHUB_API_BASE,
+    GITHUB_API_TIMEOUT,
+    GITHUB_MAX_PER_PAGE,
+    PRERELEASE_ADD_COMMIT_PATTERN,
+    PRERELEASE_COMMIT_HISTORY_FILE,
     PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS,
     PRERELEASE_COMMITS_CACHE_FILE,
+    PRERELEASE_DELETE_COMMIT_PATTERN,
+    PRERELEASE_TRACKING_JSON_FILE,
 )
+from fetchtastic.log_utils import logger
 from fetchtastic.utils import make_github_api_request
 
 # Import for type annotations only (available in older packaging versions)
@@ -49,6 +62,8 @@ class VersionManager:
     PRERELEASE_DIR_SEGMENT_RX = re.compile(
         r"(firmware-\d+\.\d+\.\d+\.[a-f0-9]{6,})", re.IGNORECASE
     )
+    _PRERELEASE_ADD_RX = re.compile(PRERELEASE_ADD_COMMIT_PATTERN)
+    _PRERELEASE_DELETE_RX = re.compile(PRERELEASE_DELETE_COMMIT_PATTERN)
 
     def normalize_version(
         self, version: Optional[str]
@@ -334,7 +349,13 @@ class VersionManager:
         return matching
 
     def fetch_recent_repo_commits(
-        self, limit: int, cache_manager: Any, force_refresh: bool = False
+        self,
+        limit: int,
+        *,
+        cache_manager: Any,
+        github_token: Optional[str] = None,
+        allow_env_token: bool = True,
+        force_refresh: bool = False,
     ) -> List[Dict[str, Any]]:
         """
         Fetch recent commits from meshtastic.github.io with caching and expiry.
@@ -347,40 +368,392 @@ class VersionManager:
         Returns:
             List of commit dicts
         """
+        limit = max(1, int(limit))
         cache_file = os.path.join(
             cache_manager.cache_dir, PRERELEASE_COMMITS_CACHE_FILE
         )
+
         if not force_refresh:
-            cached = cache_manager.read_with_expiry(
-                cache_file, PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS / 3600
-            )
-            if cached:
-                data = cached.get("data") if isinstance(cached, dict) else cached
-                if data:
-                    logger.debug("Using cached prerelease commit history")
-                    return data
+            cached = cache_manager.read_json(cache_file)
+            if isinstance(cached, dict):
+                cached_at = cached.get("cached_at")
+                commits = cached.get("commits")
+                if cached_at and isinstance(commits, list):
+                    try:
+                        cached_at_dt = datetime.fromisoformat(
+                            str(cached_at).replace("Z", "+00:00")
+                        )
+                        age_seconds = (
+                            datetime.now(timezone.utc) - cached_at_dt
+                        ).total_seconds()
+                        if age_seconds < PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS:
+                            logger.debug("Using cached prerelease commit history")
+                            return commits[:limit]
+                        logger.debug("Commits cache expired (age: %.1fs)", age_seconds)
+                    except ValueError:
+                        pass
+
+        logger.debug("Fetching commits from API (cache miss/expired)")
+
+        all_commits: List[Dict[str, Any]] = []
+        seen_shas: set[str] = set()
+        per_page = min(GITHUB_MAX_PER_PAGE, limit)
+        page = 1
+        url = f"{GITHUB_API_BASE}/meshtastic/meshtastic.github.io/commits"
 
         try:
-            response = make_github_api_request(
-                "https://api.github.com/repos/meshtastic/meshtastic.github.io/commits",
-                allow_env_token=True,
-            )
-            commits = response.json() if hasattr(response, "json") else response
-            commits = commits[:limit] if isinstance(commits, list) else []
-            cache_manager.cache_with_expiry(
+            while len(all_commits) < limit:
+                response = make_github_api_request(
+                    url,
+                    github_token=github_token,
+                    allow_env_token=allow_env_token,
+                    params={"per_page": per_page, "page": page},
+                    timeout=GITHUB_API_TIMEOUT,
+                )
+                commits_page = response.json()
+                if not isinstance(commits_page, list) or not commits_page:
+                    break
+                for commit in commits_page:
+                    sha = commit.get("sha")
+                    if sha and sha in seen_shas:
+                        continue
+                    if sha:
+                        seen_shas.add(sha)
+                    all_commits.append(commit)
+                    if len(all_commits) >= limit:
+                        break
+                if len(commits_page) < per_page:
+                    break
+                page += 1
+
+            cache_manager.atomic_write_json(
                 cache_file,
-                {"data": commits},
-                PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS / 3600,
+                {
+                    "commits": all_commits,
+                    "cached_at": datetime.now(timezone.utc).isoformat(),
+                },
             )
-            return commits
+            return all_commits[:limit]
         except Exception as e:
-            logger.warning(f"Could not fetch repo commits: {e}")
+            logger.warning("Could not fetch repo commits: %s", e)
             return []
 
+    @staticmethod
+    def _create_default_prerelease_entry(
+        *, directory: str, identifier: str, base_version: str, commit_hash: str
+    ) -> Dict[str, Any]:
+        return {
+            "directory": directory,
+            "identifier": identifier,
+            "base_version": base_version,
+            "commit_hash": commit_hash,
+            "added_at": None,
+            "removed_at": None,
+            "added_sha": None,
+            "removed_sha": None,
+            "active": DEFAULT_PRERELEASE_ACTIVE,
+            "status": DEFAULT_PRERELEASE_STATUS,
+        }
+
+    def _record_prerelease_addition(
+        self,
+        entries: Dict[str, Dict[str, Any]],
+        *,
+        directory: str,
+        identifier: str,
+        expected_version: str,
+        short_hash: str,
+        timestamp: Optional[str],
+        sha: Optional[str],
+    ) -> None:
+        entry = entries.setdefault(
+            directory,
+            self._create_default_prerelease_entry(
+                directory=directory,
+                identifier=identifier,
+                base_version=expected_version,
+                commit_hash=short_hash,
+            ),
+        )
+        if timestamp and not entry.get("added_at"):
+            entry["added_at"] = timestamp
+        if sha and not entry.get("added_sha"):
+            entry["added_sha"] = sha
+        entry["active"] = True
+        entry["status"] = "active"
+        entry["removed_at"] = None
+        entry["removed_sha"] = None
+
+    def _record_prerelease_deletion(
+        self,
+        entries: Dict[str, Dict[str, Any]],
+        *,
+        directory: str,
+        identifier: str,
+        expected_version: str,
+        short_hash: str,
+        timestamp: Optional[str],
+        sha: Optional[str],
+    ) -> None:
+        entry = entries.setdefault(
+            directory,
+            self._create_default_prerelease_entry(
+                directory=directory,
+                identifier=identifier,
+                base_version=expected_version,
+                commit_hash=short_hash,
+            ),
+        )
+        if timestamp and not entry.get("removed_at"):
+            entry["removed_at"] = timestamp
+        if sha and not entry.get("removed_sha"):
+            entry["removed_sha"] = sha
+        entry["active"] = False
+        entry["status"] = "deleted"
+
+    def build_simplified_prerelease_history(
+        self, expected_version: str, commits: List[Dict[str, Any]]
+    ) -> Tuple[List[Dict[str, Any]], set[str]]:
+        """
+        Build simplified prerelease history entries from meshtastic.github.io commits.
+        """
+        entries_by_dir: Dict[str, Dict[str, Any]] = {}
+        seen_shas: set[str] = set()
+
+        for commit in commits:
+            sha = commit.get("sha")
+            if sha:
+                seen_shas.add(str(sha))
+
+            timestamp = commit.get("commit", {}).get("committer", {}).get("date")
+            message = commit.get("commit", {}).get("message") or ""
+            if not isinstance(message, str):
+                continue
+
+            for line in message.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+
+                m_add = self._PRERELEASE_ADD_RX.match(line)
+                if m_add:
+                    base_version, short_hash = m_add.group(1), m_add.group(2)
+                    if base_version != expected_version:
+                        continue
+                    identifier = f"{base_version}.{short_hash}".lower()
+                    directory = f"{FIRMWARE_DIR_PREFIX}{identifier}"
+                    self._record_prerelease_addition(
+                        entries_by_dir,
+                        directory=directory,
+                        identifier=identifier,
+                        expected_version=expected_version,
+                        short_hash=short_hash,
+                        timestamp=timestamp,
+                        sha=str(sha) if sha else None,
+                    )
+                    continue
+
+                m_del = self._PRERELEASE_DELETE_RX.match(line)
+                if m_del:
+                    base_version, short_hash = m_del.group(1), m_del.group(2)
+                    if base_version != expected_version:
+                        continue
+                    identifier = f"{base_version}.{short_hash}".lower()
+                    directory = f"{FIRMWARE_DIR_PREFIX}{identifier}"
+                    self._record_prerelease_deletion(
+                        entries_by_dir,
+                        directory=directory,
+                        identifier=identifier,
+                        expected_version=expected_version,
+                        short_hash=short_hash,
+                        timestamp=timestamp,
+                        sha=str(sha) if sha else None,
+                    )
+
+        entries = list(entries_by_dir.values())
+        entries.sort(
+            key=lambda e: (
+                str(e.get("added_at") or ""),
+                str(e.get("directory") or ""),
+            ),
+            reverse=True,
+        )
+        return entries, seen_shas
+
+    def get_prerelease_commit_history(
+        self,
+        expected_version: str,
+        *,
+        cache_manager: Any,
+        github_token: Optional[str] = None,
+        allow_env_token: bool = True,
+        force_refresh: bool = False,
+        max_commits: int = DEFAULT_PRERELEASE_COMMITS_TO_FETCH,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get simplified prerelease history for an expected version (cached).
+        """
+        history_file = os.path.join(
+            cache_manager.cache_dir, PRERELEASE_COMMIT_HISTORY_FILE
+        )
+        now = datetime.now(timezone.utc)
+
+        cache = cache_manager.read_json(history_file)
+        if not isinstance(cache, dict):
+            cache = {}
+
+        cached_entry = cache.get(expected_version) if not force_refresh else None
+        if isinstance(cached_entry, dict) and not force_refresh:
+            entries = cached_entry.get("entries")
+            last_checked_raw = cached_entry.get("last_checked") or cached_entry.get(
+                "cached_at"
+            )
+            if isinstance(entries, list) and last_checked_raw:
+                try:
+                    last_checked = datetime.fromisoformat(
+                        str(last_checked_raw).replace("Z", "+00:00")
+                    )
+                    age_s = (now - last_checked).total_seconds()
+                    if age_s < PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS:
+                        logger.debug(
+                            "Using cached prerelease history for %s (cached %.0fs ago)",
+                            expected_version,
+                            age_s,
+                        )
+                        return entries
+                    logger.debug(
+                        "Prerelease history cache stale for %s (age %.0fs >= %ss); extending cache",
+                        expected_version,
+                        age_s,
+                        PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS,
+                    )
+                except ValueError:
+                    pass
+
+        commits = self.fetch_recent_repo_commits(
+            max_commits,
+            cache_manager=cache_manager,
+            github_token=github_token,
+            allow_env_token=allow_env_token,
+            force_refresh=force_refresh,
+        )
+        entries, shas = self.build_simplified_prerelease_history(
+            expected_version, commits
+        )
+
+        cache[expected_version] = {
+            "entries": entries,
+            "cached_at": now.isoformat(),
+            "last_checked": now.isoformat(),
+            "shas": sorted(shas),
+        }
+        cache_manager.atomic_write_json(history_file, cache)
+        logger.debug("Saved %d prerelease commit history entries to cache", len(cache))
+        return entries
+
+    def get_latest_active_prerelease_from_history(
+        self,
+        expected_version: str,
+        *,
+        cache_manager: Any,
+        github_token: Optional[str] = None,
+        allow_env_token: bool = True,
+        force_refresh: bool = False,
+    ) -> Tuple[Optional[str], List[Dict[str, Any]]]:
+        entries = self.get_prerelease_commit_history(
+            expected_version,
+            cache_manager=cache_manager,
+            github_token=github_token,
+            allow_env_token=allow_env_token,
+            force_refresh=force_refresh,
+        )
+        active = [
+            e for e in entries if e.get("status") == "active" and e.get("directory")
+        ]
+        if not active:
+            return None, entries
+        return str(active[0]["directory"]), entries
+
+    def summarize_prerelease_history(
+        self, entries: List[Dict[str, Any]]
+    ) -> Dict[str, int]:
+        created = sum(1 for e in entries if e.get("added_at") or e.get("added_sha"))
+        deleted = sum(
+            1 for e in entries if e.get("status") == "deleted" or e.get("removed_at")
+        )
+        active = sum(
+            1 for e in entries if e.get("status") == "active" or e.get("active")
+        )
+        return {"created": created, "deleted": deleted, "active": active}
+
+    def update_prerelease_tracking(
+        self,
+        latest_release_tag: str,
+        newest_prerelease_dir: str,
+        *,
+        cache_manager: Any,
+    ) -> int:
+        """
+        Update legacy-format prerelease_tracking.json with newest prerelease id.
+        """
+        if not newest_prerelease_dir or not newest_prerelease_dir.startswith(
+            FIRMWARE_DIR_PREFIX
+        ):
+            return 0
+
+        tracking_file = os.path.join(
+            cache_manager.cache_dir, PRERELEASE_TRACKING_JSON_FILE
+        )
+        prerelease_id = newest_prerelease_dir.removeprefix(FIRMWARE_DIR_PREFIX).lower()
+        clean_latest_release = self.extract_clean_version(latest_release_tag)
+
+        tracking = cache_manager.read_json(tracking_file)
+        if not isinstance(tracking, dict):
+            tracking = {}
+
+        existing_release = tracking.get("version") or tracking.get("latest_version")
+        commits_raw = tracking.get("commits")
+        if commits_raw is None and tracking.get("hash"):
+            commits_raw = [tracking.get("hash")]
+        existing_commits = (
+            [c for c in commits_raw if isinstance(c, str)]
+            if isinstance(commits_raw, list)
+            else []
+        )
+
+        if (
+            existing_release
+            and clean_latest_release
+            and existing_release != clean_latest_release
+        ):
+            logger.info(
+                "New release %s detected (previously tracking %s). Resetting prerelease tracking.",
+                latest_release_tag,
+                existing_release,
+            )
+            existing_commits = []
+
+        if prerelease_id in set(existing_commits):
+            return len(existing_commits)
+
+        updated_commits = list(dict.fromkeys([*existing_commits, prerelease_id]))
+        now_iso = datetime.now(timezone.utc).isoformat()
+        payload = {
+            "version": clean_latest_release,
+            "commits": updated_commits,
+            "hash": (
+                prerelease_id.split(".")[-1] if "." in prerelease_id else prerelease_id
+            ),
+            "count": len(updated_commits),
+            "timestamp": now_iso,
+            "last_updated": now_iso,
+        }
+        if not cache_manager.atomic_write_json(tracking_file, payload):
+            return 0
+        return len(updated_commits)
+
     def summarize_rate_limit(self, response: Any) -> Optional[Dict[str, Any]]:
-        """
-        Extract rate-limit info from a GitHub API response for logging/reporting.
-        """
+        """Extract rate-limit info from a GitHub API response for logging/reporting."""
         try:
             headers = response.headers
             remaining = headers.get("X-RateLimit-Remaining")
@@ -926,6 +1299,3 @@ class VersionManager:
                 pass
 
         return False
-
-
-import os

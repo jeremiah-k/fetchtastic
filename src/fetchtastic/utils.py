@@ -25,6 +25,7 @@ from fetchtastic.constants import (
     DEFAULT_CHUNK_SIZE,
     DEFAULT_CONNECT_RETRIES,
     DEFAULT_REQUEST_TIMEOUT,
+    FILE_TYPE_PREFIXES,
     GITHUB_API_TIMEOUT,
     WINDOWS_INITIAL_RETRY_DELAY,
     WINDOWS_MAX_REPLACE_RETRIES,
@@ -141,6 +142,55 @@ def get_api_request_summary() -> Dict[str, Any]:
             summary["rate_limit_reset"] = reset_timestamp
 
     return summary
+
+
+def format_api_summary(summary: Dict[str, Any]) -> str:
+    """
+    Format API request statistics into a concise, human-readable string for logging.
+
+    Note: This tracks GitHub API calls only, not file downloads from release assets.
+    """
+    auth_status = "🔐 authenticated" if summary["auth_used"] else "🌐 unauthenticated"
+    requests_str = "request" if summary["total_requests"] == 1 else "requests"
+    log_parts = [
+        f"📊 GitHub API Summary: {summary['total_requests']} API {requests_str} ({auth_status})"
+    ]
+
+    total_cache_lookups = summary["cache_hits"] + summary["cache_misses"]
+    if total_cache_lookups > 0:
+        cache_hit_rate = (summary["cache_hits"] / total_cache_lookups) * 100
+        hits_str = "hit" if summary["cache_hits"] == 1 else "hits"
+        misses_str = "miss" if summary["cache_misses"] == 1 else "misses"
+        log_parts.append(
+            f"{total_cache_lookups} cache lookups → "
+            f"{summary['cache_hits']} {hits_str} (skipped), "
+            f"{summary['cache_misses']} {misses_str} (fetched) "
+            f"[{cache_hit_rate:.1f}% hit rate]"
+        )
+
+    uncached_requests = max(0, summary["total_requests"] - summary["cache_misses"])
+    if uncached_requests > 0 and total_cache_lookups > 0:
+        direct_label = (
+            "direct API request" if uncached_requests == 1 else "direct API requests"
+        )
+        log_parts.append(
+            f"{uncached_requests} {direct_label} (pagination/non-cacheable)"
+        )
+
+    remaining = summary.get("rate_limit_remaining")
+    reset_time = summary.get("rate_limit_reset")
+    if remaining is not None:
+        remaining_str = "request" if remaining == 1 else "requests"
+        if isinstance(reset_time, datetime):
+            time_until_reset = reset_time - datetime.now(timezone.utc)
+            minutes_until_reset = max(0, int(time_until_reset.total_seconds() / 60))
+            log_parts.append(
+                f"{remaining} {remaining_str} remaining (resets in {minutes_until_reset} min)"
+            )
+        else:
+            log_parts.append(f"{remaining} {remaining_str} remaining")
+
+    return ", ".join(log_parts)
 
 
 def reset_api_tracking() -> None:
@@ -1222,5 +1272,61 @@ def matches_selected_patterns(
                 or pat_sanitised in base_legacy_sanitised
             ):
                 return True
+
+    return False
+
+
+def matches_extract_patterns(
+    filename: str,
+    extract_patterns: List[str],
+    device_manager: Optional[Any] = None,
+) -> bool:
+    """
+    Legacy-compatible prerelease selection matcher.
+
+    This is used for prerelease repo file selection where patterns are typically
+    device identifiers (e.g. "rak4631-") or file-type prefixes (e.g. "device-").
+    """
+    filename_lower = filename.lower()
+
+    for pattern in extract_patterns:
+        pattern_lower = str(pattern).lower()
+        if not pattern_lower:
+            continue
+
+        if pattern_lower == "littlefs-":
+            if filename_lower.startswith("littlefs-"):
+                return True
+            continue
+
+        if any(pattern_lower.startswith(prefix) for prefix in FILE_TYPE_PREFIXES):
+            if pattern_lower in filename_lower:
+                return True
+            continue
+
+        is_device_pattern_match = False
+        if device_manager and getattr(device_manager, "is_device_pattern", None):
+            try:
+                if device_manager.is_device_pattern(pattern):
+                    is_device_pattern_match = True
+            except Exception:
+                is_device_pattern_match = False
+        elif pattern_lower.endswith(("-", "_")):
+            is_device_pattern_match = True
+
+        if is_device_pattern_match:
+            clean_pattern = pattern_lower.rstrip("-_ ")
+            if len(clean_pattern) <= 2:
+                if re.search(rf"\b{re.escape(clean_pattern)}\b", filename_lower):
+                    return True
+            else:
+                if re.search(
+                    rf"(^|[-_]){re.escape(clean_pattern)}([-_]|$)", filename_lower
+                ):
+                    return True
+            continue
+
+        if pattern_lower in filename_lower:
+            return True
 
     return False

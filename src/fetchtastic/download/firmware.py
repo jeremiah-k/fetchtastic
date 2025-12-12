@@ -4,19 +4,28 @@ Firmware Release Downloader
 This module implements the specific downloader for Meshtastic firmware releases.
 """
 
+import fnmatch
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fetchtastic.constants import (
+    EXECUTABLE_PERMISSIONS,
     FIRMWARE_DIR_PREFIX,
     LATEST_FIRMWARE_PRERELEASE_JSON_FILE,
     LATEST_FIRMWARE_RELEASE_JSON_FILE,
     MESHTASTIC_FIRMWARE_RELEASES_URL,
+    MESHTASTIC_GITHUB_IO_CONTENTS_URL,
     RELEASES_CACHE_EXPIRY_HOURS,
 )
+from fetchtastic.device_hardware import DeviceHardwareManager
 from fetchtastic.log_utils import logger
-from fetchtastic.utils import make_github_api_request
+from fetchtastic.utils import (
+    download_file_with_retry,
+    make_github_api_request,
+    matches_extract_patterns,
+    verify_file_integrity,
+)
 
 from .base import BaseDownloader
 from .interfaces import Asset, DownloadResult, Release
@@ -73,24 +82,30 @@ class FirmwareReleaseDownloader(BaseDownloader):
             List[Release]: List of available firmware releases
         """
         try:
-            cache_file = os.path.join(
-                self.cache_manager.cache_dir, "firmware_releases.json"
+            params = {"per_page": 8}
+            url_key = self.cache_manager.build_url_cache_key(
+                self.firmware_releases_url, params
+            )
+            releases_data = self.cache_manager.read_releases_cache_entry(
+                url_key, expiry_seconds=int(RELEASES_CACHE_EXPIRY_HOURS * 3600)
             )
 
-            releases_data = self.cache_manager.read_with_expiry(
-                cache_file, RELEASES_CACHE_EXPIRY_HOURS
-            )
-
-            if not releases_data:
+            if releases_data is None:
                 response = make_github_api_request(
-                    f"{self.firmware_releases_url}",
+                    self.firmware_releases_url,
                     self.config.get("GITHUB_TOKEN"),
                     allow_env_token=True,
-                    params={"per_page": 8},
+                    params=params,
                 )
                 releases_data = response.json() if hasattr(response, "json") else []
-                self.cache_manager.cache_with_expiry(
-                    cache_file, releases_data, RELEASES_CACHE_EXPIRY_HOURS
+                if isinstance(releases_data, list):
+                    logger.debug(
+                        "Cached %d releases for %s (fetched from API)",
+                        len(releases_data),
+                        self.firmware_releases_url,
+                    )
+                self.cache_manager.write_releases_cache_entry(
+                    url_key, releases_data if isinstance(releases_data, list) else []
                 )
 
             if not releases_data or not isinstance(releases_data, list):
@@ -468,6 +483,308 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
         return (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
 
+    def _get_prerelease_base_dir(self) -> str:
+        prerelease_dir = os.path.join(self.download_dir, "firmware", "prerelease")
+        os.makedirs(prerelease_dir, exist_ok=True)
+        return prerelease_dir
+
+    def _get_prerelease_patterns(self) -> List[str]:
+        if "SELECTED_PRERELEASE_ASSETS" in self.config:
+            patterns = self.config.get("SELECTED_PRERELEASE_ASSETS") or []
+            return patterns if isinstance(patterns, list) else [str(patterns)]
+
+        extract_patterns = self.config.get("EXTRACT_PATTERNS") or []
+        extract_patterns = (
+            extract_patterns
+            if isinstance(extract_patterns, list)
+            else [str(extract_patterns)]
+        )
+        if extract_patterns:
+            logger.warning(
+                "Using EXTRACT_PATTERNS for prerelease file selection is deprecated. "
+                "Please re-run 'fetchtastic setup' to update your configuration."
+            )
+        return extract_patterns
+
+    def _matches_exclude_patterns(
+        self, filename: str, exclude_patterns: List[str]
+    ) -> bool:
+        filename_lower = filename.lower()
+        return any(
+            fnmatch.fnmatch(filename_lower, str(pattern).lower())
+            for pattern in exclude_patterns or []
+        )
+
+    def _fetch_prerelease_directory_listing(
+        self,
+        prerelease_dir: str,
+        *,
+        force_refresh: bool,
+    ) -> List[Dict[str, Any]]:
+        api_url = f"{MESHTASTIC_GITHUB_IO_CONTENTS_URL}/{prerelease_dir}"
+        response = make_github_api_request(
+            api_url,
+            github_token=self.config.get("GITHUB_TOKEN"),
+            allow_env_token=True,
+        )
+        contents = response.json()
+        if not isinstance(contents, list):
+            return []
+        logger.debug("Fetched %d items from repository", len(contents))
+        return contents
+
+    def _download_prerelease_assets(
+        self,
+        remote_dir: str,
+        *,
+        selected_patterns: List[str],
+        exclude_patterns: List[str],
+        force_refresh: bool,
+    ) -> tuple[list[DownloadResult], list[DownloadResult], bool]:
+        prerelease_base_dir = self._get_prerelease_base_dir()
+        target_dir = os.path.join(prerelease_base_dir, remote_dir)
+        os.makedirs(target_dir, exist_ok=True)
+
+        device_manager = DeviceHardwareManager()
+
+        contents = self._fetch_prerelease_directory_listing(
+            remote_dir, force_refresh=force_refresh
+        )
+        file_items = [
+            item
+            for item in contents
+            if isinstance(item, dict) and item.get("type") == "file"
+        ]
+
+        matching: list[Dict[str, Any]] = []
+        for item in file_items:
+            name = str(item.get("name") or "")
+            if not name:
+                continue
+            if exclude_patterns and self._matches_exclude_patterns(
+                name, exclude_patterns
+            ):
+                logger.debug(
+                    "Skipping pre-release file %s (matched exclude pattern)", name
+                )
+                continue
+            if selected_patterns and not matches_extract_patterns(
+                name, selected_patterns, device_manager=device_manager
+            ):
+                continue
+            matching.append(item)
+
+        logger.debug("Found %d matching prerelease files", len(matching))
+
+        successes: list[DownloadResult] = []
+        failures: list[DownloadResult] = []
+        any_downloaded = False
+
+        for item in matching:
+            name = str(item.get("name") or "")
+            url = item.get("download_url") or item.get("browser_download_url")
+            if not name or not url:
+                continue
+
+            target_path = os.path.join(target_dir, name)
+            try:
+                if (
+                    not force_refresh
+                    and os.path.exists(target_path)
+                    and verify_file_integrity(target_path)
+                ):
+                    logger.debug(
+                        "Prerelease file already exists and is valid: %s", name
+                    )
+                    successes.append(
+                        self.create_download_result(
+                            success=True,
+                            release_tag=remote_dir,
+                            file_path=target_path,
+                            download_url=str(url),
+                            file_size=item.get("size"),
+                            file_type="firmware_prerelease",
+                        )
+                    )
+                    continue
+
+                ok = download_file_with_retry(str(url), target_path)
+                if ok:
+                    any_downloaded = True
+                    if name.lower().endswith(".sh") and os.name != "nt":
+                        try:
+                            os.chmod(target_path, EXECUTABLE_PERMISSIONS)
+                        except OSError:
+                            pass
+                    successes.append(
+                        self.create_download_result(
+                            success=True,
+                            release_tag=remote_dir,
+                            file_path=target_path,
+                            download_url=str(url),
+                            file_size=item.get("size"),
+                            file_type="firmware_prerelease",
+                        )
+                    )
+                else:
+                    failures.append(
+                        self.create_download_result(
+                            success=False,
+                            release_tag=remote_dir,
+                            file_path=target_path,
+                            error_message="Download failed",
+                            download_url=str(url),
+                            file_size=item.get("size"),
+                            file_type="firmware_prerelease",
+                            is_retryable=True,
+                            error_type="network_error",
+                        )
+                    )
+            except Exception as exc:
+                failures.append(
+                    self.create_download_result(
+                        success=False,
+                        release_tag=remote_dir,
+                        file_path=target_path,
+                        error_message=str(exc),
+                        download_url=str(url),
+                        file_size=item.get("size"),
+                        file_type="firmware_prerelease",
+                        is_retryable=True,
+                        error_type="network_error",
+                    )
+                )
+
+        return successes, failures, any_downloaded
+
+    def download_repo_prerelease_firmware(
+        self,
+        latest_release_tag: str,
+        *,
+        force_refresh: bool = False,
+    ) -> tuple[list[DownloadResult], list[DownloadResult], Optional[str]]:
+        """
+        Download firmware prerelease assets from meshtastic.github.io (legacy behavior).
+        """
+        check_prereleases = self.config.get(
+            "CHECK_FIRMWARE_PRERELEASES", self.config.get("CHECK_PRERELEASES", False)
+        )
+        if not check_prereleases:
+            return [], [], None
+
+        logger.info("Checking for pre-release firmware...")
+
+        version_manager = VersionManager()
+        clean_latest_release = (
+            version_manager.extract_clean_version(latest_release_tag)
+            or latest_release_tag
+        )
+        expected_version = version_manager.calculate_expected_prerelease_version(
+            clean_latest_release
+        )
+        if not expected_version:
+            return [], [], None
+
+        logger.debug("Expected prerelease version: %s", expected_version)
+
+        active_dir, history_entries = (
+            version_manager.get_latest_active_prerelease_from_history(
+                expected_version,
+                cache_manager=self.cache_manager,
+                github_token=self.config.get("GITHUB_TOKEN"),
+                allow_env_token=True,
+                force_refresh=force_refresh,
+            )
+        )
+        if active_dir:
+            logger.info("Using commit history for prerelease detection")
+        else:
+            # Fallback: scan repo root for prerelease directories
+            try:
+                response = make_github_api_request(
+                    MESHTASTIC_GITHUB_IO_CONTENTS_URL,
+                    github_token=self.config.get("GITHUB_TOKEN"),
+                    allow_env_token=True,
+                )
+                contents = response.json()
+                dirs = [
+                    item.get("name")
+                    for item in contents
+                    if isinstance(item, dict) and item.get("type") == "dir"
+                ]
+                matches = version_manager.scan_prerelease_directories(
+                    [d for d in dirs if isinstance(d, str)], expected_version
+                )
+                if matches:
+                    # Choose newest by tuple then string
+                    matches.sort(
+                        key=lambda ident: (
+                            version_manager.get_release_tuple(ident) or (),
+                            ident,
+                        ),
+                        reverse=True,
+                    )
+                    active_dir = f"{FIRMWARE_DIR_PREFIX}{matches[0]}"
+            except Exception:
+                active_dir = None
+
+        if not active_dir:
+            return [], [], None
+
+        selected_patterns = self._get_prerelease_patterns()
+        exclude_patterns = self._get_exclude_patterns()
+        if selected_patterns:
+            logger.debug(
+                "Using your extraction patterns for pre-release selection: %s",
+                " ".join(selected_patterns),
+            )
+
+        prerelease_base_dir = self._get_prerelease_base_dir()
+        existing_dirs = [
+            d
+            for d in os.listdir(prerelease_base_dir)
+            if os.path.isdir(os.path.join(prerelease_base_dir, d))
+        ]
+
+        successes, failures, any_downloaded = self._download_prerelease_assets(
+            active_dir,
+            selected_patterns=selected_patterns,
+            exclude_patterns=exclude_patterns,
+            force_refresh=force_refresh,
+        )
+
+        if not any_downloaded and active_dir in existing_dirs and not failures:
+            logger.info("Found an existing pre-release, but no new files to download.")
+
+        if any_downloaded or force_refresh:
+            version_manager.update_prerelease_tracking(
+                latest_release_tag, active_dir, cache_manager=self.cache_manager
+            )
+
+        # Emit legacy-style history summary when available
+        if history_entries:
+            summary = version_manager.summarize_prerelease_history(history_entries)
+            logger.info(
+                "Prereleases since %s: %d created, %d deleted, %d active",
+                clean_latest_release,
+                summary["created"],
+                summary["deleted"],
+                summary["active"],
+            )
+            active_ids = [
+                e.get("identifier")
+                for e in history_entries
+                if e.get("status") == "active" and e.get("identifier")
+            ]
+            if active_ids:
+                logger.info(
+                    "Prerelease commits for %s: %s",
+                    expected_version,
+                    ", ".join(active_ids[:10]),
+                )
+
+        return successes, failures, active_dir
+
     def handle_prereleases(self, releases: List[Release]) -> List[Release]:
         """
         Filter and manage firmware prereleases with enhanced functionality.
@@ -479,10 +796,14 @@ class FirmwareReleaseDownloader(BaseDownloader):
             List[Release]: Filtered list of prereleases
         """
         # Check if prereleases are enabled in config
-        check_prereleases = self.config.get("CHECK_FIRMWARE_PRERELEASES", False)
+        check_prereleases = self.config.get(
+            "CHECK_FIRMWARE_PRERELEASES", self.config.get("CHECK_PRERELEASES", False)
+        )
 
         if not check_prereleases:
             return []
+
+        version_manager = VersionManager()
 
         # Filter prereleases
         prereleases = [r for r in releases if r.prerelease]
@@ -495,7 +816,6 @@ class FirmwareReleaseDownloader(BaseDownloader):
         exclude_patterns = self.config.get("FIRMWARE_PRERELEASE_EXCLUDE_PATTERNS", [])
 
         if include_patterns or exclude_patterns:
-            version_manager = VersionManager()
             prerelease_tags = [r.tag_name for r in prereleases]
             filtered_tags = version_manager.filter_prereleases_by_pattern(
                 prerelease_tags, include_patterns, exclude_patterns

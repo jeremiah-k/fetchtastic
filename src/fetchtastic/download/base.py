@@ -13,7 +13,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fetchtastic.log_utils import logger
-from fetchtastic.utils import download_file_with_retry, matches_selected_patterns
+from fetchtastic.utils import (
+    download_file_with_retry,
+    matches_selected_patterns,
+    verify_file_integrity,
+)
 
 from .cache import CacheManager
 from .files import FileOperations
@@ -97,7 +101,9 @@ class BaseDownloader(Downloader, ABC):
         Returns:
             bool: True if verification succeeded, False otherwise
         """
-        return self.file_operations.verify_file_hash(file_path, expected_hash)
+        if expected_hash:
+            return self.file_operations.verify_file_hash(file_path, expected_hash)
+        return verify_file_integrity(file_path)
 
     def extract(
         self,
@@ -369,7 +375,7 @@ class BaseDownloader(Downloader, ABC):
         if asset.size and self.file_operations.get_file_size(target_path) != asset.size:
             return False
 
-        # Hash/verify (when expected_hash is provided, verify handles None as exists)
+        # Hash/verify (legacy: verify/write sidecar and validate)
         if not self.verify(target_path):
             return False
 

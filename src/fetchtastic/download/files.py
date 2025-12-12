@@ -14,6 +14,7 @@ import zipfile
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from fetchtastic.constants import EXECUTABLE_PERMISSIONS, SHELL_SCRIPT_EXTENSION
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import matches_selected_patterns
 
@@ -154,6 +155,14 @@ class FileOperations:
                             extract_path, "wb"
                         ) as target:
                             shutil.copyfileobj(source, target)
+
+                        if os.name != "nt" and base_name.lower().endswith(
+                            SHELL_SCRIPT_EXTENSION
+                        ):
+                            try:
+                                os.chmod(extract_path, EXECUTABLE_PERMISSIONS)
+                            except OSError:
+                                pass
 
                         extracted_files.append(Path(extract_path))
                         logger.debug(f"Extracted {file_name} to {extract_path}")

@@ -170,6 +170,10 @@ class DownloadMigration:
         failed_downloads = []
 
         for result in self.orchestrator.failed_downloads:
+            file_path_str = str(result.file_path) if result.file_path else ""
+            is_firmware_prerelease = (
+                "firmware" in file_path_str and "prerelease" in file_path_str
+            )
             failed_downloads.append(
                 {
                     "file_name": (
@@ -180,16 +184,20 @@ class DownloadMigration:
                     "release_tag": result.release_tag or "unknown",
                     "url": result.download_url or "unknown",
                     "type": (
-                        "Firmware"
-                        if result.file_path and "firmware" in str(result.file_path)
+                        "Firmware Prerelease"
+                        if is_firmware_prerelease
                         else (
-                            "Repository"
-                            if result.file_path
-                            and (
-                                "repository" in str(result.file_path)
-                                or "repo-dls" in str(result.file_path)
+                            "Firmware"
+                            if result.file_path and "firmware" in str(result.file_path)
+                            else (
+                                "Repository"
+                                if result.file_path
+                                and (
+                                    "repository" in str(result.file_path)
+                                    or "repo-dls" in str(result.file_path)
+                                )
+                                else "Android APK"
                             )
-                            else "Android APK"
                         )
                     ),
                     "path_to_download": (
