@@ -19,9 +19,22 @@ from unittest.mock import patch
 
 import pytest
 
+from fetchtastic.download.cache import (
+    CacheManager,
+    _load_commit_cache,
+    _load_prerelease_dir_cache,
+    _load_releases_cache,
+)
 from fetchtastic.download.firmware import FIRMWARE_DIR_PREFIX, FirmwareReleaseDownloader
 from fetchtastic.download.interfaces import Asset, Release
-from fetchtastic.download.version import VersionManager
+from fetchtastic.download.version import (
+    VersionManager,
+    _parse_new_json_format,
+    _read_prerelease_tracking_data,
+)
+
+# Create version manager instance for tests that need it
+version_manager = VersionManager()
 
 
 def _make_zip_bytes(file_map: dict[str, str]) -> bytes:
@@ -2110,11 +2123,6 @@ def test_cleanup_superseded_prereleases_atomic_write_failure_logs_warning(
 @pytest.mark.core_downloads
 def test_parse_json_formats_error_handling(tmp_path):
     """Test JSON parsing functions with error handling."""
-    from fetchtastic.downloader import (
-        _parse_new_json_format,
-        _read_prerelease_tracking_data,
-    )
-
     # Test _parse_new_json_format with invalid data
     invalid_data = {
         "version": "v1.0.0",
@@ -3358,13 +3366,20 @@ def test_cache_thread_safety():
     import time
     from unittest.mock import patch
 
-    from fetchtastic.downloader import (
+    from fetchtastic.download.cache import (
+        CacheManager,
         _load_commit_cache,
         _load_prerelease_dir_cache,
         _load_releases_cache,
-        clear_all_caches,
-        clear_commit_timestamp_cache,
     )
+    from fetchtastic.download.version import (
+        VersionManager,
+        _parse_new_json_format,
+        _read_prerelease_tracking_data,
+    )
+
+    # Create cache manager instance
+    cache_manager = CacheManager()
 
     def simulate_cache_operation(_cache_type, operation_func, results_list, thread_id):
         """
@@ -3391,7 +3406,7 @@ def test_cache_thread_safety():
     with patch("fetchtastic.downloader._ensure_cache_dir", return_value="/test/cache"):
         with patch("fetchtastic.downloader._atomic_write_json", return_value=True):
             # Reset cache state
-            clear_commit_timestamp_cache()
+            cache_manager.clear_all_caches()
 
             # Test concurrent loads
             commit_results = []
@@ -3421,7 +3436,7 @@ def test_cache_thread_safety():
     with patch("fetchtastic.downloader._ensure_cache_dir", return_value="/test/cache"):
         with patch("fetchtastic.downloader._atomic_write_json", return_value=True):
             # Reset cache state using clear_all_caches
-            clear_all_caches()
+            cache_manager.clear_all_caches()
 
             # Test concurrent loads
             release_results = []
@@ -3450,7 +3465,7 @@ def test_cache_thread_safety():
     with patch("fetchtastic.downloader._ensure_cache_dir", return_value="/test/cache"):
         with patch("fetchtastic.downloader._atomic_write_json", return_value=True):
             # Reset cache state
-            clear_all_caches()
+            cache_manager.clear_all_caches()
 
             # Test concurrent loads
             prerelease_results = []

@@ -784,3 +784,32 @@ class FileOperations:
             return sha256_hash.hexdigest()
         except IOError:
             return None
+
+
+def safe_extract_path(extract_dir: str, file_path: str) -> str:
+    """
+    Safely resolves the extraction path for a file to prevent directory traversal.
+
+    It ensures that the resolved path is within the specified extraction directory.
+
+    Args:
+        extract_dir (str): The intended base directory for extraction.
+        file_path (str): The relative path of the file to be extracted,
+                         as obtained from the archive.
+
+    Returns:
+        str: The safe, absolute path for extraction.
+
+    Raises:
+        ValueError: If the resolved path is outside the `extract_dir`.
+    """
+    real_extract_dir = os.path.realpath(extract_dir)
+    prospective_path = os.path.join(real_extract_dir, file_path)
+    normalized_path = os.path.realpath(prospective_path)
+
+    if not _is_within_base(real_extract_dir, normalized_path):
+        raise ValueError(
+            f"Unsafe extraction path '{file_path}' is outside base '{extract_dir}'"
+        )
+
+    return normalized_path
