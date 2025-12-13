@@ -5,11 +5,12 @@ import os
 import platform
 import shutil
 import subprocess
+import time
 from typing import List
 
 import platformdirs
 
-from fetchtastic import downloader, repo_downloader, setup_config
+from fetchtastic import setup_config
 from fetchtastic.constants import (
     FIRMWARE_DIR_PREFIX,
     MANAGED_DIRECTORIES,
@@ -21,11 +22,18 @@ from fetchtastic.constants import (
     MSG_REMOVED_MANAGED_DIR,
     MSG_REMOVED_MANAGED_FILE,
 )
+from fetchtastic.download.cli_integration import DownloadCLIIntegration
+from fetchtastic.download.repository import RepositoryDownloader
 from fetchtastic.log_utils import logger, set_log_level
 from fetchtastic.setup_config import (
     copy_to_clipboard_func,
     display_version_info,
     get_upgrade_command,
+)
+from fetchtastic.utils import (
+    format_api_summary,
+    get_api_request_summary,
+    reset_api_tracking,
 )
 
 
@@ -231,7 +239,65 @@ def main():
                 set_log_level(config["LOG_LEVEL"])
 
             # Run the downloader
-            downloader.main(force_refresh=args.force)
+            reset_api_tracking()
+            start_time = time.time()
+            integration = DownloadCLIIntegration()
+            (
+                downloaded_firmwares,
+                _new_firmware_versions,
+                downloaded_apks,
+                _new_apk_versions,
+                failed_downloads,
+                latest_firmware_version,
+                latest_apk_version,
+            ) = integration.main(force_refresh=args.force, config=config)
+
+            elapsed = time.time() - start_time
+            logger.info(f"\nCompleted in {elapsed:.1f}s")
+
+            downloaded_count = len(downloaded_firmwares) + len(downloaded_apks)
+            if downloaded_count > 0:
+                logger.info(f"Downloaded {downloaded_count} new versions")
+
+            if latest_firmware_version:
+                logger.info(f"Latest firmware: {latest_firmware_version}")
+            if latest_apk_version:
+                logger.info(f"Latest APK: {latest_apk_version}")
+
+            latest_versions = integration.get_latest_versions()
+            latest_firmware_prerelease = latest_versions.get("firmware_prerelease")
+            latest_apk_prerelease = latest_versions.get("android_prerelease")
+            if latest_firmware_prerelease:
+                logger.info(f"Latest firmware prerelease: {latest_firmware_prerelease}")
+            if latest_apk_prerelease:
+                logger.info(f"Latest APK prerelease: {latest_apk_prerelease}")
+
+            if failed_downloads:
+                logger.info(f"{len(failed_downloads)} downloads failed:")
+                for failure in failed_downloads:
+                    url = failure.get("url", "unknown")
+                    retryable = failure.get("retryable")
+                    http_status = failure.get("http_status")
+                    error = failure.get("error", "")
+                    logger.info(
+                        f"- {failure.get('type', 'Unknown')} {failure.get('release_tag', '')}: "
+                        f"{failure.get('file_name', 'unknown')} "
+                        f"URL={url} retryable={retryable} http_status={http_status} error={error}"
+                    )
+
+            if downloaded_count == 0 and not failed_downloads:
+                logger.info(
+                    "All assets are up to date.\n%s",
+                    time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                )
+
+            summary = get_api_request_summary()
+            if summary.get("total_requests", 0) > 0:
+                logger.debug(format_api_summary(summary))
+            else:
+                logger.debug(
+                    "📊 GitHub API Summary: No API requests made (all data served from cache)"
+                )
     elif args.command == "topic":
         # Display the NTFY topic and prompt to copy to clipboard
         config = setup_config.load_config()
@@ -312,8 +378,10 @@ def main():
             return
 
         if args.repo_command == "browse":
-            # Run the repository downloader
-            repo_downloader.main(config)
+            # Run the repository downloader using the new menu integration
+            from fetchtastic.menu_repo import run_repository_downloader_menu
+
+            run_repository_downloader_menu(config)
 
             # Remind about updates at the end if available
             if update_available:
@@ -631,7 +699,7 @@ def run_clean():
 
 def run_repo_clean(config):
     """
-    Cleans the repository download directory.
+    Cleans the repository download directory using the new RepositoryDownloader.
     """
     print(
         "This will remove all files downloaded from the meshtastic.github.io repository."
@@ -644,13 +712,9 @@ def run_repo_clean(config):
         print("Clean operation cancelled.")
         return
 
-    # Clean the repo directory
-    download_dir = config.get("DOWNLOAD_DIR")
-    if not download_dir:
-        print("Download directory not configured.")
-        return
-
-    success = repo_downloader.clean_repo_directory(download_dir)
+    # Clean the repo directory using the new downloader
+    repo_downloader = RepositoryDownloader(config)
+    success = repo_downloader.clean_repository_directory()
     if success:
         print("Repository directory cleaned successfully.")
     else:

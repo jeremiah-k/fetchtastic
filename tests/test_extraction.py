@@ -19,7 +19,7 @@ import pytest
 
 from fetchtastic import downloader
 from fetchtastic.device_hardware import DeviceHardwareManager
-from fetchtastic.downloader import matches_extract_patterns
+from fetchtastic.utils import matches_extract_patterns
 
 
 @pytest.fixture

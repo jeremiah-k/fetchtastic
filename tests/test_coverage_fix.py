@@ -17,17 +17,17 @@ def populated_releases_cache():
     """
     from datetime import datetime, timezone
 
-    import fetchtastic.downloader as downloader_module
+    import fetchtastic.download.orchestrator as orchestrator_module
 
     # Save original state
-    original_cache = downloader_module._releases_cache.copy()
-    original_loaded = downloader_module._releases_cache_loaded
+    original_cache = orchestrator_module._releases_cache.copy()
+    original_loaded = orchestrator_module._releases_cache_loaded
 
     # Set up test state
-    downloader_module._releases_cache_loaded = True
+    orchestrator_module._releases_cache_loaded = True
     cache_key = "https://api.github.com/repos/meshtastic/firmware/releases?per_page=5"
     test_data = [{"tag_name": "v2.7.8"}]
-    downloader_module._releases_cache[cache_key] = (
+    orchestrator_module._releases_cache[cache_key] = (
         test_data,
         datetime.now(timezone.utc),
     )
@@ -35,8 +35,8 @@ def populated_releases_cache():
     yield test_data, cache_key
 
     # Restore original state
-    downloader_module._releases_cache = original_cache
-    downloader_module._releases_cache_loaded = original_loaded
+    orchestrator_module._releases_cache = original_cache
+    orchestrator_module._releases_cache_loaded = original_loaded
 
 
 def test_token_warning_lines_coverage(tmp_path):
@@ -75,7 +75,7 @@ def test_cache_logging_lines_coverage(populated_releases_cache):
     """Direct test to cover cache logging lines."""
     from datetime import datetime, timezone
 
-    import fetchtastic.downloader as downloader_module
+    import fetchtastic.download.orchestrator as orchestrator_module
 
     test_data, _ = populated_releases_cache
 
@@ -99,7 +99,7 @@ def test_cache_logging_lines_coverage(populated_releases_cache):
         android_cache_key = (
             "https://api.github.com/repos/meshtastic/android/releases?per_page=5"
         )
-        downloader_module._releases_cache[android_cache_key] = (
+        orchestrator_module._releases_cache[android_cache_key] = (
             test_data,
             datetime.now(timezone.utc),
         )
@@ -128,7 +128,7 @@ def test_cache_logging_lines_coverage(populated_releases_cache):
 
         # Test fallback URL parsing for generic URL (no firmware/android)
         generic_cache_key = "https://api.github.com/repos/meshtastic/some-other-repo/releases?per_page=5"
-        downloader_module._releases_cache[generic_cache_key] = (
+        orchestrator_module._releases_cache[generic_cache_key] = (
             test_data,
             datetime.now(timezone.utc),
         )
@@ -150,16 +150,18 @@ def test_api_fetch_logging_lines_coverage():
 
     Mocks GitHub API responses to return a single page containing a release with a `published_at` timestamp, verifies that each call returns the mocked release, and restores the downloader module's releases cache and loaded flag after the test to avoid global state pollution.
     """
-    import fetchtastic.downloader as downloader_module
+    import fetchtastic.download.orchestrator as orchestrator_module
 
     # Store original state to prevent test pollution
-    original_cache = getattr(downloader_module, "_releases_cache", {}).copy()
-    original_cache_loaded = getattr(downloader_module, "_releases_cache_loaded", False)
+    original_cache = getattr(orchestrator_module, "_releases_cache", {}).copy()
+    original_cache_loaded = getattr(
+        orchestrator_module, "_releases_cache_loaded", False
+    )
 
     try:
         # Reset cache to ensure API fetch path
-        downloader_module._releases_cache = {}
-        downloader_module._releases_cache_loaded = True
+        orchestrator_module._releases_cache = {}
+        orchestrator_module._releases_cache_loaded = True
 
         def mock_api_request(_url, **kwargs):
             """
@@ -222,20 +224,20 @@ def test_api_fetch_logging_lines_coverage():
             ]
     finally:
         # Restore original state to prevent test pollution
-        downloader_module._releases_cache = original_cache
-        downloader_module._releases_cache_loaded = original_cache_loaded
+        orchestrator_module._releases_cache = original_cache
+        orchestrator_module._releases_cache_loaded = original_cache_loaded
 
 
 def test_get_latest_releases_data_paginates():
     """Ensure _get_latest_releases_data fetches additional pages when needed."""
-    import fetchtastic.downloader as downloader_module
+    import fetchtastic.download.orchestrator as orchestrator_module
 
-    original_cache = downloader_module._releases_cache.copy()
-    original_loaded = downloader_module._releases_cache_loaded
+    original_cache = orchestrator_module._releases_cache.copy()
+    original_loaded = orchestrator_module._releases_cache_loaded
 
     try:
-        downloader_module._releases_cache = {}
-        downloader_module._releases_cache_loaded = True
+        orchestrator_module._releases_cache = {}
+        orchestrator_module._releases_cache_loaded = True
 
         def _make_response(items):
             """
@@ -308,8 +310,8 @@ def test_get_latest_releases_data_paginates():
         assert len(result) == 3
         assert call_pages == [1, 2]
     finally:
-        downloader_module._releases_cache = original_cache
-        downloader_module._releases_cache_loaded = original_loaded
+        orchestrator_module._releases_cache = original_cache
+        orchestrator_module._releases_cache_loaded = original_loaded
 
 
 def test_main_function_full_coverage(tmp_path):

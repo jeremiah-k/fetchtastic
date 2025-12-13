@@ -16,6 +16,11 @@ from unittest.mock import patch
 import pytest
 
 from fetchtastic import downloader
+from fetchtastic.download.files import (
+    _safe_rmtree,
+    _sanitize_path_component,
+    safe_extract_path,
+)
 
 
 @pytest.fixture
@@ -27,7 +32,6 @@ def mock_commit_history(monkeypatch):
         monkeypatch (pytest.MonkeyPatch): Pytest fixture used to patch attributes on modules; this function uses it to replace
             fetchtastic.downloader._get_prerelease_commit_history with a stub that returns [].
     """
-    from fetchtastic import downloader
 
     monkeypatch.setattr(
         downloader,
@@ -45,7 +49,7 @@ class TestSecuritySymlinkAttacks:
     )
     def test_safe_rmtree_blocks_symlink_traversal(self, tmp_path):
         """Test that _safe_rmtree handles symlinks (current implementation removes them directly)."""
-        from fetchtastic.downloader import _safe_rmtree
+        # _safe_rmtree imported at module level
 
         # Create important external data
         external_dir = tmp_path / "external"
@@ -78,7 +82,7 @@ class TestSecuritySymlinkAttacks:
     )
     def test_safe_rmtree_blocks_nested_symlink_traversal(self, tmp_path):
         """Test that _safe_rmtree handles nested symlinks correctly."""
-        from fetchtastic.downloader import _safe_rmtree
+        # _safe_rmtree imported at module level
 
         # Create external target
         external_dir = tmp_path / "external"
@@ -106,7 +110,7 @@ class TestSecuritySymlinkAttacks:
     )
     def test_safe_rmtree_blocks_symlink_loop(self, tmp_path):
         """Test that _safe_rmtree handles symlink loops safely."""
-        from fetchtastic.downloader import _safe_rmtree
+        # _safe_rmtree imported at module level
 
         # Create symlink loop
         dir1 = tmp_path / "dir1"
@@ -128,7 +132,7 @@ class TestSecuritySymlinkAttacks:
     )
     def test_safe_rmtree_allows_safe_symlinks(self, tmp_path):
         """Test that _safe_rmtree allows symlinks within the same directory tree."""
-        from fetchtastic.downloader import _safe_rmtree
+        # _safe_rmtree imported at module level
 
         # Create directory structure with internal symlinks
         base_dir = tmp_path / "base"
@@ -150,7 +154,7 @@ class TestSecuritySymlinkAttacks:
 
     def test_safe_rmtree_handles_nonexistent_paths(self, tmp_path):
         """Test that _safe_rmtree handles non-existent paths gracefully."""
-        from fetchtastic.downloader import _safe_rmtree
+        # _safe_rmtree imported at module level
 
         nonexistent = tmp_path / "nonexistent"
 
@@ -160,7 +164,7 @@ class TestSecuritySymlinkAttacks:
 
     def test_safe_rmtree_handles_regular_directories(self, tmp_path):
         """Test that _safe_rmtree works normally with regular directories."""
-        from fetchtastic.downloader import _safe_rmtree
+        # _safe_rmtree imported at module level
 
         # Create normal directory structure
         test_dir = tmp_path / "test"
@@ -176,7 +180,7 @@ class TestSecuritySymlinkAttacks:
 
     def test_safe_rmtree_rejects_paths_outside_base(self, tmp_path):
         """_safe_rmtree should not touch paths that are outside the permitted base dir."""
-        from fetchtastic.downloader import _safe_rmtree
+        # _safe_rmtree imported at module level
 
         base_dir = tmp_path / "base"
         base_dir.mkdir()
@@ -196,7 +200,7 @@ class TestSecuritySymlinkAttacks:
     )
     def test_safe_rmtree_skips_symlinks_outside_base(self, tmp_path):
         """Symlinks that live outside the base directory should be left alone."""
-        from fetchtastic.downloader import _safe_rmtree
+        # _safe_rmtree imported at module level
 
         base_dir = tmp_path / "base"
         base_dir.mkdir()
@@ -217,7 +221,7 @@ class TestSecurityPathTraversal:
 
     def test_path_sanitization_blocks_traversal(self):
         """Test that _sanitize_path_component blocks path traversal attempts."""
-        from fetchtastic.downloader import _sanitize_path_component
+        # _sanitize_path_component imported at module level
 
         # Test various path traversal attempts
         malicious_names = [
@@ -271,7 +275,7 @@ class TestSecurityPathTraversal:
 
     def test_path_sanitization_preserves_safe_names(self):
         """Test that _sanitize_path_component preserves safe names."""
-        from fetchtastic.downloader import _sanitize_path_component
+        # _sanitize_path_component imported at module level
 
         safe_names = [
             "firmware-rak4631-2.7.9.uf2",
@@ -293,7 +297,7 @@ class TestSecurityPathTraversal:
 
     def test_path_sanitization_handles_edge_cases(self):
         """Test _sanitize_path_component with edge cases."""
-        from fetchtastic.downloader import _sanitize_path_component
+        # _sanitize_path_component imported at module level
 
         edge_cases = [
             "",  # Empty string
@@ -315,7 +319,7 @@ class TestSecurityPathTraversal:
 
     def test_safe_extract_path_prevents_traversal(self, tmp_path):
         """Test that safe_extract_path prevents directory traversal."""
-        from fetchtastic.downloader import safe_extract_path
+        # safe_extract_path imported at module level
 
         extract_dir = str(tmp_path / "extract")
 
@@ -369,7 +373,7 @@ class TestSecurityPathTraversal:
 
     def test_safe_extract_path_allows_safe_paths(self, tmp_path):
         """Test that safe_extract_path allows legitimate paths."""
-        from fetchtastic.downloader import safe_extract_path
+        # safe_extract_path imported at module level
 
         extract_dir = str(tmp_path / "extract")
 
@@ -397,7 +401,7 @@ class TestSecurityInputValidation:
 
     def test_release_tag_sanitization_blocks_unsafe_tags(self):
         """Test that release tag sanitization blocks unsafe inputs."""
-        from fetchtastic.downloader import _sanitize_path_component
+        # _sanitize_path_component imported at module level
 
         # Test various unsafe release tags
         unsafe_tags = [
@@ -443,7 +447,7 @@ class TestSecurityInputValidation:
 
     def test_release_tag_sanitization_preserves_safe_tags(self):
         """Test that safe release tags are preserved."""
-        from fetchtastic.downloader import _sanitize_path_component
+        # _sanitize_path_component imported at module level
 
         safe_tags = [
             "v2.7.9",
@@ -466,7 +470,7 @@ class TestSecurityInputValidation:
 
     def test_filename_sanitization_in_download_process(self):
         """Test that filenames are sanitized during download process."""
-        from fetchtastic.downloader import _sanitize_path_component
+        # _sanitize_path_component imported at module level
 
         # Test filenames that might come from GitHub API
         test_filenames = [
@@ -495,7 +499,7 @@ class TestSecurityInputValidation:
 
     def test_directory_name_sanitization_prevents_traversal(self):
         """Test that directory names are sanitized to prevent traversal."""
-        from fetchtastic.downloader import _sanitize_path_component
+        # _sanitize_path_component imported at module level
 
         # Test directory names that might be used for creating release directories
         unsafe_dir_names = [
