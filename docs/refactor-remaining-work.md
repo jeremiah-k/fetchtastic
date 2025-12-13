@@ -8,19 +8,18 @@ Current handoff/status: `docs/refactor-handoff.md`.
 
 ### P1 – Functional Parity Gaps
 
-1. Repository downloads scope decision **(Open)**
-   - Interactive `repo browse` is the intended repo-dls UX; the download pipeline should not drift by auto-downloading repo contents.
-   - Decide whether to remove repo downloads from `DownloadOrchestrator` (preferred) or add a config-backed selection list.
+1. Repository downloads scope decision **(Done – pipeline does not touch repo-dls)**
+   - `fetchtastic download` no longer processes or cleans `repo-dls`; repo downloads remain an interactive `repo browse` feature.
 2. Prerelease handling for firmware/APK
    - Commit-history and directory scan helpers added (expected version, directory matching, tracking creation/cleanup).
    - Tracking write/cleanup unified via VersionManager; tracking files include metadata and expiry.
-   - TODO: Refresh commit history before prerelease selection; use the prerelease dir-list cache for repo fallback.
+   - Done: Refresh commit history before prerelease selection; validate commit-history-selected dirs against cached repo listings.
 3. Version tracking + cache parity
    - Added backward-compatible readers/writers and legacy key support; expiry-aware cache reads.
    - TODO: Unify commit timestamp cache expiry paths (single source of truth); confirm migration/compat for existing on-disk caches.
 4. Extraction parity & safety
    - Implement `_validate_extraction_patterns` / `check_extraction_needed` equivalents.
-   - Ensure extraction produces hash/sidecar behavior consistent with legacy (if applicable) and applies excludes.
+   - Ensure extraction skip is treated as success (already-extracted is not an error). **(Done)**
    - Add traversal-safe extraction path handling to mirror monolith behavior for nested members.
 
 ### P2 – Reliability & Reporting
