@@ -29,7 +29,7 @@ from fetchtastic.utils import (
 
 from .base import BaseDownloader
 from .interfaces import Asset, DownloadResult, Release
-from .version import VersionManager, extract_version
+from .version import VersionManager
 
 
 class FirmwareReleaseDownloader(BaseDownloader):
