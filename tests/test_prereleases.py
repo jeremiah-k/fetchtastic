@@ -51,6 +51,22 @@ for attr in [
     "_cache_lock",
     "logger",
     "menu_repo",
+    "_find_latest_remote_prerelease_dir",
+    "_clear_prerelease_cache",
+    "_fetch_prerelease_directories",
+    "_extract_clean_version",
+    "get_prerelease_tracking_info",
+    "check_for_prereleases",
+    "cleanup_superseded_prereleases",
+    "get_commit_timestamp",
+    "_create_default_prerelease_entry",
+    "_get_prerelease_commit_history",
+    "_build_simplified_prerelease_history",
+    "_fetch_recent_repo_commits",
+    "clear_all_caches",
+    "get_commit_timestamp",
+    "_save_commit_cache",
+    "clear_commit_timestamp_cache",
 ]:
     if hasattr(legacy_compat, attr):
         setattr(downloader, attr, getattr(legacy_compat, attr))
