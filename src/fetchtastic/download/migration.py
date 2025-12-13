@@ -119,6 +119,10 @@ class DownloadMigration:
         current_firmware = self.firmware_downloader.get_latest_release_tag()
 
         for result in success_results:
+            # Legacy parity: "already complete" skips should not be reported as
+            # downloaded versions in the CLI summary.
+            if getattr(result, "was_skipped", False):
+                continue
             if result.release_tag:
                 # Determine if this is firmware or Android based on file path
                 if result.file_path and "firmware" in str(result.file_path):

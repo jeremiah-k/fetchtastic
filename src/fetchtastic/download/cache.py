@@ -17,6 +17,7 @@ from fetchtastic.constants import (
     FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
     GITHUB_API_BASE,
     GITHUB_API_TIMEOUT,
+    MESHTASTIC_GITHUB_IO_CONTENTS_URL,
 )
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import (
@@ -226,8 +227,92 @@ class CacheManager:
                 if datetime.now(timezone.utc) > expires_at:
                     logger.debug(f"Cache expired for {cache_file}")
                     return None
+        except (ValueError, TypeError):
+            # If expiry is malformed, treat the entry as non-expiring (legacy tolerant).
+            pass
 
-            return cache_data.get("data")
+        return cache_data.get("data")
+
+    def get_repo_directories(
+        self,
+        path: str = "",
+        *,
+        force_refresh: bool = False,
+        github_token: Optional[str] = None,
+        allow_env_token: bool = True,
+    ) -> List[str]:
+        """
+        List directory names at a meshtastic.github.io repository path with short TTL caching.
+
+        Cache format is compatible with the module-level prerelease directory cache helpers:
+        `{cache_key: {"directories": [...], "cached_at": "<iso>"}}`.
+        """
+        normalized_path = (path or "").strip("/")
+        cache_key = f"repo:{normalized_path or '/'}"
+        cache_file = os.path.join(self.cache_dir, "prerelease_dirs.json")
+        now = datetime.now(timezone.utc)
+
+        cache = self.read_json(cache_file)
+        if not isinstance(cache, dict):
+            cache = {}
+
+        cached = cache.get(cache_key) if not force_refresh else None
+        if isinstance(cached, dict) and not force_refresh:
+            directories = cached.get("directories")
+            cached_at_raw = cached.get("cached_at")
+            if isinstance(directories, list) and cached_at_raw:
+                try:
+                    cached_at = datetime.fromisoformat(
+                        str(cached_at_raw).replace("Z", "+00:00")
+                    )
+                    age_s = (now - cached_at).total_seconds()
+                    if age_s < FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS:
+                        logger.debug(
+                            "Using cached prerelease directories for %s (cached %.0fs ago)",
+                            normalized_path or "/",
+                            age_s,
+                        )
+                        return [d for d in directories if isinstance(d, str)]
+                    logger.debug(
+                        "Prerelease directory cache stale for %s (age %.0fs >= %ss); refreshing",
+                        normalized_path or "/",
+                        age_s,
+                        FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
+                    )
+                except ValueError:
+                    pass
+
+        api_url = (
+            f"{MESHTASTIC_GITHUB_IO_CONTENTS_URL}/{normalized_path}"
+            if normalized_path
+            else MESHTASTIC_GITHUB_IO_CONTENTS_URL
+        )
+        try:
+            response = make_github_api_request(
+                api_url,
+                github_token=github_token,
+                allow_env_token=allow_env_token,
+                timeout=GITHUB_API_TIMEOUT,
+            )
+            contents = response.json()
+            if not isinstance(contents, list):
+                return []
+            directories = [
+                item.get("name")
+                for item in contents
+                if isinstance(item, dict)
+                and item.get("type") == "dir"
+                and item.get("name")
+            ]
+            cache[cache_key] = {
+                "directories": directories,
+                "cached_at": now.isoformat(),
+            }
+            self.atomic_write_json(cache_file, cache)
+            return [d for d in directories if isinstance(d, str)]
+        except Exception as exc:
+            logger.debug("Could not fetch repo directories for %s: %s", api_url, exc)
+            return []
         except (ValueError, KeyError) as e:
             logger.error(f"Invalid cache format in {cache_file}: {e}")
             return None

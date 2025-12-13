@@ -319,6 +319,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
             DownloadResult: Result of the extraction operation
         """
         try:
+            exclude_patterns = exclude_patterns or []
+
             # Get the path to the downloaded ZIP file
             zip_path = self.get_target_path_for_release(release.tag_name, asset.name)
             if not os.path.exists(zip_path):
@@ -334,21 +336,40 @@ class FirmwareReleaseDownloader(BaseDownloader):
             # Get the directory where files will be extracted
             extract_dir = os.path.dirname(zip_path)
 
-            # Use the enhanced extraction with validation
-            extracted_files = self.file_operations.extract_with_validation(
-                zip_path, extract_dir, patterns, exclude_patterns or []
+            # Legacy parity: extraction is a no-op success when all matching files
+            # already exist with expected sizes (skip instead of treating as failure).
+            if not self.file_operations.validate_extraction_patterns(
+                patterns, exclude_patterns
+            ):
+                return self.create_download_result(
+                    success=False,
+                    release_tag=release.tag_name,
+                    file_path=Path(zip_path),
+                    error_message="Invalid extraction patterns",
+                    file_type="firmware",
+                    error_type="validation_error",
+                )
+
+            if not self.file_operations.check_extraction_needed(
+                zip_path, extract_dir, patterns, exclude_patterns
+            ):
+                return self.create_download_result(
+                    success=True,
+                    release_tag=release.tag_name,
+                    file_path=Path(zip_path),
+                    extracted_files=[],
+                    file_type="firmware",
+                    was_skipped=True,
+                )
+
+            extracted_files = self.file_operations.extract_archive(
+                zip_path, extract_dir, patterns, exclude_patterns
             )
+            if extracted_files:
+                self.file_operations.generate_hash_for_extracted_files(extracted_files)
 
             if extracted_files:
                 logger.info(f"Extracted {len(extracted_files)} files from {asset.name}")
-
-                # Generate hash files for extracted files (legacy sidecar behavior)
-                hash_results = self.file_operations.generate_hash_for_extracted_files(
-                    extracted_files
-                )
-                logger.debug(
-                    f"Generated hashes for {len(hash_results)} extracted files"
-                )
 
                 return self.create_download_result(
                     success=True,
@@ -706,21 +727,30 @@ class FirmwareReleaseDownloader(BaseDownloader):
             )
         )
         if active_dir:
+            # Validate that the commit-history-selected directory still exists in the repo.
+            try:
+                repo_dirs = self.cache_manager.get_repo_directories(
+                    "",
+                    force_refresh=force_refresh,
+                    github_token=self.config.get("GITHUB_TOKEN"),
+                    allow_env_token=True,
+                )
+                if active_dir not in repo_dirs:
+                    active_dir = None
+            except Exception:
+                active_dir = None
+
+        if active_dir:
             logger.info("Using commit history for prerelease detection")
         else:
             # Fallback: scan repo root for prerelease directories
             try:
-                response = make_github_api_request(
-                    MESHTASTIC_GITHUB_IO_CONTENTS_URL,
+                dirs = self.cache_manager.get_repo_directories(
+                    "",
+                    force_refresh=force_refresh,
                     github_token=self.config.get("GITHUB_TOKEN"),
                     allow_env_token=True,
                 )
-                contents = response.json()
-                dirs = [
-                    item.get("name")
-                    for item in contents
-                    if isinstance(item, dict) and item.get("type") == "dir"
-                ]
                 matches = version_manager.scan_prerelease_directories(
                     [d for d in dirs if isinstance(d, str)], expected_version
                 )

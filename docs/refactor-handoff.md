@@ -35,6 +35,7 @@ This document is the “current truth” for another engineer taking over. Updat
   - Failures carry URL, retryable flag, and HTTP status (when known) into the legacy-style `failed_downloads` list.
   - `src/fetchtastic/download/migration.py`
   - `src/fetchtastic/cli.py`
+  - Note: CLI “Downloaded X new versions” now excludes `was_skipped` results for parity.
 
 ## What Is Still Not Parity (High Priority)
 
@@ -65,13 +66,11 @@ There is a `CacheManager.get_commit_timestamp()` path with expiry, but module-le
 
 ### 4) Repository downloader scope and wiring
 
-The interactive repo browser (`fetchtastic repo browse`) is the primary “repo-dls” feature. The download pipeline currently calls `RepositoryDownloader.get_repository_files()` but that function is a stub returning `[]`.
+The interactive repo browser (`fetchtastic repo browse`) is the “repo-dls” feature. For parity, the standard `fetchtastic download` pipeline should not touch repo downloads.
 
-- Decide:
-  - Option A (minimal drift): remove repo downloads from the standard download pipeline (keep repo downloads only via `repo browse`).
-  - Option B: support a config-backed repo selection list and have the pipeline download it.
+- Current branch behavior (parity-safe): the download pipeline does not process or clean `repo-dls`.
 - Files: `src/fetchtastic/download/orchestrator.py`, `src/fetchtastic/download/repository.py`, `src/fetchtastic/menu_repo.py`
-- Note: `src/fetchtastic/menu_repo.py` currently imports `RepositoryDownloader` but doesn’t use it; that import can create circular coupling and should be removed if not needed.
+- Note: the unused `RepositoryDownloader` import was removed from `src/fetchtastic/menu_repo.py` to avoid circular coupling.
 
 ### 5) CLI/reporting polish parity
 
@@ -85,17 +84,10 @@ Files: `src/fetchtastic/cli.py`, `src/fetchtastic/download/cli_integration.py`, 
 
 ## Step-by-Step Next Work (Do In This Order)
 
-1. **Move commit-history refresh earlier**
-   - Update `DownloadOrchestrator.run_download_pipeline()` to refresh commits before firmware prerelease selection.
-   - Share `_recent_commits` to downloaders before any prerelease filtering.
-2. **Use prerelease directory-list cache in repo fallback**
-   - Wrap the `MESHTASTIC_GITHUB_IO_CONTENTS_URL` root listing with cache load/save + expiry logging.
-3. **Unify commit timestamp cache expiry**
+1. **Unify commit timestamp cache expiry**
    - Make commit timestamp reads/writes go through one expiry-aware implementation.
    - Add tests for expiry and for legacy file compatibility.
-4. **Settle repository downloader scope**
-   - Either remove pipeline repo downloads (preferred for minimal drift) or implement config-backed selections.
-5. **Add CLI summary assertions**
+2. **Add CLI summary assertions**
    - Tests that the CLI download command surfaces failure URLs/retryable/http status in output (and counts behave like legacy).
 
 ## How To Validate (Fast)

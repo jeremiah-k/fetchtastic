@@ -20,6 +20,7 @@ from unittest.mock import patch
 import pytest
 
 from fetchtastic.download.firmware import FirmwareReleaseDownloader
+from fetchtastic.download.interfaces import Asset, Release
 
 
 def _make_zip_bytes(file_map: dict[str, str]) -> bytes:
@@ -122,6 +123,39 @@ def test_extract_archive_respects_exclude_and_safety(tmp_path):
     assert "good.bin" in extracted_names
     assert "debug.bin" not in extracted_names
     assert not (extract_dir / ".." / "evil.bin").exists()
+
+
+@pytest.mark.core_downloads
+def test_extract_firmware_is_success_when_already_extracted(tmp_path):
+    downloader = FirmwareReleaseDownloader({"DOWNLOAD_DIR": str(tmp_path)})
+
+    release = Release(tag_name="v1.0.0", prerelease=False)
+    asset = Asset(
+        name="firmware-test.zip",
+        download_url="https://example.invalid/firmware-test.zip",
+        size=0,
+    )
+
+    zip_path = Path(
+        downloader.get_target_path_for_release(release.tag_name, asset.name)
+    )
+    zip_path.parent.mkdir(parents=True, exist_ok=True)
+    zip_bytes = _make_zip_bytes({"good.bin": "ok"})
+    zip_path.write_bytes(zip_bytes)
+
+    # Pre-create the extracted file with matching size so extraction is not needed.
+    extracted_path = zip_path.parent / "good.bin"
+    extracted_path.write_text("ok", encoding="utf-8")
+
+    result = downloader.extract_firmware(
+        release,
+        asset,
+        patterns=["good.bin"],
+        exclude_patterns=[],
+    )
+
+    assert result.success is True
+    assert result.was_skipped is True
 
 
 @pytest.mark.core_downloads

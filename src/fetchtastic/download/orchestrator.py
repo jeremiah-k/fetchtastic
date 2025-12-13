@@ -64,14 +64,18 @@ class DownloadOrchestrator:
         start_time = time.time()
         logger.info("Starting download pipeline...")
 
+        # Legacy parity: refresh commit history early so prerelease selection can
+        # use commit-cache filtering during the run (not after).
+        self._refresh_commit_history_cache()
+        if hasattr(self, "_recent_commits"):
+            self.android_downloader._recent_commits = self._recent_commits
+            self.firmware_downloader._recent_commits = self._recent_commits
+
         # Process Android downloads
         self._process_android_downloads()
 
         # Process firmware downloads
         self._process_firmware_downloads()
-
-        # Process repository downloads
-        self._process_repository_downloads()
 
         # Enhance results with metadata before retry
         self._enhance_download_results_with_metadata()
@@ -830,9 +834,6 @@ class DownloadOrchestrator:
             firmware_keep = self.config.get("FIRMWARE_VERSIONS_TO_KEEP", 5)
             self.firmware_downloader.cleanup_old_versions(firmware_keep)
 
-            # Clean up repository versions
-            self.repository_downloader.cleanup_old_versions(5)
-
             logger.info("Old version cleanup completed")
 
         except Exception as e:
@@ -888,9 +889,6 @@ class DownloadOrchestrator:
 
         except Exception as e:
             logger.error(f"Error updating version tracking: {e}")
-
-        # Fetch and cache recent repo commits for prerelease expected-version computation
-        self._refresh_commit_history_cache()
 
     def _manage_prerelease_tracking(self) -> None:
         """

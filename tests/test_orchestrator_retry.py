@@ -56,3 +56,31 @@ def test_retry_uses_real_download(monkeypatch, tmp_path):
     assert any(r.success for r in orch.download_results)
     assert not orch.failed_downloads
     assert download_called["url"] == url
+
+
+def test_orchestrator_refreshes_commits_before_processing(monkeypatch):
+    config = {"MAX_RETRIES": 0}
+    orch = DownloadOrchestrator(config)
+
+    calls = []
+
+    def fake_refresh():
+        calls.append("refresh")
+        orch._recent_commits = [{"sha": "abc1234"}]
+
+    monkeypatch.setattr(orch, "_refresh_commit_history_cache", fake_refresh)
+    monkeypatch.setattr(orch, "_process_android_downloads", lambda: calls.append("apk"))
+    monkeypatch.setattr(
+        orch, "_process_firmware_downloads", lambda: calls.append("firmware")
+    )
+    monkeypatch.setattr(
+        orch, "_process_repository_downloads", lambda: calls.append("repo")
+    )
+    monkeypatch.setattr(orch, "_enhance_download_results_with_metadata", lambda: None)
+    monkeypatch.setattr(orch, "_retry_failed_downloads", lambda: None)
+    monkeypatch.setattr(orch, "_log_download_summary", lambda *_: None)
+
+    orch.run_download_pipeline()
+
+    assert calls[:1] == ["refresh"]
+    assert orch.firmware_downloader._recent_commits == [{"sha": "abc1234"}]

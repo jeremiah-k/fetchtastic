@@ -282,10 +282,11 @@ def main():
                     url = failure.get("url", "unknown")
                     retryable = failure.get("retryable")
                     http_status = failure.get("http_status")
+                    error = failure.get("error", "")
                     logger.info(
                         f"- {failure.get('type','Unknown')} {failure.get('release_tag','')}: "
                         f"{failure.get('file_name','unknown')} "
-                        f"URL={url} retryable={retryable} http_status={http_status}"
+                        f"URL={url} retryable={retryable} http_status={http_status} error={error}"
                     )
 
             if downloaded_count == 0 and not failed_downloads:
