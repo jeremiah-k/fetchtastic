@@ -3,10 +3,7 @@
 Test script to verify repository downloader integration in the orchestrator.
 """
 
-import sys
 import tempfile
-
-sys.path.insert(0, "/home/coder/fetchtastic/src")
 
 from fetchtastic.download.orchestrator import DownloadOrchestrator
 
@@ -234,7 +231,7 @@ if __name__ == "__main__":
 
     if success:
         print("\n🎉 All repository integration tests passed!")
-        sys.exit(0)
+        exit(0)
     else:
         print("\n❌ Some repository integration tests failed.")
-        sys.exit(1)
+        exit(1)

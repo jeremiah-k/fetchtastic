@@ -4,14 +4,9 @@ Test script to verify prerelease functionality integration in the new modular ar
 """
 
 import json
-
-# Add the src directory to the path so we can import the modules
-import sys
 import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch
-
-sys.path.insert(0, "/home/coder/fetchtastic/src")
 
 from fetchtastic.download.android import MeshtasticAndroidAppDownloader
 from fetchtastic.download.firmware import FirmwareReleaseDownloader
@@ -171,7 +166,7 @@ if __name__ == "__main__":
 
     if success:
         print("\n🎉 All tests passed! Prerelease functionality is working correctly.")
-        sys.exit(0)
+        exit(0)
     else:
         print("\n❌ Some tests failed. Please check the implementation.")
-        sys.exit(1)
+        exit(1)

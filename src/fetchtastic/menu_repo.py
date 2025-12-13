@@ -10,6 +10,7 @@ from fetchtastic.constants import (
     GITHUB_API_TIMEOUT,
     MESHTASTIC_GITHUB_IO_CONTENTS_URL,
 )
+from fetchtastic.download.repository import RepositoryDownloader
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import make_github_api_request
 

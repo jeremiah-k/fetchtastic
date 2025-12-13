@@ -28,8 +28,13 @@ def _safe_target_dir(download_dir: str, requested_subdir: str) -> str:
     if os.path.isabs(requested_subdir):
         return base_repo_dir
 
-    candidate = os.path.normpath(os.path.join(base_repo_dir, requested_subdir))
-    if not candidate.startswith(os.path.normpath(base_repo_dir)):
+    base_norm = os.path.normpath(base_repo_dir)
+    candidate = os.path.normpath(os.path.join(base_norm, requested_subdir))
+    # Ensure candidate stays within base_repo_dir
+    try:
+        if os.path.commonpath([base_norm, candidate]) != base_norm:
+            return base_repo_dir
+    except ValueError:
         return base_repo_dir
 
     os.makedirs(candidate, exist_ok=True)

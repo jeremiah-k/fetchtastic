@@ -15,7 +15,6 @@ from packaging.version import InvalidVersion, Version
 from packaging.version import parse as parse_version
 
 from fetchtastic.constants import (
-    COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS,
     DEFAULT_PRERELEASE_ACTIVE,
     DEFAULT_PRERELEASE_COMMITS_TO_FETCH,
     DEFAULT_PRERELEASE_STATUS,
@@ -144,7 +143,7 @@ def _extract_clean_version(version_with_hash: Optional[str]) -> Optional[str]:
 def _normalize_commit_identifier(commit_id: str, release_version: Optional[str]) -> str:
     commit_id = (commit_id or "").lower()
 
-    if re.search(r"^\\d+\\.\\d+\\.\\d+\\.[a-f0-9]{6,40}$", commit_id):
+    if re.search(r"^\d+\.\d+\.\d+\.[a-f0-9]{6,40}$", commit_id):
         return commit_id
 
     if re.match(r"^[a-f0-9]{6,40}$", commit_id):
@@ -1186,9 +1185,6 @@ class VersionManager:
             return metadata
 
         metadata["is_prerelease"] = True
-
-        # Remove leading 'v'/'V' for processing
-        clean_version = version.lstrip("vV")
 
         # Parse version to extract components
         normalized = self.normalize_version(version)

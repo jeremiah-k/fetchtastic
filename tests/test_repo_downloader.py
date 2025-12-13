@@ -6,20 +6,18 @@ that replaces the old monolithic repo_downloader.py functionality.
 """
 
 import os
-from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import patch
 
 import pytest
 
-from src.fetchtastic.download.interfaces import DownloadResult
-from src.fetchtastic.download.repository import RepositoryDownloader
+from fetchtastic.download.repository import RepositoryDownloader
 
 
 @pytest.fixture
-def mock_config():
+def mock_config(tmp_path):
     """Provides a mock configuration for the repository downloader."""
     return {
-        "DOWNLOAD_DIR": "/tmp/test_downloads",
+        "DOWNLOAD_DIR": str(tmp_path / "test_downloads"),
         "VERSIONS_TO_KEEP": 5,
         "REPO_DOWNLOADS_DIR": "repo-dls",
         "SHELL_SCRIPT_EXTENSION": ".sh",
@@ -27,7 +25,7 @@ def mock_config():
 
 
 @pytest.fixture
-def repository_downloader(mock_config):
+def repository_downloader(mock_config, tmp_path):
     """Provides a RepositoryDownloader instance with mock configuration."""
     return RepositoryDownloader(mock_config)
 
