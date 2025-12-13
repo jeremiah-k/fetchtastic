@@ -8,6 +8,9 @@ and related functionality.
 import json
 import os
 import re
+
+# Import legacy compatibility layer for migration
+import sys
 import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -16,7 +19,21 @@ from unittest.mock import Mock, patch
 import pytest
 import requests
 
-from fetchtastic import downloader
+sys.path.insert(0, os.path.dirname(__file__))
+import legacy_compat
+
+
+# Create a mock downloader object for backward compatibility
+class MockDownloader:
+    pass
+
+
+downloader = MockDownloader()
+
+# Copy all functions and attributes from legacy_compat to downloader
+for attr in dir(legacy_compat):
+    if not attr.startswith("_"):
+        setattr(downloader, attr, getattr(legacy_compat, attr))
 from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.prerelease_history import PrereleaseHistoryManager
 from fetchtastic.download.version import VersionManager
@@ -896,6 +913,9 @@ def test_get_commit_timestamp_cache():
         # First call should make API request and cache result
         result1 = _cache_manager.get_commit_timestamp(
             "meshtastic", "firmware", "abcdef123"
+        )
+        print(
+            f"DEBUG: result1 = {result1}, mock_get.call_count = {mock_get.call_count}"
         )
         assert result1 is not None
         assert isinstance(result1, datetime)
