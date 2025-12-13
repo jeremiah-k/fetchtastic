@@ -9,7 +9,11 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from fetchtastic.constants import PRERELEASE_TRACKING_JSON_FILE
+from fetchtastic.constants import (
+    DEFAULT_ANDROID_VERSIONS_TO_KEEP,
+    DEFAULT_FIRMWARE_VERSIONS_TO_KEEP,
+    PRERELEASE_TRACKING_JSON_FILE,
+)
 from fetchtastic.log_utils import logger
 
 from .android import MeshtasticAndroidAppDownloader
@@ -71,11 +75,11 @@ class DownloadOrchestrator:
             self.android_downloader._recent_commits = self._recent_commits
             self.firmware_downloader._recent_commits = self._recent_commits
 
-        # Process Android downloads
-        self._process_android_downloads()
-
         # Process firmware downloads
         self._process_firmware_downloads()
+
+        # Process Android downloads
+        self._process_android_downloads()
 
         # Enhance results with metadata before retry
         self._enhance_download_results_with_metadata()
@@ -98,6 +102,12 @@ class DownloadOrchestrator:
             if not android_releases:
                 logger.info("No Android releases found")
                 return
+
+            # Limit releases to process to match legacy behavior
+            keep_count = self.config.get(
+                "ANDROID_VERSIONS_TO_KEEP", DEFAULT_ANDROID_VERSIONS_TO_KEEP
+            )
+            android_releases = android_releases[:keep_count]
 
             # Filter releases based on configuration
             releases_to_download = self._filter_releases(android_releases, "android")
@@ -133,8 +143,14 @@ class DownloadOrchestrator:
                 (r for r in firmware_releases if not r.prerelease), None
             )
 
+            # Limit releases to process to match legacy behavior
+            keep_count = self.config.get(
+                "FIRMWARE_VERSIONS_TO_KEEP", DEFAULT_FIRMWARE_VERSIONS_TO_KEEP
+            )
+            releases_to_check = firmware_releases[:keep_count]
+
             # Filter releases based on configuration
-            releases_to_download = self._filter_releases(firmware_releases, "firmware")
+            releases_to_download = self._filter_releases(releases_to_check, "firmware")
 
             # Download each release
             for release in releases_to_download:

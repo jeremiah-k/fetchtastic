@@ -11,10 +11,13 @@ Scope: Identify missing/ regressed behaviors vs v0.8.9; enumerate fixes and test
 - ✅ Prerelease config compatibility: firmware prerelease repo flow honors `CHECK_PRERELEASES` fallback and uses user patterns for selection.
 - ✅ Prerelease repo flow: expected-version computation + commit-history parsing + legacy-style history summaries are implemented.
 - ✅ CLI failure metadata: failures can surface URL/retryable/HTTP status in the download summary output.
+- ✅ Logging spam: chunk download logging completely removed to match 0.8.9 behavior.
+- ✅ Execution Order: restored legacy order (Firmware first, then Android) in download pipeline.
+- ✅ Prerelease iteration: applied `*_VERSIONS_TO_KEEP` limits to download loops to prevent iterating and logging "Skipping..." for ancient releases.
+- ✅ Commit-history refresh: now occurs early in the pipeline (`run_download_pipeline`) to ensure prerelease selection benefits from cached history.
 
 ### Still Open (Parity Gaps)
 
-- Commit-history refresh happens late (after pipeline), so prerelease selection during the run may not benefit from commit-cache filtering.
 - Repo directory-scan fallback for prerelease repo flow does not use the directory-list cache (TTL/expiry parity missing).
 - Commit timestamp cache expiry/compat needs unification (avoid multiple code paths with different expiry behavior).
 - Repository downloads in the standard download pipeline are likely drift: interactive `repo browse` is the intended “repo-dls” feature, but the pipeline calls a stub `get_repository_files()` returning `[]`.

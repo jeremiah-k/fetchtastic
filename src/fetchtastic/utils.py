@@ -956,10 +956,6 @@ def download_file_with_retry(
                     file.write(chunk)
                     downloaded_chunks += 1
                     downloaded_bytes += len(chunk)
-                    if downloaded_chunks % 100 == 0:
-                        logger.debug(
-                            f"Downloaded {downloaded_chunks} chunks ({downloaded_bytes} bytes) so far for {url}"
-                        )
 
         elapsed = time.time() - start_time
         file_size_mb = downloaded_bytes / (1024 * 1024)
