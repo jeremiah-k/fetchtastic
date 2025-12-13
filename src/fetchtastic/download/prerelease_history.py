@@ -655,24 +655,59 @@ def _is_entry_deleted(entry: Dict[str, Any]) -> bool:
     Returns:
         bool: True if the entry is marked as deleted, False otherwise.
     """
-    return entry.get("status") == "deleted"
+    return entry.get("status") == "deleted" or bool(entry.get("removed_at"))
 
 
 def _format_history_entry(
-    entry: Dict[str, Any], index: int, identifier: str
+    entry: Dict[str, Any],
+    idx: int,
+    latest_active_identifier: Optional[str],
 ) -> Dict[str, Any]:
     """
-    Format a history entry for display or processing.
+    Produce a display-ready prerelease history entry augmented with UI markup and status flags.
 
     Parameters:
-        entry (dict): The history entry to format.
-        index (int): The index of the entry in the history.
-        identifier (str): The identifier for the entry.
+        entry (dict): Original prerelease history entry; should include an identifier field
+            accessible by keys like "identifier", "directory", or "dir".
+        idx (int): Position of the entry in a sorted history list where 0 denotes the newest entry.
+        latest_active_identifier (str | None): Identifier of the currently active prerelease, or
+            None if there is no active prerelease.
 
     Returns:
-        dict: The formatted history entry.
+        dict: A copy of the original entry augmented with:
+            - "display_name": the extracted identifier,
+            - "markup_label": a UI-ready label (may contain markup for deleted/new/latest),
+            - "is_deleted": `True` if the entry is marked deleted,
+            - "is_newest": `True` if idx == 0,
+            - "is_latest": `True` if the entry matches the latest_active_identifier.
     """
-    formatted = entry.copy()
-    formatted["index"] = index
-    formatted["identifier"] = identifier
-    return formatted
+    identifier = _extract_identifier_from_entry(entry)
+    if not identifier:
+        return entry
+
+    is_deleted = _is_entry_deleted(entry)
+    is_newest = idx == 0
+    is_latest_active = (
+        not is_deleted
+        and latest_active_identifier is not None
+        and identifier == latest_active_identifier
+    )
+
+    if is_deleted:
+        markup_label = f"[red][strike]{identifier}[/strike][/red]"
+    elif is_newest or is_latest_active:
+        markup_label = f"[green]{identifier}[/]"
+    else:
+        markup_label = identifier
+
+    formatted_entry = dict(entry)
+    formatted_entry.update(
+        {
+            "display_name": identifier,
+            "markup_label": markup_label,
+            "is_deleted": is_deleted,
+            "is_newest": is_newest,
+            "is_latest": is_latest_active,
+        }
+    )
+    return formatted_entry

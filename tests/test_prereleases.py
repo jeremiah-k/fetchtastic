@@ -128,15 +128,41 @@ def _extract_identifier_from_entry(entry):
 
 def _is_entry_deleted(entry):
     """Check if a prerelease entry is marked as deleted."""
-    return entry.get("status") == "deleted"
+    return entry.get("status") == "deleted" or bool(entry.get("removed_at"))
 
 
-def _format_history_entry(entry, index, identifier):
+def _format_history_entry(entry, idx, latest_active_identifier):
     """Format a prerelease entry for history display."""
-    formatted = entry.copy()
-    formatted["index"] = index
-    formatted["identifier"] = identifier
-    return formatted
+    identifier = _extract_identifier_from_entry(entry)
+    if not identifier:
+        return entry
+
+    is_deleted = _is_entry_deleted(entry)
+    is_newest = idx == 0
+    is_latest_active = (
+        not is_deleted
+        and latest_active_identifier is not None
+        and identifier == latest_active_identifier
+    )
+
+    if is_deleted:
+        markup_label = f"[red][strike]{identifier}[/strike][/red]"
+    elif is_newest or is_latest_active:
+        markup_label = f"[green]{identifier}[/]"
+    else:
+        markup_label = identifier
+
+    formatted_entry = dict(entry)
+    formatted_entry.update(
+        {
+            "display_name": identifier,
+            "markup_label": markup_label,
+            "is_deleted": is_deleted,
+            "is_newest": is_newest,
+            "is_latest": is_latest_active,
+        }
+    )
+    return formatted_entry
 
 
 # Global cache reference for tests that access it directly
