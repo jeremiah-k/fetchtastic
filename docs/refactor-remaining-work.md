@@ -36,14 +36,17 @@ Current handoff/status: `docs/refactor-handoff.md`.
 
 ### P3 – Clean-up & Migration
 
-8. CLI path simplification **(In Progress)**
+8. CLI path simplification **(Ready for Removal)**
    - DownloadMigration is still used by cli_integration.py and tests
-   - Parity is largely complete, but test dependencies need migration
+   - Parity is complete, but extensive test dependencies still need migration
    - Plan: Update tests to use orchestrator directly, then remove migration layer
-   - Keep thin compatibility shim only if absolutely necessary for test compatibility
-9. Legacy removal **(Ready to Start)**
+   - Current blocker: 74 test files import from legacy downloader
+   - Recommendation: Create test migration plan before removing migration layer
+9. Legacy removal **(Blocked by Test Dependencies)**
    - Remove monolithic `downloader.py` - parity is proven
    - Remove DownloadMigration after test migration is complete
+   - Current blocker: 74 test files still import from legacy downloader
+   - Action needed: Create comprehensive test migration plan
    - Clean up legacy imports and references
    - Update documentation to reflect new architecture
 10. Documentation/tests

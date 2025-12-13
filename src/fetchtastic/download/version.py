@@ -349,7 +349,7 @@ class VersionManager:
                     "reset": int(reset),
                     "limit": int(limit) if limit else None,
                 }
-        except Exception:
+        except (AttributeError, TypeError, ValueError):
             return None
         return None
 
@@ -396,10 +396,10 @@ class VersionManager:
 
         # Get commit hash suffix
         hash_suffix = self.get_commit_hash_suffix(commit_hash)
+        suffix = f"{prerelease_type}1"
         if hash_suffix:
-            return f"{clean_base}-{prerelease_type}.1+{hash_suffix}"
-        else:
-            return f"{clean_base}-{prerelease_type}.1"
+            return f"{clean_base}-{suffix}+{hash_suffix}"
+        return f"{clean_base}-{suffix}"
 
     def is_prerelease_version(self, version: str) -> bool:
         """

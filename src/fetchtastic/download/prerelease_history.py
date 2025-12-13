@@ -485,7 +485,7 @@ class PrereleaseHistoryManager:
                 filename_pattern = f"prerelease_{safe_version}_*.json"
 
                 for filename in os.listdir(tracking_dir):
-                    if re.fullmatch(filename_pattern, filename):
+                    if fnmatch.fnmatch(filename, filename_pattern):
                         try:
                             os.remove(os.path.join(tracking_dir, filename))
                             logger.info(

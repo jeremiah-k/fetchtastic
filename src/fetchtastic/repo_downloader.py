@@ -63,8 +63,20 @@ def download_repo_files(selected_files: Dict[str, Any], download_dir: str) -> Li
         if not name or not url:
             continue
 
-        safe_name = os.path.basename(name)
+        safe_name = os.path.basename(name).strip()
+        # Validate filename to prevent path traversal
+        if not safe_name or safe_name in {".", ".."} or "\x00" in safe_name:
+            logger.warning(f"Skipping unsafe filename: {safe_name}")
+            continue
+
         dest_path = os.path.join(target_dir, safe_name)
+        # Ensure dest_path is within target_dir
+        real_dest_path = os.path.realpath(dest_path)
+        real_target_dir = os.path.realpath(target_dir)
+        if not real_dest_path.startswith(real_target_dir):
+            logger.warning(f"Skipping file outside target directory: {safe_name}")
+            continue
+
         if download_file_with_retry(str(url), dest_path):
             downloaded.append(dest_path)
 
