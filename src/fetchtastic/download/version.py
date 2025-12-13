@@ -296,10 +296,11 @@ class VersionManager:
 
         This method analyzes commit messages and history to determine what the
         expected prerelease version should be based on commit patterns.
+        Matches legacy behavior for prerelease version detection.
 
         Args:
             commit_history: List of commit messages/history entries
-            base_version: Base version to use as starting point
+            base_version: Base version to use as starting point (without 'v' prefix)
 
         Returns:
             Optional[str]: Expected prerelease version or None if cannot be determined
@@ -307,12 +308,30 @@ class VersionManager:
         if not commit_history or not base_version:
             return None
 
-        # Extract prerelease-like versions from commits that include the base version
-        version_pattern = re.compile(rf"{re.escape(base_version)}\.(\w+)")
+        # Clean base version by removing 'v' prefix if present
+        clean_base = base_version.lstrip("v")
+
+        # Look for ADD pattern commits first (highest priority)
+        for commit in commit_history:
+            if self._PRERELEASE_ADD_RX.search(commit):
+                # Extract version from ADD commit
+                add_match = re.search(
+                    rf"{re.escape(clean_base)}\.(\w+)", commit, re.IGNORECASE
+                )
+                if add_match:
+                    return f"{clean_base}.{add_match.group(1).lower()}"
+
+        # Look for any version-like pattern in commits
+        version_pattern = re.compile(
+            rf"{re.escape(clean_base)}[.-](\w+)", re.IGNORECASE
+        )
         for commit in commit_history:
             match = version_pattern.search(commit)
             if match:
-                return f"{base_version}.{match.group(1)}"
+                suffix = match.group(1).lower()
+                # Filter out common non-version suffixes
+                if not any(x in suffix for x in ["merge", "pull", "branch", "tag"]):
+                    return f"{clean_base}.{suffix}"
 
         # If no explicit match, fall back to incremented patch
         return self.calculate_expected_prerelease_version(base_version)
@@ -540,6 +559,12 @@ class VersionManager:
             tracking_data["latest_version"] = version
             tracking_data["last_updated"] = tracking_data["timestamp"]
 
+        # Add file_type for legacy compatibility
+        if "android" in release_type.lower():
+            tracking_data["file_type"] = "android"
+        elif "firmware" in release_type.lower():
+            tracking_data["file_type"] = "firmware"
+
         if additional_data:
             tracking_data.update(additional_data)
 
@@ -668,6 +693,134 @@ class VersionManager:
 
         return latest_version
 
+    def create_prerelease_tracking_json(
+        self,
+        current_release: str,
+        commits: List[str],
+        expected_version: Optional[str] = None,
+        additional_data: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Create prerelease tracking JSON matching legacy format.
+
+        Args:
+            current_release: Current stable release version
+            commits: List of commit identifiers
+            expected_version: Expected prerelease version
+            additional_data: Optional additional data
+
+        Returns:
+            Dict: Prerelease tracking JSON structure
+        """
+        tracking_data = {
+            "version": current_release,
+            "commits": commits,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "source": "fetchtastic-downloader",
+        }
+
+        if expected_version:
+            tracking_data["expected_version"] = expected_version
+
+        # Add legacy compatibility fields
+        tracking_data["latest_version"] = current_release
+        tracking_data["last_updated"] = tracking_data["timestamp"]
+
+        # Add commit hash if available
+        if commits:
+            # Extract hash from first commit (legacy behavior)
+            first_commit = commits[0] if commits else ""
+            hash_match = re.search(r"[a-f0-9]{6,40}$", first_commit.lower())
+            if hash_match:
+                tracking_data["hash"] = hash_match.group(0)
+
+        if additional_data:
+            tracking_data.update(additional_data)
+
+        return tracking_data
+
+    def parse_legacy_prerelease_tracking(
+        self, tracking_data: Dict[str, Any]
+    ) -> Tuple[List[str], Optional[str], Optional[str]]:
+        """
+        Parse legacy prerelease tracking data format.
+
+        Args:
+            tracking_data: Legacy tracking data dictionary
+
+        Returns:
+            Tuple containing:
+            - List of commit identifiers
+            - Current release version
+            - Last updated timestamp
+        """
+        version = tracking_data.get("version") or tracking_data.get("latest_version")
+        hash_val = tracking_data.get("hash")
+        current_release = self.ensure_v_prefix_if_missing(version)
+
+        commits_raw = tracking_data.get("commits")
+        if commits_raw is None and hash_val:
+            expected = self.calculate_expected_prerelease_version(current_release or "")
+            commits_raw = [f"{expected}.{hash_val}"] if expected else [hash_val]
+
+        if not isinstance(commits_raw, list):
+            logger.warning(
+                "Invalid commits format in tracking file: expected list, got %s. Resetting commits.",
+                type(commits_raw).__name__,
+            )
+            commits_raw = []
+
+        commits: List[str] = []
+        for commit in commits_raw:
+            if isinstance(commit, str):
+                normalized = _normalize_commit_identifier(
+                    commit.lower(), current_release
+                )
+                if normalized:
+                    commits.append(normalized)
+            else:
+                logger.warning(
+                    "Invalid commit entry in tracking file: expected str, got %s. Skipping.",
+                    type(commit).__name__,
+                )
+
+        commits = list(dict.fromkeys(commits))
+        last_updated = tracking_data.get("last_updated") or tracking_data.get(
+            "timestamp"
+        )
+        return commits, current_release, last_updated
+
+    def should_cleanup_prerelease(
+        self,
+        commit_identifier: str,
+        active_commits: List[str],
+        delete_patterns: List[str],
+    ) -> bool:
+        """
+        Determine if a prerelease should be cleaned up based on legacy logic.
+
+        Args:
+            commit_identifier: Commit identifier to check
+            active_commits: List of currently active commits
+            delete_patterns: Patterns that indicate deletion
+
+        Returns:
+            bool: True if prerelease should be cleaned up
+        """
+        # Check if it's in active commits
+        if commit_identifier in active_commits:
+            return False
+
+        # Check delete patterns
+        for pattern in delete_patterns:
+            if self._PRERELEASE_DELETE_RX.search(pattern):
+                # Extract hash from pattern and compare
+                pattern_hash = re.search(r"[a-f0-9]{6,40}", pattern.lower())
+                if pattern_hash and pattern_hash.group(0) in commit_identifier.lower():
+                    return True
+
+        return False
+
 
 # ==============================================================================
 # Legacy / Module-Level Compatibility Functions
@@ -717,37 +870,8 @@ def _normalize_commit_identifier(commit_id: str, release_version: Optional[str])
 def _parse_new_json_format(
     tracking_data: Dict[str, Any],
 ) -> Tuple[List[str], Optional[str], Optional[str]]:
-    version = tracking_data.get("version")
-    hash_val = tracking_data.get("hash")
-    current_release = _ensure_v_prefix_if_missing(version)
-
-    commits_raw = tracking_data.get("commits")
-    if commits_raw is None and hash_val:
-        expected = calculate_expected_prerelease_version(current_release or "")
-        commits_raw = [f"{expected}.{hash_val}"] if expected else [hash_val]
-
-    if not isinstance(commits_raw, list):
-        logger.warning(
-            "Invalid commits format in tracking file: expected list, got %s. Resetting commits.",
-            type(commits_raw).__name__,
-        )
-        commits_raw = []
-
-    commits: List[str] = []
-    for commit in commits_raw:
-        if isinstance(commit, str):
-            normalized = _normalize_commit_identifier(commit.lower(), current_release)
-            if normalized:
-                commits.append(normalized)
-        else:
-            logger.warning(
-                "Invalid commit entry in tracking file: expected str, got %s. Skipping.",
-                type(commit).__name__,
-            )
-
-    commits = list(dict.fromkeys(commits))
-    last_updated = tracking_data.get("last_updated") or tracking_data.get("timestamp")
-    return commits, current_release, last_updated
+    """Parse new JSON format using VersionManager for better consistency."""
+    return _version_manager.parse_legacy_prerelease_tracking(tracking_data)
 
 
 def _read_prerelease_tracking_data(tracking_file: str):
@@ -856,3 +980,24 @@ def _get_commit_hash_from_dir(dir_name: str) -> Optional[str]:
 
 def calculate_expected_prerelease_version(latest_version: str) -> str:
     return _version_manager.calculate_expected_prerelease_version(latest_version)
+
+
+def is_prerelease_directory(dir_name: str) -> bool:
+    """Check if directory name represents a prerelease version."""
+    version_part = extract_version(dir_name).lower()
+
+    # Check for prerelease indicators
+    prerelease_patterns = [
+        r".*alpha.*",
+        r".*beta.*",
+        r".*rc.*",
+        r".*dev.*",
+        r".*[a-f0-9]{6,40}.*",  # Contains commit hash
+    ]
+
+    return any(re.search(pattern, version_part) for pattern in prerelease_patterns)
+
+
+def normalize_commit_identifier(commit_id: str, release_version: Optional[str]) -> str:
+    """Normalize commit identifier to version+hash format."""
+    return _normalize_commit_identifier(commit_id, release_version)

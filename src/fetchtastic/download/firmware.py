@@ -5,7 +5,9 @@ This module implements the specific downloader for Meshtastic firmware releases.
 """
 
 import fnmatch
+import json
 import os
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -424,7 +426,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 item_path = os.path.join(firmware_dir, item)
                 if (
                     os.path.isdir(item_path)
-                    and item.startswith("v")
+                    and re.match(r"^(v)?\d+\.\d+\.\d+", item)
                     and item not in ["prerelease", "repo-dls"]
                 ):
                     version_dirs.append(item)
@@ -468,8 +470,6 @@ class FirmwareReleaseDownloader(BaseDownloader):
         latest_file = os.path.join(self.download_dir, self.latest_release_file)
         if os.path.exists(latest_file):
             try:
-                import json
-
                 with open(latest_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     return data.get("latest_version")
@@ -530,13 +530,11 @@ class FirmwareReleaseDownloader(BaseDownloader):
             )
         return extract_patterns
 
-    def _matches_exclude_patterns(
-        self, filename: str, exclude_patterns: List[str]
-    ) -> bool:
+    def _matches_exclude_patterns(self, filename: str, patterns: List[str]) -> bool:
         filename_lower = filename.lower()
         return any(
             fnmatch.fnmatch(filename_lower, str(pattern).lower())
-            for pattern in exclude_patterns or []
+            for pattern in patterns or []
         )
 
     def _fetch_prerelease_directory_listing(

@@ -10,7 +10,11 @@ import os
 import re
 from typing import Any, Dict, List
 
-from fetchtastic.constants import REPO_DOWNLOADS_DIR
+from fetchtastic.constants import (
+    EXECUTABLE_PERMISSIONS,
+    REPO_DOWNLOADS_DIR,
+    SHELL_SCRIPT_EXTENSION,
+)
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import download_file_with_retry
 
@@ -63,5 +67,18 @@ def download_repo_files(selected_files: Dict[str, Any], download_dir: str) -> Li
         dest_path = os.path.join(target_dir, safe_name)
         if download_file_with_retry(str(url), dest_path):
             downloaded.append(dest_path)
+
+            # Set executable permissions for shell scripts
+            if safe_name.endswith(SHELL_SCRIPT_EXTENSION):
+                try:
+                    import stat
+
+                    current_permissions = os.stat(dest_path).st_mode
+                    os.chmod(dest_path, current_permissions | EXECUTABLE_PERMISSIONS)
+                    logger.info(f"Set executable permissions for: {dest_path}")
+                except OSError as e:
+                    logger.warning(
+                        f"Failed to set executable permissions for {dest_path}: {e}"
+                    )
 
     return downloaded

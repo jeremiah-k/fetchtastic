@@ -73,7 +73,6 @@ class DownloadOrchestrator:
         # Legacy parity: refresh commit history early so prerelease selection can
         # use commit-cache filtering during the run (not after).
         self._refresh_commit_history_cache()
-        # Note: _recent_commits attribute not available on downloaders
 
         # Process firmware downloads
         self._process_firmware_downloads()
@@ -920,7 +919,6 @@ class DownloadOrchestrator:
             logger.info("Managing prerelease tracking files...")
 
             # Share recent commits with downloaders for prerelease filtering
-            # Note: _recent_commits attribute not available on downloaders
 
             # Manage Android prerelease tracking
             self.android_downloader.manage_prerelease_tracking_files()

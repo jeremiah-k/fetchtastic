@@ -26,7 +26,7 @@ from fetchtastic.utils import (
     track_api_cache_miss,
 )
 
-from .files import _atomic_write_json
+from .files import _atomic_write, _atomic_write_json
 
 
 class CacheManager:
@@ -72,33 +72,12 @@ class CacheManager:
         Args:
             file_path: Destination path to write
             writer_func: Callable that receives an open text file-like object and writes content
-            suffix: Suffix to use for the temporary file
+            suffix: Suffix to use for temporary file
 
         Returns:
-            bool: True if the content was written successfully, False otherwise
+            bool: True if content was written successfully, False otherwise
         """
-        try:
-            temp_fd, temp_path = tempfile.mkstemp(
-                dir=os.path.dirname(file_path), prefix="tmp-", suffix=suffix
-            )
-        except OSError as e:
-            logger.error(f"Could not create temporary file for {file_path}: {e}")
-            return False
-
-        try:
-            with os.fdopen(temp_fd, "w", encoding="utf-8") as temp_f:
-                writer_func(temp_f)
-            os.replace(temp_path, file_path)
-        except (IOError, UnicodeEncodeError, OSError) as e:
-            logger.error(f"Could not write to {file_path}: {e}")
-            return False
-        finally:
-            if os.path.exists(temp_path):
-                try:
-                    os.remove(temp_path)
-                except OSError:
-                    pass  # Ignore cleanup errors
-        return True
+        return _atomic_write(file_path, writer_func, suffix)
 
     def atomic_write_text(self, file_path: str, content: str) -> bool:
         """
@@ -128,11 +107,7 @@ class CacheManager:
         Returns:
             bool: True on successful write, False on error
         """
-
-        def _write_json_content(f):
-            json.dump(data, f, indent=2)
-
-        return self.atomic_write(file_path, _write_json_content, suffix=".json")
+        return _atomic_write_json(file_path, data)
 
     def read_json(self, file_path: str) -> Optional[Dict]:
         """
