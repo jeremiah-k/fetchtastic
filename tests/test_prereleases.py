@@ -83,6 +83,14 @@ def get_commit_timestamp(commit_hash, github_token=None):
 
 
 def clear_commit_timestamp_cache():
+    return _cache_manager.clear_all_caches()
+
+
+def _save_commit_cache(cache_data=None):
+    """Compatibility wrapper for saving commit cache."""
+    # For new architecture, this is handled automatically by cache manager
+    # This is a no-op for compatibility
+    pass
     return _cache_manager.clear_cache("commit_timestamps.json")
 
 
@@ -102,13 +110,7 @@ def _load_commit_cache():
     return {}
 
 
-def _save_commit_cache(cache_data):
-    cache_file = _get_commit_cache_file()
-    cache_file.parent.mkdir(parents=True, exist_ok=True)
-    import json
-
-    with open(cache_file, "w") as f:
-        json.dump(cache_data, f, indent=2)
+# _save_commit_cache already defined above
 
 
 def _get_commit_hash_from_dir(dir_name):
@@ -890,7 +892,7 @@ def test_get_commit_timestamp_cache():
     with patch(
         "fetchtastic.downloader.make_github_api_request", return_value=mock_response
     ) as mock_get:
-        result3 = get_commit_timestamp(
+        result3 = _cache_manager.get_commit_timestamp(
             "meshtastic", "firmware", "abcdef123", force_refresh=True
         )
         assert result3 == result1
@@ -904,7 +906,9 @@ def test_get_commit_timestamp_cache():
     with patch(
         "fetchtastic.downloader.make_github_api_request", return_value=mock_response
     ) as mock_get:
-        result4 = get_commit_timestamp("meshtastic", "firmware", "abcdef123")
+        result4 = _cache_manager.get_commit_timestamp(
+            "meshtastic", "firmware", "abcdef123"
+        )
         assert result4 == result1
         assert mock_get.call_count == 1  # Should refresh expired cache
 
@@ -1136,7 +1140,7 @@ def test_get_commit_timestamp_loads_persistent_cache():
             _commit_timestamp_cache.clear()
 
             # Call get_commit_timestamp - should load from persistent cache
-            result = get_commit_timestamp("owner", "repo", "preloaded")
+            result = _cache_manager.get_commit_timestamp("owner", "repo", "preloaded")
 
             assert result == test_timestamp
             assert "owner/repo/preloaded" in _commit_timestamp_cache
@@ -1330,7 +1334,9 @@ def test_get_commit_timestamp_error_handling():
     # Test HTTP error
     http_err = requests.HTTPError("404 Not Found")
     with patch("fetchtastic.downloader.make_github_api_request", side_effect=http_err):
-        result = get_commit_timestamp("meshtastic", "firmware", "badcommit")
+        result = _cache_manager.get_commit_timestamp(
+            "meshtastic", "firmware", "badcommit"
+        )
         assert result is None
 
     # Test JSON decode error
@@ -1356,7 +1362,9 @@ def test_get_commit_timestamp_error_handling():
     with patch(
         "fetchtastic.downloader.make_github_api_request", return_value=mock_response
     ):
-        result = get_commit_timestamp("meshtastic", "firmware", "badcommit")
+        result = _cache_manager.get_commit_timestamp(
+            "meshtastic", "firmware", "badcommit"
+        )
         assert result is None
 
     clear_commit_timestamp_cache()
@@ -1374,7 +1382,9 @@ def test_get_commit_timestamp_error_handling():
         "fetchtastic.downloader.make_github_api_request", return_value=mock_response
     ):
         # First call should make API request
-        result1 = get_commit_timestamp("meshtastic", "firmware", "abcdef123")
+        result1 = _cache_manager.get_commit_timestamp(
+            "meshtastic", "firmware", "abcdef123"
+        )
         assert result1 is not None
         assert isinstance(result1, datetime)
 
