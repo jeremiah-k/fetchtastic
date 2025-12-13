@@ -4,6 +4,8 @@
 
 This document provides a comprehensive, prioritized implementation plan for completing the Fetchtastic downloader refactor with full feature parity and backward compatibility.
 
+Source of truth for current parity status: `docs/refactor-handoff.md`.
+
 ## Current State Analysis
 
 ### Completed Components
@@ -16,12 +18,12 @@ This document provides a comprehensive, prioritized implementation plan for comp
 - ✅ Migration compatibility layer
 - ✅ Basic version management and caching
 
-### P1 Functional Parity Gaps - COMPLETED ✅
+### P1 Functional Parity Gaps - In Progress
 
-- ✅ **P1.1: Repository Downloader Integration** - Fully integrated with selection/exclude semantics
-- ✅ **P1.2: Prerelease Handling** - Complete commit-history logic and tracking implementation
-- ✅ **P1.3: Version Tracking + Cache Parity** - Atomic writes and backward compatibility
-- ✅ **P1.4: Extraction Parity & Safety** - Traversal-safe extraction with validation
+- ⚠️ **P1.1: Repository Downloader Integration** - Interactive repo browsing works; pipeline wiring needs decision (avoid drift).
+- ⚠️ **P1.2: Prerelease Handling** - Core logic exists; remaining timing/caching parity still open (commit refresh timing, dir-list cache).
+- ⚠️ **P1.3: Version Tracking + Cache Parity** - Atomic writes + compat readers exist; commit timestamp cache expiry unification still open.
+- ⚠️ **P1.4: Extraction Parity & Safety** - Safety foundations exist; validate remaining sidecar/need-check alignment as parity hardening.
 
 ### Remaining Gaps (from refactor-remaining-work.md)
 

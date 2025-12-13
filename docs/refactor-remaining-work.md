@@ -2,21 +2,22 @@
 
 Status: living checklist for completing parity and clean-up of the modular downloader. Update this file as tasks close or new gaps are found.
 
+Current handoff/status: `docs/refactor-handoff.md`.
+
 ## Priorities (P1 = block release, P2 = needed for parity, P3 = polish)
 
 ### P1 – Functional Parity Gaps
 
-1. Wire `RepositoryDownloader` into `DownloadOrchestrator` **(Done – integrated)**
-   - Repo execution now runs in the pipeline with include/exclude semantics and metadata for retry/reporting.
-   - Paths remain under `firmware/repo-dls`; shell scripts keep executable handling.
-   - Follow-up: verify CLI summaries surface repo counts/failures and include download URLs.
+1. Repository downloads scope decision **(Open)**
+   - Interactive `repo browse` is the intended repo-dls UX; the download pipeline should not drift by auto-downloading repo contents.
+   - Decide whether to remove repo downloads from `DownloadOrchestrator` (preferred) or add a config-backed selection list.
 2. Prerelease handling for firmware/APK
    - Commit-history and directory scan helpers added (expected version, directory matching, tracking creation/cleanup).
    - Tracking write/cleanup unified via VersionManager; tracking files include metadata and expiry.
-   - TODO: Wire commit-history fetch and cache expiry into downloader flow; ensure commit hashes populate prerelease names.
+   - TODO: Refresh commit history before prerelease selection; use the prerelease dir-list cache for repo fallback.
 3. Version tracking + cache parity
    - Added backward-compatible readers/writers and legacy key support; expiry-aware cache reads.
-   - TODO: Plug release cache expiry into release fetch paths; migrate existing tracking files on disk.
+   - TODO: Unify commit timestamp cache expiry paths (single source of truth); confirm migration/compat for existing on-disk caches.
 4. Extraction parity & safety
    - Implement `_validate_extraction_patterns` / `check_extraction_needed` equivalents.
    - Ensure extraction produces hash/sidecar behavior consistent with legacy (if applicable) and applies excludes.

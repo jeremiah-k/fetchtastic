@@ -5,15 +5,19 @@ Scope: Identify missing/ regressed behaviors vs v0.8.9; enumerate fixes and test
 
 ## Observed Regressions (from user runs)
 
-- APK downloads re-run despite existing files; no “already complete” short-circuit. Large APK download continues until manual Ctrl+C.
-- Prerelease handling effectively disabled: legacy config uses `CHECK_PRERELEASES`/`SELECTED_PRERELEASE_ASSETS`, but modular code only checks `CHECK_APK_PRERELEASES`/`CHECK_FIRMWARE_PRERELEASES`, so prereleases are skipped.
-- Legacy prerelease repo scan/commit-history flow missing: no expected-version computation using commit history or repo directory listings; no cache age/refresh checks beyond simple expiry; no active prerelease selection/reporting.
-- Release caching semantics differ: legacy cache keyed by per_page URL with 60s expiry and rate-limit accounting; new code caches raw JSON once without pagination handling, rate-limit tracking, or per-page query.
-- Release completeness checks absent: legacy validated size/hash/zip integrity and skipped when releases were fully downloaded; new pipeline downloads every asset that passes simple selection.
-- Selection mapping gaps: legacy used `SELECTED_APK_ASSETS`, `SELECTED_FIRMWARE_ASSETS`, `SELECTED_PRERELEASE_ASSETS`; new code looks at `SELECTED_PATTERNS`/`EXCLUDE_PATTERNS` only (config compat missing).
-- Extraction validation/sidecars: legacy validated patterns, ensured need-to-extract, verified hashes and produced .sha256 sidecars; modular code partially does this, but does not gate extraction on completion checks or integrate with selection/exclude during prerelease repo pulls.
-- Repo/reporting: CLI summary does not surface failed downloads with URLs in a user-facing way; migration failure report improved but CLI output still terse. Repository download failures not included in legacy-style summaries.
-- Cache/commit timestamp parity: legacy cached commit histories with strict expiry and statistics; modular code fetches commits but does not integrate results into prerelease selection or expose expiry/age logs.
+### Resolved / Mitigated
+
+- ✅ Completeness checks: APK/firmware now short-circuit when already complete (size + verify + zip integrity), preventing large re-downloads.
+- ✅ Prerelease config compatibility: firmware prerelease repo flow honors `CHECK_PRERELEASES` fallback and uses user patterns for selection.
+- ✅ Prerelease repo flow: expected-version computation + commit-history parsing + legacy-style history summaries are implemented.
+- ✅ CLI failure metadata: failures can surface URL/retryable/HTTP status in the download summary output.
+
+### Still Open (Parity Gaps)
+
+- Commit-history refresh happens late (after pipeline), so prerelease selection during the run may not benefit from commit-cache filtering.
+- Repo directory-scan fallback for prerelease repo flow does not use the directory-list cache (TTL/expiry parity missing).
+- Commit timestamp cache expiry/compat needs unification (avoid multiple code paths with different expiry behavior).
+- Repository downloads in the standard download pipeline are likely drift: interactive `repo browse` is the intended “repo-dls” feature, but the pipeline calls a stub `get_repository_files()` returning `[]`.
 
 ## Parity Tasks (fix + tests)
 
