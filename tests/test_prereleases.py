@@ -34,6 +34,26 @@ downloader = MockDownloader()
 for attr in dir(legacy_compat):
     if not attr.startswith("__"):  # Copy all except dunder methods
         setattr(downloader, attr, getattr(legacy_compat, attr))
+
+# Also copy module-level attributes from legacy_compat
+for attr in [
+    "platformdirs",
+    "_commit_cache_file",
+    "_releases_cache_file",
+    "_prerelease_dir_cache_file",
+    "_prerelease_commit_history_file",
+    "_prerelease_dir_cache_loaded",
+    "_prerelease_commit_history_loaded",
+    "_commit_cache_loaded",
+    "_prerelease_dir_cache",
+    "_commit_timestamp_cache",
+    "_prerelease_commit_history_cache",
+    "_cache_lock",
+    "logger",
+    "menu_repo",
+]:
+    if hasattr(legacy_compat, attr):
+        setattr(downloader, attr, getattr(legacy_compat, attr))
 from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.prerelease_history import PrereleaseHistoryManager
 from fetchtastic.download.version import VersionManager
@@ -187,7 +207,7 @@ def _format_history_entry(entry, idx, latest_active_identifier):
 
 
 # Global cache reference for tests that access it directly
-_commit_timestamp_cache = {}
+_commit_timestamp_cache = downloader._commit_timestamp_cache
 
 # Constant for blocked network message
 _BLOCKED_NETWORK_MSG = "Network access is blocked in tests"
@@ -923,8 +943,8 @@ def test_get_commit_timestamp_cache():
 
         # Check that cache contains the entry
         cache_key = "meshtastic/firmware/abcdef123"
-        assert cache_key in _commit_timestamp_cache
-        cached_timestamp, cached_at = _commit_timestamp_cache[cache_key]
+        assert cache_key in downloader._commit_timestamp_cache
+        cached_timestamp, cached_at = downloader._commit_timestamp_cache[cache_key]
         assert cached_timestamp == result1
         assert isinstance(cached_at, datetime)
 

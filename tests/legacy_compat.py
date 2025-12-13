@@ -167,6 +167,12 @@ def get_commit_timestamp(
         with open(cache_file, "w") as f:
             json.dump(cache, f)
 
+        # Also update the global cache variable for test compatibility
+        # Import the cache from the downloader module
+        from fetchtastic.downloader import _commit_timestamp_cache as global_cache
+
+        global_cache[cache_key] = (timestamp, now)
+
         return timestamp
     except Exception:
         return None
