@@ -182,7 +182,11 @@ class DownloadMigration:
         }
 
         for result in self.orchestrator.failed_downloads:
-            failure_type = file_type_map.get(result.file_type, "Unknown")
+            failure_type = (
+                file_type_map.get(result.file_type, "Unknown")
+                if result.file_type
+                else "Unknown"
+            )
             failed_downloads.append(
                 {
                     "file_name": (
