@@ -125,7 +125,7 @@ def get_api_request_summary() -> Dict[str, Any]:
             - "rate_limit_reset" (datetime.datetime, optional): Reset timestamp for the cached rate limit, present when available.
     """
     with _api_tracking_lock:
-        summary = {
+        summary: Dict[str, Any] = {
             "total_requests": _api_request_count,
             "cache_hits": _api_cache_hits,
             "cache_misses": _api_cache_misses,

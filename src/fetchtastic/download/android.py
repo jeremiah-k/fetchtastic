@@ -408,14 +408,14 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             )
 
         if expected_base:
-            prereleases = [
-                pr
-                for pr in prereleases
-                if version_manager.extract_clean_version(pr.tag_name)
-                and version_manager.extract_clean_version(pr.tag_name)
-                .lstrip("vV")
-                .startswith(expected_base)
-            ]
+            filtered_prereleases = []
+            for pr in prereleases:
+                clean_version = version_manager.extract_clean_version(pr.tag_name)
+                if clean_version and clean_version.lstrip("vV").startswith(
+                    expected_base
+                ):
+                    filtered_prereleases.append(pr)
+            prereleases = filtered_prereleases
 
         # Further restrict using commit history cache if available
         commit_cache = getattr(self, "_recent_commits", None)

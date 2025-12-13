@@ -554,8 +554,12 @@ class VersionManager:
             parts = clean_version.split(".")
             if len(parts) >= 3:
                 try:
-                    major, minor, patch = parts[0], parts[1], int(parts[2])
-                    return f"{major}.{minor}.{patch + 1}"
+                    fallback_major, fallback_minor, fallback_patch = (
+                        parts[0],
+                        parts[1],
+                        int(parts[2]),
+                    )
+                    return f"{fallback_major}.{fallback_minor}.{fallback_patch + 1}"
                 except ValueError:
                     pass
 
