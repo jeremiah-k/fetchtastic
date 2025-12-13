@@ -15,6 +15,7 @@ Scope: Identify missing/ regressed behaviors vs v0.8.9; enumerate fixes and test
 - ✅ Execution Order: restored legacy order (Firmware first, then Android) in download pipeline.
 - ✅ Prerelease iteration: applied `*_VERSIONS_TO_KEEP` limits to download loops to prevent iterating and logging "Skipping..." for ancient releases.
 - ✅ Commit-history refresh: now occurs early in the pipeline (`run_download_pipeline`) to ensure prerelease selection benefits from cached history.
+- ✅ Prerelease base version: fixed regression where `latest_stable` filter caused the downloader to seek old prereleases (e.g., 2.7.16) when a newer release (e.g., 2.7.16 stable) was already available. Now uses the absolute latest release.
 
 ### Still Open (Parity Gaps)
 

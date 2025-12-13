@@ -139,9 +139,7 @@ class DownloadOrchestrator:
                 logger.info("No firmware releases found")
                 return
 
-            latest_stable = next(
-                (r for r in firmware_releases if not r.prerelease), None
-            )
+            latest_release = firmware_releases[0] if firmware_releases else None
 
             # Limit releases to process to match legacy behavior
             keep_count = self.config.get(
@@ -179,10 +177,10 @@ class DownloadOrchestrator:
                         )
 
             # Legacy: firmware prereleases from meshtastic.github.io directories
-            if latest_stable:
+            if latest_release:
                 successes, failures, _active_dir = (
                     self.firmware_downloader.download_repo_prerelease_firmware(
-                        latest_stable.tag_name, force_refresh=False
+                        latest_release.tag_name, force_refresh=False
                     )
                 )
                 for result in successes:
