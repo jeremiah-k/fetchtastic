@@ -17,125 +17,23 @@ import pytest
 import requests
 
 from fetchtastic import downloader
-from fetchtastic.download.cache import CacheManager
-from fetchtastic.download.prerelease_history import PrereleaseHistoryManager
-from fetchtastic.download.version import VersionManager
-from fetchtastic.utils import matches_extract_patterns
-
-# Create global instances for backward compatibility with legacy function-based tests
-_version_manager = VersionManager()
-_prerelease_manager = PrereleaseHistoryManager()
-_cache_manager = CacheManager()
-
-
-# Legacy function wrappers for backward compatibility during migration
-def _normalize_version(version):
-    return _version_manager.normalize_version(version)
-
-
-def _get_release_tuple(version):
-    return _version_manager.get_release_tuple(version)
-
-
-def _sort_key(entry):
-    """Return a sort key that orders prerelease entries by their most recent activity."""
-    added_at = entry.get("added_at") or ""
-    removed_at = entry.get("removed_at") or ""
-    # Use the most recent timestamp for sorting
-    most_recent = max(added_at, removed_at)
-    return (most_recent, entry.get("identifier", ""))
-
-
-def get_prerelease_tracking_info(
-    github_token=None, force_refresh=False, allow_env_token=True
-):
-    """Legacy wrapper for getting prerelease tracking info."""
-    # Check if we're in a test that's mocking _ensure_cache_dir
-    import fetchtastic.download.cache as cache_module
-
-    if hasattr(cache_module, "_ensure_cache_dir"):
-        tracking_file_path = (
-            cache_module._ensure_cache_dir() + "/prerelease_tracking.json"
-        )
-    else:
-        tracking_file_path = _cache_manager.cache_dir + "/prerelease_tracking.json"
-
-    import json
-    import os
-
-    if os.path.exists(tracking_file_path):
-        with open(tracking_file_path, "r") as f:
-            return json.load(f)
-    return {}
-
-
-def update_prerelease_tracking(latest_release_tag, current_prerelease):
-    """Legacy wrapper for updating prerelease tracking."""
-    return _prerelease_manager.update_prerelease_tracking(
-        latest_release_tag, current_prerelease, cache_manager=_cache_manager
-    )
-
-
-def get_commit_timestamp(commit_hash, github_token=None):
-    return _cache_manager.get_commit_timestamp(
-        "meshtastic", "Meshtastic-device", commit_hash, github_token=github_token
-    )
-
-
-def clear_commit_timestamp_cache():
-    return _cache_manager.clear_cache("commit_timestamps.json")
-
-
-def _get_commit_cache_file():
-    from pathlib import Path
-
-    return Path(_cache_manager.cache_dir) / "commit_timestamps.json"
-
-
-def _load_commit_cache():
-    cache_file = _get_commit_cache_file()
-    if cache_file.exists():
-        import json
-
-        with open(cache_file, "r") as f:
-            return json.load(f)
-    return {}
-
-
-def _save_commit_cache(cache_data):
-    cache_file = _get_commit_cache_file()
-    cache_file.parent.mkdir(parents=True, exist_ok=True)
-    import json
-
-    with open(cache_file, "w") as f:
-        json.dump(cache_data, f, indent=2)
-
-
-def _get_commit_hash_from_dir(dir_name):
-    """Extract commit hash from directory name."""
-    import re
-
-    match = re.search(r"([a-f0-9]{6,})", dir_name)
-    return match.group(1) if match else dir_name
-
-
-def _extract_identifier_from_entry(entry):
-    """Extract identifier from a prerelease entry."""
-    return entry.get("identifier", "")
-
-
-def _is_entry_deleted(entry):
-    """Check if a prerelease entry is marked as deleted."""
-    return entry.get("deleted", False)
-
-
-def _format_history_entry(entry):
-    """Format a prerelease entry for history display."""
-    return f"{entry.get('identifier', 'unknown')}: {entry.get('added_at', 'unknown')}"
-
-
-# Global cache reference for tests that access it directly
-_commit_timestamp_cache = {}
+from fetchtastic.downloader import (
+    _commit_timestamp_cache,
+    _extract_identifier_from_entry,
+    _format_history_entry,
+    _get_commit_cache_file,
+    _get_commit_hash_from_dir,
+    _is_entry_deleted,
+    _load_commit_cache,
+    _normalize_version,
+    _save_commit_cache,
+    _sort_key,
+    clear_commit_timestamp_cache,
+    get_commit_timestamp,
+    get_prerelease_tracking_info,
+    matches_extract_patterns,
+    update_prerelease_tracking,
+)
 
 # Constant for blocked network message
 _BLOCKED_NETWORK_MSG = "Network access is blocked in tests"

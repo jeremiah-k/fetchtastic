@@ -1557,12 +1557,12 @@ def test_setup_firmware_selected_prerelease_assets_migration_empty_input(mock_in
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_get_prerelease_patterns_selected_assets_key():
-    """Test _get_prerelease_patterns with SELECTED_PRERELEASE_ASSETS key."""
-    from fetchtastic.downloader import _get_prerelease_patterns
+def testget_prerelease_patterns_selected_assets_key():
+    """Test get_prerelease_patterns with SELECTED_PRERELEASE_ASSETS key."""
+    from fetchtastic.download import get_prerelease_patterns
 
     config = {"SELECTED_PRERELEASE_ASSETS": ["rak4631-", "tbeam"]}
-    result = _get_prerelease_patterns(config)
+    result = get_prerelease_patterns(config)
 
     assert result == ["rak4631-", "tbeam"]
 
@@ -1682,38 +1682,38 @@ def test_setup_github_set_new_token(capsys, monkeypatch):
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_get_prerelease_patterns_selected_assets_none():
-    """Test _get_prerelease_patterns with SELECTED_PRERELEASE_ASSETS set to None."""
-    from fetchtastic.downloader import _get_prerelease_patterns
+def testget_prerelease_patterns_selected_assets_none():
+    """Test get_prerelease_patterns with SELECTED_PRERELEASE_ASSETS set to None."""
+    from fetchtastic.download import get_prerelease_patterns
 
     config = {"SELECTED_PRERELEASE_ASSETS": None}
-    result = _get_prerelease_patterns(config)
+    result = get_prerelease_patterns(config)
 
     assert result == []  # Should return empty list, not None
 
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_get_prerelease_patterns_selected_assets_empty():
-    """Test _get_prerelease_patterns with empty SELECTED_PRERELEASE_ASSETS."""
-    from fetchtastic.downloader import _get_prerelease_patterns
+def testget_prerelease_patterns_selected_assets_empty():
+    """Test get_prerelease_patterns with empty SELECTED_PRERELEASE_ASSETS."""
+    from fetchtastic.download import get_prerelease_patterns
 
     config = {"SELECTED_PRERELEASE_ASSETS": []}
-    result = _get_prerelease_patterns(config)
+    result = get_prerelease_patterns(config)
 
     assert result == []
 
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_get_prerelease_patterns_fallback_to_extract_patterns():
-    """Test _get_prerelease_patterns fallback to EXTRACT_PATTERNS."""
-    from fetchtastic.downloader import _get_prerelease_patterns
+def testget_prerelease_patterns_fallback_to_extract_patterns():
+    """Test get_prerelease_patterns fallback to EXTRACT_PATTERNS."""
+    from fetchtastic.download import get_prerelease_patterns
 
     config = {"EXTRACT_PATTERNS": ["station-", "heltec-"]}
 
     with patch("fetchtastic.downloader.logger") as mock_logger:
-        result = _get_prerelease_patterns(config)
+        result = get_prerelease_patterns(config)
 
         assert result == ["station-", "heltec-"]
         mock_logger.warning.assert_called_once()
@@ -1722,21 +1722,21 @@ def test_get_prerelease_patterns_fallback_to_extract_patterns():
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_get_prerelease_patterns_no_keys():
-    """Test _get_prerelease_patterns with no configuration keys."""
-    from fetchtastic.downloader import _get_prerelease_patterns
+def testget_prerelease_patterns_no_keys():
+    """Test get_prerelease_patterns with no configuration keys."""
+    from fetchtastic.download import get_prerelease_patterns
 
     config = {}
-    result = _get_prerelease_patterns(config)
+    result = get_prerelease_patterns(config)
 
     assert result == []
 
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_get_prerelease_patterns_precedence():
+def testget_prerelease_patterns_precedence():
     """Test that SELECTED_PRERELEASE_ASSETS takes precedence over EXTRACT_PATTERNS."""
-    from fetchtastic.downloader import _get_prerelease_patterns
+    from fetchtastic.download import get_prerelease_patterns
 
     config = {
         "SELECTED_PRERELEASE_ASSETS": ["new-pattern"],
@@ -1744,7 +1744,7 @@ def test_get_prerelease_patterns_precedence():
     }
 
     with patch("fetchtastic.downloader.logger") as mock_logger:
-        result = _get_prerelease_patterns(config)
+        result = get_prerelease_patterns(config)
 
         assert result == ["new-pattern"]
         mock_logger.warning.assert_not_called()  # No deprecation warning when using new key

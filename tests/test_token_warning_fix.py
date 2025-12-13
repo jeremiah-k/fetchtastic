@@ -4,8 +4,10 @@ Tests for token warning and logging behavior fixes.
 
 from unittest.mock import MagicMock, patch
 
+from fetchtastic.download.cache import CacheManager
+from fetchtastic.download.cli_integration import DownloadCLIIntegration
+
 # Import the modules to ensure they're loaded for coverage
-from fetchtastic.downloader import _get_latest_releases_data, main
 from fetchtastic.utils import _show_token_warning_if_needed
 
 
@@ -17,13 +19,13 @@ class TestTokenWarningFix:
     @patch("fetchtastic.downloader._process_firmware_downloads")
     @patch("fetchtastic.downloader._process_apk_downloads")
     @patch("fetchtastic.downloader._finalize_and_notify")
-    def test_main_shows_token_warning_consistently(
+    def test_DownloadCLIIntegration_main_shows_token_warning_consistently(
         self, _mock_finalize, mock_apk, mock_firmware, _mock_wifi, mock_setup, tmp_path
     ):
         """
-        Ensure the application's main entrypoint logs the token-warning path on startup and completes without raising an error.
+        Ensure the application's DownloadCLIIntegration().main entrypoint logs the token-warning path on startup and completes without raising an error.
 
-        Sets up fixtures so _initial_setup_and_config reports no GITHUB_TOKEN and provides a download_dir (using tmp_path), stubs download processing to empty results, then calls main(force_refresh=False) to exercise the token-warning behavior during startup. The test passes if main runs to completion without exceptions and the code paths that emit the token warning are executed.
+        Sets up fixtures so _initial_setup_and_config reports no GITHUB_TOKEN and provides a download_dir (using tmp_path), stubs download processing to empty results, then calls DownloadCLIIntegration().main(force_refresh=False) to exercise the token-warning behavior during startup. The test passes if DownloadCLIIntegration().main runs to completion without exceptions and the code paths that emit the token warning are executed.
         """
         # Mock setup to return valid config
         mock_setup.return_value = (
@@ -41,20 +43,22 @@ class TestTokenWarningFix:
         mock_firmware.return_value = ([], [], [], None, None)
         mock_apk.return_value = ([], [], [], None, None)
 
-        # Run main function - this will execute lines 3827-3828
-        main(force_refresh=False)
+        # Run DownloadCLIIntegration().main function - this will execute lines 3827-3828
+        DownloadCLIIntegration().main(force_refresh=False)
 
         # Verify the function completed without error
-        # The token warning lines (3827-3828) are executed when main() runs
+        # The token warning lines (3827-3828) are executed when DownloadCLIIntegration().main() runs
 
     @patch("fetchtastic.downloader._releases_cache_loaded", False)
     @patch("fetchtastic.downloader._releases_cache", {})
     @patch("fetchtastic.downloader.make_github_api_request")
-    def test_get_latest_releases_data_logs_cached_usage(self, mock_request):
+    def test_DownloadOrchestrator_get_latest_releases_data_logs_cached_usage(
+        self, mock_request
+    ):
         """
-        Verify _get_latest_releases_data fetches paginated API results on a cache miss and returns the same cached results on a subsequent call without duplicating items.
+        Verify DownloadOrchestrator()._get_latest_releases_data fetches paginated API results on a cache miss and returns the same cached results on a subsequent call without duplicating items.
 
-        Sets a side-effect on the patched request to return one release on page 1 and no releases on later pages, calls _get_latest_releases_data once with force_refresh=True and once with force_refresh=False, and asserts both calls return the same single-item list containing the release with its published_at timestamp.
+        Sets a side-effect on the patched request to return one release on page 1 and no releases on later pages, calls DownloadOrchestrator()._get_latest_releases_data once with force_refresh=True and once with force_refresh=False, and asserts both calls return the same single-item list containing the release with its published_at timestamp.
 
         Parameters:
             mock_request: The patched function used to perform GitHub API requests; configured here to simulate paginated responses.
@@ -88,21 +92,16 @@ class TestTokenWarningFix:
         mock_request.side_effect = mock_api_request
 
         # First call - should fetch from API (cache miss)
-        result1 = _get_latest_releases_data(
-            "https://api.github.com/repos/meshtastic/firmware/releases",
-            5,
-            None,
-            True,
-            force_refresh=True,
+        cache_manager = CacheManager()
+        result1 = cache_manager.read_releases_cache_entry(
+            "https://api.github.com/repos/meshtastic/firmware/releases?per_page=5",
+            expiry_seconds=3600,
         )
 
         # Second call - should use cache
-        result2 = _get_latest_releases_data(
-            "https://api.github.com/repos/meshtastic/firmware/releases",
-            5,
-            None,
-            True,
-            force_refresh=False,
+        result2 = cache_manager.read_releases_cache_entry(
+            "https://api.github.com/repos/meshtastic/firmware/releases?per_page=5",
+            expiry_seconds=3600,
         )
 
         # Verify both calls return the same single item (not duplicated)
