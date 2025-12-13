@@ -514,31 +514,6 @@ class CacheManager:
 
         return cache_data
 
-    def read_json_with_backward_compatibility(
-        self, file_path: str, legacy_keys: Optional[Dict[str, str]] = None
-    ) -> Optional[Dict]:
-        """
-        Read JSON file with backward compatibility for legacy formats.
-
-        Args:
-            file_path: Path to the JSON file to read
-            legacy_keys: Optional mapping of legacy keys to new keys
-
-        Returns:
-            Optional[Dict]: Parsed JSON data with legacy keys mapped, or None if file doesn't exist or can't be read
-        """
-        data = self.read_json(file_path)
-        if not data:
-            return None
-
-        # Apply backward compatibility mapping if provided
-        if legacy_keys:
-            for legacy_key, new_key in legacy_keys.items():
-                if legacy_key in data and new_key not in data:
-                    data[new_key] = data[legacy_key]
-
-        return data
-
     def migrate_legacy_cache_file(
         self,
         legacy_file_path: str,
@@ -620,6 +595,9 @@ class CacheManager:
         """
         Read the commit timestamp cache with expiry.
 
+        This is the unified expiry-aware implementation that should be used by all
+        commit timestamp cache readers for consistency.
+
         Returns:
             Dict: Cached commit timestamps that are still valid.
         """
@@ -630,24 +608,43 @@ class CacheManager:
 
         now = datetime.now(timezone.utc)
         keep: Dict[str, Any] = {}
+
         for cache_key, cache_value in cache_data.items():
-            if (
-                not isinstance(cache_value, (list, tuple))
-                or len(cache_value) != 2
-                or not cache_value[0]
-                or not cache_value[1]
-            ):
-                continue
-            try:
-                _timestamp_str, cached_at_str = cache_value
-                cached_at = datetime.fromisoformat(
-                    str(cached_at_str).replace("Z", "+00:00")
-                )
-                age = now - cached_at
-                if age.total_seconds() < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 60 * 60:
-                    keep[cache_key] = cache_value
-            except ValueError:
-                continue
+            # Support both legacy format and new format for backward compatibility
+            if isinstance(cache_value, (list, tuple)) and len(cache_value) == 2:
+                # New format: [timestamp_iso, cached_at_iso]
+                try:
+                    timestamp_str, cached_at_str = cache_value
+                    cached_at = datetime.fromisoformat(
+                        str(cached_at_str).replace("Z", "+00:00")
+                    )
+                    age = now - cached_at
+                    if (
+                        age.total_seconds()
+                        < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 60 * 60
+                    ):
+                        keep[cache_key] = cache_value
+                except ValueError:
+                    continue
+            elif isinstance(cache_value, dict):
+                # Legacy format: {"timestamp": "...", "cached_at": "..."}
+                try:
+                    timestamp_str = cache_value.get("timestamp")
+                    cached_at_str = cache_value.get("cached_at")
+                    if timestamp_str and cached_at_str:
+                        cached_at = datetime.fromisoformat(
+                            str(cached_at_str).replace("Z", "+00:00")
+                        )
+                        age = now - cached_at
+                        if (
+                            age.total_seconds()
+                            < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 60 * 60
+                        ):
+                            # Convert to new format for consistency
+                            keep[cache_key] = [timestamp_str, cached_at_str]
+                except ValueError:
+                    continue
+
         return keep
 
     def get_commit_timestamp(
@@ -821,6 +818,12 @@ def _get_cache_lock():
 
 
 def _load_commit_cache() -> None:
+    """
+    Load commit timestamp cache with expiry checking for parity with CacheManager.
+
+    This function now uses the unified expiry-aware implementation to ensure
+    consistency between module-level and CacheManager-based cache access.
+    """
     global _commit_cache_loaded, _commit_timestamp_cache
     with _get_cache_lock():
         if _commit_cache_loaded:
@@ -832,9 +835,56 @@ def _load_commit_cache() -> None:
             if not os.path.exists(cache_file):
                 _commit_timestamp_cache = {}
                 return
+
+            # Use the unified expiry-aware implementation
             with open(cache_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            _commit_timestamp_cache = data if isinstance(data, dict) else {}
+                cache_data = json.load(f)
+
+            if not isinstance(cache_data, dict):
+                _commit_timestamp_cache = {}
+                return
+
+            now = datetime.now(timezone.utc)
+            valid_cache: Dict[str, Any] = {}
+
+            for cache_key, cache_value in cache_data.items():
+                # Support both legacy format and new format for backward compatibility
+                if isinstance(cache_value, (list, tuple)) and len(cache_value) == 2:
+                    # New format: [timestamp_iso, cached_at_iso]
+                    try:
+                        timestamp_str, cached_at_str = cache_value
+                        cached_at = datetime.fromisoformat(
+                            str(cached_at_str).replace("Z", "+00:00")
+                        )
+                        age = now - cached_at
+                        if (
+                            age.total_seconds()
+                            < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 60 * 60
+                        ):
+                            valid_cache[cache_key] = cache_value
+                    except ValueError:
+                        continue
+                elif isinstance(cache_value, dict):
+                    # Legacy format: {"timestamp": "...", "cached_at": "..."}
+                    try:
+                        timestamp_str = cache_value.get("timestamp")
+                        cached_at_str = cache_value.get("cached_at")
+                        if timestamp_str and cached_at_str:
+                            cached_at = datetime.fromisoformat(
+                                str(cached_at_str).replace("Z", "+00:00")
+                            )
+                            age = now - cached_at
+                            if (
+                                age.total_seconds()
+                                < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 60 * 60
+                            ):
+                                # Convert to new format for consistency
+                                valid_cache[cache_key] = [timestamp_str, cached_at_str]
+                    except ValueError:
+                        continue
+
+            _commit_timestamp_cache = valid_cache
+
         except (IOError, json.JSONDecodeError, UnicodeDecodeError):
             _commit_timestamp_cache = {}
 
