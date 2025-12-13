@@ -10,8 +10,11 @@ from fetchtastic import cli
 def test_cli_download_command(mocker):
     """Test the 'download' command dispatch."""
     mocker.patch("sys.argv", ["fetchtastic", "download"])
-    mock_downloader_main = mocker.patch("fetchtastic.downloader.main")
+    mock_integration_cls = mocker.patch("fetchtastic.cli.DownloadCLIIntegration")
+    mock_integration = mock_integration_cls.return_value
+    mock_integration.main.return_value = ([], [], [], [], [], "", "")
     mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
+    mocker.patch("fetchtastic.setup_config.load_config", return_value={"LOG_LEVEL": ""})
 
     # 1. Test when config exists
     mocker.patch(
@@ -21,21 +24,23 @@ def test_cli_download_command(mocker):
     mocker.patch("fetchtastic.setup_config.prompt_for_migration")
     mocker.patch("fetchtastic.setup_config.migrate_config")
     cli.main()
-    mock_downloader_main.assert_called_once()
+    mock_integration.main.assert_called_once()
     mock_setup_run.assert_not_called()
 
     # 2. Test when config does not exist
-    mock_downloader_main.reset_mock()
+    mock_integration.main.reset_mock()
     mocker.patch("fetchtastic.setup_config.config_exists", return_value=(False, None))
     cli.main()
     mock_setup_run.assert_called_once()
-    mock_downloader_main.assert_not_called()
+    mock_integration.main.assert_not_called()
 
 
 def test_cli_download_with_migration(mocker):
     """Test the 'download' command with an old config file that needs migration."""
     mocker.patch("sys.argv", ["fetchtastic", "download"])
-    mock_downloader_main = mocker.patch("fetchtastic.downloader.main")
+    mock_integration_cls = mocker.patch("fetchtastic.cli.DownloadCLIIntegration")
+    mock_integration = mock_integration_cls.return_value
+    mock_integration.main.return_value = ([], [], [], [], [], "", "")
     mocker.patch(
         "fetchtastic.setup_config.config_exists",
         return_value=(True, "/path/to/old/config"),
@@ -46,7 +51,7 @@ def test_cli_download_with_migration(mocker):
     mocker.patch("fetchtastic.setup_config.load_config", return_value={"key": "val"})
 
     cli.main()
-    mock_downloader_main.assert_called_once()
+    mock_integration.main.assert_called_once()
 
 
 def test_cli_setup_command_windows_integration_update(mocker):
@@ -137,7 +142,9 @@ def test_cli_repo_command_success(mocker, command):
     )
 
     if command == "browse":
-        mock_action = mocker.patch("fetchtastic.repo_downloader.main")
+        mock_action = mocker.patch(
+            "fetchtastic.menu_repo.run_repository_downloader_menu"
+        )
     else:  # clean
         mock_action = mocker.patch("fetchtastic.cli.run_repo_clean")
 
@@ -158,7 +165,9 @@ def test_cli_repo_browse_command_no_config(mocker):
     mock_load_config = mocker.patch(
         "fetchtastic.setup_config.load_config", return_value={"key": "val"}
     )
-    mock_repo_main = mocker.patch("fetchtastic.repo_downloader.main")
+    mock_repo_main = mocker.patch(
+        "fetchtastic.menu_repo.run_repository_downloader_menu"
+    )
     mocker.patch(
         "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.0.0", False)
     )
@@ -197,7 +206,7 @@ def test_cli_repo_command_with_update_available(mocker, command):
     mocker.patch("fetchtastic.setup_config.load_config", return_value={"key": "val"})
 
     if command == "browse":
-        mocker.patch("fetchtastic.repo_downloader.main")
+        mocker.patch("fetchtastic.menu_repo.run_repository_downloader_menu")
     else:  # clean
         mocker.patch("fetchtastic.cli.run_repo_clean")
 
@@ -1100,7 +1109,9 @@ def test_cli_download_with_log_level_config(mocker):
     Sets up a fake CLI invocation and a loaded configuration containing a "LOG_LEVEL" key. Asserts that `set_log_level` is called with the configured value, `downloader.main` is invoked, and `setup_config.run_setup` is not called when a valid config exists.
     """
     mocker.patch("sys.argv", ["fetchtastic", "download"])
-    mock_downloader_main = mocker.patch("fetchtastic.downloader.main")
+    mock_integration_cls = mocker.patch("fetchtastic.cli.DownloadCLIIntegration")
+    mock_integration = mock_integration_cls.return_value
+    mock_integration.main.return_value = ([], [], [], [], [], "", "")
     mock_set_log_level = mocker.patch("fetchtastic.cli.set_log_level")
     mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
 
@@ -1119,14 +1130,16 @@ def test_cli_download_with_log_level_config(mocker):
 
     # Verify that set_log_level was called with the correct level
     mock_set_log_level.assert_called_once_with("DEBUG")
-    mock_downloader_main.assert_called_once()
+    mock_integration.main.assert_called_once()
     mock_setup_run.assert_not_called()
 
 
 def test_cli_download_without_log_level_config(mocker):
     """Test the 'download' command without LOG_LEVEL configuration."""
     mocker.patch("sys.argv", ["fetchtastic", "download"])
-    mock_downloader_main = mocker.patch("fetchtastic.downloader.main")
+    mock_integration_cls = mocker.patch("fetchtastic.cli.DownloadCLIIntegration")
+    mock_integration = mock_integration_cls.return_value
+    mock_integration.main.return_value = ([], [], [], [], [], "", "")
     mock_set_log_level = mocker.patch("fetchtastic.cli.set_log_level")
     mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
 
@@ -1145,7 +1158,7 @@ def test_cli_download_without_log_level_config(mocker):
 
     # Verify that set_log_level was NOT called
     mock_set_log_level.assert_not_called()
-    mock_downloader_main.assert_called_once()
+    mock_integration.main.assert_called_once()
     mock_setup_run.assert_not_called()
 
 
@@ -1157,7 +1170,9 @@ def test_cli_download_with_empty_config(mocker):
     - and does not run setup (`run_setup`).
     """
     mocker.patch("sys.argv", ["fetchtastic", "download"])
-    mock_downloader_main = mocker.patch("fetchtastic.downloader.main")
+    mock_integration_cls = mocker.patch("fetchtastic.cli.DownloadCLIIntegration")
+    mock_integration = mock_integration_cls.return_value
+    mock_integration.main.return_value = ([], [], [], [], [], "", "")
     mock_set_log_level = mocker.patch("fetchtastic.cli.set_log_level")
     mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
 
@@ -1175,14 +1190,16 @@ def test_cli_download_with_empty_config(mocker):
 
     # Verify that set_log_level was NOT called
     mock_set_log_level.assert_not_called()
-    mock_downloader_main.assert_called_once()
+    mock_integration.main.assert_called_once()
     mock_setup_run.assert_not_called()
 
 
 def test_cli_download_with_various_log_levels(mocker):
     """Test the 'download' command with various LOG_LEVEL values."""
     mocker.patch("sys.argv", ["fetchtastic", "download"])
-    mock_downloader_main = mocker.patch("fetchtastic.downloader.main")
+    mock_integration_cls = mocker.patch("fetchtastic.cli.DownloadCLIIntegration")
+    mock_integration = mock_integration_cls.return_value
+    mock_integration.main.return_value = ([], [], [], [], [], "", "")
     mock_set_log_level = mocker.patch("fetchtastic.cli.set_log_level")
     mocker.patch("fetchtastic.setup_config.run_setup")
 
@@ -1197,7 +1214,7 @@ def test_cli_download_with_various_log_levels(mocker):
 
     for log_level in log_levels:
         mock_set_log_level.reset_mock()
-        mock_downloader_main.reset_mock()
+        mock_integration.main.reset_mock()
 
         mock_config = {"LOG_LEVEL": log_level}
         mocker.patch("fetchtastic.setup_config.load_config", return_value=mock_config)
@@ -1206,14 +1223,16 @@ def test_cli_download_with_various_log_levels(mocker):
 
         # Verify that set_log_level was called with the correct level
         mock_set_log_level.assert_called_once_with(log_level)
-        mock_downloader_main.assert_called_once()
+        mock_integration.main.assert_called_once()
 
 
 @pytest.mark.parametrize("log_level", ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
 def test_cli_download_parametrized_log_levels(mocker, log_level):
     """Test the 'download' command with parametrized LOG_LEVEL values."""
     mocker.patch("sys.argv", ["fetchtastic", "download"])
-    mock_downloader_main = mocker.patch("fetchtastic.downloader.main")
+    mock_integration_cls = mocker.patch("fetchtastic.cli.DownloadCLIIntegration")
+    mock_integration = mock_integration_cls.return_value
+    mock_integration.main.return_value = ([], [], [], [], [], "", "")
     mock_set_log_level = mocker.patch("fetchtastic.cli.set_log_level")
     mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
 
@@ -1230,7 +1249,7 @@ def test_cli_download_parametrized_log_levels(mocker, log_level):
 
     # Verify that set_log_level was called with the correct level
     mock_set_log_level.assert_called_once_with(log_level)
-    mock_downloader_main.assert_called_once()
+    mock_integration.main.assert_called_once()
     mock_setup_run.assert_not_called()
 
 
@@ -1242,7 +1261,9 @@ def test_cli_download_with_invalid_log_levels(mocker, invalid_log_level):
     and that downloader.main is invoked while setup_config.run_setup is not.
     """
     mocker.patch("sys.argv", ["fetchtastic", "download"])
-    mock_downloader_main = mocker.patch("fetchtastic.downloader.main")
+    mock_integration_cls = mocker.patch("fetchtastic.cli.DownloadCLIIntegration")
+    mock_integration = mock_integration_cls.return_value
+    mock_integration.main.return_value = ([], [], [], [], [], "", "")
     mock_set_log_level = mocker.patch("fetchtastic.cli.set_log_level")
     mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
 
@@ -1260,7 +1281,7 @@ def test_cli_download_with_invalid_log_levels(mocker, invalid_log_level):
 
     # Verify that set_log_level was called with the invalid level (let set_log_level handle validation)
     mock_set_log_level.assert_called_once_with(invalid_log_level)
-    mock_downloader_main.assert_called_once()
+    mock_integration.main.assert_called_once()
     mock_setup_run.assert_not_called()
 
 
@@ -1274,7 +1295,9 @@ def test_cli_download_with_empty_log_level(mocker):
     - setup_config.run_setup is not invoked.
     """
     mocker.patch("sys.argv", ["fetchtastic", "download"])
-    mock_downloader_main = mocker.patch("fetchtastic.downloader.main")
+    mock_integration_cls = mocker.patch("fetchtastic.cli.DownloadCLIIntegration")
+    mock_integration = mock_integration_cls.return_value
+    mock_integration.main.return_value = ([], [], [], [], [], "", "")
     mock_set_log_level = mocker.patch("fetchtastic.cli.set_log_level")
     mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
 
@@ -1291,14 +1314,16 @@ def test_cli_download_with_empty_log_level(mocker):
 
     # Empty string should NOT call set_log_level (falsy value)
     mock_set_log_level.assert_not_called()
-    mock_downloader_main.assert_called_once()
+    mock_integration.main.assert_called_once()
     mock_setup_run.assert_not_called()
 
 
 def test_cli_download_with_case_insensitive_log_levels(mocker):
     """Test the 'download' command with case variations of LOG_LEVEL values."""
     mocker.patch("sys.argv", ["fetchtastic", "download"])
-    mock_downloader_main = mocker.patch("fetchtastic.downloader.main")
+    mock_integration_cls = mocker.patch("fetchtastic.cli.DownloadCLIIntegration")
+    mock_integration = mock_integration_cls.return_value
+    mock_integration.main.return_value = ([], [], [], [], [], "", "")
     mock_set_log_level = mocker.patch("fetchtastic.cli.set_log_level")
     mocker.patch("fetchtastic.setup_config.run_setup")
 
@@ -1313,7 +1338,7 @@ def test_cli_download_with_case_insensitive_log_levels(mocker):
 
     for log_level in case_variations:
         mock_set_log_level.reset_mock()
-        mock_downloader_main.reset_mock()
+        mock_integration.main.reset_mock()
 
         mock_config = {"LOG_LEVEL": log_level}
         mocker.patch("fetchtastic.setup_config.load_config", return_value=mock_config)
@@ -1322,4 +1347,4 @@ def test_cli_download_with_case_insensitive_log_levels(mocker):
 
         # Verify that set_log_level was called with the case variation
         mock_set_log_level.assert_called_once_with(log_level)
-        mock_downloader_main.assert_called_once()
+        mock_integration.main.assert_called_once()

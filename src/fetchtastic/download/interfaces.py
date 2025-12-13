@@ -107,6 +107,9 @@ class DownloadResult:
     is_retryable: bool = False
     """Whether this failure is retryable"""
 
+    was_skipped: bool = False
+    """Whether this result represents a skip (already complete) rather than a new download."""
+
 
 class DownloadTask(ABC):
     """

@@ -5,6 +5,7 @@ This module provides version parsing, comparison, and tracking utilities
 that are used across all downloaders for consistent version handling.
 """
 
+import json
 import os
 import re
 from datetime import datetime, timedelta, timezone
@@ -22,6 +23,10 @@ from fetchtastic.constants import (
     GITHUB_API_BASE,
     GITHUB_API_TIMEOUT,
     GITHUB_MAX_PER_PAGE,
+    LATEST_ANDROID_PRERELEASE_JSON_FILE,
+    LATEST_ANDROID_RELEASE_JSON_FILE,
+    LATEST_FIRMWARE_PRERELEASE_JSON_FILE,
+    LATEST_FIRMWARE_RELEASE_JSON_FILE,
     PRERELEASE_ADD_COMMIT_PATTERN,
     PRERELEASE_COMMIT_HISTORY_FILE,
     PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS,
@@ -32,11 +37,278 @@ from fetchtastic.constants import (
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import make_github_api_request
 
+from .files import _atomic_write_json
+
 # Import for type annotations only (available in older packaging versions)
 try:
     from packaging.version import LegacyVersion  # type: ignore
 except ImportError:
     LegacyVersion = None  # type: ignore
+
+
+NON_ASCII_RX = re.compile(r"[^\x00-\x7F]+")
+PRERELEASE_VERSION_RX = re.compile(
+    r"^(\d+(?:\.\d+)*)[.-](rc|dev|alpha|beta|b)\.?(\d*)$", re.IGNORECASE
+)
+HASH_SUFFIX_VERSION_RX = re.compile(r"^(\d+(?:\.\d+)*)\.([A-Za-z0-9][A-Za-z0-9.-]*)$")
+VERSION_BASE_RX = re.compile(r"^(\d+(?:\.\d+)*)")
+
+
+def _normalize_version(version: Optional[str]) -> Optional[Union[Version, Any]]:
+    if version is None:
+        return None
+
+    trimmed = version.strip()
+    if not trimmed:
+        return None
+
+    if trimmed.lower().startswith("v"):
+        trimmed = trimmed[1:]
+
+    try:
+        return parse_version(trimmed)
+    except InvalidVersion:
+        m_pr = PRERELEASE_VERSION_RX.match(trimmed)
+        if m_pr:
+            pr_kind_lower = m_pr.group(2).lower()
+            kind = {"alpha": "a", "beta": "b"}.get(pr_kind_lower, pr_kind_lower)
+            num = m_pr.group(3) or "0"
+            try:
+                return parse_version(f"{m_pr.group(1)}{kind}{num}")
+            except InvalidVersion:
+                return None
+
+        m_hash = HASH_SUFFIX_VERSION_RX.match(trimmed)
+        if m_hash:
+            try:
+                return parse_version(f"{m_hash.group(1)}+{m_hash.group(2)}")
+            except InvalidVersion:
+                return None
+
+    return None
+
+
+def _get_release_tuple(version: Optional[str]) -> Optional[tuple[int, ...]]:
+    if version is None:
+        return None
+
+    version_stripped = version.strip()
+    if not version_stripped:
+        return None
+
+    base = (
+        version_stripped[1:]
+        if version_stripped.lower().startswith("v")
+        else version_stripped
+    )
+    match = VERSION_BASE_RX.match(base)
+    base_tuple = (
+        tuple(int(part) for part in match.group(1).split(".")) if match else None
+    )
+
+    normalized = _normalize_version(version_stripped)
+    normalized_tuple = (
+        normalized.release
+        if isinstance(normalized, Version) and normalized.release
+        else None
+    )
+
+    if base_tuple and normalized_tuple:
+        return (
+            base_tuple if len(base_tuple) > len(normalized_tuple) else normalized_tuple
+        )
+    return base_tuple or normalized_tuple
+
+
+def _ensure_v_prefix_if_missing(version: Optional[str]) -> Optional[str]:
+    if version is None:
+        return None
+    version = version.strip()
+    if version and not version.lower().startswith("v"):
+        return f"v{version}"
+    return version
+
+
+def _extract_clean_version(version_with_hash: Optional[str]) -> Optional[str]:
+    if not version_with_hash:
+        return None
+
+    version_part = version_with_hash.lstrip("vV")
+    parts = version_part.split(".")
+    if len(parts) >= 3:
+        clean_version = ".".join(parts[:3])
+        return f"v{clean_version}"
+    return _ensure_v_prefix_if_missing(version_with_hash)
+
+
+def _normalize_commit_identifier(commit_id: str, release_version: Optional[str]) -> str:
+    commit_id = (commit_id or "").lower()
+
+    if re.search(r"^\\d+\\.\\d+\\.\\d+\\.[a-f0-9]{6,40}$", commit_id):
+        return commit_id
+
+    if re.match(r"^[a-f0-9]{6,40}$", commit_id):
+        if release_version:
+            clean_version = _extract_clean_version(release_version)
+            if clean_version:
+                version_without_v = clean_version.lstrip("v")
+                return f"{version_without_v}.{commit_id}"
+        return commit_id
+
+    return commit_id
+
+
+def _parse_new_json_format(
+    tracking_data: Dict[str, Any],
+) -> tuple[list[str], str | None, str | None]:
+    version = tracking_data.get("version")
+    hash_val = tracking_data.get("hash")
+    current_release = _ensure_v_prefix_if_missing(version)
+
+    commits_raw = tracking_data.get("commits")
+    if commits_raw is None and hash_val:
+        expected = calculate_expected_prerelease_version(current_release or "")
+        commits_raw = [f"{expected}.{hash_val}"] if expected else [hash_val]
+
+    if not isinstance(commits_raw, list):
+        logger.warning(
+            "Invalid commits format in tracking file: expected list, got %s. Resetting commits.",
+            type(commits_raw).__name__,
+        )
+        commits_raw = []
+
+    commits: list[str] = []
+    for commit in commits_raw:
+        if isinstance(commit, str):
+            normalized = _normalize_commit_identifier(commit.lower(), current_release)
+            if normalized:
+                commits.append(normalized)
+        else:
+            logger.warning(
+                "Invalid commit entry in tracking file: expected str, got %s. Skipping.",
+                type(commit).__name__,
+            )
+
+    commits = list(dict.fromkeys(commits))
+    last_updated = tracking_data.get("last_updated") or tracking_data.get("timestamp")
+    return commits, current_release, last_updated
+
+
+def _read_prerelease_tracking_data(tracking_file: str):
+    commits: list[str] = []
+    current_release: Optional[str] = None
+    last_updated: Optional[str] = None
+
+    if os.path.exists(tracking_file):
+        try:
+            with open(tracking_file, "r", encoding="utf-8") as f:
+                tracking_data = json.load(f)
+
+            if not isinstance(tracking_data, dict):
+                logger.warning(
+                    "Unexpected JSON type in prerelease tracking file %s: %s",
+                    tracking_file,
+                    type(tracking_data).__name__,
+                )
+                return commits, current_release, last_updated
+
+            if "version" in tracking_data and (
+                "hash" in tracking_data or "commits" in tracking_data
+            ):
+                commits, current_release, last_updated = _parse_new_json_format(
+                    tracking_data
+                )
+            else:
+                logger.warning(
+                    "Unexpected prerelease tracking format in %s; ignoring file.",
+                    tracking_file,
+                )
+        except (IOError, json.JSONDecodeError, UnicodeDecodeError) as e:
+            logger.warning("Could not read prerelease tracking file: %s", e)
+
+    return commits, current_release, last_updated
+
+
+def _read_latest_release_tag(json_file: str) -> Optional[str]:
+    if os.path.exists(json_file):
+        try:
+            with open(json_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                version = data.get("latest_version")
+                return (
+                    version.strip()
+                    if isinstance(version, str) and version.strip()
+                    else None
+                )
+        except (IOError, json.JSONDecodeError):
+            return None
+    return None
+
+
+def _write_latest_release_tag(
+    json_file: str, version_tag: str, release_type: str
+) -> bool:
+    release_type_l = release_type.lower()
+    file_type_slug = (
+        "android"
+        if "android" in release_type_l
+        else (
+            "firmware"
+            if "firmware" in release_type_l
+            else release_type_l.replace(" ", "_")
+        )
+    )
+    data = {
+        "latest_version": version_tag,
+        "file_type": file_type_slug,
+        "last_updated": datetime.now(timezone.utc).isoformat(),
+    }
+    success = _atomic_write_json(json_file, data)
+    if not success:
+        logger.warning("Failed to write latest release tag to JSON file: %s", json_file)
+    return success
+
+
+def _get_json_release_basename(release_type: str) -> str:
+    release_type_lower = release_type.lower()
+    if "firmware prerelease" in release_type_lower:
+        return LATEST_FIRMWARE_PRERELEASE_JSON_FILE
+    if "firmware" in release_type_lower:
+        return LATEST_FIRMWARE_RELEASE_JSON_FILE
+    if "android apk prerelease" in release_type_lower:
+        return LATEST_ANDROID_PRERELEASE_JSON_FILE
+    if "android" in release_type_lower:
+        return LATEST_ANDROID_RELEASE_JSON_FILE
+    return "latest_release.json"
+
+
+def extract_version(dir_name: str) -> str:
+    return dir_name.removeprefix(FIRMWARE_DIR_PREFIX)
+
+
+def _get_commit_hash_from_dir(dir_name: str) -> Optional[str]:
+    version_part = extract_version(dir_name)
+    commit_match = re.search(
+        r"[.-]([a-f0-9]{6,40})(?:[.-]|$)", version_part, re.IGNORECASE
+    )
+    if commit_match:
+        return commit_match.group(1).lower()
+    return None
+
+
+def calculate_expected_prerelease_version(latest_version: str) -> str:
+    latest_tuple = _get_release_tuple(latest_version)
+    if not latest_tuple or len(latest_tuple) < 2:
+        logger.warning(
+            "Could not calculate expected prerelease version from: %s", latest_version
+        )
+        return ""
+
+    major, minor = latest_tuple[0], latest_tuple[1]
+    patch = latest_tuple[2] if len(latest_tuple) > 2 else 0
+    expected_patch = patch + 1
+    return f"{major}.{minor}.{expected_patch}"
 
 
 class VersionManager:

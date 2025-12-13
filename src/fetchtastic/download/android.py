@@ -207,6 +207,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                     download_url=asset.download_url,
                     file_size=asset.size,
                     file_type="android",
+                    was_skipped=True,
                 )
 
             # Download the APK
@@ -244,7 +245,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                     success=False,
                     release_tag=release.tag_name,
                     file_path=target_path,
-                    error_message="Download failed",
+                    error_message="download_file_with_retry returned False",
                     download_url=asset.download_url,
                     file_size=asset.size,
                     file_type="android",
@@ -619,3 +620,14 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         version_manager.manage_prerelease_tracking_files(
             tracking_dir, current_tracking_data, self.cache_manager
         )
+
+
+def _is_apk_prerelease_by_name(tag_name: str) -> bool:
+    return "-open" in (tag_name or "").lower() or "-closed" in (tag_name or "").lower()
+
+
+def _is_apk_prerelease(release: Dict[str, Any]) -> bool:
+    tag_name = (release or {}).get("tag_name", "")
+    is_legacy_prerelease = _is_apk_prerelease_by_name(tag_name)
+    is_github_prerelease = (release or {}).get("prerelease", False)
+    return is_legacy_prerelease or is_github_prerelease

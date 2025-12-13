@@ -14,6 +14,7 @@ from urllib.parse import urlencode
 
 from fetchtastic.constants import (
     COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS,
+    FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
     GITHUB_API_BASE,
     GITHUB_API_TIMEOUT,
 )
@@ -23,6 +24,8 @@ from fetchtastic.utils import (
     track_api_cache_hit,
     track_api_cache_miss,
 )
+
+from .files import _atomic_write_json
 
 
 class CacheManager:
@@ -271,7 +274,11 @@ class CacheManager:
         return f"{url}?{urlencode(filtered)}"
 
     def _get_releases_cache_file(self) -> str:
-        return os.path.join(self.cache_dir, "releases_cache.json")
+        primary = os.path.join(self.cache_dir, "releases.json")
+        legacy = os.path.join(self.cache_dir, "releases_cache.json")
+        return (
+            primary if os.path.exists(primary) or not os.path.exists(legacy) else legacy
+        )
 
     def read_releases_cache_entry(
         self, url_cache_key: str, *, expiry_seconds: int
@@ -625,3 +632,209 @@ class CacheManager:
                 "Could not fetch commit timestamp for %s: %s", commit_hash, exc
             )
             return None
+
+
+_cache_lock = None
+_commit_cache_file: Optional[str] = None
+_releases_cache_file: Optional[str] = None
+_commit_cache_loaded = False
+_releases_cache_loaded = False
+_commit_timestamp_cache: Dict[str, Any] = {}
+_releases_cache: Dict[str, Any] = {}
+_prerelease_dir_cache_file: Optional[str] = None
+_prerelease_dir_cache_loaded = False
+_prerelease_dir_cache: Dict[str, Any] = {}
+
+
+def _ensure_cache_dir() -> str:
+    import platformdirs
+
+    cache_dir = platformdirs.user_cache_dir("fetchtastic")
+    os.makedirs(cache_dir, exist_ok=True)
+    return cache_dir
+
+
+def _get_commit_cache_file() -> str:
+    global _commit_cache_file
+    if _commit_cache_file is None:
+        _commit_cache_file = os.path.join(_ensure_cache_dir(), "commit_timestamps.json")
+    return _commit_cache_file
+
+
+def _get_releases_cache_file() -> str:
+    global _releases_cache_file
+    if _releases_cache_file is None:
+        _releases_cache_file = os.path.join(_ensure_cache_dir(), "releases.json")
+    return _releases_cache_file
+
+
+def _get_prerelease_dir_cache_file() -> str:
+    global _prerelease_dir_cache_file
+    if _prerelease_dir_cache_file is None:
+        _prerelease_dir_cache_file = os.path.join(
+            _ensure_cache_dir(), "prerelease_dirs.json"
+        )
+    return _prerelease_dir_cache_file
+
+
+def _load_json_cache_with_expiry(
+    cache_file_path: str,
+    expiry_hours: Optional[float],
+    cache_entry_validator: Callable[[Dict[str, Any]], bool],
+    entry_processor: Callable[[Dict[str, Any], datetime], Any],
+    cache_name: str,
+) -> Dict[str, Any]:
+    try:
+        if not os.path.exists(cache_file_path):
+            return {}
+
+        with open(cache_file_path, "r", encoding="utf-8") as f:
+            cache_data = json.load(f)
+
+        if not isinstance(cache_data, dict):
+            return {}
+
+        current_time = datetime.now(timezone.utc)
+        loaded: Dict[str, Any] = {}
+
+        for cache_key, cache_entry in cache_data.items():
+            try:
+                if not cache_entry_validator(cache_entry):
+                    logger.debug(
+                        "Skipping invalid %s cache entry for %s: incorrect structure",
+                        cache_name,
+                        cache_key,
+                    )
+                    continue
+
+                cached_at = datetime.fromisoformat(
+                    str(cache_entry["cached_at"]).replace("Z", "+00:00")
+                )
+                age = current_time - cached_at
+                if (
+                    expiry_hours is not None
+                    and age.total_seconds() >= expiry_hours * 3600
+                ):
+                    continue
+
+                loaded[cache_key] = entry_processor(cache_entry, cached_at)
+            except Exception:
+                continue
+
+        return loaded
+    except (IOError, json.JSONDecodeError, UnicodeDecodeError):
+        return {}
+
+
+def _get_cache_lock():
+    global _cache_lock
+    if _cache_lock is None:
+        import threading
+
+        _cache_lock = threading.Lock()
+    return _cache_lock
+
+
+def _load_commit_cache() -> None:
+    global _commit_cache_loaded, _commit_timestamp_cache
+    with _get_cache_lock():
+        if _commit_cache_loaded:
+            return
+        _commit_cache_loaded = True
+
+        cache_file = _get_commit_cache_file()
+        try:
+            if not os.path.exists(cache_file):
+                _commit_timestamp_cache = {}
+                return
+            with open(cache_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            _commit_timestamp_cache = data if isinstance(data, dict) else {}
+        except (IOError, json.JSONDecodeError, UnicodeDecodeError):
+            _commit_timestamp_cache = {}
+
+
+def _load_releases_cache() -> None:
+    global _releases_cache_loaded, _releases_cache
+    with _get_cache_lock():
+        if _releases_cache_loaded:
+            return
+        _releases_cache_loaded = True
+
+        cache_file = _get_releases_cache_file()
+        try:
+            if not os.path.exists(cache_file):
+                _releases_cache = {}
+                return
+            with open(cache_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            _releases_cache = data if isinstance(data, dict) else {}
+        except (IOError, json.JSONDecodeError, UnicodeDecodeError):
+            _releases_cache = {}
+
+
+def _clear_cache_generic(
+    cache: Dict[str, Any], file_getter: Callable[[], str], name: str
+) -> None:
+    cache.clear()
+    try:
+        cache_file = file_getter()
+        if os.path.exists(cache_file):
+            os.remove(cache_file)
+    except OSError as exc:
+        logger.debug("Could not clear %s cache: %s", name, exc)
+
+
+def _load_prerelease_dir_cache() -> None:
+    global _prerelease_dir_cache, _prerelease_dir_cache_loaded
+
+    if _prerelease_dir_cache_loaded:
+        return
+
+    def validate_prerelease_entry(cache_entry: Dict[str, Any]) -> bool:
+        return (
+            isinstance(cache_entry, dict)
+            and "directories" in cache_entry
+            and "cached_at" in cache_entry
+        )
+
+    def process_prerelease_entry(cache_entry: Dict[str, Any], cached_at: datetime):
+        directories = cache_entry["directories"]
+        if not isinstance(directories, list):
+            raise TypeError("directories is not a list")
+        return (directories, cached_at)
+
+    loaded_data = _load_json_cache_with_expiry(
+        cache_file_path=_get_prerelease_dir_cache_file(),
+        expiry_hours=FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS / 3600,
+        cache_entry_validator=validate_prerelease_entry,
+        entry_processor=process_prerelease_entry,
+        cache_name="prerelease directory",
+    )
+
+    with _get_cache_lock():
+        if _prerelease_dir_cache_loaded:
+            return
+        if isinstance(loaded_data, dict):
+            _prerelease_dir_cache.update(loaded_data)
+        _prerelease_dir_cache_loaded = True
+
+
+def _save_prerelease_dir_cache() -> None:
+    cache_file = _get_prerelease_dir_cache_file()
+    try:
+        with _get_cache_lock():
+            cache_data = {
+                cache_key: {
+                    "directories": directories,
+                    "cached_at": cached_at.isoformat(),
+                }
+                for cache_key, (directories, cached_at) in _prerelease_dir_cache.items()
+            }
+
+        if not _atomic_write_json(cache_file, cache_data):
+            logger.warning(
+                "Failed to save prerelease directory cache to %s", cache_file
+            )
+    except (IOError, OSError):
+        logger.warning("Could not save prerelease directory cache")

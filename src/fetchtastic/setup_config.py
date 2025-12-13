@@ -1054,6 +1054,9 @@ def _setup_automation(
                     print("Boot script has not been set up.")
 
         else:
+            if not _crontab_available():
+                return config
+
             # Linux/Mac: Check if any Fetchtastic cron jobs exist
             any_cron_jobs_exist = check_any_cron_jobs_exist()
             if any_cron_jobs_exist:
@@ -2687,6 +2690,8 @@ def check_cron_job_exists():
             for line in existing_cron.splitlines()
             if not line.strip().startswith("@reboot")
         )
+    except FileNotFoundError:
+        return False
     except Exception as e:
         print(f"An error occurred while checking for existing cron jobs: {e}")
         return False
@@ -2726,6 +2731,8 @@ def check_any_cron_jobs_exist():
             ("# fetchtastic" in line or "fetchtastic download" in line)
             for line in existing_cron.splitlines()
         )
+    except FileNotFoundError:
+        return False
     except Exception as e:
         print(f"An error occurred while checking for existing cron jobs: {e}")
         return False

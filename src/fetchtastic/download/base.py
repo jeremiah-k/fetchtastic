@@ -12,12 +12,9 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from fetchtastic import utils
 from fetchtastic.log_utils import logger
-from fetchtastic.utils import (
-    download_file_with_retry,
-    matches_selected_patterns,
-    verify_file_integrity,
-)
+from fetchtastic.utils import matches_selected_patterns
 
 from .cache import CacheManager
 from .files import FileOperations
@@ -78,7 +75,7 @@ class BaseDownloader(Downloader, ABC):
             os.makedirs(os.path.dirname(target_path), exist_ok=True)
 
             # Use the existing robust download utility
-            success = download_file_with_retry(url, target_path)
+            success = utils.download_file_with_retry(url, target_path)
 
             if success:
                 logger.info(f"Successfully downloaded {os.path.basename(target_path)}")
@@ -103,7 +100,7 @@ class BaseDownloader(Downloader, ABC):
         """
         if expected_hash:
             return self.file_operations.verify_file_hash(file_path, expected_hash)
-        return verify_file_integrity(file_path)
+        return utils.verify_file_integrity(file_path)
 
     def extract(
         self,
@@ -302,11 +299,15 @@ class BaseDownloader(Downloader, ABC):
         file_path: str,
         error_message: Optional[str] = None,
         *,
+        extracted_files: Optional[List[Path]] = None,
         download_url: Optional[str] = None,
         file_size: Optional[int] = None,
         file_type: Optional[str] = None,
         is_retryable: bool = False,
         error_type: Optional[str] = None,
+        error_details: Optional[Dict[str, Any]] = None,
+        http_status_code: Optional[int] = None,
+        was_skipped: bool = False,
     ) -> DownloadResult:
         """
         Create a DownloadResult object.
@@ -330,11 +331,15 @@ class BaseDownloader(Downloader, ABC):
             release_tag=release_tag,
             file_path=Path(file_path),
             error_message=error_message,
+            extracted_files=extracted_files,
             download_url=download_url,
             file_size=file_size,
             file_type=file_type,
             is_retryable=is_retryable,
             error_type=error_type,
+            error_details=error_details,
+            http_status_code=http_status_code,
+            was_skipped=was_skipped,
         )
 
     def get_existing_file_path(self, release_tag: str, file_name: str) -> Optional[str]:
@@ -350,6 +355,10 @@ class BaseDownloader(Downloader, ABC):
         """
         target_path = self.get_target_path_for_release(release_tag, file_name)
         return target_path if os.path.exists(target_path) else None
+
+    def cleanup_file(self, file_path: str) -> bool:
+        """Remove a file from disk via the shared file operations helper."""
+        return self.file_operations.cleanup_file(file_path)
 
     def _is_zip_intact(self, file_path: str) -> bool:
         """Quick integrity check for zip archives."""

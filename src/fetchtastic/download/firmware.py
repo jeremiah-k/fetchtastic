@@ -29,7 +29,7 @@ from fetchtastic.utils import (
 
 from .base import BaseDownloader
 from .interfaces import Asset, DownloadResult, Release
-from .version import VersionManager
+from .version import VersionManager, extract_version
 
 
 class FirmwareReleaseDownloader(BaseDownloader):
@@ -198,6 +198,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     download_url=asset.download_url,
                     file_size=asset.size,
                     file_type="firmware",
+                    was_skipped=True,
                 )
 
             # Download the firmware ZIP
@@ -235,7 +236,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     success=False,
                     release_tag=release.tag_name,
                     file_path=target_path,
-                    error_message="Download failed",
+                    error_message="download_file_with_retry returned False",
                     download_url=asset.download_url,
                     file_size=asset.size,
                     file_type="firmware",
@@ -588,25 +589,33 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
             target_path = os.path.join(target_dir, name)
             try:
-                if (
-                    not force_refresh
-                    and os.path.exists(target_path)
-                    and verify_file_integrity(target_path)
-                ):
-                    logger.debug(
-                        "Prerelease file already exists and is valid: %s", name
-                    )
-                    successes.append(
-                        self.create_download_result(
-                            success=True,
-                            release_tag=remote_dir,
-                            file_path=target_path,
-                            download_url=str(url),
-                            file_size=item.get("size"),
-                            file_type="firmware_prerelease",
+                if not force_refresh and os.path.exists(target_path):
+                    zip_ok = True
+                    if name.lower().endswith(".zip"):
+                        try:
+                            import zipfile
+
+                            with zipfile.ZipFile(target_path, "r") as zf:
+                                zip_ok = zf.testzip() is None
+                        except Exception:
+                            zip_ok = False
+
+                    if zip_ok and verify_file_integrity(target_path):
+                        logger.debug(
+                            "Prerelease file already exists and is valid: %s", name
                         )
-                    )
-                    continue
+                        successes.append(
+                            self.create_download_result(
+                                success=True,
+                                release_tag=remote_dir,
+                                file_path=target_path,
+                                download_url=str(url),
+                                file_size=item.get("size"),
+                                file_type="firmware_prerelease",
+                                was_skipped=True,
+                            )
+                        )
+                        continue
 
                 ok = download_file_with_retry(str(url), target_path)
                 if ok:
@@ -632,7 +641,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                             success=False,
                             release_tag=remote_dir,
                             file_path=target_path,
-                            error_message="Download failed",
+                            error_message="download_file_with_retry returned False",
                             download_url=str(url),
                             file_size=item.get("size"),
                             file_type="firmware_prerelease",
@@ -1167,19 +1176,29 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 > 0
             )
 
-            if is_new_version:
-                new_versions.append(release.tag_name)
-
             # Download each asset
             release_downloaded = False
+            attempted_download = False
             for asset in release.assets:
                 if not downloader.should_download_release(release.tag_name, asset.name):
                     continue
 
+                if not getattr(asset, "download_url", None):
+                    failures.append(
+                        {
+                            "release_tag": release.tag_name,
+                            "asset": asset.name,
+                            "reason": "Missing browser_download_url",
+                        }
+                    )
+                    continue
+
+                attempted_download = True
                 download_result = downloader.download_firmware(release, asset)
 
                 if download_result.success:
-                    release_downloaded = True
+                    if not download_result.was_skipped:
+                        release_downloaded = True
 
                     # Handle extraction if needed
                     if auto_extract and extract_patterns:
@@ -1206,6 +1225,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
             if release_downloaded:
                 downloaded.append(release.tag_name)
+            if attempted_download and is_new_version:
+                new_versions.append(release.tag_name)
 
         # Clean up old versions
         downloader.cleanup_old_versions(versions_to_keep)

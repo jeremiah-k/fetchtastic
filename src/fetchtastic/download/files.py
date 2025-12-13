@@ -6,17 +6,297 @@ hash verification, and archive extraction.
 """
 
 import fnmatch
+import glob
 import hashlib
+import json
 import os
 import re
 import shutil
+import tempfile
 import zipfile
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
-from fetchtastic.constants import EXECUTABLE_PERMISSIONS, SHELL_SCRIPT_EXTENSION
+from fetchtastic.constants import (
+    EXECUTABLE_PERMISSIONS,
+    FIRMWARE_DIR_PREFIX,
+    SHELL_SCRIPT_EXTENSION,
+)
 from fetchtastic.log_utils import logger
-from fetchtastic.utils import matches_selected_patterns
+from fetchtastic.utils import (
+    get_hash_file_path,
+    matches_selected_patterns,
+    verify_file_integrity,
+)
+
+NON_ASCII_RX = re.compile(r"[^\x00-\x7F]+")
+
+
+def strip_unwanted_chars(text: str) -> str:
+    return NON_ASCII_RX.sub("", text)
+
+
+def _matches_exclude(name: str, patterns: List[str]) -> bool:
+    name_l = name.lower()
+    return any(fnmatch.fnmatch(name_l, p.lower()) for p in patterns)
+
+
+def _sanitize_path_component(component: Optional[str]) -> Optional[str]:
+    if component is None:
+        return None
+
+    sanitized = component.strip()
+    if not sanitized or sanitized in {".", ".."}:
+        return None
+
+    if os.path.isabs(sanitized):
+        return None
+
+    if "\x00" in sanitized:
+        return None
+
+    for separator in (os.sep, os.altsep):
+        if separator and separator in sanitized:
+            return None
+
+    return sanitized
+
+
+def _get_existing_prerelease_dirs(prerelease_dir: str) -> list[str]:
+    if not os.path.exists(prerelease_dir):
+        return []
+
+    entries: list[str] = []
+    try:
+        with os.scandir(prerelease_dir) as iterator:
+            for entry in iterator:
+                if not entry.is_dir(follow_symlinks=False):
+                    continue
+                if not entry.name.startswith(FIRMWARE_DIR_PREFIX):
+                    continue
+                safe_name = _sanitize_path_component(entry.name)
+                if safe_name is None:
+                    logger.warning(
+                        "Ignoring unsafe prerelease directory name: %s", entry.name
+                    )
+                    continue
+                entries.append(safe_name)
+    except OSError as e:
+        logger.debug("Error scanning prerelease dir %s: %s", prerelease_dir, e)
+
+    return entries
+
+
+def _get_string_list_from_config(config: Dict[str, Any], key: str) -> List[str]:
+    value = config.get(key, [])
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, list):
+        return []
+    return [str(p) for p in value if isinstance(p, (str, bytes))]
+
+
+def _is_release_complete(
+    release_data: Dict[str, Any],
+    release_dir: str,
+    selected_patterns: Optional[List[str]],
+    exclude_patterns: List[str],
+) -> bool:
+    if not os.path.exists(release_dir):
+        return False
+
+    expected_assets: list[str] = []
+    for asset in release_data.get("assets", []) or []:
+        file_name = asset.get("name", "")
+        if not file_name:
+            continue
+
+        if selected_patterns and not matches_selected_patterns(
+            file_name, selected_patterns
+        ):
+            continue
+
+        if _matches_exclude(file_name, exclude_patterns):
+            continue
+
+        expected_assets.append(file_name)
+
+    if not expected_assets:
+        logger.debug("No assets match selected patterns for release in %s", release_dir)
+        return False
+
+    for asset_name in expected_assets:
+        asset_path = os.path.join(release_dir, asset_name)
+        if not os.path.exists(asset_path):
+            logger.debug(
+                "Missing asset %s in release directory %s", asset_name, release_dir
+            )
+            return False
+
+        if asset_name.lower().endswith(".zip"):
+            try:
+                with zipfile.ZipFile(asset_path, "r") as zf:
+                    if zf.testzip() is not None:
+                        logger.debug("Corrupted zip file detected: %s", asset_path)
+                        return False
+                actual_size = os.path.getsize(asset_path)
+                asset_data = next(
+                    (
+                        a
+                        for a in (release_data.get("assets", []) or [])
+                        if a.get("name") == asset_name
+                    ),
+                    None,
+                )
+                if asset_data:
+                    expected_size = asset_data.get("size")
+                    if expected_size is not None and actual_size != expected_size:
+                        logger.debug(
+                            "File size mismatch for %s: expected %s, got %s",
+                            asset_path,
+                            expected_size,
+                            actual_size,
+                        )
+                        return False
+            except (zipfile.BadZipFile, OSError, IOError, TypeError):
+                return False
+        else:
+            try:
+                actual_size = os.path.getsize(asset_path)
+                for asset in release_data.get("assets", []) or []:
+                    if asset.get("name") == asset_name:
+                        expected_size = asset.get("size")
+                        if expected_size is not None and actual_size != expected_size:
+                            logger.debug(
+                                "File size mismatch for %s: expected %s, got %s",
+                                asset_path,
+                                expected_size,
+                                actual_size,
+                            )
+                            return False
+                        break
+            except (OSError, TypeError):
+                return False
+
+    return True
+
+
+def _prepare_for_redownload(file_path: str) -> bool:
+    try:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            logger.debug("Removed existing file: %s", file_path)
+
+        hash_path = get_hash_file_path(file_path)
+        if os.path.exists(hash_path):
+            os.remove(hash_path)
+            logger.debug("Removed stale hash file: %s", hash_path)
+
+        for tmp_path in glob.glob(f"{glob.escape(file_path)}.tmp.*"):
+            os.remove(tmp_path)
+            logger.debug("Removed orphaned temp file: %s", tmp_path)
+    except OSError as e:
+        logger.error("Error preparing for re-download of %s: %s", file_path, e)
+        return False
+    else:
+        return True
+
+
+def _prerelease_needs_download(file_path: str) -> bool:
+    if not os.path.exists(file_path):
+        return True
+
+    if verify_file_integrity(file_path):
+        return False
+
+    logger.warning(
+        "Existing prerelease file %s failed integrity check; re-downloading",
+        os.path.basename(file_path),
+    )
+    if not _prepare_for_redownload(file_path):
+        return False
+    return True
+
+
+def _is_within_base(real_base_dir: str, candidate: str) -> bool:
+    try:
+        return os.path.commonpath([real_base_dir, candidate]) == real_base_dir
+    except ValueError:
+        return False
+
+
+def _safe_rmtree(path_to_remove: str, base_dir: str, item_name: str) -> bool:
+    try:
+        real_base_dir = os.path.realpath(base_dir)
+
+        if os.path.islink(path_to_remove):
+            link_dir = os.path.dirname(os.path.abspath(path_to_remove))
+            real_link_dir = os.path.realpath(link_dir)
+
+            if not _is_within_base(real_base_dir, real_link_dir):
+                logger.warning(
+                    "Skipping removal of symlink %s because its location is outside the base directory",
+                    path_to_remove,
+                )
+                return False
+
+            logger.info("Removing symlink: %s", item_name)
+            os.unlink(path_to_remove)
+            return True
+
+        real_target = os.path.realpath(path_to_remove)
+        if not _is_within_base(real_base_dir, real_target):
+            logger.warning(
+                "Skipping removal of %s because it resolves outside the base directory",
+                path_to_remove,
+            )
+            return False
+
+        if os.path.isdir(path_to_remove):
+            shutil.rmtree(path_to_remove)
+        else:
+            os.remove(path_to_remove)
+    except OSError as e:
+        logger.error("Error removing %s: %s", path_to_remove, e)
+        return False
+    else:
+        return True
+
+
+def _atomic_write(
+    file_path: str, writer_func: Callable[[Any], None], suffix: str = ".tmp"
+) -> bool:
+    """
+    Atomically write a file by writing to a temporary file and replacing the target on success.
+    """
+    try:
+        temp_fd, temp_path = tempfile.mkstemp(
+            dir=os.path.dirname(file_path), prefix="tmp-", suffix=suffix
+        )
+    except OSError as e:
+        logger.error(f"Could not create temporary file for {file_path}: {e}")
+        return False
+
+    try:
+        with os.fdopen(temp_fd, "w", encoding="utf-8") as temp_f:
+            writer_func(temp_f)
+        os.replace(temp_path, file_path)
+    except (IOError, UnicodeEncodeError, OSError) as e:
+        logger.error(f"Could not write to {file_path}: {e}")
+        return False
+    finally:
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
+    return True
+
+
+def _atomic_write_json(file_path: str, data: dict) -> bool:
+    return _atomic_write(
+        file_path, lambda f: json.dump(data, f, indent=2), suffix=".json"
+    )
 
 
 class FileOperations:
@@ -45,24 +325,11 @@ class FileOperations:
         Returns:
             bool: True on successful write, False on error
         """
-        try:
-            # Write to temporary file first
-            temp_path = f"{file_path}.tmp"
-            with open(temp_path, "w", encoding="utf-8") as f:
-                f.write(content)
 
-            # Atomic rename to final destination
-            os.replace(temp_path, file_path)
-            return True
-        except (IOError, OSError) as e:
-            logger.error(f"Could not write to {file_path}: {e}")
-            # Clean up temp file if it exists
-            if os.path.exists(temp_path):
-                try:
-                    os.remove(temp_path)
-                except OSError:
-                    pass
-            return False
+        def _write_content(f):
+            f.write(content)
+
+        return _atomic_write(file_path, _write_content, suffix=".txt")
 
     def verify_file_hash(
         self, file_path: str, expected_hash: Optional[str] = None
