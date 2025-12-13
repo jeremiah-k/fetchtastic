@@ -32,7 +32,7 @@ downloader = MockDownloader()
 
 # Copy all functions and attributes from legacy_compat to downloader
 for attr in dir(legacy_compat):
-    if not attr.startswith("_"):
+    if not attr.startswith("__"):  # Copy all except dunder methods
         setattr(downloader, attr, getattr(legacy_compat, attr))
 from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.prerelease_history import PrereleaseHistoryManager
