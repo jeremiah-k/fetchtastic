@@ -264,11 +264,7 @@ def main():
             if latest_apk_version:
                 logger.info(f"Latest APK: {latest_apk_version}")
 
-            latest_versions = (
-                integration.migration.get_latest_versions()
-                if integration.migration
-                else {}
-            )
+            latest_versions = integration.get_latest_versions()
             latest_firmware_prerelease = latest_versions.get("firmware_prerelease")
             latest_apk_prerelease = latest_versions.get("android_prerelease")
             if latest_firmware_prerelease:

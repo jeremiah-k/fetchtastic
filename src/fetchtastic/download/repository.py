@@ -242,14 +242,16 @@ class RepositoryDownloader(BaseDownloader):
             base_repo_dir = os.path.join(
                 self.download_dir, "firmware", self.repo_downloads_dir
             )
-            test_path = os.path.join(base_repo_dir, subdirectory)
-            normalized_path = os.path.abspath(os.path.normpath(test_path))
-            base_abs = os.path.abspath(os.path.normpath(base_repo_dir))
-            if os.path.commonpath([base_abs, normalized_path]) != base_abs:
-                return False
 
-            return True
-        except (ValueError, TypeError):
+            # Resolve real paths to handle symlinks and '..' components securely.
+            real_base_path = os.path.realpath(base_repo_dir)
+            candidate_path = os.path.join(real_base_path, subdirectory)
+            real_candidate_path = os.path.realpath(candidate_path)
+
+            # Check if the resolved candidate path is within the base directory.
+            return real_candidate_path.startswith(real_base_path)
+
+        except (ValueError, TypeError, OSError):
             return False
 
     def _set_executable_permissions(self, file_path: str) -> bool:

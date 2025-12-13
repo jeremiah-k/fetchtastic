@@ -22,6 +22,7 @@ from fetchtastic.utils import make_github_api_request, matches_selected_patterns
 
 from .base import BaseDownloader
 from .interfaces import Asset, DownloadResult, Release
+from .prerelease_history import PrereleaseHistoryManager
 from .version import VersionManager
 
 
@@ -362,12 +363,17 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         """Get current timestamp in ISO 8601 format."""
         return datetime.now(timezone.utc).isoformat()
 
-    def handle_prereleases(self, releases: List[Release]) -> List[Release]:
+    def handle_prereleases(
+        self,
+        releases: List[Release],
+        recent_commits: Optional[List[Dict[str, Any]]] = None,
+    ) -> List[Release]:
         """
         Filter and manage Android prereleases with enhanced functionality.
 
         Args:
             releases: List of all releases
+            recent_commits: Optional list of recent commits for filtering
 
         Returns:
             List[Release]: Filtered list of prereleases
@@ -381,6 +387,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             return []
 
         version_manager = VersionManager()
+        prerelease_manager = PrereleaseHistoryManager()
 
         # Filter prereleases
         prereleases = [r for r in releases if r.prerelease]
@@ -418,10 +425,9 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             prereleases = filtered_prereleases
 
         # Further restrict using commit history cache if available
-        commit_cache = getattr(self, "_recent_commits", None)
-        if commit_cache and expected_base:
+        if recent_commits and expected_base:
             commit_hashes = []
-            for commit in commit_cache:
+            for commit in recent_commits:
                 sha = commit.get("sha")
                 if sha:
                     commit_hashes.append(sha[:7])
@@ -438,7 +444,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             from fetchtastic import menu_repo
 
             directories = menu_repo.fetch_repo_directories()
-            repo_matches = version_manager.scan_prerelease_directories(
+            repo_matches = prerelease_manager.scan_prerelease_directories(
                 directories, expected_base or ""
             )
             if repo_matches:
@@ -585,6 +591,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         # Read all existing prerelease tracking data
         existing_prereleases = []
         version_manager = VersionManager()
+        prerelease_manager = PrereleaseHistoryManager()
 
         for file_path in tracking_files:
             try:
@@ -604,7 +611,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
         # Create tracking data for current prereleases using shared helper
         current_tracking_data = [
-            version_manager.create_prerelease_tracking_data(
+            prerelease_manager.create_prerelease_tracking_data(
                 prerelease_version=prerelease.tag_name,
                 base_version=version_manager.extract_clean_version(prerelease.tag_name)
                 or "",
@@ -617,7 +624,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         ]
 
         # Clean up superseded/expired prereleases
-        version_manager.manage_prerelease_tracking_files(
+        prerelease_manager.manage_prerelease_tracking_files(
             tracking_dir, current_tracking_data, self.cache_manager
         )
 

@@ -20,6 +20,7 @@ from .android import MeshtasticAndroidAppDownloader
 from .cache import CacheManager
 from .firmware import FirmwareReleaseDownloader
 from .interfaces import DownloadResult, Release
+from .prerelease_history import PrereleaseHistoryManager
 from .repository import RepositoryDownloader
 from .version import VersionManager
 
@@ -45,6 +46,7 @@ class DownloadOrchestrator:
         """
         self.config = config
         self.version_manager = VersionManager()
+        self.prerelease_manager = PrereleaseHistoryManager()
         self.cache_manager = CacheManager()
 
         # Initialize downloaders
@@ -115,7 +117,9 @@ class DownloadOrchestrator:
                 self._download_android_release(release)
 
             # Handle Android prereleases
-            prereleases = self.android_downloader.handle_prereleases(android_releases)
+            prereleases = self.android_downloader.handle_prereleases(
+                android_releases, recent_commits=getattr(self, "_recent_commits", None)
+            )
             for prerelease in prereleases:
                 for asset in prerelease.assets:
                     if not self.android_downloader.should_download_asset(asset.name):
@@ -153,7 +157,9 @@ class DownloadOrchestrator:
                 self._download_firmware_release(release)
 
             # Handle prerelease selection based on commit history + expected version
-            prereleases = self.firmware_downloader.handle_prereleases(firmware_releases)
+            prereleases = self.firmware_downloader.handle_prereleases(
+                firmware_releases, recent_commits=getattr(self, "_recent_commits", None)
+            )
             for prerelease in prereleases:
                 for asset in prerelease.assets:
                     if not self.firmware_downloader.should_download_release(
@@ -930,7 +936,7 @@ class DownloadOrchestrator:
     def _refresh_commit_history_cache(self) -> None:
         """Refresh commit history cache used for prerelease expected-version selection."""
         try:
-            self._recent_commits = self.version_manager.fetch_recent_repo_commits(
+            self._recent_commits = self.prerelease_manager.fetch_recent_repo_commits(
                 limit=10, cache_manager=self.cache_manager, force_refresh=False
             )
         except Exception as e:

@@ -29,6 +29,7 @@ from fetchtastic.utils import (
 
 from .base import BaseDownloader
 from .interfaces import Asset, DownloadResult, Release
+from .prerelease_history import PrereleaseHistoryManager
 from .version import VersionManager
 
 
@@ -706,6 +707,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
         logger.info("Checking for pre-release firmware...")
 
         version_manager = VersionManager()
+        prerelease_manager = PrereleaseHistoryManager()
         clean_latest_release = (
             version_manager.extract_clean_version(latest_release_tag)
             or latest_release_tag
@@ -719,7 +721,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
         logger.debug("Expected prerelease version: %s", expected_version)
 
         active_dir, history_entries = (
-            version_manager.get_latest_active_prerelease_from_history(
+            prerelease_manager.get_latest_active_prerelease_from_history(
                 expected_version,
                 cache_manager=self.cache_manager,
                 github_token=self.config.get("GITHUB_TOKEN"),
@@ -752,7 +754,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     github_token=self.config.get("GITHUB_TOKEN"),
                     allow_env_token=True,
                 )
-                matches = version_manager.scan_prerelease_directories(
+                matches = prerelease_manager.scan_prerelease_directories(
                     [d for d in dirs if isinstance(d, str)], expected_version
                 )
                 if matches:
@@ -797,13 +799,13 @@ class FirmwareReleaseDownloader(BaseDownloader):
             logger.info("Found an existing pre-release, but no new files to download.")
 
         if any_downloaded or force_refresh:
-            version_manager.update_prerelease_tracking(
+            prerelease_manager.update_prerelease_tracking(
                 latest_release_tag, active_dir, cache_manager=self.cache_manager
             )
 
         # Emit legacy-style history summary when available
         if history_entries:
-            summary = version_manager.summarize_prerelease_history(history_entries)
+            summary = prerelease_manager.summarize_prerelease_history(history_entries)
             logger.info(
                 "Prereleases since %s: %d created, %d deleted, %d active",
                 clean_latest_release,
@@ -825,12 +827,17 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
         return successes, failures, active_dir
 
-    def handle_prereleases(self, releases: List[Release]) -> List[Release]:
+    def handle_prereleases(
+        self,
+        releases: List[Release],
+        recent_commits: Optional[List[Dict[str, Any]]] = None,
+    ) -> List[Release]:
         """
         Filter and manage firmware prereleases with enhanced functionality.
 
         Args:
             releases: List of all releases
+            recent_commits: Optional list of recent commits for filtering
 
         Returns:
             List[Release]: Filtered list of prereleases
@@ -844,6 +851,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
             return []
 
         version_manager = VersionManager()
+        prerelease_manager = PrereleaseHistoryManager()
 
         # Filter prereleases
         prereleases = [r for r in releases if r.prerelease]
@@ -881,10 +889,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
             prereleases = filtered_prereleases
 
         # Further restrict using commit history cache if available
-        commit_cache = getattr(self, "_recent_commits", None)
-        if commit_cache and expected_base:
+        if recent_commits and expected_base:
             commit_hashes = []
-            for commit in commit_cache:
+            for commit in recent_commits:
                 sha = commit.get("sha")
                 if sha:
                     commit_hashes.append(sha[:7])
@@ -901,7 +908,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
             from fetchtastic import menu_repo
 
             directories = menu_repo.fetch_repo_directories()
-            repo_matches = version_manager.scan_prerelease_directories(
+            repo_matches = prerelease_manager.scan_prerelease_directories(
                 directories, expected_base or ""
             )
             if repo_matches:
@@ -1002,6 +1009,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
         # Read all existing prerelease tracking data
         existing_prereleases = []
         version_manager = VersionManager()
+        prerelease_manager = PrereleaseHistoryManager()
 
         for file_path in tracking_files:
             try:
@@ -1021,7 +1029,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
         # Create tracking data for current prereleases
         current_tracking_data = [
-            version_manager.create_prerelease_tracking_data(
+            prerelease_manager.create_prerelease_tracking_data(
                 prerelease_version=prerelease.tag_name,
                 base_version=version_manager.extract_clean_version(prerelease.tag_name)
                 or "",
@@ -1034,7 +1042,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
         ]
 
         # Clean up superseded/expired prereleases using shared helper
-        version_manager.manage_prerelease_tracking_files(
+        prerelease_manager.manage_prerelease_tracking_files(
             tracking_dir, current_tracking_data, self.cache_manager
         )
 

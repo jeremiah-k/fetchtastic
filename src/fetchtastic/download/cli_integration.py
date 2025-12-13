@@ -144,6 +144,22 @@ class DownloadCLIIntegration:
             "firmware_downloads": 0,
         }
 
+    def get_latest_versions(self) -> Dict[str, str]:
+        """
+        Get the latest versions of all artifact types.
+
+        Returns:
+            Dict[str, str]: Dictionary mapping artifact types to latest versions
+        """
+        if self.migration:
+            return self.migration.get_latest_versions()
+        return {
+            "android": "",
+            "firmware": "",
+            "firmware_prerelease": "",
+            "android_prerelease": "",
+        }
+
     def validate_integration(self) -> bool:
         """
         Validate that the CLI integration is working properly.
