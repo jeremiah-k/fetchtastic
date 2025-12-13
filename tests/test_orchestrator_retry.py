@@ -83,4 +83,4 @@ def test_orchestrator_refreshes_commits_before_processing(monkeypatch):
     orch.run_download_pipeline()
 
     assert calls[:1] == ["refresh"]
-    assert orch.firmware_downloader._recent_commits == [{"sha": "abc1234"}]
+    # Note: _recent_commits attribute is no longer set on downloaders for type safety

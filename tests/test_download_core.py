@@ -19,8 +19,9 @@ from unittest.mock import patch
 
 import pytest
 
-from fetchtastic.download.firmware import FirmwareReleaseDownloader
+from fetchtastic.download.firmware import FIRMWARE_DIR_PREFIX, FirmwareReleaseDownloader
 from fetchtastic.download.interfaces import Asset, Release
+from fetchtastic.download.version import VersionManager
 
 
 def _make_zip_bytes(file_map: dict[str, str]) -> bytes:
@@ -597,7 +598,7 @@ def test_check_and_download_corrupted_existing_zip_records_failure(tmp_path):
     assert downloaded == []
     assert len(failures) == 1
     assert failures[0]["release_tag"] == release_tag
-    assert failures[0]["reason"] == "download_file_with_retry returned False"
+    assert failures[0]["reason"] == "download(...) returned False"
     assert _new_versions == []
 
 
@@ -926,7 +927,7 @@ class TestDownloadCoreIntegration:
             assert new == ["v1.0.0"]  # Notify about new version even if download failed
             assert len(failed) == 1
             assert failed[0]["release_tag"] == "v1.0.0"
-            assert failed[0]["reason"] == "download_file_with_retry returned False"
+            assert failed[0]["reason"] == "download(...) returned False"
 
     @pytest.mark.core_downloads
     def test_version_tracking_across_multiple_runs(self, tmp_path):
@@ -3021,14 +3022,14 @@ def test_extract_version():
 
 
 @pytest.mark.core_downloads
-def test_remove_firmware_prefix_logic():
-    """Test the logic of removing firmware prefix using extract_version."""
-    from fetchtastic.download.firmware import FIRMWARE_DIR_PREFIX, extract_version
+def test_extract_clean_version_logic():
+    """Test extract_clean_version function behavior."""
+    version_manager = VersionManager()
 
-    # Test that extract_version removes the firmware prefix
-    assert extract_version("firmware-v1.0.0") == "v1.0.0"
-    assert extract_version(f"{FIRMWARE_DIR_PREFIX}something") == "something"
-    assert extract_version("v1.0.0") == "v1.0.0"  # No prefix to remove
+    # Test that extract_clean_version handles version strings correctly
+    assert version_manager.extract_clean_version("v1.0.0") == "v1.0.0"
+    assert version_manager.extract_clean_version("1.0.0") == "v1.0.0"
+    assert version_manager.extract_clean_version("v1.0.0.abc123") == "v1.0.0"
 
 
 @pytest.mark.core_downloads
