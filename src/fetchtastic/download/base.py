@@ -7,8 +7,7 @@ that can be extended by specific artifact downloaders.
 
 import fnmatch
 import os
-import re
-from abc import ABC, abstractmethod
+from abc import ABC
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -18,7 +17,7 @@ from fetchtastic.utils import matches_selected_patterns
 
 from .cache import CacheManager
 from .files import FileOperations
-from .interfaces import Asset, Downloader, DownloadResult, Release
+from .interfaces import Asset, Downloader, DownloadResult
 from .version import VersionManager
 
 

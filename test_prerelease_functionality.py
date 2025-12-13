@@ -39,13 +39,6 @@ def test_prerelease_functionality():
         # Test prerelease tracking file management
         print("Testing prerelease tracking file management...")
 
-        # Create some mock prereleases
-        mock_prereleases = [
-            Release(tag_name="v2.7.8-rc1", prerelease=True),
-            Release(tag_name="v2.7.8-rc2", prerelease=True),
-            Release(tag_name="v2.7.9-beta1", prerelease=True),
-        ]
-
         # Test that prerelease tracking files are created and managed
         try:
             # This should create prerelease tracking files

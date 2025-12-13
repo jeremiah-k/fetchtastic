@@ -716,7 +716,7 @@ class CacheManager:
             timestamp = datetime.fromisoformat(
                 str(timestamp_str).replace("Z", "+00:00")
             )
-            cache[cache_key] = (timestamp.isoformat(), now.isoformat())
+            cache[cache_key] = [timestamp.isoformat(), now.isoformat()]
             self.atomic_write_json(cache_file, cache)
             return timestamp
         except Exception as exc:

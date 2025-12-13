@@ -244,9 +244,9 @@ def main():
             integration = DownloadCLIIntegration()
             (
                 downloaded_firmwares,
-                new_firmware_versions,
+                _new_firmware_versions,
                 downloaded_apks,
-                new_apk_versions,
+                _new_apk_versions,
                 failed_downloads,
                 latest_firmware_version,
                 latest_apk_version,
@@ -284,8 +284,8 @@ def main():
                     http_status = failure.get("http_status")
                     error = failure.get("error", "")
                     logger.info(
-                        f"- {failure.get('type','Unknown')} {failure.get('release_tag','')}: "
-                        f"{failure.get('file_name','unknown')} "
+                        f"- {failure.get('type', 'Unknown')} {failure.get('release_tag', '')}: "
+                        f"{failure.get('file_name', 'unknown')} "
                         f"URL={url} retryable={retryable} http_status={http_status} error={error}"
                     )
 

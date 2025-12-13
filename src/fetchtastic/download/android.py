@@ -309,7 +309,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
     def _is_version_directory(self, dir_name: str) -> bool:
         """Check if a directory name represents a version directory."""
-        return dir_name.startswith("v") and re.match(r"^v\d+\.\d+\.\d+$", dir_name)
+        return bool(re.match(r"^v\d+\.\d+\.\d+$", dir_name))
 
     def _get_version_sort_key(self, version_dir: str) -> tuple:
         """Get a sort key for version directories."""

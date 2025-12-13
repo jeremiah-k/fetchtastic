@@ -163,7 +163,7 @@ class DownloadMigration:
         comparison = version_manager.compare_versions(version1, version2)
         return comparison > 0
 
-    def get_failed_downloads(self) -> List[Dict[str, str]]:
+    def get_failed_downloads(self) -> List[Dict[str, Any]]:
         """
         Get failed downloads in legacy format.
 

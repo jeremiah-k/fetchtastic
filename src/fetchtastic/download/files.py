@@ -418,9 +418,10 @@ class FileOperations:
                         # Ensure parent directory exists
                         os.makedirs(os.path.dirname(extract_path), exist_ok=True)
 
-                        with zip_ref.open(file_info) as source, open(
-                            extract_path, "wb"
-                        ) as target:
+                        with (
+                            zip_ref.open(file_info) as source,
+                            open(extract_path, "wb") as target,
+                        ):
                             shutil.copyfileobj(source, target)
 
                         if os.name != "nt" and base_name.lower().endswith(
@@ -698,11 +699,13 @@ class FileOperations:
             if os.path.exists(file_path):
                 os.remove(file_path)
 
-            # Clean up any temporary files
-            temp_files = [f"{file_path}.tmp", f"{file_path}.tmp.*"]
-            for temp_file in temp_files:
-                if os.path.exists(temp_file):
-                    os.remove(temp_file)
+            # Remove exact .tmp file
+            tmp_exact = f"{file_path}.tmp"
+            if os.path.exists(tmp_exact):
+                os.remove(tmp_exact)
+            # Remove .tmp.* pattern files using glob
+            for tmp_pattern_file in glob.glob(f"{glob.escape(file_path)}.tmp.*"):
+                os.remove(tmp_pattern_file)
 
             return True
         except OSError as e:

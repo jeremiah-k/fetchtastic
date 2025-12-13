@@ -196,7 +196,7 @@ def test_repository_processing_flow():
             orchestrator.repository_downloader = MockRepositoryDownloader(config)
 
             # Run the download pipeline
-            success_results, failed_results = orchestrator.run_download_pipeline()
+            _success_results, _failed_results = orchestrator.run_download_pipeline()
 
             # Should have processed repository files
             stats = orchestrator.get_download_statistics()

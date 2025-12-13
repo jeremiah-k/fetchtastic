@@ -1,6 +1,6 @@
 # Downloader Refactor Parity Audit (rf-spectre-1 vs 0.8.9)
 
-Date: today  
+Date: 2025-12-13  
 Scope: Identify missing/ regressed behaviors vs v0.8.9; enumerate fixes and tests required for parity.
 
 ## Observed Regressions (from user runs)

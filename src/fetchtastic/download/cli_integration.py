@@ -115,6 +115,9 @@ class DownloadCLIIntegration:
                     return [], [], [], [], [], "", ""
 
                 config = setup_config.load_config()
+                if config is None:
+                    logger.error("Configuration file exists but could not be loaded.")
+                    return [], [], [], [], [], "", ""
 
             results = self.run_download(config, force_refresh)
             self.log_integration_summary()
@@ -306,7 +309,7 @@ class DownloadCLIIntegration:
             progress: Progress percentage (0.0 to 1.0)
         """
         if progress > 0:
-            logger.info(f"Progress: {progress*100:.1f}% - {message}")
+            logger.info(f"Progress: {progress * 100:.1f}% - {message}")
         else:
             logger.info(f"Status: {message}")
 

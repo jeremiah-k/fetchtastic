@@ -1186,7 +1186,6 @@ class VersionManager:
 
         metadata["is_prerelease"] = True
 
-        # Parse version to extract components
         normalized = self.normalize_version(version)
         if isinstance(normalized, Version):
             # Extract base version

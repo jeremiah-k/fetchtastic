@@ -8,7 +8,7 @@ This document outlines the comprehensive refactoring of Fetchtastic's monolithic
 
 ### Architecture Overview
 
-The current downloader architecture is centered around a single monolithic [`downloader.py`](src/fetchtastic/downloader.py) file (6,475 lines) that handles:
+The current downloader architecture is centered around a single monolithic [`downloader.py`](../src/fetchtastic/downloader.py) file (6,475 lines) that handles:
 
 1. **Android APK Downloads**: Meshtastic Android app releases
 2. **Firmware Downloads**: Meshtastic firmware releases

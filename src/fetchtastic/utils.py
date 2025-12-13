@@ -1286,7 +1286,7 @@ def matches_extract_patterns(
     filename_lower = filename.lower()
 
     for pattern in extract_patterns:
-        pattern_lower = str(pattern).lower()
+        pattern_lower = str(pattern).strip().lower()
         if not pattern_lower:
             continue
 
@@ -1305,7 +1305,7 @@ def matches_extract_patterns(
             try:
                 if device_manager.is_device_pattern(pattern):
                     is_device_pattern_match = True
-            except Exception:
+            except (AttributeError, TypeError, ValueError):
                 is_device_pattern_match = False
         elif pattern_lower.endswith(("-", "_")):
             is_device_pattern_match = True
