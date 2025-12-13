@@ -11,6 +11,11 @@ from abc import ABC
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
+try:
+    from requests.exceptions import RequestException
+except ImportError:
+    RequestException = Exception
+
 from fetchtastic import utils
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import matches_selected_patterns
@@ -44,8 +49,8 @@ class BaseDownloader(Downloader, ABC):
         self.cache_manager = cache_manager or CacheManager()
         self.file_operations = FileOperations()
 
-        # Initialize common configuration
-        self.download_dir = self._get_download_dir()
+        # Initialize common configuration with normalized paths
+        self.download_dir = str(Path(self._get_download_dir()))
         self.versions_to_keep = self._get_versions_to_keep()
 
     def _get_download_dir(self) -> str:
@@ -70,20 +75,21 @@ class BaseDownloader(Downloader, ABC):
             bool: True if download succeeded, False otherwise
         """
         try:
-            # Ensure target directory exists
-            os.makedirs(os.path.dirname(target_path), exist_ok=True)
+            # Ensure target directory exists using pathlib
+            target = Path(target_path)
+            target.parent.mkdir(parents=True, exist_ok=True)
 
             # Use the existing robust download utility
-            success = utils.download_file_with_retry(url, str(target_path))
+            success = utils.download_file_with_retry(url, str(target))
 
             if success:
-                logger.info(f"Successfully downloaded {os.path.basename(target_path)}")
+                logger.info(f"Successfully downloaded {target.name}")
             else:
                 logger.error(f"Failed to download {url}")
 
             return success
-        except Exception as e:
-            logger.error(f"Error downloading {url}: {e}")
+        except (OSError, RequestException, ValueError) as e:
+            logger.exception("Error downloading %s: %s", url, e)
             return False
 
     def verify(self, file_path: Pathish, expected_hash: Optional[str] = None) -> bool:
@@ -118,12 +124,13 @@ class BaseDownloader(Downloader, ABC):
         Returns:
             List[Path]: List of paths to extracted files
         """
-        # Get the directory where the archive is located
-        archive_dir = os.path.dirname(file_path)
+        # Get the directory where the archive is located using pathlib
+        archive_path = Path(file_path)
+        archive_dir = str(archive_path.parent)
         extracted = self.file_operations.extract_archive(
-            str(file_path), archive_dir, patterns, exclude_patterns or []
+            str(archive_path), archive_dir, patterns, exclude_patterns or []
         )
-        return extracted  # type: ignore[return-value]
+        return [Path(p) for p in extracted]  # Convert back to Path objects
 
     def cleanup_old_versions(self, keep_limit: int) -> None:
         """
@@ -173,12 +180,12 @@ class BaseDownloader(Downloader, ABC):
 
         return os.path.join(version_dir, safe_name)
 
-    def should_download_release(self, release_tag: str, asset_name: str) -> bool:
+    def should_download_release(self, _release_tag: str, asset_name: str) -> bool:
         """
         Determine if a release should be downloaded based on selection patterns.
 
         Args:
-            release_tag: The release tag to check
+            _release_tag: The release tag to check (prefixed to silence linter)
             asset_name: The asset name to check
 
         Returns:
@@ -187,6 +194,15 @@ class BaseDownloader(Downloader, ABC):
         # Get selection patterns from config
         selected_patterns = self._get_selected_patterns()
         exclude_patterns = self._get_exclude_patterns()
+
+        # Check if release tag matches selected patterns (release-level filtering)
+        if selected_patterns and not self._matches_selected_patterns(
+            _release_tag, selected_patterns
+        ):
+            logger.debug(
+                f"Skipping release {_release_tag} - doesn't match selected patterns"
+            )
+            return False
 
         # Check if asset matches selected patterns
         if selected_patterns and not self._matches_selected_patterns(

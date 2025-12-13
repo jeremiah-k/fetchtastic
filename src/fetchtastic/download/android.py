@@ -5,6 +5,7 @@ This module implements the specific downloader for Meshtastic Android APK files.
 """
 
 import fnmatch
+import json
 import os
 import re
 from datetime import datetime, timezone
@@ -101,7 +102,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                     url_key, releases_data if isinstance(releases_data, list) else []
                 )
 
-            if not releases_data or not isinstance(releases_data, list):
+            if releases_data is None or not isinstance(releases_data, list):
                 logger.error("Invalid releases data received from GitHub API")
                 return []
 
@@ -332,8 +333,6 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         latest_file = os.path.join(self.download_dir, self.latest_release_file)
         if os.path.exists(latest_file):
             try:
-                import json
-
                 with open(latest_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     return data.get("latest_version")
@@ -587,6 +586,11 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         for filename in os.listdir(tracking_dir):
             if filename.startswith("prerelease_") and filename.endswith(".json"):
                 tracking_files.append(os.path.join(tracking_dir, filename))
+
+        # Also include the main prerelease tracking file if it exists
+        main_tracking_file = self.get_prerelease_tracking_file()
+        if os.path.exists(main_tracking_file):
+            tracking_files.append(main_tracking_file)
 
         # Read all existing prerelease tracking data
         existing_prereleases = []
