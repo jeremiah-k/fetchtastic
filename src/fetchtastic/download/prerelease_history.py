@@ -5,6 +5,7 @@ This module handles the tracking, fetching, and management of prerelease history
 from GitHub commits and repository directories.
 """
 
+import fnmatch
 import json
 import os
 import re
@@ -626,3 +627,52 @@ class PrereleaseHistoryManager:
             if base_version == expected_version:
                 matching.append(dir_name)
         return matching
+
+
+def _extract_identifier_from_entry(entry: Dict[str, Any]) -> str:
+    """
+    Return the identifier for a prerelease history entry.
+
+    Checks for keys in priority order: "identifier", "directory", then "dir",
+    and returns the first non-empty value found. If none are present, returns an empty string.
+
+    Parameters:
+        entry (dict): History entry mapping potentially containing identifier fields.
+
+    Returns:
+        identifier (str): The extracted identifier or an empty string if not found.
+    """
+    return entry.get("identifier") or entry.get("directory") or entry.get("dir") or ""
+
+
+def _is_entry_deleted(entry: Dict[str, Any]) -> bool:
+    """
+    Check if a prerelease history entry is marked as deleted.
+
+    Parameters:
+        entry (dict): History entry to check.
+
+    Returns:
+        bool: True if the entry is marked as deleted, False otherwise.
+    """
+    return entry.get("status") == "deleted"
+
+
+def _format_history_entry(
+    entry: Dict[str, Any], index: int, identifier: str
+) -> Dict[str, Any]:
+    """
+    Format a history entry for display or processing.
+
+    Parameters:
+        entry (dict): The history entry to format.
+        index (int): The index of the entry in the history.
+        identifier (str): The identifier for the entry.
+
+    Returns:
+        dict: The formatted history entry.
+    """
+    formatted = entry.copy()
+    formatted["index"] = index
+    formatted["identifier"] = identifier
+    return formatted

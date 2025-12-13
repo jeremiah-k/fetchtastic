@@ -121,17 +121,20 @@ def _get_commit_hash_from_dir(dir_name):
 
 def _extract_identifier_from_entry(entry):
     """Extract identifier from a prerelease entry."""
-    return entry.get("identifier", "")
+    return entry.get("identifier") or entry.get("directory") or entry.get("dir") or ""
 
 
 def _is_entry_deleted(entry):
     """Check if a prerelease entry is marked as deleted."""
-    return entry.get("deleted", False)
+    return entry.get("status") == "deleted"
 
 
-def _format_history_entry(entry):
+def _format_history_entry(entry, index, identifier):
     """Format a prerelease entry for history display."""
-    return f"{entry.get('identifier', 'unknown')}: {entry.get('added_at', 'unknown')}"
+    formatted = entry.copy()
+    formatted["index"] = index
+    formatted["identifier"] = identifier
+    return formatted
 
 
 # Global cache reference for tests that access it directly
@@ -862,13 +865,17 @@ def test_get_commit_timestamp_cache():
         "fetchtastic.downloader.make_github_api_request", return_value=mock_response
     ) as mock_get:
         # First call should make API request and cache result
-        result1 = get_commit_timestamp("meshtastic", "firmware", "abcdef123")
+        result1 = _cache_manager.get_commit_timestamp(
+            "meshtastic", "firmware", "abcdef123"
+        )
         assert result1 is not None
         assert isinstance(result1, datetime)
         assert mock_get.call_count == 1
 
         # Second call should use cache
-        result2 = get_commit_timestamp("meshtastic", "firmware", "abcdef123")
+        result2 = _cache_manager.get_commit_timestamp(
+            "meshtastic", "firmware", "abcdef123"
+        )
         assert result2 == result1
         assert mock_get.call_count == 1  # Still only one call
 
@@ -1371,8 +1378,10 @@ def test_get_commit_timestamp_error_handling():
         assert result1 is not None
         assert isinstance(result1, datetime)
 
-        # Second call should use cache
-        result2 = get_commit_timestamp("meshtastic", "firmware", "abcdef123")
+        # Second call should use cache (no API request)
+        result2 = _cache_manager.get_commit_timestamp(
+            "meshtastic", "firmware", "abcdef123"
+        )
         assert result2 == result1
 
         # Verify only one API call was made
