@@ -2,31 +2,24 @@
 
 ## Overview
 
-This document outlines the comprehensive plan for migrating tests away from the legacy downloader (`downloader.py`) to the new modular architecture, enabling complete removal of legacy code.
+This document provides a comprehensive roadmap for migrating test files from the legacy monolithic downloader (`src/fetchtastic/downloader.py`) to the new modular architecture (`src/fetchtastic/download/`).
 
 ## Current State Analysis
 
-### Legacy Dependencies Identified
+### Test Files Requiring Migration
 
-Based on code analysis, **74 test files** still import from `fetchtastic.downloader`:
+| Test File                 | Lines | Legacy Imports | Priority | Complexity        | New Module Mapping                                         |
+| ------------------------- | ----- | -------------- | -------- | ----------------- | ---------------------------------------------------------- |
+| test_prereleases.py       | 2,531 | 21             | P1       | HIGH              | version.py, prerelease_history.py, android.py, firmware.py |
+| test_download_core.py     | 3,632 | 3              | P1       | HIGH              | firmware.py, base.py, cache.py                             |
+| test_security_paths.py    | 752   | 13             | P1       | SECURITY CRITICAL | files.py, base.py, repository.py                           |
+| test_utils.py             | 1,366 | 3              | P2       | MEDIUM            | utils.py, cache.py                                         |
+| test_extraction.py        | 545   | 1              | P2       | LOW               | utils.py                                                   |
+| test_setup_config.py      | 1,750 | 6              | P2       | MEDIUM            | base.py, version.py                                        |
+| test_coverage_fix.py      | 402   | 8              | P3       | MEDIUM            | cli_integration.py, orchestrator.py                        |
+| test_token_warning_fix.py | 181   | 1              | P3       | LOW               | orchestrator.py, cli_integration.py                        |
 
-#### High-Impact Test Files
-
-- `test_download_core.py` - Core download functionality tests
-- `test_setup_config.py` - Configuration and setup tests
-- `test_prereleases.py` - Prerelease handling tests
-- `test_utils.py` - Utility function tests
-- `test_single_blob_cache.py` - Cache management tests
-- `test_token_warning_fix.py` - Token handling tests
-- `test_security_paths.py` - Security validation tests
-- `test_extraction.py` - Archive extraction tests
-- `test_coverage_fix.py` - Coverage reporting tests
-
-#### Medium-Impact Test Files
-
-- `test_cli.py` - CLI integration tests
-- `test_versions.py` - Version handling tests
-- `test_migration_reporting.py` - Migration layer tests
+**Total: 11,159 lines of test code, 56 legacy import statements**
 
 ### Critical Functions Imported
 
@@ -49,224 +42,243 @@ The most commonly imported legacy functions:
 - `matches_extract_patterns` - Pattern matching
 - `safe_extract_path` - Safe extraction paths
 
-## Migration Strategy
+## Legacy Function Mapping
 
-### Phase 1: Mapping and Analysis (Week 1)
-
-#### 1.1 Create Function Mapping Matrix
-
-Create comprehensive mapping of legacy functions to new architecture equivalents:
-
-| Legacy Function                       | New Location                                                 | Status   | Priority |
-| ------------------------------------- | ------------------------------------------------------------ | -------- | -------- |
-| `_get_latest_releases_data`           | `CacheManager.read_releases_cache_entry`                     | High     | P1       |
-| `_get_prerelease_patterns`            | `VersionManager` methods                                     | High     | P1       |
-| `_safe_rmtree`                        | `FileOperations.safe_rmtree`                                 | Medium   | P2       |
-| `_sanitize_path_component`            | `FileOperations.sanitize_path`                               | Medium   | P2       |
-| `main`                                | `DownloadOrchestrator.run_download_pipeline`                 | Critical | P0       |
-| `_format_api_summary`                 | `DownloadOrchestrator._log_download_summary`                 | Medium   | P2       |
-| `clear_commit_timestamp_cache`        | `CacheManager.clear_cache`                                   | Medium   | P2       |
-| `_ensure_cache_dir`                   | `CacheManager.__init__`                                      | Low      | P3       |
-| `_enrich_history_from_commit_details` | `VersionManager.parse_commit_history_for_prerelease_version` | High     | P1       |
-| `_extract_prerelease_dir_info`        | `PrereleaseHistoryManager`                                   | High     | P1       |
-| `_get_prerelease_commit_history`      | `PrereleaseHistoryManager.get_commit_history`                | High     | P1       |
-| `_cleanup_apk_prereleases`            | `AndroidDownloader.manage_prerelease_tracking_files`         | High     | P1       |
-| `cleanup_superseded_prereleases`      | `PrereleaseHistoryManager.manage_prerelease_tracking_files`  | High     | P1       |
-| `_get_release_tuple`                  | `VersionManager.get_release_tuple`                           | Medium   | P2       |
-| `matches_extract_patterns`            | `FileOperations.matches_extract_patterns`                    | Medium   | P2       |
-| `safe_extract_path`                   | `FileOperations.safe_extract_path`                           | Medium   | P2       |
-
-#### 1.2 Dependency Impact Analysis
-
-- **P0 (Blocking)**: `main` function - Core entry point
-- **P1 (High)**: Release data, prerelease handling, version management
-- **P2 (Medium)**: Utility functions, cache operations, path handling
-- **P3 (Low)**: Cache directory setup
-
-### Phase 2: Test Migration Implementation (Weeks 2-3)
-
-#### 2.1 Create Compatibility Shims
-
-Create temporary compatibility modules in `fetchtastic.download.legacy_shims`:
+### Security Functions
 
 ```python
-# legacy_shims/__init__.py
-"""Compatibility shims for legacy test migration."""
-
-from .downloader_shim import (
-    get_latest_releases_data,
-    get_prerelease_patterns,
-    safe_rmtree,
-    sanitize_path_component,
-    format_api_summary,
-    clear_commit_timestamp_cache,
-    ensure_cache_dir,
-    enrich_history_from_commit_details,
-    extract_prerelease_dir_info,
-    get_prerelease_commit_history,
-    cleanup_apk_prereleases,
-    cleanup_superseded_prereleases,
-    get_release_tuple,
-    matches_extract_patterns,
-    safe_extract_path,
-)
-
-# Re-export for backward compatibility
-__all__ = [
-    'get_latest_releases_data',
-    'get_prerelease_patterns',
-    'safe_rmtree',
-    'sanitize_path_component',
-    'format_api_summary',
-    'clear_commit_timestamp_cache',
-    'ensure_cache_dir',
-    'enrich_history_from_commit_details',
-    'extract_prerelease_dir_info',
-    'get_prerelease_commit_history',
-    'cleanup_apk_prereleases',
-    'cleanup_superseded_prereleases',
-    'get_release_tuple',
-    'matches_extract_patterns',
-    'safe_extract_path',
-]
+# Legacy → New Location
+_safe_rmtree() → FileOperations._safe_rmtree() (files.py:228)
+_sanitize_path_component() → BaseDownloader._sanitize_path_component() (base.py:267)
+_atomic_write() → FileOperations.atomic_write() (files.py:317) & CacheManager.atomic_write() (cache.py:66)
+safe_extract_path() → FileOperations.safe_extract_path() (files.py)
 ```
 
-#### 2.2 Implement Shim Functions
+### Version Functions
 
-Each shim function will:
+```python
+# Legacy → New Location
+_normalize_version() → VersionManager.normalize_version() (version.py:63)
+_get_release_tuple() → VersionManager.get_release_tuple()
+_sort_key → VersionManager._sort_key
+```
 
-1. Import the new equivalent from modular architecture
-2. Provide the same interface/signature as legacy function
-3. Add deprecation warnings
-4. Include compatibility mapping for any signature differences
+### Cache Functions
 
-#### 2.3 Update Test Imports Incrementally
+```python
+# Legacy → New Location
+get_commit_timestamp() → CacheManager.get_commit_timestamp() (cache.py:635)
+clear_commit_timestamp_cache() → CacheManager.clear_cache()
+_commit_timestamp_cache → CacheManager internal state
+_cache_lock → CacheManager internal state
+```
 
-Update test files in priority order:
+### Prerelease Functions
 
-**Week 2: Critical Path Tests**
+```python
+# Legacy → New Location
+cleanup_superseded_prereleases() → PrereleaseHistoryManager.should_cleanup_superseded_prerelease() (prerelease_history.py:547)
+get_prerelease_tracking_info() → PrereleaseHistoryManager methods
+update_prerelease_tracking() → PrereleaseHistoryManager.update_prerelease_tracking() (prerelease_history.py:376)
+_get_prerelease_commit_history() → PrereleaseHistoryManager.get_prerelease_commit_history() (prerelease_history.py:270)
+_extract_prerelease_dir_info() → PrereleaseHistoryManager methods
+_enrich_history_from_commit_details() → PrereleaseHistoryManager methods
+```
 
-1. `test_download_core.py` - Update imports to use shims
-2. `test_prereleases.py` - Update imports to use shims
-3. `test_security_paths.py` - Update imports to use shims
+### Utility Functions
 
-**Week 3: Core Functionality Tests**  
-4. `test_setup_config.py` - Update imports to use shims 5. `test_utils.py` - Update imports to use shims 6. `test_single_blob_cache.py` - Update imports to use shims
+```python
+# Legacy → New Location
+matches_extract_patterns() → utils.matches_extract_patterns() (utils.py:1275) - UNCHANGED
+_format_api_summary() → utils.format_api_summary() - UNCHANGED
+_extract_identifier_from_entry() → VersionManager methods
+_format_history_entry() → PrereleaseHistoryManager methods
+_get_commit_cache_file() → CacheManager methods
+_get_commit_hash_from_dir() → PrereleaseHistoryManager methods
+_is_entry_deleted() → PrereleaseHistoryManager methods
+_load_commit_cache() → CacheManager methods
+_save_commit_cache() → CacheManager methods
+```
 
-**Week 4: Integration Tests** 7. `test_cli.py` - Update imports to use shims  
-8. `test_versions.py` - Update imports to use shims 9. `test_extraction.py` - Update imports to use shims 10. `test_coverage_fix.py` - Update imports to use shims
+### Configuration Functions
 
-#### 2.4 Test and Validate
+```python
+# Legacy → New Location
+_get_prerelease_patterns() → NEEDS TO BE ADDED to base.py or version.py
+_get_latest_releases_data() → DownloadOrchestrator methods
+main() → DownloadCLIIntegration.main()
+```
 
-After each test file update:
+### File Operations
 
-1. Run the specific test suite
-2. Verify all tests pass
-3. Check for deprecation warnings (confirming shim usage)
-4. Run regression tests to ensure no behavior changes
+```python
+# Legacy → New Location
+_ensure_cache_dir() → CacheManager._ensure_cache_dir()
+_cleanup_apk_prereleases() → MeshtasticAndroidAppDownloader methods
+```
 
-### Phase 3: Legacy Removal (Week 4)
+## Detailed Import Analysis
 
-#### 3.1 Remove Legacy Code
+### test_prereleases.py (21 imports)
 
-Once all tests pass with shims:
+```python
+# Current imports from legacy:
+from fetchtastic.downloader import (
+    _commit_timestamp_cache,           # → CacheManager internal state
+    _extract_identifier_from_entry,    # → VersionManager method
+    _format_history_entry,             # → PrereleaseHistoryManager method
+    _get_commit_cache_file,            # → CacheManager method
+    _get_commit_hash_from_dir,         # → PrereleaseHistoryManager method
+    _is_entry_deleted,                 # → PrereleaseHistoryManager method
+    _load_commit_cache,                # → CacheManager method
+    _normalize_version,                 # → VersionManager.normalize_version()
+    _save_commit_cache,                # → CacheManager method
+    _sort_key,                         # → VersionManager._sort_key
+    clear_commit_timestamp_cache,      # → CacheManager.clear_cache()
+    get_commit_timestamp,              # → CacheManager.get_commit_timestamp()
+    get_prerelease_tracking_info,      # → PrereleaseHistoryManager method
+    matches_extract_patterns,           # → utils.matches_extract_patterns()
+    update_prerelease_tracking,        # → PrereleaseHistoryManager.update_prerelease_tracking()
+)
+```
 
-1. **Delete `legacy_downloader.py`** - Remove monolithic file
-2. **Update imports** - Remove from `__init__.py` if present
-3. **Clean up references** - Update any remaining documentation
+### test_download_core.py (3 imports)
 
-#### 3.2 Remove Compatibility Shims
+```python
+# Limited imports, mostly uses new modules already
+# Focus on cache and file operation functions
+```
 
-1. Delete `fetchtastic.download.legacy_shims` directory
-2. Remove shim imports from test files
-3. Update test imports to use new architecture directly
+### test_security_paths.py (13 imports)
 
-#### 3.3 Update Migration Layer
+```python
+# SECURITY CRITICAL - All path safety functions
+from fetchtastic.downloader import (
+    _safe_rmtree,                    # → FileOperations._safe_rmtree()
+    _sanitize_path_component,        # → BaseDownloader._sanitize_path_component()
+    safe_extract_path,               # → FileOperations.safe_extract_path()
+)
+```
 
-1. **Simplify `DownloadMigration`** - Remove complex compatibility logic
-2. **Route CLI directly** - Update `cli_integration.py` to use orchestrator directly
-3. **Update documentation** - Reflect simplified architecture
+### test_utils.py (3 imports)
 
-### Phase 4: Documentation Updates (Week 5)
+```python
+from fetchtastic.downloader import (
+    _format_api_summary,             # → utils.format_api_summary()
+    clear_commit_timestamp_cache,    # → CacheManager.clear_cache()
+    _cache_lock, _commit_timestamp_cache,  # → CacheManager internal state
+)
+```
 
-#### 4.1 Update Architecture Documentation
+### test_setup_config.py (6 imports)
 
-- Update `docs/refactor-implementation-plan.md` - Mark legacy removal as complete
-- Update `docs/refactor-remaining-work.md` - Mark all tasks as complete
-- Create `docs/legacy-removal-summary.md` - Document the removal process
+```python
+from fetchtastic.downloader import (
+    _get_prerelease_patterns,         # → NEEDS TO BE ADDED
+)
+```
 
-#### 4.2 Update Developer Documentation
+### test_coverage_fix.py (8 imports)
 
-- Update `AGENTS.md` - Remove legacy downloader references
-- Update README.md - Reflect new architecture only
-- Update contribution guidelines - Reference new modular patterns
+```python
+# Dynamic imports and main function
+import fetchtastic.downloader as downloader_module  # → Use new modules directly
+from fetchtastic.downloader import main, _get_latest_releases_data  # → DownloadCLIIntegration, DownloadOrchestrator
+```
 
-## Risk Mitigation
+### test_extraction.py (1 import)
 
-### Testing Risks
+```python
+from fetchtastic.downloader import matches_extract_patterns  # → utils.matches_extract_patterns()
+```
 
-- **Behavior Changes**: New architecture might have subtle differences
-- **Test Coverage**: Some edge cases might be missed
-- **Regression Risk**: Legacy behavior might not be perfectly replicated
+### test_token_warning_fix.py (1 import)
 
-**Mitigation**:
+```python
+from fetchtastic.downloader import _get_latest_releases_data, main  # → DownloadOrchestrator, DownloadCLIIntegration
+```
 
-- Comprehensive test suite with 100% pass rate required
-- Side-by-side comparison testing during migration
-- Detailed logging of any differences found
+## Risk Assessment
 
-### Operational Risks
+### HIGH RISK - Security Tests
 
-- **Breaking Changes**: Existing integrations might break
-- **Performance**: New architecture might have different performance characteristics
-- **Dependencies**: New import paths might affect deployment
+- **test_security_paths.py**: Path traversal protection tests must maintain exact security guarantees
+- **Mitigation**: Manual verification of each security test after migration
+- **Validation**: Test must still block all attack vectors
 
-**Mitigation**:
+### HIGH RISK - Complex Mocking
 
-- Feature flag for gradual rollout
-- Performance benchmarking before and after
-- Backward compatibility warnings during transition
+- **test_prereleases.py**: 259 mock operations, complex test fixtures
+- **test_download_core.py**: 191 mock operations
+- **Mitigation**: Systematic mock path updates, test-by-test validation
+
+### MEDIUM RISK - Missing Functions
+
+- **\_get_prerelease_patterns()**: Not found in new modules, must be added
+- **Mitigation**: Add function to appropriate module before migration
+
+### LOW RISK - Utility Functions
+
+- **test_extraction.py, test_utils.py**: Simple function replacements
+- **Mitigation**: Direct function mapping, minimal test changes
+
+## Migration Strategy
+
+### Phase 1: Analysis & Preparation ✅ IN PROGRESS
+
+- [x] Dependency mapping completed
+- [x] Migration priority matrix created
+- [x] Module equivalency document created
+- [x] Risk assessment completed
+- [ ] Add missing \_get_prerelease_patterns() function
+
+### Phase 2: Core Tests (P1)
+
+- [ ] Migrate test_prereleases.py (2,531 lines, 21 imports)
+- [ ] Migrate test_download_core.py (3,632 lines, 3 imports)
+
+### Phase 3: Security & Utilities (P1/P2)
+
+- [ ] Migrate test_security_paths.py (752 lines, 13 imports) - SECURITY CRITICAL
+- [ ] Migrate test_utils.py (1,366 lines, 3 imports)
+- [ ] Migrate test_extraction.py (545 lines, 1 import)
+
+### Phase 4: Integration (P2/P3)
+
+- [ ] Migrate test_setup_config.py (1,750 lines, 6 imports)
+- [ ] Migrate test_coverage_fix.py (402 lines, 8 imports)
+- [ ] Migrate test_token_warning_fix.py (181 lines, 1 import)
+
+### Phase 5: Menu/Config Alignment
+
+- [ ] Config key parity verification
+- [ ] Menu prompt alignment
+- [ ] Default value confirmation
+
+### Phase 6: Legacy Removal
+
+- [ ] All tests passing (0 legacy imports)
+- [ ] Performance parity confirmed
+- [ ] Documentation updated
+- [ ] Legacy files removed
 
 ## Success Criteria
 
-### Functional Requirements
-
-- [ ] All 74 test files import from new architecture
-- [ ] All tests pass without modification
-- [ ] No legacy imports remain in codebase
-- [ ] CLI works directly with orchestrator
-- [ ] Migration layer simplified or removed
-
-### Quality Requirements
-
-- [ ] No deprecation warnings in production runs
-- [ ] Test coverage maintained or improved
-- [ ] Performance benchmarks meet or exceed legacy
-- [ ] Documentation accurately reflects new architecture
-
-### Security Requirements
-
-- [ ] Path traversal vulnerabilities fixed (completed)
-- [ ] Input validation maintained or improved
-- [ ] No new security vulnerabilities introduced
-- [ ] Security tests pass with new architecture
-
-## Timeline
-
-| Week | Activities                            | Expected Outcome                             |
-| ---- | ------------------------------------- | -------------------------------------------- |
-| 1    | Mapping analysis, shim creation       | Complete function matrix                     |
-| 2    | Critical path tests migration         | Core tests updated and passing               |
-| 3    | Core functionality tests migration    | Remaining tests updated and passing          |
-| 4    | Integration tests migration           | All tests updated and passing                |
-| 5    | Legacy removal, documentation updates | Legacy code removed, architecture simplified |
+- ✅ Zero legacy imports in test files
+- ✅ 100% test pass rate maintained
+- ✅ Security tests still catch vulnerabilities
+- ✅ Performance parity or better vs legacy
+- ✅ Config compatibility fully verified
+- ✅ Documentation completely updated
+- ✅ Legacy code removed from codebase
 
 ## Next Steps
 
-1. **Immediate**: Create compatibility shim directory structure
-2. **Week 1**: Begin with highest priority test migrations
-3. **Continuous**: Run full test suite after each migration batch
-4. **Validation**: Perform regression testing before legacy removal
-5. **Final**: Complete legacy removal and documentation updates
+1. **Add missing function**: Implement `_get_prerelease_patterns()` in appropriate module
+2. **Begin Phase 2**: Start with test_prereleases.py migration
+3. **Security validation**: Pay special attention to test_security_paths.py
+4. **Progress tracking**: Update this document after each phase completion
 
-This plan ensures systematic, risk-managed migration from legacy to new architecture while maintaining test coverage and functionality.
+---
+
+_Last Updated: Phase 1 Analysis Complete_

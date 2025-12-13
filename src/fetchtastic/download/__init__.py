@@ -20,6 +20,9 @@ from .android import MeshtasticAndroidAppDownloader
 from .base import BaseDownloader
 from .cache import CacheManager
 from .cli_integration import DownloadCLIIntegration
+
+# Import config utilities
+from .config_utils import get_prerelease_patterns
 from .files import FileOperations
 from .firmware import FirmwareReleaseDownloader
 from .interfaces import (
@@ -59,4 +62,6 @@ __all__ = [
     "VersionManager",
     "CacheManager",
     "FileOperations",
+    # Configuration utilities
+    "get_prerelease_patterns",
 ]
