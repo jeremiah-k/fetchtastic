@@ -426,7 +426,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 item_path = os.path.join(firmware_dir, item)
                 if (
                     os.path.isdir(item_path)
-                    and re.match(r"^(v)?\d+\.\d+\.\d+", item)
+                    and re.match(r"^(v)?\d+\.\d+(?:\.\d+)?", item)
                     and item not in ["prerelease", "repo-dls"]
                 ):
                     version_dirs.append(item)

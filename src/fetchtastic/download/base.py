@@ -185,7 +185,7 @@ class BaseDownloader(Downloader, ABC):
         Determine if a release should be downloaded based on selection patterns.
 
         Args:
-            _release_tag: The release tag to check (prefixed to silence linter)
+            _release_tag: The release tag (unused, prefixed to silence linter)
             asset_name: The asset name to check
 
         Returns:
@@ -194,15 +194,6 @@ class BaseDownloader(Downloader, ABC):
         # Get selection patterns from config
         selected_patterns = self._get_selected_patterns()
         exclude_patterns = self._get_exclude_patterns()
-
-        # Check if release tag matches selected patterns (release-level filtering)
-        if selected_patterns and not self._matches_selected_patterns(
-            _release_tag, selected_patterns
-        ):
-            logger.debug(
-                f"Skipping release {_release_tag} - doesn't match selected patterns"
-            )
-            return False
 
         # Check if asset matches selected patterns
         if selected_patterns and not self._matches_selected_patterns(

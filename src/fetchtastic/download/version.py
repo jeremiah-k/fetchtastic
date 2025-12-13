@@ -298,6 +298,10 @@ class VersionManager:
         expected prerelease version should be based on commit patterns.
         Matches legacy behavior for prerelease version detection.
 
+        Expected commit message shapes: base_version followed by dot and suffix
+        (e.g., "2.7.13.abc123" for commit hash.)
+        The regex may capture unintended tokens if commit formats vary widely.
+
         Args:
             commit_history: List of commit messages/history entries
             base_version: Base version to use as starting point (without 'v' prefix)
@@ -414,7 +418,12 @@ class VersionManager:
         if not version:
             return False
 
-        # Check for prerelease indicators
+        # First try to use parsed Version.pre signal for accuracy
+        normalized = self.normalize_version(version)
+        if isinstance(normalized, Version):
+            return normalized.pre is not None
+
+        # Fallback to substring matching for non-standard versions
         prerelease_indicators = [
             "-rc",
             "-alpha",
@@ -990,7 +999,6 @@ def is_prerelease_directory(dir_name: str) -> bool:
     prerelease_patterns = [
         r".*alpha.*",
         r".*beta.*",
-        r".*rc.*",
         r".*dev.*",
         r".*[a-f0-9]{6,40}.*",  # Contains commit hash
     ]

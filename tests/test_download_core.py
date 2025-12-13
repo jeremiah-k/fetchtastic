@@ -166,9 +166,9 @@ def test_cleanup_old_versions(tmp_path):
     firmware_dir.mkdir()
 
     # Create some version directories
-    (firmware_dir / "v1.0").mkdir()
-    (firmware_dir / "v2.0").mkdir()
-    (firmware_dir / "v3.0").mkdir()
+    (firmware_dir / "v1.0.0").mkdir()
+    (firmware_dir / "v2.0.0").mkdir()
+    (firmware_dir / "v3.0.0").mkdir()
     (firmware_dir / "repo-dls").mkdir()  # Should be ignored
     (firmware_dir / "prerelease").mkdir()  # Should be ignored
 
@@ -189,9 +189,9 @@ def test_cleanup_old_versions(tmp_path):
     downloader.download_dir = str(tmp_path)  # Set download_dir to tmp_path
     downloader.cleanup_old_versions(releases_to_keep)
 
-    assert not (firmware_dir / "v1.0").exists()
-    assert (firmware_dir / "v2.0").exists()
-    assert (firmware_dir / "v3.0").exists()
+    assert not (firmware_dir / "v1.0.0").exists()
+    assert (firmware_dir / "v2.0.0").exists()
+    assert (firmware_dir / "v3.0.0").exists()
     assert (firmware_dir / "repo-dls").exists()
     assert (firmware_dir / "prerelease").exists()
 
