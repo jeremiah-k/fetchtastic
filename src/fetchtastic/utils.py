@@ -1312,6 +1312,8 @@ def matches_extract_patterns(
 
         if is_device_pattern_match:
             clean_pattern = pattern_lower.rstrip("-_ ")
+            if not clean_pattern:
+                continue
             if len(clean_pattern) <= 2:
                 if re.search(rf"\b{re.escape(clean_pattern)}\b", filename_lower):
                     return True

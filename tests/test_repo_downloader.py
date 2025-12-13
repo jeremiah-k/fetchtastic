@@ -25,7 +25,7 @@ def mock_config(tmp_path):
 
 
 @pytest.fixture
-def repository_downloader(mock_config, tmp_path):
+def repository_downloader(mock_config):
     """Provides a RepositoryDownloader instance with mock configuration."""
     return RepositoryDownloader(mock_config)
 
@@ -50,6 +50,7 @@ def mock_script_file_info():
     }
 
 
+@pytest.mark.unit
 def test_repository_downloader_initialization(repository_downloader, mock_config):
     """Test that RepositoryDownloader initializes correctly."""
     assert repository_downloader.config == mock_config
@@ -58,6 +59,7 @@ def test_repository_downloader_initialization(repository_downloader, mock_config
     assert repository_downloader.shell_script_extension == ".sh"
 
 
+@pytest.mark.unit
 def test_get_safe_target_directory_success(repository_downloader, tmp_path):
     """Test _get_safe_target_directory with valid subdirectory."""
     # Mock the download_dir to use tmp_path
@@ -76,6 +78,7 @@ def test_get_safe_target_directory_success(repository_downloader, tmp_path):
     assert os.path.exists(expected_dir)
 
 
+@pytest.mark.unit
 def test_get_safe_target_directory_invalid(repository_downloader, tmp_path):
     """Test _get_safe_target_directory with invalid subdirectory."""
     repository_downloader.download_dir = str(tmp_path)
@@ -86,6 +89,7 @@ def test_get_safe_target_directory_invalid(repository_downloader, tmp_path):
     assert target_dir == str(expected_dir)  # Should fall back to base directory
 
 
+@pytest.mark.unit
 def test_is_safe_subdirectory_valid(repository_downloader):
     """Test _is_safe_subdirectory with valid subdirectories."""
     assert repository_downloader._is_safe_subdirectory("valid-dir") is True
@@ -93,6 +97,7 @@ def test_is_safe_subdirectory_valid(repository_downloader):
     assert repository_downloader._is_safe_subdirectory("") is True
 
 
+@pytest.mark.unit
 def test_is_safe_subdirectory_invalid(repository_downloader):
     """Test _is_safe_subdirectory with invalid subdirectories."""
     assert repository_downloader._is_safe_subdirectory("../../etc") is False
@@ -101,6 +106,7 @@ def test_is_safe_subdirectory_invalid(repository_downloader):
     assert repository_downloader._is_safe_subdirectory("dir/../../etc") is False
 
 
+@pytest.mark.unit
 def test_download_repository_file_success(
     repository_downloader, mock_file_info, tmp_path
 ):
@@ -124,6 +130,7 @@ def test_download_repository_file_success(
     # The mock returns True but doesn't actually create the file
 
 
+@pytest.mark.unit
 def test_download_repository_file_failure(
     repository_downloader, mock_file_info, tmp_path
 ):
@@ -144,6 +151,7 @@ def test_download_repository_file_failure(
     assert result.file_type == "repository"
 
 
+@pytest.mark.unit
 def test_download_repository_file_invalid_info(repository_downloader, tmp_path):
     """Test download_repository_file with invalid file info."""
     repository_downloader.download_dir = str(tmp_path)
@@ -161,6 +169,7 @@ def test_download_repository_file_invalid_info(repository_downloader, tmp_path):
     assert "Invalid file info" in result.error_message
 
 
+@pytest.mark.unit
 def test_download_repository_file_script_permissions(
     repository_downloader, mock_script_file_info, tmp_path
 ):
@@ -180,6 +189,7 @@ def test_download_repository_file_script_permissions(
     mock_chmod.assert_called_once_with(str(result.file_path))
 
 
+@pytest.mark.unit
 def test_set_executable_permissions_success(repository_downloader, tmp_path):
     """Test _set_executable_permissions on Unix-like systems."""
     test_file = tmp_path / "test-script.sh"
@@ -192,6 +202,7 @@ def test_set_executable_permissions_success(repository_downloader, tmp_path):
     assert result is True
 
 
+@pytest.mark.unit
 def test_clean_repository_directory_success(repository_downloader, tmp_path):
     """Test clean_repository_directory successfully cleans the directory."""
     # Create test directory structure
@@ -213,6 +224,7 @@ def test_clean_repository_directory_success(repository_downloader, tmp_path):
     assert len(list(repo_dir.iterdir())) == 0  # But should be empty
 
 
+@pytest.mark.unit
 def test_clean_repository_directory_nonexistent(repository_downloader, tmp_path):
     """Test clean_repository_directory when directory doesn't exist."""
     repository_downloader.download_dir = str(tmp_path)
@@ -222,6 +234,7 @@ def test_clean_repository_directory_nonexistent(repository_downloader, tmp_path)
     assert result is True  # Should return True when nothing to clean
 
 
+@pytest.mark.unit
 def test_clean_repository_directory_error(repository_downloader, tmp_path):
     """Test clean_repository_directory when cleanup fails."""
     repo_dir = tmp_path / "firmware" / "repo-dls"
@@ -237,6 +250,7 @@ def test_clean_repository_directory_error(repository_downloader, tmp_path):
     assert result is False
 
 
+@pytest.mark.unit
 def test_download_repository_files_batch(
     repository_downloader, mock_file_info, mock_script_file_info, tmp_path
 ):
@@ -255,12 +269,14 @@ def test_download_repository_files_batch(
     assert all(result.success for result in results)
 
 
+@pytest.mark.unit
 def test_get_repository_download_url(repository_downloader):
     """Test get_repository_download_url method."""
     url = repository_downloader.get_repository_download_url("firmware/test.bin")
     assert url == "https://meshtastic.github.io/firmware/test.bin"
 
 
+@pytest.mark.unit
 def test_cleanup_old_versions(repository_downloader, tmp_path):
     """Test cleanup_old_versions method."""
     repository_downloader.download_dir = str(tmp_path)
@@ -279,18 +295,21 @@ def test_cleanup_old_versions(repository_downloader, tmp_path):
     mock_clean.assert_called_once()
 
 
+@pytest.mark.unit
 def test_get_latest_release_tag(repository_downloader):
     """Test get_latest_release_tag method."""
     result = repository_downloader.get_latest_release_tag()
     assert result == "repository-latest"
 
 
+@pytest.mark.unit
 def test_update_latest_release_tag(repository_downloader):
     """Test update_latest_release_tag method."""
     result = repository_downloader.update_latest_release_tag("v1.0.0")
     assert result is True
 
 
+@pytest.mark.unit
 def test_should_download_release(repository_downloader):
     """Test should_download_release method."""
     # Repository downloads should always return True
@@ -298,6 +317,7 @@ def test_should_download_release(repository_downloader):
     assert result is True
 
 
+@pytest.mark.unit
 def test_get_repository_files_empty(repository_downloader):
     """Test get_repository_files method."""
     # This would normally make HTTP requests, but for testing we expect empty list
@@ -309,6 +329,7 @@ def test_get_repository_files_empty(repository_downloader):
 # Integration tests
 
 
+@pytest.mark.integration
 def test_repository_downloader_integration(repository_downloader, tmp_path):
     """Integration test for repository downloader workflow."""
     repository_downloader.download_dir = str(tmp_path)
@@ -347,6 +368,7 @@ def test_repository_downloader_integration(repository_downloader, tmp_path):
 # Error handling tests
 
 
+@pytest.mark.unit
 def test_download_repository_file_exception(
     repository_downloader, mock_file_info, tmp_path
 ):
@@ -365,6 +387,7 @@ def test_download_repository_file_exception(
     assert "Network error" in result.error_message
 
 
+@pytest.mark.unit
 def test_clean_repository_directory_partial_failure(repository_downloader, tmp_path):
     """Test clean_repository_directory handles partial failures."""
     repo_dir = tmp_path / "firmware" / "repo-dls"
