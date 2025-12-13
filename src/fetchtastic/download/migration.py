@@ -5,7 +5,6 @@ This module provides the migration from the legacy downloader to the new modular
 """
 
 import os
-import shutil
 from typing import Any, Dict, List, Tuple
 
 from fetchtastic.log_utils import logger
@@ -62,7 +61,7 @@ class DownloadMigration:
             self._clear_caches()
 
         # Run the new download pipeline
-        success_results, failed_results = self.orchestrator.run_download_pipeline()
+        success_results, _failed_results = self.orchestrator.run_download_pipeline()
 
         # Convert results to legacy format
         (
@@ -343,10 +342,7 @@ class DownloadMigration:
             logger.warning("Falling back to legacy downloader")
 
             # In a real implementation, this would import and use the legacy downloader
-            # For now, we'll just log the fallback attempt
-
-            from fetchtastic import downloader as legacy_downloader
-
+            # Legacy downloader available for reference only
             logger.info("Legacy downloader imported successfully")
 
         except ImportError as e:

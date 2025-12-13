@@ -89,7 +89,7 @@ class RepositoryDownloader(BaseDownloader):
                     error_message=error_msg,
                 )
 
-            file_name = file_info["name"]
+            file_name = str(file_info["name"])
             download_url = file_info["download_url"]
 
             # Create safe target directory path
@@ -104,8 +104,18 @@ class RepositoryDownloader(BaseDownloader):
                     error_message=error_msg,
                 )
 
-            # Create target path
-            target_path = os.path.join(target_dir, file_name)
+            # Create target path (prevent traversal via filename)
+            safe_name = os.path.basename(file_name)
+            if not safe_name or safe_name != file_name:
+                error_msg = f"Unsafe repository filename: {file_name}"
+                logger.error(error_msg)
+                return self.create_download_result(
+                    success=False,
+                    release_tag="repository",
+                    file_path="",
+                    error_message=error_msg,
+                )
+            target_path = os.path.join(target_dir, safe_name)
 
             # Skip if already complete
             size = file_info.get("size")
@@ -233,10 +243,9 @@ class RepositoryDownloader(BaseDownloader):
                 self.download_dir, "firmware", self.repo_downloads_dir
             )
             test_path = os.path.join(base_repo_dir, subdirectory)
-            normalized_path = os.path.normpath(test_path)
-
-            # Ensure the normalized path still starts with the base repo directory
-            if not normalized_path.startswith(os.path.normpath(base_repo_dir)):
+            normalized_path = os.path.abspath(os.path.normpath(test_path))
+            base_abs = os.path.abspath(os.path.normpath(base_repo_dir))
+            if os.path.commonpath([base_abs, normalized_path]) != base_abs:
                 return False
 
             return True
@@ -315,14 +324,15 @@ class RepositoryDownloader(BaseDownloader):
     def get_repository_download_url(self, file_path: str) -> str:
         """
         Get the full download URL for a repository file.
-
         Args:
             file_path: The file path within the repository
-
         Returns:
             str: Full download URL
         """
-        return urljoin(self.repo_url, file_path)
+        file_path = str(file_path)
+        if "://" in file_path or file_path.startswith("/"):
+            raise ValueError(f"Repository file_path must be relative: {file_path}")
+        return urljoin(self.repo_url.rstrip("/") + "/", file_path)
 
     def download_repository_files_batch(
         self, files_info: List[Dict[str, Any]], subdirectory: str = ""

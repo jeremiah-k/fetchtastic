@@ -19,7 +19,7 @@ from fetchtastic.log_utils import logger
 from .android import MeshtasticAndroidAppDownloader
 from .cache import CacheManager
 from .firmware import FirmwareReleaseDownloader
-from .interfaces import Asset, DownloadResult, Release
+from .interfaces import DownloadResult, Release
 from .repository import RepositoryDownloader
 from .version import VersionManager
 
@@ -509,7 +509,7 @@ class DownloadOrchestrator:
                 )
 
                 # Log detailed retry information
-                logger.info(f"Retrying download {i+1}/{len(retryable_failures)}:")
+                logger.info(f"Retrying download {i + 1}/{len(retryable_failures)}:")
                 logger.info(f"  - Release: {failed_result.release_tag}")
                 logger.info(f"  - URL: {failed_result.download_url}")
                 logger.info(f"  - File: {failed_result.file_path}")
@@ -666,14 +666,14 @@ class DownloadOrchestrator:
         logger.info("📊 DETAILED RETRY REPORT")
         logger.info("=" * 60)
 
-        logger.info(f"📈 Overall Statistics:")
+        logger.info("📈 Overall Statistics:")
         logger.info(f"  - Total failures processed: {total_failures}")
         logger.info(f"  - Retryable failures: {len(retryable_failures)}")
         logger.info(f"  - Non-retryable failures: {len(non_retryable_failures)}")
         logger.info(f"  - Retry success rate: {retry_success_rate:.1f}%")
 
         if retryable_failures:
-            logger.info(f"\n🔄 Retryable Failures Summary:")
+            logger.info("\n🔄 Retryable Failures Summary:")
             by_type = {}
             for failure in retryable_failures:
                 failure_type = failure.file_type or "unknown"
@@ -688,12 +688,12 @@ class DownloadOrchestrator:
                 attempt = failure.retry_count
                 by_attempt[attempt] = by_attempt.get(attempt, 0) + 1
 
-            logger.info(f"\n📊 Retry Attempt Distribution:")
+            logger.info("\n📊 Retry Attempt Distribution:")
             for attempt, count in sorted(by_attempt.items()):
                 logger.info(f"  - Attempt {attempt}: {count} failures")
 
         if non_retryable_failures:
-            logger.info(f"\n❌ Non-Retryable Failures Summary:")
+            logger.info("\n❌ Non-Retryable Failures Summary:")
             by_reason = {}
             for failure in non_retryable_failures:
                 reason = failure.error_type or "unknown_error"

@@ -6,9 +6,11 @@ the foundation of the modular download architecture.
 """
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, List, Optional, Union
+
+Pathish = Union[str, Path]
 
 if TYPE_CHECKING:
     from .cache import CacheManager
@@ -31,13 +33,8 @@ class Release:
     body: Optional[str] = None
     """Release notes/markdown content"""
 
-    assets: Optional[List["Asset"]] = None
+    assets: List["Asset"] = field(default_factory=list)
     """List of downloadable assets for this release"""
-
-    def __post_init__(self):
-        """Ensure assets list is initialized."""
-        if self.assets is None:
-            self.assets = []
 
 
 @dataclass
@@ -70,13 +67,13 @@ class DownloadResult:
     release_tag: Optional[str] = None
     """The release tag that was downloaded"""
 
-    file_path: Optional[Path] = None
+    file_path: Optional[Pathish] = None
     """Path to the downloaded file (if successful)"""
 
     error_message: Optional[str] = None
     """Error message (if failed)"""
 
-    extracted_files: Optional[List[Path]] = None
+    extracted_files: Optional[List[Pathish]] = None
     """List of files extracted from archives"""
 
     # Enhanced retry and failure metadata for P2.1
@@ -138,7 +135,7 @@ class DownloadTask(ABC):
         """
 
     @abstractmethod
-    def get_target_path(self) -> Path:
+    def get_target_path(self) -> Pathish:
         """
         Get the target path where the download will be saved.
 
@@ -210,7 +207,7 @@ class Downloader(ABC):
     """
 
     @abstractmethod
-    def download(self, url: str, target_path: Path) -> bool:
+    def download(self, url: str, target_path: Pathish) -> bool:
         """
         Download a file from a URL to a target path.
 
@@ -223,7 +220,7 @@ class Downloader(ABC):
         """
 
     @abstractmethod
-    def verify(self, file_path: Path, expected_hash: Optional[str] = None) -> bool:
+    def verify(self, file_path: Pathish, expected_hash: Optional[str] = None) -> bool:
         """
         Verify the integrity of a downloaded file.
 
@@ -238,10 +235,10 @@ class Downloader(ABC):
     @abstractmethod
     def extract(
         self,
-        file_path: Path,
+        file_path: Pathish,
         patterns: List[str],
         exclude_patterns: Optional[List[str]],
-    ) -> List[Path]:
+    ) -> List[Pathish]:
         """
         Extract files from an archive matching specific patterns.
 
