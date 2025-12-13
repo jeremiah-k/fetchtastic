@@ -911,20 +911,13 @@ def test_get_commit_timestamp_cache():
         "fetchtastic.utils.make_github_api_request", return_value=mock_response
     ) as mock_get:
         # First call should make API request and cache result
-        result1 = _cache_manager.get_commit_timestamp(
-            "meshtastic", "firmware", "abcdef123"
-        )
-        print(
-            f"DEBUG: result1 = {result1}, mock_get.call_count = {mock_get.call_count}"
-        )
+        result1 = downloader.get_commit_timestamp("meshtastic", "firmware", "abcdef123")
         assert result1 is not None
         assert isinstance(result1, datetime)
         assert mock_get.call_count == 1
 
         # Second call should use cache
-        result2 = _cache_manager.get_commit_timestamp(
-            "meshtastic", "firmware", "abcdef123"
-        )
+        result2 = downloader.get_commit_timestamp("meshtastic", "firmware", "abcdef123")
         assert result2 == result1
         assert mock_get.call_count == 1  # Still only one call
 

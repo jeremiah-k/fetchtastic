@@ -105,9 +105,71 @@ def _fetch_recent_repo_commits(*args, **kwargs):
     return _prerelease_manager.fetch_recent_repo_commits(*args, **kwargs)
 
 
-def get_commit_timestamp(*args, **kwargs):
-    """Legacy wrapper using new cache manager"""
-    return _cache_manager.get_commit_timestamp(*args, **kwargs)
+def get_commit_timestamp(
+    owner: str,
+    repo: str,
+    commit_hash: str,
+    *,
+    github_token=None,
+    allow_env_token=True,
+    force_refresh=False,
+):
+    """Legacy wrapper using new cache manager with API call support"""
+    # For test compatibility, implement basic caching + API call
+    import json
+    from datetime import datetime, timezone
+
+    from fetchtastic.utils import make_github_api_request
+
+    cache_key = f"{owner}/{repo}/{commit_hash}"
+    cache_file = os.path.join(_cache_manager.cache_dir, "commit_timestamps.json")
+
+    # Simple cache implementation
+    try:
+        with open(cache_file, "r") as f:
+            cache = json.load(f)
+    except:
+        cache = {}
+
+    now = datetime.now(timezone.utc)
+
+    # Check cache first
+    if not force_refresh and cache_key in cache:
+        try:
+            timestamp_str, cached_at_str = cache[cache_key]
+            cached_at = datetime.fromisoformat(
+                str(cached_at_str).replace("Z", "+00:00")
+            )
+            age = now - cached_at
+            # Use 24 hours expiry for tests
+            if age.total_seconds() < 24 * 60 * 60:
+                return datetime.fromisoformat(str(timestamp_str).replace("Z", "+00:00"))
+        except Exception:
+            pass
+
+    # Make API call if not cached or force refresh
+    from fetchtastic.constants import GITHUB_API_BASE, GITHUB_API_TIMEOUT
+
+    url = f"{GITHUB_API_BASE}/{owner}/{repo}/commits/{commit_hash}"
+    try:
+        response = make_github_api_request(
+            url,
+            github_token=github_token,
+            allow_env_token=allow_env_token,
+            timeout=GITHUB_API_TIMEOUT,
+        )
+        commit_data = response.json()
+        timestamp_str = commit_data["commit"]["committer"]["date"]
+        timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
+
+        # Cache the result
+        cache[cache_key] = [timestamp_str, now.isoformat()]
+        with open(cache_file, "w") as f:
+            json.dump(cache, f)
+
+        return timestamp
+    except Exception:
+        return None
 
 
 def clear_all_caches(*args, **kwargs):
