@@ -318,6 +318,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
         Returns:
             DownloadResult: Result of the extraction operation
         """
+        zip_path: str = ""
         try:
             exclude_patterns = exclude_patterns or []
 
@@ -327,7 +328,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 return self.create_download_result(
                     success=False,
                     release_tag=release.tag_name,
-                    file_path=Path(zip_path),
+                    file_path=zip_path,
                     error_message="ZIP file not found",
                     file_type="firmware",
                     error_type="validation_error",
@@ -344,7 +345,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 return self.create_download_result(
                     success=False,
                     release_tag=release.tag_name,
-                    file_path=Path(zip_path),
+                    file_path=zip_path,
                     error_message="Invalid extraction patterns",
                     file_type="firmware",
                     error_type="validation_error",
@@ -356,7 +357,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 return self.create_download_result(
                     success=True,
                     release_tag=release.tag_name,
-                    file_path=Path(zip_path),
+                    file_path=zip_path,
                     extracted_files=[],
                     file_type="firmware",
                     was_skipped=True,
@@ -374,7 +375,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 return self.create_download_result(
                     success=True,
                     release_tag=release.tag_name,
-                    file_path=Path(zip_path),
+                    file_path=zip_path,
                     extracted_files=extracted_files,
                     file_type="firmware",
                 )
@@ -385,7 +386,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 return self.create_download_result(
                     success=False,
                     release_tag=release.tag_name,
-                    file_path=Path(zip_path),
+                    file_path=zip_path,
                     error_message="No files matched extraction patterns",
                     file_type="firmware",
                     error_type="validation_error",
@@ -397,7 +398,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
             return self.create_download_result(
                 success=False,
                 release_tag=release.tag_name,
-                file_path=Path(zip_path),
+                file_path=zip_path or os.path.join(self.download_dir, "firmware"),
                 error_message=str(e),
                 file_type="firmware",
                 error_type="extraction_error",

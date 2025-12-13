@@ -223,7 +223,11 @@ class CacheManager:
         try:
             expires_at_str = cache_data.get("expires_at")
             if expires_at_str:
-                expires_at = datetime.fromisoformat(expires_at_str)
+                expires_at = datetime.fromisoformat(
+                    str(expires_at_str).replace("Z", "+00:00")
+                )
+                if expires_at.tzinfo is None:
+                    expires_at = expires_at.replace(tzinfo=timezone.utc)
                 if datetime.now(timezone.utc) > expires_at:
                     logger.debug(f"Cache expired for {cache_file}")
                     return None
@@ -310,12 +314,14 @@ class CacheManager:
             }
             self.atomic_write_json(cache_file, cache)
             return [d for d in directories if isinstance(d, str)]
+        except (ValueError, KeyError, TypeError) as e:
+            logger.error(
+                "Invalid repo directories cache format in %s: %s", cache_file, e
+            )
+            return []
         except Exception as exc:
             logger.debug("Could not fetch repo directories for %s: %s", api_url, exc)
             return []
-        except (ValueError, KeyError) as e:
-            logger.error(f"Invalid cache format in {cache_file}: {e}")
-            return None
 
     def clear_cache(self, cache_file: str) -> bool:
         """
@@ -506,7 +512,11 @@ class CacheManager:
 
         if ts_key:
             try:
-                ts_val = datetime.fromisoformat(cache_data[ts_key])
+                ts_val = datetime.fromisoformat(
+                    str(cache_data[ts_key]).replace("Z", "+00:00")
+                )
+                if ts_val.tzinfo is None:
+                    ts_val = ts_val.replace(tzinfo=timezone.utc)
                 if datetime.now(timezone.utc) - ts_val > timedelta(hours=expiry_hours):
                     return None
             except ValueError:

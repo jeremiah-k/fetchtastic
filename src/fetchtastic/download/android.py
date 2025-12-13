@@ -136,8 +136,8 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
             return releases
 
-        except Exception as e:
-            logger.error(f"Error fetching Android releases: {e}")
+        except Exception:
+            logger.exception("Error fetching Android releases")
             return []
 
     def get_assets(self, release: Release) -> List[Asset]:
@@ -253,14 +253,14 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                     error_type="network_error",
                 )
 
-        except Exception as e:
-            logger.error(f"Error downloading APK {asset.name}: {e}")
+        except Exception:
+            logger.exception("Error downloading APK %s", asset.name)
             safe_path = target_path or os.path.join(self.download_dir, "android")
             return self.create_download_result(
                 success=False,
                 release_tag=release.tag_name,
                 file_path=str(Path(safe_path)),
-                error_message=str(e),
+                error_message="Error downloading APK",
                 download_url=getattr(asset, "download_url", None),
                 file_size=getattr(asset, "size", None),
                 file_type="android",
@@ -304,8 +304,8 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                         f"Error removing old Android version {old_version}: {e}"
                     )
 
-        except Exception as e:
-            logger.error(f"Error cleaning up old Android versions: {e}")
+        except Exception:
+            logger.exception("Error cleaning up old Android versions")
 
     def _is_version_directory(self, dir_name: str) -> bool:
         """Check if a directory name represents a version directory."""
@@ -360,8 +360,6 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
     def _get_current_iso_timestamp(self) -> str:
         """Get current timestamp in ISO 8601 format."""
-        from datetime import datetime, timezone
-
         return datetime.now(timezone.utc).isoformat()
 
     def handle_prereleases(self, releases: List[Release]) -> List[Release]:
@@ -450,7 +448,9 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                     if any(match in pr.tag_name for match in repo_matches)
                 ] or prereleases
         except Exception:
-            pass
+            logger.debug(
+                "Repo directory scan for APK prereleases failed", exc_info=True
+            )
 
         return prereleases
 
