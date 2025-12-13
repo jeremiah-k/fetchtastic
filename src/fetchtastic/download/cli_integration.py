@@ -250,12 +250,6 @@ class DownloadCLIIntegration:
                     f"Error: {failure.error_message or 'unknown'} "
                     f"Retryable: {failure.is_retryable}"
                 )
-                print(
-                    f"Failed {failure.file_type or 'unknown'} {failure.release_tag or ''} "
-                    f"URL: {failure.download_url or 'unknown'} "
-                    f"Error: {failure.error_message or 'unknown'} "
-                    f"Retryable: {failure.is_retryable}"
-                )
 
     def handle_cli_error(self, error: Exception) -> None:
         """
