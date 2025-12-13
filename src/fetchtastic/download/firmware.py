@@ -376,7 +376,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     success=True,
                     release_tag=release.tag_name,
                     file_path=zip_path,
-                    extracted_files=extracted_files,
+                    extracted_files=extracted_files,  # type: ignore[arg-type]
                     file_type="firmware",
                 )
             else:

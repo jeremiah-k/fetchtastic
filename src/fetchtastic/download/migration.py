@@ -219,9 +219,11 @@ class DownloadMigration:
         Get latest versions for all artifact types.
 
         Returns:
-            Dict[str, str]: Dictionary of latest versions
+            Dict[str, str]: Dictionary of latest versions (None values converted to empty strings)
         """
-        return self.orchestrator.get_latest_versions()
+        versions = self.orchestrator.get_latest_versions()
+        # Convert Optional[str] to str for compatibility
+        return {k: v or "" for k, v in versions.items()}
 
     def get_download_statistics(self) -> Dict[str, Any]:
         """

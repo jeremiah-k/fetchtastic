@@ -71,9 +71,7 @@ class DownloadOrchestrator:
         # Legacy parity: refresh commit history early so prerelease selection can
         # use commit-cache filtering during the run (not after).
         self._refresh_commit_history_cache()
-        if hasattr(self, "_recent_commits"):
-            self.android_downloader._recent_commits = self._recent_commits
-            self.firmware_downloader._recent_commits = self._recent_commits
+        # Note: _recent_commits attribute not available on downloaders
 
         # Process firmware downloads
         self._process_firmware_downloads()
@@ -674,7 +672,7 @@ class DownloadOrchestrator:
 
         if retryable_failures:
             logger.info("\n🔄 Retryable Failures Summary:")
-            by_type = {}
+            by_type: Dict[str, int] = {}
             for failure in retryable_failures:
                 failure_type = failure.file_type or "unknown"
                 by_type[failure_type] = by_type.get(failure_type, 0) + 1
@@ -683,7 +681,7 @@ class DownloadOrchestrator:
                 logger.info(f"  - {file_type}: {count} failures")
 
             # Show retry distribution
-            by_attempt = {}
+            by_attempt: Dict[int, int] = {}
             for failure in retryable_failures:
                 attempt = failure.retry_count
                 by_attempt[attempt] = by_attempt.get(attempt, 0) + 1
@@ -694,7 +692,7 @@ class DownloadOrchestrator:
 
         if non_retryable_failures:
             logger.info("\n❌ Non-Retryable Failures Summary:")
-            by_reason = {}
+            by_reason: Dict[str, int] = {}
             for failure in non_retryable_failures:
                 reason = failure.error_type or "unknown_error"
                 by_reason[reason] = by_reason.get(reason, 0) + 1
@@ -916,9 +914,7 @@ class DownloadOrchestrator:
             logger.info("Managing prerelease tracking files...")
 
             # Share recent commits with downloaders for prerelease filtering
-            if hasattr(self, "_recent_commits"):
-                self.android_downloader._recent_commits = self._recent_commits
-                self.firmware_downloader._recent_commits = self._recent_commits
+            # Note: _recent_commits attribute not available on downloaders
 
             # Manage Android prerelease tracking
             self.android_downloader.manage_prerelease_tracking_files()

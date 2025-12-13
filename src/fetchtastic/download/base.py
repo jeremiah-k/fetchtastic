@@ -9,7 +9,7 @@ import fnmatch
 import os
 from abc import ABC
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from fetchtastic import utils
 from fetchtastic.log_utils import logger
@@ -17,7 +17,7 @@ from fetchtastic.utils import matches_selected_patterns
 
 from .cache import CacheManager
 from .files import FileOperations
-from .interfaces import Asset, Downloader, DownloadResult
+from .interfaces import Asset, Downloader, DownloadResult, Pathish
 from .version import VersionManager
 
 
@@ -56,7 +56,7 @@ class BaseDownloader(Downloader, ABC):
         """Get the number of versions to keep from configuration."""
         return int(self.config.get("VERSIONS_TO_KEEP", 5))
 
-    def download(self, url: str, target_path: str) -> bool:
+    def download(self, url: str, target_path: Pathish) -> bool:
         """
         Download a file from a URL to a target path.
 
@@ -74,7 +74,7 @@ class BaseDownloader(Downloader, ABC):
             os.makedirs(os.path.dirname(target_path), exist_ok=True)
 
             # Use the existing robust download utility
-            success = utils.download_file_with_retry(url, target_path)
+            success = utils.download_file_with_retry(url, str(target_path))
 
             if success:
                 logger.info(f"Successfully downloaded {os.path.basename(target_path)}")
@@ -86,7 +86,7 @@ class BaseDownloader(Downloader, ABC):
             logger.error(f"Error downloading {url}: {e}")
             return False
 
-    def verify(self, file_path: str, expected_hash: Optional[str] = None) -> bool:
+    def verify(self, file_path: Pathish, expected_hash: Optional[str] = None) -> bool:
         """
         Verify the integrity of a downloaded file.
 
@@ -98,15 +98,15 @@ class BaseDownloader(Downloader, ABC):
             bool: True if verification succeeded, False otherwise
         """
         if expected_hash:
-            return self.file_operations.verify_file_hash(file_path, expected_hash)
-        return utils.verify_file_integrity(file_path)
+            return self.file_operations.verify_file_hash(str(file_path), expected_hash)
+        return utils.verify_file_integrity(str(file_path))
 
     def extract(
         self,
-        file_path: str,
+        file_path: Pathish,
         patterns: List[str],
         exclude_patterns: Optional[List[str]] = None,
-    ) -> List[Path]:
+    ) -> List[Pathish]:
         """
         Extract files from an archive matching specific patterns.
 
@@ -120,9 +120,10 @@ class BaseDownloader(Downloader, ABC):
         """
         # Get the directory where the archive is located
         archive_dir = os.path.dirname(file_path)
-        return self.file_operations.extract_archive(
-            file_path, archive_dir, patterns, exclude_patterns or []
+        extracted = self.file_operations.extract_archive(
+            str(file_path), archive_dir, patterns, exclude_patterns or []
         )
+        return extracted  # type: ignore[return-value]
 
     def cleanup_old_versions(self, keep_limit: int) -> None:
         """
@@ -298,7 +299,7 @@ class BaseDownloader(Downloader, ABC):
         file_path: str,
         error_message: Optional[str] = None,
         *,
-        extracted_files: Optional[List[Path]] = None,
+        extracted_files: Optional[List[Pathish]] = None,
         download_url: Optional[str] = None,
         file_size: Optional[int] = None,
         file_type: Optional[str] = None,
@@ -330,7 +331,7 @@ class BaseDownloader(Downloader, ABC):
             release_tag=release_tag,
             file_path=Path(file_path),
             error_message=error_message,
-            extracted_files=extracted_files,
+            extracted_files=extracted_files,  # type: ignore[arg-type]
             download_url=download_url,
             file_size=file_size,
             file_type=file_type,

@@ -347,7 +347,7 @@ class RepositoryDownloader(BaseDownloader):
         Returns:
             List[DownloadResult]: List of download results for each file
         """
-        results = []
+        results: List[DownloadResult] = []
 
         if not files_info:
             logger.info("No files to download")

@@ -1576,7 +1576,7 @@ def run_setup(sections: Optional[Sequence[str]] = None):
         return partial_sections is None or section in partial_sections
 
     if is_partial_run:
-        section_list = ", ".join(sorted(partial_sections))
+        section_list = ", ".join(sorted(partial_sections or []))
         print(f"Updating Fetchtastic setup sections: {section_list}")
     else:
         print("Running Fetchtastic Setup...")
