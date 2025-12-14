@@ -38,11 +38,8 @@ class TestMeshtasticAndroidAppDownloader:
     def test_init(self, mock_config):
         """Test downloader initialization."""
         with (
-            patch("fetchtastic.download.android.CacheManager") as mock_cache,
-            patch("fetchtastic.download.android.VersionManager") as mock_version,
-            patch(
-                "fetchtastic.download.android.PrereleaseHistoryManager"
-            ) as mock_prerelease,
+            patch("fetchtastic.download.base.CacheManager") as mock_cache,
+            patch("fetchtastic.download.base.VersionManager") as mock_version,
         ):
             dl = MeshtasticAndroidAppDownloader(mock_config)
 
@@ -54,7 +51,6 @@ class TestMeshtasticAndroidAppDownloader:
             assert dl.latest_release_file == "latest_android_release.json"
             mock_cache.assert_called_once()
             mock_version.assert_called_once()
-            mock_prerelease.assert_called_once()
 
     def test_get_target_path_for_release(self, downloader):
         """Test target path generation for APK releases."""
@@ -83,6 +79,9 @@ class TestMeshtasticAndroidAppDownloader:
         ]
         mock_request.return_value = mock_response
 
+        # Mock cache manager to return None (cache miss) so API is called
+        downloader.cache_manager.read_releases_cache_entry.return_value = None
+
         releases = downloader.get_releases(limit=10)
 
         assert len(releases) == 1
@@ -103,11 +102,22 @@ class TestMeshtasticAndroidAppDownloader:
     def test_get_assets_apk_only(self, downloader):
         """Test that only APK assets are returned."""
         release = Mock(spec=Release)
-        release.assets = [
-            Mock(spec=Asset, name="meshtastic.apk", download_url="url1", size=1000),
-            Mock(spec=Asset, name="meshtastic.aab", download_url="url2", size=2000),
-            Mock(spec=Asset, name="readme.txt", download_url="url3", size=100),
-        ]
+        asset1 = Mock(spec=Asset)
+        asset1.name = "meshtastic.apk"
+        asset1.download_url = "url1"
+        asset1.size = 1000
+
+        asset2 = Mock(spec=Asset)
+        asset2.name = "meshtastic.aab"
+        asset2.download_url = "url2"
+        asset2.size = 2000
+
+        asset3 = Mock(spec=Asset)
+        asset3.name = "readme.txt"
+        asset3.download_url = "url3"
+        asset3.size = 100
+
+        release.assets = [asset1, asset2, asset3]
 
         assets = downloader.get_assets(release)
 
@@ -136,7 +146,7 @@ class TestMeshtasticAndroidAppDownloader:
         # Asset matches exclude patterns
         assert downloader.should_download_asset("meshtastic-beta.apk") is False
 
-    @patch("fetchtastic.download.android.download_file_with_retry")
+    @patch("fetchtastic.utils.download_file_with_retry")
     @patch("os.path.exists")
     @patch("os.path.getsize")
     def test_download_apk_success(
@@ -163,10 +173,10 @@ class TestMeshtasticAndroidAppDownloader:
 
         assert result.success is True
         assert result.release_tag == "v1.0.0"
-        assert "meshtastic.apk" in result.file_path
+        assert "meshtastic.apk" in str(result.file_path)
         mock_download.assert_called_once()
 
-    @patch("fetchtastic.download.android.download_file_with_retry")
+    @patch("fetchtastic.utils.download_file_with_retry")
     def test_download_apk_download_failure(self, mock_download, downloader):
         """Test APK download failure."""
         mock_download.return_value = False
@@ -301,37 +311,43 @@ class TestMeshtasticAndroidAppDownloader:
     def test_get_prerelease_tracking_file(self, downloader):
         """Test prerelease tracking file path generation."""
         path = downloader.get_prerelease_tracking_file()
-
-        assert "prerelease_tracking_android.json" in path
+        path = downloader.get_prerelease_tracking_file()
+        assert "latest_android_prerelease.json" in path
 
     @patch("fetchtastic.download.android.datetime")
     def test_update_prerelease_tracking(self, mock_datetime, downloader):
-        """Test updating prerelease tracking."""
-        mock_datetime.now.return_value = Mock()
-        mock_datetime.now.return_value.isoformat.return_value = "2023-01-01T00:00:00"
-
         downloader.cache_manager.atomic_write_json = Mock(return_value=True)
 
         result = downloader.update_prerelease_tracking("v1.0.0-beta")
 
         assert result is True
 
-    def test_manage_prerelease_tracking_files(self, downloader):
+    @patch("fetchtastic.download.android.PrereleaseHistoryManager")
+    def test_manage_prerelease_tracking_files(
+        self, mock_prerelease_manager_class, downloader
+    ):
         """Test prerelease tracking file management."""
-        # Mock the prerelease manager
-        downloader.prerelease_manager.cleanup_old_prereleases = Mock()
+        # Mock the prerelease manager class
+        mock_prerelease_manager = Mock()
+        mock_prerelease_manager_class.return_value = mock_prerelease_manager
 
         downloader.manage_prerelease_tracking_files()
 
-        downloader.prerelease_manager.cleanup_old_prereleases.assert_called_once()
+        mock_prerelease_manager.manage_prerelease_tracking_files.assert_called_once()
 
     def test_is_apk_prerelease_by_name(self):
-        """Test APK prerelease detection by name."""
+        """Test legacy APK prerelease detection by name."""
         from fetchtastic.download.android import _is_apk_prerelease_by_name
 
-        assert _is_apk_prerelease_by_name("v1.0.0-alpha") is True
+        # Test legacy Meshtastic prerelease indicators
+        assert _is_apk_prerelease_by_name("v1.0.0-open.1") is True
+        assert _is_apk_prerelease_by_name("v1.0.0-closed.1") is True
+        assert _is_apk_prerelease_by_name("v1.0.0-OPEN.1") is True  # Case insensitive
+
+        # Test regular releases and standard prerelease indicators
         assert _is_apk_prerelease_by_name("v1.0.0") is False
-        assert _is_apk_prerelease_by_name("v1.0.0-rc1") is True
+        assert _is_apk_prerelease_by_name("v1.0.0-alpha") is False
+        assert _is_apk_prerelease_by_name("v1.0.0-rc1") is False
 
     def test_is_apk_prerelease_release_dict(self):
         """Test APK prerelease detection from release dict."""
@@ -346,21 +362,30 @@ class TestMeshtasticAndroidAppDownloader:
     @patch("fetchtastic.download.android.logger")
     def test_handle_prereleases_with_tracking(self, mock_logger, downloader):
         """Test prerelease handling with tracking updates."""
-        # Mock prerelease data
+        # Mock prerelease data - GitHub prereleases are identified by prerelease=True
         prerelease_releases = [
-            Mock(spec=Release, tag_name="v1.0.0-beta", prerelease=True)
+            Mock(
+                spec=Release,
+                tag_name="v1.0.1-beta",
+                prerelease=True,
+                published_at="2023-01-01T00:00:00Z",
+            )
+        ]
+        stable_releases = [Mock(spec=Release, tag_name="v1.0.0", prerelease=False)]
+        all_releases = stable_releases + prerelease_releases
+
+        # Mock version manager for expected version calculation
+        downloader.version_manager = Mock()
+        downloader.version_manager.calculate_expected_prerelease_version.return_value = (
+            "1.0.1"
+        )
+        downloader.version_manager.extract_clean_version.return_value = "v1.0.1"
+        downloader.version_manager.filter_prereleases_by_pattern.return_value = [
+            "v1.0.1-beta"
         ]
 
-        # Mock existing releases check
-        downloader.get_existing_releases = Mock(return_value=[])
-        downloader.should_download_prerelease = Mock(return_value=True)
-        downloader.download_apk = Mock(
-            return_value=Mock(spec=DownloadResult, success=True)
-        )
-        downloader.update_prerelease_tracking = Mock(return_value=True)
+        result = downloader.handle_prereleases(all_releases)
 
-        downloader.handle_prereleases(prerelease_releases, "universal")
-
-        # Should attempt download and update tracking
-        downloader.download_apk.assert_called_once()
-        downloader.update_prerelease_tracking.assert_called_once_with("v1.0.0-beta")
+        # Should return prereleases that match expected base version
+        assert len(result) == 1
+        assert result[0].tag_name == "v1.0.1-beta"

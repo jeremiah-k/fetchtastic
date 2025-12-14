@@ -13,11 +13,23 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from unittest.mock import Mock
 
-from fetchtastic.download.cache import CacheManager
+# Import downloader cache variables to sync them
+import fetchtastic.downloader as downloader_module
+from fetchtastic.download.cache import (
+    CacheManager,
+)
+from fetchtastic.download.cache import _releases_cache as cache_releases_cache
+from fetchtastic.download.cache import (
+    _releases_cache_loaded as cache_releases_cache_loaded,
+)
 from fetchtastic.download.firmware import FirmwareReleaseDownloader
 from fetchtastic.download.prerelease_history import PrereleaseHistoryManager
 from fetchtastic.download.version import VersionManager
 from fetchtastic.utils import matches_extract_patterns
+
+# Make downloader cache reference the same objects as cache module
+downloader_module._releases_cache = cache_releases_cache
+downloader_module._releases_cache_loaded = cache_releases_cache_loaded
 
 # Create global instances for backward compatibility with legacy function-based tests
 _version_manager = VersionManager()

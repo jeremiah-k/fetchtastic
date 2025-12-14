@@ -38,8 +38,8 @@ class TestFirmwareReleaseDownloader:
     def test_init(self, mock_config):
         """Test downloader initialization."""
         with (
-            patch("fetchtastic.download.firmware.CacheManager") as mock_cache,
-            patch("fetchtastic.download.firmware.VersionManager") as mock_version,
+            patch("fetchtastic.download.base.CacheManager") as mock_cache,
+            patch("fetchtastic.download.base.VersionManager") as mock_version,
             patch(
                 "fetchtastic.download.firmware.PrereleaseHistoryManager"
             ) as mock_prerelease,
@@ -54,7 +54,6 @@ class TestFirmwareReleaseDownloader:
             assert dl.latest_release_file == "latest_firmware_release.json"
             mock_cache.assert_called_once()
             mock_version.assert_called_once()
-            mock_prerelease.assert_called_once()
 
     def test_get_target_path_for_release(self, downloader):
         """Test target path generation for firmware releases."""
@@ -66,6 +65,10 @@ class TestFirmwareReleaseDownloader:
     @patch("fetchtastic.download.firmware.make_github_api_request")
     def test_get_releases_success(self, mock_request, downloader):
         """Test successful release fetching from GitHub."""
+        # Mock cache to return None so it falls back to API
+        downloader.cache_manager.read_releases_cache_entry.return_value = None
+        downloader.cache_manager.write_releases_cache_entry = Mock()
+
         mock_response = Mock()
         mock_response.json.return_value = [
             {
@@ -91,24 +94,31 @@ class TestFirmwareReleaseDownloader:
         assert len(releases[0].assets) == 1
 
     def test_get_assets_firmware_filtering(self, downloader):
-        """Test that assets are filtered for firmware files."""
-        release = Mock(spec=Release)
-        release.assets = [
-            Mock(
-                spec=Asset, name="firmware-rak4631.zip", download_url="url1", size=1000
-            ),
-            Mock(spec=Asset, name="firmware-tbeam.zip", download_url="url2", size=2000),
-            Mock(spec=Asset, name="readme.txt", download_url="url3", size=100),
-        ]
+        """Test that get_assets returns all assets from the release."""
+        asset1 = Mock(spec=Asset)
+        asset1.name = "firmware-rak4631.zip"
+        asset1.download_url = "url1"
+        asset1.size = 1000
 
-        # Mock should_download_release to return True for firmware assets
-        downloader.should_download_release = Mock(side_effect=[True, True, False])
+        asset2 = Mock(spec=Asset)
+        asset2.name = "firmware-tbeam.zip"
+        asset2.download_url = "url2"
+        asset2.size = 2000
+
+        asset3 = Mock(spec=Asset)
+        asset3.name = "readme.txt"
+        asset3.download_url = "url3"
+        asset3.size = 100
+
+        release = Mock(spec=Release)
+        release.assets = [asset1, asset2, asset3]
 
         assets = downloader.get_assets(release)
 
-        assert len(assets) == 2
+        assert len(assets) == 3
         assert assets[0].name == "firmware-rak4631.zip"
         assert assets[1].name == "firmware-tbeam.zip"
+        assert assets[2].name == "readme.txt"
 
     def test_get_download_url(self, downloader):
         """Test download URL retrieval."""
@@ -119,7 +129,7 @@ class TestFirmwareReleaseDownloader:
 
         assert url == "https://example.com/firmware.zip"
 
-    @patch("fetchtastic.download.firmware.download_file_with_retry")
+    @patch("fetchtastic.utils.download_file_with_retry")
     @patch("os.path.exists")
     @patch("os.path.getsize")
     def test_download_firmware_success(

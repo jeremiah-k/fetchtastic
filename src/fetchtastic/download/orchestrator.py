@@ -9,6 +9,8 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+# Make orchestrator cache reference the same objects as cache module
+import fetchtastic.downloader as downloader_module
 from fetchtastic.constants import (
     DEFAULT_ANDROID_VERSIONS_TO_KEEP,
     DEFAULT_FIRMWARE_VERSIONS_TO_KEEP,
@@ -17,12 +19,15 @@ from fetchtastic.constants import (
 from fetchtastic.log_utils import logger
 
 from .android import MeshtasticAndroidAppDownloader
-from .cache import CacheManager
+from .cache import CacheManager, _releases_cache, _releases_cache_loaded
 from .firmware import FirmwareReleaseDownloader
 from .interfaces import DownloadResult, Release
 from .prerelease_history import PrereleaseHistoryManager
 from .repository import RepositoryDownloader
 from .version import VersionManager
+
+downloader_module._releases_cache = _releases_cache
+downloader_module._releases_cache_loaded = _releases_cache_loaded
 
 
 class DownloadOrchestrator:

@@ -150,9 +150,11 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             release: The release to get assets for
 
         Returns:
-            List[Asset]: List of downloadable assets for the release
+            List[Asset]: List of downloadable assets for release
         """
-        return release.assets or []
+        # Filter for APK files only
+        assets = release.assets or []
+        return [asset for asset in assets if asset.name.lower().endswith(".apk")]
 
     def get_download_url(self, asset: Asset) -> str:
         """
@@ -311,7 +313,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
     def _is_version_directory(self, dir_name: str) -> bool:
         """Check if a directory name represents a version directory."""
-        return bool(re.match(r"^(v)?\d+\.\d+\.\d+$", dir_name))
+        return bool(re.match(r"^(v)?\d+(\.\d+){1,2}$", dir_name))
 
     def _get_version_sort_key(self, version_dir: str) -> tuple:
         """Get a sort key for version directories."""
@@ -319,7 +321,10 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         version = version_dir.lstrip("v")
         try:
             parts = list(map(int, version.split(".")))
-            return tuple(parts)
+            # Pad to 3 parts for consistent sorting
+            while len(parts) < 3:
+                parts.append(0)
+            return tuple(parts[:3])  # Ensure exactly 3 parts
         except ValueError:
             return (0, 0, 0)
 
@@ -553,6 +558,11 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         Returns:
             bool: True if prerelease should be downloaded, False otherwise
         """
+        # Check if prereleases are enabled in config
+        check_prereleases = self.config.get("CHECK_APK_PRERELEASES", False)
+        if not check_prereleases:
+            return False
+
         # Check if we have a tracking file
         tracking_file = self.get_prerelease_tracking_file()
         if os.path.exists(tracking_file):
