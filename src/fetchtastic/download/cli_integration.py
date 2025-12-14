@@ -343,3 +343,166 @@ class DownloadCLIIntegration:
             "platform": sys.platform,
             "executable": sys.executable,
         }
+
+    def _get_existing_prerelease_dirs(self, prerelease_dir: str) -> List[str]:
+        """List existing prerelease directory names."""
+        if not os.path.exists(prerelease_dir):
+            return []
+
+        entries = []
+        try:
+            for entry in os.listdir(prerelease_dir):
+                full_path = os.path.join(prerelease_dir, entry)
+                if os.path.isdir(full_path) and not os.path.islink(full_path):
+                    if entry.startswith("firmware-"):
+                        entries.append(entry)
+        except OSError:
+            pass
+        return entries
+
+    def check_for_prereleases(
+        self,
+        download_dir: str,
+        latest_release_tag: str,
+        selected_patterns: Optional[List[str]] = None,
+        exclude_patterns: Optional[List[str]] = None,
+        device_manager=None,
+        github_token: Optional[str] = None,
+        force_refresh: bool = False,
+        allow_env_token: bool = True,
+    ) -> Tuple[bool, List[str]]:
+        """
+        Detect and download matching prerelease firmware assets for the expected prerelease version.
+
+        This is a compatibility method that provides the same interface as the legacy
+        check_for_prereleases function, implemented using the new modular architecture.
+
+        Args:
+            download_dir: Base download directory containing firmware/prerelease subdirectory
+            latest_release_tag: Official release tag used to compute expected prerelease version
+            selected_patterns: Asset selection patterns
+            exclude_patterns: Patterns to exclude from matching assets
+            device_manager: Optional device pattern resolver
+            github_token: GitHub API token
+            force_refresh: Force remote checks and update tracking
+            allow_env_token: Allow using token from environment
+
+        Returns:
+            Tuple of (downloaded: bool, versions: List[str])
+        """
+        if not self.migration:
+            logger.error("Migration not initialized")
+            return False, []
+
+        # Use the migration's orchestrator and components
+        orchestrator = self.migration.orchestrator
+        version_manager = orchestrator.version_manager
+        prerelease_manager = orchestrator.prerelease_manager
+        firmware_downloader = self.migration.firmware_downloader
+
+        # Calculate expected prerelease version
+        expected_version = version_manager.calculate_expected_prerelease_version(
+            latest_release_tag
+        )
+        if not expected_version:
+            logger.warning(
+                f"Could not calculate expected prerelease version from {latest_release_tag}"
+            )
+            return False, []
+
+        logger.debug(f"Expected prerelease version: {expected_version}")
+
+        # Set up prerelease directory
+        prerelease_base_dir = os.path.join(download_dir, "firmware", "prerelease")
+        os.makedirs(prerelease_base_dir, exist_ok=True)
+
+        # Check for existing prereleases locally
+        existing_dirs = self._get_existing_prerelease_dirs(prerelease_base_dir)
+
+        # Try to get latest active prerelease from history
+        try:
+            latest_active_dir = (
+                prerelease_manager.get_latest_active_prerelease_from_history(
+                    expected_version,
+                    github_token=github_token,
+                    force_refresh=force_refresh,
+                    allow_env_token=allow_env_token,
+                )
+            )
+
+            if latest_active_dir and latest_active_dir in existing_dirs:
+                # Latest active prerelease already exists locally
+                remote_dir = latest_active_dir
+                logger.debug(f"Using existing active prerelease: {remote_dir}")
+                return False, [remote_dir]
+            elif latest_active_dir:
+                # Latest active prerelease found remotely but not local
+                remote_dir = latest_active_dir
+                logger.debug(f"Found remote active prerelease: {remote_dir}")
+            else:
+                # No active prerelease found, fall back to directory scanning
+                remote_dir = None
+                logger.debug("No active prerelease found in commit history")
+
+        except Exception as exc:
+            logger.debug(f"Failed to get prerelease commit history: {exc}")
+            remote_dir = None
+
+        # Fallback to directory scanning
+        if not remote_dir:
+            logger.debug("Falling back to directory scanning approach")
+
+            # Find newest matching prerelease directory
+            matching_dirs = [
+                d
+                for d in existing_dirs
+                if version_manager.extract_clean_version(d).startswith(expected_version)
+            ]
+
+            if matching_dirs:
+                # Sort by version
+                matching_dirs.sort(
+                    key=lambda d: version_manager.get_release_tuple(d) or (),
+                    reverse=True,
+                )
+                newest_dir = matching_dirs[0]
+                logger.debug(f"Found existing prerelease: {newest_dir}")
+                return False, [newest_dir]
+
+            # Find latest remote prerelease directory
+            remote_dir = prerelease_manager.find_latest_remote_prerelease_dir(
+                expected_version,
+                github_token=github_token,
+                force_refresh=force_refresh,
+                allow_env_token=allow_env_token,
+            )
+
+            if not remote_dir:
+                return False, []
+
+        # Download assets for the selected prerelease
+        files_downloaded = firmware_downloader.download_prerelease_assets(
+            remote_dir,
+            prerelease_base_dir,
+            selected_patterns or [],
+            exclude_patterns or [],
+            device_manager,
+            force_refresh,
+            github_token=github_token,
+            allow_env_token=allow_env_token,
+        )
+
+        # Update tracking information
+        if files_downloaded or force_refresh:
+            prerelease_manager.update_prerelease_tracking(
+                latest_release_tag, remote_dir
+            )
+
+        # Clean up old prerelease directories if appropriate
+        should_cleanup = files_downloaded or remote_dir in existing_dirs
+        if should_cleanup:
+            firmware_downloader._cleanup_old_prerelease_dirs(
+                prerelease_base_dir, remote_dir, existing_dirs
+            )
+
+        return files_downloaded, [remote_dir] if files_downloaded else []

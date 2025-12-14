@@ -708,7 +708,7 @@ def test_windows_shortcut_creation(mocker):
 @patch("fetchtastic.setup_config.check_any_cron_jobs_exist", return_value=False)
 @patch("fetchtastic.setup_config.setup_cron_job")
 @patch("fetchtastic.setup_config.setup_reboot_cron_job")
-@patch("fetchtastic.downloader.main")
+@patch("fetchtastic.cli.main")
 @patch("shutil.which")
 @patch(
     "fetchtastic.setup_config.platformdirs.user_config_dir",
@@ -789,7 +789,7 @@ def test_run_setup_first_run_linux_simple(
 @patch("fetchtastic.setup_config.create_windows_menu_shortcuts")
 @patch("fetchtastic.setup_config.create_config_shortcut")
 @patch("fetchtastic.setup_config.create_startup_shortcut")
-@patch("fetchtastic.downloader.main")
+@patch("fetchtastic.cli.main")
 @patch("shutil.which")
 @patch(
     "fetchtastic.setup_config.platformdirs.user_config_dir",
@@ -874,7 +874,7 @@ def test_run_setup_first_run_windows(
 @patch("fetchtastic.setup_config.setup_boot_script")
 @patch("fetchtastic.setup_config.check_cron_job_exists", return_value=False)
 @patch("fetchtastic.setup_config.check_boot_script_exists", return_value=False)
-@patch("fetchtastic.downloader.main")
+@patch("fetchtastic.cli.main")
 @patch("shutil.which")
 @patch("fetchtastic.setup_config.subprocess.run")
 @patch(
@@ -958,7 +958,7 @@ def test_run_setup_first_run_termux(  # noqa: ARG001
 @patch("fetchtastic.setup_config.remove_reboot_cron_job")
 @patch("fetchtastic.setup_config.setup_cron_job")
 @patch("fetchtastic.setup_config.setup_reboot_cron_job")
-@patch("fetchtastic.downloader.main")
+@patch("fetchtastic.cli.main")
 @patch("shutil.which")
 @patch(
     "fetchtastic.setup_config.platformdirs.user_config_dir",
@@ -1065,7 +1065,7 @@ def test_run_setup_existing_config(
 @patch("fetchtastic.setup_config.remove_reboot_cron_job")
 @patch("fetchtastic.setup_config.setup_cron_job")
 @patch("fetchtastic.setup_config.setup_reboot_cron_job")
-@patch("fetchtastic.downloader.main")
+@patch("fetchtastic.cli.main")
 @patch("shutil.which")
 @patch(
     "fetchtastic.setup_config.platformdirs.user_config_dir",
@@ -1712,7 +1712,7 @@ def testget_prerelease_patterns_fallback_to_extract_patterns():
 
     config = {"EXTRACT_PATTERNS": ["station-", "heltec-"]}
 
-    with patch("fetchtastic.downloader.logger") as mock_logger:
+    with patch("fetchtastic.log_utils.logger") as mock_logger:
         result = get_prerelease_patterns(config)
 
         assert result == ["station-", "heltec-"]
@@ -1743,7 +1743,7 @@ def testget_prerelease_patterns_precedence():
         "EXTRACT_PATTERNS": ["old-pattern"],
     }
 
-    with patch("fetchtastic.downloader.logger") as mock_logger:
+    with patch("fetchtastic.log_utils.logger") as mock_logger:
         result = get_prerelease_patterns(config)
 
         assert result == ["new-pattern"]
