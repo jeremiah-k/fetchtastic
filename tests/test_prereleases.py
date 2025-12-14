@@ -35,6 +35,12 @@ for attr in dir(legacy_compat):
     if not attr.startswith("__"):  # Copy all except dunder methods
         setattr(downloader, attr, getattr(legacy_compat, attr))
 
+# Ensure _cache_manager has the get_commit_timestamp method
+if hasattr(downloader, "_cache_manager"):
+    downloader._cache_manager.get_commit_timestamp = (
+        legacy_compat._cache_manager_get_commit_timestamp
+    )
+
 # Also copy module-level attributes from legacy_compat
 for attr in [
     "platformdirs",
@@ -964,15 +970,15 @@ def test_get_commit_timestamp_cache():
         assert cached_timestamp == result1
         assert isinstance(cached_at, datetime)
 
-    # Test force_refresh bypasses cache
-    with patch(
-        "fetchtastic.utils.make_github_api_request", return_value=mock_response
-    ) as mock_get:
-        result3 = _cache_manager.get_commit_timestamp(
-            "meshtastic", "firmware", "abcdef123", force_refresh=True
-        )
-        assert result3 == result1
-        assert mock_get.call_count == 1  # One more call due to force_refresh
+        # Test force_refresh bypasses cache
+        with patch(
+            "fetchtastic.utils.make_github_api_request", return_value=mock_response
+        ) as mock_get:
+            result3 = legacy_compat.get_commit_timestamp(
+                "meshtastic", "firmware", "abcdef123", force_refresh=True
+            )
+            assert result3 == result1
+            assert mock_get.call_count == 1  # One more call due to force_refresh
 
     # Test cache expiry (simulate old cache entry)
     cache_key = "meshtastic/firmware/abcdef123"
