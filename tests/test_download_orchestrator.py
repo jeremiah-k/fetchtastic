@@ -36,8 +36,11 @@ class TestDownloadOrchestrator:
         orch.prerelease_manager = Mock()
         # Mock the downloaders that are created in __init__
         orch.android_downloader = Mock()
+        orch.android_downloader.download_dir = "/tmp/test"
         orch.firmware_downloader = Mock()
+        orch.firmware_downloader.download_dir = "/tmp/test"
         orch.repository_downloader = Mock()
+        orch.repository_downloader.download_dir = "/tmp/test"
         return orch
 
     def test_init(self, mock_config):
@@ -123,7 +126,7 @@ class TestDownloadOrchestrator:
         # Mock releases
         mock_release = Mock(spec=Release)
         mock_release.tag_name = "v1.0.0"
-        orchestrator.version_manager.get_releases = Mock(return_value=[mock_release])
+        orchestrator.android_downloader.get_releases = Mock(return_value=[mock_release])
 
         # Mock filtering
         orchestrator._filter_releases = Mock(return_value=[mock_release])
@@ -131,7 +134,7 @@ class TestDownloadOrchestrator:
 
         orchestrator._process_android_downloads()
 
-        orchestrator.version_manager.get_releases.assert_called_once()
+        orchestrator.android_downloader.get_releases.assert_called_once()
         orchestrator._filter_releases.assert_called_once_with([mock_release], "android")
         orchestrator._download_android_release.assert_called_once_with(mock_release)
 
@@ -140,15 +143,17 @@ class TestDownloadOrchestrator:
         # Mock releases
         mock_release = Mock(spec=Release)
         mock_release.tag_name = "v2.0.0"
-        orchestrator.version_manager.get_releases = Mock(return_value=[mock_release])
+        orchestrator.firmware_downloader.get_releases = Mock(
+            return_value=[mock_release]
+        )
 
-        # Mock filtering and downloading
+        # Mock filtering
         orchestrator._filter_releases = Mock(return_value=[mock_release])
         orchestrator._download_firmware_release = Mock()
 
         orchestrator._process_firmware_downloads()
 
-        orchestrator.version_manager.get_releases.assert_called_once()
+        orchestrator.firmware_downloader.get_releases.assert_called_once()
         orchestrator._filter_releases.assert_called_once_with(
             [mock_release], "firmware"
         )
@@ -157,18 +162,18 @@ class TestDownloadOrchestrator:
     def test_process_repository_downloads(self, orchestrator):
         """Test repository download processing."""
         # Mock repository files
-        mock_file = {"name": "test.sh", "download_url": "http://example.com/test.sh"}
-        orchestrator.version_manager.get_repository_files = Mock(
+        mock_file = {"name": "file1.zip", "download_url": "url1"}
+        orchestrator.repository_downloader.get_repository_files = Mock(
             return_value=[mock_file]
         )
 
-        # Mock filtering and downloading
+        # Mock filtering
         orchestrator._filter_repository_files = Mock(return_value=[mock_file])
         orchestrator._download_repository_file = Mock()
 
         orchestrator._process_repository_downloads()
 
-        orchestrator.version_manager.get_repository_files.assert_called_once()
+        orchestrator.repository_downloader.get_repository_files.assert_called_once()
         orchestrator._filter_repository_files.assert_called_once_with([mock_file])
         orchestrator._download_repository_file.assert_called_once_with(mock_file)
 

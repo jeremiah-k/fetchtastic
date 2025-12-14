@@ -456,6 +456,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
         version = version_dir.lstrip("v")
         try:
             parts = list(map(int, version.split(".")))
+            # Pad to 3 components for consistent sorting
+            while len(parts) < 3:
+                parts.append(0)
             return tuple(parts)
         except ValueError:
             return (0, 0, 0)
@@ -968,6 +971,10 @@ class FirmwareReleaseDownloader(BaseDownloader):
         Returns:
             bool: True if prerelease should be downloaded, False otherwise
         """
+        # Check if prereleases are enabled in config
+        if not self.config.get("CHECK_FIRMWARE_PRERELEASES", False):
+            return False
+
         # Check if we have a tracking file
         tracking_file = self.get_prerelease_tracking_file()
         if os.path.exists(tracking_file):
