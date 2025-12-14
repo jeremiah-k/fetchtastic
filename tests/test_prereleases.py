@@ -51,12 +51,30 @@ class CompatibilityDownloader:
     """Compatibility layer for tests using the old downloader interface."""
 
     def __init__(self):
+        self.config = {
+            "DOWNLOAD_DIR": "/tmp/test",
+            "CHECK_FIRMWARE_PRERELEASES": True,
+            "SELECTED_PRERELEASE_ASSETS": ["rak4631"],
+            "EXCLUDE_PATTERNS": ["*debug*"],
+            "GITHUB_TOKEN": "test_token",
+        }
         self.cache_manager = CacheManager()
         self.version_manager = VersionManager()
         self.prerelease_manager = PrereleaseHistoryManager()
-        self.firmware_downloader = FirmwareReleaseDownloader({})
+        self.firmware_downloader = FirmwareReleaseDownloader(self.config)
 
     # Delegate methods to appropriate new objects
+    def manage_prerelease_tracking_files(self):
+        return self.firmware_downloader.manage_prerelease_tracking_files()
+
+    def download_repo_prerelease_firmware(self, *args, **kwargs):
+        return self.firmware_downloader.download_repo_prerelease_firmware(
+            *args, **kwargs
+        )
+
+    def handle_prereleases(self, *args, **kwargs):
+        return self.firmware_downloader.handle_prereleases(*args, **kwargs)
+
     def check_for_prereleases(self, *args, **kwargs):
         # This would need to be implemented to delegate to the new system
         # For now, return mock values
@@ -623,9 +641,9 @@ def test_prerelease_tracking_functionality(
     iso8601_pattern = (
         r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?([+-]\d{2}:\d{2}|Z)?$"
     )
-    assert re.match(iso8601_pattern, tracking_data["last_updated"]), (
-        f"last_updated not in ISO-8601 format: {tracking_data['last_updated']}"
-    )
+    assert re.match(
+        iso8601_pattern, tracking_data["last_updated"]
+    ), f"last_updated not in ISO-8601 format: {tracking_data['last_updated']}"
 
     # Commits should be a list of strings, normalized to lowercase and unique.
     assert tracking_data.get("commits"), "commits should not be empty"
@@ -673,9 +691,9 @@ def test_prerelease_smart_pattern_matching():
         ]:
             assert matches, f"File {filename} should match patterns {extract_patterns}"
         else:
-            assert not matches, (
-                f"File {filename} should NOT match patterns {extract_patterns}"
-            )
+            assert (
+                not matches
+            ), f"File {filename} should NOT match patterns {extract_patterns}"
 
 
 def test_prerelease_directory_cleanup(tmp_path, write_dummy_file, mock_commit_history):
@@ -2345,9 +2363,9 @@ def test_cleanup_apk_prereleases_non_standard_versioning(tmp_path):
     _cleanup_apk_prereleases(str(prerelease_dir), "v2.7.8")
 
     # Check that old versions were removed
-    assert not old_prerelease.exists(), (
-        "Old non-standard prerelease should be cleaned up"
-    )
+    assert (
+        not old_prerelease.exists()
+    ), "Old non-standard prerelease should be cleaned up"
     assert not standard_old.exists(), "Old standard prerelease should be cleaned up"
 
     # Check that newer version was kept
@@ -2553,9 +2571,9 @@ def test_apk_download_prerelease_filtering_logic():
             prerelease_tuple is None or prerelease_tuple > latest_release_tuple
         )
 
-        assert should_download == case["should_download"], (
-            f"Failed for {case['tag']}: {case['reason']}"
-        )
+        assert (
+            should_download == case["should_download"]
+        ), f"Failed for {case['tag']}: {case['reason']}"
 
 
 def test_firmware_cleanup_simplified_logic(tmp_path):
