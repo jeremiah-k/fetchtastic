@@ -814,7 +814,8 @@ class DownloadOrchestrator:
             Dict[str, Any]: Dictionary containing download statistics
         """
         return {
-            "total_downloads": len(self.download_results),
+            "total_downloads": len(self.download_results) + len(self.failed_downloads),
+            "successful_downloads": len(self.download_results),
             "failed_downloads": len(self.failed_downloads),
             "success_rate": self._calculate_success_rate(),
             "android_downloads": self._count_artifact_downloads("android"),
