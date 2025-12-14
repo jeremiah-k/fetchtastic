@@ -1,5 +1,31 @@
 # src/fetchtastic/downloader.py
 
+"""
+DEPRECATED: This module has been refactored into a modular architecture.
+
+The functionality has been split into:
+- fetchtastic.download.android: Android APK downloads
+- fetchtastic.download.firmware: Firmware downloads
+- fetchtastic.download.repository: Repository file downloads
+- fetchtastic.download.orchestrator: Download coordination
+- fetchtastic.download.cache: Caching functionality
+- fetchtastic.download.files: File operations
+- fetchtastic.download.version: Version management
+
+This file is kept for backward compatibility but will be removed in a future version.
+Please update imports to use the new modular components.
+"""
+
+import warnings
+
+warnings.warn(
+    "fetchtastic.downloader is deprecated. "
+    "Use fetchtastic.download modules instead. "
+    "This module will be removed in a future version.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
 import fnmatch
 import glob
 import json
