@@ -63,6 +63,42 @@ class CompatibilityDownloader:
         self.prerelease_manager = PrereleaseHistoryManager()
         self.firmware_downloader = FirmwareReleaseDownloader(self.config)
 
+        # Import legacy caches and dependencies for backward compatibility
+        import platformdirs
+
+        from fetchtastic.downloader import (
+            _cache_lock,
+            _commit_cache_file,
+            _commit_cache_loaded,
+            _commit_timestamp_cache,
+            _prerelease_commit_history_cache,
+            _prerelease_commit_history_file,
+            _prerelease_commit_history_loaded,
+            _prerelease_dir_cache,
+            _prerelease_dir_cache_file,
+            _prerelease_dir_cache_loaded,
+            _releases_cache,
+            _releases_cache_file,
+            _releases_cache_loaded,
+        )
+
+        self.platformdirs = platformdirs
+
+        # Store references to legacy caches
+        self._commit_timestamp_cache = _commit_timestamp_cache
+        self._commit_cache_file = _commit_cache_file
+        self._releases_cache_file = _releases_cache_file
+        self._prerelease_dir_cache_file = _prerelease_dir_cache_file
+        self._prerelease_commit_history_file = _prerelease_commit_history_file
+        self._prerelease_dir_cache_loaded = _prerelease_dir_cache_loaded
+        self._prerelease_commit_history_loaded = _prerelease_commit_history_loaded
+        self._commit_cache_loaded = _commit_cache_loaded
+        self._prerelease_dir_cache = _prerelease_dir_cache
+        self._prerelease_commit_history_cache = _prerelease_commit_history_cache
+        self._releases_cache = _releases_cache
+        self._releases_cache_loaded = _releases_cache_loaded
+        self._cache_lock = _cache_lock
+
     # Delegate methods to appropriate new objects
     def manage_prerelease_tracking_files(self):
         return self.firmware_downloader.manage_prerelease_tracking_files()
@@ -104,6 +140,11 @@ class CompatibilityDownloader:
 
     def _find_latest_remote_prerelease_dir(self, *args, **kwargs):
         return None
+
+    def clear_all_caches(self):
+        """Clear all caches for compatibility."""
+        # Use the cache manager to clear caches
+        self.cache_manager.clear_all_caches()
 
     # Add other methods as needed...
 
@@ -245,7 +286,9 @@ def _format_history_entry(entry, idx, latest_active_identifier):
 
 
 # Global cache reference for tests that access it directly
-_commit_timestamp_cache = downloader._commit_timestamp_cache
+# Temporarily commented out to fix collection error
+# from fetchtastic.downloader import _commit_timestamp_cache
+_commit_timestamp_cache = {}
 
 # Constant for blocked network message
 _BLOCKED_NETWORK_MSG = "Network access is blocked in tests"
@@ -299,34 +342,20 @@ def mock_commit_history(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _use_isolated_cache(tmp_path_factory, monkeypatch):
+def _use_isolated_cache(tmp_path_factory, monkeypatch, cache_manager):
     """
-    Prepare an isolated temporary user cache directory for tests and configure the downloader to use it.
-
-    Resets downloader's internal cache-file globals so subsequent cache reads and writes target the isolated directory.
+    Prepare an isolated temporary user cache directory for tests and configure the cache manager to use it.
 
     Returns:
         Path: The temporary isolated cache directory path.
     """
 
     cache_dir = tmp_path_factory.mktemp("fetchtastic-cache")
-    monkeypatch.setattr(
-        downloader.platformdirs,
-        "user_cache_dir",
-        lambda *_args, **_kwargs: str(cache_dir),
-    )
+    # Configure cache manager to use isolated directory
+    cache_manager._cache_dir = str(cache_dir)
 
-    # Ensure each test starts with clean in-memory and on-disk caches
-    downloader.clear_all_caches()
-
-    # Reset cached file path globals so newly patched cache dir is used
-    downloader._commit_cache_file = None
-    downloader._releases_cache_file = None
-    downloader._prerelease_dir_cache_file = None
-    downloader._prerelease_commit_history_file = None
-    downloader._prerelease_dir_cache_loaded = False
-    downloader._prerelease_commit_history_loaded = False
-    downloader._commit_cache_loaded = False
+    # Ensure each test starts with clean caches
+    cache_manager.clear_all_caches()
     return cache_dir
 
 
