@@ -12,8 +12,6 @@ from unittest.mock import MagicMock, mock_open, patch
 import pytest
 import yaml
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-
 import fetchtastic.setup_config as setup_config
 
 

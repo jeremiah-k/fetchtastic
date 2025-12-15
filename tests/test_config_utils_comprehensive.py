@@ -2,13 +2,7 @@
 Comprehensive tests for configuration utilities module.
 """
 
-import os
-import sys
-
 import pytest
-
-# Add src to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from fetchtastic.download.config_utils import (
     _get_string_list_from_config,
