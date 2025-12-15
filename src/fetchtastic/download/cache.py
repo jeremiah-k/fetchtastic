@@ -12,6 +12,13 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import urlencode
 
+try:
+    import requests
+
+    _RequestException = requests.RequestException
+except ImportError:  # pragma: no cover
+    _RequestException = Exception  # type: ignore[assignment]
+
 from fetchtastic.constants import (
     COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS,
     FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
@@ -27,6 +34,18 @@ from fetchtastic.utils import (
 )
 
 from .files import _atomic_write, _atomic_write_json
+
+
+def _parse_iso_datetime_utc(value: Any) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
 
 
 class CacheManager:
@@ -198,12 +217,8 @@ class CacheManager:
         try:
             expires_at_str = cache_data.get("expires_at")
             if expires_at_str:
-                expires_at = datetime.fromisoformat(
-                    str(expires_at_str).replace("Z", "+00:00")
-                )
-                if expires_at.tzinfo is None:
-                    expires_at = expires_at.replace(tzinfo=timezone.utc)
-                if datetime.now(timezone.utc) > expires_at:
+                expires_at = _parse_iso_datetime_utc(expires_at_str)
+                if expires_at and datetime.now(timezone.utc) > expires_at:
                     logger.debug(f"Cache expired for {cache_file}")
                     return None
         except (ValueError, TypeError):
@@ -240,10 +255,8 @@ class CacheManager:
             directories = cached.get("directories")
             cached_at_raw = cached.get("cached_at")
             if isinstance(directories, list) and cached_at_raw:
-                try:
-                    cached_at = datetime.fromisoformat(
-                        str(cached_at_raw).replace("Z", "+00:00")
-                    )
+                cached_at = _parse_iso_datetime_utc(cached_at_raw)
+                if cached_at:
                     age_s = (now - cached_at).total_seconds()
                     if age_s < FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS:
                         logger.debug(
@@ -258,8 +271,6 @@ class CacheManager:
                         age_s,
                         FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
                     )
-                except ValueError:
-                    pass
 
         api_url = (
             f"{MESHTASTIC_GITHUB_IO_CONTENTS_URL}/{normalized_path}"
@@ -291,10 +302,10 @@ class CacheManager:
             return [d for d in directories if isinstance(d, str)]
         except (ValueError, KeyError, TypeError) as e:
             logger.error(
-                "Invalid repo directories cache format in %s: %s", cache_file, e
+                "Invalid JSON or structure in GitHub response for %s: %s", api_url, e
             )
             return []
-        except Exception as exc:
+        except _RequestException as exc:
             logger.debug("Could not fetch repo directories for %s: %s", api_url, exc)
             return []
 
@@ -326,10 +337,8 @@ class CacheManager:
             contents = cached.get("contents")
             cached_at_raw = cached.get("cached_at")
             if isinstance(contents, list) and cached_at_raw:
-                try:
-                    cached_at = datetime.fromisoformat(
-                        str(cached_at_raw).replace("Z", "+00:00")
-                    )
+                cached_at = _parse_iso_datetime_utc(cached_at_raw)
+                if cached_at:
                     age_s = (now - cached_at).total_seconds()
                     if age_s < FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS:
                         logger.debug(
@@ -344,8 +353,6 @@ class CacheManager:
                         age_s,
                         FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
                     )
-                except ValueError:
-                    pass
 
         api_url = (
             f"{MESHTASTIC_GITHUB_IO_CONTENTS_URL}/{normalized_path}"
@@ -369,9 +376,11 @@ class CacheManager:
             self.atomic_write_json(cache_file, cache)
             return [c for c in contents if isinstance(c, dict)]
         except (ValueError, KeyError, TypeError) as e:
-            logger.error("Invalid repo contents cache format in %s: %s", cache_file, e)
+            logger.error(
+                "Invalid JSON or structure in GitHub response for %s: %s", api_url, e
+            )
             return []
-        except Exception as exc:
+        except _RequestException as exc:
             logger.debug("Could not fetch repo contents for %s: %s", api_url, exc)
             return []
 
@@ -447,11 +456,8 @@ class CacheManager:
             cached_at_raw = entry.get("cached_at")
             if not cached_at_raw:
                 continue
-            try:
-                cached_at = datetime.fromisoformat(
-                    str(cached_at_raw).replace("Z", "+00:00")
-                )
-            except ValueError:
+            cached_at = _parse_iso_datetime_utc(cached_at_raw)
+            if not cached_at:
                 continue
             age_s = (now - cached_at).total_seconds()
             if age_s >= expiry_seconds:
@@ -473,11 +479,8 @@ class CacheManager:
             track_api_cache_miss()
             return None
 
-        try:
-            cached_at = datetime.fromisoformat(
-                str(cached_at_raw).replace("Z", "+00:00")
-            )
-        except ValueError:
+        cached_at = _parse_iso_datetime_utc(cached_at_raw)
+        if not cached_at:
             track_api_cache_miss()
             return None
 
@@ -564,14 +567,12 @@ class CacheManager:
 
         if ts_key:
             try:
-                ts_val = datetime.fromisoformat(
-                    str(cache_data[ts_key]).replace("Z", "+00:00")
-                )
-                if ts_val.tzinfo is None:
-                    ts_val = ts_val.replace(tzinfo=timezone.utc)
+                ts_val = _parse_iso_datetime_utc(cache_data[ts_key])
+                if ts_val is None:
+                    return None
                 if datetime.now(timezone.utc) - ts_val > timedelta(hours=expiry_hours):
                     return None
-            except ValueError:
+            except (ValueError, TypeError):
                 return None
 
         return cache_data
@@ -619,8 +620,19 @@ class CacheManager:
 
             return success
 
-        except Exception as e:
-            logger.error(f"Error migrating legacy cache file: {e}")
+        except (
+            IOError,
+            OSError,
+            json.JSONDecodeError,
+            UnicodeDecodeError,
+            TypeError,
+        ) as e:
+            logger.error(
+                "Error migrating legacy cache file from %s to %s: %s",
+                legacy_file_path,
+                new_file_path,
+                e,
+            )
             return False
 
     def get_cache_expiry_timestamp(self, cache_file: str, expiry_hours: float) -> str:
@@ -677,16 +689,16 @@ class CacheManager:
                 # New format: [timestamp_iso, cached_at_iso]
                 try:
                     timestamp_str, cached_at_str = cache_value
-                    cached_at = datetime.fromisoformat(
-                        str(cached_at_str).replace("Z", "+00:00")
-                    )
+                    cached_at = _parse_iso_datetime_utc(cached_at_str)
+                    if cached_at is None:
+                        continue
                     age = now - cached_at
                     if (
                         age.total_seconds()
                         < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 60 * 60
                     ):
                         keep[cache_key] = cache_value
-                except ValueError:
+                except (ValueError, TypeError):
                     continue
             elif isinstance(cache_value, dict):
                 # Legacy format: {"timestamp": "...", "cached_at": "..."}
@@ -694,9 +706,9 @@ class CacheManager:
                     timestamp_str = cache_value.get("timestamp")
                     cached_at_str = cache_value.get("cached_at")
                     if timestamp_str and cached_at_str:
-                        cached_at = datetime.fromisoformat(
-                            str(cached_at_str).replace("Z", "+00:00")
-                        )
+                        cached_at = _parse_iso_datetime_utc(cached_at_str)
+                        if cached_at is None:
+                            continue
                         age = now - cached_at
                         if (
                             age.total_seconds()
@@ -704,7 +716,7 @@ class CacheManager:
                         ):
                             # Convert to new format for consistency
                             keep[cache_key] = [timestamp_str, cached_at_str]
-                except ValueError:
+                except (ValueError, TypeError):
                     continue
 
         return keep
@@ -733,9 +745,10 @@ class CacheManager:
         if not force_refresh and cache_key in cache:
             try:
                 timestamp_str, cached_at_str = cache[cache_key]
-                cached_at = datetime.fromisoformat(
-                    str(cached_at_str).replace("Z", "+00:00")
-                )
+                cached_at = _parse_iso_datetime_utc(cached_at_str)
+                timestamp = _parse_iso_datetime_utc(timestamp_str)
+                if cached_at is None or timestamp is None:
+                    raise ValueError("Invalid commit timestamp cache entry")
                 age = now - cached_at
                 if age.total_seconds() < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 60 * 60:
                     track_api_cache_hit()
@@ -744,11 +757,13 @@ class CacheManager:
                         commit_hash,
                         age.total_seconds(),
                     )
-                    return datetime.fromisoformat(
-                        str(timestamp_str).replace("Z", "+00:00")
-                    )
-            except Exception:
-                pass
+                    return timestamp
+            except (ValueError, TypeError, KeyError) as exc:
+                logger.debug(
+                    "Ignoring invalid commit timestamp cache entry for %s: %s",
+                    cache_key,
+                    exc,
+                )
 
         track_api_cache_miss()
         url = f"{GITHUB_API_BASE}/{owner}/{repo}/commits/{commit_hash}"
@@ -765,13 +780,13 @@ class CacheManager:
             )
             if not timestamp_str:
                 return None
-            timestamp = datetime.fromisoformat(
-                str(timestamp_str).replace("Z", "+00:00")
-            )
+            timestamp = _parse_iso_datetime_utc(timestamp_str)
+            if timestamp is None:
+                return None
             cache[cache_key] = [timestamp.isoformat(), now.isoformat()]
             self.atomic_write_json(cache_file, cache)
             return timestamp
-        except Exception as exc:
+        except (_RequestException, ValueError, TypeError, KeyError) as exc:
             logger.debug(
                 "Could not fetch commit timestamp for %s: %s", commit_hash, exc
             )
@@ -851,9 +866,9 @@ def _load_json_cache_with_expiry(
                     )
                     continue
 
-                cached_at = datetime.fromisoformat(
-                    str(cache_entry["cached_at"]).replace("Z", "+00:00")
-                )
+                cached_at = _parse_iso_datetime_utc(cache_entry.get("cached_at"))
+                if cached_at is None:
+                    continue
                 age = current_time - cached_at
                 if (
                     expiry_hours is not None
@@ -862,7 +877,7 @@ def _load_json_cache_with_expiry(
                     continue
 
                 loaded[cache_key] = entry_processor(cache_entry, cached_at)
-            except Exception:
+            except (ValueError, TypeError, KeyError):
                 continue
 
         return loaded
@@ -915,16 +930,16 @@ def _load_commit_cache() -> None:
                     # New format: [timestamp_iso, cached_at_iso]
                     try:
                         timestamp_str, cached_at_str = cache_value
-                        cached_at = datetime.fromisoformat(
-                            str(cached_at_str).replace("Z", "+00:00")
-                        )
+                        cached_at = _parse_iso_datetime_utc(cached_at_str)
+                        if cached_at is None:
+                            continue
                         age = now - cached_at
                         if (
                             age.total_seconds()
                             < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 60 * 60
                         ):
                             valid_cache[cache_key] = cache_value
-                    except ValueError:
+                    except (ValueError, TypeError):
                         continue
                 elif isinstance(cache_value, dict):
                     # Legacy format: {"timestamp": "...", "cached_at": "..."}
@@ -932,9 +947,9 @@ def _load_commit_cache() -> None:
                         timestamp_str = cache_value.get("timestamp")
                         cached_at_str = cache_value.get("cached_at")
                         if timestamp_str and cached_at_str:
-                            cached_at = datetime.fromisoformat(
-                                str(cached_at_str).replace("Z", "+00:00")
-                            )
+                            cached_at = _parse_iso_datetime_utc(cached_at_str)
+                            if cached_at is None:
+                                continue
                             age = now - cached_at
                             if (
                                 age.total_seconds()
@@ -942,7 +957,7 @@ def _load_commit_cache() -> None:
                             ):
                                 # Convert to new format for consistency
                                 valid_cache[cache_key] = [timestamp_str, cached_at_str]
-                    except ValueError:
+                    except (ValueError, TypeError):
                         continue
 
             _commit_timestamp_cache = valid_cache

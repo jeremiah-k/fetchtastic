@@ -1626,8 +1626,9 @@ def test_cli_download_force_flag(mocker, mock_cli_dependencies):
 
     cli.main()
 
-    # Verify main was called (force flag should be passed through)
+    # Verify main was called with force_refresh=True
     args, kwargs = mock_cli_dependencies.main.call_args
+    assert kwargs.get("force_refresh") is True or (len(args) > 0 and args[0] is True)
 
 
 @pytest.mark.user_interface

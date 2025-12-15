@@ -6,9 +6,11 @@ This module provides integration between the new download subsystem and the exis
 
 import os
 import sys
+import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from fetchtastic.log_utils import logger
+from fetchtastic.utils import format_api_summary, get_api_request_summary
 
 from .android import MeshtasticAndroidAppDownloader
 from .firmware import FirmwareReleaseDownloader
@@ -120,6 +122,69 @@ class DownloadCLIIntegration:
 
         except Exception as e:
             logger.error(f"Error clearing caches: {e}")
+
+    def log_download_results_summary(
+        self,
+        *,
+        logger_override: Any = None,
+        elapsed_seconds: float,
+        downloaded_firmwares: List[str],
+        downloaded_apks: List[str],
+        failed_downloads: List[Dict[str, str]],
+        latest_firmware_version: str,
+        latest_apk_version: str,
+    ) -> None:
+        """
+        Log a legacy-style download summary for the CLI.
+
+        This keeps the CLI command handler focused on dispatch and delegates formatting here.
+        """
+        log = logger_override or logger
+        log.info(f"\nCompleted in {elapsed_seconds:.1f}s")
+
+        downloaded_count = len(downloaded_firmwares) + len(downloaded_apks)
+        if downloaded_count > 0:
+            log.info(f"Downloaded {downloaded_count} new versions")
+
+        if latest_firmware_version:
+            log.info(f"Latest firmware: {latest_firmware_version}")
+        if latest_apk_version:
+            log.info(f"Latest APK: {latest_apk_version}")
+
+        latest_versions = self.get_latest_versions()
+        latest_firmware_prerelease = latest_versions.get("firmware_prerelease")
+        latest_apk_prerelease = latest_versions.get("android_prerelease")
+        if latest_firmware_prerelease:
+            log.info(f"Latest firmware prerelease: {latest_firmware_prerelease}")
+        if latest_apk_prerelease:
+            log.info(f"Latest APK prerelease: {latest_apk_prerelease}")
+
+        if failed_downloads:
+            log.info(f"{len(failed_downloads)} downloads failed:")
+            for failure in failed_downloads:
+                url = failure.get("url", "unknown")
+                retryable = failure.get("retryable")
+                http_status = failure.get("http_status")
+                error = failure.get("error", "")
+                log.info(
+                    f"- {failure.get('type', 'Unknown')} {failure.get('release_tag', '')}: "
+                    f"{failure.get('file_name', 'unknown')} "
+                    f"URL={url} retryable={retryable} http_status={http_status} error={error}"
+                )
+
+        if downloaded_count == 0 and not failed_downloads:
+            log.info(
+                "All assets are up to date.\n%s",
+                time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            )
+
+        summary = get_api_request_summary()
+        if summary.get("total_requests", 0) > 0:
+            log.debug(format_api_summary(summary))
+        else:
+            log.debug(
+                "📊 GitHub API Summary: No API requests made (all data served from cache)"
+            )
 
     def _convert_results_to_legacy_format(
         self, success_results: List[Any]
@@ -648,7 +713,8 @@ class DownloadCLIIntegration:
             matching_dirs = [
                 d
                 for d in existing_dirs
-                if version_manager.extract_clean_version(d).startswith(expected_version)
+                if (clean := version_manager.extract_clean_version(d))
+                and clean.startswith(expected_version)
             ]
 
             if matching_dirs:

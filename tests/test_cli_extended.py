@@ -358,7 +358,6 @@ def test_run_repo_clean_confirmation_cancelled(mocker, capsys):
 
 
 @pytest.mark.user_interface
-@pytest.mark.user_interface
 @pytest.mark.unit
 def test_windows_specific_cleanup_logic(mocker, capsys):
     """Test Windows-specific cleanup with winshell available."""

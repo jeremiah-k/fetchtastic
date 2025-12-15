@@ -27,6 +27,8 @@ from .interfaces import (
     Asset,
     Downloader,
     DownloadResult,
+    DownloadSource,
+    DownloadTask,
     Release,
 )
 from .orchestrator import DownloadOrchestrator

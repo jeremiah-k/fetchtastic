@@ -296,7 +296,13 @@ class RepositoryDownloader(BaseDownloader):
             real_candidate_path = os.path.realpath(candidate_path)
 
             # Check if the resolved candidate path is within the base directory.
-            return real_candidate_path.startswith(real_base_path)
+            try:
+                return (
+                    os.path.commonpath([real_base_path, real_candidate_path])
+                    == real_base_path
+                )
+            except ValueError:
+                return False
 
         except (ValueError, TypeError, OSError):
             return False

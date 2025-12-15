@@ -459,7 +459,11 @@ class FileOperations:
         ):
             return False
         normalized = os.path.normpath(member_name)
-        if normalized.startswith("..") or normalized.startswith(f"..{os.sep}"):
+        if normalized == "..":
+            return False
+        if normalized.startswith(f"..{os.sep}"):
+            return False
+        if os.altsep and normalized.startswith(f"..{os.altsep}"):
             return False
         # Explicit null byte check
         if "\x00" in normalized:

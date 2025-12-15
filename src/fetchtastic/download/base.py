@@ -21,7 +21,7 @@ from fetchtastic.log_utils import logger
 from fetchtastic.utils import matches_selected_patterns
 
 from .cache import CacheManager
-from .files import FileOperations
+from .files import FileOperations, _sanitize_path_component
 from .interfaces import Asset, Downloader, DownloadResult, Pathish
 from .version import VersionManager
 
@@ -263,36 +263,9 @@ class BaseDownloader(Downloader, ABC):
             fnmatch.fnmatch(filename_lower, pattern.lower()) for pattern in patterns
         )
 
-    @staticmethod
-    def _sanitize_path_component(component: Optional[str]) -> Optional[str]:
-        """
-        Return a filesystem-safe single path component or None if the input is unsafe.
-
-        Mirrors the legacy downloader's safeguards against path traversal and invalid
-        components.
-        """
-        if component is None:
-            return None
-
-        sanitized = component.strip()
-        if not sanitized or sanitized in {".", ".."}:
-            return None
-
-        if os.path.isabs(sanitized):
-            return None
-
-        if "\x00" in sanitized:
-            return None
-
-        for separator in (os.sep, os.altsep):
-            if separator and separator in sanitized:
-                return None
-
-        return sanitized
-
     def _sanitize_required(self, component: str, label: str) -> str:
         """Sanitize a required component or raise ValueError with a helpful message."""
-        safe = self._sanitize_path_component(component)
+        safe = _sanitize_path_component(component)
         if safe is None:
             raise ValueError(
                 f"Unsafe {label} provided; aborting to avoid path traversal"

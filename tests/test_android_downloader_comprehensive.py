@@ -128,7 +128,14 @@ class TestMeshtasticAndroidAppDownloader:
         assert result.release_tag == "v2.7.14"
         assert result.file_type == "android"
 
-    def test_download_apk_method_exists(self, android_downloader):
+    @patch("fetchtastic.download.android.MeshtasticAndroidAppDownloader.download")
+    @patch("fetchtastic.download.android.MeshtasticAndroidAppDownloader.verify")
+    @patch(
+        "fetchtastic.download.android.MeshtasticAndroidAppDownloader.is_asset_complete"
+    )
+    def test_download_apk_method_exists(
+        self, mock_is_complete, mock_verify, mock_download, android_downloader
+    ):
         """Test that download_apk method exists and can be called."""
         release = Release(tag_name="v2.7.14", prerelease=False)
         asset = Asset(
@@ -138,6 +145,9 @@ class TestMeshtasticAndroidAppDownloader:
         )
 
         # Method should exist and return a result
+        mock_is_complete.return_value = False
+        mock_download.return_value = True
+        mock_verify.return_value = True
         result = android_downloader.download_apk(release, asset)
         assert hasattr(result, "success")
         assert result.file_type == "android"

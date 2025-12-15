@@ -104,7 +104,8 @@ _save_commit_cache() → CacheManager methods
 
 ```python
 # Legacy → New Location
-_get_prerelease_patterns() → NEEDS TO BE ADDED to base.py or version.py
+_get_prerelease_patterns() → FirmwareReleaseDownloader._get_prerelease_patterns() (src/fetchtastic/download/firmware.py)
+get_prerelease_patterns() → fetchtastic.download.config_utils.get_prerelease_patterns() (src/fetchtastic/download/config_utils.py)
 _get_latest_releases_data() → DownloadOrchestrator methods
 main() → DownloadCLIIntegration.main()
 ```
