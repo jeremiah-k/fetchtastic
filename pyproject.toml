@@ -111,11 +111,7 @@ output = "coverage.xml"
 directory = "htmlcov"
 
 [tool.coverage.components]
-core = [
-  "src/fetchtastic/downloader.py",
-  "src/fetchtastic/repo_downloader.py",
-  "src/fetchtastic/utils.py",
-]
+core = ["src/fetchtastic/download/*.py", "src/fetchtastic/utils.py"]
 interface = [
   "src/fetchtastic/cli.py",
   "src/fetchtastic/menu_apk.py",

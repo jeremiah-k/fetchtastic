@@ -22,8 +22,7 @@ component_management:
     - component_id: core_downloads
       name: Core Downloads
       paths:
-        - src/fetchtastic/downloader.py
-        - src/fetchtastic/repo_downloader.py
+        - src/fetchtastic/download/*.py
         - src/fetchtastic/utils.py
       statuses:
         - type: project
