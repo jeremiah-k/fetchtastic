@@ -201,8 +201,13 @@ def test_cli_repo_browse_command(mocker, mock_cli_dependencies):
     mock_repo_menu = mocker.patch(
         "fetchtastic.menu_repo.run_repository_downloader_menu"
     )
+    mock_input = mocker.patch("builtins.input", return_value="")
 
-    # Repo browse command doesn't raise SystemExit, just runs
+    # Mock config_exists to return True to avoid setup running
+    mocker.patch(
+        "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
+    )
+
     cli.main()
 
     mock_repo_menu.assert_called_once()
@@ -214,8 +219,13 @@ def test_cli_repo_clean_command(mocker, mock_cli_dependencies):
     """Test 'repo clean' command dispatch."""
     mocker.patch("sys.argv", ["fetchtastic", "repo", "clean"])
     mock_repo_clean = mocker.patch("fetchtastic.cli.run_repo_clean")
+    mock_input = mocker.patch("builtins.input", return_value="")
 
-    # Repo clean command doesn't raise SystemExit, just runs
+    # Mock config_exists to return True to avoid setup running
+    mocker.patch(
+        "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
+    )
+
     cli.main()
 
     mock_repo_clean.assert_called_once()
