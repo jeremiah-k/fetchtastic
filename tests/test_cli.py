@@ -18,18 +18,19 @@ def mock_cli_dependencies(mocker):
     mocker.patch("requests.get", return_value=mocker.MagicMock())
     mocker.patch("requests.Session.get", return_value=mocker.MagicMock())
 
-    # Mock external dependencies to avoid side effects
+    # Mock external dependencies to avoid side effects - patch at actual import locations
     mocker.patch("fetchtastic.setup_config.load_config", return_value={"LOG_LEVEL": ""})
-    mocker.patch("fetchtastic.cli.set_log_level")
-    mocker.patch("fetchtastic.cli.reset_api_tracking")
+    mocker.patch("fetchtastic.log_utils.set_log_level")
+    mocker.patch("fetchtastic.log_utils.logger")
+    mocker.patch("fetchtastic.utils.reset_api_tracking")
     mocker.patch("time.time", return_value=1234567890)
     mocker.patch(
-        "fetchtastic.cli.get_api_request_summary", return_value={"total_requests": 0}
+        "fetchtastic.utils.get_api_request_summary", return_value={"total_requests": 0}
     )
 
     # Mock integration instance
     mock_integration = mocker.MagicMock()
-    mock_integration.main.return_value = ([], [], [], [], "", "")
+    mock_integration.main.return_value = ([], [], [], "", "")
     mock_integration.get_latest_versions.return_value = {
         "firmware": "",
         "android": "",
@@ -39,7 +40,8 @@ def mock_cli_dependencies(mocker):
     mock_integration.manage_prerelease_files.return_value = 0
     mock_integration.clean_old_versions.return_value = 0
     mocker.patch(
-        "fetchtastic.cli.DownloadCLIIntegration", return_value=mock_integration
+        "fetchtastic.download.cli_integration.DownloadCLIIntegration",
+        return_value=mock_integration,
     )
 
     return mock_integration
@@ -60,15 +62,15 @@ def test_cli_download_command(mocker, mock_cli_dependencies):
     )
     cli.main()
 
-    mock_cli_dependencies.main.assert_called_once()
+    mock_cli_dependencies.assert_called_once()
     mock_setup_run.assert_not_called()
 
     # 2. Test when config does not exist
-    mock_cli_dependencies.main.reset_mock()
+    mock_cli_dependencies.reset_mock()
     mocker.patch("fetchtastic.setup_config.config_exists", return_value=(False, None))
     cli.main()
     mock_setup_run.assert_called_once()
-    mock_cli_dependencies.main.assert_not_called()
+    mock_cli_dependencies.assert_not_called()
 
 
 def test_cli_download_with_migration(mocker, mock_cli_dependencies):
@@ -103,7 +105,7 @@ def test_cli_setup_command_windows_integration_update(mocker):
     )
     mocker.patch("fetchtastic.setup_config.CONFIG_FILE", "/fake/config.yaml")
 
-    mock_logger = mocker.patch("fetchtastic.cli.logger")
+    mock_logger = mocker.patch("fetchtastic.log_utils.logger")
     cli.main()
     mock_load_config.assert_called_once()
     mock_create_shortcuts.assert_called_once_with("/fake/config.yaml", "/fake/dir")
@@ -120,7 +122,7 @@ def test_cli_setup_command_windows_integration_update_no_config(mocker):
         "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.0.0", False)
     )
 
-    mock_logger = mocker.patch("fetchtastic.cli.logger")
+    mock_logger = mocker.patch("fetchtastic.log_utils.logger")
     cli.main()
 
     # Should log error message about no configuration
@@ -144,7 +146,7 @@ def test_cli_setup_command_windows_integration_update_failed(mocker):
     )
     mocker.patch("fetchtastic.setup_config.CONFIG_FILE", "/fake/config.yaml")
 
-    mock_logger = mocker.patch("fetchtastic.cli.logger")
+    mock_logger = mocker.patch("fetchtastic.log_utils.logger")
     cli.main()
     mock_logger.error.assert_any_call("Failed to update Windows integrations.")
 
@@ -240,9 +242,10 @@ def test_cli_clean_command_enhanced(mocker, mock_cli_dependencies):
     """Test 'clean' command dispatch with enhanced checks."""
     mocker.patch("sys.argv", ["fetchtastic", "clean"])
     mock_clean = mocker.patch("fetchtastic.cli.run_clean")
+    # Mock input to avoid stdin issues
+    mocker.patch("builtins.input", return_value="y")
 
     cli.main()
-
     mock_clean.assert_called_once()
 
 
@@ -344,6 +347,8 @@ def test_cli_repo_command_success(mocker, command):
         )
     else:  # clean
         mock_action = mocker.patch("fetchtastic.cli.run_repo_clean")
+        # Mock input to avoid stdin issues
+        mocker.patch("builtins.input", return_value="y")
 
     mocker.patch(
         "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.0.0", False)
@@ -386,7 +391,7 @@ def test_cli_repo_browse_command_config_load_failed(mocker):
         "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.0.0", False)
     )
 
-    mock_logger = mocker.patch("fetchtastic.cli.logger")
+    mock_logger = mocker.patch("fetchtastic.log_utils.logger")
     cli.main()
     mock_logger.error.assert_any_call(
         "Configuration not found. Please run 'fetchtastic setup' first."
@@ -406,6 +411,8 @@ def test_cli_repo_command_with_update_available(mocker, command):
         mocker.patch("fetchtastic.menu_repo.run_repository_downloader_menu")
     else:  # clean
         mocker.patch("fetchtastic.cli.run_repo_clean")
+        # Mock input to avoid stdin issues
+        mocker.patch("builtins.input", return_value="y")
 
     mocker.patch(
         "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.1.0", True)
@@ -415,7 +422,7 @@ def test_cli_repo_command_with_update_available(mocker, command):
         return_value="pip install --upgrade fetchtastic",
     )
 
-    mock_logger = mocker.patch("fetchtastic.cli.logger")
+    mock_logger = mocker.patch("fetchtastic.log_utils.logger")
     cli.main()
 
     # Should log update available messages
@@ -544,7 +551,7 @@ def test_cli_setup_command_with_update_available(mocker):
     """Test the 'setup' command when an update is available."""
     mocker.patch("sys.argv", ["fetchtastic", "setup"])
     mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
-    mock_logger = mocker.patch("fetchtastic.cli.logger")
+    mock_logger = mocker.patch("fetchtastic.log_utils.logger")
 
     # Mock version info to indicate update is available
     mocker.patch(
@@ -576,6 +583,8 @@ def test_cli_clean_command(mocker):
     mocker.patch("sys.argv", ["fetchtastic", "clean"])
     # Mock the function in the cli module itself
     mock_run_clean = mocker.patch("fetchtastic.cli.run_clean")
+    # Mock input to avoid stdin issues
+    mocker.patch("builtins.input", return_value="y")
     cli.main()
     mock_run_clean.assert_called_once()
 
@@ -806,7 +815,7 @@ def test_cli_setup_windows_integration_no_config(mocker):
     mocker.patch(
         "fetchtastic.cli.display_version_info", return_value=("1.0", "1.0", False)
     )
-    mock_logger = mocker.patch("fetchtastic.cli.logger")
+    mock_logger = mocker.patch("fetchtastic.log_utils.logger")
 
     cli.main()
 
@@ -837,7 +846,7 @@ def test_cli_version_with_update_available_legacy(mocker):
     mocker.patch(
         "fetchtastic.cli.get_upgrade_command", return_value="pipx upgrade fetchtastic"
     )
-    mock_logger = mocker.patch("fetchtastic.cli.logger")
+    mock_logger = mocker.patch("fetchtastic.log_utils.logger")
 
     cli.main()
 
@@ -1306,7 +1315,7 @@ def test_cli_download_with_log_level_config(mocker):
     Sets up a fake CLI invocation and a loaded configuration containing a "LOG_LEVEL" key. Asserts that `set_log_level` is called with the configured value, `downloader.main` is invoked, and `setup_config.run_setup` is not called when a valid config exists.
     """
     mocker.patch("sys.argv", ["fetchtastic", "download"])
-    mock_set_log_level = mocker.patch("fetchtastic.cli.set_log_level")
+    mock_set_log_level = mocker.patch("fetchtastic.log_utils.set_log_level")
     mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
 
     # Mock external dependencies
@@ -1326,7 +1335,8 @@ def test_cli_download_with_log_level_config(mocker):
         "android_prerelease": "",
     }
     mocker.patch(
-        "fetchtastic.cli.DownloadCLIIntegration", return_value=mock_integration
+        "fetchtastic.download.cli_integration.DownloadCLIIntegration",
+        return_value=mock_integration,
     )
 
     # Test when config exists with LOG_LEVEL setting
@@ -1351,7 +1361,7 @@ def test_cli_download_with_log_level_config(mocker):
 def test_cli_download_without_log_level_config(mocker):
     """Test the 'download' command without LOG_LEVEL configuration."""
     mocker.patch("sys.argv", ["fetchtastic", "download"])
-    mock_set_log_level = mocker.patch("fetchtastic.cli.set_log_level")
+    mock_set_log_level = mocker.patch("fetchtastic.log_utils.set_log_level")
     mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
 
     # Mock external dependencies
@@ -1371,7 +1381,8 @@ def test_cli_download_without_log_level_config(mocker):
         "android_prerelease": "",
     }
     mocker.patch(
-        "fetchtastic.cli.DownloadCLIIntegration", return_value=mock_integration
+        "fetchtastic.download.cli_integration.DownloadCLIIntegration",
+        return_value=mock_integration,
     )
 
     # Test when config exists but without LOG_LEVEL setting
@@ -1401,7 +1412,7 @@ def test_cli_download_with_empty_config(mocker):
     - and does not run setup (`run_setup`).
     """
     mocker.patch("sys.argv", ["fetchtastic", "download"])
-    mock_set_log_level = mocker.patch("fetchtastic.cli.set_log_level")
+    mock_set_log_level = mocker.patch("fetchtastic.log_utils.set_log_level")
     mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
 
     # Mock external dependencies
@@ -1421,7 +1432,8 @@ def test_cli_download_with_empty_config(mocker):
         "android_prerelease": "",
     }
     mocker.patch(
-        "fetchtastic.cli.DownloadCLIIntegration", return_value=mock_integration
+        "fetchtastic.download.cli_integration.DownloadCLIIntegration",
+        return_value=mock_integration,
     )
 
     # Test when config exists but load_config returns None
@@ -1449,7 +1461,7 @@ def test_cli_download_with_various_log_levels(mocker):
         "fetchtastic.cli.DownloadCLIIntegration.main",
         return_value=([], [], [], [], [], "", ""),
     )
-    mock_set_log_level = mocker.patch("fetchtastic.cli.set_log_level")
+    mock_set_log_level = mocker.patch("fetchtastic.log_utils.set_log_level")
     mocker.patch("fetchtastic.setup_config.run_setup")
 
     mocker.patch(
@@ -1483,7 +1495,7 @@ def test_cli_download_parametrized_log_levels(mocker, log_level):
         "fetchtastic.cli.DownloadCLIIntegration.main",
         return_value=([], [], [], [], [], "", ""),
     )
-    mock_set_log_level = mocker.patch("fetchtastic.cli.set_log_level")
+    mock_set_log_level = mocker.patch("fetchtastic.log_utils.set_log_level")
     mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
 
     mocker.patch(
@@ -1515,7 +1527,7 @@ def test_cli_download_with_invalid_log_levels(mocker, invalid_log_level):
         "fetchtastic.cli.DownloadCLIIntegration.main",
         return_value=([], [], [], [], [], "", ""),
     )
-    mock_set_log_level = mocker.patch("fetchtastic.cli.set_log_level")
+    mock_set_log_level = mocker.patch("fetchtastic.log_utils.set_log_level")
     mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
 
     mocker.patch(
@@ -1550,7 +1562,7 @@ def test_cli_download_with_empty_log_level(mocker):
         "fetchtastic.cli.DownloadCLIIntegration.main",
         return_value=([], [], [], [], [], "", ""),
     )
-    mock_set_log_level = mocker.patch("fetchtastic.cli.set_log_level")
+    mock_set_log_level = mocker.patch("fetchtastic.log_utils.set_log_level")
     mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
 
     mocker.patch(
@@ -1573,7 +1585,7 @@ def test_cli_download_with_empty_log_level(mocker):
 def test_cli_download_with_case_insensitive_log_levels(mocker, mock_cli_dependencies):
     """Test the 'download' command with case variations of LOG_LEVEL values."""
     mocker.patch("sys.argv", ["fetchtastic", "download"])
-    mock_set_log_level = mocker.patch("fetchtastic.cli.set_log_level")
+    mock_set_log_level = mocker.patch("fetchtastic.log_utils.set_log_level")
 
     mocker.patch(
         "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")

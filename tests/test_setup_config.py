@@ -1,4 +1,5 @@
 import copy
+import getpass
 import importlib
 import os
 import subprocess
@@ -72,8 +73,8 @@ def test_is_termux_no_prefix():
     ],
 )
 def test_get_platform(mocker, is_termux_val, platform_system, expected):
-    """Test the platform detection logic."""
-    mocker.patch("fetchtastic.setup_config.is_termux", return_value=is_termux_val)
+    """Test platform detection logic."""
+    mocker.patch("src.fetchtastic.setup_config.is_termux", return_value=is_termux_val)
     mocker.patch("platform.system", return_value=platform_system)
     assert setup_config.get_platform() == expected
 
@@ -128,10 +129,11 @@ def test_is_fetchtastic_installed_via_pipx_false(mock_run):
 def test_get_fetchtastic_installation_method_pipx():
     """Test installation method detection for pipx."""
     with patch(
-        "fetchtastic.setup_config.is_fetchtastic_installed_via_pipx", return_value=True
+        "src.fetchtastic.setup_config.is_fetchtastic_installed_via_pipx",
+        return_value=True,
     ):
         with patch(
-            "fetchtastic.setup_config.is_fetchtastic_installed_via_pip",
+            "src.fetchtastic.setup_config.is_fetchtastic_installed_via_pip",
             return_value=False,
         ):
             assert setup_config.get_fetchtastic_installation_method() == "pipx"
@@ -156,10 +158,11 @@ def test_get_fetchtastic_installation_method_pip():
 def test_get_fetchtastic_installation_method_unknown():
     """Test installation method detection when unknown."""
     with patch(
-        "fetchtastic.setup_config.is_fetchtastic_installed_via_pipx", return_value=False
+        "src.fetchtastic.setup_config.is_fetchtastic_installed_via_pipx",
+        return_value=False,
     ):
         with patch(
-            "fetchtastic.setup_config.is_fetchtastic_installed_via_pip",
+            "src.fetchtastic.setup_config.is_fetchtastic_installed_via_pip",
             return_value=False,
         ):
             assert setup_config.get_fetchtastic_installation_method() == "unknown"
@@ -186,11 +189,13 @@ def test_load_config_no_file(tmp_path, mocker):
 @pytest.mark.configuration
 @pytest.mark.unit
 def test_load_config_new_location(tmp_path, mocker):
-    """Test loading config from the new (platformdirs) location."""
+    """Test loading config from new (platformdirs) location."""
     new_config_path = tmp_path / "new_config.yaml"
     old_config_path = tmp_path / "old_config.yaml"
-    mocker.patch("fetchtastic.setup_config.CONFIG_FILE", str(new_config_path))
-    mocker.patch("fetchtastic.setup_config.OLD_CONFIG_FILE", str(old_config_path))
+
+    # Patch the config file path directly in the module
+    mocker.patch.object(setup_config, "CONFIG_FILE", str(new_config_path))
+    mocker.patch.object(setup_config, "OLD_CONFIG_FILE", str(old_config_path))
 
     config_data = {"SAVE_APKS": True}
     with open(new_config_path, "w") as f:
@@ -207,8 +212,8 @@ def test_load_config_old_location_suggests_migration(tmp_path, mocker):
     """Test loading config from old location suggests migration."""
     new_config_path = tmp_path / "new_config.yaml"
     old_config_path = tmp_path / "old_config.yaml"
-    mocker.patch("fetchtastic.setup_config.CONFIG_FILE", str(new_config_path))
-    mocker.patch("fetchtastic.setup_config.OLD_CONFIG_FILE", str(old_config_path))
+    mocker.patch.object(setup_config, "CONFIG_FILE", str(new_config_path))
+    mocker.patch.object(setup_config, "OLD_CONFIG_FILE", str(old_config_path))
 
     # Create config in old location
     config_data = TEST_CONFIG.copy()
@@ -244,8 +249,8 @@ def test_config_exists_new_location(tmp_path, mocker):
     """Test config_exists detects config in new location."""
     new_config_path = tmp_path / "new_config.yaml"
     old_config_path = tmp_path / "old_config.yaml"
-    mocker.patch("fetchtastic.setup_config.CONFIG_FILE", str(new_config_path))
-    mocker.patch("fetchtastic.setup_config.OLD_CONFIG_FILE", str(old_config_path))
+    mocker.patch.object(setup_config, "CONFIG_FILE", str(new_config_path))
+    mocker.patch.object(setup_config, "OLD_CONFIG_FILE", str(old_config_path))
 
     # Create config in new location
     new_config_path.write_text("test: config")
@@ -261,8 +266,8 @@ def test_config_exists_old_location(tmp_path, mocker):
     """Test config_exists detects config in old location."""
     new_config_path = tmp_path / "new_config.yaml"
     old_config_path = tmp_path / "old_config.yaml"
-    mocker.patch("fetchtastic.setup_config.CONFIG_FILE", str(new_config_path))
-    mocker.patch("fetchtastic.setup_config.OLD_CONFIG_FILE", str(old_config_path))
+    mocker.patch.object(setup_config, "CONFIG_FILE", str(new_config_path))
+    mocker.patch.object(setup_config, "OLD_CONFIG_FILE", str(old_config_path))
 
     # Create config in old location only
     old_config_path.write_text("test: config")
@@ -278,8 +283,8 @@ def test_config_exists_none(tmp_path, mocker):
     """Test config_exists when no config exists."""
     new_config_path = tmp_path / "new_config.yaml"
     old_config_path = tmp_path / "old_config.yaml"
-    mocker.patch("fetchtastic.setup_config.CONFIG_FILE", str(new_config_path))
-    mocker.patch("fetchtastic.setup_config.OLD_CONFIG_FILE", str(old_config_path))
+    mocker.patch.object(setup_config, "CONFIG_FILE", str(new_config_path))
+    mocker.patch.object(setup_config, "OLD_CONFIG_FILE", str(old_config_path))
 
     exists, path = setup_config.config_exists()
     assert exists is False
@@ -411,8 +416,8 @@ def test_load_config_old_location(tmp_path, mocker):
     """Test loading config from the old location when new one doesn't exist."""
     new_config_path = tmp_path / "new_config.yaml"
     old_config_path = tmp_path / "old_config.yaml"
-    mocker.patch("fetchtastic.setup_config.CONFIG_FILE", str(new_config_path))
-    mocker.patch("fetchtastic.setup_config.OLD_CONFIG_FILE", str(old_config_path))
+    mocker.patch.object(setup_config, "CONFIG_FILE", str(new_config_path))
+    mocker.patch.object(setup_config, "OLD_CONFIG_FILE", str(old_config_path))
 
     config_data = {"SAVE_FIRMWARE": True}
     with open(old_config_path, "w") as f:
@@ -429,8 +434,8 @@ def test_load_config_prefers_new_location(tmp_path, mocker):
     """Test that the new config location is preferred when both exist."""
     new_config_path = tmp_path / "new_config.yaml"
     old_config_path = tmp_path / "old_config.yaml"
-    mocker.patch("fetchtastic.setup_config.CONFIG_FILE", str(new_config_path))
-    mocker.patch("fetchtastic.setup_config.OLD_CONFIG_FILE", str(old_config_path))
+    mocker.patch.object(setup_config, "CONFIG_FILE", str(new_config_path))
+    mocker.patch.object(setup_config, "OLD_CONFIG_FILE", str(old_config_path))
 
     new_config_data = {"key": "new"}
     old_config_data = {"key": "old"}
@@ -448,8 +453,8 @@ def test_migrate_config(tmp_path, mocker):
     """Test the configuration migration logic."""
     new_config_path = tmp_path / "new_config.yaml"
     old_config_path = tmp_path / "old_config.yaml"
-    mocker.patch("fetchtastic.setup_config.CONFIG_FILE", str(new_config_path))
-    mocker.patch("fetchtastic.setup_config.OLD_CONFIG_FILE", str(old_config_path))
+    mocker.patch.object(setup_config, "CONFIG_FILE", str(new_config_path))
+    mocker.patch.object(setup_config, "OLD_CONFIG_FILE", str(old_config_path))
     mocker.patch("fetchtastic.setup_config.CONFIG_DIR", str(tmp_path))
 
     # Create an old config file
@@ -1089,6 +1094,7 @@ def test_run_setup_first_run_windows(
 @pytest.mark.configuration
 @pytest.mark.unit
 @patch("builtins.input")
+@patch("getpass.getpass", return_value="")
 @patch("fetchtastic.setup_config.platform.system", return_value="Linux")
 @patch("fetchtastic.setup_config.is_termux", return_value=True)
 @patch("fetchtastic.setup_config.config_exists", return_value=(False, None))
