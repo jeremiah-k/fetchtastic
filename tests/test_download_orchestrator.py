@@ -67,25 +67,16 @@ class TestDownloadOrchestrator:
         # Mock the processing methods
         orchestrator._process_android_downloads = Mock()
         orchestrator._process_firmware_downloads = Mock()
-        orchestrator._process_repository_downloads = Mock()
         orchestrator._retry_failed_downloads = Mock()
         orchestrator._enhance_download_results_with_metadata = Mock()
         orchestrator._log_download_summary = Mock()
         orchestrator._refresh_commit_history_cache = Mock()
-
-        # Mock config checks
-        orchestrator.config = {
-            "DOWNLOAD_ANDROID": True,
-            "DOWNLOAD_FIRMWARE": True,
-            "DOWNLOAD_REPOSITORY": True,
-        }
 
         orchestrator.run_download_pipeline()
 
         orchestrator._refresh_commit_history_cache.assert_called_once()
         orchestrator._process_firmware_downloads.assert_called_once()
         orchestrator._process_android_downloads.assert_called_once()
-        orchestrator._process_repository_downloads.assert_called_once()
         orchestrator._enhance_download_results_with_metadata.assert_called_once()
         orchestrator._retry_failed_downloads.assert_called_once()
         orchestrator._log_download_summary.assert_called_once_with(1000.0)
@@ -119,7 +110,6 @@ class TestDownloadOrchestrator:
         # Processing methods should still be called (they check internally)
         orchestrator._process_android_downloads.assert_called_once()
         orchestrator._process_firmware_downloads.assert_called_once()
-        orchestrator._process_repository_downloads.assert_called_once()
 
     def test_process_android_downloads(self, orchestrator):
         """Test Android download processing."""
@@ -158,24 +148,6 @@ class TestDownloadOrchestrator:
             [mock_release], "firmware"
         )
         orchestrator._download_firmware_release.assert_called_once_with(mock_release)
-
-    def test_process_repository_downloads(self, orchestrator):
-        """Test repository download processing."""
-        # Mock repository files
-        mock_file = {"name": "file1.zip", "download_url": "url1"}
-        orchestrator.repository_downloader.get_repository_files = Mock(
-            return_value=[mock_file]
-        )
-
-        # Mock filtering
-        orchestrator._filter_repository_files = Mock(return_value=[mock_file])
-        orchestrator._download_repository_file = Mock()
-
-        orchestrator._process_repository_downloads()
-
-        orchestrator.repository_downloader.get_repository_files.assert_called_once()
-        orchestrator._filter_repository_files.assert_called_once_with([mock_file])
-        orchestrator._download_repository_file.assert_called_once_with(mock_file)
 
     def test_filter_releases(self, orchestrator):
         """Test release filtering logic."""

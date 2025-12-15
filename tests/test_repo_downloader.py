@@ -6,7 +6,7 @@ that replaces the old monolithic repo_downloader.py functionality.
 """
 
 import os
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -320,10 +320,14 @@ def test_should_download_release(repository_downloader):
 @pytest.mark.unit
 def test_get_repository_files_empty(repository_downloader):
     """Test get_repository_files method."""
-    # This would normally make HTTP requests, but for testing we expect empty list
-    # when no actual API calls are made
-    files = repository_downloader.get_repository_files()
-    assert files == []
+    # Mock the API call to return empty list
+    with patch("fetchtastic.utils.make_github_api_request") as mock_request:
+        mock_response = MagicMock()
+        mock_response.json.return_value = []
+        mock_request.return_value = mock_response
+
+        files = repository_downloader.get_repository_files()
+        assert files == []
 
 
 # Integration tests

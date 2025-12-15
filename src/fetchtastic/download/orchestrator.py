@@ -80,8 +80,8 @@ class DownloadOrchestrator:
         # Process Android downloads
         self._process_android_downloads()
 
-        # Process repository downloads
-        self._process_repository_downloads()
+        # Note: Repository downloads are handled separately through the interactive
+        # "repo browse" command and are not part of the automatic download pipeline
 
         # Enhance results with metadata before retry
         self._enhance_download_results_with_metadata()

@@ -52,7 +52,6 @@ class TestDownloadOrchestrator:
         with (
             patch.object(orchestrator, "_process_android_downloads"),
             patch.object(orchestrator, "_process_firmware_downloads"),
-            patch.object(orchestrator, "_process_repository_downloads"),
             patch.object(orchestrator, "cleanup_old_versions"),
             patch.object(orchestrator, "update_version_tracking"),
             patch.object(orchestrator, "_manage_prerelease_tracking"),
@@ -191,14 +190,6 @@ class TestDownloadOrchestrator:
         ):
             orchestrator._process_firmware_downloads()
 
-    def test_process_repository_downloads(self, orchestrator):
-        """Test processing repository downloads."""
-        # Mock network operations
-        with patch.object(
-            orchestrator.repository_downloader, "get_repository_files", return_value=[]
-        ):
-            orchestrator._process_repository_downloads()
-
     def test_download_android_release(self, orchestrator):
         """Test downloading Android release."""
         release = Release(tag_name="v2.7.14", prerelease=False)
@@ -235,18 +226,6 @@ class TestDownloadOrchestrator:
             orchestrator._download_firmware_release(release)
             mock_download.assert_called()
 
-    def test_download_repository_file(self, orchestrator):
-        """Test downloading repository file."""
-        file_info = {"name": "test.bin", "download_url": "https://example.com/test.bin"}
-
-        # Mock the actual download
-        with patch.object(
-            orchestrator.repository_downloader, "download_repository_file"
-        ) as mock_download:
-            mock_download.return_value = Mock(success=True)
-            orchestrator._download_repository_file(file_info)
-            mock_download.assert_called()
-
     def test_filter_releases(self, orchestrator):
         """Test filtering releases."""
         releases = [
@@ -255,14 +234,4 @@ class TestDownloadOrchestrator:
         ]
 
         filtered = orchestrator._filter_releases(releases, "firmware")
-        assert isinstance(filtered, list)
-
-    def test_filter_repository_files(self, orchestrator):
-        """Test filtering repository files."""
-        files = [
-            {"name": "firmware-rak4631.bin"},
-            {"name": "readme.txt"},
-        ]
-
-        filtered = orchestrator._filter_repository_files(files)
         assert isinstance(filtered, list)

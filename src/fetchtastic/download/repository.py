@@ -49,16 +49,63 @@ class RepositoryDownloader(BaseDownloader):
         """
         Get available files from the Meshtastic repository.
 
+        This method fetches repository contents from the GitHub API.
+        Note: Repository downloads are typically interactive and handled through
+        the menu system, not automatic downloads.
+
         Args:
             subdirectory: Optional subdirectory path within the repository
 
         Returns:
             List[Dict[str, Any]]: List of file information dictionaries
         """
-        # This would typically make an HTTP request to fetch the repository listing
-        # For now, we'll return an empty list as this would require actual API integration
-        logger.info(f"Fetching repository files from {self.repo_url}/{subdirectory}")
-        return []
+        try:
+            from fetchtastic.constants import (
+                GITHUB_API_TIMEOUT,
+                MESHTASTIC_GITHUB_IO_CONTENTS_URL,
+            )
+            from fetchtastic.utils import make_github_api_request
+
+            # Construct API URL
+            api_url = MESHTASTIC_GITHUB_IO_CONTENTS_URL
+            if subdirectory:
+                subdirectory = subdirectory.strip("/")
+                api_url = f"{api_url}/{subdirectory}"
+
+            # Make API request
+            response = make_github_api_request(
+                api_url,
+                github_token=self.config.get("GITHUB_TOKEN"),
+                allow_env_token=True,
+                timeout=GITHUB_API_TIMEOUT,
+            )
+
+            contents = response.json()
+            if not isinstance(contents, list):
+                logger.warning(f"Expected list from GitHub API, got {type(contents)}")
+                return []
+
+            # Filter for files only (directories are handled by menu system)
+            files = []
+            for item in contents:
+                if isinstance(item, dict) and item.get("type") == "file":
+                    file_info = {
+                        "name": item.get("name", ""),
+                        "path": item.get("path", ""),
+                        "download_url": item.get("download_url", ""),
+                        "size": item.get("size", 0),
+                        "type": "file",
+                    }
+                    files.append(file_info)
+
+            logger.info(
+                f"Fetched {len(files)} repository files from {subdirectory or 'root'}"
+            )
+            return files
+
+        except Exception as e:
+            logger.error(f"Error fetching repository files: {e}")
+            return []
 
     def download_repository_file(
         self, file_info: Dict[str, Any], target_subdirectory: str = ""

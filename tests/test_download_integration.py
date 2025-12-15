@@ -50,17 +50,12 @@ class TestDownloadIntegration:
             patch.object(
                 orchestrator.android_downloader, "get_releases", return_value=[]
             ),
-            patch.object(
-                orchestrator.repository_downloader,
-                "get_repository_files",
-                return_value=[],
-            ),
             patch.object(orchestrator, "cleanup_old_versions"),
             patch.object(orchestrator, "update_version_tracking"),
             patch.object(orchestrator, "_manage_prerelease_tracking"),
             patch.object(orchestrator, "_log_download_summary"),
         ):
-            # Run the pipeline
+            # Should handle the error gracefully
             result = orchestrator.run_download_pipeline()
 
             # Should complete without errors
@@ -196,11 +191,6 @@ class TestDownloadIntegration:
             ),
             patch.object(
                 orchestrator.android_downloader, "get_releases", return_value=[]
-            ),
-            patch.object(
-                orchestrator.repository_downloader,
-                "get_repository_files",
-                return_value=[],
             ),
             patch.object(
                 orchestrator.firmware_downloader,
