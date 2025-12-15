@@ -1142,6 +1142,7 @@ def test_run_setup_first_run_termux(  # noqa: ARG001
     mock_is_termux,
     mock_platform_system,
     mock_input,
+    *_unused_mocks,
 ):
     """Test a simple first-run setup process on a Termux system."""
     user_inputs = [

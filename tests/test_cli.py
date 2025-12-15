@@ -34,6 +34,12 @@ def mock_cli_dependencies(mocker):
     # Create a mock integration instance that prevents real downloads
     mock_integration_instance = mocker.MagicMock()
     mock_integration_instance.main.return_value = ([], [], [], [], [], "", "")
+    mock_integration_instance.get_latest_versions.return_value = {
+        "firmware": "",
+        "android": "",
+        "firmware_prerelease": "",
+        "android_prerelease": "",
+    }
 
     # Mock the CLI integration at its defining module to prevent real downloads/network.
     mocker.patch(
@@ -1455,7 +1461,7 @@ def test_cli_download_with_various_log_levels(mocker):
     """Test the 'download' command with various LOG_LEVEL values."""
     mocker.patch("sys.argv", ["fetchtastic", "download"])
     mock_integration_main = mocker.patch(
-        "fetchtastic.cli.DownloadCLIIntegration.main",
+        "fetchtastic.download.cli_integration.DownloadCLIIntegration.main",
         return_value=([], [], [], [], [], "", ""),
     )
     mock_set_log_level = mocker.patch("fetchtastic.log_utils.set_log_level")
@@ -1489,7 +1495,7 @@ def test_cli_download_parametrized_log_levels(mocker, log_level):
     """Test the 'download' command with parametrized LOG_LEVEL values."""
     mocker.patch("sys.argv", ["fetchtastic", "download"])
     mock_integration_main = mocker.patch(
-        "fetchtastic.cli.DownloadCLIIntegration.main",
+        "fetchtastic.download.cli_integration.DownloadCLIIntegration.main",
         return_value=([], [], [], [], [], "", ""),
     )
     mock_set_log_level = mocker.patch("fetchtastic.log_utils.set_log_level")
@@ -1521,7 +1527,7 @@ def test_cli_download_with_invalid_log_levels(mocker, invalid_log_level):
     """
     mocker.patch("sys.argv", ["fetchtastic", "download"])
     mock_integration_main = mocker.patch(
-        "fetchtastic.cli.DownloadCLIIntegration.main",
+        "fetchtastic.download.cli_integration.DownloadCLIIntegration.main",
         return_value=([], [], [], [], [], "", ""),
     )
     mock_set_log_level = mocker.patch("fetchtastic.log_utils.set_log_level")
@@ -1556,7 +1562,7 @@ def test_cli_download_with_empty_log_level(mocker):
     """
     mocker.patch("sys.argv", ["fetchtastic", "download"])
     mock_integration_main = mocker.patch(
-        "fetchtastic.cli.DownloadCLIIntegration.main",
+        "fetchtastic.download.cli_integration.DownloadCLIIntegration.main",
         return_value=([], [], [], [], [], "", ""),
     )
     mock_set_log_level = mocker.patch("fetchtastic.log_utils.set_log_level")

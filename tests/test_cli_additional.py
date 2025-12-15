@@ -12,7 +12,7 @@ def mock_cli_dependencies(mocker):
     """Fixture to mock common CLI dependencies while allowing CLI code to run."""
     # Mock external dependencies to avoid side effects
     mocker.patch("fetchtastic.setup_config.load_config", return_value={"LOG_LEVEL": ""})
-    mocker.patch("fetchtastic.cli.set_log_level")
+    mocker.patch("fetchtastic.log_utils.set_log_level")
     mocker.patch("fetchtastic.cli.reset_api_tracking")
     mocker.patch("time.time", return_value=1234567890)
     mocker.patch(
@@ -29,7 +29,8 @@ def mock_cli_dependencies(mocker):
         "android_prerelease": "",
     }
     mocker.patch(
-        "fetchtastic.cli.DownloadCLIIntegration", return_value=mock_integration
+        "fetchtastic.download.cli_integration.DownloadCLIIntegration",
+        return_value=mock_integration,
     )
 
     return mock_integration
