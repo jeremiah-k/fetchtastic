@@ -5,6 +5,7 @@ import os
 import platform
 import shutil
 import subprocess
+import sys
 import time
 from typing import List
 
@@ -232,7 +233,13 @@ def main():
                     # Update config_path to the new location
                     config_path = setup_config.CONFIG_FILE
                     # Re-load the configuration from the new location
-                    config = setup_config.load_config(config_path)
+                    try:
+                        config = setup_config.load_config(config_path)
+                    except Exception as e:
+                        log_utils.logger.error(
+                            f"Failed to load migrated configuration: {e}"
+                        )
+                        sys.exit(1)
                 else:
                     log_utils.logger.error(
                         "Failed to migrate configuration. Continuing with old location."
@@ -516,12 +523,20 @@ def run_clean():
     old_config_file = setup_config.OLD_CONFIG_FILE
 
     if os.path.exists(config_file):
-        os.remove(config_file)
-        print(f"Removed configuration file: {config_file}")
+        try:
+            os.remove(config_file)
+            print(f"Removed configuration file: {config_file}")
+        except Exception as e:
+            print(f"Failed to delete configuration file {config_file}. Reason: {e}")
 
     if os.path.exists(old_config_file):
-        os.remove(old_config_file)
-        print(f"Removed old configuration file: {old_config_file}")
+        try:
+            os.remove(old_config_file)
+            print(f"Removed old configuration file: {old_config_file}")
+        except Exception as e:
+            print(
+                f"Failed to delete old configuration file {old_config_file}. Reason: {e}"
+            )
 
     # Remove config directory if empty
     config_dir = setup_config.CONFIG_DIR
