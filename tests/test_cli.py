@@ -210,21 +210,7 @@ def test_cli_version_with_update_available(mocker, mock_cli_dependencies):
 
 @pytest.mark.user_interface
 @pytest.mark.unit
-def test_cli_version_update_available(mocker, mock_cli_dependencies):
-    """Test 'version' command when update is available."""
-    mocker.patch("sys.argv", ["fetchtastic", "version"])
-    mock_display = mocker.patch(
-        "fetchtastic.cli.display_version_info", return_value=("1.0.0", "2.0.0", True)
-    )
-
-    cli.main()
-
-    mock_display.assert_called_once()
-
-
-@pytest.mark.user_interface
-@pytest.mark.unit
-def test_cli_version_with_update_available(mocker, mock_cli_dependencies):
+def test_cli_version_with_update_available_v2(mocker, mock_cli_dependencies):
     """Test 'version' command when update is available."""
     mocker.patch("sys.argv", ["fetchtastic", "version"])
     mock_display = mocker.patch(
@@ -283,6 +269,8 @@ def test_cli_repo_browse_command(mocker, mock_cli_dependencies):
     mocker.patch(
         "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
     )
+    # Mock RepositoryDownloader to prevent HTTP calls
+    mocker.patch("fetchtastic.cli.RepositoryDownloader")
 
     cli.main()
 
@@ -301,6 +289,8 @@ def test_cli_repo_clean_command(mocker, mock_cli_dependencies):
     mocker.patch(
         "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
     )
+    # Mock RepositoryDownloader to prevent HTTP calls
+    mocker.patch("fetchtastic.cli.RepositoryDownloader")
 
     cli.main()
 
@@ -818,7 +808,7 @@ def test_cli_setup_windows_integration_non_windows(mocker):
     # The flag should not be available, so this is expected behavior
 
 
-def test_cli_version_with_update_available(mocker):
+def test_cli_version_with_update_available_legacy(mocker):
     """Test the 'version' command with update available."""
     mocker.patch("sys.argv", ["fetchtastic", "version"])
     mocker.patch(
