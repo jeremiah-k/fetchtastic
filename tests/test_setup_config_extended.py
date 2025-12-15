@@ -75,7 +75,7 @@ def test_migrate_pip_to_pipx_success(mocker, tmp_path):
         for call in mock_subprocess.call_args_list
         if "pipx" in str(call) and "install" in str(call)
     ]
-    assert len(pipx_install_calls) == 2  # ensurepath + install
+    assert len(pipx_install_calls) == 1  # pipx install fetchtastic
 
 
 @pytest.mark.configuration
