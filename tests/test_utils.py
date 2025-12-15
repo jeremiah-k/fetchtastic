@@ -961,15 +961,12 @@ def test_make_github_api_request_cached_rate_limit():
 @pytest.mark.core_downloads
 @pytest.mark.unit
 def test_cache_thread_safety():
-    """Test that cache operations are thread-safe."""
+    """Test that rate limit cache operations are thread-safe."""
     import threading
     import time
-    from datetime import datetime, timezone
 
     # Clear caches before test
     utils.clear_rate_limit_cache()
-    # Legacy downloader removed - skip commit timestamp cache test
-    pytest.skip("Legacy downloader module removed")
 
     # Test rate limit cache thread safety
     def update_rate_limit_worker(token_hash, value):
@@ -1010,9 +1007,6 @@ def test_cache_thread_safety():
         remaining, cached_at = utils._rate_limit_cache[token_hash]
         assert remaining == 100 + i
         assert isinstance(cached_at, datetime)
-
-    # Legacy downloader removed - skip commit timestamp cache test
-    pytest.skip("Legacy downloader module removed")
 
 
 @pytest.mark.core_downloads
