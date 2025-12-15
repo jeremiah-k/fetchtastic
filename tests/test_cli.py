@@ -19,7 +19,10 @@ def mock_cli_dependencies(mocker):
     mocker.patch("requests.Session.get", return_value=mocker.MagicMock())
 
     # Mock external dependencies to avoid side effects - patch at actual import locations
-    mocker.patch("fetchtastic.setup_config.load_config", return_value={"LOG_LEVEL": ""})
+    mocker.patch(
+        "fetchtastic.setup_config.load_config",
+        return_value={"LOG_LEVEL": "", "DOWNLOAD_DIR": "/tmp/downloads"},
+    )
     mocker.patch("fetchtastic.log_utils.set_log_level")
     mocker.patch("fetchtastic.log_utils.logger")
     mocker.patch("fetchtastic.utils.reset_api_tracking")
@@ -30,7 +33,7 @@ def mock_cli_dependencies(mocker):
 
     # Mock integration instance
     mock_integration = mocker.MagicMock()
-    mock_integration.main.return_value = ([], [], [], "", "")
+    mock_integration.main.return_value = ([], [], [], [], [], "", "")
     mock_integration.get_latest_versions.return_value = {
         "firmware": "",
         "android": "",
@@ -39,12 +42,22 @@ def mock_cli_dependencies(mocker):
     }
     mock_integration.manage_prerelease_files.return_value = 0
     mock_integration.clean_old_versions.return_value = 0
-    mocker.patch(
-        "fetchtastic.download.cli_integration.DownloadCLIIntegration",
-        return_value=mock_integration,
+
+    # Create a mock integration instance
+    mock_integration_instance = mocker.MagicMock()
+    mock_integration_instance.main.return_value = ([], [], [], [], [], "", "")
+
+    # Mock the DownloadCLIIntegration class itself
+    mock_integration_class = mocker.patch(
+        "fetchtastic.cli.DownloadCLIIntegration", return_value=mock_integration_instance
     )
 
-    return mock_integration
+    # Also mock the orchestrator and downloaders to prevent any real network calls
+    mocker.patch("fetchtastic.download.orchestrator.DownloadOrchestrator")
+    mocker.patch("fetchtastic.download.android.MeshtasticAndroidAppDownloader")
+    mocker.patch("fetchtastic.download.firmware.FirmwareReleaseDownloader")
+
+    return mock_integration_instance
 
 
 def test_cli_download_command(mocker, mock_cli_dependencies):
@@ -62,7 +75,7 @@ def test_cli_download_command(mocker, mock_cli_dependencies):
     )
     cli.main()
 
-    mock_cli_dependencies.assert_called_once()
+    mock_cli_dependencies.main.assert_called_once()
     mock_setup_run.assert_not_called()
 
     # 2. Test when config does not exist
