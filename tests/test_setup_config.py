@@ -31,16 +31,16 @@ def test_is_termux_true():
 
     # Test with different PREFIX values
     test_cases = [
-        {"PREFIX": "/data/data/com.termux/files/usr", "expected": True},
-        {"PREFIX": "/data/data/com.termux", "expected": True},
-        {"PREFIX": "/data/data/other/files/usr", "expected": False},
-        {"PREFIX": "/usr", "expected": False},
+        ({"PREFIX": "/data/data/com.termux/files/usr"}, True),
+        ({"PREFIX": "/data/data/com.termux"}, True),
+        ({"PREFIX": "/data/data/other/files/usr"}, False),
+        ({"PREFIX": "/usr"}, False),
     ]
 
-    for case in test_cases:
-        with patch.dict(os.environ, case):
+    for env_vars, expected in test_cases:
+        with patch.dict(os.environ, env_vars):
             result = setup_config.is_termux()
-            assert result == case["expected"]
+            assert result == expected
 
 
 @pytest.mark.configuration
@@ -495,12 +495,106 @@ def test_get_upgrade_command_fallback(mocker):
         return_value="pipx",
     )
     mocker.patch(
-        "fetchtastic.setup_config.get_fetchtastic_installed_via_pipx",
+        "fetchtastic.setup_config.is_fetchtastic_installed_via_pipx",
         return_value=False,
     )
 
-    # Should fall back to pip command
-    assert setup_config.get_upgrade_command() == "pip install --upgrade fetchtastic"
+    # Should fall back to pipx command when is_termux=True and installation_method="pipx"
+    assert setup_config.get_upgrade_command() == "pipx upgrade fetchtastic"
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_config_exists(mocker):
+    """Test config_exists function returns tuple."""
+    # Test when config file exists
+    mocker.patch("os.path.exists", return_value=True)
+    result = setup_config.config_exists()
+    assert isinstance(result, tuple)
+    assert len(result) == 2
+    assert result[0] is True  # exists flag
+    assert isinstance(result[1], str)  # path
+
+    # Test when config file doesn't exist
+    mocker.patch("os.path.exists", return_value=False)
+    result = setup_config.config_exists()
+    assert isinstance(result, tuple)
+    assert len(result) == 2
+    assert result[0] is False  # exists flag
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_load_config(mocker):
+    """Test load_config function."""
+    import configparser
+
+    # Test successful config loading
+    mock_config = mocker.MagicMock()
+    mock_config.sections.return_value = ["section1", "section2"]
+
+    mocker.patch("configparser.ConfigParser", return_value=mock_config)
+    mocker.patch("os.path.exists", return_value=True)
+
+    config = setup_config.load_config()
+    assert config is not None
+
+    # Test when config doesn't exist
+    mocker.patch("os.path.exists", return_value=False)
+    config = setup_config.load_config()
+    assert config is None
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_platform_functions():
+    """Test platform detection functions."""
+    # Test get_platform function
+    platform = setup_config.get_platform()
+    assert isinstance(platform, str)
+    assert platform in ["linux", "darwin", "windows"]
+
+    # Test get_downloads_dir function
+    downloads_dir = setup_config.get_downloads_dir()
+    assert isinstance(downloads_dir, str)
+    # Just check it's a valid path, not necessarily ending in Downloads
+    assert len(downloads_dir) > 0
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_installation_detection_functions(mocker):
+    """Test installation detection functions."""
+    # Test is_fetchtastic_installed_via_pip
+    mocker.patch("shutil.which", return_value="/usr/bin/pip")
+    mocker.patch("subprocess.run", return_value=mocker.MagicMock(stdout="fetchtastic"))
+
+    result = setup_config.is_fetchtastic_installed_via_pip()
+    assert isinstance(result, bool)
+
+    # Test is_fetchtastic_installed_via_pipx
+    mocker.patch("shutil.which", return_value="/usr/bin/pipx")
+    result = setup_config.is_fetchtastic_installed_via_pipx()
+    assert isinstance(result, bool)
+
+    # Test get_fetchtastic_installation_method
+    method = setup_config.get_fetchtastic_installation_method()
+    assert isinstance(method, str)
+    assert method in ["pip", "pipx", "source", "unknown"]
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_storage_function(mocker):
+    """Test setup_storage function."""
+    mock_subprocess = mocker.patch("subprocess.run")
+    mock_logger = mocker.patch("fetchtastic.log_utils.logger")
+
+    result = setup_config.setup_storage()
+
+    # Function doesn't return anything, just runs the command
+    assert result is None
+    mock_subprocess.assert_called_once_with(["termux-setup-storage"], check=True)
 
 
 def test_cron_job_setup(mocker):

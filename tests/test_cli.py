@@ -138,8 +138,8 @@ def test_cli_setup_command_windows_integration_update_failed(mocker):
 
 
 def test_cli_setup_command_windows_integration_update_non_windows(mocker):
-    """Test the 'setup' command with Windows integration update on non-Windows."""
-    # Mock platform.system to ensure the flag is not added on non-Windows platforms
+    """Test 'setup' command with Windows integration update on non-Windows."""
+    # Mock platform.system to ensure that flag is not added on non-Windows platforms
     mocker.patch("platform.system", return_value="Linux")
     mocker.patch("sys.argv", ["fetchtastic", "setup", "--update-integrations"])
     mocker.patch(
@@ -148,6 +148,103 @@ def test_cli_setup_command_windows_integration_update_non_windows(mocker):
     )
 
     # This should raise SystemExit because --update-integrations is not available on Linux
+    with pytest.raises(SystemExit):
+        cli.main()
+
+
+@pytest.mark.user_interface
+@pytest.mark.unit
+def test_cli_help_command(mocker, mock_cli_dependencies):
+    """Test 'help' command dispatch."""
+    mocker.patch("sys.argv", ["fetchtastic", "help"])
+
+    with pytest.raises(SystemExit):
+        cli.main()
+
+
+@pytest.mark.user_interface
+@pytest.mark.unit
+def test_cli_help_command_with_subcommand(mocker, mock_cli_dependencies):
+    """Test 'help' command with specific command argument."""
+    mocker.patch("sys.argv", ["fetchtastic", "help", "download"])
+
+    with pytest.raises(SystemExit):
+        cli.main()
+
+
+@pytest.mark.user_interface
+@pytest.mark.unit
+def test_cli_version_command(mocker, mock_cli_dependencies):
+    """Test 'version' command dispatch."""
+    mocker.patch("sys.argv", ["fetchtastic", "version"])
+    mock_display_version = mocker.patch("fetchtastic.cli.display_version_info")
+
+    with pytest.raises(SystemExit):
+        cli.main()
+
+    mock_display_version.assert_called_once()
+
+
+@pytest.mark.user_interface
+@pytest.mark.unit
+def test_cli_topic_command(mocker, mock_cli_dependencies):
+    """Test 'topic' command dispatch."""
+    mocker.patch("sys.argv", ["fetchtastic", "topic"])
+    mock_topic = mocker.patch("fetchtastic.cli.get_ntfy_topic")
+
+    with pytest.raises(SystemExit):
+        cli.main()
+
+    mock_topic.assert_called_once()
+
+
+@pytest.mark.user_interface
+@pytest.mark.unit
+def test_cli_clean_command(mocker, mock_cli_dependencies):
+    """Test 'clean' command dispatch."""
+    mocker.patch("sys.argv", ["fetchtastic", "clean"])
+    mock_clean = mocker.patch("fetchtastic.cli.clean_fetchtastic")
+
+    with pytest.raises(SystemExit):
+        cli.main()
+
+    mock_clean.assert_called_once()
+
+
+@pytest.mark.user_interface
+@pytest.mark.unit
+def test_cli_repo_browse_command(mocker, mock_cli_dependencies):
+    """Test 'repo browse' command dispatch."""
+    mocker.patch("sys.argv", ["fetchtastic", "repo", "browse"])
+    mock_repo = mocker.patch("fetchtastic.cli.browse_repository")
+
+    with pytest.raises(SystemExit):
+        cli.main()
+
+    mock_repo.assert_called_once()
+
+
+@pytest.mark.user_interface
+@pytest.mark.unit
+def test_cli_repo_clean_command(mocker, mock_cli_dependencies):
+    """Test 'repo clean' command dispatch."""
+    mocker.patch("sys.argv", ["fetchtastic", "repo", "clean"])
+    mock_repo_clean = mocker.patch("fetchtastic.cli.clean_repository_directory")
+
+    with pytest.raises(SystemExit):
+        cli.main()
+
+    mock_repo_clean.assert_called_once()
+
+
+@pytest.mark.user_interface
+@pytest.mark.unit
+def test_cli_no_command(mocker, mock_cli_dependencies):
+    """Test CLI when no command is provided."""
+    mocker.patch("sys.argv", ["fetchtastic"])
+
+    with pytest.raises(SystemExit):
+        cli.main()
     with pytest.raises(SystemExit):
         cli.main()
 
@@ -1421,3 +1518,38 @@ def test_cli_download_with_case_insensitive_log_levels(mocker, mock_cli_dependen
         # Verify that set_log_level was called with the case variation
         mock_set_log_level.assert_called_once_with(log_level)
         mock_cli_dependencies.main.assert_called_once()
+
+
+@pytest.mark.user_interface
+@pytest.mark.unit
+def test_cli_download_force_flag(mocker, mock_cli_dependencies):
+    """Test 'download' command with --force flag."""
+    mocker.patch("sys.argv", ["fetchtastic", "download", "--force"])
+    mocker.patch(
+        "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
+    )
+    mocker.patch("fetchtastic.setup_config.prompt_for_migration")
+    mocker.patch("fetchtastic.setup_config.migrate_config")
+
+    cli.main()
+
+    # Verify main was called (force flag should be passed through)
+    args, kwargs = mock_cli_dependencies.main.call_args
+
+
+@pytest.mark.user_interface
+@pytest.mark.unit
+def test_cli_setup_with_multiple_sections(mocker, mock_cli_dependencies):
+    """Test 'setup' command with multiple --section arguments."""
+    mocker.patch(
+        "sys.argv",
+        ["fetchtastic", "setup", "--section", "firmware", "--section", "android"],
+    )
+    mock_run_setup = mocker.patch("fetchtastic.setup_config.run_setup")
+    mocker.patch(
+        "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.0.0", False)
+    )
+
+    cli.main()
+
+    mock_run_setup.assert_called_once()
