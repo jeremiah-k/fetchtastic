@@ -640,10 +640,17 @@ def configure_exclude_patterns(config: dict) -> None:
     - Normalizes input by trimming whitespace, removing empty entries, and deduplicating while preserving order.
     - Confirms the final list with the user before saving.
 
+    In non-interactive environments (CI or when stdin is not a tty), it automatically uses the recommended patterns.
+
     Effects:
     - Writes the finalized list of patterns to config["EXCLUDE_PATTERNS"] (a list of strings).
     - Does not persist the config to disk; callers should save the configuration if desired.
     """
+    # In non-interactive environments, use recommended defaults
+    if not sys.stdin.isatty() or os.environ.get("CI"):
+        config["EXCLUDE_PATTERNS"] = RECOMMENDED_EXCLUDE_PATTERNS.copy()
+        print("Using recommended exclude patterns (non-interactive mode).")
+        return
     while True:  # Loop for retry capability
         print("\n--- Exclude Pattern Configuration ---")
         print(

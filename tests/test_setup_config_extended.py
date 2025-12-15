@@ -197,7 +197,6 @@ def test_setup_downloads_apk_only(mocker, capsys):
         "builtins.input",
         side_effect=[
             "a",  # Choose APK only
-            "n",  # Don't rerun menu
             "y",  # Check APK prereleases
         ],
     )
@@ -320,6 +319,7 @@ def test_setup_downloads_partial_run(mocker):
         "builtins.input",
         side_effect=[
             "y",  # Keep APK selection
+            "n",  # Don't rerun menu (keep existing selection)
             "y",  # Enable prereleases
         ],
     )
@@ -356,6 +356,10 @@ def test_configure_exclude_patterns_custom_patterns(mocker):
     config = {}
     custom_patterns = ["*.debug", "*test*", "*.tmp"]
 
+    # Mock interactive environment
+    mocker.patch.dict(os.environ, {}, clear=False)  # Ensure CI is not set
+    mocker.patch("sys.stdin.isatty", return_value=True)
+
     # Mock input to use custom patterns
     mocker.patch(
         "builtins.input",
@@ -377,6 +381,10 @@ def test_configure_exclude_patterns_add_to_defaults(mocker):
     """Test configure_exclude_patterns adding to defaults."""
     config = {}
     additional = ["*.custom", "*.test"]
+
+    # Mock interactive environment
+    mocker.patch.dict(os.environ, {}, clear=False)  # Ensure CI is not set
+    mocker.patch("sys.stdin.isatty", return_value=True)
 
     # Mock input to use defaults and add more
     mocker.patch(
@@ -401,6 +409,10 @@ def test_configure_exclude_patterns_no_patterns(mocker):
     """Test configure_exclude_patterns with no patterns."""
     config = {}
 
+    # Mock interactive environment
+    mocker.patch.dict(os.environ, {}, clear=False)  # Ensure CI is not set
+    mocker.patch("sys.stdin.isatty", return_value=True)
+
     # Mock input to use no patterns
     mocker.patch(
         "builtins.input",
@@ -422,13 +434,19 @@ def test_configure_exclude_patterns_retry_on_invalid(mocker):
     """Test configure_exclude_patterns retry loop on invalid confirmation."""
     config = {}
 
+    # Mock interactive environment
+    mocker.patch.dict(os.environ, {}, clear=False)  # Ensure CI is not set
+    mocker.patch("sys.stdin.isatty", return_value=True)
+
     # Mock input to reject first confirmation, accept second
     mocker.patch(
         "builtins.input",
         side_effect=[
-            "n",  # Don't use defaults
-            "*.test",  # Custom patterns
+            "n",  # Don't use defaults (first loop)
+            "*.test",  # Custom patterns (first loop)
             "n",  # Reject first confirmation
+            "n",  # Don't use defaults (second loop)
+            "*.test",  # Custom patterns (second loop)
             "y",  # Accept second confirmation
         ],
     )
@@ -662,14 +680,14 @@ def test_copy_to_clipboard_linux_no_tools(mocker):
     mocker.patch.dict(os.environ, {}, clear=True)  # Remove Termux env
     mocker.patch("platform.system", return_value="Linux")
     mocker.patch("shutil.which", return_value=None)  # No clipboard tools
-    mocker.patch("builtins.print")
+    mock_print = mocker.patch("builtins.print")
 
     result = setup_config.copy_to_clipboard_func("test text")
 
     assert result is False
     # Should print message about missing tools
     print_calls = [
-        call for call in mocker.call_args_list if "xclip or xsel" in str(call)
+        call for call in mock_print.call_args_list if "xclip or xsel" in str(call)
     ]
     assert len(print_calls) > 0
 
@@ -836,7 +854,7 @@ def test_display_version_info_success(mocker):
     mock_response.status_code = 200
     mock_response.json.return_value = {"info": {"version": "0.9.0"}}
     mocker.patch("requests.get", return_value=mock_response)
-    mocker.patch("packaging.version.parse", side_effect=lambda v: mocker.MagicMock())
+    # Don't mock packaging.version.parse to avoid breaking version comparison
 
     current, latest, available = setup_config.display_version_info()
 
