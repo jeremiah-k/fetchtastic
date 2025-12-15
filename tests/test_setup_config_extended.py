@@ -357,7 +357,7 @@ def test_configure_exclude_patterns_custom_patterns(mocker):
     custom_patterns = ["*.debug", "*test*", "*.tmp"]
 
     # Mock interactive environment
-    mocker.patch.dict(os.environ, {}, clear=False)  # Ensure CI is not set
+    mocker.patch("os.environ.get", return_value=None)  # Ensure CI is not set
     mocker.patch("sys.stdin.isatty", return_value=True)
 
     # Mock input to use custom patterns
@@ -383,7 +383,7 @@ def test_configure_exclude_patterns_add_to_defaults(mocker):
     additional = ["*.custom", "*.test"]
 
     # Mock interactive environment
-    mocker.patch.dict(os.environ, {}, clear=False)  # Ensure CI is not set
+    mocker.patch("os.environ.get", return_value=None)  # Ensure CI is not set
     mocker.patch("sys.stdin.isatty", return_value=True)
 
     # Mock input to use defaults and add more
@@ -410,7 +410,7 @@ def test_configure_exclude_patterns_no_patterns(mocker):
     config = {}
 
     # Mock interactive environment
-    mocker.patch.dict(os.environ, {}, clear=False)  # Ensure CI is not set
+    mocker.patch("os.environ.get", return_value=None)  # Ensure CI is not set
     mocker.patch("sys.stdin.isatty", return_value=True)
 
     # Mock input to use no patterns
@@ -435,7 +435,7 @@ def test_configure_exclude_patterns_retry_on_invalid(mocker):
     config = {}
 
     # Mock interactive environment
-    mocker.patch.dict(os.environ, {}, clear=False)  # Ensure CI is not set
+    mocker.patch("os.environ.get", return_value=None)  # Ensure CI is not set
     mocker.patch("sys.stdin.isatty", return_value=True)
 
     # Mock input to reject first confirmation, accept second
