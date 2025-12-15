@@ -731,20 +731,6 @@ class FirmwareReleaseDownloader(BaseDownloader):
             )
         )
         if active_dir:
-            # Validate that the commit-history-selected directory still exists in the repo.
-            try:
-                repo_dirs = self.cache_manager.get_repo_directories(
-                    "",
-                    force_refresh=force_refresh,
-                    github_token=self.config.get("GITHUB_TOKEN"),
-                    allow_env_token=True,
-                )
-                if active_dir not in repo_dirs:
-                    active_dir = None
-            except Exception:
-                active_dir = None
-
-        if active_dir:
             logger.info("Using commit history for prerelease detection")
         else:
             # Fallback: scan repo root for prerelease directories
@@ -903,23 +889,6 @@ class FirmwareReleaseDownloader(BaseDownloader):
             ]
             if filtered_by_commits:
                 prereleases = filtered_by_commits
-
-        # Repo directory scan: ensure prerelease tag exists in repo listing
-        try:
-            from fetchtastic import menu_repo
-
-            directories = menu_repo.fetch_repo_directories()
-            repo_matches = prerelease_manager.scan_prerelease_directories(
-                directories, expected_base or ""
-            )
-            if repo_matches:
-                prereleases = [
-                    pr
-                    for pr in prereleases
-                    if any(match in pr.tag_name for match in repo_matches)
-                ] or prereleases
-        except Exception as e:
-            logger.debug("Skipping repo directory scan for prerelease filtering: %s", e)
 
         return prereleases
 

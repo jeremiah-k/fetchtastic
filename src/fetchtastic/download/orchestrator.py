@@ -68,10 +68,6 @@ class DownloadOrchestrator:
         start_time = time.time()
         logger.info("Starting download pipeline...")
 
-        # Legacy parity: refresh commit history early so prerelease selection can
-        # use commit-cache filtering during the run (not after).
-        self._refresh_commit_history_cache()
-
         # Process firmware downloads
         self._process_firmware_downloads()
 
@@ -117,6 +113,8 @@ class DownloadOrchestrator:
                 self._download_android_release(release)
 
             # Handle Android prereleases
+            if any(r.prerelease for r in android_releases):
+                self._refresh_commit_history_cache()
             prereleases = self.android_downloader.handle_prereleases(
                 android_releases, recent_commits=getattr(self, "_recent_commits", None)
             )
@@ -157,6 +155,8 @@ class DownloadOrchestrator:
                 self._download_firmware_release(release)
 
             # Handle prerelease selection based on commit history + expected version
+            if any(r.prerelease for r in firmware_releases):
+                self._refresh_commit_history_cache()
             prereleases = self.firmware_downloader.handle_prereleases(
                 firmware_releases, recent_commits=getattr(self, "_recent_commits", None)
             )

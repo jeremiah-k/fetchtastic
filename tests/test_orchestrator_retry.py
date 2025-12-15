@@ -79,5 +79,6 @@ def test_orchestrator_refreshes_commits_before_processing(monkeypatch):
 
     orch.run_download_pipeline()
 
-    assert calls[:1] == ["refresh"]
-    # Note: _recent_commits attribute is no longer set on downloaders for type safety
+    assert "firmware" in calls
+    assert "apk" in calls
+    # Commit refresh is now lazy (only when prerelease filtering needs it).

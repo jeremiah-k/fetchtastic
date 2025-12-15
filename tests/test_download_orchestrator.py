@@ -68,11 +68,9 @@ class TestDownloadOrchestrator:
         orchestrator._retry_failed_downloads = Mock()
         orchestrator._enhance_download_results_with_metadata = Mock()
         orchestrator._log_download_summary = Mock()
-        orchestrator._refresh_commit_history_cache = Mock()
 
         orchestrator.run_download_pipeline()
 
-        orchestrator._refresh_commit_history_cache.assert_called_once()
         orchestrator._process_firmware_downloads.assert_called_once()
         orchestrator._process_android_downloads.assert_called_once()
         orchestrator._enhance_download_results_with_metadata.assert_called_once()
@@ -87,7 +85,6 @@ class TestDownloadOrchestrator:
         orchestrator._retry_failed_downloads = Mock()
         orchestrator._enhance_download_results_with_metadata = Mock()
         orchestrator._log_download_summary = Mock()
-        orchestrator._refresh_commit_history_cache = Mock()
 
         # Disable all components (download methods handle config internally)
         orchestrator.config = {
@@ -98,7 +95,6 @@ class TestDownloadOrchestrator:
         orchestrator.run_download_pipeline()
 
         # Should still call retry and metadata enhancement
-        orchestrator._refresh_commit_history_cache.assert_called_once()
         orchestrator._retry_failed_downloads.assert_called_once()
         orchestrator._enhance_download_results_with_metadata.assert_called_once()
         orchestrator._log_download_summary.assert_called_once()
