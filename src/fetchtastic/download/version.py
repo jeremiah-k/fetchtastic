@@ -420,10 +420,10 @@ class VersionManager:
 
         # First try to use parsed Version.pre signal for accuracy
         normalized = self.normalize_version(version)
-        if isinstance(normalized, Version):
-            return normalized.pre is not None
+        if isinstance(normalized, Version) and normalized.pre is not None:
+            return True
 
-        # Fallback to substring matching for non-standard versions
+        # Fallback to substring matching for non-standard versions or dev releases
         prerelease_indicators = [
             "-rc",
             "-alpha",
@@ -436,7 +436,18 @@ class VersionManager:
         ]
 
         version_lower = version.lower()
-        return any(indicator in version_lower for indicator in prerelease_indicators)
+
+        # Check for explicit prerelease indicators
+        if any(indicator in version_lower for indicator in prerelease_indicators):
+            return True
+
+        # Check for commit hash patterns (indicates prerelease)
+        import re
+
+        if re.search(r"[a-f0-9]{6,}", version_lower):
+            return True
+
+        return False
 
     def get_prerelease_metadata_from_version(self, version: str) -> Dict[str, Any]:
         """
