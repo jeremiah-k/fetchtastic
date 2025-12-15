@@ -10,7 +10,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from fetchtastic.log_utils import logger
 
-from .migration import DownloadMigration
+from .android import MeshtasticAndroidAppDownloader
+from .firmware import FirmwareReleaseDownloader
+from .orchestrator import DownloadOrchestrator
 
 
 class DownloadCLIIntegration:
@@ -26,7 +28,9 @@ class DownloadCLIIntegration:
 
     def __init__(self):
         """Initialize the CLI integration."""
-        self.migration = None
+        self.orchestrator = None
+        self.android_downloader = None
+        self.firmware_downloader = None
         self.config = None
 
     def run_download(
@@ -55,25 +59,40 @@ class DownloadCLIIntegration:
             - latest_apk_version: Latest APK version
         """
         try:
-            # Initialize migration with the provided config
+            # Initialize components with the provided config
             self.config = config
-            self.migration = DownloadMigration(config)
+            self.orchestrator = DownloadOrchestrator(config)
+            self.android_downloader = MeshtasticAndroidAppDownloader(config)
+            self.firmware_downloader = FirmwareReleaseDownloader(config)
 
-            # Run the migration process
+            # Clear caches if force refresh is requested
+            if force_refresh:
+                self._clear_caches()
+
+            # Run the download pipeline
+            success_results, _failed_results = self.orchestrator.run_download_pipeline()
+
+            # Convert results to legacy format
             (
                 downloaded_firmwares,
                 new_firmware_versions,
                 downloaded_apks,
                 new_apk_versions,
-            ) = self.migration.run_migration(force_refresh)
+            ) = self._convert_results_to_legacy_format(success_results)
+
+            # Handle cleanup
+            self.orchestrator.cleanup_old_versions()
+
+            # Update version tracking
+            self.orchestrator.update_version_tracking()
 
             # Get failed downloads
-            failed_downloads = self.migration.get_failed_downloads()
+            failed_downloads = self.get_failed_downloads()
 
             # Get latest versions
-            latest_versions = self.migration.get_latest_versions()
-            latest_firmware_version = latest_versions.get("firmware", "")
-            latest_apk_version = latest_versions.get("android", "")
+            latest_versions = self.orchestrator.get_latest_versions()
+            latest_firmware_version = latest_versions.get("firmware", "") or ""
+            latest_apk_version = latest_versions.get("android", "") or ""
 
             return (
                 downloaded_firmwares,
@@ -89,6 +108,133 @@ class DownloadCLIIntegration:
             logger.error(f"Error in CLI integration: {e}")
             # Return empty results and error information
             return [], [], [], [], [], "", ""
+
+    def _clear_caches(self) -> None:
+        """Clear all caches as requested by force refresh."""
+        try:
+            # Clear cache manager caches
+            if self.android_downloader:
+                self.android_downloader.cache_manager.clear_all_caches()
+
+            logger.info("All caches cleared")
+
+        except Exception as e:
+            logger.error(f"Error clearing caches: {e}")
+
+    def _convert_results_to_legacy_format(
+        self, success_results: List[Any]
+    ) -> Tuple[List[str], List[str], List[str], List[str]]:
+        """
+        Convert new download results to legacy format.
+
+        Args:
+            success_results: List of successful download results
+
+        Returns:
+            Tuple containing lists in legacy format
+        """
+        downloaded_firmwares = []
+        new_firmware_versions = []
+        downloaded_apks = []
+        new_apk_versions = []
+
+        # Get current versions before processing results
+        current_android = self.android_downloader.get_latest_release_tag()
+        current_firmware = self.firmware_downloader.get_latest_release_tag()
+
+        for result in success_results:
+            # Legacy parity: "already complete" skips should not be reported as
+            # downloaded versions in the CLI summary.
+            if getattr(result, "was_skipped", False):
+                continue
+            if result.release_tag:
+                # Determine if this is firmware or Android based on file path
+                if result.file_path and "firmware" in str(result.file_path):
+                    if result.release_tag not in downloaded_firmwares:
+                        downloaded_firmwares.append(result.release_tag)
+                        # Check if this is a new version
+                        if not current_firmware or self._is_newer_version(
+                            result.release_tag, current_firmware
+                        ):
+                            new_firmware_versions.append(result.release_tag)
+                elif result.file_path and "android" in str(result.file_path):
+                    if result.release_tag not in downloaded_apks:
+                        downloaded_apks.append(result.release_tag)
+                        # Check if this is a new version
+                        if not current_android or self._is_newer_version(
+                            result.release_tag, current_android
+                        ):
+                            new_apk_versions.append(result.release_tag)
+
+        return (
+            downloaded_firmwares,
+            new_firmware_versions,
+            downloaded_apks,
+            new_apk_versions,
+        )
+
+    def _is_newer_version(self, version1: str, version2: str) -> bool:
+        """
+        Check if version1 is newer than version2.
+
+        Args:
+            version1: First version to compare
+            version2: Second version to compare
+
+        Returns:
+            bool: True if version1 is newer than version2
+        """
+        version_manager = self.android_downloader.get_version_manager()
+        comparison = version_manager.compare_versions(version1, version2)
+        return comparison > 0
+
+    def get_failed_downloads(self) -> List[Dict[str, Any]]:
+        """
+        Get failed downloads in legacy format.
+
+        Returns:
+            List[Dict[str, str]]: List of failed downloads with details
+        """
+        if not self.orchestrator:
+            return []
+
+        failed_downloads = []
+
+        file_type_map = {
+            "firmware": "Firmware",
+            "android": "Android APK",
+            "firmware_prerelease": "Firmware Prerelease",
+            "firmware_prerelease_repo": "Firmware Prerelease",
+            "repository": "Repository",
+            "android_prerelease": "Android APK Prerelease",
+        }
+
+        for result in self.orchestrator.failed_downloads:
+            failure_type = (
+                file_type_map.get(result.file_type, "Unknown")
+                if result.file_type
+                else "Unknown"
+            )
+            failed_downloads.append(
+                {
+                    "file_name": (
+                        os.path.basename(str(result.file_path))
+                        if result.file_path
+                        else "unknown"
+                    ),
+                    "release_tag": result.release_tag or "unknown",
+                    "url": result.download_url or "unknown",
+                    "type": failure_type,
+                    "path_to_download": (
+                        str(result.file_path) if result.file_path else "unknown"
+                    ),
+                    "error": result.error_message or "",
+                    "retryable": result.is_retryable,
+                    "http_status": result.http_status_code,
+                }
+            )
+
+        return failed_downloads
 
     def main(
         self,
@@ -134,8 +280,8 @@ class DownloadCLIIntegration:
         Returns:
             Dict[str, Any]: Dictionary containing download statistics
         """
-        if self.migration:
-            return self.migration.get_download_statistics()
+        if self.orchestrator:
+            return self.orchestrator.get_download_statistics()
         return {
             "total_downloads": 0,
             "failed_downloads": 0,
@@ -151,8 +297,10 @@ class DownloadCLIIntegration:
         Returns:
             Dict[str, str]: Dictionary mapping artifact types to latest versions
         """
-        if self.migration:
-            return self.migration.get_latest_versions()
+        if self.orchestrator:
+            versions = self.orchestrator.get_latest_versions()
+            # Convert Optional[str] to str for compatibility
+            return {k: v or "" for k, v in versions.items()}
         return {
             "android": "",
             "firmware": "",
@@ -167,20 +315,50 @@ class DownloadCLIIntegration:
         Returns:
             bool: True if validation passed
         """
-        if not self.migration:
+        if (
+            not self.orchestrator
+            or not self.android_downloader
+            or not self.firmware_downloader
+        ):
             return False
 
-        return self.migration.validate_migration()
+        try:
+            # Check that basic functionality works
+            android_releases = self.android_downloader.get_releases(limit=1)
+            firmware_releases = self.firmware_downloader.get_releases(limit=1)
+
+            if not android_releases or not firmware_releases:
+                logger.warning("Integration validation: Could not fetch releases")
+                return False
+
+            # Check that download directories exist
+            download_dir = self.android_downloader._get_download_dir()
+            if not os.path.exists(download_dir):
+                os.makedirs(download_dir, exist_ok=True)
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Integration validation failed: {e}")
+            return False
 
     def get_migration_report(self) -> Dict[str, Any]:
         """
-        Get a report on the migration and integration status.
+        Get a report on the integration status.
 
         Returns:
-            Dict[str, Any]: Migration and integration status report
+            Dict[str, Any]: Integration status report
         """
-        if self.migration:
-            return self.migration.get_migration_report()
+        if self.orchestrator and self.android_downloader and self.firmware_downloader:
+            return {
+                "status": "completed",
+                "android_downloader_initialized": True,
+                "firmware_downloader_initialized": True,
+                "orchestrator_initialized": True,
+                "configuration_valid": self._validate_configuration(),
+                "download_directory_exists": self._check_download_directory(),
+                "statistics": self.get_download_statistics(),
+            }
 
         return {
             "status": "not_initialized",
@@ -200,10 +378,25 @@ class DownloadCLIIntegration:
         Returns:
             bool: True if fallback was attempted
         """
-        if self.migration:
-            self.migration.fallback_to_legacy()
-            return True
+        # Fallback is no longer needed since we're using the new architecture directly
+        logger.warning(
+            "Fallback to legacy downloader requested but new architecture is active"
+        )
         return False
+
+    def _validate_configuration(self) -> bool:
+        """Validate the configuration."""
+        if not self.config:
+            return False
+        required_keys = ["DOWNLOAD_DIR"]
+        return all(key in self.config for key in required_keys)
+
+    def _check_download_directory(self) -> bool:
+        """Check if download directory exists."""
+        if not self.android_downloader:
+            return False
+        download_dir = self.android_downloader._get_download_dir()
+        return os.path.exists(download_dir)
 
     def get_legacy_compatibility_report(self) -> Dict[str, Any]:
         """
@@ -224,7 +417,7 @@ class DownloadCLIIntegration:
 
     def log_integration_summary(self) -> None:
         """Log a summary of the integration process."""
-        if not self.migration:
+        if not self.orchestrator:
             logger.info("CLI Integration: Not initialized")
             return
 
@@ -256,9 +449,9 @@ class DownloadCLIIntegration:
             f"Firmware downloads: {stats.get('firmware_downloads', 0)}, "
             f"Repository downloads: {stats.get('repository_downloads', 0)}"
         )
-        if self.migration and self.migration.orchestrator.failed_downloads:
+        if self.orchestrator.failed_downloads:
             logger.info("Failed downloads with URLs:")
-            for failure in self.migration.orchestrator.failed_downloads:
+            for failure in self.orchestrator.failed_downloads:
                 logger.info(
                     f"- {failure.file_type or 'unknown'} "
                     f"{failure.release_tag or ''} "
@@ -339,7 +532,7 @@ class DownloadCLIIntegration:
                 else "Not configured"
             ),
             "configuration_loaded": self.config is not None,
-            "migration_initialized": self.migration is not None,
+            "orchestrator_initialized": self.orchestrator is not None,
             "platform": sys.platform,
             "executable": sys.executable,
         }
@@ -390,15 +583,14 @@ class DownloadCLIIntegration:
         Returns:
             Tuple of (downloaded: bool, versions: List[str])
         """
-        if not self.migration:
-            logger.error("Migration not initialized")
+        if not self.orchestrator or not self.firmware_downloader:
+            logger.error("Orchestrator not initialized")
             return False, []
 
-        # Use the migration's orchestrator and components
-        orchestrator = self.migration.orchestrator
-        version_manager = orchestrator.version_manager
-        prerelease_manager = orchestrator.prerelease_manager
-        firmware_downloader = self.migration.firmware_downloader
+        # Use the orchestrator's components
+        version_manager = self.orchestrator.version_manager
+        prerelease_manager = self.orchestrator.prerelease_manager
+        firmware_downloader = self.firmware_downloader
 
         # Calculate expected prerelease version
         expected_version = version_manager.calculate_expected_prerelease_version(

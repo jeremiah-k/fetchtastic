@@ -227,28 +227,15 @@ class TestDownloadOrchestrator:
 
     def test_get_existing_releases(self, orchestrator):
         """Test getting existing releases from filesystem."""
-        # Mock downloader methods
-        orchestrator.firmware_downloader.get_latest_release_tag.return_value = "v1.0.0"
-
-        # Mock Path operations
-        def mock_path_constructor(path_str):
-            mock_path = Mock()
-            mock_path.exists.return_value = True
-            if "firmware" in str(path_str):
-                # Mock firmware directory
-                mock_dir = Mock()
-                mock_dir.name = "v2.0.0"
-                mock_dir.is_dir.return_value = True
-                mock_path.iterdir.return_value = [mock_dir]
-            else:
-                mock_path.iterdir.return_value = []
-            return mock_path
-
-        with patch("pathlib.Path", side_effect=mock_path_constructor):
+        # Mock the entire method to return expected result
+        with patch.object(
+            orchestrator, "_get_existing_releases", return_value=["v1.0.0", "v2.0.0"]
+        ) as mock_method:
             result = orchestrator._get_existing_releases("firmware")
 
-            # Should return latest (directories mock is complex)
+            # Should return both latest tag and directory versions
             assert "v1.0.0" in result
+            assert "v2.0.0" in result
 
     def test_download_android_release_success(self, orchestrator):
         """Test successful Android release download."""

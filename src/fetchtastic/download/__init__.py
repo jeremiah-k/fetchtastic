@@ -20,8 +20,6 @@ from .android import MeshtasticAndroidAppDownloader
 from .base import BaseDownloader
 from .cache import CacheManager
 from .cli_integration import DownloadCLIIntegration
-
-# Import config utilities
 from .config_utils import get_prerelease_patterns
 from .files import FileOperations
 from .firmware import FirmwareReleaseDownloader
@@ -29,12 +27,10 @@ from .interfaces import (
     Asset,
     Downloader,
     DownloadResult,
-    DownloadSource,
-    DownloadTask,
     Release,
 )
-from .migration import DownloadMigration
 from .orchestrator import DownloadOrchestrator
+from .prerelease_history import PrereleaseHistoryManager
 from .repository import RepositoryDownloader
 from .version import VersionManager
 
@@ -54,8 +50,6 @@ __all__ = [
     "RepositoryDownloader",
     # Orchestration
     "DownloadOrchestrator",
-    # Migration
-    "DownloadMigration",
     # CLI Integration
     "DownloadCLIIntegration",
     # Core components
