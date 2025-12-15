@@ -4,7 +4,8 @@ from unittest.mock import patch
 
 import pytest
 
-from fetchtastic import cli
+# Import cli module to ensure coverage tracking works
+import src.fetchtastic.cli as cli
 
 
 @pytest.fixture

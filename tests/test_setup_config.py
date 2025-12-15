@@ -7,7 +7,8 @@ from unittest.mock import MagicMock, mock_open, patch
 import pytest
 import yaml
 
-from fetchtastic import setup_config
+# Import setup_config module to ensure coverage tracking works
+import src.fetchtastic.setup_config as setup_config
 from tests.test_constants import TEST_CONFIG
 
 
