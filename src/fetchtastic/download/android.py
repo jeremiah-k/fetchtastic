@@ -559,7 +559,9 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             bool: True if prerelease should be downloaded, False otherwise
         """
         # Check if prereleases are enabled in config
-        check_prereleases = self.config.get("CHECK_APK_PRERELEASES", False)
+        check_prereleases = self.config.get(
+            "CHECK_APK_PRERELEASES", self.config.get("CHECK_PRERELEASES", False)
+        )
         if not check_prereleases:
             return False
 
@@ -587,6 +589,12 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         This method scans the prerelease tracking directory and cleans up any superseded
         or expired prerelease tracking files.
         """
+        check_prereleases = self.config.get(
+            "CHECK_APK_PRERELEASES", self.config.get("CHECK_PRERELEASES", False)
+        )
+        if not check_prereleases:
+            return
+
         tracking_dir = os.path.dirname(self.get_prerelease_tracking_file())
         if not os.path.exists(tracking_dir):
             return

@@ -193,7 +193,10 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
             # Check if we need to download
             if self.is_asset_complete(release.tag_name, asset):
-                logger.info(f"Firmware {asset.name} already exists and is complete")
+                logger.debug(
+                    "Firmware %s already exists and is complete",
+                    asset.name,
+                )
                 return self.create_download_result(
                     success=True,
                     release_tag=release.tag_name,
@@ -210,7 +213,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
             if success:
                 # Verify the download
                 if self.verify(target_path):
-                    logger.info(f"Successfully downloaded and verified {asset.name}")
+                    logger.info("Downloaded and verified %s", asset.name)
                     return self.create_download_result(
                         success=True,
                         release_tag=release.tag_name,
@@ -969,7 +972,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
             bool: True if prerelease should be downloaded, False otherwise
         """
         # Check if prereleases are enabled in config
-        if not self.config.get("CHECK_FIRMWARE_PRERELEASES", False):
+        if not self.config.get(
+            "CHECK_FIRMWARE_PRERELEASES", self.config.get("CHECK_PRERELEASES", False)
+        ):
             return False
 
         # Check if we have a tracking file

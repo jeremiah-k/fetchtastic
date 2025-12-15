@@ -71,6 +71,8 @@ class PrereleaseHistoryManager:
                         cached_at_dt = datetime.fromisoformat(
                             str(cached_at).replace("Z", "+00:00")
                         )
+                        if cached_at_dt.tzinfo is None:
+                            cached_at_dt = cached_at_dt.replace(tzinfo=timezone.utc)
                         age_seconds = (
                             datetime.now(timezone.utc) - cached_at_dt
                         ).total_seconds()
@@ -78,7 +80,7 @@ class PrereleaseHistoryManager:
                             logger.debug("Using cached prerelease commit history")
                             return commits[:limit]
                         logger.debug("Commits cache expired (age: %.1fs)", age_seconds)
-                    except ValueError:
+                    except (ValueError, TypeError):
                         pass
 
         logger.debug("Fetching commits from API (cache miss/expired)")

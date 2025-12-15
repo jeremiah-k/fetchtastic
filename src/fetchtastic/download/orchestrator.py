@@ -388,7 +388,10 @@ class DownloadOrchestrator:
         """
         if result.success:
             self.download_results.append(result)
-            logger.info(f"Successfully {operation_type}: {result.release_tag}")
+            if getattr(result, "was_skipped", False) is True:
+                logger.debug("Skipped %s: %s", operation_type, result.release_tag)
+            else:
+                logger.debug("Completed %s: %s", operation_type, result.release_tag)
         else:
             self.failed_downloads.append(result)
             error_msg = result.error_message or "Unknown error"
@@ -706,13 +709,26 @@ class DownloadOrchestrator:
     def _log_download_summary(self, start_time: float) -> None:
         """Log a summary of the download results."""
         elapsed_time = time.time() - start_time
-        total_downloads = len(self.download_results)
+        downloaded = [
+            result
+            for result in self.download_results
+            if result.success and getattr(result, "was_skipped", False) is not True
+        ]
+        skipped = [
+            result
+            for result in self.download_results
+            if result.success and getattr(result, "was_skipped", False) is True
+        ]
         total_failures = len(self.failed_downloads)
 
         logger.info("Download pipeline completed")
         logger.info(f"Time taken: {elapsed_time:.2f} seconds")
-        logger.info(f"Successful downloads: {total_downloads}")
-        logger.info(f"Failed downloads: {total_failures}")
+        logger.info(
+            "Downloads: %d downloaded, %d skipped, %d failed",
+            len(downloaded),
+            len(skipped),
+            total_failures,
+        )
 
         if total_failures > 0:
             logger.warning(
@@ -726,20 +742,39 @@ class DownloadOrchestrator:
         Returns:
             Dict[str, Any]: Dictionary containing download statistics
         """
+        downloaded = [
+            result
+            for result in self.download_results
+            if result.success and getattr(result, "was_skipped", False) is not True
+        ]
+        skipped = [
+            result
+            for result in self.download_results
+            if result.success and getattr(result, "was_skipped", False) is True
+        ]
+        attempted = len(downloaded) + len(self.failed_downloads)
         return {
-            "total_downloads": len(self.download_results) + len(self.failed_downloads),
-            "successful_downloads": len(self.download_results),
+            # "Downloads" excludes skipped results for legacy-parity reporting.
+            "total_downloads": attempted,
+            "successful_downloads": len(downloaded),
+            "skipped_downloads": len(skipped),
             "failed_downloads": len(self.failed_downloads),
             "success_rate": self._calculate_success_rate(),
             "android_downloads": self._count_artifact_downloads("android"),
             "firmware_downloads": self._count_artifact_downloads("firmware"),
-            "repository_downloads": self._count_artifact_downloads("repository"),
+            # Repository downloads are not part of the automatic download pipeline.
+            "repository_downloads": 0,
         }
 
     def _calculate_success_rate(self) -> float:
         """Calculate the success rate of downloads."""
-        total = len(self.download_results) + len(self.failed_downloads)
-        return (len(self.download_results) / total) * 100 if total > 0 else 100.0
+        downloaded_count = sum(
+            1
+            for result in self.download_results
+            if result.success and getattr(result, "was_skipped", False) is not True
+        )
+        attempted = downloaded_count + len(self.failed_downloads)
+        return (downloaded_count / attempted) * 100 if attempted > 0 else 100.0
 
     def _count_artifact_downloads(self, artifact_type: str) -> int:
         """
@@ -755,8 +790,11 @@ class DownloadOrchestrator:
             1
             for result in self.download_results
             if (
-                result.file_type == artifact_type
-                or (result.file_path and artifact_type in str(result.file_path))
+                getattr(result, "was_skipped", False) is not True
+                and (
+                    result.file_type == artifact_type
+                    or (result.file_path and artifact_type in str(result.file_path))
+                )
             )
         )
 
@@ -857,7 +895,11 @@ class DownloadOrchestrator:
         """Refresh commit history cache used for prerelease expected-version selection."""
         try:
             self._recent_commits = self.prerelease_manager.fetch_recent_repo_commits(
-                limit=10, cache_manager=self.cache_manager, force_refresh=False
+                limit=10,
+                cache_manager=self.cache_manager,
+                github_token=self.config.get("GITHUB_TOKEN"),
+                allow_env_token=True,
+                force_refresh=False,
             )
         except Exception as e:
             logger.debug(f"Skipping commit history refresh: {e}")

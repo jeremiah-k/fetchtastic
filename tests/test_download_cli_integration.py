@@ -62,12 +62,10 @@ def test_cli_integration_main_with_config_parameter(mocker):
             "apk_latest",
         ),
     )
-    log_summary = mocker.patch.object(integration, "log_integration_summary")
 
     result = integration.main(config=config)
 
     run_download.assert_called_once_with(config, False)
-    log_summary.assert_called_once()
     assert result[0] == ["fw"]
 
 

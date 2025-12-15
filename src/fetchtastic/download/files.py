@@ -578,7 +578,7 @@ class FileOperations:
                 # If all files that would be extracted already exist with correct sizes,
                 # extraction is not needed
                 if files_to_extract > 0 and files_existing == files_to_extract:
-                    logger.info(
+                    logger.debug(
                         f"All {files_to_extract} files already extracted - skipping extraction"
                     )
                     return False

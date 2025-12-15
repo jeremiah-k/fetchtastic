@@ -331,7 +331,6 @@ class DownloadCLIIntegration:
                     return [], [], [], [], [], "", ""
 
             results = self.run_download(config, force_refresh)
-            self.log_integration_summary()
             return results
 
         except Exception as error:
