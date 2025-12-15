@@ -29,6 +29,19 @@ def test_is_termux_true():
     with patch.dict(os.environ, {"PREFIX": "/data/data/com.termux/files/usr"}):
         assert setup_config.is_termux() is True
 
+    # Test with different PREFIX values
+    test_cases = [
+        {"PREFIX": "/data/data/com.termux/files/usr", "expected": True},
+        {"PREFIX": "/data/data/com.termux", "expected": True},
+        {"PREFIX": "/data/data/other/files/usr", "expected": False},
+        {"PREFIX": "/usr", "expected": False},
+    ]
+
+    for case in test_cases:
+        with patch.dict(os.environ, case):
+            result = setup_config.is_termux()
+            assert result == case["expected"]
+
 
 @pytest.mark.configuration
 @pytest.mark.unit
@@ -465,13 +478,29 @@ def test_migrate_config(tmp_path, mocker):
     ],
 )
 def test_get_upgrade_command(mocker, is_termux_val, install_method, expected):
-    """Test the upgrade command generation logic."""
+    """Test upgrade command generation logic."""
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=is_termux_val)
     mocker.patch(
         "fetchtastic.setup_config.get_fetchtastic_installation_method",
         return_value=install_method,
     )
     assert setup_config.get_upgrade_command() == expected
+
+
+def test_get_upgrade_command_fallback(mocker):
+    """Test upgrade command when both install methods fail."""
+    mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
+    mocker.patch(
+        "fetchtastic.setup_config.get_fetchtastic_installation_method",
+        return_value="pipx",
+    )
+    mocker.patch(
+        "fetchtastic.setup_config.get_fetchtastic_installed_via_pipx",
+        return_value=False,
+    )
+
+    # Should fall back to pip command
+    assert setup_config.get_upgrade_command() == "pip install --upgrade fetchtastic"
 
 
 def test_cron_job_setup(mocker):
