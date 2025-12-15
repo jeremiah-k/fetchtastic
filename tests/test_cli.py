@@ -31,31 +31,15 @@ def mock_cli_dependencies(mocker):
         "fetchtastic.utils.get_api_request_summary", return_value={"total_requests": 0}
     )
 
-    # Mock integration instance
-    mock_integration = mocker.MagicMock()
-    mock_integration.main.return_value = ([], [], [], [], [], "", "")
-    mock_integration.get_latest_versions.return_value = {
-        "firmware": "",
-        "android": "",
-        "firmware_prerelease": "",
-        "android_prerelease": "",
-    }
-    mock_integration.manage_prerelease_files.return_value = 0
-    mock_integration.clean_old_versions.return_value = 0
-
-    # Create a mock integration instance
+    # Create a mock integration instance that prevents real downloads
     mock_integration_instance = mocker.MagicMock()
     mock_integration_instance.main.return_value = ([], [], [], [], [], "", "")
 
-    # Mock the DownloadCLIIntegration class itself
-    mock_integration_class = mocker.patch(
-        "fetchtastic.cli.DownloadCLIIntegration", return_value=mock_integration_instance
+    # Mock the CLI integration at the source module level to prevent real downloads
+    mocker.patch(
+        "src.fetchtastic.cli.DownloadCLIIntegration",
+        return_value=mock_integration_instance,
     )
-
-    # Also mock the orchestrator and downloaders to prevent any real network calls
-    mocker.patch("fetchtastic.download.orchestrator.DownloadOrchestrator")
-    mocker.patch("fetchtastic.download.android.MeshtasticAndroidAppDownloader")
-    mocker.patch("fetchtastic.download.firmware.FirmwareReleaseDownloader")
 
     return mock_integration_instance
 
