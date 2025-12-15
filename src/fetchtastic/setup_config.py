@@ -1562,7 +1562,7 @@ def run_setup(sections: Optional[Sequence[str]] = None):
     """
     Run the interactive Fetchtastic setup wizard.
 
-    Guides the user through creating or migrating configuration, selecting assets (APKs and/or firmware), retention and extraction settings, notification (NTFY) setup, and scheduling/startup options. Behavior is platform-aware: on Termux it may install required packages, configure storage, and offer pip→pipx migration; on Windows it can create Start Menu and startup shortcuts; on Linux/macOS/Termux it can install/remove cron or boot jobs. The function persists settings to the configured YAML file, updates the global BASE_DIR (and related config keys), may create or migrate CONFIG_FILE, and optionally triggers an initial download run (calls downloader.main()).
+    Guides the user through creating or migrating configuration, selecting assets (APKs and/or firmware), retention and extraction settings, notification (NTFY) setup, and scheduling/startup options. Behavior is platform-aware: on Termux it may install required packages, configure storage, and offer pip→pipx migration; on Windows it can create Start Menu and startup shortcuts; on Linux/macOS/Termux it can install/remove cron or boot jobs. The function persists settings to the configured YAML file, updates the global BASE_DIR (and related config keys), may create or migrate CONFIG_FILE, and optionally triggers an initial download run via the modular download CLI integration (`DownloadCLIIntegration().main()`).
 
     When ``sections`` is provided the wizard focuses only on those configuration areas (drawn from
     :data:`SETUP_SECTION_CHOICES`). Other settings are preserved using the existing values from the

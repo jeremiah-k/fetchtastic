@@ -915,8 +915,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     for pr in prereleases
                     if any(match in pr.tag_name for match in repo_matches)
                 ] or prereleases
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Skipping repo directory scan for prerelease filtering: %s", e)
 
         return prereleases
 

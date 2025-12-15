@@ -17,7 +17,7 @@ from fetchtastic.constants import (
 from fetchtastic.log_utils import logger
 
 from .android import MeshtasticAndroidAppDownloader
-from .cache import CacheManager, _releases_cache, _releases_cache_loaded
+from .cache import CacheManager
 from .firmware import FirmwareReleaseDownloader
 from .interfaces import DownloadResult, Release
 from .prerelease_history import PrereleaseHistoryManager
@@ -443,9 +443,8 @@ class DownloadOrchestrator:
                 # Update retry metadata
                 failed_result.retry_count += 1
                 failed_result.retry_timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-                failed_result.error_message = (
-                    f"Retry attempt {failed_result.retry_count}/{max_retries}"
-                )
+                original_error = failed_result.error_message or "Unknown error"
+                failed_result.error_message = f"Retry attempt {failed_result.retry_count}/{max_retries} - Original: {original_error}"
 
                 # Log detailed retry information
                 logger.info(f"Retrying download {i + 1}/{len(retryable_failures)}:")
@@ -530,6 +529,8 @@ class DownloadOrchestrator:
                         error_message=None,
                         is_retryable=False,
                     )
+            else:
+                logger.debug("Retry not supported for file type: %s", file_type)
 
             # If we reach here, retry failed verification or download
             return DownloadResult(

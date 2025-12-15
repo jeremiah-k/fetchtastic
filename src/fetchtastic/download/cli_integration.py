@@ -107,7 +107,7 @@ class DownloadCLIIntegration:
             )
 
         except Exception as e:
-            logger.error(f"Error in CLI integration: {e}")
+            logger.exception("Error in CLI integration: %s", e)
             # Return empty results and error information
             return [], [], [], [], [], "", ""
 

@@ -442,8 +442,6 @@ class VersionManager:
             return True
 
         # Check for commit hash patterns (indicates prerelease)
-        import re
-
         if re.search(r"[a-f0-9]{6,}", version_lower):
             return True
 

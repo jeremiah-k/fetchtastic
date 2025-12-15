@@ -123,7 +123,7 @@ class PrereleaseHistoryManager:
             )
             return all_commits[:limit]
         except Exception as e:
-            logger.warning("Could not fetch repo commits: %s", e)
+            logger.warning("Could not fetch repo commits (%s): %s", type(e).__name__, e)
             return []
 
     @staticmethod
@@ -603,6 +603,7 @@ class PrereleaseHistoryManager:
                     if self.version_manager.is_prerelease_version(version):
                         found_versions.append(version)
             except Exception:
+                logger.debug("Failed to extract version from file: %s", file_path)
                 continue
 
         return found_versions

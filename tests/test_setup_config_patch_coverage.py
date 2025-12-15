@@ -189,3 +189,42 @@ def test_run_setup_first_run_calls_download_cli_integration(mocker, tmp_path):
 
     mock_download_cli_cls.assert_called_once()
     mock_instance.main.assert_called_once()
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_configure_exclude_patterns_non_interactive_uses_recommended(mocker, capsys):
+    config: dict = {}
+    mocker.patch("fetchtastic.setup_config.sys.stdin.isatty", return_value=False)
+    mocker.patch.dict(os.environ, {}, clear=False)
+
+    setup_config.configure_exclude_patterns(config)
+
+    assert config["EXCLUDE_PATTERNS"] == setup_config.RECOMMENDED_EXCLUDE_PATTERNS
+    captured = capsys.readouterr()
+    assert "Using recommended exclude patterns" in captured.out
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_configure_exclude_patterns_ci_env_uses_recommended(mocker, capsys):
+    config: dict = {}
+    mocker.patch("fetchtastic.setup_config.sys.stdin.isatty", return_value=True)
+    mocker.patch.dict(os.environ, {"CI": "true"}, clear=False)
+
+    setup_config.configure_exclude_patterns(config)
+
+    assert config["EXCLUDE_PATTERNS"] == setup_config.RECOMMENDED_EXCLUDE_PATTERNS
+    captured = capsys.readouterr()
+    assert "Using recommended exclude patterns" in captured.out
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("input_value", "expected"),
+    [("hourly", "hourly"), ("daily", "daily"), ("none", "none")],
+)
+def test_prompt_for_cron_frequency_accepts_full_words(mocker, input_value, expected):
+    mocker.patch("builtins.input", return_value=input_value)
+    assert setup_config._prompt_for_cron_frequency() == expected

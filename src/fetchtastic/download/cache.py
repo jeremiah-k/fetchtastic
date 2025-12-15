@@ -907,62 +907,10 @@ def _load_commit_cache() -> None:
             return
         _commit_cache_loaded = True
 
-        cache_file = _get_commit_cache_file()
         try:
-            if not os.path.exists(cache_file):
-                _commit_timestamp_cache = {}
-                return
-
-            # Use the unified expiry-aware implementation
-            with open(cache_file, "r", encoding="utf-8") as f:
-                cache_data = json.load(f)
-
-            if not isinstance(cache_data, dict):
-                _commit_timestamp_cache = {}
-                return
-
-            now = datetime.now(timezone.utc)
-            valid_cache: Dict[str, Any] = {}
-
-            for cache_key, cache_value in cache_data.items():
-                # Support both legacy format and new format for backward compatibility
-                if isinstance(cache_value, (list, tuple)) and len(cache_value) == 2:
-                    # New format: [timestamp_iso, cached_at_iso]
-                    try:
-                        timestamp_str, cached_at_str = cache_value
-                        cached_at = _parse_iso_datetime_utc(cached_at_str)
-                        if cached_at is None:
-                            continue
-                        age = now - cached_at
-                        if (
-                            age.total_seconds()
-                            < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 60 * 60
-                        ):
-                            valid_cache[cache_key] = cache_value
-                    except (ValueError, TypeError):
-                        continue
-                elif isinstance(cache_value, dict):
-                    # Legacy format: {"timestamp": "...", "cached_at": "..."}
-                    try:
-                        timestamp_str = cache_value.get("timestamp")
-                        cached_at_str = cache_value.get("cached_at")
-                        if timestamp_str and cached_at_str:
-                            cached_at = _parse_iso_datetime_utc(cached_at_str)
-                            if cached_at is None:
-                                continue
-                            age = now - cached_at
-                            if (
-                                age.total_seconds()
-                                < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 60 * 60
-                            ):
-                                # Convert to new format for consistency
-                                valid_cache[cache_key] = [timestamp_str, cached_at_str]
-                    except (ValueError, TypeError):
-                        continue
-
-            _commit_timestamp_cache = valid_cache
-
-        except (IOError, json.JSONDecodeError, UnicodeDecodeError):
+            manager = CacheManager(_ensure_cache_dir())
+            _commit_timestamp_cache = manager.read_commit_timestamp_cache()
+        except (IOError, OSError, json.JSONDecodeError, UnicodeDecodeError, TypeError):
             _commit_timestamp_cache = {}
 
 
@@ -973,15 +921,12 @@ def _load_releases_cache() -> None:
             return
         _releases_cache_loaded = True
 
-        cache_file = _get_releases_cache_file()
         try:
-            if not os.path.exists(cache_file):
-                _releases_cache = {}
-                return
-            with open(cache_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
+            manager = CacheManager(_ensure_cache_dir())
+            cache_file = _get_releases_cache_file()
+            data = manager.read_json(cache_file)
             _releases_cache = data if isinstance(data, dict) else {}
-        except (IOError, json.JSONDecodeError, UnicodeDecodeError):
+        except (IOError, OSError, json.JSONDecodeError, UnicodeDecodeError, TypeError):
             _releases_cache = {}
 
 
