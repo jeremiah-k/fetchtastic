@@ -132,30 +132,28 @@ def test_run_download_successful(mocker):
     mock_version_manager.compare_versions.return_value = 1  # v1.0 > v0.9
     mock_android.get_version_manager.return_value = mock_version_manager
 
-    with (
-        mocker.patch(
-            "fetchtastic.download.cli_integration.DownloadOrchestrator",
-            return_value=mock_orchestrator,
-        ),
-        mocker.patch(
-            "fetchtastic.download.cli_integration.MeshtasticAndroidAppDownloader",
-            return_value=mock_android,
-        ),
-        mocker.patch(
-            "fetchtastic.download.cli_integration.FirmwareReleaseDownloader",
-            return_value=mock_firmware,
-        ),
-    ):
-        result = integration.run_download(config)
+    mocker.patch(
+        "fetchtastic.download.cli_integration.DownloadOrchestrator",
+        return_value=mock_orchestrator,
+    )
+    mocker.patch(
+        "fetchtastic.download.cli_integration.MeshtasticAndroidAppDownloader",
+        return_value=mock_android,
+    )
+    mocker.patch(
+        "fetchtastic.download.cli_integration.FirmwareReleaseDownloader",
+        return_value=mock_firmware,
+    )
+    result = integration.run_download(config)
 
-        assert len(result) == 7
-        assert result[0] == ["v1.0"]  # downloaded_firmwares
-        assert result[1] == ["v1.0"]  # new_firmware_versions
-        assert result[2] == []  # downloaded_apks
-        assert result[3] == []  # new_apk_versions
-        assert result[4] == []  # failed_downloads
-        assert result[5] == "v1.0"  # latest_firmware_version
-        assert result[6] == "v1.0"  # latest_apk_version
+    assert len(result) == 7
+    assert result[0] == ["v1.0"]  # downloaded_firmwares
+    assert result[1] == ["v1.0"]  # new_firmware_versions
+    assert result[2] == []  # downloaded_apks
+    assert result[3] == []  # new_apk_versions
+    assert result[4] == []  # failed_downloads
+    assert result[5] == "v1.0"  # latest_firmware_version
+    assert result[6] == "v1.0"  # latest_apk_version
 
 
 def test_run_download_with_force_refresh(mocker):
@@ -175,23 +173,21 @@ def test_run_download_with_force_refresh(mocker):
         "android": None,
     }
 
-    with (
-        mocker.patch(
-            "fetchtastic.download.cli_integration.DownloadOrchestrator",
-            return_value=mock_orchestrator,
-        ),
-        mocker.patch(
-            "fetchtastic.download.cli_integration.MeshtasticAndroidAppDownloader",
-            return_value=mock_android,
-        ),
-        mocker.patch(
-            "fetchtastic.download.cli_integration.FirmwareReleaseDownloader",
-            return_value=mock_firmware,
-        ),
-    ):
-        integration.run_download(config, force_refresh=True)
+    mocker.patch(
+        "fetchtastic.download.cli_integration.DownloadOrchestrator",
+        return_value=mock_orchestrator,
+    )
+    mocker.patch(
+        "fetchtastic.download.cli_integration.MeshtasticAndroidAppDownloader",
+        return_value=mock_android,
+    )
+    mocker.patch(
+        "fetchtastic.download.cli_integration.FirmwareReleaseDownloader",
+        return_value=mock_firmware,
+    )
+    integration.run_download(config, force_refresh=True)
 
-        mock_android.cache_manager.clear_all_caches.assert_called_once()
+    mock_android.cache_manager.clear_all_caches.assert_called_once()
 
 
 def test_run_download_handles_exception(mocker):
@@ -478,10 +474,10 @@ def test_validate_integration_success(mocker):
     integration.firmware_downloader.get_releases.return_value = [MagicMock()]
     integration.android_downloader._get_download_dir.return_value = "/tmp/android"
 
-    with mocker.patch("os.path.exists", return_value=True):
-        result = integration.validate_integration()
+    mocker.patch("os.path.exists", return_value=True)
+    result = integration.validate_integration()
 
-        assert result is True
+    assert result is True
 
 
 def test_validate_integration_missing_components():
@@ -517,21 +513,17 @@ def test_get_migration_report_initialized(mocker):
     integration.firmware_downloader = MagicMock()
     integration.config = {"DOWNLOAD_DIR": "/tmp"}
 
-    with (
-        mocker.patch.object(integration, "_validate_configuration", return_value=True),
-        mocker.patch.object(
-            integration, "_check_download_directory", return_value=True
-        ),
-        mocker.patch.object(
-            integration, "get_download_statistics", return_value={"total": 5}
-        ),
-    ):
-        result = integration.get_migration_report()
+    mocker.patch.object(integration, "_validate_configuration", return_value=True)
+    mocker.patch.object(integration, "_check_download_directory", return_value=True)
+    mocker.patch.object(
+        integration, "get_download_statistics", return_value={"total": 5}
+    )
+    result = integration.get_migration_report()
 
-        assert result["status"] == "completed"
-        assert result["android_downloader_initialized"] is True
-        assert result["firmware_downloader_initialized"] is True
-        assert result["orchestrator_initialized"] is True
+    assert result["status"] == "completed"
+    assert result["android_downloader_initialized"] is True
+    assert result["firmware_downloader_initialized"] is True
+    assert result["orchestrator_initialized"] is True
 
 
 def test_get_migration_report_not_initialized():
@@ -579,10 +571,10 @@ def test_check_download_directory_exists(mocker):
     integration.android_downloader = MagicMock()
     integration.android_downloader._get_download_dir.return_value = "/tmp/android"
 
-    with mocker.patch("os.path.exists", return_value=True):
-        result = integration._check_download_directory()
+    mocker.patch("os.path.exists", return_value=True)
+    result = integration._check_download_directory()
 
-        assert result is True
+    assert result is True
 
 
 def test_check_download_directory_missing():
@@ -599,14 +591,14 @@ def test_get_legacy_compatibility_report(mocker):
     """get_legacy_compatibility_report should return compatibility info."""
     integration = DownloadCLIIntegration()
 
-    with mocker.patch.object(
+    mocker.patch.object(
         integration, "get_download_statistics", return_value={"total": 10}
-    ):
-        result = integration.get_legacy_compatibility_report()
+    )
+    result = integration.get_legacy_compatibility_report()
 
-        assert result["cli_integration_ready"] is True
-        assert result["expected_interface_compatibility"] is True
-        assert result["statistics"]["total"] == 10
+    assert result["cli_integration_ready"] is True
+    assert result["expected_interface_compatibility"] is True
+    assert result["statistics"]["total"] == 10
 
 
 def test_log_integration_summary(mocker):
@@ -635,18 +627,12 @@ def test_log_integration_summary(mocker):
 
     mock_logger = mocker.patch("fetchtastic.download.cli_integration.logger")
 
-    with (
-        mocker.patch.object(
-            integration, "get_migration_report", return_value=mock_report
-        ),
-        mocker.patch.object(
-            integration, "get_download_statistics", return_value=mock_stats
-        ),
-    ):
-        integration.log_integration_summary()
+    mocker.patch.object(integration, "get_migration_report", return_value=mock_report)
+    mocker.patch.object(integration, "get_download_statistics", return_value=mock_stats)
+    integration.log_integration_summary()
 
-        # Verify logging calls were made
-        assert mock_logger.info.call_count > 5
+    # Verify logging calls were made
+    assert mock_logger.info.call_count > 5
 
 
 def test_log_integration_summary_no_orchestrator(mocker):
@@ -728,26 +714,24 @@ def test_get_existing_prerelease_dirs(mocker):
     """_get_existing_prerelease_dirs should list firmware directories."""
     integration = DownloadCLIIntegration()
 
-    with (
-        mocker.patch("os.path.exists", return_value=True),
-        mocker.patch(
-            "os.listdir", return_value=["firmware-v1.0", "firmware-v1.1", "other-file"]
-        ),
-        mocker.patch("os.path.isdir", return_value=True),
-        mocker.patch("os.path.islink", return_value=False),
-    ):
-        result = integration._get_existing_prerelease_dirs("/tmp/prerelease")
+    mocker.patch("os.path.exists", return_value=True)
+    mocker.patch(
+        "os.listdir", return_value=["firmware-v1.0", "firmware-v1.1", "other-file"]
+    )
+    mocker.patch("os.path.isdir", return_value=True)
+    mocker.patch("os.path.islink", return_value=False)
+    result = integration._get_existing_prerelease_dirs("/tmp/prerelease")
 
-        assert "firmware-v1.0" in result
-        assert "firmware-v1.1" in result
-        assert "other-file" not in result
+    assert "firmware-v1.0" in result
+    assert "firmware-v1.1" in result
+    assert "other-file" not in result
 
 
 def test_get_existing_prerelease_dirs_no_directory(mocker):
     """_get_existing_prerelease_dirs should return empty list when directory doesn't exist."""
     integration = DownloadCLIIntegration()
 
-    with mocker.patch("os.path.exists", return_value=False):
-        result = integration._get_existing_prerelease_dirs("/tmp/prerelease")
+    mocker.patch("os.path.exists", return_value=False)
+    result = integration._get_existing_prerelease_dirs("/tmp/prerelease")
 
-        assert result == []
+    assert result == []
