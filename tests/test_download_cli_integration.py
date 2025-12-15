@@ -127,6 +127,11 @@ def test_run_download_successful(mocker):
     mock_orchestrator.cleanup_old_versions = MagicMock()
     mock_orchestrator.update_version_tracking = MagicMock()
 
+    # Mock version manager for comparisons
+    mock_version_manager = MagicMock()
+    mock_version_manager.compare_versions.return_value = 1  # v1.0 > v0.9
+    mock_android.get_version_manager.return_value = mock_version_manager
+
     with (
         mocker.patch(
             "fetchtastic.download.cli_integration.DownloadOrchestrator",
@@ -236,6 +241,13 @@ def test_convert_results_to_legacy_format_firmware(mocker):
     integration.android_downloader.get_latest_release_tag.return_value = "v0.9"
     integration.firmware_downloader.get_latest_release_tag.return_value = "v0.9"
 
+    # Mock version manager
+    mock_version_manager = MagicMock()
+    mock_version_manager.compare_versions.return_value = 1  # v1.0 > v0.9
+    integration.android_downloader.get_version_manager.return_value = (
+        mock_version_manager
+    )
+
     mock_result = MagicMock()
     mock_result.release_tag = "v1.0"
     mock_result.file_path = "/tmp/firmware/firmware.zip"
@@ -261,6 +273,13 @@ def test_convert_results_to_legacy_format_android(mocker):
 
     integration.android_downloader.get_latest_release_tag.return_value = "v0.9"
     integration.firmware_downloader.get_latest_release_tag.return_value = "v0.9"
+
+    # Mock version manager
+    mock_version_manager = MagicMock()
+    mock_version_manager.compare_versions.return_value = 1  # v1.0 > v0.9
+    integration.android_downloader.get_version_manager.return_value = (
+        mock_version_manager
+    )
 
     mock_result = MagicMock()
     mock_result.release_tag = "v1.0"
@@ -645,24 +664,25 @@ def test_handle_cli_error(mocker):
     """handle_cli_error should log appropriate messages based on error type."""
     integration = DownloadCLIIntegration()
 
-    with mocker.patch("fetchtastic.download.cli_integration.logger") as mock_logger:
-        # Test ImportError
-        integration.handle_cli_error(ImportError("module not found"))
-        mock_logger.error.assert_any_call(
-            "Import error - please check your Python environment and dependencies"
-        )
+    mock_logger = mocker.patch("fetchtastic.download.cli_integration.logger")
 
-        # Test FileNotFoundError
-        integration.handle_cli_error(FileNotFoundError("file not found"))
-        mock_logger.error.assert_any_call(
-            "File not found - please check your configuration and paths"
-        )
+    # Test ImportError
+    integration.handle_cli_error(ImportError("module not found"))
+    mock_logger.error.assert_any_call(
+        "Import error - please check your Python environment and dependencies"
+    )
 
-        # Test generic Exception
-        integration.handle_cli_error(Exception("generic error"))
-        mock_logger.error.assert_any_call(
-            "An unexpected error occurred - please check logs for details"
-        )
+    # Test FileNotFoundError
+    integration.handle_cli_error(FileNotFoundError("file not found"))
+    mock_logger.error.assert_any_call(
+        "File not found - please check your configuration and paths"
+    )
+
+    # Test generic Exception
+    integration.handle_cli_error(Exception("generic error"))
+    mock_logger.error.assert_any_call(
+        "An unexpected error occurred - please check logs for details"
+    )
 
 
 def test_get_cli_help_integration():
