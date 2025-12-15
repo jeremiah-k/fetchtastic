@@ -580,9 +580,81 @@ def test_setup_storage_function(mocker):
 
     result = setup_config.setup_storage()
 
-    # Function doesn't return anything, just runs the command
+    # Function doesn't return anything, just runs
     assert result is None
     mock_subprocess.assert_called_once_with(["termux-setup-storage"], check=True)
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_migration_functions(mocker):
+    """Test migration-related functions."""
+    # Test install_crond function
+    mock_run = mocker.patch("subprocess.run")
+    mock_popen = mocker.patch("subprocess.Popen")
+    mock_communicate = mock_popen.return_value.communicate
+
+    # Test install_crond
+    mock_run.return_value = mocker.MagicMock(stdout="", returncode=0)
+    mock_communicate.return_value = ("", "")
+    mocker.patch("shutil.which", return_value="/path/to/fetchtastic")
+
+    result = setup_config.install_crond()
+
+    # Should return True on successful installation
+    assert result is True
+    mock_run.assert_called()
+
+    # Test setup_boot_script function
+    mock_run.return_value = mocker.MagicMock(stdout="", returncode=0)
+    result = setup_config.setup_boot_script()
+
+    # Should return True on successful setup
+    assert result is True
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_get_upgrade_command_comprehensive(mocker):
+    """Test get_upgrade_command with comprehensive scenarios."""
+    # Test on Linux without sudo
+    mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
+    mocker.patch("fetchtastic.setup_config.is_windows", return_value=False)
+    mocker.patch("fetchtastic.setup_config.is_sudo_available", return_value=False)
+    mocker.patch(
+        "fetchtastic.setup_config.is_fetchtastic_installed_via_pipx", return_value=False
+    )
+
+    result = setup_config.get_upgrade_command()
+
+    # Should return pip install --user command
+    assert "pip install --user --upgrade fetchtastic" in result
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_config_file_operations(mocker):
+    """Test config file operations."""
+    import os
+    import tempfile
+
+    # Test with temporary directory
+    with tempfile.TemporaryDirectory() as temp_dir:
+        config_file = os.path.join(temp_dir, "config.yaml")
+
+        # Create a test config file
+        with open(config_file, "w") as f:
+            f.write("TEST_KEY: test_value\nBASE_DIR: /test/dir")
+
+        # Test config_exists with explicit directory
+        exists, path = setup_config.config_exists(temp_dir)
+        assert exists is True
+        assert path == config_file
+
+        # Test load_config with explicit directory
+        config = setup_config.load_config(temp_dir)
+        assert config is not None
+        assert config["TEST_KEY"] == "test_value"
 
 
 def test_cron_job_setup(mocker):

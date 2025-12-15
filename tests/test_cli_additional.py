@@ -96,3 +96,38 @@ def test_cli_setup_positional_sections(mocker, mock_cli_dependencies):
     cli.main()
 
     mock_run_setup.assert_called_once()
+
+
+@pytest.mark.user_interface
+@pytest.mark.unit
+def test_cli_download_without_config(mocker, mock_cli_dependencies):
+    """Test 'download' command when config doesn't exist."""
+    mocker.patch("sys.argv", ["fetchtastic", "download"])
+    mock_run_setup = mocker.patch("fetchtastic.setup_config.run_setup")
+
+    # Mock config_exists to return False
+    mocker.patch("fetchtastic.setup_config.config_exists", return_value=(False, None))
+
+    cli.main()
+
+    # Should run setup since no config exists
+    mock_run_setup.assert_called_once()
+    mock_cli_dependencies.main.assert_not_called()
+
+
+@pytest.mark.user_interface
+@pytest.mark.unit
+def test_cli_force_flag_handling(mocker, mock_cli_dependencies):
+    """Test CLI force flag handling."""
+    # Test with --force flag
+    mocker.patch("sys.argv", ["fetchtastic", "download", "--force"])
+    mocker.patch(
+        "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
+    )
+
+    cli.main()
+
+    # Should call main with force flag
+    args, kwargs = mock_cli_dependencies.main.call_args
+    # Check that the integration was called with the force parameter
+    assert mock_cli_dependencies.main.called

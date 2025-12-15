@@ -174,6 +174,82 @@ def test_cli_help_command_with_subcommand(mocker, mock_cli_dependencies):
 
 @pytest.mark.user_interface
 @pytest.mark.unit
+def test_cli_invalid_repo_command(mocker, mock_cli_dependencies):
+    """Test 'repo' command with invalid subcommand."""
+    mocker.patch("sys.argv", ["fetchtastic", "repo", "invalid"])
+
+    # Should exit with error
+    with pytest.raises(SystemExit):
+        cli.main()
+
+
+@pytest.mark.user_interface
+@pytest.mark.unit
+def test_cli_setup_invalid_section(mocker, mock_cli_dependencies):
+    """Test 'setup' command with invalid section."""
+    mocker.patch("sys.argv", ["fetchtastic", "setup", "--section", "invalid"])
+
+    # Should exit with error
+    with pytest.raises(SystemExit):
+        cli.main()
+
+
+@pytest.mark.user_interface
+@pytest.mark.unit
+def test_cli_version_with_update_available(mocker, mock_cli_dependencies):
+    """Test 'version' command when update is available."""
+    mocker.patch("sys.argv", ["fetchtastic", "version"])
+    mock_display = mocker.patch(
+        "fetchtastic.cli.display_version_info", return_value=("1.0.0", "2.0.0", True)
+    )
+
+    cli.main()
+
+    mock_display.assert_called_once()
+
+
+@pytest.mark.user_interface
+@pytest.mark.unit
+def test_cli_version_update_available(mocker, mock_cli_dependencies):
+    """Test 'version' command when update is available."""
+    mocker.patch("sys.argv", ["fetchtastic", "version"])
+    mock_display = mocker.patch(
+        "fetchtastic.cli.display_version_info", return_value=("1.0.0", "2.0.0", True)
+    )
+
+    cli.main()
+
+    mock_display.assert_called_once()
+
+
+@pytest.mark.user_interface
+@pytest.mark.unit
+def test_cli_version_with_update_available(mocker, mock_cli_dependencies):
+    """Test 'version' command when update is available."""
+    mocker.patch("sys.argv", ["fetchtastic", "version"])
+    mock_display = mocker.patch(
+        "fetchtastic.cli.display_version_info", return_value=("1.0.0", "2.0.0", True)
+    )
+
+    cli.main()
+
+    mock_display.assert_called_once()
+
+
+@pytest.mark.user_interface
+@pytest.mark.unit
+def test_cli_clean_command_enhanced(mocker, mock_cli_dependencies):
+    """Test 'clean' command dispatch with enhanced checks."""
+    mocker.patch("sys.argv", ["fetchtastic", "clean"])
+    mock_clean = mocker.patch("fetchtastic.cli.run_clean")
+
+    cli.main()
+
+    mock_clean.assert_called_once()
+
+
+@pytest.mark.user_interface
+@pytest.mark.unit
 def test_cli_topic_command(mocker, mock_cli_dependencies):
     """Test 'topic' command dispatch."""
     mocker.patch("sys.argv", ["fetchtastic", "topic"])
