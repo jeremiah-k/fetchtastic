@@ -4,8 +4,8 @@ from unittest.mock import patch
 
 import pytest
 
-# Import cli module to ensure coverage tracking works
-import src.fetchtastic.cli as cli
+# Import the package module (matches how users invoke it)
+import fetchtastic.cli as cli
 
 
 @pytest.fixture
@@ -35,9 +35,9 @@ def mock_cli_dependencies(mocker):
     mock_integration_instance = mocker.MagicMock()
     mock_integration_instance.main.return_value = ([], [], [], [], [], "", "")
 
-    # Mock the CLI integration at the source module level to prevent real downloads
+    # Mock the CLI integration at its defining module to prevent real downloads/network.
     mocker.patch(
-        "src.fetchtastic.cli.DownloadCLIIntegration",
+        "fetchtastic.download.cli_integration.DownloadCLIIntegration",
         return_value=mock_integration_instance,
     )
 

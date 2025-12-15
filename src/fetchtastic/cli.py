@@ -10,7 +10,7 @@ from typing import List
 
 import platformdirs
 
-from fetchtastic import setup_config
+from fetchtastic import log_utils, setup_config
 from fetchtastic.constants import (
     FIRMWARE_DIR_PREFIX,
     MANAGED_DIRECTORIES,
@@ -22,19 +22,24 @@ from fetchtastic.constants import (
     MSG_REMOVED_MANAGED_DIR,
     MSG_REMOVED_MANAGED_FILE,
 )
-from fetchtastic.download.cli_integration import DownloadCLIIntegration
+from fetchtastic.download import cli_integration as download_cli_integration
 from fetchtastic.download.repository import RepositoryDownloader
-from fetchtastic.log_utils import logger, set_log_level
-from fetchtastic.setup_config import (
-    copy_to_clipboard_func,
-    display_version_info,
-    get_upgrade_command,
-)
 from fetchtastic.utils import (
     format_api_summary,
     get_api_request_summary,
     reset_api_tracking,
 )
+
+# Patch-friendly aliases for CLI tests.
+copy_to_clipboard_func = setup_config.copy_to_clipboard_func
+
+
+def display_version_info():
+    return setup_config.display_version_info()
+
+
+def get_upgrade_command():
+    return setup_config.get_upgrade_command()
 
 
 def main():
@@ -156,7 +161,7 @@ def main():
         if hasattr(args, "update_integrations") and args.update_integrations:
             # Only update Windows integrations
             if platform.system() == "Windows":
-                logger.info("Updating Windows integrations...")
+                log_utils.logger.info("Updating Windows integrations...")
                 config = setup_config.load_config()
                 if config:
                     success = setup_config.create_windows_menu_shortcuts(
@@ -164,15 +169,19 @@ def main():
                         config.get("BASE_DIR", setup_config.BASE_DIR),
                     )
                     if success:
-                        logger.info("Windows integrations updated successfully!")
+                        log_utils.logger.info(
+                            "Windows integrations updated successfully!"
+                        )
                     else:
-                        logger.error("Failed to update Windows integrations.")
+                        log_utils.logger.error("Failed to update Windows integrations.")
                 else:
-                    logger.error(
+                    log_utils.logger.error(
                         "No configuration found. Run 'fetchtastic setup' first."
                     )
             else:
-                logger.info("Integration updates are only available on Windows.")
+                log_utils.logger.info(
+                    "Integration updates are only available on Windows."
+                )
         else:
             # Run the full setup process (optionally limited to specific sections)
             combined_sections: List[str] = (args.section or []) + (args.sections or [])
@@ -194,16 +203,16 @@ def main():
         # Remind about updates at the end if available
         if update_available:
             upgrade_cmd = get_upgrade_command()
-            logger.info("\nUpdate Available")
-            logger.info(
+            log_utils.logger.info("\nUpdate Available")
+            log_utils.logger.info(
                 f"A newer version (v{latest_version}) of Fetchtastic is available!"
             )
-            logger.info(f"Run '{upgrade_cmd}' to upgrade.")
+            log_utils.logger.info(f"Run '{upgrade_cmd}' to upgrade.")
     elif args.command == "download":
         # Check if configuration exists
         exists, config_path = setup_config.config_exists()
         if not exists:
-            logger.info("No configuration found. Running setup.")
+            log_utils.logger.info("No configuration found. Running setup.")
             setup_config.run_setup()
         else:
             # Check if config is in old location and needs migration
@@ -211,13 +220,13 @@ def main():
                 setup_config.CONFIG_FILE
             ):
                 separator = "=" * 80
-                logger.info(f"\n{separator}")
-                logger.info("Configuration Migration")
-                logger.info(separator)
+                log_utils.logger.info(f"\n{separator}")
+                log_utils.logger.info("Configuration Migration")
+                log_utils.logger.info(separator)
                 # Automatically migrate without prompting
                 setup_config.prompt_for_migration()  # Just logs the migration message
                 if setup_config.migrate_config():
-                    logger.info(
+                    log_utils.logger.info(
                         "Configuration successfully migrated to the new location."
                     )
                     # Update config_path to the new location
@@ -225,23 +234,23 @@ def main():
                     # Re-load the configuration from the new location
                     config = setup_config.load_config(config_path)
                 else:
-                    logger.error(
+                    log_utils.logger.error(
                         "Failed to migrate configuration. Continuing with old location."
                     )
-                logger.info(f"{separator}\n")
+                log_utils.logger.info(f"{separator}\n")
 
             # Display the config file location
-            logger.info(f"Using configuration from: {config_path}")
+            log_utils.logger.info(f"Using configuration from: {config_path}")
 
             # Load config and set log level if specified
             config = setup_config.load_config()
             if config and config.get("LOG_LEVEL"):
-                set_log_level(config["LOG_LEVEL"])
+                log_utils.set_log_level(config["LOG_LEVEL"])
 
             # Run the downloader
             reset_api_tracking()
             start_time = time.time()
-            integration = DownloadCLIIntegration()
+            integration = download_cli_integration.DownloadCLIIntegration()
             (
                 downloaded_firmwares,
                 _new_firmware_versions,
@@ -253,49 +262,51 @@ def main():
             ) = integration.main(force_refresh=args.force, config=config)
 
             elapsed = time.time() - start_time
-            logger.info(f"\nCompleted in {elapsed:.1f}s")
+            log_utils.logger.info(f"\nCompleted in {elapsed:.1f}s")
 
             downloaded_count = len(downloaded_firmwares) + len(downloaded_apks)
             if downloaded_count > 0:
-                logger.info(f"Downloaded {downloaded_count} new versions")
+                log_utils.logger.info(f"Downloaded {downloaded_count} new versions")
 
             if latest_firmware_version:
-                logger.info(f"Latest firmware: {latest_firmware_version}")
+                log_utils.logger.info(f"Latest firmware: {latest_firmware_version}")
             if latest_apk_version:
-                logger.info(f"Latest APK: {latest_apk_version}")
+                log_utils.logger.info(f"Latest APK: {latest_apk_version}")
 
             latest_versions = integration.get_latest_versions()
             latest_firmware_prerelease = latest_versions.get("firmware_prerelease")
             latest_apk_prerelease = latest_versions.get("android_prerelease")
             if latest_firmware_prerelease:
-                logger.info(f"Latest firmware prerelease: {latest_firmware_prerelease}")
+                log_utils.logger.info(
+                    f"Latest firmware prerelease: {latest_firmware_prerelease}"
+                )
             if latest_apk_prerelease:
-                logger.info(f"Latest APK prerelease: {latest_apk_prerelease}")
+                log_utils.logger.info(f"Latest APK prerelease: {latest_apk_prerelease}")
 
             if failed_downloads:
-                logger.info(f"{len(failed_downloads)} downloads failed:")
+                log_utils.logger.info(f"{len(failed_downloads)} downloads failed:")
                 for failure in failed_downloads:
                     url = failure.get("url", "unknown")
                     retryable = failure.get("retryable")
                     http_status = failure.get("http_status")
                     error = failure.get("error", "")
-                    logger.info(
+                    log_utils.logger.info(
                         f"- {failure.get('type', 'Unknown')} {failure.get('release_tag', '')}: "
                         f"{failure.get('file_name', 'unknown')} "
                         f"URL={url} retryable={retryable} http_status={http_status} error={error}"
                     )
 
             if downloaded_count == 0 and not failed_downloads:
-                logger.info(
+                log_utils.logger.info(
                     "All assets are up to date.\n%s",
                     time.strftime("%Y-%m-%dT%H:%M:%S%z"),
                 )
 
             summary = get_api_request_summary()
             if summary.get("total_requests", 0) > 0:
-                logger.debug(format_api_summary(summary))
+                log_utils.logger.debug(format_api_summary(summary))
             else:
-                logger.debug(
+                log_utils.logger.debug(
                     "📊 GitHub API Summary: No API requests made (all data served from cache)"
                 )
     elif args.command == "topic":
@@ -343,11 +354,11 @@ def main():
         current_version, latest_version, update_available = display_version_info()
 
         # Log version information
-        logger.info(f"Fetchtastic v{current_version}")
+        log_utils.logger.info(f"Fetchtastic v{current_version}")
         if update_available and latest_version:
             upgrade_cmd = get_upgrade_command()
-            logger.info(f"A newer version (v{latest_version}) is available!")
-            logger.info(f"Run '{upgrade_cmd}' to upgrade.")
+            log_utils.logger.info(f"A newer version (v{latest_version}) is available!")
+            log_utils.logger.info(f"Run '{upgrade_cmd}' to upgrade.")
     elif args.command == "help":
         # Handle help command
         help_command = args.help_command
@@ -372,7 +383,7 @@ def main():
 
         config = setup_config.load_config()
         if not config:
-            logger.error(
+            log_utils.logger.error(
                 "Configuration not found. Please run 'fetchtastic setup' first."
             )
             return
@@ -386,11 +397,11 @@ def main():
             # Remind about updates at the end if available
             if update_available:
                 upgrade_cmd = get_upgrade_command()
-                logger.info("\nUpdate Available")
-                logger.info(
+                log_utils.logger.info("\nUpdate Available")
+                log_utils.logger.info(
                     f"A newer version (v{latest_version}) of Fetchtastic is available!"
                 )
-                logger.info(f"Run '{upgrade_cmd}' to upgrade.")
+                log_utils.logger.info(f"Run '{upgrade_cmd}' to upgrade.")
         elif args.repo_command == "clean":
             # Clean the repository directory
             run_repo_clean(config)
@@ -398,11 +409,11 @@ def main():
             # Remind about updates at the end if available
             if update_available:
                 upgrade_cmd = get_upgrade_command()
-                logger.info("\nUpdate Available")
-                logger.info(
+                log_utils.logger.info("\nUpdate Available")
+                log_utils.logger.info(
                     f"A newer version (v{latest_version}) of Fetchtastic is available!"
                 )
-                logger.info(f"Run '{upgrade_cmd}' to upgrade.")
+                log_utils.logger.info(f"Run '{upgrade_cmd}' to upgrade.")
         else:
             # No repo subcommand provided
             repo_parser.print_help()
@@ -604,9 +615,11 @@ def run_clean():
         """
         try:
             os.remove(item_path)
-            logger.info(MSG_REMOVED_MANAGED_FILE.format(path=item_path))
+            log_utils.logger.info(MSG_REMOVED_MANAGED_FILE.format(path=item_path))
         except OSError as e:
-            logger.error(MSG_FAILED_DELETE_MANAGED_FILE.format(path=item_path, error=e))
+            log_utils.logger.error(
+                MSG_FAILED_DELETE_MANAGED_FILE.format(path=item_path, error=e)
+            )
 
     if os.path.exists(download_dir):
         for item in os.listdir(download_dir):
@@ -628,17 +641,19 @@ def run_clean():
             if is_managed_dir and os.path.isdir(item_path):
                 try:
                     shutil.rmtree(item_path)
-                    logger.info(MSG_REMOVED_MANAGED_DIR.format(path=item_path))
+                    log_utils.logger.info(
+                        MSG_REMOVED_MANAGED_DIR.format(path=item_path)
+                    )
                 except OSError as e:
-                    logger.error(
+                    log_utils.logger.error(
                         MSG_FAILED_DELETE_MANAGED_DIR.format(path=item_path, error=e)
                     )
             # Handle actual files
             elif is_managed_file and os.path.isfile(item_path):
                 _remove_managed_file(item_path)
 
-        logger.info(MSG_CLEANED_MANAGED_DIRS.format(path=download_dir))
-        logger.info(MSG_PRESERVE_OTHER_FILES)
+        log_utils.logger.info(MSG_CLEANED_MANAGED_DIRS.format(path=download_dir))
+        log_utils.logger.info(MSG_PRESERVE_OTHER_FILES)
 
     # Remove cron job entries (non-Windows platforms)
     if platform.system() != "Windows":

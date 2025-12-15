@@ -8,8 +8,8 @@ from unittest.mock import MagicMock, mock_open, patch
 import pytest
 import yaml
 
-# Import setup_config module to ensure coverage tracking works
-import src.fetchtastic.setup_config as setup_config
+# Import package module (matches real usage)
+import fetchtastic.setup_config as setup_config
 from tests.test_constants import TEST_CONFIG
 
 
@@ -74,7 +74,7 @@ def test_is_termux_no_prefix():
 )
 def test_get_platform(mocker, is_termux_val, platform_system, expected):
     """Test platform detection logic."""
-    mocker.patch("src.fetchtastic.setup_config.is_termux", return_value=is_termux_val)
+    mocker.patch("fetchtastic.setup_config.is_termux", return_value=is_termux_val)
     mocker.patch("platform.system", return_value=platform_system)
     assert setup_config.get_platform() == expected
 
@@ -129,11 +129,11 @@ def test_is_fetchtastic_installed_via_pipx_false(mock_run):
 def test_get_fetchtastic_installation_method_pipx():
     """Test installation method detection for pipx."""
     with patch(
-        "src.fetchtastic.setup_config.is_fetchtastic_installed_via_pipx",
+        "fetchtastic.setup_config.is_fetchtastic_installed_via_pipx",
         return_value=True,
     ):
         with patch(
-            "src.fetchtastic.setup_config.is_fetchtastic_installed_via_pip",
+            "fetchtastic.setup_config.is_fetchtastic_installed_via_pip",
             return_value=False,
         ):
             assert setup_config.get_fetchtastic_installation_method() == "pipx"
@@ -158,11 +158,11 @@ def test_get_fetchtastic_installation_method_pip():
 def test_get_fetchtastic_installation_method_unknown():
     """Test installation method detection when unknown."""
     with patch(
-        "src.fetchtastic.setup_config.is_fetchtastic_installed_via_pipx",
+        "fetchtastic.setup_config.is_fetchtastic_installed_via_pipx",
         return_value=False,
     ):
         with patch(
-            "src.fetchtastic.setup_config.is_fetchtastic_installed_via_pip",
+            "fetchtastic.setup_config.is_fetchtastic_installed_via_pip",
             return_value=False,
         ):
             assert setup_config.get_fetchtastic_installation_method() == "unknown"
@@ -236,7 +236,7 @@ def test_load_config_invalid_yaml(tmp_path, mocker):
 
     # Create invalid YAML that will cause a parsing error
     with open(new_config_path, "w") as f:
-        f.write("invalid: yaml: content: [unclosed")
+        f.write("invalid: [unclosed")
 
     # The function should raise a YAML parsing error
     with pytest.raises(yaml.YAMLError):
@@ -298,9 +298,9 @@ def test_config_exists_none(tmp_path, mocker):
 @pytest.mark.unit
 def test_get_upgrade_command_termux_pip():
     """Test upgrade command for Termux with pip installation."""
-    with patch("src.fetchtastic.setup_config.is_termux", return_value=True):
+    with patch("fetchtastic.setup_config.is_termux", return_value=True):
         with patch(
-            "src.fetchtastic.setup_config.get_fetchtastic_installation_method",
+            "fetchtastic.setup_config.get_fetchtastic_installation_method",
             return_value="pip",
         ):
             assert (
