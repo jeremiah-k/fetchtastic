@@ -48,6 +48,7 @@ def test_show_help_repo_unknown_subcommand(mocker, capsys):
         "browse": mocker.MagicMock(),
         "clean": mocker.MagicMock(),
     }
+    mock_subparsers = mocker.MagicMock()
 
     # Call help with unknown repo subcommand
     cli.show_help(
@@ -241,7 +242,8 @@ def test_cron_job_cleanup_logic(mocker):
     cli.run_clean()
 
     # Should have called crontab -l to list jobs
-    subprocess.run.assert_any_call(
+    mock_subprocess = mocker.patch("subprocess.run")
+    mock_subprocess.assert_any_call(
         ["crontab", "-l"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
     )
 
