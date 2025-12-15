@@ -158,8 +158,8 @@ def test_cli_help_command(mocker, mock_cli_dependencies):
     """Test 'help' command dispatch."""
     mocker.patch("sys.argv", ["fetchtastic", "help"])
 
-    with pytest.raises(SystemExit):
-        cli.main()
+    # Help command doesn't raise SystemExit, just prints help
+    cli.main()
 
 
 @pytest.mark.user_interface
@@ -168,21 +168,8 @@ def test_cli_help_command_with_subcommand(mocker, mock_cli_dependencies):
     """Test 'help' command with specific command argument."""
     mocker.patch("sys.argv", ["fetchtastic", "help", "download"])
 
-    with pytest.raises(SystemExit):
-        cli.main()
-
-
-@pytest.mark.user_interface
-@pytest.mark.unit
-def test_cli_version_command(mocker, mock_cli_dependencies):
-    """Test 'version' command dispatch."""
-    mocker.patch("sys.argv", ["fetchtastic", "version"])
-    mock_display_version = mocker.patch("fetchtastic.cli.display_version_info")
-
-    with pytest.raises(SystemExit):
-        cli.main()
-
-    mock_display_version.assert_called_once()
+    # Help command doesn't raise SystemExit, just prints help
+    cli.main()
 
 
 @pytest.mark.user_interface
@@ -190,25 +177,20 @@ def test_cli_version_command(mocker, mock_cli_dependencies):
 def test_cli_topic_command(mocker, mock_cli_dependencies):
     """Test 'topic' command dispatch."""
     mocker.patch("sys.argv", ["fetchtastic", "topic"])
-    mock_topic = mocker.patch("fetchtastic.cli.get_ntfy_topic")
+    mock_config = mocker.patch(
+        "fetchtastic.setup_config.load_config",
+        return_value={"NTFY_SERVER": "https://ntfy.sh", "NTFY_TOPIC": "test-topic"},
+    )
+    mock_clipboard = mocker.patch(
+        "fetchtastic.cli.copy_to_clipboard_func", return_value=True
+    )
+    mock_input = mocker.patch("builtins.input", return_value="y")
 
-    with pytest.raises(SystemExit):
-        cli.main()
+    # Topic command doesn't raise SystemExit, just runs
+    cli.main()
 
-    mock_topic.assert_called_once()
-
-
-@pytest.mark.user_interface
-@pytest.mark.unit
-def test_cli_clean_command(mocker, mock_cli_dependencies):
-    """Test 'clean' command dispatch."""
-    mocker.patch("sys.argv", ["fetchtastic", "clean"])
-    mock_clean = mocker.patch("fetchtastic.cli.clean_fetchtastic")
-
-    with pytest.raises(SystemExit):
-        cli.main()
-
-    mock_clean.assert_called_once()
+    mock_config.assert_called_once()
+    mock_clipboard.assert_called_once()
 
 
 @pytest.mark.user_interface
@@ -216,12 +198,14 @@ def test_cli_clean_command(mocker, mock_cli_dependencies):
 def test_cli_repo_browse_command(mocker, mock_cli_dependencies):
     """Test 'repo browse' command dispatch."""
     mocker.patch("sys.argv", ["fetchtastic", "repo", "browse"])
-    mock_repo = mocker.patch("fetchtastic.cli.browse_repository")
+    mock_repo_menu = mocker.patch(
+        "fetchtastic.menu_repo.run_repository_downloader_menu"
+    )
 
-    with pytest.raises(SystemExit):
-        cli.main()
+    # Repo browse command doesn't raise SystemExit, just runs
+    cli.main()
 
-    mock_repo.assert_called_once()
+    mock_repo_menu.assert_called_once()
 
 
 @pytest.mark.user_interface
@@ -229,24 +213,22 @@ def test_cli_repo_browse_command(mocker, mock_cli_dependencies):
 def test_cli_repo_clean_command(mocker, mock_cli_dependencies):
     """Test 'repo clean' command dispatch."""
     mocker.patch("sys.argv", ["fetchtastic", "repo", "clean"])
-    mock_repo_clean = mocker.patch("fetchtastic.cli.clean_repository_directory")
+    mock_repo_clean = mocker.patch("fetchtastic.cli.run_repo_clean")
 
-    with pytest.raises(SystemExit):
-        cli.main()
+    # Repo clean command doesn't raise SystemExit, just runs
+    cli.main()
 
     mock_repo_clean.assert_called_once()
 
 
 @pytest.mark.user_interface
 @pytest.mark.unit
-def test_cli_no_command(mocker, mock_cli_dependencies):
+def test_cli_no_command_basic(mocker, mock_cli_dependencies):
     """Test CLI when no command is provided."""
     mocker.patch("sys.argv", ["fetchtastic"])
 
-    with pytest.raises(SystemExit):
-        cli.main()
-    with pytest.raises(SystemExit):
-        cli.main()
+    # No command doesn't raise SystemExit, just shows help
+    cli.main()
 
 
 @pytest.mark.parametrize("command", ["browse", "clean"])

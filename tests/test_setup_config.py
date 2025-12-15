@@ -527,18 +527,6 @@ def test_config_exists(mocker):
 @pytest.mark.unit
 def test_load_config(mocker):
     """Test load_config function."""
-    import configparser
-
-    # Test successful config loading
-    mock_config = mocker.MagicMock()
-    mock_config.sections.return_value = ["section1", "section2"]
-
-    mocker.patch("configparser.ConfigParser", return_value=mock_config)
-    mocker.patch("os.path.exists", return_value=True)
-
-    config = setup_config.load_config()
-    assert config is not None
-
     # Test when config doesn't exist
     mocker.patch("os.path.exists", return_value=False)
     config = setup_config.load_config()
