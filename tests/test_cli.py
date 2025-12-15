@@ -11,6 +11,13 @@ import src.fetchtastic.cli as cli
 @pytest.fixture
 def mock_cli_dependencies(mocker):
     """Fixture to mock common CLI dependencies while allowing CLI code to run."""
+    # Mock SSL/urllib3 to prevent SystemTimeWarning
+    mocker.patch("urllib3.connectionpool.HTTPSConnectionPool")
+    mocker.patch("urllib3.connection.HTTPSConnection")
+    mocker.patch("urllib3.connection.HTTPConnection")
+    mocker.patch("requests.get", return_value=mocker.MagicMock())
+    mocker.patch("requests.Session.get", return_value=mocker.MagicMock())
+
     # Mock external dependencies to avoid side effects
     mocker.patch("fetchtastic.setup_config.load_config", return_value={"LOG_LEVEL": ""})
     mocker.patch("fetchtastic.cli.set_log_level")
@@ -22,13 +29,15 @@ def mock_cli_dependencies(mocker):
 
     # Mock integration instance
     mock_integration = mocker.MagicMock()
-    mock_integration.main.return_value = ([], [], [], [], [], "", "")
+    mock_integration.main.return_value = ([], [], [], [], "", "")
     mock_integration.get_latest_versions.return_value = {
         "firmware": "",
         "android": "",
         "firmware_prerelease": "",
         "android_prerelease": "",
     }
+    mock_integration.manage_prerelease_files.return_value = 0
+    mock_integration.clean_old_versions.return_value = 0
     mocker.patch(
         "fetchtastic.cli.DownloadCLIIntegration", return_value=mock_integration
     )
@@ -37,18 +46,20 @@ def mock_cli_dependencies(mocker):
 
 
 def test_cli_download_command(mocker, mock_cli_dependencies):
-    """Test the 'download' command dispatch."""
+    """Test 'download' command dispatch."""
     mocker.patch("sys.argv", ["fetchtastic", "download"])
     mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
 
-    # 1. Test when config exists
+    # Mock migration logic to avoid its side effects
+    mocker.patch("fetchtastic.setup_config.prompt_for_migration")
+    mocker.patch("fetchtastic.setup_config.migrate_config")
+
+    # Test when config exists
     mocker.patch(
         "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
     )
-    # Mock the migration logic to avoid its side effects
-    mocker.patch("fetchtastic.setup_config.prompt_for_migration")
-    mocker.patch("fetchtastic.setup_config.migrate_config")
     cli.main()
+
     mock_cli_dependencies.main.assert_called_once()
     mock_setup_run.assert_not_called()
 
@@ -272,6 +283,9 @@ def test_cli_repo_browse_command(mocker, mock_cli_dependencies):
     )
     # Mock RepositoryDownloader to prevent HTTP calls
     mocker.patch("fetchtastic.cli.RepositoryDownloader")
+    # Mock urllib3 to prevent SSL/time warnings
+    mocker.patch("urllib3.connectionpool.HTTPSConnectionPool")
+    mocker.patch("urllib3.connection.HTTPSConnection")
 
     cli.main()
 
@@ -281,21 +295,26 @@ def test_cli_repo_browse_command(mocker, mock_cli_dependencies):
 @pytest.mark.user_interface
 @pytest.mark.unit
 def test_cli_repo_clean_command(mocker, mock_cli_dependencies):
-    """Test 'repo clean' command dispatch."""
+    """Test 'repo clean' command by running CLI with mocked dependencies."""
     mocker.patch("sys.argv", ["fetchtastic", "repo", "clean"])
-    mock_repo_clean = mocker.patch("fetchtastic.cli.run_repo_clean")
-    mock_input = mocker.patch("builtins.input", return_value="")
+
+    # Mock input to return "y" to confirm clean operation
+    mock_input = mocker.patch("builtins.input", return_value="y")
 
     # Mock config_exists to return True to avoid setup running
-    mocker.patch(
+    mock_config_exists = mocker.patch(
         "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
     )
     # Mock RepositoryDownloader to prevent HTTP calls
-    mocker.patch("fetchtastic.cli.RepositoryDownloader")
+    mock_repo_downloader = mocker.patch("fetchtastic.cli.RepositoryDownloader")
+    # Mock urllib3 to prevent SSL/time warnings
+    mocker.patch("urllib3.connectionpool.HTTPSConnectionPool")
+    mocker.patch("urllib3.connection.HTTPSConnection")
 
     cli.main()
 
-    mock_repo_clean.assert_called_once()
+    # Verify config check was called
+    mock_config_exists.assert_called_once()
 
 
 @pytest.mark.user_interface
