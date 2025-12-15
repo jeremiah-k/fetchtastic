@@ -546,15 +546,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
         *,
         force_refresh: bool,
     ) -> List[Dict[str, Any]]:
-        api_url = f"{MESHTASTIC_GITHUB_IO_CONTENTS_URL}/{prerelease_dir}"
-        response = make_github_api_request(
-            api_url,
+        contents = self.cache_manager.get_repo_contents(
+            prerelease_dir,
+            force_refresh=force_refresh,
             github_token=self.config.get("GITHUB_TOKEN"),
             allow_env_token=True,
         )
-        contents = response.json()
-        if not isinstance(contents, list):
-            return []
         logger.debug("Fetched %d items from repository", len(contents))
         return contents
 

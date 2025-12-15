@@ -39,8 +39,6 @@ class TestDownloadOrchestrator:
         orch.android_downloader.download_dir = "/tmp/test"
         orch.firmware_downloader = Mock()
         orch.firmware_downloader.download_dir = "/tmp/test"
-        orch.repository_downloader = Mock()
-        orch.repository_downloader.download_dir = "/tmp/test"
         return orch
 
     def test_init(self, mock_config):
@@ -86,17 +84,15 @@ class TestDownloadOrchestrator:
         # Mock the processing methods
         orchestrator._process_android_downloads = Mock()
         orchestrator._process_firmware_downloads = Mock()
-        orchestrator._process_repository_downloads = Mock()
         orchestrator._retry_failed_downloads = Mock()
         orchestrator._enhance_download_results_with_metadata = Mock()
         orchestrator._log_download_summary = Mock()
         orchestrator._refresh_commit_history_cache = Mock()
 
-        # Disable all components
+        # Disable all components (download methods handle config internally)
         orchestrator.config = {
             "DOWNLOAD_ANDROID": False,
             "DOWNLOAD_FIRMWARE": False,
-            "DOWNLOAD_REPOSITORY": False,
         }
 
         orchestrator.run_download_pipeline()

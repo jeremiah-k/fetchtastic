@@ -303,22 +303,21 @@ class TestFirmwareReleaseDownloader:
             downloader._matches_exclude_patterns("firmware.zip", ["*debug*"]) is False
         )
 
-    @patch("fetchtastic.download.firmware.make_github_api_request")
-    def test_fetch_prerelease_directory_listing(self, mock_request, downloader):
+    def test_fetch_prerelease_directory_listing(self, downloader):
         """Test fetching prerelease directory listing."""
-        mock_response = Mock()
-        mock_response.json.return_value = [
-            {"name": "firmware-rak4631-v1.0.0.abc123.zip", "download_url": "url1"},
-            {"name": "readme.txt", "download_url": "url2"},
-        ]
-        mock_request.return_value = mock_response
+        downloader.cache_manager.get_repo_contents = Mock(
+            return_value=[
+                {"name": "firmware-rak4631-v1.0.0.abc123.zip", "download_url": "url1"},
+                {"name": "readme.txt", "download_url": "url2"},
+            ]
+        )
 
         listing = downloader._fetch_prerelease_directory_listing(
             "prerelease_dir", force_refresh=True
         )
 
         assert len(listing) == 2
-        mock_request.assert_called_once()
+        downloader.cache_manager.get_repo_contents.assert_called_once()
 
     @patch("os.path.exists")
     @patch("os.listdir")

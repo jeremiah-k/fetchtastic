@@ -22,7 +22,6 @@ def integration_config():
         "DOWNLOAD_DIR": "/tmp/test_integration",
         "FIRMWARE_VERSIONS_TO_KEEP": 2,
         "ANDROID_VERSIONS_TO_KEEP": 2,
-        "REPO_VERSIONS_TO_KEEP": 2,
         "SELECTED_PATTERNS": ["rak4631"],
         "EXCLUDE_PATTERNS": ["*debug*"],
         "GITHUB_TOKEN": "test_token",
@@ -68,7 +67,6 @@ class TestDownloadIntegration:
         # Check that all downloaders are initialized
         assert orch.firmware_downloader is not None
         assert orch.android_downloader is not None
-        assert orch.repository_downloader is not None
         assert orch.version_manager is not None
         assert orch.prerelease_manager is not None
         assert orch.cache_manager is not None
@@ -99,11 +97,6 @@ class TestDownloadIntegration:
             ),
             patch.object(
                 orchestrator.android_downloader, "get_releases", return_value=[]
-            ),
-            patch.object(
-                orchestrator.repository_downloader,
-                "get_repository_files",
-                return_value=[],
             ),
             patch.object(orchestrator, "cleanup_old_versions"),
             patch.object(orchestrator, "update_version_tracking"),
@@ -239,5 +232,4 @@ class TestDownloadIntegration:
         # All components should have cache managers (current architecture has separate instances)
         assert orchestrator.firmware_downloader.cache_manager is not None
         assert orchestrator.android_downloader.cache_manager is not None
-        assert orchestrator.repository_downloader.cache_manager is not None
         assert orchestrator.cache_manager is not None

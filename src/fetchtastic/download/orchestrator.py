@@ -21,7 +21,6 @@ from .cache import CacheManager, _releases_cache, _releases_cache_loaded
 from .firmware import FirmwareReleaseDownloader
 from .interfaces import DownloadResult, Release
 from .prerelease_history import PrereleaseHistoryManager
-from .repository import RepositoryDownloader
 from .version import VersionManager
 
 
@@ -52,7 +51,6 @@ class DownloadOrchestrator:
         # Initialize downloaders
         self.android_downloader = MeshtasticAndroidAppDownloader(config)
         self.firmware_downloader = FirmwareReleaseDownloader(config)
-        self.repository_downloader = RepositoryDownloader(config)
 
         # Track results
         self.download_results: List[DownloadResult] = []
@@ -80,8 +78,8 @@ class DownloadOrchestrator:
         # Process Android downloads
         self._process_android_downloads()
 
-        # Note: Repository downloads are handled separately through the interactive
-        # "repo browse" command and are not part of the automatic download pipeline
+        # Legacy parity: Repository downloads are handled separately through the interactive
+        # "repo browse" command and are not part of the automatic download pipeline.
 
         # Enhance results with metadata before retry
         self._enhance_download_results_with_metadata()
@@ -197,51 +195,6 @@ class DownloadOrchestrator:
         except Exception as e:
             logger.error(f"Error processing firmware downloads: {e}")
 
-    def _process_repository_downloads(self) -> None:
-        """Process repository downloads."""
-        try:
-            logger.info("Processing repository downloads...")
-
-            # Get repository files
-            repository_files = self.repository_downloader.get_repository_files()
-            if not repository_files:
-                logger.info("No repository files found")
-                return
-
-            # Filter files based on configuration
-            files_to_download = self._filter_repository_files(repository_files)
-
-            # Download each file
-            for file_info in files_to_download:
-                self._download_repository_file(file_info)
-
-        except Exception as e:
-            logger.error(f"Error processing repository downloads: {e}")
-
-    def _filter_repository_files(
-        self, files: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
-        """
-        Filter repository files based on configuration.
-
-        Args:
-            files: List of available repository files
-
-        Returns:
-            List[Dict[str, Any]]: Filtered list of files to download
-        """
-        filtered_files = []
-
-        for file_info in files:
-            file_name = file_info.get("name", "")
-
-            if self.repository_downloader.should_download_release(
-                release_tag="repository", asset_name=file_name
-            ):
-                filtered_files.append(file_info)
-
-        return filtered_files
-
     def _filter_releases(
         self, releases: List[Release], artifact_type: str
     ) -> List[Release]:
@@ -334,26 +287,6 @@ class DownloadOrchestrator:
                 return False
 
         return True
-
-    def _download_repository_file(self, file_info: Dict[str, Any]) -> None:
-        """
-        Download a repository file.
-
-        Args:
-            file_info: Dictionary containing file information
-        """
-        try:
-            file_name = file_info.get("name", "unknown")
-            logger.info(f"Downloading repository file {file_name}")
-
-            # Download the file
-            result = self.repository_downloader.download_repository_file(file_info)
-            self._handle_download_result(result, "repository")
-
-        except Exception as e:
-            logger.error(
-                f"Error downloading repository file {file_info.get('name', 'unknown')}: {e}"
-            )
 
     def _download_android_release(self, release: Release) -> None:
         """
@@ -472,7 +405,7 @@ class DownloadOrchestrator:
 
         # Get retry configuration
         max_retries = self.config.get("MAX_RETRIES", 3)
-        retry_delay = self.config.get("RETRY_DELAY_SECONDS", 5)
+        retry_delay = self.config.get("RETRY_DELAY_SECONDS", 0)
         retry_backoff_factor = self.config.get("RETRY_BACKOFF_FACTOR", 2.0)
 
         logger.info(
@@ -504,8 +437,8 @@ class DownloadOrchestrator:
                     f"Waiting {current_delay:.1f} seconds before retry attempt {failed_result.retry_count + 1}/{max_retries}..."
                 )
 
-                # Simulate the delay (in real implementation, this would be time.sleep)
-                time.sleep(min(current_delay, 30))  # Cap at 30 seconds for testing
+                if current_delay > 0:
+                    time.sleep(current_delay)
 
                 # Update retry metadata
                 failed_result.retry_count += 1
@@ -585,22 +518,6 @@ class DownloadOrchestrator:
             elif file_type == "firmware":
                 ok = self.firmware_downloader.download(url, target_path)
                 if ok and self.firmware_downloader.verify(target_path):
-                    return DownloadResult(
-                        success=True,
-                        release_tag=failed_result.release_tag,
-                        file_path=Path(target_path),
-                        download_url=url,
-                        file_size=failed_result.file_size,
-                        file_type=file_type,
-                        retry_count=failed_result.retry_count,
-                        retry_timestamp=failed_result.retry_timestamp,
-                        error_message=None,
-                        is_retryable=False,
-                    )
-
-            elif file_type == "repository":
-                ok = self.repository_downloader.download(url, target_path)
-                if ok and self.repository_downloader.verify(target_path):
                     return DownloadResult(
                         success=True,
                         release_tag=failed_result.release_tag,
@@ -711,7 +628,7 @@ class DownloadOrchestrator:
         logger.info("\n💡 Retry Configuration:")
         logger.info(f"  - Max retries: {self.config.get('MAX_RETRIES', 3)}")
         logger.info(
-            f"  - Base delay: {self.config.get('RETRY_DELAY_SECONDS', 5)} seconds"
+            f"  - Base delay: {self.config.get('RETRY_DELAY_SECONDS', 0)} seconds"
         )
         logger.info(
             f"  - Backoff factor: {self.config.get('RETRY_BACKOFF_FACTOR', 2.0)}"

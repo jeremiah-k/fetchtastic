@@ -19,9 +19,8 @@ Scope: Identify missing/ regressed behaviors vs v0.8.9; enumerate fixes and test
 
 ### Still Open (Parity Gaps)
 
-- Repo directory-scan fallback for prerelease repo flow does not use the directory-list cache (TTL/expiry parity missing).
 - Commit timestamp cache expiry/compat needs unification (avoid multiple code paths with different expiry behavior).
-- Repository downloads in the standard download pipeline are likely drift: interactive `repo browse` is the intended “repo-dls” feature, but the pipeline calls a stub `get_repository_files()` returning `[]`.
+- (If needed) Audit commit timestamp consumers to ensure all paths use `CacheManager.get_commit_timestamp()` consistently.
 
 ## Parity Tasks (fix + tests)
 

@@ -81,3 +81,64 @@ def test_get_repo_directories_refreshes_when_stale(monkeypatch, isolated_cache_d
     assert calls["count"] == 2
     assert first == ["firmware-1"]
     assert second == ["firmware-2"]
+
+
+def test_get_repo_contents_caches_with_ttl(monkeypatch, isolated_cache_dir):
+    manager = CacheManager()
+
+    payload = [
+        {"type": "file", "name": "firmware.bin", "download_url": "https://example/x"},
+        {"type": "dir", "name": "subdir"},
+        "not-a-dict",
+    ]
+
+    calls = {"count": 0}
+
+    def fake_request(*_args, **_kwargs):
+        calls["count"] += 1
+        return _FakeResponse(payload)
+
+    monkeypatch.setattr(
+        "fetchtastic.download.cache.make_github_api_request", fake_request
+    )
+
+    first = manager.get_repo_contents("firmware-1.2.3.abc")
+    second = manager.get_repo_contents("firmware-1.2.3.abc")
+
+    assert calls["count"] == 1
+    assert first == [payload[0], payload[1]]
+    assert second == first
+
+
+def test_get_repo_contents_refreshes_when_stale(monkeypatch, isolated_cache_dir):
+    manager = CacheManager()
+
+    calls = {"count": 0}
+
+    def fake_request(*_args, **_kwargs):
+        calls["count"] += 1
+        return _FakeResponse([{"type": "file", "name": f"fw-{calls['count']}.bin"}])
+
+    monkeypatch.setattr(
+        "fetchtastic.download.cache.make_github_api_request", fake_request
+    )
+
+    cache_file = isolated_cache_dir / "repo_contents.json"
+    cache_file.write_text(
+        (
+            "{"
+            '"contents:firmware-older": {'
+            '"contents": [{"type": "file", "name": "old.bin"}],'
+            f'"cached_at": "{(datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()}"'
+            "}"
+            "}"
+        ),
+        encoding="utf-8",
+    )
+
+    first = manager.get_repo_contents("firmware-older")
+    second = manager.get_repo_contents("firmware-older", force_refresh=True)
+
+    assert calls["count"] == 2
+    assert first == [{"type": "file", "name": "fw-1.bin"}]
+    assert second == [{"type": "file", "name": "fw-2.bin"}]

@@ -73,9 +73,6 @@ def test_orchestrator_refreshes_commits_before_processing(monkeypatch):
     monkeypatch.setattr(
         orch, "_process_firmware_downloads", lambda: calls.append("firmware")
     )
-    monkeypatch.setattr(
-        orch, "_process_repository_downloads", lambda: calls.append("repo")
-    )
     monkeypatch.setattr(orch, "_enhance_download_results_with_metadata", lambda: None)
     monkeypatch.setattr(orch, "_retry_failed_downloads", lambda: None)
     monkeypatch.setattr(orch, "_log_download_summary", lambda *_: None)

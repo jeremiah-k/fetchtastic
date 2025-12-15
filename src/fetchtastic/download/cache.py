@@ -298,6 +298,83 @@ class CacheManager:
             logger.debug("Could not fetch repo directories for %s: %s", api_url, exc)
             return []
 
+    def get_repo_contents(
+        self,
+        path: str = "",
+        *,
+        force_refresh: bool = False,
+        github_token: Optional[str] = None,
+        allow_env_token: bool = True,
+    ) -> List[Dict[str, Any]]:
+        """
+        Fetch raw directory contents at a meshtastic.github.io repository path with TTL caching.
+
+        Returns the JSON list produced by the GitHub contents API for the given path.
+        Entries are filtered to dictionaries for type safety.
+        """
+        normalized_path = (path or "").strip("/")
+        cache_key = f"contents:{normalized_path or '/'}"
+        cache_file = os.path.join(self.cache_dir, "repo_contents.json")
+        now = datetime.now(timezone.utc)
+
+        cache = self.read_json(cache_file)
+        if not isinstance(cache, dict):
+            cache = {}
+
+        cached = cache.get(cache_key) if not force_refresh else None
+        if isinstance(cached, dict) and not force_refresh:
+            contents = cached.get("contents")
+            cached_at_raw = cached.get("cached_at")
+            if isinstance(contents, list) and cached_at_raw:
+                try:
+                    cached_at = datetime.fromisoformat(
+                        str(cached_at_raw).replace("Z", "+00:00")
+                    )
+                    age_s = (now - cached_at).total_seconds()
+                    if age_s < FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS:
+                        logger.debug(
+                            "Using cached repo contents for %s (cached %.0fs ago)",
+                            normalized_path or "/",
+                            age_s,
+                        )
+                        return [c for c in contents if isinstance(c, dict)]
+                    logger.debug(
+                        "Repo contents cache stale for %s (age %.0fs >= %ss); refreshing",
+                        normalized_path or "/",
+                        age_s,
+                        FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
+                    )
+                except ValueError:
+                    pass
+
+        api_url = (
+            f"{MESHTASTIC_GITHUB_IO_CONTENTS_URL}/{normalized_path}"
+            if normalized_path
+            else MESHTASTIC_GITHUB_IO_CONTENTS_URL
+        )
+        try:
+            response = make_github_api_request(
+                api_url,
+                github_token=github_token,
+                allow_env_token=allow_env_token,
+                timeout=GITHUB_API_TIMEOUT,
+            )
+            contents = response.json()
+            if not isinstance(contents, list):
+                return []
+            cache[cache_key] = {
+                "contents": contents,
+                "cached_at": now.isoformat(),
+            }
+            self.atomic_write_json(cache_file, cache)
+            return [c for c in contents if isinstance(c, dict)]
+        except (ValueError, KeyError, TypeError) as e:
+            logger.error("Invalid repo contents cache format in %s: %s", cache_file, e)
+            return []
+        except Exception as exc:
+            logger.debug("Could not fetch repo contents for %s: %s", api_url, exc)
+            return []
+
     def clear_cache(self, cache_file: str) -> bool:
         """
         Clear a specific cache file.

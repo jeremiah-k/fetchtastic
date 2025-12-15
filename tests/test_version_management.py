@@ -123,6 +123,17 @@ class TestVersionComparison:
         result = vm.compare_versions("v1.2.4", "v1.2.3")
         assert result == 1
 
+
+class TestPrereleaseIdentifierFormatting:
+    """Test prerelease identifier formatting helpers."""
+
+    def test_create_prerelease_version_with_hash_matches_expected_format(self):
+        vm = VersionManager()
+        assert (
+            vm.create_prerelease_version_with_hash("v1.2.3", "abcdef123456")
+            == "1.2.3-rc1+abcdef1"
+        )
+
     def test_compare_versions_lesser(self):
         """Test comparing versions where first is lesser."""
         vm = VersionManager()
