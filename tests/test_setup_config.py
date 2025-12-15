@@ -298,9 +298,9 @@ def test_config_exists_none(tmp_path, mocker):
 @pytest.mark.unit
 def test_get_upgrade_command_termux_pip():
     """Test upgrade command for Termux with pip installation."""
-    with patch("fetchtastic.setup_config.is_termux", return_value=True):
+    with patch("src.fetchtastic.setup_config.is_termux", return_value=True):
         with patch(
-            "fetchtastic.setup_config.get_fetchtastic_installation_method",
+            "src.fetchtastic.setup_config.get_fetchtastic_installation_method",
             return_value="pip",
         ):
             assert (
