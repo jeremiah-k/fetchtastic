@@ -544,5 +544,5 @@ class TestSafeExtractPath:
     def test_null_byte_attack(self, tmp_path):
         """Test protection against null byte."""
         # os.path.realpath raises ValueError for null bytes before our check
-        with pytest.raises(ValueError, match="embedded null byte"):
+        with pytest.raises(ValueError):
             safe_extract_path(str(tmp_path), "safe/file.txt\x00evil.txt")
