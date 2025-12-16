@@ -34,7 +34,16 @@ class TestFirmwareReleaseDownloader:
 
     @pytest.fixture
     def downloader(self, mock_config, mock_cache_manager):
-        """Create a FirmwareReleaseDownloader instance with mocked dependencies."""
+        """
+        Create a FirmwareReleaseDownloader configured for tests with injected mocked dependencies.
+        
+        Parameters:
+        	mock_config (dict): Configuration dictionary to initialize the downloader.
+        	mock_cache_manager (Mock): Mocked CacheManager used for cache interactions.
+        
+        Returns:
+        	dl (FirmwareReleaseDownloader): Initialized downloader whose `cache_manager` is set to `mock_cache_manager` and whose `version_manager` and `file_operations` attributes are replaced with mocks.
+        """
         dl = FirmwareReleaseDownloader(mock_config, mock_cache_manager)
         # Mock the dependencies that are set in __init__
         dl.cache_manager = mock_cache_manager
@@ -138,7 +147,15 @@ class TestFirmwareReleaseDownloader:
     def test_download_firmware_success(
         self, mock_getsize, mock_exists, mock_download, downloader
     ):
-        """Test successful firmware download and extraction."""
+        """
+        Verify that downloading and extracting a firmware asset succeeds and returns expected metadata.
+        
+        Parameters:
+            mock_getsize (Mock): Fixture mocking os.path.getsize used to simulate existing file size.
+            mock_exists (Mock): Fixture mocking os.path.exists used to simulate file presence.
+            mock_download (Mock): Fixture mocking the network download function; should emulate a successful download.
+            downloader (FirmwareReleaseDownloader): Fixture instance under test with verification and extraction methods mocked.
+        """
         # Setup mocks
         mock_exists.return_value = True
         mock_getsize.return_value = 1000000

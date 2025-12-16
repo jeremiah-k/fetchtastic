@@ -15,7 +15,18 @@ class TestDownloadOrchestrator:
 
     @pytest.fixture
     def mock_config(self):
-        """Mock configuration dictionary."""
+        """
+        Provide a mock configuration dictionary used for tests.
+        
+        Returns:
+            dict: Configuration with the following keys:
+                DOWNLOAD_DIR (str): Path to the download directory.
+                CHECK_APK_PRERELEASES (bool): Whether to include Android prerelease APKs.
+                CHECK_FIRMWARE_PRERELEASES (bool): Whether to include firmware prereleases.
+                SELECTED_FIRMWARE_ASSETS (list[str]): Firmware asset names to select.
+                EXCLUDE_PATTERNS (list[str]): Glob patterns of assets/releases to exclude.
+                GITHUB_TOKEN (str): Token used for authenticated GitHub requests.
+        """
         return {
             "DOWNLOAD_DIR": "/tmp/test",
             "CHECK_APK_PRERELEASES": True,
@@ -27,7 +38,17 @@ class TestDownloadOrchestrator:
 
     @pytest.fixture
     def orchestrator(self, mock_config):
-        """Create a DownloadOrchestrator instance with mocked dependencies."""
+        """
+        Create a DownloadOrchestrator with its external dependencies replaced by mocks for testing.
+        
+        Parameters:
+            mock_config (dict): Configuration dictionary passed to the DownloadOrchestrator constructor.
+        
+        Returns:
+            orchestrator (DownloadOrchestrator): Instance whose cache_manager, version_manager, prerelease_manager,
+            android_downloader, and firmware_downloader have been replaced with Mock objects and whose downloader
+            download_dir attributes are set to "/tmp/test".
+        """
         orch = DownloadOrchestrator(mock_config)
         # Mock the dependencies that are set in __init__
         orch.cache_manager = Mock()

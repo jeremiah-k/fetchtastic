@@ -26,7 +26,9 @@ def test_get_string_list_from_config_missing_key():
 
 
 def test_get_string_list_from_config_none_value():
-    """Test _get_string_list_from_config with None value."""
+    """
+    Verifies that when a config key exists with value None, _get_string_list_from_config returns an empty list.
+    """
     config = {"test_key": None}
     result = _get_string_list_from_config(config, "test_key")
     assert result == []

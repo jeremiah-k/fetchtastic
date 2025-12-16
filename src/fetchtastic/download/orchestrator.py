@@ -38,10 +38,12 @@ class DownloadOrchestrator:
 
     def __init__(self, config: Dict[str, Any]):
         """
-        Initialize the download orchestrator.
-
-        Args:
-            config: Configuration dictionary
+        Create a DownloadOrchestrator configured to run the download pipeline.
+        
+        Initializes version, prerelease history, and cache managers; instantiates Android and firmware downloaders with the provided cache manager; and prepares result lists and in-run release caches.
+        
+        Parameters:
+            config (Dict[str, Any]): Configuration mapping used by the orchestrator and its downloaders (controls behavior such as keep counts, prerelease handling, retry settings, extraction/exclude patterns, etc.).
         """
         self.config = config
         self.version_manager = VersionManager()
@@ -66,10 +68,10 @@ class DownloadOrchestrator:
         self,
     ) -> Tuple[List[DownloadResult], List[DownloadResult]]:
         """
-        Run the complete download pipeline.
-
+        Orchestrates discovery, downloading, retrying, and summary reporting for all configured artifact types.
+        
         Returns:
-            Tuple[List[DownloadResult], List[DownloadResult]]: Successful and failed download results
+            Tuple[List[DownloadResult], List[DownloadResult]]: A tuple containing the list of successful download results (first element) and the list of failed download results (second element).
         """
         start_time = time.time()
         logger.info("Starting download pipeline...")
@@ -95,7 +97,11 @@ class DownloadOrchestrator:
         return self.download_results, self.failed_downloads
 
     def _process_android_downloads(self) -> None:
-        """Process Android APK downloads."""
+        """
+        Orchestrates scanning and downloading of Android APK releases and prerelease APK assets, updating internal download and failure records.
+        
+        This method ensures Android releases are fetched (using a cached list when available), limits processing to the configured number of recent releases, skips releases already marked complete, downloads missing release assets, refreshes prerelease commit history when prereleases are present, processes eligible prerelease assets, and records each asset's outcome via the orchestrator's result handling.
+        """
         try:
             logger.info("Scanning Android APK releases")
             if self.android_releases is None:
@@ -148,7 +154,11 @@ class DownloadOrchestrator:
             logger.error(f"Error processing Android downloads: {e}")
 
     def _process_firmware_downloads(self) -> None:
-        """Process firmware downloads."""
+        """
+        Scan available firmware releases and ensure required firmware artifacts are downloaded and cleaned up.
+        
+        Checks up to the configured number of latest firmware releases and downloads any releases that are not already complete. Attempts to fetch repository prerelease firmware for the selected latest release and records each download outcome in the orchestrator's result lists. Removes any non-prerelease directories found in the firmware prerelease folder. Errors encountered during the process are caught and logged.
+        """
         try:
             logger.info("Scanning Firmware releases")
             if self.firmware_releases is None:
@@ -217,10 +227,12 @@ class DownloadOrchestrator:
         self, releases: List[Release]
     ) -> Optional[Release]:
         """
-        Select the "latest" release using version semantics rather than GitHub's prerelease flag.
-
-        Meshtastic firmware tags often include a hash suffix (e.g. v2.7.16.a597230) and
-        GitHub's prerelease metadata is not reliable for distinguishing "latest stable".
+        Selects the release with the highest semantic version parsed from release tag names.
+        
+        Parses each release's tag to a version tuple and returns the release with the greatest version. If no tags can be parsed, returns the first release in the provided list. If the list is empty, returns None.
+        
+        Returns:
+            selected_release (Optional[Release]): The release with the highest parsed version, the first release if none parse, or None if no releases were provided.
         """
         best_release: Optional[Release] = None
         best_tuple: Optional[Tuple[int, ...]] = None
@@ -258,13 +270,13 @@ class DownloadOrchestrator:
 
     def _get_existing_releases(self, artifact_type: str) -> List[str]:
         """
-        Get list of existing releases for an artifact type.
-
-        Args:
-            artifact_type: Type of artifact ('android' or 'firmware')
-
+        Return existing release tags and local release directory names for the given artifact type.
+        
+        Parameters:
+            artifact_type (str): Artifact category to inspect; expected values are "android" or "firmware".
+        
         Returns:
-            List[str]: List of existing release tags
+            List[str]: Deduplicated list of release identifiers found for the artifact type. The list includes the downloader's latest release tag (if available) followed by names of local release directories, preserving discovery order.
         """
         existing: List[str] = []
         if artifact_type == "android":
@@ -287,14 +299,14 @@ class DownloadOrchestrator:
 
     def _should_download_release(self, release: Release, artifact_type: str) -> bool:
         """
-        Determine if a release should be downloaded.
-
-        Args:
-            release: The release to check
-            artifact_type: Type of artifact
-
+        Decides whether the given release should be downloaded for the specified artifact type.
+        
+        Parameters:
+            release (Release): The release to evaluate.
+            artifact_type (str): Artifact type identifier (e.g., "android" or "firmware") used to apply artifact-specific prerelease policy.
+        
         Returns:
-            bool: True if release should be downloaded
+            bool: `True` if the release passes the prerelease policy and should be downloaded, `False` otherwise.
         """
         # Check prerelease settings
         if release.prerelease:
@@ -319,12 +331,13 @@ class DownloadOrchestrator:
 
     def _download_android_release(self, release: Release) -> bool:
         """
-        Download an Android release and its assets.
-
-        Args:
-            release: The Android release to download
+        Download all eligible assets for a given Android release and record each asset's result.
+        
+        Parameters:
+            release (Release): The Android release whose assets should be downloaded.
+        
         Returns:
-            bool: True if any asset was downloaded, False otherwise.
+            `True` if any asset was downloaded, `False` otherwise.
         """
         any_downloaded = False
         try:
@@ -343,12 +356,13 @@ class DownloadOrchestrator:
 
     def _download_firmware_release(self, release: Release) -> bool:
         """
-        Download a firmware release and its assets.
-
-        Args:
-            release: The firmware release to download
+        Download and extract firmware assets for a given release according to configured filters.
+        
+        Parameters:
+            release (Release): Firmware release whose matching assets will be downloaded and extracted.
+        
         Returns:
-            bool: True if any asset was downloaded, False otherwise.
+            bool: `True` if at least one asset was downloaded, `False` otherwise.
         """
         any_downloaded = False
         try:
@@ -395,20 +409,23 @@ class DownloadOrchestrator:
 
     def _get_extraction_patterns(self) -> List[str]:
         """
-        Get extraction patterns from configuration.
-
+        Retrieve extraction filename patterns from the orchestrator configuration.
+        
         Returns:
-            List[str]: List of filename patterns to extract
+            List[str]: Filename patterns to extract. If the configured value is a single string, it is returned as a one-element list.
         """
         patterns = self.config.get("EXTRACT_PATTERNS", [])
         return patterns if isinstance(patterns, list) else [patterns]
 
     def _get_exclude_patterns(self) -> List[str]:
         """
-        Get exclude patterns from configuration.
-
+        Return exclude filename patterns from configuration, normalized to a list.
+        
+        If the config key "EXCLUDE_PATTERNS" is missing, returns an empty list.
+        If the value is a single string, it will be wrapped in a list; list values are returned unchanged.
+        
         Returns:
-            List[str]: List of filename patterns to exclude
+            List[str]: Filename patterns to exclude.
         """
         patterns = self.config.get("EXCLUDE_PATTERNS", [])
         return patterns if isinstance(patterns, list) else [patterns]
@@ -417,11 +434,11 @@ class DownloadOrchestrator:
         self, result: DownloadResult, operation_type: str
     ) -> None:
         """
-        Handle the result of a download operation.
-
-        Args:
-            result: The download result
-            operation_type: Type of operation (for logging)
+        Record a download result by adding it to the orchestrator's success or failure lists and logging the outcome.
+        
+        Parameters:
+            result (DownloadResult): The result of a download attempt. If `result.success` is True the result is appended to `download_results`; if `result.success` is False it is appended to `failed_downloads`. A `was_skipped` attribute on `result` (when present and True) is treated as a skipped success.
+            operation_type (str): Human-readable operation/category used in logs (for example 'android', 'firmware', or include 'prerelease' to indicate prerelease handling).
         """
         if result.success:
             self.download_results.append(result)
@@ -440,7 +457,11 @@ class DownloadOrchestrator:
                 logger.error(f"URL: {result.download_url}")
 
     def _retry_failed_downloads(self) -> None:
-        """Retry failed downloads with enhanced metadata and retry logic."""
+        """
+        Retry failed downloads using per-result metadata and exponential backoff.
+        
+        Reads MAX_RETRIES, RETRY_DELAY_SECONDS, and RETRY_BACKOFF_FACTOR from configuration, separates failures into retryable and non-retryable groups, and attempts retries for eligible failures. Each retry increments the result's retry count, stamps a retry timestamp, updates the error message with retry context, waits using exponential backoff, and records the retry outcome (successful retries are moved to completed results; persistent failures are marked non-retryable and retained). After processing, replaces the stored failed downloads with the remaining non-retryable failures and generates a summary report of retry activity.
+        """
         if not self.failed_downloads:
             return
 
@@ -514,10 +535,13 @@ class DownloadOrchestrator:
 
     def _retry_single_failure(self, failed_result: DownloadResult) -> DownloadResult:
         """
-        Retry a single failed download using stored metadata.
-
+        Attempt a single retry of a previously failed download using metadata from the provided DownloadResult.
+        
+        Parameters:
+            failed_result (DownloadResult): The original failed download result containing the URL, target path, retry counters, and file type used to perform the retry.
+        
         Returns:
-            DownloadResult: Updated result after retry attempt.
+            DownloadResult: A result representing the outcome of the retry. On success the returned result has `success=True` and contains the validated file path; on failure the returned result has `success=False` and includes an error message and updated `is_retryable`/retry metadata.
         """
         url = failed_result.download_url
         target_path = str(failed_result.file_path) if failed_result.file_path else None
@@ -611,11 +635,16 @@ class DownloadOrchestrator:
         non_retryable_failures: List[DownloadResult],
     ) -> None:
         """
-        Generate a detailed retry report with statistics and metadata.
-
-        Args:
-            retryable_failures: List of failures that were retryable
-            non_retryable_failures: List of failures that were not retryable
+        Log a structured report summarizing retry outcomes for failed downloads.
+        
+        Produces aggregate statistics and breakdowns including total failures, count of retryable
+        and non-retryable failures, retry success rate, per-file-type counts, distribution by
+        retry attempt, and counts by error reason. Also logs the effective retry configuration
+        (max retries, base delay, backoff factor).
+        
+        Parameters:
+            retryable_failures (List[DownloadResult]): Failures that were subject to retry attempts.
+            non_retryable_failures (List[DownloadResult]): Failures that were not eligible for retries.
         """
         total_failures = len(retryable_failures) + len(non_retryable_failures)
         retry_success_rate = 0.0
@@ -680,10 +709,9 @@ class DownloadOrchestrator:
 
     def _enhance_download_results_with_metadata(self) -> None:
         """
-        Enhance download results with additional metadata for better reporting and retry handling.
-
-        This method should be called after all downloads are complete to ensure all results
-        have proper metadata populated.
+        Populate missing metadata on aggregated download results after a run completes.
+        
+        For each result in self.download_results and self.failed_downloads this fills in a missing `file_type` by inspecting the result's `file_path` (mapping to "android", "firmware", "repository", or "unknown") and initializes retry-related fields for failures: sets `is_retryable` using _is_download_retryable(result) and ensures `retry_count` is set to 0 when not already present.
         """
         for result in self.download_results + self.failed_downloads:
             # Set file type based on file path if not already set
@@ -705,13 +733,17 @@ class DownloadOrchestrator:
 
     def _is_download_retryable(self, result: DownloadResult) -> bool:
         """
-        Determine if a failed download is retryable based on error type and configuration.
-
-        Args:
-            result: The download result to check
-
+        Decides whether a failed download should be retried based on the download result's `error_type`.
+        
+        Parameters:
+            result (DownloadResult): The download result whose `error_type` will be evaluated.
+        
         Returns:
-            bool: True if the download should be retried
+            `true` if the download should be retried, `false` otherwise.
+        
+        Notes:
+            - Known error types that indicate permanent failures (for example: `permission_error`, `validation_error`, `corrupted_file`, `disk_full`, `invalid_url`, `authentication_error`) are treated as non-retryable.
+            - Unknown or transient error types (for example: network, timeout, rate limiting) are treated as retryable by default.
         """
         if not result.error_type:
             return True  # Unknown errors are retryable by default
@@ -745,7 +777,15 @@ class DownloadOrchestrator:
             return True
 
     def _log_download_summary(self, start_time: float) -> None:
-        """Log a summary of the download results."""
+        """
+        Log a concise summary of the download pipeline results.
+        
+        Logs the elapsed time since `start_time`, counts of successfully downloaded assets (excluding skipped),
+        counts of skipped successful downloads, and the number of failed downloads. Emits a warning if any downloads failed.
+        
+        Parameters:
+            start_time (float): Epoch timestamp (seconds) marking when the pipeline started (as returned by time.time()).
+        """
         elapsed_time = time.time() - start_time
         downloaded = [
             result
@@ -775,10 +815,18 @@ class DownloadOrchestrator:
 
     def get_download_statistics(self) -> Dict[str, Any]:
         """
-        Get statistics about the download operations.
-
+        Return a summary of download operation counts and rates.
+        
         Returns:
-            Dict[str, Any]: Dictionary containing download statistics
+            Dict[str, Any]: Mapping with keys:
+                - "total_downloads": number of attempted downloads (excludes skipped results).
+                - "successful_downloads": number of completed, non-skipped downloads.
+                - "skipped_downloads": number of downloads marked as skipped.
+                - "failed_downloads": number of failed downloads.
+                - "success_rate": overall success percentage as a float (0–100).
+                - "android_downloads": count of successful android artifact downloads.
+                - "firmware_downloads": count of successful firmware artifact downloads.
+                - "repository_downloads": count of repository downloads (always 0 for automatic pipeline).
         """
         downloaded = [
             result
@@ -805,7 +853,12 @@ class DownloadOrchestrator:
         }
 
     def _calculate_success_rate(self) -> float:
-        """Calculate the success rate of downloads."""
+        """
+        Compute the percentage of attempted downloads that completed successfully.
+        
+        Returns:
+            float: Percentage (0.0–100.0) of successful downloads. Returns 100.0 when there were no attempted downloads.
+        """
         downloaded_count = sum(
             1
             for result in self.download_results
@@ -816,13 +869,13 @@ class DownloadOrchestrator:
 
     def _count_artifact_downloads(self, artifact_type: str) -> int:
         """
-        Count downloads for a specific artifact type.
-
-        Args:
-            artifact_type: Type of artifact to count
-
+        Count successful (non-skipped) downloads for the given artifact type.
+        
+        Parameters:
+        	artifact_type (str): Artifact type identifier used to match results (e.g., "android", "firmware"); matched against `result.file_type` or `artifact_type` contained in `result.file_path`.
+        
         Returns:
-            int: Number of downloads for the artifact type
+        	int: Number of matching downloads that were not skipped.
         """
         return sum(
             1
@@ -909,10 +962,14 @@ class DownloadOrchestrator:
 
     def get_latest_versions(self) -> Dict[str, Optional[str]]:
         """
-        Get the latest versions of all artifact types.
-
+        Retrieve the latest known version tags for Android and firmware artifacts, including the active firmware prerelease if available.
+        
         Returns:
-            Dict[str, Optional[str]]: Dictionary mapping artifact types to latest versions
+            Dict[str, Optional[str]]: Mapping with keys:
+                - "android": latest Android release tag or None
+                - "firmware": latest firmware release tag or None
+                - "firmware_prerelease": active firmware prerelease identifier (without "firmware-" prefix when applicable) or None
+                - "android_prerelease": currently not determined by this method (always None)
         """
         firmware_prerelease = None
         latest_firmware_release = self.firmware_downloader.get_latest_release_tag()
@@ -958,7 +1015,11 @@ class DownloadOrchestrator:
         }
 
     def update_version_tracking(self) -> None:
-        """Update version tracking for all artifact types."""
+        """
+        Update tracked latest release tags for Android and firmware and refresh prerelease tracking.
+        
+        Uses cached release lists when available; otherwise fetches the latest release for each artifact, updates each downloader's latest release tag, and refreshes prerelease tracking files. Logs an error if updating fails.
+        """
         try:
             # Use cached releases if available
             android_releases = (
@@ -987,11 +1048,9 @@ class DownloadOrchestrator:
 
     def _manage_prerelease_tracking(self) -> None:
         """
-        Manage prerelease tracking files for all artifact types.
-
-        This method calls the prerelease management functions for both
-        Android and firmware downloaders to clean up superseded prereleases
-        and maintain tracking file consistency.
+        Manage prerelease tracking files for Android and firmware.
+        
+        Cleans up superseded prerelease directories and ensures prerelease tracking files remain consistent for each artifact type.
         """
         try:
             logger.info("Managing prerelease tracking files...")

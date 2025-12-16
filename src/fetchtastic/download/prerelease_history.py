@@ -41,6 +41,11 @@ class PrereleaseHistoryManager:
     _PRERELEASE_DELETE_RX = re.compile(PRERELEASE_DELETE_COMMIT_PATTERN)
 
     def __init__(self):
+        """
+        Initialize the manager and its version utilities.
+        
+        Creates a VersionManager instance stored on self.version_manager for all version-related operations used by the PrereleaseHistoryManager.
+        """
         self.version_manager = VersionManager()
 
     def fetch_recent_repo_commits(
@@ -53,7 +58,17 @@ class PrereleaseHistoryManager:
         force_refresh: bool = False,
     ) -> List[Dict[str, Any]]:
         """
-        Fetch recent commits from meshtastic.github.io with caching and expiry.
+        Fetch recent commits for the meshtastic.github.io repository, using a local cache with expiry to avoid unnecessary API requests.
+        
+        Parameters:
+            limit (int): Maximum number of commits to return; values less than 1 are treated as 1.
+            cache_manager (Any): Cache manager providing `cache_dir`, `read_json`, and `atomic_write_json` used for storing/retrieving cached commits.
+            github_token (Optional[str]): GitHub token to use for API requests; if omitted, an environment token may be used when allowed.
+            allow_env_token (bool): Whether an environment-provided GitHub token may be used when `github_token` is not supplied.
+            force_refresh (bool): If True, ignore any cached data and fetch fresh commits from the API.
+        
+        Returns:
+            List[Dict[str, Any]]: A list of commit objects (as returned by the GitHub API), up to `limit`. Returns an empty list on failure.
         """
         limit = max(1, int(limit))
         cache_file = os.path.join(
@@ -131,6 +146,22 @@ class PrereleaseHistoryManager:
     def _create_default_prerelease_entry(
         *, directory: str, identifier: str, base_version: str, commit_hash: str
     ) -> Dict[str, Any]:
+        """
+        Create a default prerelease entry dictionary populated with the provided identifiers and default metadata fields.
+        
+        Returns:
+            dict: A prerelease entry with keys:
+                - directory (str): directory name or path
+                - identifier (str): prerelease identifier
+                - base_version (str): base version string
+                - commit_hash (str): associated commit hash
+                - added_at (None): timestamp when added (unset)
+                - removed_at (None): timestamp when removed (unset)
+                - added_sha (None): SHA when added (unset)
+                - removed_sha (None): SHA when removed (unset)
+                - active (bool): default active flag (DEFAULT_PRERELEASE_ACTIVE)
+                - status (str): default status (DEFAULT_PRERELEASE_STATUS)
+        """
         return {
             "directory": directory,
             "identifier": identifier,
@@ -155,6 +186,20 @@ class PrereleaseHistoryManager:
         timestamp: Optional[str],
         sha: Optional[str],
     ) -> None:
+        """
+        Record a prerelease addition for a directory in the provided entries mapping.
+        
+        If an entry for the directory does not exist, a default prerelease entry is created. When a timestamp or SHA is provided and the corresponding fields are not already set, they are recorded as `added_at` and `added_sha`. The entry is marked active with `status` set to "active" and any removal fields (`removed_at`, `removed_sha`) are cleared.
+        
+        Parameters:
+            entries (Dict[str, Dict[str, Any]]): Mapping of directory names to prerelease entry dictionaries to update.
+            directory (str): Directory key under which to record the prerelease.
+            identifier (str): Identifier for the prerelease (e.g., directory suffix or version).
+            expected_version (str): Base version expected for this prerelease; used when creating a default entry.
+            short_hash (str): Short commit hash or identifier to store on default entry creation.
+            timestamp (Optional[str]): Timestamp string to set as `added_at` if the entry does not already have it.
+            sha (Optional[str]): Full commit SHA to set as `added_sha` if the entry does not already have it.
+        """
         entry = entries.setdefault(
             directory,
             self._create_default_prerelease_entry(
@@ -184,6 +229,18 @@ class PrereleaseHistoryManager:
         timestamp: Optional[str],
         sha: Optional[str],
     ) -> None:
+        """
+        Record that a prerelease directory was removed and update or create its history entry.
+        
+        Parameters:
+            entries (Dict[str, Dict[str, Any]]): Mapping of directory names to prerelease history entries to update.
+            directory (str): Directory key under which the prerelease entry is stored/created.
+            identifier (str): Prerelease identifier (e.g., directory suffix or ID) to store on a new entry.
+            expected_version (str): Base version that the prerelease is associated with; used when creating a default entry.
+            short_hash (str): Short commit hash to store in a newly created default entry.
+            timestamp (Optional[str]): ISO-8601 timestamp when the deletion occurred; set to `removed_at` if not already present.
+            sha (Optional[str]): Full commit SHA associated with the deletion; set to `removed_sha` if not already present.
+        """
         entry = entries.setdefault(
             directory,
             self._create_default_prerelease_entry(
@@ -204,7 +261,16 @@ class PrereleaseHistoryManager:
         self, expected_version: str, commits: List[Dict[str, Any]]
     ) -> Tuple[List[Dict[str, Any]], set[str]]:
         """
-        Build simplified prerelease history entries from meshtastic.github.io commits.
+        Constructs a simplified prerelease history for a specific base version by parsing commit messages.
+        
+        Processes the provided commits from oldest to newest, extracting prerelease addition and deletion events that match the given base version. For each matching event it records or updates a per-directory prerelease entry (using internal record helpers). The resulting entries are sorted by added timestamp then directory.
+        
+        Parameters:
+            expected_version (str): The base firmware version to filter prerelease events (e.g., "1.2.3").
+            commits (List[Dict[str, Any]]): A list of commit objects (GitHub-style) to scan for prerelease add/remove messages.
+        
+        Returns:
+            Tuple[List[Dict[str, Any]], set[str]]: A tuple where the first element is the sorted list of simplified prerelease entry dictionaries and the second is the set of seen commit SHAs.
         """
         entries_by_dir: Dict[str, Dict[str, Any]] = {}
         seen_shas: set[str] = set()
@@ -280,7 +346,18 @@ class PrereleaseHistoryManager:
         max_commits: int = DEFAULT_PRERELEASE_COMMITS_TO_FETCH,
     ) -> List[Dict[str, Any]]:
         """
-        Get simplified prerelease history for an expected version (cached).
+        Retrieve simplified prerelease history for a given base version, using a cached value when it is fresh.
+        
+        Parameters:
+            expected_version (str): Base firmware version to build history for.
+            cache_manager (Any): Cache manager providing `cache_dir`, `read_json(path)` and `atomic_write_json(path, obj)` used to load and persist history.
+            github_token (Optional[str]): GitHub token to use for API requests, if any.
+            allow_env_token (bool): Whether to allow a token sourced from the environment when `github_token` is not provided.
+            force_refresh (bool): If True, bypass any cached history and fetch commits from GitHub.
+            max_commits (int): Maximum number of recent repository commits to fetch when rebuilding history.
+        
+        Returns:
+            List[Dict[str, Any]]: Simplified prerelease history entries for the specified base version.
         """
         history_file = os.path.join(
             cache_manager.cache_dir, PRERELEASE_COMMIT_HISTORY_FILE
@@ -349,6 +426,15 @@ class PrereleaseHistoryManager:
         allow_env_token: bool = True,
         force_refresh: bool = False,
     ) -> Tuple[Optional[str], List[Dict[str, Any]]]:
+        """
+        Return the most recent active prerelease directory for the given base version along with the full history entries.
+        
+        Parameters:
+            expected_version (str): Base release version to match when selecting prerelease entries.
+        
+        Returns:
+            tuple: A pair `(latest_dir, entries)` where `latest_dir` is the directory string of the most recent active prerelease for `expected_version`, or `None` if no active prerelease exists; `entries` is the list of prerelease history entry dictionaries.
+        """
         entries = self.get_prerelease_commit_history(
             expected_version,
             cache_manager=cache_manager,
@@ -366,6 +452,19 @@ class PrereleaseHistoryManager:
     def summarize_prerelease_history(
         self, entries: List[Dict[str, Any]]
     ) -> Dict[str, int]:
+        """
+        Produce counts of created, deleted, and active prerelease entries from a list of history records.
+        
+        Parameters:
+            entries (List[Dict[str, Any]]): List of prerelease history records. Each record may include keys such as
+                `added_at`, `added_sha`, `removed_at`, `status`, and `active` which are used to determine counts.
+        
+        Returns:
+            Dict[str, int]: A dictionary with keys:
+                - `created`: number of entries with `added_at` or `added_sha`.
+                - `deleted`: number of entries with `status` equal to `"deleted"` or with `removed_at`.
+                - `active`: number of entries with `status` equal to `"active"` or with a truthy `active` flag.
+        """
         created = sum(1 for e in entries if e.get("added_at") or e.get("added_sha"))
         deleted = sum(
             1 for e in entries if e.get("status") == "deleted" or e.get("removed_at")
@@ -383,7 +482,17 @@ class PrereleaseHistoryManager:
         cache_manager: Any,
     ) -> int:
         """
-        Update legacy-format prerelease_tracking.json with newest prerelease id.
+        Update the legacy prerelease_tracking.json file with the provided newest prerelease identifier.
+        
+        If newest_prerelease_dir is not a firmware prerelease path (does not start with the firmware prefix) the function does nothing and returns 0. The function reads the existing tracking payload from the cache, resets the tracked commits if the provided latest_release_tag represents a different release than currently tracked, appends the new prerelease id if not already present, and writes the updated payload back to the cache.
+        
+        Parameters:
+            latest_release_tag (str): The latest release tag to record as the tracked release.
+            newest_prerelease_dir (str): Directory name of the newest prerelease (expected to start with the firmware directory prefix).
+            cache_manager (Any): Cache manager providing read_json and atomic_write_json operations and a cache_dir attribute.
+        
+        Returns:
+            int: Number of prerelease ids recorded after the update, or `0` if no update was performed (invalid prerelease dir or write failure).
         """
         if not newest_prerelease_dir or not newest_prerelease_dir.startswith(
             FIRMWARE_DIR_PREFIX
@@ -450,7 +559,18 @@ class PrereleaseHistoryManager:
         cache_manager: Any,
     ) -> None:
         """
-        Manage prerelease tracking files including cleanup of superseded prereleases.
+        Maintain prerelease tracking JSON files by removing superseded or expired entries and writing/updating files for the current prereleases.
+        
+        This function:
+        - Returns immediately if the tracking directory does not exist.
+        - Reads existing tracking files named "prerelease_*.json" from tracking_dir and keeps only those that pass version_manager.validate_version_tracking_data (must include "prerelease_version" and "base_version").
+        - For each existing tracking entry, deletes any on-disk tracking files whose prerelease is considered superseded or expired according to should_cleanup_superseded_prerelease.
+        - Writes or updates a tracking file for each validated entry in current_prereleases using a filename of the form "prerelease_{safe_prerelease_version}_{safe_base_version}.json" (non-alphanumeric characters except dot and dash are replaced with underscores) via cache_manager.atomic_write_json.
+        
+        Parameters:
+            tracking_dir (str): Filesystem directory that stores prerelease tracking JSON files.
+            current_prereleases (List[Dict[str, Any]]): Iterable of prerelease tracking objects; each must include `prerelease_version` and `base_version`.
+            cache_manager (Any): Object providing file helpers used by this function; must implement `read_json(path)` returning parsed JSON or falsy, and `atomic_write_json(path, data)` to write JSON atomically.
         """
         if not os.path.exists(tracking_dir):
             return
@@ -528,7 +648,21 @@ class PrereleaseHistoryManager:
         commit_hash: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        Create prerelease tracking data structure.
+        Builds a prerelease tracking payload that includes expiry and creation timestamps.
+        
+        Parameters:
+            prerelease_version (str): Prerelease identifier (e.g., "1.2.3-rc.4").
+            base_version (str): Base release version that this prerelease targets.
+            expiry_hours (float): Number of hours from now when the tracking entry should expire.
+            commit_hash (Optional[str]): Optional commit SHA associated with the prerelease.
+        
+        Returns:
+            dict: Tracking data with keys:
+                - "prerelease_version": the provided prerelease_version
+                - "base_version": the provided base_version
+                - "expiry_timestamp": ISO 8601 UTC timestamp when the entry expires
+                - "created_at": ISO 8601 UTC timestamp when the entry was created
+                - "commit_hash": included only if `commit_hash` was provided
         """
         expiry_timestamp = (
             datetime.now(timezone.utc) + timedelta(hours=expiry_hours)
@@ -550,7 +684,16 @@ class PrereleaseHistoryManager:
         self, current_prerelease: Dict[str, Any], new_prerelease: Dict[str, Any]
     ) -> bool:
         """
-        Determine if a current prerelease should be cleaned up as superseded.
+        Decide whether a current prerelease should be removed because it is superseded.
+        
+        Checks two conditions: if the new prerelease has a newer `base_version` than the current prerelease, or if the current prerelease includes an `expiry_timestamp` (ISO 8601 string) that is in the past.
+        
+        Parameters:
+            current_prerelease (dict): Prerelease record; expected keys used: `base_version` (str) and optional `expiry_timestamp` (ISO 8601 str).
+            new_prerelease (dict): New prerelease record; expected key used: `base_version` (str).
+        
+        Returns:
+            `True` if the current prerelease should be cleaned up, `False` otherwise.
         """
         # Check if new prerelease is based on a newer version
         current_base = current_prerelease.get("base_version")
@@ -577,7 +720,19 @@ class PrereleaseHistoryManager:
         self, directory_path: str, pattern: str = "*"
     ) -> List[str]:
         """
-        Scan directory for prerelease version files.
+        Find prerelease version identifiers from filenames in a directory.
+        
+        Scans files in the given directory using the provided glob pattern (non-recursively),
+        extracts version-like substrings from filenames, and returns those that are
+        recognized as prerelease versions by the manager's version checker. If the
+        directory does not exist, an empty list is returned.
+        
+        Parameters:
+            directory_path (str): Path to the directory to scan.
+            pattern (str): Glob pattern to match filenames (default "*").
+        
+        Returns:
+            List[str]: A list of prerelease version strings found in matching filenames.
         """
         import glob
         import os
@@ -613,7 +768,14 @@ class PrereleaseHistoryManager:
         self, directories: List[str], expected_version: str
     ) -> List[str]:
         """
-        Scan prerelease directories (meshtastic.github.io style) to collect prerelease identifiers.
+        Collect prerelease directory identifiers from a list of directory names that follow the meshtastic.github.io naming convention.
+        
+        Parameters:
+            directories (List[str]): Iterable of directory names to inspect (e.g., "firmware-1.2.3.abcd12").
+            expected_version (str): Base version to match (e.g., "1.2.3").
+        
+        Returns:
+            List[str]: List of directory suffixes matching the expected base version (the part after the "firmware-" prefix).
         """
         matching = []
         for raw_dir_name in directories:
@@ -633,29 +795,25 @@ class PrereleaseHistoryManager:
 
 def _extract_identifier_from_entry(entry: Dict[str, Any]) -> str:
     """
-    Return the identifier for a prerelease history entry.
-
-    Checks for keys in priority order: "identifier", "directory", then "dir",
-    and returns the first non-empty value found. If none are present, returns an empty string.
-
-    Parameters:
-        entry (dict): History entry mapping potentially containing identifier fields.
-
+    Retrieve the identifier for a prerelease history entry.
+    
+    Prefers the value of the "identifier" key, then "directory", then "dir"; returns an empty string if none are present.
+    
     Returns:
-        identifier (str): The extracted identifier or an empty string if not found.
+        The extracted identifier, or an empty string if no identifier is found.
     """
     return entry.get("identifier") or entry.get("directory") or entry.get("dir") or ""
 
 
 def _is_entry_deleted(entry: Dict[str, Any]) -> bool:
     """
-    Check if a prerelease history entry is marked as deleted.
-
+    Determine whether a prerelease history entry is deleted.
+    
     Parameters:
-        entry (dict): History entry to check.
-
+        entry (Dict[str, Any]): A prerelease history entry dictionary.
+    
     Returns:
-        bool: True if the entry is marked as deleted, False otherwise.
+        bool: True if the entry's status is "deleted" or it has a truthy `removed_at` value, False otherwise.
     """
     return entry.get("status") == "deleted" or bool(entry.get("removed_at"))
 

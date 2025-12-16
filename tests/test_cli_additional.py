@@ -5,7 +5,15 @@ from fetchtastic import cli
 
 @pytest.fixture
 def mock_cli_dependencies(mocker):
-    """Fixture to mock common CLI dependencies while allowing CLI code to run."""
+    """
+    Prepare and return a MagicMock that stands in for the CLI integration and patch common external CLI dependencies.
+    
+    Parameters:
+        mocker: The pytest-mock fixture used to apply patches.
+    
+    Returns:
+        MagicMock: A mock integration instance whose `main` returns a 6-tuple of empty lists/strings and whose `get_latest_versions` returns empty version strings.
+    """
     # Mock external dependencies to avoid side effects
     mocker.patch("fetchtastic.setup_config.load_config", return_value={"LOG_LEVEL": ""})
     mocker.patch("fetchtastic.log_utils.set_log_level")

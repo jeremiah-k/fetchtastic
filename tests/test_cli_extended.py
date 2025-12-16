@@ -138,6 +138,15 @@ def test_run_clean_permission_errors(mocker, capsys):
     mocker.patch("fetchtastic.setup_config.OLD_CONFIG_FILE", "/path/to/old_config")
 
     def mock_remove_with_error(path):
+        """
+        Simulates removing a filesystem path and raises a permission error for paths containing "config".
+        
+        Parameters:
+            path (str): Filesystem path to remove.
+        
+        Raises:
+            PermissionError: If the string "config" is present in `path`.
+        """
         if "config" in path:
             raise PermissionError("Permission denied")
         else:
@@ -158,7 +167,11 @@ def test_run_clean_permission_errors(mocker, capsys):
 @pytest.mark.user_interface
 @pytest.mark.unit
 def test_run_clean_managed_file_filtering(mocker):
-    """Test run_clean correctly filters managed vs unmanaged files."""
+    """
+    Verify run_clean removes only managed artifacts and preserves personal files.
+    
+    Ensures the cleanup routine always removes the active and old config files, removes files and directories identified as managed (e.g., firmware archives and managed folders), and does not remove user personal files or directories.
+    """
 
     # Mock directory contents with mix of managed and unmanaged files
     mock_files = [
@@ -188,9 +201,23 @@ def test_run_clean_managed_file_filtering(mocker):
     removed_dirs = []
 
     def mock_remove(path):
+        """
+        Record the given filesystem path in the shared removed_files list.
+        
+        This helper emulates file removal for tests by appending the provided path to the module-level removed_files list as a side effect.
+        
+        Parameters:
+            path (str): Filesystem path to record as removed.
+        """
         removed_files.append(path)
 
     def mock_rmtree(path):
+        """
+        Record a directory path as removed by appending it to the `removed_dirs` list.
+        
+        Parameters:
+            path (str): Filesystem path of the directory that would be removed.
+        """
         removed_dirs.append(path)
 
     mocker.patch("os.remove", side_effect=mock_remove)

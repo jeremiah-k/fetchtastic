@@ -25,6 +25,17 @@ def test_get_download_statistics_excludes_skipped_from_download_counts():
 
     class _Result:
         def __init__(self, *, success: bool, was_skipped: bool, file_type: str):
+            """
+            Initialize a Result object representing an individual download outcome.
+            
+            Parameters:
+                success (bool): `True` if the download completed successfully, `False` otherwise.
+                was_skipped (bool): `True` if the download was intentionally skipped, `False` otherwise.
+                file_type (str): The category or type of the downloaded file (e.g., "firmware").
+            
+            Attributes:
+                file_path (str | None): Path where the file was saved, set to `None` by default.
+            """
             self.success = success
             self.was_skipped = was_skipped
             self.file_type = file_type

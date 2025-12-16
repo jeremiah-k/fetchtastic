@@ -534,7 +534,11 @@ class TestUtilityFunctions:
         assert not os.path.exists(cache_file)
 
     def test_load_commit_cache(self, tmp_path):
-        """Test loading commit cache."""
+        """
+        Verifies that loading the commit cache completes without raising an exception.
+        
+        This test invokes the commit cache loader to ensure it executes successfully in the test environment; it does not assert specific state changes.
+        """
         # This is a complex function that loads global state
         # Just test that it doesn't crash
         _load_commit_cache()

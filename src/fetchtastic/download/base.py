@@ -35,11 +35,16 @@ class BaseDownloader(Downloader, ABC):
         self, config: Dict[str, Any], cache_manager: Optional[CacheManager] = None
     ):
         """
-        Initialize the base downloader.
-
-        Args:
-            config: Configuration dictionary
-            cache_manager: Optional cache manager instance
+        Initialize BaseDownloader and its common helpers.
+        
+        Parameters:
+            config (Dict[str, Any]): Configuration containing downloader settings. Recognized keys include
+                "DOWNLOAD_DIR" (defaults to "~/meshtastic") and "VERSIONS_TO_KEEP" (defaults to 5).
+            cache_manager (Optional[CacheManager]): Cache manager to use; a new CacheManager is created if omitted.
+        
+        Notes:
+            Creates a VersionManager and FileOperations instance, stores a CacheManager, and normalizes
+            download_dir (string path) and versions_to_keep from the provided configuration.
         """
         self.config = config
         self.version_manager = VersionManager()
@@ -53,25 +58,31 @@ class BaseDownloader(Downloader, ABC):
         self.versions_to_keep = self._get_versions_to_keep()
 
     def _get_download_dir(self) -> str:
-        """Get the download directory from configuration."""
+        """
+        Determine the directory used for downloads from configuration.
+        
+        Returns:
+            download_dir (str): Configured download directory path. If not set, returns the user's home 'meshtastic' directory (e.g. '~/meshtastic').
+        """
         return self.config.get("DOWNLOAD_DIR", os.path.expanduser("~/meshtastic"))
 
     def _get_versions_to_keep(self) -> int:
-        """Get the number of versions to keep from configuration."""
+        """
+        Return the number of release versions to retain.
+        
+        Reads "VERSIONS_TO_KEEP" from the downloader configuration and returns its value cast to int; defaults to 5 if the setting is not present.
+        
+        Returns:
+            int: Number of versions to keep (defaults to 5).
+        """
         return int(self.config.get("VERSIONS_TO_KEEP", 5))
 
     def download(self, url: str, target_path: Pathish) -> bool:
         """
-        Download a file from a URL to a target path.
-
-        Uses the existing download_file_with_retry utility for robustness.
-
-        Args:
-            url: The URL to download from
-            target_path: Where to save the downloaded file
-
+        Download a file from the given URL into the specified target path.
+        
         Returns:
-            bool: True if download succeeded, False otherwise
+            bool: True if the file was downloaded successfully, False otherwise.
         """
         try:
             # Ensure target directory exists using pathlib
@@ -94,13 +105,15 @@ class BaseDownloader(Downloader, ABC):
     def verify(self, file_path: Pathish, expected_hash: Optional[str] = None) -> bool:
         """
         Verify the integrity of a downloaded file.
-
-        Args:
-            file_path: Path to the file to verify
-            expected_hash: Optional expected hash for verification
-
+        
+        If `expected_hash` is provided, verifies the file's hash against it; otherwise performs a general integrity check.
+        
+        Parameters:
+            file_path (Pathish): Path to the file to verify.
+            expected_hash (Optional[str]): Expected hash to validate against; if omitted, a broader integrity check is used.
+        
         Returns:
-            bool: True if verification succeeded, False otherwise
+            bool: `True` if the file passes verification, `False` otherwise.
         """
         if expected_hash:
             return self.file_operations.verify_file_hash(str(file_path), expected_hash)
@@ -113,15 +126,15 @@ class BaseDownloader(Downloader, ABC):
         exclude_patterns: Optional[List[str]] = None,
     ) -> List[Pathish]:
         """
-        Extract files from an archive matching specific patterns.
-
-        Args:
-            file_path: Path to the archive file
-            patterns: List of filename patterns to extract
-            exclude_patterns: Optional list of filename patterns to skip
-
+        Extracts files from the given archive that match any of the provided include patterns and do not match the optional exclude patterns.
+        
+        Parameters:
+            file_path (PathLike | str): Path to the archive file.
+            patterns (List[str]): Filename include patterns (e.g., glob or fnmatch) used to select files to extract.
+            exclude_patterns (Optional[List[str]]): Optional filename patterns to exclude from extraction.
+        
         Returns:
-            List[Path]: List of paths to extracted files
+            List[pathlib.Path]: Paths to the extracted files.
         """
         # Get the directory where the archive is located using pathlib
         archive_path = Path(file_path)
@@ -181,14 +194,16 @@ class BaseDownloader(Downloader, ABC):
 
     def should_download_release(self, _release_tag: str, asset_name: str) -> bool:
         """
-        Determine if a release should be downloaded based on selection patterns.
-
-        Args:
-            _release_tag: The release tag (unused, prefixed to silence linter)
-            asset_name: The asset name to check
-
+        Decide whether an asset should be downloaded based on configured selection and exclusion patterns.
+        
+        The asset is eligible only if it matches at least one configured selected pattern (when any are defined)
+        and does not match any configured exclude pattern.
+        
+        Parameters:
+            asset_name (str): The name of the asset to evaluate.
+        
         Returns:
-            bool: True if the release should be downloaded, False otherwise
+            bool: `true` if the asset should be downloaded, `false` otherwise.
         """
         # Get selection patterns from config
         selected_patterns = self._get_selected_patterns()
@@ -211,7 +226,14 @@ class BaseDownloader(Downloader, ABC):
         return True
 
     def _get_selected_patterns(self) -> List[str]:
-        """Get the selected patterns from configuration."""
+        """
+        Retrieve asset selection patterns from configuration, falling back to legacy keys if necessary.
+        
+        Checks "SELECTED_PATTERNS" and, if not present, attempts "SELECTED_FIRMWARE_ASSETS", "SELECTED_PRERELEASE_ASSETS", and "SELECTED_APK_ASSETS". Normalizes a single string into a one-element list.
+        
+        Returns:
+            List[str]: Selection patterns from configuration, or an empty list if none are configured.
+        """
         patterns = self.config.get("SELECTED_PATTERNS")
 
         # Backward compatibility with existing config keys
@@ -226,7 +248,12 @@ class BaseDownloader(Downloader, ABC):
         return patterns if isinstance(patterns, list) else [patterns]
 
     def _get_exclude_patterns(self) -> List[str]:
-        """Get the exclude patterns from configuration."""
+        """
+        Retrieve exclude filename patterns from the configuration.
+        
+        Returns:
+            patterns (List[str]): A list of exclude pattern strings. If the config value is a single string it is wrapped into a one-element list; missing value yields an empty list.
+        """
         patterns = self.config.get("EXCLUDE_PATTERNS", [])
         return patterns if isinstance(patterns, list) else [patterns]
 
@@ -245,14 +272,14 @@ class BaseDownloader(Downloader, ABC):
 
     def _matches_exclude_patterns(self, filename: str, patterns: List[str]) -> bool:
         """
-        Check if a filename matches any of the exclude patterns.
-
-        Args:
-            filename: The filename to check
-            patterns: List of patterns to match against
-
+        Check whether the filename matches any exclude pattern, using case-insensitive shell-style wildcard matching.
+        
+        Parameters:
+            filename: The filename to test.
+            patterns: Iterable of shell-style patterns (e.g., '*.zip'); matching is case-insensitive.
+        
         Returns:
-            bool: True if filename matches any exclude pattern, False otherwise
+            True if the filename matches any exclude pattern, False otherwise.
         """
         if not patterns:
             return False  # No exclude patterns means don't exclude anything
@@ -263,7 +290,19 @@ class BaseDownloader(Downloader, ABC):
         )
 
     def _sanitize_required(self, component: str, label: str) -> str:
-        """Sanitize a required component or raise ValueError with a helpful message."""
+        """
+        Ensure a path component is safe for use and return the sanitized value.
+        
+        Parameters:
+            component (str): The path component to sanitize.
+            label (str): Human-readable label used in the error message if sanitization fails.
+        
+        Returns:
+            sanitized (str): The sanitized path component.
+        
+        Raises:
+            ValueError: If the component cannot be safely sanitized (to prevent path traversal).
+        """
         safe = _sanitize_path_component(component)
         if safe is None:
             raise ValueError(
@@ -289,21 +328,25 @@ class BaseDownloader(Downloader, ABC):
         was_skipped: bool = False,
     ) -> DownloadResult:
         """
-        Create a DownloadResult object.
-
-        Args:
-            success: Whether the download succeeded
-            release_tag: The release tag
-            file_path: Path to the downloaded file
-            error_message: Optional error message
-            download_url: URL used to fetch the asset
-            file_size: Size of the asset in bytes
-            file_type: Asset type hint (android/firmware/repository)
-            is_retryable: Whether this failure can be retried
-            error_type: Optional error classification
-
+        Builds a standardized DownloadResult representing a download attempt for a release asset.
+        
+        Parameters:
+            success (bool): Whether the download succeeded.
+            release_tag (str): Release identifier associated with the asset.
+            file_path (str): Path to the downloaded file; converted to a Path on the result.
+            error_message (Optional[str]): Human-readable error message, if any.
+            extracted_files (Optional[List[Pathish]]): Files extracted from an archive, if applicable.
+            download_url (Optional[str]): URL used to fetch the asset.
+            file_size (Optional[int]): Size of the asset in bytes, when known.
+            file_type (Optional[str]): Asset type hint (e.g., "android", "firmware", "repository").
+            is_retryable (bool): Whether a failed download can be retried.
+            error_type (Optional[str]): Machine-readable classification of the error.
+            error_details (Optional[Dict[str, Any]]): Additional structured error information.
+            http_status_code (Optional[int]): HTTP status code returned by the request, if applicable.
+            was_skipped (bool): Whether the asset was intentionally skipped (not attempted).
+        
         Returns:
-            DownloadResult: The download result object
+            DownloadResult: An object encapsulating the outcome and metadata of the download attempt.
         """
         return DownloadResult(
             success=success,
@@ -323,24 +366,40 @@ class BaseDownloader(Downloader, ABC):
 
     def get_existing_file_path(self, release_tag: str, file_name: str) -> Optional[str]:
         """
-        Get the path to an existing file for a release.
-
-        Args:
-            release_tag: The release tag
-            file_name: The filename
-
+        Return the filesystem path for an asset of the given release if the file exists.
+        
+        Parameters:
+            release_tag (str): Release tag used to locate the version directory.
+            file_name (str): Asset filename within the release directory.
+        
         Returns:
-            Optional[str]: Path to existing file, or None if it doesn't exist
+            Optional[str]: Path to the existing file as a string, or `None` if the file does not exist.
         """
         target_path = self.get_target_path_for_release(release_tag, file_name)
         return target_path if os.path.exists(target_path) else None
 
     def cleanup_file(self, file_path: str) -> bool:
-        """Remove a file from disk via the shared file operations helper."""
+        """
+        Delete the file at the given path if present.
+        
+        Parameters:
+            file_path (str): Path to the file to remove.
+        
+        Returns:
+            bool: `True` if the file was removed, `False` otherwise.
+        """
         return self.file_operations.cleanup_file(file_path)
 
     def _is_zip_intact(self, file_path: str) -> bool:
-        """Quick integrity check for zip archives."""
+        """
+        Perform a quick integrity check of a ZIP archive.
+        
+        Parameters:
+            file_path (str): Path to the ZIP file to inspect.
+        
+        Returns:
+            bool: `True` if the archive contains no corrupt members, `False` otherwise.
+        """
         import zipfile
 
         try:
@@ -379,15 +438,15 @@ class BaseDownloader(Downloader, ABC):
         self, release_tag: str, file_name: str, expected_size: int
     ) -> bool:
         """
-        Determine if a file needs to be downloaded.
-
-        Args:
-            release_tag: The release tag
-            file_name: The filename
-            expected_size: Expected file size
-
+        Determine whether a release asset file should be downloaded.
+        
+        Parameters:
+            release_tag (str): Release tag used to locate the existing file.
+            file_name (str): Name of the asset file.
+            expected_size (int): Expected file size in bytes.
+        
         Returns:
-            bool: True if file needs download, False if it exists and is valid
+            `true` if the file should be downloaded, `false` otherwise.
         """
         existing_path = self.get_existing_file_path(release_tag, file_name)
         if not existing_path:
