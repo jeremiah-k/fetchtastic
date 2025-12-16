@@ -52,20 +52,19 @@ def mock_repo_contents():
     ]
 
 
-@pytest.mark.skip("Rate limiting cache issues causing test instability")
 def test_fetch_repo_contents(mocker, mock_repo_contents):
     """Test fetching and processing of repository contents."""
     import fetchtastic.utils
 
     mock_response = mocker.MagicMock()
     mock_response.json.return_value = mock_repo_contents
-    mock_make_request = mocker.patch("fetchtastic.utils.make_github_api_request")
+    mock_make_request = mocker.patch("fetchtastic.menu_repo.make_github_api_request")
     mock_make_request.return_value = mock_response
 
     # Reset rate limit cache to avoid cached rate limit issues
-    with mocker.patch.object(fetchtastic.utils, "_rate_limit_cache_loaded", False):
-        with mocker.patch.object(fetchtastic.utils, "_rate_limit_cache", {}):
-            items = menu_repo.fetch_repo_contents()
+    mocker.patch.object(fetchtastic.utils, "_rate_limit_cache_loaded", False)
+    mocker.patch.object(fetchtastic.utils, "_rate_limit_cache", {})
+    items = menu_repo.fetch_repo_contents()
 
     # Check filtering - should be 4 items (3 dirs, 1 file) - README.md and meshtastic-deb.asc filtered
     assert len(items) == 4
@@ -133,7 +132,6 @@ def test_select_files(mocker):
     assert selected is None
 
 
-@pytest.mark.skip("Rate limiting cache issues causing test instability")
 def test_fetch_repo_contents_with_path(mocker, mock_repo_contents):
     """Test fetching repository contents with a specific path."""
     import fetchtastic.utils
@@ -144,9 +142,9 @@ def test_fetch_repo_contents_with_path(mocker, mock_repo_contents):
     mock_make_request.return_value = mock_response
 
     # Reset rate limit cache to avoid cached rate limit issues
-    with mocker.patch.object(fetchtastic.utils, "_rate_limit_cache_loaded", False):
-        with mocker.patch.object(fetchtastic.utils, "_rate_limit_cache", {}):
-            menu_repo.fetch_repo_contents("firmware-2.7.4.c1f4f79")
+    mocker.patch.object(fetchtastic.utils, "_rate_limit_cache_loaded", False)
+    mocker.patch.object(fetchtastic.utils, "_rate_limit_cache", {})
+    menu_repo.fetch_repo_contents("firmware-2.7.4.c1f4f79")
 
     # Verify the URL was constructed correctly with proper parameters
     expected_url = "https://api.github.com/repos/meshtastic/meshtastic.github.io/contents/firmware-2.7.4.c1f4f79"

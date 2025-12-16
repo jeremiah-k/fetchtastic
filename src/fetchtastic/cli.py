@@ -25,10 +25,12 @@ from fetchtastic.constants import (
 )
 from fetchtastic.download import cli_integration as download_cli_integration
 from fetchtastic.download.repository import RepositoryDownloader
+from fetchtastic.utils import get_api_request_summary as _get_api_request_summary
 from fetchtastic.utils import (
-    get_api_request_summary,
     reset_api_tracking,
 )
+
+get_api_request_summary = _get_api_request_summary
 
 # Patch-friendly aliases for CLI tests.
 copy_to_clipboard_func = setup_config.copy_to_clipboard_func
