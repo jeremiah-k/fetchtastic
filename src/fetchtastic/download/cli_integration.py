@@ -212,8 +212,8 @@ class DownloadCLIIntegration:
         new_apk_versions = []
 
         # Get current versions before processing results
-        current_android = self.android_downloader.get_latest_release_tag()
-        current_firmware = self.firmware_downloader.get_latest_release_tag()
+        current_android = self.orchestrator.get_latest_versions().get("android")
+        current_firmware = self.orchestrator.get_latest_versions().get("firmware")
 
         for result in success_results:
             # Legacy parity: "already complete" skips should not be reported as

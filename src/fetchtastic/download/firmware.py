@@ -898,12 +898,32 @@ class FirmwareReleaseDownloader(BaseDownloader):
             else:
                 deleted_commits.append(f"[red][strike]{identifier}[/strike][/red]")
 
-        if active_commits or deleted_commits:
+        active_entries = [e for e in history_entries if e.get("status") == "active"]
+        latest_active_identifier = (
+            active_entries[-1].get("identifier") if active_entries else None
+        )
+
+        if history_entries:
             logger.info("Prerelease commits for %s:", expected_version)
-            for commit in active_commits:
-                logger.info(f"  - {commit} (active)")
-            for commit in deleted_commits:
-                logger.info(f"  - {commit} (deleted)")
+            for entry in history_entries:
+                identifier = entry.get("identifier")
+                if not identifier:
+                    continue
+
+                is_latest_active = identifier == latest_active_identifier
+                is_deleted = entry.get("status") == "deleted"
+
+                if is_deleted:
+                    label = f"[red][strike]{identifier}[/strike][/red]"
+                    status = "deleted"
+                elif is_latest_active:
+                    label = f"[bold green]{identifier}[/bold green]"
+                    status = "latest"
+                else:
+                    label = f"[green]{identifier}[/green]"
+                    status = "active"
+
+                logger.info(f"  - {label} ({status})")
 
     def handle_prereleases(
         self,

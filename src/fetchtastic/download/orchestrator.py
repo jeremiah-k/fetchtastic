@@ -848,11 +848,58 @@ class DownloadOrchestrator:
             # Clean up firmware versions
             firmware_keep = self.config.get("FIRMWARE_VERSIONS_TO_KEEP", 5)
             self.firmware_downloader.cleanup_old_versions(firmware_keep)
+            self._cleanup_deleted_prereleases()
 
             logger.info("Old version cleanup completed")
 
         except Exception as e:
             logger.error(f"Error cleaning up old versions: {e}")
+
+    def _cleanup_deleted_prereleases(self) -> None:
+        """Clean up local directories for prereleases marked as 'deleted' in the commit history."""
+        try:
+            # This logic is specific to firmware prereleases from meshtastic.github.io
+            latest_firmware_release = self.firmware_downloader.get_latest_release_tag()
+            if not latest_firmware_release:
+                return
+
+            expected_version = self.version_manager.calculate_expected_prerelease_version(
+                latest_firmware_release
+            )
+            if not expected_version:
+                return
+
+            history = self.prerelease_manager.get_prerelease_commit_history(
+                expected_version,
+                cache_manager=self.cache_manager,
+                github_token=self.config.get("GITHUB_TOKEN"),
+                allow_env_token=True,
+                force_refresh=False,
+            )
+
+            deleted_entries = [e for e in history if e.get("status") == "deleted"]
+            if not deleted_entries:
+                return
+
+            prerelease_base_dir = Path(self.firmware_downloader.download_dir) / "firmware" / "prerelease"
+            if not prerelease_base_dir.exists():
+                return
+
+            for entry in deleted_entries:
+                directory_name = entry.get("directory")
+                if not directory_name:
+                    continue
+
+                dir_to_delete = prerelease_base_dir / directory_name
+                if dir_to_delete.exists() and dir_to_delete.is_dir():
+                    logger.info(f"Removing deleted prerelease directory: {directory_name}")
+                    try:
+                        shutil.rmtree(dir_to_delete)
+                    except OSError as e:
+                        logger.error(f"Error removing directory {dir_to_delete}: {e}")
+
+        except Exception as e:
+            logger.error(f"Error during deleted prerelease cleanup: {e}", exc_info=True)
 
     def get_latest_versions(self) -> Dict[str, Optional[str]]:
         """

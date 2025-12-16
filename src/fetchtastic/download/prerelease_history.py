@@ -210,7 +210,8 @@ class PrereleaseHistoryManager:
         entries_by_dir: Dict[str, Dict[str, Any]] = {}
         seen_shas: set[str] = set()
 
-        for commit in commits:
+        # Reverse commits to process from oldest to newest
+        for commit in reversed(commits):
             sha = commit.get("sha")
             if sha:
                 seen_shas.add(str(sha))
@@ -266,7 +267,6 @@ class PrereleaseHistoryManager:
                 str(e.get("added_at") or ""),
                 str(e.get("directory") or ""),
             ),
-            reverse=True,
         )
         return entries, seen_shas
 

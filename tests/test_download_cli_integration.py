@@ -241,11 +241,14 @@ def test_clear_caches_handles_exception(mocker):
 def test_convert_results_to_legacy_format_firmware(mocker):
     """_convert_results_to_legacy_format should handle firmware results."""
     integration = DownloadCLIIntegration()
+    integration.orchestrator = MagicMock()
     integration.android_downloader = MagicMock()
     integration.firmware_downloader = MagicMock()
 
-    integration.android_downloader.get_latest_release_tag.return_value = "v0.9"
-    integration.firmware_downloader.get_latest_release_tag.return_value = "v0.9"
+    integration.orchestrator.get_latest_versions.return_value = {
+        "android": "v0.9",
+        "firmware": "v0.9",
+    }
 
     # Mock version manager
     mock_version_manager = MagicMock()
@@ -274,11 +277,14 @@ def test_convert_results_to_legacy_format_firmware(mocker):
 def test_convert_results_to_legacy_format_android(mocker):
     """_convert_results_to_legacy_format should handle android results."""
     integration = DownloadCLIIntegration()
+    integration.orchestrator = MagicMock()
     integration.android_downloader = MagicMock()
     integration.firmware_downloader = MagicMock()
 
-    integration.android_downloader.get_latest_release_tag.return_value = "v0.9"
-    integration.firmware_downloader.get_latest_release_tag.return_value = "v0.9"
+    integration.orchestrator.get_latest_versions.return_value = {
+        "android": "v0.9",
+        "firmware": "v0.9",
+    }
 
     # Mock version manager
     mock_version_manager = MagicMock()
@@ -307,9 +313,14 @@ def test_convert_results_to_legacy_format_android(mocker):
 def test_convert_results_to_legacy_format_skipped(mocker):
     """_convert_results_to_legacy_format should skip results marked as was_skipped."""
     integration = DownloadCLIIntegration()
+    integration.orchestrator = MagicMock()
     integration.android_downloader = MagicMock()
     integration.firmware_downloader = MagicMock()
 
+    integration.orchestrator.get_latest_versions.return_value = {
+        "android": "v0.9",
+        "firmware": "v0.9",
+    }
     mock_result = MagicMock()
     mock_result.release_tag = "v1.0"
     mock_result.file_path = "/tmp/firmware/firmware.zip"

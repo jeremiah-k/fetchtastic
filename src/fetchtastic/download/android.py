@@ -357,6 +357,23 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         except ValueError:
             return (0, 0, 0)
 
+    def get_latest_release_tag(self) -> Optional[str]:
+        """
+        Get the latest Android release tag from the tracking file.
+
+        Returns:
+            Optional[str]: Latest release tag, or None if not found
+        """
+        latest_file = os.path.join(self.download_dir, self.latest_release_file)
+        if os.path.exists(latest_file):
+            try:
+                with open(latest_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    return data.get("latest_version")
+            except (IOError, json.JSONDecodeError):
+                pass
+        return None
+
     def update_latest_release_tag(self, release_tag: str) -> bool:
         """
         Update the latest Android release tag in the tracking file.

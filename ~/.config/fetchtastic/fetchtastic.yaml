@@ -1,0 +1,53 @@
+ANDROID_VERSIONS_TO_KEEP: 5
+AUTO_EXTRACT: true
+BASE_DIR: /home/jules/Downloads/Meshtastic
+CHECK_PRERELEASES: true
+DOWNLOAD_DIR: /home/jules/Downloads/Meshtastic
+EXCLUDE_PATTERNS:
+- '*.hex'
+- '*tcxo*'
+- '*s3-core*'
+- '*request*'
+- '*rak4631_*'
+- '*heltec_*'
+- '*tbeam_*'
+- '*tlora_*'
+- '*_tft*'
+- '*_oled*'
+- '*_lcd*'
+- '*_epaper*'
+- '*_eink*'
+EXTRACT_PATTERNS:
+- rak4631-
+- tbeam
+- t1000-e-
+- tlora-v2-1-1_6-
+- device-
+FIRMWARE_VERSIONS_TO_KEEP: 8
+GITHUB_TOKEN: 'ghp_github_token_redacted'
+LAST_SETUP_DATE: '2025-11-02T10:55:27.679058'
+LAST_SETUP_VERSION: 0.8.1
+LOG_LEVEL: debug
+NOTIFY_ON_DOWNLOAD_ONLY: true
+NTFY_SERVER: https://ntfy.example.com
+NTFY_TOPIC: fetchtastic-example
+SAVE_APKS: true
+SAVE_FIRMWARE: true
+SELECTED_APK_ASSETS:
+- app-fdroid-release.apk
+- app-google-release.apk
+SELECTED_FIRMWARE_ASSETS:
+- firmware-esp32.zip
+- firmware-esp32c3.zip
+- firmware-esp32c6.zip
+- firmware-esp32s3.zip
+- firmware-nrf52840.zip
+- firmware-rp2040.zip
+- firmware-rp2350.zip
+- firmware-stm32.zip
+SELECTED_PRERELEASE_ASSETS:
+- rak4631-
+- tbeam
+- t1000-e-
+- tlora-v2-1-1_6-
+- device-

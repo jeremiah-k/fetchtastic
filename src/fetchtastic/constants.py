@@ -151,7 +151,8 @@ COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS = 24
 # Legacy behavior: releases API responses are cached on an hours-scale to avoid
 # burning GitHub API requests unnecessarily.
 RELEASES_CACHE_EXPIRY_HOURS = 1 / 60  # 1 minute (in hours)
-FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS = 60  # 1 minute
+# Prerelease contents rarely change once a commit is published, so cache for a longer duration.
+FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS = 24 * 60 * 60  # 24 hours
 # Keep prerelease commit history fresh so we see new prereleases within a minute.
 PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS = 60
 

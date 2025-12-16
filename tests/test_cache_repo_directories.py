@@ -61,6 +61,10 @@ def test_get_repo_directories_refreshes_when_stale(monkeypatch, isolated_cache_d
         "fetchtastic.download.cache.make_github_api_request", fake_request
     )
 
+    monkeypatch.setattr(
+        "fetchtastic.download.cache.FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS",
+        60,
+    )
     # Seed cache with an entry older than the TTL.
     cache_file = isolated_cache_dir / "prerelease_dirs.json"
     cache_file.write_text(
@@ -123,6 +127,10 @@ def test_get_repo_contents_refreshes_when_stale(monkeypatch, isolated_cache_dir)
         "fetchtastic.download.cache.make_github_api_request", fake_request
     )
 
+    monkeypatch.setattr(
+        "fetchtastic.download.cache.FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS",
+        60,
+    )
     cache_file = isolated_cache_dir / "repo_contents.json"
     cache_file.write_text(
         (
