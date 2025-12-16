@@ -2,14 +2,13 @@
 #
 # Comprehensive unit tests for the MeshtasticAndroidAppDownloader class.
 
-from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import pytest
 
 from fetchtastic.download.android import MeshtasticAndroidAppDownloader
 from fetchtastic.download.cache import CacheManager
-from fetchtastic.download.interfaces import Asset, DownloadResult, Release
+from fetchtastic.download.interfaces import Asset, Release
 
 
 class TestMeshtasticAndroidAppDownloader:

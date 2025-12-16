@@ -264,7 +264,7 @@ def test_cli_topic_command(mocker, mock_cli_dependencies):
     mock_clipboard = mocker.patch(
         "fetchtastic.cli.copy_to_clipboard_func", return_value=True
     )
-    mock_input = mocker.patch("builtins.input", return_value="y")
+    mocker.patch("builtins.input", return_value="y")
 
     # Topic command doesn't raise SystemExit, just runs
     cli.main()
@@ -281,7 +281,7 @@ def test_cli_repo_browse_command(mocker, mock_cli_dependencies):
     mock_repo_menu = mocker.patch(
         "fetchtastic.menu_repo.run_repository_downloader_menu"
     )
-    mock_input = mocker.patch("builtins.input", return_value="")
+    mocker.patch("builtins.input", return_value="")
 
     # Mock config_exists to return True to avoid setup running
     mocker.patch(
@@ -305,14 +305,14 @@ def test_cli_repo_clean_command(mocker, mock_cli_dependencies):
     mocker.patch("sys.argv", ["fetchtastic", "repo", "clean"])
 
     # Mock input to return "y" to confirm clean operation
-    mock_input = mocker.patch("builtins.input", return_value="y")
+    mocker.patch("builtins.input", return_value="y")
 
     # Mock config_exists to return True to avoid setup running
     mock_config_exists = mocker.patch(
         "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
     )
     # Mock RepositoryDownloader to prevent HTTP calls
-    mock_repo_downloader = mocker.patch("fetchtastic.cli.RepositoryDownloader")
+    mocker.patch("fetchtastic.cli.RepositoryDownloader")
     # Mock urllib3 to prevent SSL/time warnings
     mocker.patch("urllib3.connectionpool.HTTPSConnectionPool")
     mocker.patch("urllib3.connection.HTTPSConnection")

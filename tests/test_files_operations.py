@@ -11,12 +11,9 @@ Comprehensive tests for the files.py module covering:
 """
 
 import hashlib
-import json
 import os
-import tempfile
 import zipfile
 from pathlib import Path
-from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 

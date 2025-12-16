@@ -1,7 +1,5 @@
 import os
 import subprocess
-import sys
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -127,7 +125,7 @@ def test_should_recommend_setup_version_mismatch(mocker):
         "fetchtastic.setup_config.load_config",
         return_value={"LAST_SETUP_VERSION": "0.8.0"},
     )
-    mock_version = mocker.patch("importlib.metadata.version", return_value="0.8.1")
+    mocker.patch("importlib.metadata.version", return_value="0.8.1")
 
     should_recommend, reason, last_version, current_version = (
         setup_config.should_recommend_setup()
@@ -159,7 +157,6 @@ def test_migrate_config_success(mocker, tmp_path):
     """Test successful config migration."""
     old_config = tmp_path / "old_config.yaml"
     new_config = tmp_path / "new_config.yaml"
-    test_config_data = {"BASE_DIR": "/test", "SAVE_APKS": True}
 
     mocker.patch("fetchtastic.setup_config.OLD_CONFIG_FILE", str(old_config))
     mocker.patch("fetchtastic.setup_config.CONFIG_FILE", str(new_config))
@@ -167,12 +164,10 @@ def test_migrate_config_success(mocker, tmp_path):
 
     # Mock file operations
     mocker.patch("os.path.exists", side_effect=lambda path: path == str(old_config))
-    mock_open = mocker.patch(
-        "builtins.open", mocker.mock_open(read_data="test: config")
-    )
+    mocker.patch("builtins.open", mocker.mock_open(read_data="test: config"))
     mocker.patch("os.makedirs")
     mocker.patch("os.remove")
-    mock_logger = mocker.patch("fetchtastic.log_utils.logger")
+    mocker.patch("fetchtastic.log_utils.logger")
 
     result = setup_config.migrate_config()
 
@@ -197,7 +192,7 @@ def test_prompt_for_migration(mocker):
     """Test prompt_for_migration function."""
     mocker.patch("fetchtastic.setup_config.OLD_CONFIG_FILE", "/old/config.yaml")
     mocker.patch("fetchtastic.setup_config.CONFIG_FILE", "/new/config.yaml")
-    mock_logger = mocker.patch("fetchtastic.log_utils.logger")
+    mocker.patch("fetchtastic.log_utils.logger")
 
     result = setup_config.prompt_for_migration()
 

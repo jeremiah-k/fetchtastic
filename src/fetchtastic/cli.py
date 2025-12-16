@@ -26,7 +26,6 @@ from fetchtastic.constants import (
 from fetchtastic.download import cli_integration as download_cli_integration
 from fetchtastic.download.repository import RepositoryDownloader
 from fetchtastic.utils import (
-    format_api_summary,
     get_api_request_summary,
     reset_api_tracking,
 )
@@ -525,7 +524,7 @@ def run_clean():
         # Check if Windows modules are available
         windows_modules_available = False
         try:
-            import winshell
+            import winshell  # type: ignore[import]
 
             windows_modules_available = True
         except ImportError:
@@ -718,7 +717,7 @@ def get_fetchtastic_version():
         from importlib.metadata import version
     except ImportError:
         # For Python < 3.8
-        from importlib_metadata import version
+        from importlib_metadata import version  # type: ignore[import]
     try:
         return version("fetchtastic")
     except Exception:

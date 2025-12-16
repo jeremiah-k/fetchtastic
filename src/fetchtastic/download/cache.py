@@ -7,17 +7,11 @@ commit timestamps, and other download-related data.
 
 import json
 import os
-import tempfile
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import urlencode
 
-try:
-    import requests
-
-    _RequestException = requests.RequestException
-except ImportError:  # pragma: no cover
-    _RequestException = Exception  # type: ignore[assignment]
+import requests
 
 from fetchtastic.constants import (
     COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS,
@@ -305,7 +299,7 @@ class CacheManager:
                 "Invalid JSON or structure in GitHub response for %s: %s", api_url, e
             )
             return []
-        except _RequestException as exc:
+        except requests.RequestException as exc:
             logger.debug("Could not fetch repo directories for %s: %s", api_url, exc)
             return []
 
@@ -380,7 +374,7 @@ class CacheManager:
                 "Invalid JSON or structure in GitHub response for %s: %s", api_url, e
             )
             return []
-        except _RequestException as exc:
+        except requests.RequestException as exc:
             logger.debug("Could not fetch repo contents for %s: %s", api_url, exc)
             return []
 
@@ -786,7 +780,7 @@ class CacheManager:
             cache[cache_key] = [timestamp.isoformat(), now.isoformat()]
             self.atomic_write_json(cache_file, cache)
             return timestamp
-        except (_RequestException, ValueError, TypeError, KeyError) as exc:
+        except (requests.RequestException, ValueError, TypeError, KeyError) as exc:
             logger.debug(
                 "Could not fetch commit timestamp for %s: %s", commit_hash, exc
             )

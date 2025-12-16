@@ -5,9 +5,6 @@ This module tests the complete download pipeline to ensure the new modular
 architecture preserves the same behavior as the legacy monolithic downloader.
 """
 
-import os
-import tempfile
-from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest

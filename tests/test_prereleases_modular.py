@@ -5,11 +5,7 @@ This module contains tests for prerelease discovery, tracking, cleanup,
 and related functionality using the new modular components.
 """
 
-import json
-import os
-import tempfile
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from datetime import datetime
 from unittest.mock import Mock, patch
 
 import pytest

@@ -56,6 +56,7 @@ __all__ = [
     "DownloadCLIIntegration",
     # Core components
     "VersionManager",
+    "PrereleaseHistoryManager",
     "CacheManager",
     "FileOperations",
     # Configuration utilities

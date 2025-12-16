@@ -6,15 +6,13 @@ previously handled by the legacy downloader module, ensuring they work
 correctly with the new modular architecture.
 """
 
-import json
 import os
-from pathlib import Path
-from unittest import mock
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pytest
 
 from fetchtastic.download.android import MeshtasticAndroidAppDownloader
+from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.interfaces import Asset, Release
 
 
@@ -29,9 +27,6 @@ def test_config():
         "GITHUB_TOKEN": "test_token",
         "CHECK_ANDROID_PRERELEASES": True,
     }
-
-
-from fetchtastic.download.cache import CacheManager
 
 
 @pytest.fixture

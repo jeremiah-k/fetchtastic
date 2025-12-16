@@ -5,7 +5,6 @@ This module implements the orchestration layer that coordinates multiple
 downloaders in a single fetchtastic download run.
 """
 
-import re
 import shutil
 import time
 from pathlib import Path
@@ -14,7 +13,6 @@ from typing import Any, Dict, List, Optional, Tuple
 from fetchtastic.constants import (
     DEFAULT_ANDROID_VERSIONS_TO_KEEP,
     DEFAULT_FIRMWARE_VERSIONS_TO_KEEP,
-    PRERELEASE_TRACKING_JSON_FILE,
 )
 from fetchtastic.log_utils import logger
 

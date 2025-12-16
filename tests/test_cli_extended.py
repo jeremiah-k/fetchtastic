@@ -1,9 +1,6 @@
 import argparse
-import os
-import shutil
 import subprocess
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -132,7 +129,6 @@ def test_select_files_user_quits(mocker):
 @pytest.mark.unit
 def test_run_clean_permission_errors(mocker, capsys):
     """Test run_clean with file/directory permission errors."""
-    mock_config = {"BASE_DIR": "/tmp/test"}
 
     # Mock file operations to raise permission errors
     mocker.patch(
@@ -163,9 +159,6 @@ def test_run_clean_permission_errors(mocker, capsys):
 @pytest.mark.unit
 def test_run_clean_managed_file_filtering(mocker):
     """Test run_clean correctly filters managed vs unmanaged files."""
-    from fetchtastic.constants import MANAGED_DIRECTORIES, MANAGED_FILES
-
-    mock_config = {"BASE_DIR": "/tmp/test"}
 
     # Mock directory contents with mix of managed and unmanaged files
     mock_files = [
@@ -315,7 +308,7 @@ def test_cli_download_failed_downloads_reporting(mocker, capsys):
     mocker.patch(
         "fetchtastic.utils.get_api_request_summary", return_value={"total_requests": 5}
     )
-    mock_logger = mocker.patch("fetchtastic.log_utils.logger")
+    mocker.patch("fetchtastic.log_utils.logger")
 
     with patch("sys.argv", ["fetchtastic", "download"]):
         cli.main()
@@ -358,7 +351,6 @@ def test_run_repo_clean_confirmation_cancelled(mocker, capsys):
 @pytest.mark.unit
 def test_windows_specific_cleanup_logic(mocker, capsys):
     """Test Windows-specific cleanup with winshell available."""
-    mock_config = {"BASE_DIR": "/tmp/test"}
 
     # Mock Windows environment
     mocker.patch("platform.system", return_value="Windows")
@@ -395,7 +387,6 @@ def test_windows_specific_cleanup_logic(mocker, capsys):
 @pytest.mark.unit
 def test_cron_job_cleanup_logic(mocker):
     """Test cron job removal on non-Windows platforms."""
-    mock_config = {"BASE_DIR": "/tmp/test"}
 
     # Mock Linux environment
     mocker.patch("platform.system", return_value="Linux")

@@ -8,12 +8,12 @@ correctly with the new modular architecture.
 
 import json
 import os
-from pathlib import Path
 from unittest import mock
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pytest
 
+from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.firmware import FirmwareReleaseDownloader
 from fetchtastic.download.interfaces import Asset, Release
 
@@ -29,9 +29,6 @@ def test_config():
         "GITHUB_TOKEN": "test_token",
         "CHECK_FIRMWARE_PRERELEASES": True,
     }
-
-
-from fetchtastic.download.cache import CacheManager
 
 
 @pytest.fixture
@@ -259,6 +256,7 @@ class TestFirmwareReleaseDownloader:
         ]
 
         from fetchtastic.download.cache import CacheManager
+
         cache_manager = CacheManager()
 
         # Test static method exists and works

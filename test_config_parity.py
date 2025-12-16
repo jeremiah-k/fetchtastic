@@ -3,7 +3,6 @@
 Quick test to verify config key compatibility between legacy and new architecture.
 """
 
-import os
 import sys
 
 sys.path.insert(0, "src")

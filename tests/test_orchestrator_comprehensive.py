@@ -6,8 +6,6 @@ previously handled by the legacy downloader module, ensuring they work
 correctly with the new modular architecture.
 """
 
-import os
-from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest

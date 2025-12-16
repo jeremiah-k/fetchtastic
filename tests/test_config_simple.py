@@ -4,7 +4,6 @@ import subprocess
 # Add src to path so we can import the module
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -43,7 +42,7 @@ def test_copy_to_clipboard_termux_failure(mocker):
         "subprocess.run",
         side_effect=subprocess.CalledProcessError(1, "termux-clipboard-set"),
     )
-    mock_print = mocker.patch("builtins.print")
+    mocker.patch("builtins.print")
 
     result = setup_config.copy_to_clipboard_func("test text")
 
@@ -129,7 +128,7 @@ def test_should_recommend_setup_version_mismatch(mocker):
         "fetchtastic.setup_config.load_config",
         return_value={"LAST_SETUP_VERSION": "0.8.0"},
     )
-    mock_version = mocker.patch("importlib.metadata.version", return_value="0.8.1")
+    mocker.patch("importlib.metadata.version", return_value="0.8.1")
 
     should_recommend, reason, last_version, current_version = (
         setup_config.should_recommend_setup()
@@ -161,7 +160,7 @@ def test_prompt_for_migration(mocker):
     """Test prompt_for_migration function."""
     mocker.patch("fetchtastic.setup_config.OLD_CONFIG_FILE", "/old/config.yaml")
     mocker.patch("fetchtastic.setup_config.CONFIG_FILE", "/new/config.yaml")
-    mock_logger = mocker.patch("fetchtastic.log_utils.logger")
+    mocker.patch("fetchtastic.log_utils.logger")
 
     result = setup_config.prompt_for_migration()
 

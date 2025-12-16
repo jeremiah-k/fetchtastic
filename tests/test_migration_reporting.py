@@ -8,7 +8,16 @@ def test_migration_does_not_report_skipped_assets_as_downloads(tmp_path, monkeyp
     integration = DownloadCLIIntegration()
     # Initialize the components
     integration.config = {"DOWNLOAD_DIR": str(tmp_path)}
-    integration.orchestrator = type("Orchestrator", (), {"get_latest_versions": lambda self: {"android": "v1.0.0", "firmware": "v1.0.0"}})()
+    integration.orchestrator = type(
+        "Orchestrator",
+        (),
+        {
+            "get_latest_versions": lambda self: {
+                "android": "v1.0.0",
+                "firmware": "v1.0.0",
+            }
+        },
+    )()
 
     # Mock the downloaders
     mock_android = type(

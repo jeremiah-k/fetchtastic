@@ -2,14 +2,13 @@
 #
 # Comprehensive unit tests for the FirmwareReleaseDownloader class.
 
-from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import pytest
 
-from fetchtastic.download.firmware import FirmwareReleaseDownloader
 from fetchtastic.download.cache import CacheManager
-from fetchtastic.download.interfaces import Asset, DownloadResult, Release
+from fetchtastic.download.firmware import FirmwareReleaseDownloader
+from fetchtastic.download.interfaces import Asset, Release
 
 
 class TestFirmwareReleaseDownloader:
@@ -47,9 +46,7 @@ class TestFirmwareReleaseDownloader:
         """Test downloader initialization."""
         with (
             patch("fetchtastic.download.base.VersionManager") as mock_version,
-            patch(
-                "fetchtastic.download.firmware.PrereleaseHistoryManager"
-            ) as mock_prerelease,
+            patch("fetchtastic.download.firmware.PrereleaseHistoryManager"),
         ):
             dl = FirmwareReleaseDownloader(mock_config, mock_cache_manager)
 
@@ -392,7 +389,7 @@ class TestFirmwareReleaseDownloader:
                 "fetchtastic.download.files._atomic_write",
                 side_effect=lambda *args, **kwargs: None,
             ),  # Prevent temp file creation
-            patch("os.remove") as mock_remove,
+            patch("os.remove"),
         ):
             downloader.manage_prerelease_tracking_files()
 

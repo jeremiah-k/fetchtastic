@@ -22,6 +22,7 @@ from fetchtastic.log_utils import logger
 from fetchtastic.utils import make_github_api_request, matches_selected_patterns
 
 from .base import BaseDownloader
+from .cache import CacheManager
 from .interfaces import Asset, DownloadResult, Release
 from .prerelease_history import PrereleaseHistoryManager
 from .version import VersionManager
@@ -284,7 +285,9 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
         selected_patterns = self.config.get("SELECTED_APK_ASSETS", [])
         expected_assets = [
-            asset for asset in release.assets if matches_selected_patterns(asset.name, selected_patterns)
+            asset
+            for asset in release.assets
+            if matches_selected_patterns(asset.name, selected_patterns)
         ]
 
         if not expected_assets:
@@ -420,7 +423,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             return []
 
         version_manager = VersionManager()
-        prerelease_manager = PrereleaseHistoryManager()
+        PrereleaseHistoryManager()
 
         # Filter prereleases
         prereleases = [r for r in releases if r.prerelease]
@@ -626,16 +629,21 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         prerelease_manager = PrereleaseHistoryManager()
 
         for file_path in tracking_files:
+            tracking_data = None
             try:
                 tracking_data = self.cache_manager.read_json(file_path)
-                if (
-                    tracking_data
-                    and "latest_version" in tracking_data
-                    and "base_version" in tracking_data
-                ):
-                    existing_prereleases.append(tracking_data)
-            except Exception:
-                continue
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.debug(
+                    "Skipping prerelease tracking file %s due to read error: %s",
+                    file_path,
+                    exc,
+                )
+            if (
+                tracking_data
+                and "latest_version" in tracking_data
+                and "base_version" in tracking_data
+            ):
+                existing_prereleases.append(tracking_data)
 
         # Get current prereleases from GitHub (if available)
         current_releases = self.get_releases(limit=10)

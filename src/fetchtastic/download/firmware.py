@@ -17,7 +17,6 @@ from fetchtastic.constants import (
     LATEST_FIRMWARE_PRERELEASE_JSON_FILE,
     LATEST_FIRMWARE_RELEASE_JSON_FILE,
     MESHTASTIC_FIRMWARE_RELEASES_URL,
-    MESHTASTIC_GITHUB_IO_CONTENTS_URL,
     RELEASES_CACHE_EXPIRY_HOURS,
 )
 from fetchtastic.device_hardware import DeviceHardwareManager
@@ -31,6 +30,7 @@ from fetchtastic.utils import (
 )
 
 from .base import BaseDownloader
+from .cache import CacheManager
 from .interfaces import Asset, DownloadResult, Release
 from .prerelease_history import PrereleaseHistoryManager
 from .version import VersionManager
@@ -866,7 +866,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
         # Emit legacy-style history summary when available
         if history_entries:
-            self.log_prerelease_summary(history_entries, clean_latest_release, expected_version)
+            self.log_prerelease_summary(
+                history_entries, clean_latest_release, expected_version
+            )
 
         # Consolidate skipped messages
         skipped_count = sum(1 for result in successes if result.was_skipped)
@@ -875,7 +877,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
         return successes, failures, active_dir
 
-    def log_prerelease_summary(self, history_entries: List[Dict[str, Any]], clean_latest_release: str, expected_version: str):
+    def log_prerelease_summary(
+        self,
+        history_entries: List[Dict[str, Any]],
+        clean_latest_release: str,
+        expected_version: str,
+    ):
         """Log a formatted summary of the prerelease history."""
         prerelease_manager = PrereleaseHistoryManager()
         summary = prerelease_manager.summarize_prerelease_history(history_entries)
@@ -949,7 +956,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
             return []
 
         version_manager = VersionManager()
-        prerelease_manager = PrereleaseHistoryManager()
+        PrereleaseHistoryManager()
 
         # Filter prereleases (GitHub's prerelease flag can be noisy for hash-suffixed tags)
         prereleases = [
@@ -1123,16 +1130,21 @@ class FirmwareReleaseDownloader(BaseDownloader):
         prerelease_manager = PrereleaseHistoryManager()
 
         for file_path in tracking_files:
+            tracking_data = None
             try:
                 tracking_data = self.cache_manager.read_json(file_path)
-                if (
-                    tracking_data
-                    and "latest_version" in tracking_data
-                    and "base_version" in tracking_data
-                ):
-                    existing_prereleases.append(tracking_data)
-            except Exception:
-                continue
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.debug(
+                    "Skipping prerelease tracking file %s due to read error: %s",
+                    file_path,
+                    exc,
+                )
+            if (
+                tracking_data
+                and "latest_version" in tracking_data
+                and "base_version" in tracking_data
+            ):
+                existing_prereleases.append(tracking_data)
 
         # Get current prereleases from GitHub (if available)
         current_releases = self.get_releases(limit=10)

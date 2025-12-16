@@ -1,5 +1,3 @@
-import pytest
-
 from fetchtastic.download.config_utils import (
     _get_string_list_from_config,
     get_prerelease_patterns,

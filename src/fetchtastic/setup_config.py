@@ -50,7 +50,7 @@ CRON_SCHEDULES = {
 # Import Windows-specific modules if on Windows
 if platform.system() == "Windows":
     try:
-        import winshell
+        import winshell  # type: ignore[import]
 
         WINDOWS_MODULES_AVAILABLE = True
     except ImportError:
@@ -2292,7 +2292,7 @@ def copy_to_clipboard_func(text):
     elif platform.system() == "Windows" and WINDOWS_MODULES_AVAILABLE:
         # Windows environment with win32com available
         try:
-            import win32clipboard
+            import win32clipboard  # type: ignore[import]
 
             win32clipboard.OpenClipboard()
             win32clipboard.EmptyClipboard()

@@ -13,12 +13,8 @@ Comprehensive tests for the cache.py module covering:
 
 import json
 import os
-import tempfile
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from fetchtastic.download.cache import (
     CacheManager,
@@ -55,7 +51,7 @@ class TestCacheManagerInitialization:
         cache_dir = tmp_path / "new_cache_dir"
         assert not cache_dir.exists()
 
-        cache_manager = CacheManager(str(cache_dir))
+        CacheManager(str(cache_dir))
         assert cache_dir.exists()
         assert cache_dir.is_dir()
 
@@ -334,7 +330,7 @@ class TestReleasesCache:
         cache_file = cache_manager._get_releases_cache_file()
         now = datetime.now(timezone.utc)
         cache_data = {
-            "test_key": {
+            "releases_identifier": {
                 "releases": [{"tag_name": "v1.0.0"}],
                 "cached_at": now.isoformat(),
             }
@@ -344,7 +340,7 @@ class TestReleasesCache:
             json.dump(cache_data, f)
 
         result = cache_manager.read_releases_cache_entry(
-            "test_key", expiry_seconds=3600
+            "releases_identifier", expiry_seconds=3600
         )
         assert result == [{"tag_name": "v1.0.0"}]
 
@@ -356,7 +352,7 @@ class TestReleasesCache:
         cache_file = cache_manager._get_releases_cache_file()
         past = datetime.now(timezone.utc) - timedelta(hours=2)
         cache_data = {
-            "test_key": {
+            "releases_identifier": {
                 "releases": [{"tag_name": "v1.0.0"}],
                 "cached_at": past.isoformat(),
             }
@@ -366,7 +362,7 @@ class TestReleasesCache:
             json.dump(cache_data, f)
 
         result = cache_manager.read_releases_cache_entry(
-            "test_key", expiry_seconds=3600
+            "releases_identifier", expiry_seconds=3600
         )
         assert result is None
 
@@ -375,7 +371,7 @@ class TestReleasesCache:
         cache_manager = CacheManager(str(tmp_path))
         releases = [{"tag_name": "v1.0.0"}]
 
-        cache_manager.write_releases_cache_entry("test_key", releases)
+        cache_manager.write_releases_cache_entry("releases_identifier", releases)
 
         # Verify cache file was created
         cache_file = cache_manager._get_releases_cache_file()
@@ -384,9 +380,9 @@ class TestReleasesCache:
         with open(cache_file, "r") as f:
             cache_data = json.load(f)
 
-        assert "test_key" in cache_data
-        assert cache_data["test_key"]["releases"] == releases
-        assert "cached_at" in cache_data["test_key"]
+        assert "releases_identifier" in cache_data
+        assert cache_data["releases_identifier"]["releases"] == releases
+        assert "cached_at" in cache_data["releases_identifier"]
 
 
 class TestCommitTimestampCache:

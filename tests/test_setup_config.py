@@ -1,5 +1,4 @@
 import copy
-import getpass
 import importlib
 import os
 import subprocess
@@ -582,7 +581,7 @@ def test_installation_detection_functions(mocker):
 def test_setup_storage_function(mocker):
     """Test setup_storage function."""
     mock_subprocess = mocker.patch("subprocess.run")
-    mock_logger = mocker.patch("fetchtastic.log_utils.logger")
+    mocker.patch("fetchtastic.log_utils.logger")
 
     result = setup_config.setup_storage()
 
@@ -681,7 +680,7 @@ def test_get_platform_comprehensive(mocker):
     platforms = ["Linux", "Darwin", "Windows"]
     expected_results = ["linux", "mac", "unknown"]  # Note: Darwin returns "mac"
 
-    for platform, expected in zip(platforms, expected_results):
+    for platform, expected in zip(platforms, expected_results, strict=False):
         mocker.patch("platform.system", return_value=platform)
         mocker.patch(
             "fetchtastic.setup_config.is_termux", return_value=False
@@ -695,7 +694,6 @@ def test_get_platform_comprehensive(mocker):
 def test_get_downloads_dir_comprehensive(mocker):
     """Test get_downloads_dir function."""
     # Test with Termux environment
-    mock_storage_downloads = "/data/data/com.termux/files/home/storage/downloads"
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
     mocker.patch("os.path.exists", return_value=True)
 

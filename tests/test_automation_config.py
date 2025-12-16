@@ -2,9 +2,6 @@
 Simplified automation configuration tests focused on coverage.
 """
 
-import os
-from unittest.mock import MagicMock, patch
-
 import pytest
 
 import fetchtastic.setup_config as setup_config

@@ -6,7 +6,6 @@ from GitHub commits and repository directories.
 """
 
 import fnmatch
-import json
 import os
 import re
 from datetime import datetime, timedelta, timezone

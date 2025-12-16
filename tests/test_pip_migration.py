@@ -3,10 +3,7 @@ Comprehensive tests for pip-to-pipx migration functionality.
 """
 
 import os
-import shutil
-import sys
 import tempfile
-from pathlib import Path
 from unittest.mock import MagicMock, mock_open, patch
 
 import pytest

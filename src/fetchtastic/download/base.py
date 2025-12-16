@@ -9,12 +9,9 @@ import fnmatch
 import os
 from abc import ABC
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
-try:
-    from requests.exceptions import RequestException
-except ImportError:
-    RequestException = Exception
+from requests.exceptions import RequestException
 
 from fetchtastic import utils
 from fetchtastic.log_utils import logger
@@ -46,7 +43,9 @@ class BaseDownloader(Downloader, ABC):
         """
         self.config = config
         self.version_manager = VersionManager()
-        self.cache_manager = cache_manager
+        if cache_manager is None:
+            cache_manager = CacheManager()
+        self.cache_manager: CacheManager = cache_manager
         self.file_operations = FileOperations()
 
         # Initialize common configuration with normalized paths

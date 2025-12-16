@@ -10,17 +10,10 @@ Comprehensive tests for the version.py module covering:
 """
 
 import json
-import os
-from datetime import datetime, timezone
-from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 from fetchtastic.download.version import (
     VersionManager,
-    _normalize_commit_identifier,
-    _normalize_version,
     _read_latest_release_tag,
     _read_prerelease_tracking_data,
     _write_latest_release_tag,

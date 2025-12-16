@@ -693,10 +693,10 @@ def make_github_api_request(
                     logger.debug(f"Invalid rate-limit header value: {rl_header}")
         else:
             # No rate limit info available (might be a different endpoint)
-            cached_remaining = _get_cached_rate_limit(token_hash)
-            if cached_remaining is not None:
+            cached_remaining_estimate = _get_cached_rate_limit(token_hash)
+            if cached_remaining_estimate is not None:
                 logger.debug(
-                    f"GitHub API rate-limit remaining: ~{cached_remaining} (cached estimate)"
+                    f"GitHub API rate-limit remaining: ~{cached_remaining_estimate} (cached estimate)"
                 )
             else:
                 logger.debug("No rate limit information available")

@@ -1,16 +1,12 @@
 import os
-import platform
-import shutil
 import subprocess
-from pathlib import Path
-from unittest.mock import MagicMock, mock_open, patch
+from unittest.mock import mock_open
 
 import pytest
 import yaml
 
 # Import package module (matches real usage)
 import fetchtastic.setup_config as setup_config
-from tests.test_constants import TEST_CONFIG
 
 
 @pytest.fixture
@@ -545,7 +541,7 @@ def test_setup_notifications_clipboard_termux(mocker):
         ],
     )
 
-    result_config = setup_config._setup_notifications(config)
+    setup_config._setup_notifications(config)
 
     # Should have attempted to copy topic (not URL on Termux)
     setup_config.copy_to_clipboard_func.assert_called_once_with("test-topic")

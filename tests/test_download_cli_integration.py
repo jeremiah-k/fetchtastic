@@ -1,7 +1,5 @@
 from unittest.mock import MagicMock
 
-import pytest
-
 from fetchtastic.download.cli_integration import DownloadCLIIntegration
 
 
@@ -151,9 +149,7 @@ def test_run_download_successful(mocker):
     result = integration.run_download(config)
 
     mock_android_class.assert_called_once_with(config, mock_orchestrator.cache_manager)
-    mock_firmware_class.assert_called_once_with(
-        config, mock_orchestrator.cache_manager
-    )
+    mock_firmware_class.assert_called_once_with(config, mock_orchestrator.cache_manager)
 
     assert len(result) == 7
     assert result[0] == ["v1.0"]  # downloaded_firmwares

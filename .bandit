@@ -1,13 +1,2 @@
 [bandit]
-# Bandit configuration file
-# https://bandit.readthedocs.io/en/latest/config.html
-
-# Skip security warnings that are expected in this application:
-# B101 - assert_used: Expected in test files and development code
-# B103 - set_bad_file_permissions: chmod 0o755 is needed for executable scripts
-# B311 - random: Standard random is fine for non-cryptographic purposes (temp filenames)
-# B404 - subprocess_import: subprocess module is needed for system integration
-# B603 - subprocess_without_shell_equals_true: Controlled subprocess calls are safe
-# B605 - start_process_with_a_shell: Needed for shell command execution
-# B607 - start_process_with_partial_path: Using system PATH is expected behavior
-skips = B101,B103,B311,B404,B603,B605,B607
+skips = B101,B108,B311,B404,B603,B607

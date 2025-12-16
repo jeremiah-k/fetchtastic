@@ -138,10 +138,10 @@ def test_fetch_repo_contents_with_path(mocker, mock_repo_contents):
     """Test fetching repository contents with a specific path."""
     import fetchtastic.utils
 
-    mock_get = mocker.patch("fetchtastic.menu_repo.make_github_api_request")
+    mock_make_request = mocker.patch("fetchtastic.menu_repo.make_github_api_request")
     mock_response = mocker.MagicMock()
     mock_response.json.return_value = mock_repo_contents
-    mock_get.return_value = mock_response
+    mock_make_request.return_value = mock_response
 
     # Reset rate limit cache to avoid cached rate limit issues
     with mocker.patch.object(fetchtastic.utils, "_rate_limit_cache_loaded", False):
@@ -385,10 +385,10 @@ def test_run_menu_complex_path_navigation(mocker):
 
 def test_fetch_repo_contents_debug_logging(mocker, mock_repo_contents):
     """Test debug logging in fetch_repo_contents."""
-    mock_get = mocker.patch("fetchtastic.menu_repo.make_github_api_request")
+    mock_make_request = mocker.patch("fetchtastic.menu_repo.make_github_api_request")
     mock_response = mocker.MagicMock()
     mock_response.json.return_value = mock_repo_contents
-    mock_get.return_value = mock_response
+    mock_make_request.return_value = mock_response
     mock_logger = mocker.patch("fetchtastic.menu_repo.logger")
 
     items = menu_repo.fetch_repo_contents()
@@ -402,10 +402,10 @@ def test_fetch_repo_contents_debug_logging(mocker, mock_repo_contents):
 
 def test_fetch_repo_contents_debug_logging_no_list_response(mocker):
     """Test debug logging in fetch_repo_contents when response is not a list."""
-    mock_get = mocker.patch("fetchtastic.menu_repo.make_github_api_request")
+    mock_make_request = mocker.patch("fetchtastic.menu_repo.make_github_api_request")
     mock_response = mocker.MagicMock()
     mock_response.json.return_value = {"not": "a list"}
-    mock_get.return_value = mock_response
+    mock_make_request.return_value = mock_response
     mock_logger = mocker.patch("fetchtastic.menu_repo.logger")
 
     items = menu_repo.fetch_repo_contents()
@@ -417,8 +417,8 @@ def test_fetch_repo_contents_debug_logging_no_list_response(mocker):
 
 def test_fetch_repo_contents_http_error(mocker):
     """Test HTTP error handling in fetch_repo_contents."""
-    mock_get = mocker.patch("fetchtastic.menu_repo.make_github_api_request")
-    mock_get.side_effect = requests.HTTPError("404 Not Found")
+    mock_make_request = mocker.patch("fetchtastic.menu_repo.make_github_api_request")
+    mock_make_request.side_effect = requests.HTTPError("404 Not Found")
     mock_logger = mocker.patch("fetchtastic.menu_repo.logger")
 
     items = menu_repo.fetch_repo_contents()
