@@ -272,6 +272,21 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                 error_type="network_error",
             )
 
+    def is_release_complete(self, release: Release) -> bool:
+        """
+        Check if an Android release is already fully downloaded.
+        """
+        version_dir = os.path.join(self.download_dir, "android", release.tag_name)
+        if not os.path.isdir(version_dir):
+            return False
+
+        for asset in release.assets:
+            if self.should_download_asset(asset.name):
+                asset_path = os.path.join(version_dir, asset.name)
+                if not os.path.exists(asset_path):
+                    return False
+        return True
+
     def cleanup_old_versions(self, keep_limit: int) -> None:
         """
         Clean up old Android APK versions according to retention policy.

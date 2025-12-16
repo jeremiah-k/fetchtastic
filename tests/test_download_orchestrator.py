@@ -121,16 +121,16 @@ class TestDownloadOrchestrator:
         # Mock releases
         mock_release = Mock(spec=Release)
         mock_release.tag_name = "v1.0.0"
-        orchestrator.android_downloader.get_releases = Mock(return_value=[mock_release])
-
-        # Mock filtering
-        orchestrator._filter_releases = Mock(return_value=[mock_release])
+        mock_release.prerelease = False
+        orchestrator.android_downloader.get_releases.return_value = [mock_release]
+        orchestrator.android_downloader.is_release_complete.return_value = False
+        orchestrator.android_downloader.handle_prereleases.return_value = []
         orchestrator._download_android_release = Mock()
 
         orchestrator._process_android_downloads()
 
         orchestrator.android_downloader.get_releases.assert_called_once()
-        orchestrator._filter_releases.assert_called_once_with([mock_release], "android")
+        orchestrator.android_downloader.is_release_complete.assert_called_once_with(mock_release)
         orchestrator._download_android_release.assert_called_once_with(mock_release)
 
     def test_process_firmware_downloads(self, orchestrator):
@@ -138,20 +138,17 @@ class TestDownloadOrchestrator:
         # Mock releases
         mock_release = Mock(spec=Release)
         mock_release.tag_name = "v2.0.0"
-        orchestrator.firmware_downloader.get_releases = Mock(
-            return_value=[mock_release]
-        )
-
-        # Mock filtering
-        orchestrator._filter_releases = Mock(return_value=[mock_release])
+        orchestrator.firmware_downloader.get_releases.return_value = [mock_release]
+        orchestrator.firmware_downloader.is_release_complete.return_value = False
         orchestrator._download_firmware_release = Mock()
+        # Mock _select_latest_release_by_version to avoid None issue.
+        orchestrator._select_latest_release_by_version = Mock(return_value=mock_release)
+        orchestrator.firmware_downloader.download_repo_prerelease_firmware.return_value = ([], [], None)
 
         orchestrator._process_firmware_downloads()
 
         orchestrator.firmware_downloader.get_releases.assert_called_once()
-        orchestrator._filter_releases.assert_called_once_with(
-            [mock_release], "firmware"
-        )
+        orchestrator.firmware_downloader.is_release_complete.assert_called_once_with(mock_release)
         orchestrator._download_firmware_release.assert_called_once_with(mock_release)
 
     def test_filter_releases(self, orchestrator):
@@ -347,12 +344,14 @@ class TestDownloadOrchestrator:
 
     def test_get_latest_versions(self, orchestrator):
         """Test getting latest versions from downloaders."""
-        # Mock cache_dir to avoid Path issues
-        orchestrator.cache_manager.cache_dir = "/tmp/cache"
+        orchestrator.firmware_downloader.get_latest_release_tag.return_value = "v2.0.0"
+        orchestrator.version_manager.extract_clean_version.return_value = "2.0.0"
+        orchestrator.version_manager.calculate_expected_prerelease_version.return_value = "2.0.1"
+        orchestrator.prerelease_manager.get_latest_active_prerelease_from_history.return_value = ("firmware-2.0.1.abcdef", [])
 
         versions = orchestrator.get_latest_versions()
 
-        # Should call get_latest_release_tag on downloaders
+        assert versions['firmware_prerelease'] == "2.0.1.abcdef"
         orchestrator.android_downloader.get_latest_release_tag.assert_called_once()
         orchestrator.firmware_downloader.get_latest_release_tag.assert_called_once()
 

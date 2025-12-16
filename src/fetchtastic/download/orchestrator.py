@@ -105,11 +105,13 @@ class DownloadOrchestrator:
             )
             android_releases = android_releases[:keep_count]
 
-            # Filter releases based on configuration
-            releases_to_download = self._filter_releases(android_releases, "android")
-
-            # Download each release
-            for release in releases_to_download:
+            # Download each release, skipping if already complete
+            for release in android_releases:
+                if self.android_downloader.is_release_complete(release):
+                    logger.debug(
+                        f"Release {release.tag_name} already exists and is complete, skipping download"
+                    )
+                    continue
                 self._download_android_release(release)
 
             # Handle Android prereleases
@@ -147,11 +149,16 @@ class DownloadOrchestrator:
             )
             releases_to_check = firmware_releases[:keep_count]
 
-            # Filter releases based on configuration
-            releases_to_download = self._filter_releases(releases_to_check, "firmware")
-
-            # Download each release
-            for release in releases_to_download:
+            # Download each release, skipping if already complete
+            total_to_check = len(releases_to_check)
+            for i, release in enumerate(releases_to_check):
+                logger.debug(f"Checking {release.tag_name} ({i + 1} of {total_to_check})")
+                logger.info(f"Checking {release.tag_name}…")
+                if self.firmware_downloader.is_release_complete(release):
+                    logger.debug(
+                        f"Release {release.tag_name} already exists and is complete, skipping download"
+                    )
+                    continue
                 self._download_firmware_release(release)
 
             # Legacy: firmware prereleases from meshtastic.github.io directories
@@ -281,7 +288,7 @@ class DownloadOrchestrator:
             release: The Android release to download
         """
         try:
-            logger.info(f"Downloading Android release {release.tag_name}")
+            logger.info(f"Processing release: {release.tag_name}")
 
             # Download each asset in the release
             for asset in release.assets:
@@ -301,7 +308,7 @@ class DownloadOrchestrator:
             release: The firmware release to download
         """
         try:
-            logger.info(f"Downloading firmware release {release.tag_name}")
+            logger.info(f"Processing release: {release.tag_name}")
 
             # Get extraction patterns from configuration
             extract_patterns = self._get_extraction_patterns()
@@ -809,21 +816,33 @@ class DownloadOrchestrator:
             Dict[str, Optional[str]]: Dictionary mapping artifact types to latest versions
         """
         firmware_prerelease = None
-        tracking_path = (
-            Path(self.cache_manager.cache_dir) / PRERELEASE_TRACKING_JSON_FILE
-        )
-        if tracking_path.exists():
-            try:
-                data = self.cache_manager.read_json(str(tracking_path))
-                commits = data.get("commits") if isinstance(data, dict) else None
-                if isinstance(commits, list) and commits:
-                    firmware_prerelease = str(commits[-1])
-            except Exception:
-                firmware_prerelease = None
+        latest_firmware_release = self.firmware_downloader.get_latest_release_tag()
+
+        if latest_firmware_release:
+            clean_latest_release = (
+                self.version_manager.extract_clean_version(latest_firmware_release)
+                or latest_firmware_release
+            )
+            expected_version = self.version_manager.calculate_expected_prerelease_version(
+                clean_latest_release
+            )
+            if expected_version:
+                # Do not force refresh here to avoid API calls just for status display
+                active_dir, _ = self.prerelease_manager.get_latest_active_prerelease_from_history(
+                    expected_version,
+                    cache_manager=self.cache_manager,
+                    github_token=self.config.get("GITHUB_TOKEN"),
+                    allow_env_token=True,
+                    force_refresh=False,
+                )
+                if active_dir and active_dir.startswith("firmware-"):
+                    firmware_prerelease = active_dir[len("firmware-") :]
+                else:
+                    firmware_prerelease = active_dir
 
         return {
             "android": self.android_downloader.get_latest_release_tag(),
-            "firmware": self.firmware_downloader.get_latest_release_tag(),
+            "firmware": latest_firmware_release,
             "firmware_prerelease": firmware_prerelease,
             "android_prerelease": None,
         }

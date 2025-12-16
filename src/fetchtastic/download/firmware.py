@@ -265,6 +265,25 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 error_type="network_error",
             )
 
+    def is_release_complete(self, release: Release) -> bool:
+        """
+        Check if a release is already fully downloaded by verifying that all selected asset files exist.
+        Args:
+            release: The release to check.
+        Returns:
+            bool: True if the release is complete, False otherwise.
+        """
+        version_dir = os.path.join(self.download_dir, "firmware", release.tag_name)
+        if not os.path.isdir(version_dir):
+            return False
+
+        for asset in release.assets:
+            if self.should_download_release(release.tag_name, asset.name):
+                asset_path = os.path.join(version_dir, asset.name)
+                if not os.path.exists(asset_path):
+                    return False
+        return True
+
     def validate_extraction_patterns(
         self, patterns: List[str], exclude_patterns: List[str]
     ) -> bool:
@@ -519,22 +538,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
         return prerelease_dir
 
     def _get_prerelease_patterns(self) -> List[str]:
-        if "SELECTED_PRERELEASE_ASSETS" in self.config:
-            patterns = self.config.get("SELECTED_PRERELEASE_ASSETS") or []
-            return patterns if isinstance(patterns, list) else [str(patterns)]
-
-        extract_patterns = self.config.get("EXTRACT_PATTERNS") or []
-        extract_patterns = (
-            extract_patterns
-            if isinstance(extract_patterns, list)
-            else [str(extract_patterns)]
-        )
-        if extract_patterns:
-            logger.warning(
-                "Using EXTRACT_PATTERNS for prerelease file selection is deprecated. "
-                "Please re-run 'fetchtastic setup' to update your configuration."
-            )
-        return extract_patterns
+        patterns = self.config.get("SELECTED_PRERELEASE_ASSETS") or []
+        return patterns if isinstance(patterns, list) else [str(patterns)]
 
     def _matches_exclude_patterns(self, filename: str, patterns: List[str]) -> bool:
         filename_lower = filename.lower()
