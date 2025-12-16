@@ -277,30 +277,77 @@ class FirmwareReleaseDownloader(BaseDownloader):
         if not os.path.isdir(version_dir):
             return False
 
-        expected_assets = [
-            asset for asset in release.assets if self.should_download_release(release.tag_name, asset.name)
-        ]
+        selected_patterns = self.config.get("SELECTED_FIRMWARE_ASSETS", [])
+        exclude_patterns = self._get_exclude_patterns()
+
+        expected_assets = []
+        for asset in release.assets:
+            if not asset.name:
+                continue
+
+            if selected_patterns and not matches_selected_patterns(
+                asset.name, selected_patterns
+            ):
+                continue
+
+            if self._matches_exclude_patterns(asset.name, exclude_patterns):
+                continue
+
+            expected_assets.append(asset)
 
         if not expected_assets:
+            logger.debug(
+                f"No assets match selected patterns for release in {version_dir}"
+            )
             return False
 
         for asset in expected_assets:
             asset_path = os.path.join(version_dir, asset.name)
             if not os.path.exists(asset_path):
+                logger.debug(
+                    f"Missing asset {asset.name} in release directory {version_dir}"
+                )
                 return False
+
             if asset.name.lower().endswith(".zip"):
                 try:
                     import zipfile
+
                     with zipfile.ZipFile(asset_path, "r") as zf:
                         if zf.testzip() is not None:
+                            logger.debug(f"Corrupted zip file detected: {asset_path}")
                             return False
-                except (zipfile.BadZipFile, IOError, OSError):
+                    try:
+                        actual_size = os.path.getsize(asset_path)
+                        expected_size = asset.size
+                        if expected_size is not None:
+                            if actual_size != expected_size:
+                                logger.debug(
+                                    f"File size mismatch for {asset_path}: expected {expected_size}, got {actual_size}"
+                                )
+                                return False
+                    except (OSError, TypeError):
+                        logger.debug(f"Error checking file size for {asset_path}")
+                        return False
+                except zipfile.BadZipFile:
+                    logger.debug(f"Bad zip file detected: {asset_path}")
                     return False
-            try:
-                if os.path.getsize(asset_path) != asset.size:
+                except (IOError, OSError):
+                    logger.debug(f"Error checking zip file: {asset_path}")
                     return False
-            except (OSError, TypeError):
-                return False
+            else:
+                try:
+                    actual_size = os.path.getsize(asset_path)
+                    expected_size = asset.size
+                    if expected_size is not None and actual_size != expected_size:
+                        logger.debug(
+                            f"File size mismatch for {asset_path}: expected {expected_size}, got {actual_size}"
+                        )
+                        return False
+                except (OSError, TypeError):
+                    logger.debug(f"Error checking file size for {asset_path}")
+                    return False
+
         return True
 
     def validate_extraction_patterns(

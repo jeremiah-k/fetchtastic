@@ -91,33 +91,34 @@ class DownloadOrchestrator:
     def _process_android_downloads(self) -> None:
         """Process Android APK downloads."""
         try:
-            logger.info("Processing Android APK downloads...")
-
-            # Get Android releases
+            logger.info("Scanning Android APK releases")
             android_releases = self.android_downloader.get_releases()
             if not android_releases:
                 logger.info("No Android releases found")
                 return
 
-            # Limit releases to process to match legacy behavior
             keep_count = self.config.get(
                 "ANDROID_VERSIONS_TO_KEEP", DEFAULT_ANDROID_VERSIONS_TO_KEEP
             )
-            android_releases = android_releases[:keep_count]
+            releases_to_process = android_releases[:keep_count]
 
-            # Download each release, skipping if already complete
-            total_to_check = len(android_releases)
-            for i, release in enumerate(android_releases):
-                logger.debug(f"Checking {release.tag_name} ({i + 1} of {total_to_check})")
+            releases_to_download = []
+            for release in releases_to_process:
                 logger.info(f"Checking {release.tag_name}…")
                 if self.android_downloader.is_release_complete(release):
                     logger.debug(
                         f"Release {release.tag_name} already exists and is complete, skipping download"
                     )
-                    continue
-                self._download_android_release(release)
+                else:
+                    releases_to_download.append(release)
 
-            # Handle Android prereleases
+            any_android_downloaded = False
+            if releases_to_download:
+                for release in releases_to_download:
+                    logger.info(f"Downloading Android release {release.tag_name}")
+                    if self._download_android_release(release):
+                        any_android_downloaded = True
+
             if any(r.prerelease for r in android_releases):
                 self._refresh_commit_history_cache()
             prereleases = self.android_downloader.handle_prereleases(
@@ -128,7 +129,12 @@ class DownloadOrchestrator:
                     if not self.android_downloader.should_download_asset(asset.name):
                         continue
                     result = self.android_downloader.download_apk(prerelease, asset)
+                    if result.success and not result.was_skipped:
+                        any_android_downloaded = True
                     self._handle_download_result(result, "android_prerelease")
+
+            if not any_android_downloaded and not releases_to_download:
+                logger.info("All Android APK assets are up to date.")
 
         except Exception as e:
             logger.error(f"Error processing Android downloads: {e}")
@@ -136,35 +142,35 @@ class DownloadOrchestrator:
     def _process_firmware_downloads(self) -> None:
         """Process firmware downloads."""
         try:
-            logger.info("Processing firmware downloads...")
-
-            # Get firmware releases
+            logger.info("Scanning Firmware releases")
             firmware_releases = self.firmware_downloader.get_releases()
             if not firmware_releases:
                 logger.info("No firmware releases found")
                 return
 
             latest_release = self._select_latest_release_by_version(firmware_releases)
-
-            # Limit releases to process to match legacy behavior
             keep_count = self.config.get(
                 "FIRMWARE_VERSIONS_TO_KEEP", DEFAULT_FIRMWARE_VERSIONS_TO_KEEP
             )
-            releases_to_check = firmware_releases[:keep_count]
+            releases_to_process = firmware_releases[:keep_count]
 
-            # Download each release, skipping if already complete
-            total_to_check = len(releases_to_check)
-            for i, release in enumerate(releases_to_check):
-                logger.debug(f"Checking {release.tag_name} ({i + 1} of {total_to_check})")
+            releases_to_download = []
+            for release in releases_to_process:
                 logger.info(f"Checking {release.tag_name}…")
                 if self.firmware_downloader.is_release_complete(release):
                     logger.debug(
                         f"Release {release.tag_name} already exists and is complete, skipping download"
                     )
-                    continue
-                self._download_firmware_release(release)
+                else:
+                    releases_to_download.append(release)
 
-            # Legacy: firmware prereleases from meshtastic.github.io directories
+            any_firmware_downloaded = False
+            if releases_to_download:
+                for release in releases_to_download:
+                    logger.info(f"Downloading firmware release {release.tag_name}")
+                    if self._download_firmware_release(release):
+                        any_firmware_downloaded = True
+
             if latest_release:
                 successes, failures, _active_dir = (
                     self.firmware_downloader.download_repo_prerelease_firmware(
@@ -172,12 +178,17 @@ class DownloadOrchestrator:
                     )
                 )
                 for result in successes:
+                    if not result.was_skipped:
+                        any_firmware_downloaded = True
                     self._handle_download_result(result, "firmware_prerelease_repo")
                 for result in failures:
                     self._handle_download_result(result, "firmware_prerelease_repo")
 
+            if not any_firmware_downloaded and not releases_to_download:
+                logger.info("All Firmware assets are up to date.")
+
         except Exception as e:
-            logger.error(f"Error processing firmware downloads: {e}")
+            logger.error(f"Error processing firmware downloads: {e}", exc_info=True)
 
     def _select_latest_release_by_version(
         self, releases: List[Release]
@@ -283,31 +294,40 @@ class DownloadOrchestrator:
 
         return True
 
-    def _download_android_release(self, release: Release) -> None:
+    def _download_android_release(self, release: Release) -> bool:
         """
         Download an Android release and its assets.
 
         Args:
             release: The Android release to download
+        Returns:
+            bool: True if any asset was downloaded, False otherwise.
         """
+        any_downloaded = False
         try:
             # Download each asset in the release
             for asset in release.assets:
                 if not self.android_downloader.should_download_asset(asset.name):
                     continue
                 result = self.android_downloader.download_apk(release, asset)
+                if result.success and not result.was_skipped:
+                    any_downloaded = True
                 self._handle_download_result(result, "android")
-
+            return any_downloaded
         except Exception as e:
             logger.error(f"Error downloading Android release {release.tag_name}: {e}")
+            return False
 
-    def _download_firmware_release(self, release: Release) -> None:
+    def _download_firmware_release(self, release: Release) -> bool:
         """
         Download a firmware release and its assets.
 
         Args:
             release: The firmware release to download
+        Returns:
+            bool: True if any asset was downloaded, False otherwise.
         """
+        any_downloaded = False
         try:
             # Get extraction patterns from configuration
             extract_patterns = self._get_extraction_patterns()
@@ -327,7 +347,7 @@ class DownloadOrchestrator:
                     "Release %s found, but no assets matched current selection/exclude filters",
                     release.tag_name,
                 )
-                return
+                return False
 
             # Download each asset in the release
             for asset in assets_to_download:
@@ -335,6 +355,8 @@ class DownloadOrchestrator:
                 download_result = self.firmware_downloader.download_firmware(
                     release, asset
                 )
+                if download_result.success and not download_result.was_skipped:
+                    any_downloaded = True
                 self._handle_download_result(download_result, "firmware")
 
                 # If download succeeded, extract files
@@ -343,9 +365,10 @@ class DownloadOrchestrator:
                         release, asset, extract_patterns, exclude_patterns
                     )
                     self._handle_download_result(extract_result, "firmware_extraction")
-
+            return any_downloaded
         except Exception as e:
             logger.error(f"Error downloading firmware release {release.tag_name}: {e}")
+            return False
 
     def _get_extraction_patterns(self) -> List[str]:
         """

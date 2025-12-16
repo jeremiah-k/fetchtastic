@@ -272,6 +272,9 @@ class TestFirmwareReleaseDownloader:
         with patch(
             "fetchtastic.download.firmware.make_github_api_request",
             side_effect=Exception("API Error"),
+        ), patch(
+            "fetchtastic.download.cache.CacheManager.read_releases_cache_entry",
+            return_value=None,
         ):
             releases = firmware_downloader.get_releases()
             assert releases == []
