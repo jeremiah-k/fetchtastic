@@ -39,14 +39,16 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     - Cleaning up old Android versions
     """
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], cache_manager: "CacheManager"):
         """
         Initialize the Android app downloader.
 
         Args:
             config: Configuration dictionary
+            cache_manager: The cache manager instance.
         """
         super().__init__(config)
+        self.cache_manager = cache_manager
         self.android_releases_url = MESHTASTIC_ANDROID_RELEASES_URL
         self.latest_release_file = LATEST_ANDROID_RELEASE_JSON_FILE
         self.latest_prerelease_file = LATEST_ANDROID_PRERELEASE_JSON_FILE
@@ -354,23 +356,6 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             return tuple(parts[:3])  # Ensure exactly 3 parts
         except ValueError:
             return (0, 0, 0)
-
-    def get_latest_release_tag(self) -> Optional[str]:
-        """
-        Get the latest Android release tag from the tracking file.
-
-        Returns:
-            Optional[str]: Latest release tag, or None if not found
-        """
-        latest_file = os.path.join(self.download_dir, self.latest_release_file)
-        if os.path.exists(latest_file):
-            try:
-                with open(latest_file, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    return data.get("latest_version")
-            except (IOError, json.JSONDecodeError):
-                pass
-        return None
 
     def update_latest_release_tag(self, release_tag: str) -> bool:
         """

@@ -46,7 +46,7 @@ class BaseDownloader(Downloader, ABC):
         """
         self.config = config
         self.version_manager = VersionManager()
-        self.cache_manager = cache_manager or CacheManager()
+        self.cache_manager = cache_manager
         self.file_operations = FileOperations()
 
         # Initialize common configuration with normalized paths

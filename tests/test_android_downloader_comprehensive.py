@@ -31,10 +31,14 @@ def test_config():
     }
 
 
+from fetchtastic.download.cache import CacheManager
+
+
 @pytest.fixture
 def android_downloader(test_config):
     """Android release downloader instance."""
-    return MeshtasticAndroidAppDownloader(test_config)
+    cache_manager = CacheManager()
+    return MeshtasticAndroidAppDownloader(test_config, cache_manager)
 
 
 class TestMeshtasticAndroidAppDownloader:
@@ -42,7 +46,8 @@ class TestMeshtasticAndroidAppDownloader:
 
     def test_initialization(self, test_config):
         """Test Android downloader initialization."""
-        downloader = MeshtasticAndroidAppDownloader(test_config)
+        cache_manager = CacheManager()
+        downloader = MeshtasticAndroidAppDownloader(test_config, cache_manager)
         assert downloader.download_dir == test_config["DOWNLOAD_DIR"]
         assert downloader.config == test_config
 
@@ -171,25 +176,6 @@ class TestMeshtasticAndroidAppDownloader:
         remaining_names = [d.name for d in remaining_dirs]
         assert "v2.7.14" in remaining_names
         assert "v2.7.13" in remaining_names
-
-    def test_get_latest_release_tag(self, android_downloader):
-        """Test getting the latest Android release tag."""
-        mock_data = {"latest_version": "v2.7.14"}
-
-        with (
-            patch("os.path.exists", return_value=True),
-            patch("builtins.open", mock.mock_open(read_data=json.dumps(mock_data))),
-        ):
-            latest_tag = android_downloader.get_latest_release_tag()
-
-            assert latest_tag == "v2.7.14"
-
-    def test_get_latest_release_tag_no_file(self, android_downloader):
-        """Test getting latest Android release tag when file doesn't exist."""
-        with patch("os.path.exists", return_value=False):
-            latest_tag = android_downloader.get_latest_release_tag()
-
-            assert latest_tag is None
 
     def test_update_latest_release_tag(self, android_downloader):
         """Test updating the latest Android release tag."""

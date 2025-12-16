@@ -68,8 +68,12 @@ class DownloadCLIIntegration:
             # Initialize components with the provided config
             self.config = config
             self.orchestrator = DownloadOrchestrator(config)
-            self.android_downloader = MeshtasticAndroidAppDownloader(config)
-            self.firmware_downloader = FirmwareReleaseDownloader(config)
+            self.android_downloader = MeshtasticAndroidAppDownloader(
+                config, self.orchestrator.cache_manager
+            )
+            self.firmware_downloader = FirmwareReleaseDownloader(
+                config, self.orchestrator.cache_manager
+            )
 
             # Clear caches if force refresh is requested
             if force_refresh:

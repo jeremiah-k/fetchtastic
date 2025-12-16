@@ -130,19 +130,30 @@ def test_run_download_successful(mocker):
     mock_version_manager.compare_versions.return_value = 1  # v1.0 > v0.9
     mock_android.get_version_manager.return_value = mock_version_manager
 
+    # Add a mock cache manager to the orchestrator
+    mock_orchestrator.cache_manager = MagicMock()
+
+    # Add a mock cache manager to the orchestrator
+    mock_orchestrator.cache_manager = MagicMock()
+
     mocker.patch(
         "fetchtastic.download.cli_integration.DownloadOrchestrator",
         return_value=mock_orchestrator,
     )
-    mocker.patch(
+    mock_android_class = mocker.patch(
         "fetchtastic.download.cli_integration.MeshtasticAndroidAppDownloader",
         return_value=mock_android,
     )
-    mocker.patch(
+    mock_firmware_class = mocker.patch(
         "fetchtastic.download.cli_integration.FirmwareReleaseDownloader",
         return_value=mock_firmware,
     )
     result = integration.run_download(config)
+
+    mock_android_class.assert_called_once_with(config, mock_orchestrator.cache_manager)
+    mock_firmware_class.assert_called_once_with(
+        config, mock_orchestrator.cache_manager
+    )
 
     assert len(result) == 7
     assert result[0] == ["v1.0"]  # downloaded_firmwares
@@ -185,7 +196,8 @@ def test_run_download_with_force_refresh(mocker):
     )
     integration.run_download(config, force_refresh=True)
 
-    mock_android.cache_manager.clear_all_caches.assert_called_once()
+    # Since the cache manager is shared, we can check if it was called on any downloader
+    integration.android_downloader.cache_manager.clear_all_caches.assert_called_once()
 
 
 def test_run_download_handles_exception(mocker):

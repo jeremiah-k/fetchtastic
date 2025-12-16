@@ -53,7 +53,8 @@ def prerelease_manager():
 @pytest.fixture
 def firmware_downloader(test_config):
     """Firmware release downloader instance."""
-    return FirmwareReleaseDownloader(test_config)
+    cache_manager = CacheManager()
+    return FirmwareReleaseDownloader(test_config, cache_manager)
 
 
 def test_cleanup_superseded_prereleases(firmware_downloader, tmp_path):
@@ -73,7 +74,8 @@ def test_cleanup_superseded_prereleases(firmware_downloader, tmp_path):
 
     # Use the new FirmwareReleaseDownloader directly
     config = {"DOWNLOAD_DIR": str(download_dir)}
-    firmware_downloader = FirmwareReleaseDownloader(config)
+    cache_manager = CacheManager()
+    firmware_downloader = FirmwareReleaseDownloader(config, cache_manager)
     removed = firmware_downloader.cleanup_superseded_prereleases(latest_release_tag)
     assert removed is True
 
@@ -98,7 +100,8 @@ def test_cleanup_superseded_prereleases_handles_commit_suffix(
 
     # Use the new FirmwareReleaseDownloader directly
     config = {"DOWNLOAD_DIR": str(download_dir)}
-    firmware_downloader = FirmwareReleaseDownloader(config)
+    cache_manager = CacheManager()
+    firmware_downloader = FirmwareReleaseDownloader(config, cache_manager)
     removed = firmware_downloader.cleanup_superseded_prereleases("v2.7.12.45f15b8")
 
     assert removed is True

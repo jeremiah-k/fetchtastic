@@ -6,6 +6,8 @@ downloaders in a single fetchtastic download run.
 """
 
 import time
+import re
+import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -49,12 +51,20 @@ class DownloadOrchestrator:
         self.cache_manager = CacheManager()
 
         # Initialize downloaders
-        self.android_downloader = MeshtasticAndroidAppDownloader(config)
-        self.firmware_downloader = FirmwareReleaseDownloader(config)
+        self.android_downloader = MeshtasticAndroidAppDownloader(
+            config, self.cache_manager
+        )
+        self.firmware_downloader = FirmwareReleaseDownloader(
+            config, self.cache_manager
+        )
 
         # Track results
         self.download_results: List[DownloadResult] = []
         self.failed_downloads: List[DownloadResult] = []
+
+        # Cache releases to avoid redundant API calls within a single run
+        self.android_releases: Optional[List[Release]] = None
+        self.firmware_releases: Optional[List[Release]] = None
 
     def run_download_pipeline(
         self,
@@ -92,7 +102,9 @@ class DownloadOrchestrator:
         """Process Android APK downloads."""
         try:
             logger.info("Scanning Android APK releases")
-            android_releases = self.android_downloader.get_releases()
+            if self.android_releases is None:
+                self.android_releases = self.android_downloader.get_releases()
+            android_releases = self.android_releases
             if not android_releases:
                 logger.info("No Android releases found")
                 return
@@ -143,7 +155,9 @@ class DownloadOrchestrator:
         """Process firmware downloads."""
         try:
             logger.info("Scanning Firmware releases")
-            firmware_releases = self.firmware_downloader.get_releases()
+            if self.firmware_releases is None:
+                self.firmware_releases = self.firmware_downloader.get_releases()
+            firmware_releases = self.firmware_releases
             if not firmware_releases:
                 logger.info("No firmware releases found")
                 return
@@ -186,6 +200,15 @@ class DownloadOrchestrator:
 
             if not any_firmware_downloaded and not releases_to_download:
                 logger.info("All Firmware assets are up to date.")
+
+            # Clean up prerelease directory
+            prerelease_dir = Path(self.firmware_downloader.download_dir) / "firmware" / "prerelease"
+            if prerelease_dir.exists():
+                for item in prerelease_dir.iterdir():
+                    # A pre-release directory should contain a hash, a stable release directory will not.
+                    if item.is_dir() and not re.search(r'\d+\.\d+\.\d+\.[a-f0-9]{6,}', item.name):
+                        logger.info(f"Removing incorrect directory from prerelease folder: {item.name}")
+                        shutil.rmtree(item)
 
         except Exception as e:
             logger.error(f"Error processing firmware downloads: {e}", exc_info=True)
@@ -403,7 +426,8 @@ class DownloadOrchestrator:
         if result.success:
             self.download_results.append(result)
             if getattr(result, "was_skipped", False) is True:
-                logger.debug("Skipped %s: %s", operation_type, result.release_tag)
+                if "prerelease" not in operation_type:
+                    logger.debug("Skipped %s: %s", operation_type, result.release_tag)
             else:
                 logger.debug("Completed %s: %s", operation_type, result.release_tag)
         else:
@@ -862,8 +886,15 @@ class DownloadOrchestrator:
                 else:
                     firmware_prerelease = active_dir
 
+        android_releases = (
+            self.android_releases or self.android_downloader.get_releases(limit=1)
+        )
+        latest_android_release = (
+            android_releases[0].tag_name if android_releases else None
+        )
+
         return {
-            "android": self.android_downloader.get_latest_release_tag(),
+            "android": latest_android_release,
             "firmware": latest_firmware_release,
             "firmware_prerelease": firmware_prerelease,
             "android_prerelease": None,
@@ -872,9 +903,13 @@ class DownloadOrchestrator:
     def update_version_tracking(self) -> None:
         """Update version tracking for all artifact types."""
         try:
-            # Get the latest releases for each type
-            android_releases = self.android_downloader.get_releases(limit=1)
-            firmware_releases = self.firmware_downloader.get_releases(limit=1)
+            # Use cached releases if available
+            android_releases = (
+                self.android_releases or self.android_downloader.get_releases(limit=1)
+            )
+            firmware_releases = (
+                self.firmware_releases or self.firmware_downloader.get_releases(limit=1)
+            )
 
             # Update tracking
             if android_releases:

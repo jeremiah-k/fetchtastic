@@ -344,6 +344,10 @@ class TestDownloadOrchestrator:
 
     def test_get_latest_versions(self, orchestrator):
         """Test getting latest versions from downloaders."""
+        # Mock the return values for the downloaders
+        mock_android_release = Mock(spec=Release)
+        mock_android_release.tag_name = "v1.0.0"
+        orchestrator.android_downloader.get_releases.return_value = [mock_android_release]
         orchestrator.firmware_downloader.get_latest_release_tag.return_value = "v2.0.0"
         orchestrator.version_manager.extract_clean_version.return_value = "2.0.0"
         orchestrator.version_manager.calculate_expected_prerelease_version.return_value = "2.0.1"
@@ -351,8 +355,9 @@ class TestDownloadOrchestrator:
 
         versions = orchestrator.get_latest_versions()
 
+        assert versions['android'] == "v1.0.0"
+        assert versions['firmware'] == "v2.0.0"
         assert versions['firmware_prerelease'] == "2.0.1.abcdef"
-        orchestrator.android_downloader.get_latest_release_tag.assert_called_once()
         orchestrator.firmware_downloader.get_latest_release_tag.assert_called_once()
 
     @patch("fetchtastic.download.orchestrator.logger")

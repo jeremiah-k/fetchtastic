@@ -31,10 +31,14 @@ def test_config():
     }
 
 
+from fetchtastic.download.cache import CacheManager
+
+
 @pytest.fixture
 def firmware_downloader(test_config):
     """Firmware release downloader instance."""
-    return FirmwareReleaseDownloader(test_config)
+    cache_manager = CacheManager()
+    return FirmwareReleaseDownloader(test_config, cache_manager)
 
 
 class TestFirmwareReleaseDownloader:
@@ -42,7 +46,8 @@ class TestFirmwareReleaseDownloader:
 
     def test_initialization(self, test_config):
         """Test firmware downloader initialization."""
-        downloader = FirmwareReleaseDownloader(test_config)
+        cache_manager = CacheManager()
+        downloader = FirmwareReleaseDownloader(test_config, cache_manager)
         assert downloader.download_dir == test_config["DOWNLOAD_DIR"]
         assert downloader.config == test_config
 
@@ -253,6 +258,9 @@ class TestFirmwareReleaseDownloader:
             }
         ]
 
+        from fetchtastic.download.cache import CacheManager
+        cache_manager = CacheManager()
+
         # Test static method exists and works
         result = FirmwareReleaseDownloader.check_and_download(
             releases=mock_releases,
@@ -261,6 +269,7 @@ class TestFirmwareReleaseDownloader:
             download_dir=str(tmp_path),
             versions_to_keep=2,
             selected_patterns=["test"],
+            cache_manager=cache_manager,
         )
 
         # Should return tuple of (downloaded, new_versions, failures)

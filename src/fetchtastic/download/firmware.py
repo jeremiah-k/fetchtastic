@@ -49,14 +49,16 @@ class FirmwareReleaseDownloader(BaseDownloader):
     - Cleaning up old firmware versions
     """
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], cache_manager: "CacheManager"):
         """
         Initialize the firmware downloader.
 
         Args:
             config: Configuration dictionary
+            cache_manager: The cache manager instance.
         """
         super().__init__(config)
+        self.cache_manager = cache_manager
         self.firmware_releases_url = MESHTASTIC_FIRMWARE_RELEASES_URL
         self.latest_release_file = LATEST_FIRMWARE_RELEASE_JSON_FILE
         self.latest_prerelease_file = LATEST_FIRMWARE_PRERELEASE_JSON_FILE
@@ -864,27 +866,44 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
         # Emit legacy-style history summary when available
         if history_entries:
-            summary = prerelease_manager.summarize_prerelease_history(history_entries)
-            logger.info(
-                "Prereleases since %s: %d created, %d deleted, %d active",
-                clean_latest_release,
-                summary["created"],
-                summary["deleted"],
-                summary["active"],
-            )
-            active_ids = [
-                str(e.get("identifier"))
-                for e in history_entries
-                if e.get("status") == "active" and e.get("identifier") is not None
-            ]
-            if active_ids:
-                logger.info(
-                    "Prerelease commits for %s: %s",
-                    expected_version,
-                    ", ".join(active_ids[:10]),
-                )
+            self.log_prerelease_summary(history_entries, clean_latest_release, expected_version)
+
+        # Consolidate skipped messages
+        skipped_count = sum(1 for result in successes if result.was_skipped)
+        if skipped_count > 0:
+            logger.debug(f"Skipped {skipped_count} existing pre-release files.")
 
         return successes, failures, active_dir
+
+    def log_prerelease_summary(self, history_entries: List[Dict[str, Any]], clean_latest_release: str, expected_version: str):
+        """Log a formatted summary of the prerelease history."""
+        prerelease_manager = PrereleaseHistoryManager()
+        summary = prerelease_manager.summarize_prerelease_history(history_entries)
+        logger.info(
+            "Prereleases since %s: %d created, %d deleted, %d active",
+            clean_latest_release,
+            summary["created"],
+            summary["deleted"],
+            summary["active"],
+        )
+
+        active_commits = []
+        deleted_commits = []
+        for entry in history_entries:
+            identifier = entry.get("identifier")
+            if not identifier:
+                continue
+            if entry.get("status") == "active":
+                active_commits.append(f"[green]{identifier}[/green]")
+            else:
+                deleted_commits.append(f"[red][strike]{identifier}[/strike][/red]")
+
+        if active_commits or deleted_commits:
+            logger.info("Prerelease commits for %s:", expected_version)
+            for commit in active_commits:
+                logger.info(f"  - {commit} (active)")
+            for commit in deleted_commits:
+                logger.info(f"  - {commit} (deleted)")
 
     def handle_prereleases(
         self,
@@ -1198,6 +1217,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
         selected_patterns=None,
         auto_extract=False,
         exclude_patterns=None,
+        cache_manager=None,
     ):
         """
         Static method to check and download releases (for backward compatibility with tests).
@@ -1232,7 +1252,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
         }
 
         # Create downloader instance
-        downloader = FirmwareReleaseDownloader(mock_config)
+        downloader = FirmwareReleaseDownloader(mock_config, cache_manager)
         downloader.download_dir = download_dir
 
         # Convert releases to the expected format

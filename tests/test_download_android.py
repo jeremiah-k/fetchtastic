@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, Mock, patch
 import pytest
 
 from fetchtastic.download.android import MeshtasticAndroidAppDownloader
+from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.interfaces import Asset, DownloadResult, Release
 
 
@@ -26,22 +27,24 @@ class TestMeshtasticAndroidAppDownloader:
         }
 
     @pytest.fixture
-    def downloader(self, mock_config):
+    def mock_cache_manager(self):
+        """Mock CacheManager instance."""
+        return Mock(spec=CacheManager)
+
+    @pytest.fixture
+    def downloader(self, mock_config, mock_cache_manager):
         """Create a MeshtasticAndroidAppDownloader instance with mocked dependencies."""
-        dl = MeshtasticAndroidAppDownloader(mock_config)
+        dl = MeshtasticAndroidAppDownloader(mock_config, mock_cache_manager)
         # Mock the dependencies that are set in __init__
-        dl.cache_manager = Mock()
+        dl.cache_manager = mock_cache_manager
         dl.version_manager = Mock()
         dl.file_operations = Mock()
         return dl
 
-    def test_init(self, mock_config):
+    def test_init(self, mock_config, mock_cache_manager):
         """Test downloader initialization."""
-        with (
-            patch("fetchtastic.download.base.CacheManager") as mock_cache,
-            patch("fetchtastic.download.base.VersionManager") as mock_version,
-        ):
-            dl = MeshtasticAndroidAppDownloader(mock_config)
+        with patch("fetchtastic.download.base.VersionManager") as mock_version:
+            dl = MeshtasticAndroidAppDownloader(mock_config, mock_cache_manager)
 
             assert dl.config == mock_config
             assert (
@@ -49,7 +52,6 @@ class TestMeshtasticAndroidAppDownloader:
                 == "https://api.github.com/repos/meshtastic/Meshtastic-Android/releases"
             )
             assert dl.latest_release_file == "latest_android_release.json"
-            mock_cache.assert_called_once()
             mock_version.assert_called_once()
 
     def test_get_target_path_for_release(self, downloader):
@@ -228,29 +230,6 @@ class TestMeshtasticAndroidAppDownloader:
 
         key = downloader._get_version_sort_key("v1.0")
         assert key == (1, 0, 0)
-
-    @patch("os.path.exists")
-    @patch("builtins.open")
-    @patch("json.load")
-    def test_get_latest_release_tag(
-        self, mock_json_load, mock_open, mock_exists, downloader
-    ):
-        """Test getting latest release tag from tracking file."""
-        mock_exists.return_value = True
-        mock_json_load.return_value = {"latest_version": "v1.0.0"}
-
-        tag = downloader.get_latest_release_tag()
-
-        assert tag == "v1.0.0"
-
-    @patch("os.path.exists")
-    def test_get_latest_release_tag_no_file(self, mock_exists, downloader):
-        """Test getting latest release tag when file doesn't exist."""
-        mock_exists.return_value = False
-
-        tag = downloader.get_latest_release_tag()
-
-        assert tag is None
 
     @patch("fetchtastic.download.android.datetime")
     def test_update_latest_release_tag(self, mock_datetime, downloader):

@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, Mock, patch
 import pytest
 
 from fetchtastic.download.firmware import FirmwareReleaseDownloader
+from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.interfaces import Asset, DownloadResult, Release
 
 
@@ -26,26 +27,31 @@ class TestFirmwareReleaseDownloader:
         }
 
     @pytest.fixture
-    def downloader(self, mock_config):
+    def mock_cache_manager(self):
+        """Mock CacheManager instance."""
+        mock = Mock(spec=CacheManager)
+        mock.cache_dir = "/tmp/cache"
+        return mock
+
+    @pytest.fixture
+    def downloader(self, mock_config, mock_cache_manager):
         """Create a FirmwareReleaseDownloader instance with mocked dependencies."""
-        dl = FirmwareReleaseDownloader(mock_config)
+        dl = FirmwareReleaseDownloader(mock_config, mock_cache_manager)
         # Mock the dependencies that are set in __init__
-        dl.cache_manager = Mock()
-        dl.cache_manager.cache_dir = "/tmp/cache"
+        dl.cache_manager = mock_cache_manager
         dl.version_manager = Mock()
         dl.file_operations = Mock()
         return dl
 
-    def test_init(self, mock_config):
+    def test_init(self, mock_config, mock_cache_manager):
         """Test downloader initialization."""
         with (
-            patch("fetchtastic.download.base.CacheManager") as mock_cache,
             patch("fetchtastic.download.base.VersionManager") as mock_version,
             patch(
                 "fetchtastic.download.firmware.PrereleaseHistoryManager"
             ) as mock_prerelease,
         ):
-            dl = FirmwareReleaseDownloader(mock_config)
+            dl = FirmwareReleaseDownloader(mock_config, mock_cache_manager)
 
             assert dl.config == mock_config
             assert (
@@ -53,7 +59,6 @@ class TestFirmwareReleaseDownloader:
                 == "https://api.github.com/repos/meshtastic/firmware/releases"
             )
             assert dl.latest_release_file == "latest_firmware_release.json"
-            mock_cache.assert_called_once()
             mock_version.assert_called_once()
 
     def test_get_target_path_for_release(self, downloader):
