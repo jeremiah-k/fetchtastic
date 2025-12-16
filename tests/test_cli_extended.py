@@ -417,6 +417,7 @@ def test_cron_job_cleanup_logic(mocker):
 
     # Mock Linux environment
     mocker.patch("platform.system", return_value="Linux")
+    mocker.patch("fetchtastic.setup_config._crontab_available", return_value=True)
 
     # Mock crontab operations
     mock_crontab_output = "# Existing cron\n# fetchtastic download\n0 3 * * * /usr/bin/fetchtastic download\n# Other cron\n"

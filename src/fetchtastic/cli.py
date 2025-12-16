@@ -636,39 +636,42 @@ def run_clean():
 
     # Remove cron job entries (non-Windows platforms)
     if platform.system() != "Windows":
-        try:
-            # Get current crontab entries
-            result = subprocess.run(
-                ["crontab", "-l"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-            if result.returncode == 0:
-                existing_cron = result.stdout.strip()
-                # Remove existing fetchtastic cron jobs
-                cron_lines = [
-                    line for line in existing_cron.splitlines() if line.strip()
-                ]
-                cron_lines = [
-                    line
-                    for line in cron_lines
-                    if "# fetchtastic" not in line
-                    and "fetchtastic download" not in line
-                ]
-                # Join cron lines
-                new_cron = "\n".join(cron_lines)
-                # Ensure new_cron ends with a newline
-                if not new_cron.endswith("\n"):
-                    new_cron += "\n"
-                # Update crontab
-                process = subprocess.Popen(
-                    ["crontab", "-"], stdin=subprocess.PIPE, text=True
+        if not setup_config._crontab_available():
+            print("Cron cleanup skipped: 'crontab' command not found on this system.")
+        else:
+            try:
+                # Get current crontab entries
+                result = subprocess.run(
+                    ["crontab", "-l"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
                 )
-                process.communicate(input=new_cron)
-                print("Removed Fetchtastic cron job entries.")
-        except Exception as e:
-            print(f"An error occurred while removing cron jobs: {e}")
+                if result.returncode == 0:
+                    existing_cron = result.stdout.strip()
+                    # Remove existing fetchtastic cron jobs
+                    cron_lines = [
+                        line for line in existing_cron.splitlines() if line.strip()
+                    ]
+                    cron_lines = [
+                        line
+                        for line in cron_lines
+                        if "# fetchtastic" not in line
+                        and "fetchtastic download" not in line
+                    ]
+                    # Join cron lines
+                    new_cron = "\n".join(cron_lines)
+                    # Ensure new_cron ends with a newline
+                    if not new_cron.endswith("\n"):
+                        new_cron += "\n"
+                    # Update crontab
+                    process = subprocess.Popen(
+                        ["crontab", "-"], stdin=subprocess.PIPE, text=True
+                    )
+                    process.communicate(input=new_cron)
+                    print("Removed Fetchtastic cron job entries.")
+            except Exception as e:
+                print(f"An error occurred while removing cron jobs: {e}")
 
     # Remove boot script if exists (Termux-specific)
     boot_script = os.path.expanduser("~/.termux/boot/fetchtastic.sh")

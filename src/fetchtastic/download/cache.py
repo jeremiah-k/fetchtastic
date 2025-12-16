@@ -69,9 +69,19 @@ class CacheManager:
         self.cache_dir = cache_dir or self._get_default_cache_dir()
         self._ensure_cache_dir_exists()
 
-    def get_cache_file_path(self, file_name: str) -> str:
-        """Return the full path for a cache file stored under the cache directory."""
-        return os.path.join(self.cache_dir, file_name)
+    def get_cache_file_path(self, cache_name: str, suffix: str = ".json") -> str:
+        """
+        Return the full path for a cache file stored under the cache directory.
+
+        Accepts an optional suffix that is appended when the base name does not
+        already end with it, allowing callers to pass either raw basenames or
+        full filenames directly.
+        """
+        suffix = suffix or ""
+        suffix_to_append = ""
+        if suffix and not cache_name.lower().endswith(suffix.lower()):
+            suffix_to_append = suffix
+        return os.path.join(self.cache_dir, f"{cache_name}{suffix_to_append}")
 
     def _get_default_cache_dir(self) -> str:
         """

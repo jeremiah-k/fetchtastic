@@ -618,6 +618,10 @@ def test_cli_clean_command(mocker):
 @patch("subprocess.run")
 @patch("platform.system", return_value="Linux")
 @patch(
+    "fetchtastic.setup_config._crontab_available",
+    return_value=True,
+)
+@patch(
     "fetchtastic.setup_config.CONFIG_FILE", "/tmp/config/fetchtastic.yaml"
 )  # nosec B108
 @patch(
@@ -631,6 +635,7 @@ def test_run_clean(
     mock_isdir,
     mock_isfile,
     mock_platform_system,
+    mock_crontab_available,
     mock_subprocess_run,
     mock_rmdir,
     mock_listdir,

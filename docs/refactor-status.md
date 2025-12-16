@@ -9,6 +9,7 @@ This document tracks the ongoing modular refactor. It is intentionally detailed 
 3. CLI wiring has been re-implemented to call the new integration, log API summaries, report failures, and honor `LOG_LEVEL` plus clipboard helpers.
 4. Repository download flows and repo cleanup command are routed through `RepositoryDownloader` and its new menu helpers.
 5. Major shared utilities (`utils`, version management, prerelease history) have been split into dedicated modules.
+6. `run_clean` now gracefully skips cron cleanup when `crontab` is missing to avoid noisy errors in containerized environments.
 
 These items are checkboxes only when both implementation and automated coverage (pytest+mypy) confirm parity with `v0.8.9` behavior.
 
