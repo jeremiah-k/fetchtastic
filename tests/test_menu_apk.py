@@ -47,17 +47,16 @@ def mock_apk_assets_mixed_case():
 
 def test_fetch_apk_assets(mocker, mock_apk_assets):
     """Test fetching APK assets from GitHub."""
-    mock_get = mocker.patch("requests.get")
     mock_response = mocker.MagicMock()
-    # The API returns a list of releases, we care about the first one's assets
     mock_response.json.return_value = [{"assets": mock_apk_assets}]
-    mock_get.return_value = mock_response
+    mock_make_request = mocker.patch("fetchtastic.menu_apk.make_github_api_request")
+    mock_make_request.return_value = mock_response
 
     assets = menu_apk.fetch_apk_assets()
 
     assert len(assets) == 3
-    assert "meshtastic-app-debug-2.7.4.apk" in assets
     assert "meshtastic-app-release-2.7.4.apk" in assets
+    assert "meshtastic-app-debug-2.7.4.apk" in assets
     assert "nRF_Connect_Device_Manager-release-2.7.4.apk" in assets
     # Check sorting
     assert assets[0] == "meshtastic-app-debug-2.7.4.apk"
@@ -65,10 +64,10 @@ def test_fetch_apk_assets(mocker, mock_apk_assets):
 
 def test_fetch_apk_assets_case_insensitive(mocker, mock_apk_assets_mixed_case):
     """Test fetching APK assets with case-insensitive extension matching."""
-    mock_get = mocker.patch("requests.get")
     mock_response = mocker.MagicMock()
     mock_response.json.return_value = [{"assets": mock_apk_assets_mixed_case}]
-    mock_get.return_value = mock_response
+    mock_make_request = mocker.patch("fetchtastic.menu_apk.make_github_api_request")
+    mock_make_request.return_value = mock_response
 
     assets = menu_apk.fetch_apk_assets()
 
@@ -132,24 +131,24 @@ def test_run_menu(mocker):
 def test_fetch_apk_assets_error_handling(mocker):
     """Test error handling in fetch_apk_assets."""
     # Test JSON decode error
-    mock_get = mocker.patch("requests.get")
     mock_response = mocker.MagicMock()
     mock_response.json.side_effect = json.JSONDecodeError("Invalid JSON", "", 0)
-    mock_get.return_value = mock_response
+    mock_make_request = mocker.patch("fetchtastic.menu_apk.make_github_api_request")
+    mock_make_request.return_value = mock_response
 
     assets = menu_apk.fetch_apk_assets()
     assert assets == []
 
     # Test non-list response
     mock_response.json.return_value = {"not": "a list"}
-    mock_get.return_value = mock_response
+    mock_make_request.return_value = mock_response
 
     assets = menu_apk.fetch_apk_assets()
     assert assets == []
 
     # Test empty releases list
     mock_response.json.return_value = []
-    mock_get.return_value = mock_response
+    mock_make_request.return_value = mock_response
 
     assets = menu_apk.fetch_apk_assets()
     assert assets == []
