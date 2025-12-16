@@ -47,6 +47,21 @@ class RepositoryDownloader(BaseDownloader):
         self.repo_url = MESHTASTIC_REPO_URL
         self.repo_downloads_dir = REPO_DOWNLOADS_DIR
         self.shell_script_extension = SHELL_SCRIPT_EXTENSION
+        self._cleanup_summary: Dict[str, Any] = {
+            "removed_files": 0,
+            "removed_dirs": 0,
+            "errors": [],
+            "success": False,
+        }
+
+    def get_cleanup_summary(self) -> Dict[str, Any]:
+        """
+        Return the most recent cleanup summary produced by `clean_repository_directory`.
+
+        Returns:
+            Dict[str, Any]: Summary containing counts of removed files/directories, any recorded error messages, and a success flag.
+        """
+        return dict(self._cleanup_summary)
 
     def get_repository_files(self, subdirectory: str = "") -> List[Dict[str, Any]]:
         """
@@ -343,6 +358,12 @@ class RepositoryDownloader(BaseDownloader):
         Returns:
             bool: `True` if cleanup succeeded, `False` otherwise.
         """
+        self._cleanup_summary = {
+            "removed_files": 0,
+            "removed_dirs": 0,
+            "errors": [],
+            "success": False,
+        }
         try:
             repo_dir = os.path.join(
                 self.download_dir, "firmware", self.repo_downloads_dir
@@ -361,20 +382,25 @@ class RepositoryDownloader(BaseDownloader):
                     if os.path.isfile(item_path) or os.path.islink(item_path):
                         os.remove(item_path)
                         logger.info(f"Removed file: {item_path}")
+                        self._cleanup_summary["removed_files"] += 1
                     elif os.path.isdir(item_path):
                         import shutil
 
                         shutil.rmtree(item_path)
                         logger.info(f"Removed directory: {item_path}")
+                        self._cleanup_summary["removed_dirs"] += 1
                 except OSError as e:
                     logger.error(f"Error removing {item_path}: {e}")
+                    self._cleanup_summary["errors"].append(f"{item_path}: {e}")
                     return False
 
             logger.info(f"Successfully cleaned repository directory: {repo_dir}")
+            self._cleanup_summary["success"] = True
             return True
 
         except Exception as e:
             logger.error(f"Error cleaning repository directory: {e}")
+            self._cleanup_summary["errors"].append(str(e))
             return False
 
     def get_repository_download_url(self, file_path: str) -> str:

@@ -363,6 +363,29 @@ def test_run_repo_clean_config_missing(mocker, capsys):
 
 @pytest.mark.user_interface
 @pytest.mark.unit
+def test_run_repo_clean_logs_summary(mocker):
+    """Test run_repo_clean logs cleanup summary and errors."""
+    mocker.patch("builtins.input", return_value="y")
+    mock_repo_downloader = mocker.patch("fetchtastic.cli.RepositoryDownloader")
+    mock_repo_downloader.return_value.clean_repository_directory.return_value = True
+    mock_repo_downloader.return_value.get_cleanup_summary.return_value = {
+        "removed_files": 2,
+        "removed_dirs": 1,
+        "errors": ["disk full"],
+        "success": True,
+    }
+    mock_logger = mocker.patch("fetchtastic.log_utils.logger")
+
+    cli.run_repo_clean({"BASE_DIR": "/tmp/test"})
+
+    mock_logger.info.assert_any_call(
+        "Repository cleanup summary: %d file(s), %d dir(s) removed", 2, 1
+    )
+    mock_logger.warning.assert_any_call("Repository cleanup error: disk full")
+
+
+@pytest.mark.user_interface
+@pytest.mark.unit
 def test_run_repo_clean_confirmation_cancelled(mocker, capsys):
     """Test run_repo_clean when user cancels confirmation."""
     mock_config = {"BASE_DIR": "/tmp/test"}

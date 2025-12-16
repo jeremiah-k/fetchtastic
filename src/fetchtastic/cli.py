@@ -722,6 +722,16 @@ def run_repo_clean(config):
     else:
         print("Failed to clean repository directory.")
 
+    cleanup_summary = repo_downloader.get_cleanup_summary()
+    log_utils.logger.info(
+        "Repository cleanup summary: %d file(s), %d dir(s) removed",
+        cleanup_summary.get("removed_files", 0),
+        cleanup_summary.get("removed_dirs", 0),
+    )
+    if cleanup_summary.get("errors"):
+        for err in cleanup_summary.get("errors", []):
+            log_utils.logger.warning(f"Repository cleanup error: {err}")
+
 
 def get_fetchtastic_version():
     """

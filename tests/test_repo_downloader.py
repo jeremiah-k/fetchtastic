@@ -222,6 +222,11 @@ def test_clean_repository_directory_success(repository_downloader, tmp_path):
     assert result is True
     assert repo_dir.exists()  # Directory should still exist
     assert len(list(repo_dir.iterdir())) == 0  # But should be empty
+    summary = repository_downloader.get_cleanup_summary()
+    assert summary["removed_files"] == 1
+    assert summary["removed_dirs"] == 1
+    assert summary["errors"] == []
+    assert summary["success"] is True
 
 
 @pytest.mark.unit
@@ -248,6 +253,11 @@ def test_clean_repository_directory_error(repository_downloader, tmp_path):
         result = repository_downloader.clean_repository_directory()
 
     assert result is False
+    summary = repository_downloader.get_cleanup_summary()
+    assert summary["removed_files"] == 0
+    assert summary["removed_dirs"] == 0
+    assert summary["success"] is False
+    assert "Permission denied" in summary["errors"][0]
 
 
 @pytest.mark.unit
