@@ -840,8 +840,15 @@ class FirmwareReleaseDownloader(BaseDownloader):
         version_manager = VersionManager()
         prerelease_manager = PrereleaseHistoryManager()
 
-        # Filter prereleases
-        prereleases = [r for r in releases if r.prerelease]
+        # Filter prereleases (GitHub's prerelease flag can be noisy for hash-suffixed tags)
+        prereleases = [
+            r
+            for r in releases
+            if r.prerelease
+            and not version_manager.HASH_SUFFIX_VERSION_RX.match(
+                r.tag_name.lstrip("vV")
+            )
+        ]
 
         # Sort by published date (newest first)
         prereleases.sort(key=lambda r: r.published_at or "", reverse=True)
@@ -859,10 +866,27 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
         # Further restrict to prereleases that match expected base version
         expected_base = None
-        latest_release = next((r for r in releases if not r.prerelease), None)
-        if latest_release:
+        latest_tuple = None
+        latest_tag = None
+        for candidate in releases:
+            candidate_is_hash_suffix = bool(
+                version_manager.HASH_SUFFIX_VERSION_RX.match(
+                    candidate.tag_name.lstrip("vV")
+                )
+            )
+            candidate_is_stable = (not candidate.prerelease) or candidate_is_hash_suffix
+            if not candidate_is_stable:
+                continue
+            candidate_tuple = version_manager.get_release_tuple(candidate.tag_name)
+            if candidate_tuple is None:
+                continue
+            if latest_tuple is None or candidate_tuple > latest_tuple:
+                latest_tuple = candidate_tuple
+                latest_tag = candidate.tag_name
+
+        if latest_tag:
             expected_base = version_manager.calculate_expected_prerelease_version(
-                latest_release.tag_name
+                latest_tag
             )
 
         if expected_base:

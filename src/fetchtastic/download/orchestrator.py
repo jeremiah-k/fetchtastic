@@ -139,10 +139,7 @@ class DownloadOrchestrator:
                 logger.info("No firmware releases found")
                 return
 
-            latest_release = next(
-                (release for release in firmware_releases if not release.prerelease),
-                firmware_releases[0] if firmware_releases else None,
-            )
+            latest_release = self._select_latest_release_by_version(firmware_releases)
 
             # Limit releases to process to match legacy behavior
             keep_count = self.config.get(
@@ -156,32 +153,6 @@ class DownloadOrchestrator:
             # Download each release
             for release in releases_to_download:
                 self._download_firmware_release(release)
-
-            # Handle prerelease selection based on commit history + expected version
-            if any(r.prerelease for r in firmware_releases):
-                self._refresh_commit_history_cache()
-            prereleases = self.firmware_downloader.handle_prereleases(
-                firmware_releases, recent_commits=getattr(self, "_recent_commits", None)
-            )
-            for prerelease in prereleases:
-                for asset in prerelease.assets:
-                    if not self.firmware_downloader.should_download_release(
-                        prerelease.tag_name, asset.name
-                    ):
-                        continue
-                    download_result = self.firmware_downloader.download_firmware(
-                        prerelease, asset
-                    )
-                    self._handle_download_result(download_result, "firmware_prerelease")
-                    if download_result.success:
-                        extract_patterns = self._get_extraction_patterns()
-                        exclude_patterns = self._get_exclude_patterns()
-                        extract_result = self.firmware_downloader.extract_firmware(
-                            prerelease, asset, extract_patterns, exclude_patterns
-                        )
-                        self._handle_download_result(
-                            extract_result, "firmware_prerelease_extraction"
-                        )
 
             # Legacy: firmware prereleases from meshtastic.github.io directories
             if latest_release:
@@ -197,6 +168,28 @@ class DownloadOrchestrator:
 
         except Exception as e:
             logger.error(f"Error processing firmware downloads: {e}")
+
+    def _select_latest_release_by_version(
+        self, releases: List[Release]
+    ) -> Optional[Release]:
+        """
+        Select the "latest" release using version semantics rather than GitHub's prerelease flag.
+
+        Meshtastic firmware tags often include a hash suffix (e.g. v2.7.16.a597230) and
+        GitHub's prerelease metadata is not reliable for distinguishing "latest stable".
+        """
+        best_release: Optional[Release] = None
+        best_tuple: Optional[Tuple[int, ...]] = None
+
+        for release in releases:
+            release_tuple = self.version_manager.get_release_tuple(release.tag_name)
+            if release_tuple is None:
+                continue
+            if best_tuple is None or release_tuple > best_tuple:
+                best_tuple = release_tuple
+                best_release = release
+
+        return best_release or (releases[0] if releases else None)
 
     def _filter_releases(
         self, releases: List[Release], artifact_type: str

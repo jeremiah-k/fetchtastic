@@ -224,6 +224,19 @@ class TestExpectedPrereleaseVersion:
         result = vm.calculate_expected_prerelease_version("v1.2.3")
         assert result == "1.2.4"
 
+    def test_calculate_expected_prerelease_hash_suffix_alpha_style(self):
+        """Hash-suffixed tags like v2.7.16.a597230 should increment the base patch."""
+        vm = VersionManager()
+        assert vm.calculate_expected_prerelease_version("v2.7.16.a597230") == "2.7.17"
+
+    def test_calculate_expected_prerelease_hash_suffix_numeric_style(self):
+        """Hash-suffixed tags like v2.7.15.567b8ea should increment the base patch."""
+        vm = VersionManager()
+        assert vm.calculate_expected_prerelease_version("v2.7.15.567b8ea") == "2.7.16"
+
+    def test_calculate_expected_prerelease_module_helper(self):
+        assert calculate_expected_prerelease_version("v2.7.16.a597230") == "2.7.17"
+
     def test_calculate_expected_prerelease_no_patch(self):
         """Test calculating expected prerelease from version without patch."""
         vm = VersionManager()

@@ -51,7 +51,8 @@ class VersionManager:
         r"^(\d+(?:\.\d+)*)[.-](rc|dev|alpha|beta|b)\.?(\d*)$", re.IGNORECASE
     )
     HASH_SUFFIX_VERSION_RX = re.compile(
-        r"^(\d+(?:\.\d+)*)\.([A-Za-z0-9][A-Za-z0-9.-]*)$"
+        r"^(\d+\.\d+\.\d+)\.([a-f0-9]{6,})$",
+        re.IGNORECASE,
     )
     VERSION_BASE_RX = re.compile(r"^(\d+(?:\.\d+)*)")
     PRERELEASE_DIR_SEGMENT_RX = re.compile(
@@ -136,7 +137,9 @@ class VersionManager:
             if version_stripped.lower().startswith("v")
             else version_stripped
         )
-        match = self.VERSION_BASE_RX.match(base)
+        match = self.HASH_SUFFIX_VERSION_RX.match(base) or self.VERSION_BASE_RX.match(
+            base
+        )
         base_tuple = (
             tuple(int(part) for part in match.group(1).split(".")) if match else None
         )
@@ -257,8 +260,10 @@ class VersionManager:
         if not release_version:
             return ""
 
-        # Remove leading 'v'/'V' for processing
-        clean_version = release_version.lstrip("vV")
+        normalized_version = (
+            self.extract_clean_version(release_version) or release_version
+        )
+        clean_version = normalized_version.lstrip("vV")
 
         try:
             # Parse version and increment patch version

@@ -57,6 +57,19 @@ class TestDownloadOrchestrator:
             mock_version.assert_called_once()
             mock_prerelease.assert_called_once()
 
+    def test_select_latest_release_by_version_ignores_prerelease_flag(
+        self, mock_config
+    ):
+        """Latest firmware should be selected by version, not GitHub prerelease flag."""
+        orch = DownloadOrchestrator(mock_config)
+        releases = [
+            Release(tag_name="v2.7.15.567b8ea", prerelease=False, assets=[]),
+            Release(tag_name="v2.7.16.a597230", prerelease=True, assets=[]),
+        ]
+        selected = orch._select_latest_release_by_version(releases)
+        assert selected is not None
+        assert selected.tag_name == "v2.7.16.a597230"
+
     @patch("fetchtastic.download.orchestrator.time.time")
     def test_run_download_pipeline_success(self, mock_time, orchestrator):
         """Test successful download pipeline execution."""

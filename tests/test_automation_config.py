@@ -19,8 +19,11 @@ class TestAutomationConfiguration:
         """Test _prompt_for_cron_frequency with valid choices."""
         test_cases = [
             ("h", "hourly"),
+            ("hourly", "hourly"),
             ("d", "daily"),
+            ("daily", "daily"),
             ("n", "none"),
+            ("none", "none"),
             ("", "hourly"),  # default
         ]
 
@@ -49,12 +52,59 @@ class TestAutomationConfiguration:
 
     def test_configure_cron_job_no_frequency(self, mocker):
         """Test _configure_cron_job when user selects none."""
+        mock_setup = mocker.patch("fetchtastic.setup_config.setup_cron_job")
+        mock_install = mocker.patch("fetchtastic.setup_config.install_crond")
         mocker.patch("builtins.input", return_value="none")
 
-        setup_config._configure_cron_job(install_crond_needed=False)
+        setup_config._configure_cron_job(install_crond_needed=True)
 
-        # Should not call setup functions
-        assert True  # Simple assertion
+        mock_install.assert_not_called()
+        mock_setup.assert_not_called()
+
+    def test_crontab_available_false_when_missing(self, mocker, capsys):
+        mocker.patch("fetchtastic.setup_config.shutil.which", return_value=None)
+        assert setup_config._crontab_available() is False
+        assert "crontab" in capsys.readouterr().out.lower()
+
+    def test_setup_cron_job_returns_early_without_crontab(self, mocker):
+        mocker.patch("fetchtastic.setup_config.platform.system", return_value="Linux")
+        mocker.patch("fetchtastic.setup_config._crontab_available", return_value=False)
+        mock_run = mocker.patch("fetchtastic.setup_config.subprocess.run")
+        setup_config.setup_cron_job("hourly")
+        mock_run.assert_not_called()
+
+    def test_check_cron_job_exists_returns_false_without_crontab(self, mocker):
+        mocker.patch("fetchtastic.setup_config.platform.system", return_value="Linux")
+        mocker.patch("fetchtastic.setup_config._crontab_available", return_value=False)
+        mock_run = mocker.patch("fetchtastic.setup_config.subprocess.run")
+        assert setup_config.check_cron_job_exists() is False
+        mock_run.assert_not_called()
+
+    def test_check_any_cron_jobs_exist_returns_false_without_crontab(self, mocker):
+        mocker.patch("fetchtastic.setup_config.platform.system", return_value="Linux")
+        mocker.patch("fetchtastic.setup_config._crontab_available", return_value=False)
+        mock_run = mocker.patch("fetchtastic.setup_config.subprocess.run")
+        assert setup_config.check_any_cron_jobs_exist() is False
+        mock_run.assert_not_called()
+
+    def test_setup_automation_skips_cron_when_crontab_missing(self, mocker):
+        mocker.patch("fetchtastic.setup_config.platform.system", return_value="Linux")
+        mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
+        mocker.patch("fetchtastic.setup_config._crontab_available", return_value=False)
+        mocker.patch(
+            "fetchtastic.setup_config.check_any_cron_jobs_exist",
+            side_effect=AssertionError("Should not query cron without crontab"),
+        )
+
+        config = {}
+
+        def wants(_section: str) -> bool:
+            return True
+
+        assert (
+            setup_config._setup_automation(config, is_partial_run=False, wants=wants)
+            == {}
+        )
 
     def test_setup_notifications_enable_new(self, mocker):
         """Test _setup_notifications enabling notifications."""
