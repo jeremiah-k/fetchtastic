@@ -1,7 +1,6 @@
 # src/fetchtastic/cli.py
 
 import argparse
-import inspect
 import os
 import platform
 import shutil
@@ -270,55 +269,15 @@ def main():
             ) = integration.main(force_refresh=args.force, config=config)
 
             elapsed = time.time() - start_time
-            summary_method = getattr(integration, "log_download_results_summary", None)
-            if inspect.ismethod(summary_method):
-                summary_method(
-                    logger_override=log_utils.logger,
-                    elapsed_seconds=elapsed,
-                    downloaded_firmwares=downloaded_firmwares,
-                    downloaded_apks=downloaded_apks,
-                    failed_downloads=failed_downloads,
-                    latest_firmware_version=latest_firmware_version,
-                    latest_apk_version=latest_apk_version,
-                )
-            else:
-                log_utils.logger.info(f"\nCompleted in {elapsed:.1f}s")
-
-                downloaded_count = len(downloaded_firmwares) + len(downloaded_apks)
-                if downloaded_count > 0:
-                    log_utils.logger.info(f"Downloaded {downloaded_count} new versions")
-
-                if latest_firmware_version:
-                    log_utils.logger.info(f"Latest firmware: {latest_firmware_version}")
-                if latest_apk_version:
-                    log_utils.logger.info(f"Latest APK: {latest_apk_version}")
-
-                if failed_downloads:
-                    log_utils.logger.info(f"{len(failed_downloads)} downloads failed:")
-                    for failure in failed_downloads:
-                        url = failure.get("url", "unknown")
-                        retryable = failure.get("retryable")
-                        http_status = failure.get("http_status")
-                        error = failure.get("error", "")
-                        log_utils.logger.info(
-                            f"- {failure.get('type', 'Unknown')} {failure.get('release_tag', '')}: "
-                            f"{failure.get('file_name', 'unknown')} "
-                            f"URL={url} retryable={retryable} http_status={http_status} error={error}"
-                        )
-
-                if downloaded_count == 0 and not failed_downloads:
-                    log_utils.logger.info(
-                        "All assets are up to date.\n%s",
-                        time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-                    )
-
-                summary = get_api_request_summary()
-                if summary.get("total_requests", 0) > 0:
-                    log_utils.logger.debug(format_api_summary(summary))
-                else:
-                    log_utils.logger.debug(
-                        "📊 GitHub API Summary: No API requests made (all data served from cache)"
-                    )
+            integration.log_download_results_summary(
+                logger_override=log_utils.logger,
+                elapsed_seconds=elapsed,
+                downloaded_firmwares=downloaded_firmwares,
+                downloaded_apks=downloaded_apks,
+                failed_downloads=failed_downloads,
+                latest_firmware_version=latest_firmware_version,
+                latest_apk_version=latest_apk_version,
+            )
     elif args.command == "topic":
         # Display the NTFY topic and prompt to copy to clipboard
         config = setup_config.load_config()

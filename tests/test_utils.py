@@ -1046,9 +1046,13 @@ def test_api_tracking_functions():
 
 @pytest.mark.core_downloads
 @pytest.mark.unit
-def testformat_api_summary():
+def test_format_api_summary():
     """Test format_api_summary function."""
     summary = {
+        "total_requests": 5,
+        "auth_used": True,
+        "cache_hits": 2,
+        "cache_misses": 3,
         "firmware": {"downloaded": ["1.2.3"], "skipped": [], "failed": []},
         "android": {"downloaded": ["4.5.6"], "skipped": [], "failed": []},
     }

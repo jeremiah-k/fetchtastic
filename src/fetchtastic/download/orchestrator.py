@@ -5,9 +5,9 @@ This module implements the orchestration layer that coordinates multiple
 downloaders in a single fetchtastic download run.
 """
 
-import time
 import re
 import shutil
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -23,7 +23,7 @@ from .cache import CacheManager
 from .firmware import FirmwareReleaseDownloader
 from .interfaces import DownloadResult, Release
 from .prerelease_history import PrereleaseHistoryManager
-from .version import VersionManager
+from .version import VersionManager, is_prerelease_directory
 
 
 class DownloadOrchestrator:
@@ -54,9 +54,7 @@ class DownloadOrchestrator:
         self.android_downloader = MeshtasticAndroidAppDownloader(
             config, self.cache_manager
         )
-        self.firmware_downloader = FirmwareReleaseDownloader(
-            config, self.cache_manager
-        )
+        self.firmware_downloader = FirmwareReleaseDownloader(config, self.cache_manager)
 
         # Track results
         self.download_results: List[DownloadResult] = []
@@ -202,12 +200,16 @@ class DownloadOrchestrator:
                 logger.info("All Firmware assets are up to date.")
 
             # Clean up prerelease directory
-            prerelease_dir = Path(self.firmware_downloader.download_dir) / "firmware" / "prerelease"
+            prerelease_dir = (
+                Path(self.firmware_downloader.download_dir) / "firmware" / "prerelease"
+            )
             if prerelease_dir.exists():
                 for item in prerelease_dir.iterdir():
                     # A pre-release directory should contain a hash, a stable release directory will not.
-                    if item.is_dir() and not re.search(r'\d+\.\d+\.\d+\.[a-f0-9]{6,}', item.name):
-                        logger.info(f"Removing incorrect directory from prerelease folder: {item.name}")
+                    if item.is_dir() and not is_prerelease_directory(item.name):
+                        logger.info(
+                            f"Removing incorrect directory from prerelease folder: {item.name}"
+                        )
                         shutil.rmtree(item)
 
         except Exception as e:
@@ -863,8 +865,10 @@ class DownloadOrchestrator:
             if not latest_firmware_release:
                 return
 
-            expected_version = self.version_manager.calculate_expected_prerelease_version(
-                latest_firmware_release
+            expected_version = (
+                self.version_manager.calculate_expected_prerelease_version(
+                    latest_firmware_release
+                )
             )
             if not expected_version:
                 return
@@ -881,7 +885,9 @@ class DownloadOrchestrator:
             if not deleted_entries:
                 return
 
-            prerelease_base_dir = Path(self.firmware_downloader.download_dir) / "firmware" / "prerelease"
+            prerelease_base_dir = (
+                Path(self.firmware_downloader.download_dir) / "firmware" / "prerelease"
+            )
             if not prerelease_base_dir.exists():
                 return
 
@@ -892,7 +898,9 @@ class DownloadOrchestrator:
 
                 dir_to_delete = prerelease_base_dir / directory_name
                 if dir_to_delete.exists() and dir_to_delete.is_dir():
-                    logger.info(f"Removing deleted prerelease directory: {directory_name}")
+                    logger.info(
+                        f"Removing deleted prerelease directory: {directory_name}"
+                    )
                     try:
                         shutil.rmtree(dir_to_delete)
                     except OSError as e:
@@ -916,17 +924,21 @@ class DownloadOrchestrator:
                 self.version_manager.extract_clean_version(latest_firmware_release)
                 or latest_firmware_release
             )
-            expected_version = self.version_manager.calculate_expected_prerelease_version(
-                clean_latest_release
+            expected_version = (
+                self.version_manager.calculate_expected_prerelease_version(
+                    clean_latest_release
+                )
             )
             if expected_version:
                 # Do not force refresh here to avoid API calls just for status display
-                active_dir, _ = self.prerelease_manager.get_latest_active_prerelease_from_history(
-                    expected_version,
-                    cache_manager=self.cache_manager,
-                    github_token=self.config.get("GITHUB_TOKEN"),
-                    allow_env_token=True,
-                    force_refresh=False,
+                active_dir, _ = (
+                    self.prerelease_manager.get_latest_active_prerelease_from_history(
+                        expected_version,
+                        cache_manager=self.cache_manager,
+                        github_token=self.config.get("GITHUB_TOKEN"),
+                        allow_env_token=True,
+                        force_refresh=False,
+                    )
                 )
                 if active_dir and active_dir.startswith("firmware-"):
                     firmware_prerelease = active_dir[len("firmware-") :]

@@ -2706,8 +2706,6 @@ def check_cron_job_exists():
             for line in existing_cron.splitlines()
             if not line.strip().startswith("@reboot")
         )
-    except FileNotFoundError:
-        return False
     except Exception as e:
         print(f"An error occurred while checking for existing cron jobs: {e}")
         return False
@@ -2747,8 +2745,6 @@ def check_any_cron_jobs_exist():
             ("# fetchtastic" in line or "fetchtastic download" in line)
             for line in existing_cron.splitlines()
         )
-    except FileNotFoundError:
-        return False
     except Exception as e:
         print(f"An error occurred while checking for existing cron jobs: {e}")
         return False

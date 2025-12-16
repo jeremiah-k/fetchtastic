@@ -320,14 +320,11 @@ def test_cli_download_failed_downloads_reporting(mocker, capsys):
     with patch("sys.argv", ["fetchtastic", "download"]):
         cli.main()
 
-    # Check that failed downloads are logged
-    mock_logger.info.assert_any_call("2 downloads failed:")
-    mock_logger.info.assert_any_call(
-        "- firmware v2.1.0: firmware.zip URL=https://example.com/firmware.zip retryable=True http_status=500 error=Internal Server Error"
-    )
-    mock_logger.info.assert_any_call(
-        "- apk v1.5.0: app.apk URL=https://example.com/app.apk retryable=False http_status=404 error=Not Found"
-    )
+    # Check that the integration method is called with correct parameters
+    mock_integration.log_download_results_summary.assert_called_once()
+    call_args = mock_integration.log_download_results_summary.call_args
+    assert call_args.kwargs["failed_downloads"] == failed_downloads
+    assert len(call_args.kwargs["failed_downloads"]) == 2
 
 
 @pytest.mark.user_interface
