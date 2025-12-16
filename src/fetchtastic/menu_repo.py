@@ -293,7 +293,7 @@ Select "[Quit]" to exit without downloading."""
 def run_menu():
     """
     Interactively browse the Meshtastic GitHub Pages repository and select one or more files to download.
-    
+
     Returns:
         result (dict or None): If files were selected, a dict with:
             - "directory" (str): repository path containing the selected files (empty string for root).
@@ -367,12 +367,12 @@ def run_menu():
 def run_repository_downloader_menu(config):
     """
     Orchestrates an interactive repository-download workflow and returns the paths of downloaded files.
-    
+
     Presents the repository browsing menu, downloads the user's selected files using RepositoryDownloader, and aggregates successful results.
-    
+
     Parameters:
         config (dict): Configuration for the downloader (download destination, network/timeouts, credentials, or other download-related settings).
-    
+
     Returns:
         List[str] | None: List of filesystem paths for successfully downloaded files, or `None` if no files were downloaded or the operation was cancelled/errored.
     """

@@ -8,7 +8,7 @@ correctly with the new modular architecture.
 
 import json
 import os
-from unittest import mock
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -22,7 +22,7 @@ from fetchtastic.download.interfaces import Asset, Release
 def test_config():
     """
     Provides a test configuration dictionary for the firmware downloader.
-    
+
     Returns:
         dict: Configuration mapping with keys:
             - DOWNLOAD_DIR (str): base path for test downloads.
@@ -46,11 +46,11 @@ def test_config():
 def firmware_downloader(test_config):
     """
     Create a FirmwareReleaseDownloader configured for tests.
-    
+
     Parameters:
         test_config (dict): Configuration dictionary for the downloader (e.g., download directory,
             retention settings, GitHub token, prerelease check flag) used by tests.
-    
+
     Returns:
         FirmwareReleaseDownloader: An instance of FirmwareReleaseDownloader initialized with the
         provided configuration and a fresh CacheManager.
@@ -180,24 +180,25 @@ class TestFirmwareReleaseDownloader:
         assert "v2.7.14" in remaining_names
         assert "v2.7.13" in remaining_names
 
-    def test_get_latest_release_tag(self, firmware_downloader):
+    def test_get_latest_release_tag(self, test_config, tmp_path):
         """Test getting the latest release tag."""
-        mock_data = {"latest_version": "v2.7.14"}
+        cache_manager = CacheManager(str(tmp_path))
+        downloader = FirmwareReleaseDownloader(test_config, cache_manager)
+        json_file = cache_manager.get_cache_file_path(downloader.latest_release_file)
+        Path(json_file).write_text(json.dumps({"latest_version": "v2.7.14"}))
 
-        with (
-            patch("os.path.exists", return_value=True),
-            patch("builtins.open", mock.mock_open(read_data=json.dumps(mock_data))),
-        ):
-            latest_tag = firmware_downloader.get_latest_release_tag()
+        latest_tag = downloader.get_latest_release_tag()
 
-            assert latest_tag == "v2.7.14"
+        assert latest_tag == "v2.7.14"
 
-    def test_get_latest_release_tag_no_file(self, firmware_downloader):
+    def test_get_latest_release_tag_no_file(self, test_config, tmp_path):
         """Test getting latest release tag when file doesn't exist."""
-        with patch("os.path.exists", return_value=False):
-            latest_tag = firmware_downloader.get_latest_release_tag()
+        cache_manager = CacheManager(str(tmp_path))
+        downloader = FirmwareReleaseDownloader(test_config, cache_manager)
 
-            assert latest_tag is None
+        latest_tag = downloader.get_latest_release_tag()
+
+        assert latest_tag is None
 
     def test_should_download_prerelease_disabled(self, firmware_downloader):
         """Test prerelease download check when prereleases are disabled."""

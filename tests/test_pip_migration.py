@@ -97,7 +97,7 @@ class TestPipToPipxMigration:
     def test_migrate_pip_to_pipx_backup_config_success(self, mocker):
         """
         Verify that migrating from pip to pipx backs up and restores the configuration file.
-        
+
         Creates a temporary YAML config and simulates a Termux environment with a pip installation, accepts the migration prompt, runs the migration flow, and asserts the original config file still exists after migration completes.
         """
         config_content = "TEST: original_config"

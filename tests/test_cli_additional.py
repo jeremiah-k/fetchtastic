@@ -7,10 +7,10 @@ from fetchtastic import cli
 def mock_cli_dependencies(mocker):
     """
     Prepare and return a MagicMock that stands in for the CLI integration and patch common external CLI dependencies.
-    
+
     Parameters:
         mocker: The pytest-mock fixture used to apply patches.
-    
+
     Returns:
         MagicMock: A mock integration instance whose `main` returns a 6-tuple of empty lists/strings and whose `get_latest_versions` returns empty version strings.
     """

@@ -10,10 +10,10 @@ class _SimpleCacheManager:
     def read_json(self, file_path: str):
         """
         Read and parse JSON content from a UTF-8 encoded file.
-        
+
         Parameters:
             file_path (str): Path to the JSON file to read.
-        
+
         Returns:
             The Python object resulting from parsing the JSON content (commonly a dict or list).
         """
@@ -23,11 +23,11 @@ class _SimpleCacheManager:
     def atomic_write_json(self, file_path: str, data):
         """
         Write the given data as JSON to the specified file path using UTF-8 encoding.
-        
+
         Parameters:
             file_path (str): Destination file path; existing content will be overwritten.
             data: JSON-serializable object to write to the file.
-        
+
         Returns:
             True if the data was written successfully.
         """

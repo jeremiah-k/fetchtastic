@@ -36,10 +36,10 @@ class RepositoryDownloader(BaseDownloader):
     def __init__(self, config: Dict[str, Any]):
         """
         Create a RepositoryDownloader configured for Meshtastic repository downloads.
-        
+
         Initializes the base downloader with the provided configuration and sets repository-specific attributes:
         `repo_url`, `repo_downloads_dir`, and `shell_script_extension` from module constants.
-        
+
         Parameters:
             config (Dict[str, Any]): Configuration options forwarded to the base downloader.
         """
@@ -51,10 +51,10 @@ class RepositoryDownloader(BaseDownloader):
     def get_repository_files(self, subdirectory: str = "") -> List[Dict[str, Any]]:
         """
         Fetches file entries from the Meshtastic repository GitHub contents API for an optional subdirectory.
-        
+
         Parameters:
             subdirectory (str): Relative subdirectory path within the repository; empty string refers to the repository root.
-        
+
         Returns:
             List[Dict[str, Any]]: A list of file information dictionaries. Each dictionary contains the keys `name`, `path`, `download_url`, `size`, and `type`. Returns an empty list if the API response is not a file listing or an error occurs.
         """
@@ -111,11 +111,11 @@ class RepositoryDownloader(BaseDownloader):
     ) -> DownloadResult:
         """
         Download a single repository file into the repository downloads directory.
-        
+
         Parameters:
             file_info (Dict[str, Any]): File metadata dictionary; must include 'name' and 'download_url', may include 'size'.
             target_subdirectory (str): Relative subdirectory (within the repository downloads area) to save the file; path traversal is disallowed.
-        
+
         Returns:
             DownloadResult: Result object describing the outcome — on success includes the saved file path, download URL, size, and type; on failure includes an error message and retry/error metadata.
         """
@@ -229,10 +229,10 @@ class RepositoryDownloader(BaseDownloader):
     def _get_safe_target_directory(self, subdirectory: str) -> Optional[str]:
         """
         Return a safe target directory path within the repository downloads area, creating directories as needed.
-        
+
         Parameters:
             subdirectory (str): Relative subdirectory path under the repository downloads directory; if empty, the base repository downloads directory is used.
-        
+
         Returns:
             str | None: Absolute path to the safe target directory, or None if the directory could not be created.
         """
@@ -268,10 +268,10 @@ class RepositoryDownloader(BaseDownloader):
     def _is_safe_subdirectory(self, subdirectory: str) -> bool:
         """
         Determine whether a subdirectory path is safe from path-traversal and absolute-path attacks.
-        
+
         Parameters:
             subdirectory (str): Candidate subdirectory (relative path segment) to validate.
-        
+
         Returns:
             bool: `True` if the subdirectory is a relative path that does not contain traversal or disallowed patterns and resolves inside the repository downloads base directory; `False` otherwise.
         """
@@ -309,10 +309,10 @@ class RepositoryDownloader(BaseDownloader):
     def _set_executable_permissions(self, file_path: str) -> bool:
         """
         Ensure the file has executable permission bits on Unix-like systems.
-        
+
         Parameters:
             file_path (str): Path to the file to modify.
-        
+
         Returns:
             bool: `True` if the file is left executable or permissions were modified successfully; `False` if an error occurred while setting permissions.
         """
@@ -337,9 +337,9 @@ class RepositoryDownloader(BaseDownloader):
     def clean_repository_directory(self) -> bool:
         """
         Remove all contents of the repository downloads directory (<download_dir>/firmware/<repo_downloads_dir>).
-        
+
         Removes files, symlinks, and subdirectories found in the repository downloads directory. If the directory does not exist the function does nothing and reports success.
-        
+
         Returns:
             bool: `True` if cleanup succeeded, `False` otherwise.
         """
@@ -380,13 +380,13 @@ class RepositoryDownloader(BaseDownloader):
     def get_repository_download_url(self, file_path: str) -> str:
         """
         Builds the full download URL for a repository file given its relative repository path.
-        
+
         Parameters:
             file_path (str): Relative path within the repository; must not be absolute or contain a URL scheme.
-        
+
         Returns:
             str: Absolute download URL for the specified repository file.
-        
+
         Raises:
             ValueError: If `file_path` contains "://" or starts with "/", indicating an absolute path or URL.
         """
@@ -400,13 +400,13 @@ class RepositoryDownloader(BaseDownloader):
     ) -> List[DownloadResult]:
         """
         Download multiple repository files into the repository downloads directory.
-        
+
         Downloads each file described in `files_info` and returns a per-file DownloadResult in the same order.
-        
+
         Parameters:
             files_info (List[Dict[str, Any]]): List of file info dictionaries. Each dictionary must include at least the `name` and `download_url` keys and may include `path` and `size`.
             subdirectory (str): Optional relative subdirectory under the repository downloads directory where files will be saved.
-        
+
         Returns:
             List[DownloadResult]: A list of DownloadResult objects corresponding to each input file, in the same order.
         """
@@ -425,9 +425,9 @@ class RepositoryDownloader(BaseDownloader):
     def cleanup_old_versions(self, keep_limit: int) -> None:
         """
         Remove all downloaded repository files; retention limits are ignored.
-        
+
         Repository repository files are not versioned like other artifacts, so this method clears the repository downloads directory instead of retaining a limited number of versions.
-        
+
         Parameters:
             keep_limit (int): Suggested number of versions to keep; ignored for repository downloads.
         """
@@ -437,7 +437,7 @@ class RepositoryDownloader(BaseDownloader):
     def get_latest_release_tag(self) -> Optional[str]:
         """
         Return a fixed identifier representing the latest repository release tag.
-        
+
         Returns:
             str: The fixed tag "repository-latest" used for repository downloads.
         """
@@ -464,11 +464,11 @@ class RepositoryDownloader(BaseDownloader):
     ) -> bool:
         """
         Validate that extraction include and exclude patterns are well-formed and acceptable.
-        
+
         Parameters:
             patterns (List[str]): Glob or filename patterns to include when extracting.
             exclude_patterns (List[str]): Glob or filename patterns to exclude when extracting.
-        
+
         Returns:
             bool: `True` if the provided patterns are valid and usable, `False` otherwise.
         """
@@ -508,9 +508,9 @@ class RepositoryDownloader(BaseDownloader):
     def should_download_release(self, release_tag: str, asset_name: str) -> bool:
         """
         Decide whether a repository release asset should be downloaded.
-        
+
         Repository downloads do not filter by release tag or asset name; repository assets are always selected for download.
-        
+
         Returns:
             `True` if the asset should be downloaded (`True` for all repository assets).
         """

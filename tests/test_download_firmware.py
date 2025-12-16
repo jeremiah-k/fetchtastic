@@ -2,7 +2,10 @@
 #
 # Comprehensive unit tests for the FirmwareReleaseDownloader class.
 
-from unittest.mock import Mock, patch
+import json
+import os
+from pathlib import Path
+from unittest.mock import ANY, Mock, patch
 
 import pytest
 
@@ -30,19 +33,22 @@ class TestFirmwareReleaseDownloader:
         """Mock CacheManager instance."""
         mock = Mock(spec=CacheManager)
         mock.cache_dir = "/tmp/cache"
+        mock.get_cache_file_path.side_effect = lambda file_name: os.path.join(
+            mock.cache_dir, file_name
+        )
         return mock
 
     @pytest.fixture
     def downloader(self, mock_config, mock_cache_manager):
         """
         Create a FirmwareReleaseDownloader configured for tests with injected mocked dependencies.
-        
+
         Parameters:
-        	mock_config (dict): Configuration dictionary to initialize the downloader.
-        	mock_cache_manager (Mock): Mocked CacheManager used for cache interactions.
-        
+                mock_config (dict): Configuration dictionary to initialize the downloader.
+                mock_cache_manager (Mock): Mocked CacheManager used for cache interactions.
+
         Returns:
-        	dl (FirmwareReleaseDownloader): Initialized downloader whose `cache_manager` is set to `mock_cache_manager` and whose `version_manager` and `file_operations` attributes are replaced with mocks.
+                dl (FirmwareReleaseDownloader): Initialized downloader whose `cache_manager` is set to `mock_cache_manager` and whose `version_manager` and `file_operations` attributes are replaced with mocks.
         """
         dl = FirmwareReleaseDownloader(mock_config, mock_cache_manager)
         # Mock the dependencies that are set in __init__
@@ -149,7 +155,7 @@ class TestFirmwareReleaseDownloader:
     ):
         """
         Verify that downloading and extracting a firmware asset succeeds and returns expected metadata.
-        
+
         Parameters:
             mock_getsize (Mock): Fixture mocking os.path.getsize used to simulate existing file size.
             mock_exists (Mock): Fixture mocking os.path.exists used to simulate file presence.
@@ -280,15 +286,12 @@ class TestFirmwareReleaseDownloader:
         key = downloader._get_version_sort_key("v1.0")
         assert key == (1, 0, 0)
 
-    @patch("os.path.exists")
-    @patch("builtins.open")
-    @patch("json.load")
-    def test_get_latest_release_tag(
-        self, mock_json_load, mock_open, mock_exists, downloader
-    ):
-        """Test getting latest release tag from tracking file."""
-        mock_exists.return_value = True
-        mock_json_load.return_value = {"latest_version": "v2.0.0"}
+    def test_get_latest_release_tag(self, mock_config, tmp_path):
+        """Test getting latest release tag from cache file."""
+        cache_manager = CacheManager(str(tmp_path))
+        downloader = FirmwareReleaseDownloader(mock_config, cache_manager)
+        cache_file = cache_manager.get_cache_file_path(downloader.latest_release_file)
+        Path(cache_file).write_text(json.dumps({"latest_version": "v2.0.0"}))
 
         tag = downloader.get_latest_release_tag()
 
@@ -301,10 +304,16 @@ class TestFirmwareReleaseDownloader:
         mock_datetime.now.return_value.isoformat.return_value = "2023-01-01T00:00:00"
 
         downloader.cache_manager.atomic_write_json = Mock(return_value=True)
+        downloader.cache_manager.get_cache_file_path.return_value = (
+            "/tmp/cache/latest_firmware_release.json"
+        )
 
         result = downloader.update_latest_release_tag("v2.0.0")
 
         assert result is True
+        downloader.cache_manager.atomic_write_json.assert_called_once_with(
+            "/tmp/cache/latest_firmware_release.json", ANY
+        )
 
     def test_get_prerelease_patterns(self, downloader):
         """Test getting prerelease patterns from config."""

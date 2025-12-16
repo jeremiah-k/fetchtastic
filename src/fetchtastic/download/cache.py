@@ -33,10 +33,10 @@ from .files import _atomic_write, _atomic_write_json
 def _parse_iso_datetime_utc(value: Any) -> Optional[datetime]:
     """
     Parse an ISO 8601 datetime value and produce a timezone-aware UTC datetime.
-    
+
     Parameters:
         value (Any): An ISO 8601 datetime representation (commonly a string). Falsey values or values that cannot be parsed will be treated as absent.
-    
+
     Returns:
         datetime: A timezone-aware `datetime` normalized to UTC if parsing succeeds, `None` otherwise.
     """
@@ -69,10 +69,14 @@ class CacheManager:
         self.cache_dir = cache_dir or self._get_default_cache_dir()
         self._ensure_cache_dir_exists()
 
+    def get_cache_file_path(self, file_name: str) -> str:
+        """Return the full path for a cache file stored under the cache directory."""
+        return os.path.join(self.cache_dir, file_name)
+
     def _get_default_cache_dir(self) -> str:
         """
         Return the default cache directory path used by Fetchtastic.
-        
+
         Returns:
             cache_dir (str): Absolute path to the platform-appropriate user cache directory for "fetchtastic".
         """
@@ -85,7 +89,7 @@ class CacheManager:
     def _ensure_cache_dir_exists(self) -> None:
         """
         Ensure the manager's cache directory exists, creating it if necessary.
-        
+
         Raises:
             OSError: If the directory cannot be created or is otherwise inaccessible.
         """
@@ -100,12 +104,12 @@ class CacheManager:
     ) -> bool:
         """
         Write content to a file atomically.
-        
+
         Parameters:
             file_path (str): Destination filesystem path for the final file.
             writer_func (Callable[[Any], None]): Callable that receives an open text file-like object and writes the desired content to it.
             suffix (str): Suffix to use for the temporary working file.
-        
+
         Returns:
             bool: `True` if the file was written and moved into place successfully, `False` otherwise.
         """
@@ -114,7 +118,7 @@ class CacheManager:
     def atomic_write_text(self, file_path: str, content: str) -> bool:
         """
         Atomically write text content to a file.
-        
+
         Returns:
             bool: True if the file was written successfully, False otherwise.
         """
@@ -122,7 +126,7 @@ class CacheManager:
         def _write_text_content(f):
             """
             Write the preset text content to the provided writable file-like object.
-            
+
             Parameters:
                 f (io.TextIOBase): A writable file-like object opened for text writing.
             """
@@ -133,11 +137,11 @@ class CacheManager:
     def atomic_write_json(self, file_path: str, data: Dict) -> bool:
         """
         Atomically write the given mapping to the specified path as JSON.
-        
+
         Parameters:
             file_path (str): Destination filesystem path for the JSON file.
             data (Dict): Mapping to serialize to JSON.
-        
+
         Returns:
             bool: `True` if the file was written successfully, `False` otherwise.
         """
@@ -168,11 +172,11 @@ class CacheManager:
     ) -> Optional[Dict]:
         """
         Read a JSON file and return its contents with legacy keys remapped to new keys.
-        
+
         Parameters:
             file_path (str): Path to the JSON file.
             key_mapping (Optional[Dict[str, str]]): Mapping from legacy key names to new key names. If a legacy key exists and the corresponding new key is absent, the value is copied to the new key.
-        
+
         Returns:
             Optional[Dict]: Parsed JSON object with remapped keys, or None if the file could not be read.
         """
@@ -189,10 +193,10 @@ class CacheManager:
     def read_rate_limit_summary(self, cache_file: str) -> Optional[Dict[str, Any]]:
         """
         Return the parsed rate-limit summary stored at the given cache file path.
-        
+
         Parameters:
             cache_file (str): Path to the JSON cache file containing the rate-limit summary.
-        
+
         Returns:
             dict or None: The parsed JSON object from the cache file, or None if the file is missing, unreadable, or malformed.
         """
@@ -203,12 +207,12 @@ class CacheManager:
     ) -> bool:
         """
         Writes the provided data to a cache file and records when it was cached and when it will expire.
-        
+
         Parameters:
             cache_file (str): Path to the cache file to write.
             data (Dict): Value to store under the `"data"` key in the cache file.
             expiry_hours (float): Number of hours from now after which the cache is considered expired.
-        
+
         Returns:
             bool: `true` if the cache file was written successfully, `false` otherwise.
         """
@@ -258,15 +262,15 @@ class CacheManager:
     ) -> List[str]:
         """
         Return directory names under the meshtastic.github.io repository path, using a short TTL on-disk cache.
-        
+
         Retrieves directory entries for the given repository path; if a fresh cached entry exists it will be returned, otherwise the GitHub Contents API is queried and the cache is updated. On malformed responses or request failures an empty list is returned.
-        
+
         Parameters:
             path (str): Repository path relative to the site root (leading/trailing slashes are ignored).
             force_refresh (bool): If True, skip any on-disk cache and fetch fresh data from the API.
             github_token (Optional[str]): Personal access token to use for the GitHub API call; if None an environment token may be used.
             allow_env_token (bool): Whether to allow using a token from the environment when `github_token` is not provided.
-        
+
         Returns:
             List[str]: A list of directory names (strings) found at the requested path; returns an empty list on error or if no directories are present.
         """
@@ -348,13 +352,13 @@ class CacheManager:
     ) -> List[Dict[str, Any]]:
         """
         Return the repository contents for a meshtastic.github.io path, using a TTL-backed on-disk cache.
-        
+
         Parameters:
             path (str): Repository path relative to the site root. Leading/trailing slashes are ignored.
             force_refresh (bool): If True, bypass the on-disk cache and fetch from the GitHub API.
             github_token (Optional[str]): Personal access token to use for the GitHub API request, if provided.
             allow_env_token (bool): If True, permit using an authentication token sourced from the environment when no explicit token is provided.
-        
+
         Returns:
             List[Dict[str, Any]]: A list of dictionary entries as returned by the GitHub Contents API for the path.
             Returns an empty list if the API response is malformed, the request fails, or no entries are available.
@@ -423,7 +427,7 @@ class CacheManager:
     def clear_cache(self, cache_file: str) -> bool:
         """
         Delete the specified cache file from disk.
-        
+
         Returns:
             True if the file was removed or did not exist, False if an error occurred.
         """
@@ -435,27 +439,14 @@ class CacheManager:
             logger.error(f"Could not clear cache file {cache_file}: {e}")
             return False
 
-    def get_cache_file_path(self, cache_name: str, suffix: str = ".json") -> str:
-        """
-        Get the absolute path to a cache file inside the manager's cache directory.
-        
-        Parameters:
-            cache_name (str): Cache filename without extension.
-            suffix (str): File extension to append (include the leading dot, e.g. ".json").
-        
-        Returns:
-            str: Full filesystem path to the cache file.
-        """
-        return os.path.join(self.cache_dir, f"{cache_name}{suffix}")
-
     @staticmethod
     def build_url_cache_key(url: str, params: Optional[Dict[str, Any]] = None) -> str:
         """
         Create a stable cache key by appending URL-encoded query parameters to a base URL.
-        
+
         Parameters:
             params (Optional[Dict[str, Any]]): Mapping of query parameter names to values; entries with value `None` are omitted.
-        
+
         Returns:
             str: The original `url` if `params` is None or contains no non-None values, otherwise `url` followed by `?` and the URL-encoded parameters.
         """
@@ -469,7 +460,7 @@ class CacheManager:
     def _get_releases_cache_file(self) -> str:
         """
         Selects the releases cache file path, preferring the current primary file and falling back to a legacy filename when appropriate.
-        
+
         Returns:
             str: Path to the chosen releases cache file. Returns the primary "releases.json" path if it exists or if the legacy "releases_cache.json" does not exist; otherwise returns the legacy path.
         """
@@ -484,18 +475,18 @@ class CacheManager:
     ) -> Optional[List[Dict[str, Any]]]:
         """
         Read a cached GitHub releases entry for a specific request key, validating expiry.
-        
+
         Reads the legacy multi-entry releases cache and returns the stored releases list if the
         entry for `url_cache_key` exists, is well-formed, and its cached timestamp is newer than
         `expiry_seconds` ago.
-        
+
         Cache file schema:
           { "<url>?per_page=n": { "releases": [...], "cached_at": "<iso-8601 UTC>" }, ... }
-        
+
         Parameters:
             url_cache_key (str): The stable cache key for the request (typically a URL with query).
             expiry_seconds (int): Maximum allowed age of the cache entry in seconds.
-        
+
         Returns:
             Optional[List[Dict[str, Any]]]: The cached `releases` list if present and not expired, `None` otherwise.
         """
@@ -555,9 +546,9 @@ class CacheManager:
     ) -> None:
         """
         Store a list of release entries under a URL-derived cache key in the releases cache file.
-        
+
         Writes the provided releases list into the releases cache, keyed by `url_cache_key`, and records the current UTC timestamp as `cached_at` to indicate when the entry was saved.
-        
+
         Parameters:
             url_cache_key (str): Stable cache key derived from a request URL and parameters.
             releases (List[Dict[str, Any]]): List of release objects to persist in the cache.
@@ -599,12 +590,12 @@ class CacheManager:
     ) -> bool:
         """
         Atomically write a JSON file containing the provided data and a UTC ISO 8601 timestamp.
-        
+
         Parameters:
             file_path (str): Destination path for the JSON file.
             data (Dict): Mapping to serialize into the JSON file.
             timestamp_key (str): Key under which the current UTC ISO 8601 timestamp will be stored in the data.
-        
+
         Returns:
             `true` if the file was written successfully, `false` otherwise.
         """
@@ -617,11 +608,11 @@ class CacheManager:
     def read_with_expiry(self, file_path: str, expiry_hours: float) -> Optional[Dict]:
         """
         Read cached data from a JSON file and return it only if it is present and not expired.
-        
+
         Parameters:
             file_path (str): Path to the cache JSON file to read.
             expiry_hours (float): Expiration threshold in hours; entries older than this are considered expired.
-        
+
         Returns:
             Optional[Dict]: The parsed cache data when present and not expired, otherwise `None`.
         """
@@ -708,11 +699,11 @@ class CacheManager:
     def get_cache_expiry_timestamp(self, cache_file: str, expiry_hours: float) -> str:
         """
         Compute the UTC expiry timestamp for a cache entry expiry_hours hours from now.
-        
+
         Parameters:
             cache_file (str): Path to the cache file (not used when calculating the timestamp).
             expiry_hours (float): Number of hours from now when the cache should expire.
-        
+
         Returns:
             str: Expiry timestamp in UTC as an ISO 8601 formatted string.
         """
@@ -721,11 +712,11 @@ class CacheManager:
     def validate_cache_format(self, cache_data: Dict, required_keys: List[str]) -> bool:
         """
         Check that the given cache mapping contains all required top-level keys.
-        
+
         Parameters:
             cache_data (Dict): Mapping representing cached data to validate.
             required_keys (List[str]): Keys that must be present in cache_data.
-        
+
         Returns:
             bool: `True` if every key in `required_keys` exists in `cache_data`, `False` otherwise.
         """
@@ -738,13 +729,13 @@ class CacheManager:
     def read_commit_timestamp_cache(self) -> Dict[str, Any]:
         """
         Return cached commit timestamps that have not expired.
-        
+
         Reads the on-disk commit_timestamps.json, accepts both legacy dict entries
         (`{"timestamp": "...", "cached_at": "..."}`) and the newer list form
         (`[timestamp_iso, cached_at_iso]`), filters out entries older than
         COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS, and normalizes retained entries to the
         new list format.
-        
+
         Returns:
             Dict[str, list]: Mapping of cache key to `[timestamp_iso, cached_at_iso]`
             for entries still within the expiry window.
@@ -807,9 +798,9 @@ class CacheManager:
     ) -> Optional[datetime]:
         """
         Retrieve the committer timestamp for a GitHub commit, using an on-disk cache when available.
-        
+
         Looks up a cached timestamp in commit_timestamps.json and returns it if present and not expired; otherwise fetches the commit from the GitHub API, caches the ISO timestamp together with the fetch time, and returns the parsed UTC datetime. Cache entries expire after COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS; setting `force_refresh` bypasses the cache.
-        
+
         Parameters:
             owner (str): Repository owner (GitHub user or organization).
             repo (str): Repository name.
@@ -817,7 +808,7 @@ class CacheManager:
             github_token (Optional[str]): Personal access token to use for the GitHub API request; if omitted and `allow_env_token` is True, an environment token may be used.
             allow_env_token (bool): If True, allow using a token from environment-based configuration when `github_token` is not provided.
             force_refresh (bool): If True, ignore any valid cached entry and fetch from the GitHub API.
-        
+
         Returns:
             Optional[datetime]: The commit committer datetime in UTC if available and parseable, `None` on fetch or parse failure.
         """
@@ -895,9 +886,9 @@ _prerelease_dir_cache: Dict[str, Any] = {}
 def _ensure_cache_dir() -> str:
     """
     Determine and ensure the default cache directory for Fetchtastic exists.
-    
+
     Creates the user cache directory for "fetchtastic" if it does not already exist and returns its path.
-    
+
     Returns:
         str: Path to the user's Fetchtastic cache directory.
     """
@@ -911,7 +902,7 @@ def _ensure_cache_dir() -> str:
 def _get_commit_cache_file() -> str:
     """
     Return the filesystem path for the commit timestamps cache file, creating the cached path reference if not already set.
-    
+
     Returns:
         cache_file_path (str): Absolute path to the `commit_timestamps.json` file inside the configured cache directory.
     """
@@ -924,7 +915,7 @@ def _get_commit_cache_file() -> str:
 def _get_releases_cache_file() -> str:
     """
     Return the absolute path to the releases cache file, initializing it to '<cache_dir>/releases.json' if not already set.
-    
+
     Returns:
         str: Full filesystem path to the releases cache file.
     """
@@ -937,7 +928,7 @@ def _get_releases_cache_file() -> str:
 def _get_prerelease_dir_cache_file() -> str:
     """
     Return the absolute path to the prerelease directory cache file.
-    
+
     Returns:
         cache_file (str): Absolute path to the `prerelease_dirs.json` file inside the configured cache directory; the path is computed once and reused.
     """
@@ -958,14 +949,14 @@ def _load_json_cache_with_expiry(
 ) -> Dict[str, Any]:
     """
     Load JSON cache entries from a file, validate each entry, and return processed entries that are not expired.
-    
+
     Parameters:
         cache_file_path (str): Path to the JSON cache file.
         expiry_hours (Optional[float]): Maximum age in hours for entries; if None, entries do not expire.
         cache_entry_validator (Callable[[Dict[str, Any]], bool]): Function that returns True for entries with the expected structure.
         entry_processor (Callable[[Dict[str, Any], datetime], Any]): Function that converts a valid cache entry and its parsed `cached_at` datetime into the value stored in the returned mapping.
         cache_name (str): Human-readable name for the cache used for log messages.
-    
+
     Returns:
         Dict[str, Any]: Mapping of cache keys to processed entry values for entries that passed validation and are not expired.
     """
@@ -1014,7 +1005,7 @@ def _load_json_cache_with_expiry(
 def _get_cache_lock():
     """
     Provide a module-wide threading.Lock for synchronizing cache access, creating it lazily on first call.
-    
+
     Returns:
         threading.Lock: The singleton lock instance used to synchronize cache operations.
     """
@@ -1029,7 +1020,7 @@ def _get_cache_lock():
 def _load_commit_cache() -> None:
     """
     Populate the module-level commit timestamp cache from disk using CacheManager, honoring cache expiry.
-    
+
     Reads validated commit timestamp entries from the on-disk cache and replaces the in-memory `_commit_timestamp_cache`; sets the loaded flag so subsequent calls are no-ops. On I/O or parse errors, the in-memory cache is replaced with an empty mapping.
     """
     global _commit_cache_loaded, _commit_timestamp_cache
@@ -1048,7 +1039,7 @@ def _load_commit_cache() -> None:
 def _load_releases_cache() -> None:
     """
     Load the on-disk releases cache into the module-level in-memory cache.
-    
+
     Acquires the module cache lock and, if the releases cache has not yet been loaded, reads the releases cache file and stores its contents in the `_releases_cache` global (a dict). Marks the cache as loaded by setting `_releases_cache_loaded` to True. On any I/O, decoding, or type error the function leaves `_releases_cache` as an empty dict. This function is idempotent and does not raise.
     """
     global _releases_cache_loaded, _releases_cache
@@ -1071,12 +1062,12 @@ def _clear_cache_generic(
 ) -> None:
     """
     Clear an in-memory cache and remove its backing file from disk.
-    
+
     Parameters:
         cache (Dict[str, Any]): In-memory cache mapping to be cleared in place.
         file_getter (Callable[[], str]): Callable that returns the path to the cache file to delete.
         name (str): Human-readable cache name used in debug logging.
-    
+
     Side effects:
         Empties `cache` and attempts to delete the file returned by `file_getter()`. On failure to remove the file, a debug log is emitted.
     """
@@ -1092,7 +1083,7 @@ def _clear_cache_generic(
 def _load_prerelease_dir_cache() -> None:
     """
     Load the prerelease directory cache from disk into the module-level in-memory cache.
-    
+
     This function is idempotent: if the prerelease directory cache is already loaded it returns immediately. It reads on-disk cache entries, validates that each entry contains a "directories" list and a "cached_at" timestamp, converts each entry into a (directories, cached_at) tuple, and merges the result into the module-level _prerelease_dir_cache while holding the cache lock. After successful load (or confirmed prior load) it marks the cache as loaded.
     """
     global _prerelease_dir_cache, _prerelease_dir_cache_loaded
@@ -1103,10 +1094,10 @@ def _load_prerelease_dir_cache() -> None:
     def validate_prerelease_entry(cache_entry: Dict[str, Any]) -> bool:
         """
         Check whether a prerelease cache entry has the expected structure.
-        
+
         Parameters:
             cache_entry (Dict[str, Any]): The cached entry to validate.
-        
+
         Returns:
             bool: `true` if `cache_entry` is a dictionary containing the keys `"directories"` and `"cached_at"`, `false` otherwise.
         """
@@ -1119,14 +1110,14 @@ def _load_prerelease_dir_cache() -> None:
     def process_prerelease_entry(cache_entry: Dict[str, Any], cached_at: datetime):
         """
         Validate and extract the prerelease directories list from a cache entry.
-        
+
         Parameters:
             cache_entry (Dict[str, Any]): Cache object expected to contain a "directories" key mapping to a list of directory names.
             cached_at (datetime): Timestamp associated with when the cache entry was created.
-        
+
         Returns:
             Tuple[List[Any], datetime]: A pair where the first element is the directories list from the cache entry and the second is the provided cached_at timestamp.
-        
+
         Raises:
             TypeError: If the "directories" value in cache_entry is not a list.
         """
@@ -1154,11 +1145,11 @@ def _load_prerelease_dir_cache() -> None:
 def _save_prerelease_dir_cache() -> None:
     """
     Persist the in-memory prerelease directory cache to its on-disk JSON file.
-    
+
     Builds a serializable mapping from the module's _prerelease_dir_cache where each entry stores
     "directories" and an ISO-formatted "cached_at" timestamp, then writes it atomically to the
     file returned by _get_prerelease_dir_cache_file().
-    
+
     On write failure or I/O errors the function logs a warning; it does not raise.
     """
     cache_file = _get_prerelease_dir_cache_file()

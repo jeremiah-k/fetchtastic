@@ -9,7 +9,7 @@ class _FakeResponse:
     def __init__(self, payload):
         """
         Initialize the fake response with a JSON payload to be returned by its json() method.
-        
+
         Parameters:
             payload (Any): The JSON-serializable value that json() will return (commonly a dict or list).
         """
@@ -18,7 +18,7 @@ class _FakeResponse:
     def json(self):
         """
         Retrieve the stored JSON payload.
-        
+
         Returns:
             payload (Any): The payload provided to the fake response (a dict, list, or other JSON-compatible value).
         """
@@ -29,11 +29,11 @@ class _FakeResponse:
 def isolated_cache_dir(tmp_path, monkeypatch):
     """
     Provide an isolated cache directory for tests by patching platformdirs.user_cache_dir to return the given temporary path.
-    
+
     Parameters:
         tmp_path (pathlib.Path): Temporary directory provided by pytest to use as the cache directory.
         monkeypatch (pytest.MonkeyPatch): pytest fixture used to patch `platformdirs.user_cache_dir`.
-    
+
     Returns:
         pathlib.Path: The same `tmp_path` passed in, now acting as the process cache directory.
     """
@@ -57,9 +57,9 @@ def test_get_repo_directories_caches_with_ttl(monkeypatch, isolated_cache_dir):
     def fake_request(*_args, **_kwargs):
         """
         Test helper that records an invocation and returns a fake HTTP response with the configured payload.
-        
+
         Increments calls["count"] each time it's called to track invocation count.
-        
+
         Returns:
             _FakeResponse: A fake response whose json() returns the preset `payload`.
         """
@@ -86,9 +86,9 @@ def test_get_repo_directories_refreshes_when_stale(monkeypatch, isolated_cache_d
     def fake_request(*_args, **_kwargs):
         """
         Simulate an HTTP API call by incrementing a shared call counter and returning a fake response containing a single directory entry.
-        
+
         The function increments `calls["count"]` and returns an `_FakeResponse` whose `json()` yields a list with one object: a directory `{"type": "dir", "name": "firmware-<n>"}` where `<n>` is the updated call count.
-        
+
         @returns:
             _FakeResponse: Response whose `json()` returns the described list.
         """
@@ -139,9 +139,9 @@ def test_get_repo_contents_caches_with_ttl(monkeypatch, isolated_cache_dir):
     def fake_request(*_args, **_kwargs):
         """
         Test helper that records an invocation and returns a fake HTTP response with the configured payload.
-        
+
         Increments calls["count"] each time it's called to track invocation count.
-        
+
         Returns:
             _FakeResponse: A fake response whose json() returns the preset `payload`.
         """
@@ -168,7 +168,7 @@ def test_get_repo_contents_refreshes_when_stale(monkeypatch, isolated_cache_dir)
     def fake_request(*_args, **_kwargs):
         """
         Simulates a GitHub API request that returns a single file entry and increments the shared call counter.
-        
+
         Returns:
             _FakeResponse: A response whose JSON payload is a list containing one dict with keys `type: "file"` and `name: "fw-{N}.bin"`, where `{N}` is the updated value of `calls["count"]`. This function also increments `calls["count"]`.
         """

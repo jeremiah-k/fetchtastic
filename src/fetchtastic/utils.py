@@ -111,7 +111,7 @@ def track_api_cache_miss() -> None:
 def get_api_request_summary() -> Dict[str, Any]:
     """
     Produce a session-wide summary of API request and cache statistics.
-    
+
     Returns:
         summary (dict): Aggregate information for the current session with keys:
             - "total_requests" (int): Total API requests made this session.
@@ -144,7 +144,7 @@ def get_api_request_summary() -> Dict[str, Any]:
 def format_api_summary(summary: Dict[str, Any]) -> str:
     """
     Format a dictionary of GitHub API statistics into a concise, human-readable log string.
-    
+
     Parameters:
         summary (Dict[str, Any]): Summary dictionary with keys:
             - total_requests (int): total API requests performed this session.
@@ -153,7 +153,7 @@ def format_api_summary(summary: Dict[str, Any]) -> str:
             - auth_used (bool): whether an authentication token was used for requests.
             - rate_limit_remaining (Optional[int]): optional cached remaining requests.
             - rate_limit_reset (Optional[datetime.datetime]): optional UTC reset time for the rate limit.
-    
+
     Returns:
         str: A single string summarizing the API activity suitable for logging.
     """
@@ -509,15 +509,15 @@ def make_github_api_request(
 ) -> requests.Response:
     """
     Perform a GitHub API GET request, update persistent and in-memory rate-limit tracking, and retry once without credentials if token authentication fails.
-    
+
     Parameters:
         github_token (Optional[str]): Explicit token to use for Authorization; leading/trailing whitespace is trimmed. If omitted and allow_env_token is True, the GITHUB_TOKEN environment variable may be used.
         allow_env_token (bool): If True, allow falling back to the GITHUB_TOKEN environment variable when no explicit github_token is provided.
         custom_403_message (Optional[str]): Optional message to use when a 403 rate-limit condition is raised; if omitted a default explanatory message is used.
-    
+
     Returns:
         requests.Response: The HTTP response returned by GitHub.
-    
+
     Raises:
         requests.HTTPError: For HTTP error responses (including handled 401/403 cases surfaced with descriptive messages).
         requests.RequestException: For lower-level network or request errors.
@@ -1306,7 +1306,7 @@ def matches_extract_patterns(
 ) -> bool:
     """
     Match a filename against legacy prerelease extract selection patterns.
-    
+
     Performs case-insensitive matching of filename against each pattern in extract_patterns.
     - The literal pattern "littlefs-" matches filenames that start with "littlefs-".
     - Patterns that start with any FILE_TYPE_PREFIXES element match when the pattern appears anywhere in the filename.
@@ -1314,12 +1314,12 @@ def matches_extract_patterns(
       - For device patterns of length 1–2, matches a whole-word boundary in the filename.
       - For longer device patterns, matches when the pattern appears as a separate token delimited by '-' or '_' or at the filename ends.
     - Any other pattern matches when it appears as a substring of the filename.
-    
+
     Parameters:
         filename (str): The filename to test.
         extract_patterns (List[str]): Legacy selection patterns to test against the filename.
         device_manager (Optional[Any]): Optional object exposing is_device_pattern(pattern) -> bool to classify device patterns; if absent, patterns ending with '-' or '_' are treated as device patterns.
-    
+
     Returns:
         bool: `True` if any pattern matches the filename according to the rules above, `False` otherwise.
     """

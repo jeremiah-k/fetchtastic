@@ -43,7 +43,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     def __init__(self, config: Dict[str, Any], cache_manager: "CacheManager"):
         """
         Create and configure the Meshtastic Android APK downloader.
-        
+
         Parameters:
             config (dict): Downloader configuration dictionary used to set behavior and paths.
             cache_manager (CacheManager): Cache manager used to read/write cached API responses and tracking/metadata files.
@@ -53,13 +53,16 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         self.android_releases_url = MESHTASTIC_ANDROID_RELEASES_URL
         self.latest_release_file = LATEST_ANDROID_RELEASE_JSON_FILE
         self.latest_prerelease_file = LATEST_ANDROID_PRERELEASE_JSON_FILE
+        self.latest_release_path = self.cache_manager.get_cache_file_path(
+            self.latest_release_file
+        )
 
     def get_target_path_for_release(self, release_tag: str, file_name: str) -> str:
         """
         Compute the filesystem path for an Android release asset under the android/<release> directory.
-        
+
         Sanitizes the release tag and file name and ensures the version directory exists before returning the path.
-        
+
         Returns:
             path (str): Filesystem path to the asset file.
         """
@@ -73,10 +76,10 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     def get_releases(self, limit: Optional[int] = None) -> List[Release]:
         """
         Retrieve Android APK releases from GitHub, using cached API results when available.
-        
+
         Parameters:
             limit (Optional[int]): Maximum number of releases to return.
-        
+
         Returns:
             List[Release]: List of Release objects; empty list on error or if no valid releases are found.
         """
@@ -150,10 +153,10 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     def get_assets(self, release: Release) -> List[Asset]:
         """
         Return APK assets included in the given release.
-        
+
         Parameters:
             release (Release): Release object whose assets will be filtered.
-        
+
         Returns:
             List[Asset]: Assets from the release whose names end with ".apk" (case-insensitive).
         """
@@ -164,7 +167,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     def get_download_url(self, asset: Asset) -> str:
         """
         Return the direct download URL for an asset.
-        
+
         Returns:
             The asset's direct download URL.
         """
@@ -173,9 +176,9 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     def should_download_asset(self, asset_name: str) -> bool:
         """
         Decides whether an APK asset name matches configured selection and exclusion patterns.
-        
+
         Exclude patterns, if present, take precedence over selection patterns configured in SELECTED_APK_ASSETS.
-        
+
         Returns:
             True if the asset should be downloaded, False otherwise.
         """
@@ -195,11 +198,11 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     def download_apk(self, release: Release, asset: Asset) -> DownloadResult:
         """
         Download an APK asset for a given release, verify the saved file, and return a result describing the outcome.
-        
+
         Parameters:
             release (Release): The release that contains the APK asset.
             asset (Asset): The APK asset to download.
-        
+
         Returns:
             DownloadResult: A result object describing success or failure. On success the result contains the saved `file_path`, `download_url`, `file_size`, and `file_type`; if the file was already present and complete `was_skipped` will be true. On failure the result includes `error_message`, and may set `is_retryable` and `error_type` (for example `"network_error"` or `"validation_error"`).
         """
@@ -282,10 +285,10 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     def is_release_complete(self, release: Release) -> bool:
         """
         Determine whether all selected APK assets for the given release exist on disk and match their expected sizes.
-        
+
         Parameters:
             release (Release): Release object whose tag and assets are used to locate expected APK files under the downloader's android/<release_tag> directory. Only assets that match configured SELECTED_APK_ASSETS patterns are considered.
-        
+
         Returns:
             bool: `true` if every selected asset file exists and its file size equals the asset's expected size, `false` otherwise.
         """
@@ -317,9 +320,9 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     def cleanup_old_versions(self, keep_limit: int) -> None:
         """
         Remove Android version directories older than the most recent `keep_limit` versions.
-        
+
         Scans the downloader's android subdirectory for directories whose names match version patterns, sorts them from newest to oldest, and permanently deletes directories beyond the `keep_limit` newest entries. Non-version directories are ignored. Deletion failures are logged; exceptions are caught and logged without raising.
-         
+
         Parameters:
             keep_limit (int): Number of most-recent version directories to retain; directories older than this are removed.
         """
@@ -358,10 +361,10 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     def _is_version_directory(self, dir_name: str) -> bool:
         """
         Determine whether a directory name matches the expected version-directory pattern (e.g., "1.2", "v1.2.3").
-        
+
         Parameters:
             dir_name (str): Directory name to test.
-        
+
         Returns:
             `true` if the name matches a version pattern optionally prefixed with "v" and containing one to two dot-separated numeric components (major.minor or major.minor.patch), `false` otherwise.
         """
@@ -370,12 +373,12 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     def _get_version_sort_key(self, version_dir: str) -> tuple:
         """
         Generate a sort key based on the semantic version components of a version directory name.
-        
+
         Strips a leading "v" if present, parses up to three dot-separated numeric components, and pads missing components with zeros. If the name cannot be parsed as numeric version components, returns (0, 0, 0).
-        
+
         Parameters:
             version_dir (str): Directory name containing the version (may start with 'v' and use dot-separated numeric segments).
-        
+
         Returns:
             tuple: A 3-tuple of integers (major, minor, patch) to use as a sort key; returns (0, 0, 0) for unparsable names.
         """
@@ -393,13 +396,13 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     def get_latest_release_tag(self) -> Optional[str]:
         """
         Return the latest Android release tag recorded in the tracking file.
-        
+
         Reads the tracking JSON located at download_dir/latest_release_file and returns the value stored under `latest_version`.
-        
+
         Returns:
             The latest release tag string if present, otherwise None.
         """
-        latest_file = os.path.join(self.download_dir, self.latest_release_file)
+        latest_file = self.latest_release_path
         if os.path.exists(latest_file):
             try:
                 with open(latest_file, "r", encoding="utf-8") as f:
@@ -419,7 +422,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         Returns:
             bool: True if update succeeded, False otherwise
         """
-        latest_file = os.path.join(self.download_dir, self.latest_release_file)
+        latest_file = self.latest_release_path
         data = {
             "latest_version": release_tag,
             "file_type": "android",
@@ -430,7 +433,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     def _get_current_iso_timestamp(self) -> str:
         """
         Return the current UTC timestamp as an ISO 8601 formatted string.
-        
+
         Returns:
             iso_timestamp (str): ISO 8601-formatted UTC timestamp (e.g., "2025-12-16T12:34:56+00:00").
         """
@@ -443,13 +446,13 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     ) -> List[Release]:
         """
         Selects and returns Android prerelease releases that should be considered for download.
-        
+
         Filters the provided releases according to the downloader's prerelease configuration: honors the CHECK_APK_PRERELEASES/CHECK_PRERELEASES flag, applies include/exclude tag patterns, restricts to prereleases that match the expected base version derived from the latest stable release, and optionally narrows results to tags containing short commit SHAs from recent_commits.
-        
+
         Parameters:
             releases (List[Release]): All releases to evaluate; prerelease candidates are selected from this list.
             recent_commits (Optional[List[Dict[str, Any]]]): Optional list of recent commits (each a dict with a "sha" key). When provided, prereleases containing any short (7-character) commit SHA from this list in their tag will be preferred.
-        
+
         Returns:
             List[Release]: Prerelease Release objects that match configured patterns, expected base version, and (when applicable) recent commit hashes.
         """
@@ -528,10 +531,10 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     def update_prerelease_tracking(self, prerelease_tag: str) -> bool:
         """
         Write the given prerelease tag and extracted prerelease metadata to the Android prerelease tracking JSON file.
-        
+
         Parameters:
             prerelease_tag (str): The prerelease tag to record (e.g., "v1.2.3-open-1").
-        
+
         Returns:
             bool: `true` if the tracking file was written successfully, `false` otherwise.
         """
@@ -583,9 +586,9 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     ) -> bool:
         """
         Determine whether extraction should be performed for the given file.
-        
+
         Always returns `False` because APK files handled by this downloader are not extracted.
-        
+
         Returns:
             `False` always (APK files are not extracted).
         """
@@ -596,10 +599,10 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     def should_download_prerelease(self, prerelease_tag: str) -> bool:
         """
         Decides whether the given prerelease tag should be downloaded based on configuration and existing prerelease tracking.
-        
+
         Parameters:
             prerelease_tag (str): The prerelease tag to evaluate.
-        
+
         Returns:
             bool: `True` if prereleases are enabled and either no valid tracking entry exists or `prerelease_tag` is newer than the tracked prerelease; `False` if prereleases are disabled or `prerelease_tag` is not newer than the tracked prerelease.
         """
@@ -630,7 +633,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     def manage_prerelease_tracking_files(self) -> None:
         """
         Clean up Android prerelease tracking files by removing entries that are superseded or expired.
-        
+
         When prerelease handling is enabled in configuration, this method collects existing prerelease
         tracking records, determines currently relevant prereleases from remote releases, and delegates
         removal of superseded or expired tracking files to the PrereleaseHistoryManager. No value is returned.
@@ -705,10 +708,10 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 def _is_apk_prerelease_by_name(tag_name: str) -> bool:
     """
     Determine whether a tag name indicates an APK prerelease by containing the markers "-open" or "-closed".
-    
+
     Parameters:
         tag_name (str): The release tag name to inspect.
-    
+
     Returns:
         bool: `True` if `tag_name` contains "-open" or "-closed" (case-insensitive), `False` otherwise.
     """
@@ -718,10 +721,10 @@ def _is_apk_prerelease_by_name(tag_name: str) -> bool:
 def _is_apk_prerelease(release: Dict[str, Any]) -> bool:
     """
     Determine whether a GitHub release represents an Android APK prerelease.
-    
+
     Parameters:
         release (dict): GitHub release payload (or partial dict) expected to include at least `tag_name` and/or `prerelease` keys.
-    
+
     Returns:
         bool: `True` if the release is identified as an APK prerelease (by legacy tag name patterns or the GitHub `prerelease` flag), `False` otherwise.
     """

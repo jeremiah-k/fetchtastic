@@ -34,10 +34,10 @@ def test_config():
 def orchestrator(test_config):
     """
     Create a DownloadOrchestrator configured from the provided test configuration.
-    
+
     Parameters:
         test_config (dict): Configuration dictionary used to construct the orchestrator. Expected keys include directories, retention counts, include/exclude patterns, GitHub token, and prerelease handling options.
-    
+
     Returns:
         DownloadOrchestrator: An orchestrator instance initialized with the given configuration.
     """

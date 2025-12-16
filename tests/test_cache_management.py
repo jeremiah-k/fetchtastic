@@ -536,7 +536,7 @@ class TestUtilityFunctions:
     def test_load_commit_cache(self, tmp_path):
         """
         Verifies that loading the commit cache completes without raising an exception.
-        
+
         This test invokes the commit cache loader to ensure it executes successfully in the test environment; it does not assert specific state changes.
         """
         # This is a complex function that loads global state

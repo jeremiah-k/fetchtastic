@@ -20,7 +20,7 @@ from fetchtastic.download.interfaces import Asset, Release
 def test_config():
     """
     Provide a dictionary fixture with default configuration values used by Android downloader tests.
-    
+
     Returns:
         config (dict): Test configuration containing:
             - DOWNLOAD_DIR (str): Path where test downloads are placed.
@@ -44,10 +44,10 @@ def test_config():
 def android_downloader(test_config):
     """
     Create a MeshtasticAndroidAppDownloader configured for tests.
-    
+
     Parameters:
         test_config (dict): Configuration dictionary used to initialize the downloader (e.g., DOWNLOAD_DIR, ANDROID_VERSIONS_TO_KEEP).
-    
+
     Returns:
         MeshtasticAndroidAppDownloader: Initialized downloader instance using a new CacheManager.
     """

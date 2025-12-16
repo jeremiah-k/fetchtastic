@@ -16,7 +16,7 @@ from fetchtastic.download.orchestrator import DownloadOrchestrator
 def integration_config():
     """
     Provide a default integration test configuration mapping used by orchestrator tests.
-    
+
     Returns:
         dict: Configuration containing:
             - DOWNLOAD_DIR (str): path for test downloads.
@@ -44,11 +44,11 @@ def integration_config():
 def orchestrator(integration_config):
     """
     Create a DownloadOrchestrator configured for integration tests.
-    
+
     Parameters:
         integration_config (dict): Configuration values (e.g., DOWNLOAD_DIR, retention counts, patterns, tokens)
             used to initialize the orchestrator.
-    
+
     Returns:
         DownloadOrchestrator: An orchestrator instance initialized with the provided configuration.
     """

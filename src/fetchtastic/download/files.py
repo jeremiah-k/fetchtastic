@@ -35,10 +35,10 @@ NON_ASCII_RX = re.compile(r"[^\x00-\x7F]+")
 def strip_unwanted_chars(text: str) -> str:
     """
     Remove non-ASCII characters from a string.
-    
+
     Parameters:
         text (str): The input string to sanitize.
-    
+
     Returns:
         str: The input string with all non-ASCII characters removed.
     """
@@ -48,11 +48,11 @@ def strip_unwanted_chars(text: str) -> str:
 def _matches_exclude(name: str, patterns: List[str]) -> bool:
     """
     Check whether a name matches any of the provided exclude glob patterns (case-insensitive).
-    
+
     Parameters:
         name (str): The name to test (typically a filename or path component).
         patterns (List[str]): Glob patterns to test against; matching is performed case-insensitively.
-    
+
     Returns:
         bool: `True` if `name` matches at least one pattern, `False` otherwise.
     """
@@ -63,12 +63,12 @@ def _matches_exclude(name: str, patterns: List[str]) -> bool:
 def _sanitize_path_component(component: Optional[str]) -> Optional[str]:
     """
     Validate and sanitize a single filesystem path component.
-    
+
     Trims surrounding whitespace and returns the cleaned component if it is a safe, relative path segment. Returns None when the input is None or when the component is unsafe — specifically if it is empty after trimming, equals "." or "..", is an absolute path, contains a null byte, or contains path separator characters.
-    
+
     Parameters:
         component (Optional[str]): The candidate path component to validate and sanitize.
-    
+
     Returns:
         Optional[str]: The trimmed, safe component string, or `None` if the component is unsafe or `None`.
     """
@@ -95,12 +95,12 @@ def _sanitize_path_component(component: Optional[str]) -> Optional[str]:
 def _get_existing_prerelease_dirs(prerelease_dir: str) -> list[str]:
     """
     Return a list of safe prerelease subdirectory names found in the given directory.
-    
+
     Scans the provided prerelease directory for immediate subdirectories whose names start with the firmware prefix, validates and sanitizes each name, and collects the safe names. Unsafe names are skipped and a warning is logged; filesystem errors while scanning are logged at debug level.
-    
+
     Parameters:
         prerelease_dir (str): Path to the prerelease directory to scan.
-    
+
     Returns:
         list[str]: Sanitized subdirectory names that start with the firmware prefix; empty if the directory does not exist or on scan errors.
     """
@@ -131,15 +131,15 @@ def _get_existing_prerelease_dirs(prerelease_dir: str) -> list[str]:
 def _get_string_list_from_config(config: Dict[str, Any], key: str) -> List[str]:
     """
     Normalize a configuration entry into a list of strings.
-    
+
     If the value at `key` is a single string, returns a one-element list containing that string.
     If the value is a list, returns a list containing only elements that are `str` or `bytes`, each converted to `str`.
     If the key is missing or the value is neither a string nor a list, returns an empty list.
-    
+
     Parameters:
         config (Dict[str, Any]): Mapping containing configuration values.
         key (str): Key to retrieve from the config.
-    
+
     Returns:
         List[str]: A list of strings derived from the config value.
     """
@@ -159,13 +159,13 @@ def _is_release_complete(
 ) -> bool:
     """
     Determine whether a release directory contains all expected assets and that those assets appear intact.
-    
+
     Parameters:
         release_data (Dict[str, Any]): Release metadata containing an "assets" list with objects that include at least a "name" and optionally a "size".
         release_dir (str): Filesystem path to the directory containing downloaded release assets.
         selected_patterns (Optional[List[str]]): Optional glob-style patterns used to include only assets that match; when provided, assets not matching these patterns are ignored.
         exclude_patterns (List[str]): Glob-style patterns; assets matching any of these are ignored.
-    
+
     Returns:
         bool: `True` if every expected asset (after applying selected and exclude patterns) exists in release_dir and passes integrity checks (ZIP members not corrupted and file sizes match any declared sizes in release_data), `False` otherwise.
     """
@@ -251,10 +251,10 @@ def _is_release_complete(
 def _prepare_for_redownload(file_path: str) -> bool:
     """
     Prepare a file path for re-download by removing the target file, its hash sidecar, and any orphaned temporary files.
-    
+
     Parameters:
         file_path (str): Path to the file to remove and clean up related sidecar and temporary files.
-    
+
     Returns:
         bool: `True` if cleanup completed successfully, `False` if an error occurred.
     """
@@ -281,9 +281,9 @@ def _prepare_for_redownload(file_path: str) -> bool:
 def _prerelease_needs_download(file_path: str) -> bool:
     """
     Determines whether a prerelease file at the given path needs to be downloaded.
-    
+
     If the file is missing, this reports that a download is needed. If the file exists but fails an integrity check, it attempts to prepare the file for re-download and reports that a download is needed only if preparation succeeds.
-    
+
     Returns:
         bool: `True` if the file is missing or (exists and failed integrity check and preparation for re-download succeeded), `False` otherwise.
     """
@@ -305,7 +305,7 @@ def _prerelease_needs_download(file_path: str) -> bool:
 def _is_within_base(real_base_dir: str, candidate: str) -> bool:
     """
     Determine whether the candidate path resides within the given base directory.
-    
+
     Returns:
         True if the candidate path is inside `real_base_dir`, False otherwise.
     """
@@ -318,13 +318,13 @@ def _is_within_base(real_base_dir: str, candidate: str) -> bool:
 def _safe_rmtree(path_to_remove: str, base_dir: str, item_name: str) -> bool:
     """
     Safely remove a file, directory, or symlink while preventing removal outside a specified base directory.
-    
+
     If `path_to_remove` is a symlink, only the symlink is removed after verifying the symlink's directory resolves within `base_dir`. For non-symlinks the target's realpath is checked to ensure it is inside `base_dir` before removing a file or recursively removing a directory. `item_name` is used for logging messages. The function logs and returns False on safety checks failure or on OS errors; returns True on successful removal.
     Parameters:
         path_to_remove (str): Filesystem path to remove (file, directory, or symlink).
         base_dir (str): Base directory that removals must be contained within.
         item_name (str): Human-readable name of the item for logging.
-    
+
     Returns:
         bool: `True` if the item was successfully removed, `False` if removal was skipped for safety or an error occurred.
     """
@@ -370,12 +370,12 @@ def _atomic_write(
 ) -> bool:
     """
     Write data to a file atomically by writing to a temporary file and atomically replacing the target on success.
-    
+
     Parameters:
         file_path (str): Destination file path to be written.
         writer_func (Callable[[Any], None]): Callable that receives an open text file-like object and writes the desired content to it.
         suffix (str): Suffix to use for the temporary file name (default ".tmp").
-    
+
     Returns:
         bool: `True` if the temporary write and atomic replace succeeded, `False` on any error.
     """
@@ -406,11 +406,11 @@ def _atomic_write(
 def _atomic_write_json(file_path: str, data: dict) -> bool:
     """
     Atomically write the given dictionary to the target file as pretty-printed JSON.
-    
+
     Parameters:
         file_path (str): Destination filesystem path for the JSON file.
         data (dict): JSON-serializable mapping to write to disk.
-    
+
     Returns:
         bool: `True` if the file was written and moved into place successfully, `False` on error.
     """
@@ -437,11 +437,11 @@ class FileOperations:
     def atomic_write(self, file_path: str, content: str) -> bool:
         """
         Atomically write text content to the given file path.
-        
+
         Parameters:
             file_path (str): Destination filesystem path.
             content (str): Text to write to the file.
-        
+
         Returns:
             bool: `True` if the write and atomic replacement succeeded, `False` on error.
         """
@@ -449,7 +449,7 @@ class FileOperations:
         def _write_content(f):
             """
             Write provided content to a writable file-like object.
-            
+
             Parameters:
                 f (typing.IO): A writable file-like object to which content will be written.
             """
@@ -462,11 +462,11 @@ class FileOperations:
     ) -> bool:
         """
         Determine whether a file exists and, if provided, whether its SHA-256 hash matches the expected value.
-        
+
         Parameters:
             file_path (str): Path to the file to verify.
             expected_hash (Optional[str]): Expected SHA-256 hex digest; when omitted, only existence is checked.
-        
+
         Returns:
             bool: `True` if the file exists and (when `expected_hash` is provided) its SHA-256 hex digest equals `expected_hash`; `False` otherwise.
         """
@@ -500,13 +500,13 @@ class FileOperations:
     ) -> List[Path]:
         """
         Extract matching files from a ZIP archive into a target directory.
-        
+
         Parameters:
             zip_path (str): Path to the ZIP archive.
             extract_dir (str): Destination directory for extracted files.
             patterns (List[str]): Filename glob patterns to select files for extraction; an empty list means no files will be extracted (legacy behavior).
             exclude_patterns (List[str]): Filename glob patterns to exclude from extraction (case-insensitive).
-        
+
         Returns:
             List[Path]: Paths of files that were successfully extracted; returns an empty list on error or if no files were extracted.
         """
@@ -569,11 +569,11 @@ class FileOperations:
     def _matches_exclude(self, filename: str, patterns: List[str]) -> bool:
         """
         Determine whether a filename matches any exclusion glob pattern using case-insensitive matching.
-        
+
         Parameters:
             filename (str): The name to test; comparison is performed against the pattern(s).
             patterns (List[str]): Iterable of glob-style patterns; matching is case-insensitive.
-        
+
         Returns:
             bool: `True` if `filename` matches any pattern in `patterns`, `False` otherwise.
         """
@@ -585,7 +585,7 @@ class FileOperations:
     def _is_safe_archive_member(self, member_name: str) -> bool:
         """
         Determine whether an archive member name is safe to extract.
-        
+
         Returns:
             `true` if the member name contains no absolute paths, parent-directory references, or null bytes, `false` otherwise.
         """
@@ -612,11 +612,11 @@ class FileOperations:
     ) -> bool:
         """
         Validate inclusion and exclusion glob patterns for safe archive extraction.
-        
+
         Parameters:
             patterns (List[str]): Glob patterns of files to include during extraction.
             exclude_patterns (List[str]): Glob patterns of files to exclude during extraction.
-        
+
         Returns:
             bool: True if all provided patterns are well-formed and do not pose path-traversal or overly-broad wildcard risks, False otherwise.
         """
@@ -660,15 +660,15 @@ class FileOperations:
     ) -> bool:
         """
         Determine whether the ZIP archive requires extraction by comparing candidate members against existing files in extract_dir.
-        
+
         This checks archive members that match the given filename patterns (applied to the base filename) and are not excluded, verifies each candidate would be safely extracted, and compares existing extracted file sizes to the archive entry sizes. If all matching candidates already exist with matching sizes, extraction is not needed.
-        
+
         Parameters:
             zip_path (str): Path to the ZIP archive.
             extract_dir (str): Target directory where files would be extracted.
             patterns (List[str]): Filename patterns to select candidates (matched against the base filename).
             exclude_patterns (List[str]): Filename patterns to exclude (matched against the base filename).
-        
+
         Returns:
             bool: `True` if extraction should be performed, `False` if extraction can be skipped. If the ZIP file is missing, returns `False`. On any error while checking, returns `True` (assumes extraction is needed).
         """
@@ -731,13 +731,13 @@ class FileOperations:
     ) -> List[Path]:
         """
         Extract matching files from a ZIP archive after validating patterns and extraction necessity.
-        
+
         Parameters:
             zip_path (str): Path to the ZIP archive to extract from.
             extract_dir (str): Destination directory for extracted files.
             patterns (List[str]): Filename/glob patterns selecting which files to extract.
             exclude_patterns (List[str]): Filename/glob patterns to exclude from extraction.
-        
+
         Returns:
             List[Path]: Paths of files that were extracted; empty list if no files were extracted or extraction was aborted.
         """
@@ -768,13 +768,13 @@ class FileOperations:
     ) -> Dict[str, str]:
         """
         Generate hash sidecar files for a list of extracted files using the specified algorithm.
-        
+
         Creates a sidecar file next to each existing file with the name "<file>.<algorithm>" containing the file's hex digest, and returns a mapping from the file path (string) to its hex hash. If an unsupported algorithm is provided, the method logs a warning and defaults to SHA-256.
-        
+
         Parameters:
             extracted_files (List[Path]): Paths to files for which to generate sidecar hashes.
             algorithm (str): Hash algorithm to use (e.g., "sha256", "md5"); case-insensitive.
-        
+
         Returns:
             Dict[str, str]: Mapping of file path strings to their hex digest values for files that were successfully hashed.
         """
@@ -822,10 +822,10 @@ class FileOperations:
     def cleanup_file(self, file_path: str) -> bool:
         """
         Remove the specified file and any associated temporary sidecar files.
-        
+
         Parameters:
             file_path (str): Path to the target file; the function will remove the file itself, an exact ".tmp" sibling, and any files matching the ".tmp.*" pattern for that path.
-        
+
         Returns:
             bool: `True` if all removal operations completed without error, `False` otherwise.
         """
@@ -849,10 +849,10 @@ class FileOperations:
     def ensure_directory_exists(self, directory: str) -> bool:
         """
         Ensure the directory exists, creating parent directories as needed.
-        
+
         Parameters:
             directory (str): Path to the directory to ensure exists.
-        
+
         Returns:
             bool: True if the directory exists or was created successfully, False on error.
         """
@@ -866,7 +866,7 @@ class FileOperations:
     def get_file_size(self, file_path: str) -> Optional[int]:
         """
         Retrieve the size of a file in bytes.
-        
+
         Returns:
             The file size in bytes, or None if the file does not exist or cannot be accessed.
         """
@@ -878,11 +878,11 @@ class FileOperations:
     def compare_file_hashes(self, file1: str, file2: str) -> bool:
         """
         Determine whether two files have identical SHA-256 hashes.
-        
+
         Parameters:
             file1 (str): Path to the first file.
             file2 (str): Path to the second file.
-        
+
         Returns:
             True if both files exist and their SHA-256 hex digests are identical, False otherwise.
         """
@@ -897,10 +897,10 @@ class FileOperations:
     def _get_file_hash(self, file_path: str) -> Optional[str]:
         """
         Compute the SHA-256 hash of a file.
-        
+
         Parameters:
             file_path (str): Path to the file to hash.
-        
+
         Returns:
             Optional[str]: SHA-256 hex digest string if the file exists and is readable, `None` if the file does not exist or cannot be read.
         """

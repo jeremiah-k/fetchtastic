@@ -36,12 +36,12 @@ class BaseDownloader(Downloader, ABC):
     ):
         """
         Initialize BaseDownloader and its common helpers.
-        
+
         Parameters:
             config (Dict[str, Any]): Configuration containing downloader settings. Recognized keys include
                 "DOWNLOAD_DIR" (defaults to "~/meshtastic") and "VERSIONS_TO_KEEP" (defaults to 5).
             cache_manager (Optional[CacheManager]): Cache manager to use; a new CacheManager is created if omitted.
-        
+
         Notes:
             Creates a VersionManager and FileOperations instance, stores a CacheManager, and normalizes
             download_dir (string path) and versions_to_keep from the provided configuration.
@@ -60,7 +60,7 @@ class BaseDownloader(Downloader, ABC):
     def _get_download_dir(self) -> str:
         """
         Determine the directory used for downloads from configuration.
-        
+
         Returns:
             download_dir (str): Configured download directory path. If not set, returns the user's home 'meshtastic' directory (e.g. '~/meshtastic').
         """
@@ -69,9 +69,9 @@ class BaseDownloader(Downloader, ABC):
     def _get_versions_to_keep(self) -> int:
         """
         Return the number of release versions to retain.
-        
+
         Reads "VERSIONS_TO_KEEP" from the downloader configuration and returns its value cast to int; defaults to 5 if the setting is not present.
-        
+
         Returns:
             int: Number of versions to keep (defaults to 5).
         """
@@ -80,7 +80,7 @@ class BaseDownloader(Downloader, ABC):
     def download(self, url: str, target_path: Pathish) -> bool:
         """
         Download a file from the given URL into the specified target path.
-        
+
         Returns:
             bool: True if the file was downloaded successfully, False otherwise.
         """
@@ -105,13 +105,13 @@ class BaseDownloader(Downloader, ABC):
     def verify(self, file_path: Pathish, expected_hash: Optional[str] = None) -> bool:
         """
         Verify the integrity of a downloaded file.
-        
+
         If `expected_hash` is provided, verifies the file's hash against it; otherwise performs a general integrity check.
-        
+
         Parameters:
             file_path (Pathish): Path to the file to verify.
             expected_hash (Optional[str]): Expected hash to validate against; if omitted, a broader integrity check is used.
-        
+
         Returns:
             bool: `True` if the file passes verification, `False` otherwise.
         """
@@ -127,12 +127,12 @@ class BaseDownloader(Downloader, ABC):
     ) -> List[Pathish]:
         """
         Extracts files from the given archive that match any of the provided include patterns and do not match the optional exclude patterns.
-        
+
         Parameters:
             file_path (PathLike | str): Path to the archive file.
             patterns (List[str]): Filename include patterns (e.g., glob or fnmatch) used to select files to extract.
             exclude_patterns (Optional[List[str]]): Optional filename patterns to exclude from extraction.
-        
+
         Returns:
             List[pathlib.Path]: Paths to the extracted files.
         """
@@ -195,13 +195,13 @@ class BaseDownloader(Downloader, ABC):
     def should_download_release(self, _release_tag: str, asset_name: str) -> bool:
         """
         Decide whether an asset should be downloaded based on configured selection and exclusion patterns.
-        
+
         The asset is eligible only if it matches at least one configured selected pattern (when any are defined)
         and does not match any configured exclude pattern.
-        
+
         Parameters:
             asset_name (str): The name of the asset to evaluate.
-        
+
         Returns:
             bool: `true` if the asset should be downloaded, `false` otherwise.
         """
@@ -228,9 +228,9 @@ class BaseDownloader(Downloader, ABC):
     def _get_selected_patterns(self) -> List[str]:
         """
         Retrieve asset selection patterns from configuration, falling back to legacy keys if necessary.
-        
+
         Checks "SELECTED_PATTERNS" and, if not present, attempts "SELECTED_FIRMWARE_ASSETS", "SELECTED_PRERELEASE_ASSETS", and "SELECTED_APK_ASSETS". Normalizes a single string into a one-element list.
-        
+
         Returns:
             List[str]: Selection patterns from configuration, or an empty list if none are configured.
         """
@@ -250,7 +250,7 @@ class BaseDownloader(Downloader, ABC):
     def _get_exclude_patterns(self) -> List[str]:
         """
         Retrieve exclude filename patterns from the configuration.
-        
+
         Returns:
             patterns (List[str]): A list of exclude pattern strings. If the config value is a single string it is wrapped into a one-element list; missing value yields an empty list.
         """
@@ -273,11 +273,11 @@ class BaseDownloader(Downloader, ABC):
     def _matches_exclude_patterns(self, filename: str, patterns: List[str]) -> bool:
         """
         Check whether the filename matches any exclude pattern, using case-insensitive shell-style wildcard matching.
-        
+
         Parameters:
             filename: The filename to test.
             patterns: Iterable of shell-style patterns (e.g., '*.zip'); matching is case-insensitive.
-        
+
         Returns:
             True if the filename matches any exclude pattern, False otherwise.
         """
@@ -292,14 +292,14 @@ class BaseDownloader(Downloader, ABC):
     def _sanitize_required(self, component: str, label: str) -> str:
         """
         Ensure a path component is safe for use and return the sanitized value.
-        
+
         Parameters:
             component (str): The path component to sanitize.
             label (str): Human-readable label used in the error message if sanitization fails.
-        
+
         Returns:
             sanitized (str): The sanitized path component.
-        
+
         Raises:
             ValueError: If the component cannot be safely sanitized (to prevent path traversal).
         """
@@ -329,7 +329,7 @@ class BaseDownloader(Downloader, ABC):
     ) -> DownloadResult:
         """
         Builds a standardized DownloadResult representing a download attempt for a release asset.
-        
+
         Parameters:
             success (bool): Whether the download succeeded.
             release_tag (str): Release identifier associated with the asset.
@@ -344,7 +344,7 @@ class BaseDownloader(Downloader, ABC):
             error_details (Optional[Dict[str, Any]]): Additional structured error information.
             http_status_code (Optional[int]): HTTP status code returned by the request, if applicable.
             was_skipped (bool): Whether the asset was intentionally skipped (not attempted).
-        
+
         Returns:
             DownloadResult: An object encapsulating the outcome and metadata of the download attempt.
         """
@@ -367,11 +367,11 @@ class BaseDownloader(Downloader, ABC):
     def get_existing_file_path(self, release_tag: str, file_name: str) -> Optional[str]:
         """
         Return the filesystem path for an asset of the given release if the file exists.
-        
+
         Parameters:
             release_tag (str): Release tag used to locate the version directory.
             file_name (str): Asset filename within the release directory.
-        
+
         Returns:
             Optional[str]: Path to the existing file as a string, or `None` if the file does not exist.
         """
@@ -381,10 +381,10 @@ class BaseDownloader(Downloader, ABC):
     def cleanup_file(self, file_path: str) -> bool:
         """
         Delete the file at the given path if present.
-        
+
         Parameters:
             file_path (str): Path to the file to remove.
-        
+
         Returns:
             bool: `True` if the file was removed, `False` otherwise.
         """
@@ -393,10 +393,10 @@ class BaseDownloader(Downloader, ABC):
     def _is_zip_intact(self, file_path: str) -> bool:
         """
         Perform a quick integrity check of a ZIP archive.
-        
+
         Parameters:
             file_path (str): Path to the ZIP file to inspect.
-        
+
         Returns:
             bool: `True` if the archive contains no corrupt members, `False` otherwise.
         """
@@ -439,12 +439,12 @@ class BaseDownloader(Downloader, ABC):
     ) -> bool:
         """
         Determine whether a release asset file should be downloaded.
-        
+
         Parameters:
             release_tag (str): Release tag used to locate the existing file.
             file_name (str): Name of the asset file.
             expected_size (int): Expected file size in bytes.
-        
+
         Returns:
             `true` if the file should be downloaded, `false` otherwise.
         """

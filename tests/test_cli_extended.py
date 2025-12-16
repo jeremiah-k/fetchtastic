@@ -140,10 +140,10 @@ def test_run_clean_permission_errors(mocker, capsys):
     def mock_remove_with_error(path):
         """
         Simulates removing a filesystem path and raises a permission error for paths containing "config".
-        
+
         Parameters:
             path (str): Filesystem path to remove.
-        
+
         Raises:
             PermissionError: If the string "config" is present in `path`.
         """
@@ -169,7 +169,7 @@ def test_run_clean_permission_errors(mocker, capsys):
 def test_run_clean_managed_file_filtering(mocker):
     """
     Verify run_clean removes only managed artifacts and preserves personal files.
-    
+
     Ensures the cleanup routine always removes the active and old config files, removes files and directories identified as managed (e.g., firmware archives and managed folders), and does not remove user personal files or directories.
     """
 
@@ -203,9 +203,9 @@ def test_run_clean_managed_file_filtering(mocker):
     def mock_remove(path):
         """
         Record the given filesystem path in the shared removed_files list.
-        
+
         This helper emulates file removal for tests by appending the provided path to the module-level removed_files list as a side effect.
-        
+
         Parameters:
             path (str): Filesystem path to record as removed.
         """
@@ -214,7 +214,7 @@ def test_run_clean_managed_file_filtering(mocker):
     def mock_rmtree(path):
         """
         Record a directory path as removed by appending it to the `removed_dirs` list.
-        
+
         Parameters:
             path (str): Filesystem path of the directory that would be removed.
         """

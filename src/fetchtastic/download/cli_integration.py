@@ -46,7 +46,7 @@ class DownloadCLIIntegration:
     ]:
         """
         Execute the download pipeline and return results formatted for legacy CLI compatibility.
-        
+
         Returns:
             A tuple with:
             - downloaded_firmwares (List[str]): Paths or identifiers of firmware files downloaded.
@@ -56,7 +56,7 @@ class DownloadCLIIntegration:
             - failed_downloads (List[Dict[str, str]]): List of failure records with keys such as `file_name`, `release_tag`, `url`, `type`, `path_to_download`, `error`, `retryable`, and `http_status`.
             - latest_firmware_version (str): Latest known firmware version (empty string if unavailable).
             - latest_apk_version (str): Latest known Android APK version (empty string if unavailable).
-        
+
         On error, returns empty lists for the download collections and empty strings for the latest-version values.
         """
         try:
@@ -117,7 +117,7 @@ class DownloadCLIIntegration:
     def _clear_caches(self) -> None:
         """
         Attempt to clear downloader caches.
-        
+
         Attempts to clear all caches managed by the integration (currently the Android downloader's cache manager). Exceptions raised during clearing are caught and logged; this method does not propagate errors.
         """
         try:
@@ -143,9 +143,9 @@ class DownloadCLIIntegration:
     ) -> None:
         """
         Emit a legacy-style summary of download results to the provided logger.
-        
+
         Logs elapsed time, counts of downloaded firmware and APKs, reported latest release versions (including prereleases), details of any failed downloads, and a GitHub API usage summary. If no downloads or failures occurred, logs an "up to date" timestamp. Uses the instance's get_latest_versions() for prerelease info.
-        
+
         Parameters:
             logger_override (logging-like, optional): Logger to use instead of the module logger; if omitted, the module-level `logger` is used.
             elapsed_seconds (float): Total time elapsed for the download run.
@@ -207,10 +207,10 @@ class DownloadCLIIntegration:
     ) -> Tuple[List[str], List[str], List[str], List[str]]:
         """
         Translate new-architecture successful download results into legacy CLI lists.
-        
+
         Parameters:
             success_results (List[Any]): Iterable of result objects from the orchestrator; each object may have attributes `release_tag`, `file_path`, and `was_skipped`.
-        
+
         Returns:
             Tuple[List[str], List[str], List[str], List[str]]:
                 downloaded_firmwares: Unique firmware release tags that were downloaded (excludes skipped results).
@@ -261,11 +261,11 @@ class DownloadCLIIntegration:
     def _is_newer_version(self, version1: str, version2: str) -> bool:
         """
         Determine whether `version1` represents a newer version than `version2`.
-        
+
         Parameters:
             version1 (str): Version string to compare.
             version2 (str): Version string to compare against.
-        
+
         Returns:
             bool: `True` if `version1` represents a newer version than `version2`, `False` otherwise.
         """
@@ -276,7 +276,7 @@ class DownloadCLIIntegration:
     def get_failed_downloads(self) -> List[Dict[str, Any]]:
         """
         Return a legacy-formatted list of failed download records.
-        
+
         Each list item is a dictionary with the following keys:
             file_name (str): Base filename of the intended download or "unknown" if not available.
             release_tag (str): Associated release tag or "unknown" if not available.
@@ -286,7 +286,7 @@ class DownloadCLIIntegration:
             error (str): Error message reported for the failure, or empty string if none.
             retryable (bool): Whether the failure is considered retryable.
             http_status (Optional[int]): HTTP status code associated with the failure, or None if not applicable.
-        
+
         Returns:
             List[Dict[str, Any]]: The list of failed download dictionaries. Returns an empty list if the integration is not initialized or there are no failures.
         """
@@ -381,7 +381,7 @@ class DownloadCLIIntegration:
     def get_download_statistics(self) -> Dict[str, Any]:
         """
         Provide download statistics for reporting.
-        
+
         Returns:
             A dictionary with the following keys:
             - "total_downloads" (int): Total number of attempted downloads.
@@ -403,7 +403,7 @@ class DownloadCLIIntegration:
     def get_latest_versions(self) -> Dict[str, str]:
         """
         Return the latest known versions for each artifact type.
-        
+
         Returns:
             dict: Mapping of artifact keys ('android', 'firmware', 'firmware_prerelease', 'android_prerelease') to their latest version string; empty string if unavailable.
         """
@@ -421,7 +421,7 @@ class DownloadCLIIntegration:
     def validate_integration(self) -> bool:
         """
         Verify the CLI integration is operational by checking component initialization, ability to fetch at least one release from both Android and firmware downloaders, and that the Android download directory exists (creating it if missing).
-        
+
         Returns:
             bool: `True` if all checks pass, `False` otherwise.
         """
@@ -455,9 +455,9 @@ class DownloadCLIIntegration:
     def get_migration_report(self) -> Dict[str, Any]:
         """
         Return a structured report describing the integration's initialization and readiness.
-        
+
         The report includes whether core components are initialized, whether the active configuration and download directory are valid, current download statistics, and an overall status ("completed" or "not_initialized"). When not initialized, the report includes a `repository_support` flag set to False.
-        
+
         Returns:
             Dict[str, Any]: A mapping with keys:
                 - status: "completed" or "not_initialized".
@@ -494,7 +494,7 @@ class DownloadCLIIntegration:
     def fallback_to_legacy(self) -> bool:
         """
         Indicate that a fallback to the legacy downloader will not be performed.
-        
+
         Returns:
             bool: `False` indicating no fallback to the legacy downloader was performed.
         """
@@ -507,7 +507,7 @@ class DownloadCLIIntegration:
     def _validate_configuration(self) -> bool:
         """
         Check whether required configuration keys are present.
-        
+
         Returns:
             `True` if a configuration is loaded and contains the required key "DOWNLOAD_DIR", `False` otherwise.
         """
@@ -519,7 +519,7 @@ class DownloadCLIIntegration:
     def _check_download_directory(self) -> bool:
         """
         Verify the Android downloader's configured download directory exists.
-        
+
         Returns:
             bool: `True` if the Android downloader is initialized and its download directory exists, `False` otherwise.
         """
@@ -531,7 +531,7 @@ class DownloadCLIIntegration:
     def get_legacy_compatibility_report(self) -> Dict[str, Any]:
         """
         Return a compatibility report describing how the integration matches legacy CLI expectations.
-        
+
         Returns:
             Dict[str, Any]: A mapping with boolean flags for compatibility checks and current statistics:
                 - cli_integration_ready: whether the CLI integration is initialized
@@ -555,7 +555,7 @@ class DownloadCLIIntegration:
     def log_integration_summary(self) -> None:
         """
         Emit a multi-line summary of the integration state to the module logger.
-        
+
         Includes integration status, initialization flags for the orchestrator and downloaders, configuration and download-directory checks, aggregated download statistics (total, failed, per-type counts, and success rate), and details for any failed downloads.
         """
         if not self.orchestrator:
@@ -604,7 +604,7 @@ class DownloadCLIIntegration:
     def handle_cli_error(self, error: Exception) -> None:
         """
         Log a user-friendly CLI error message and emit targeted guidance for common exception types.
-        
+
         Parameters:
             error (Exception): The exception that occurred; used to select and log specific, actionable guidance for common error categories (import, file-not-found, permission, connection, or other).
         """
@@ -629,7 +629,7 @@ class DownloadCLIIntegration:
     def get_cli_help_integration(self) -> Dict[str, str]:
         """
         Provide help text entries describing the CLI integration for the new download subsystem.
-        
+
         Returns:
             A mapping with the following keys and short instructional strings:
             - `description`: brief name or summary of the subsystem
@@ -655,7 +655,7 @@ class DownloadCLIIntegration:
     def update_cli_progress(self, message: str, progress: float = 0.0) -> None:
         """
         Emit a CLI progress or status message to the configured logger.
-        
+
         Parameters:
             message (str): Human-readable progress or status message.
             progress (float): Fractional progress between 0.0 and 1.0; if greater than 0, a percentage is logged, otherwise only the status message is logged.
@@ -689,10 +689,10 @@ class DownloadCLIIntegration:
     def _get_existing_prerelease_dirs(self, prerelease_dir: str) -> List[str]:
         """
         Return the names of existing prerelease subdirectories under the given directory.
-        
+
         Parameters:
             prerelease_dir (str): Path to the prerelease base directory to scan.
-        
+
         Returns:
             List[str]: Directory names (not full paths) that exist under `prerelease_dir`, are real directories (not symlinks), and start with the prefix "firmware-". Returns an empty list if `prerelease_dir` does not exist or an OS error occurs during scanning.
         """
@@ -723,9 +723,9 @@ class DownloadCLIIntegration:
     ) -> Tuple[bool, List[str]]:
         """
         Detect and download prerelease firmware assets matching the expected prerelease version.
-        
+
         Calculates the expected prerelease version from the provided release tag, looks for a matching prerelease locally or remotely, downloads matching assets when necessary or requested, updates prerelease tracking, and optionally cleans up old prerelease directories.
-        
+
         Parameters:
             download_dir (str): Base directory where firmware/prerelease subdirectory lives.
             latest_release_tag (str): Official release tag used to compute the expected prerelease version.
@@ -735,7 +735,7 @@ class DownloadCLIIntegration:
             github_token (Optional[str]): GitHub API token to use for remote queries; may be omitted to use environment token.
             force_refresh (bool): If True, force remote checks and update tracking even if local copies exist.
             allow_env_token (bool): If True, allow using a token found in the environment when github_token is not provided.
-        
+
         Returns:
             Tuple[bool, List[str]]: A tuple where the first element is `True` if assets were downloaded (or `False` otherwise),
             and the second element is a list containing the prerelease directory used (remote or local) when applicable, otherwise an empty list.

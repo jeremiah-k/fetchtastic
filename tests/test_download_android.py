@@ -2,7 +2,10 @@
 #
 # Comprehensive unit tests for the MeshtasticAndroidAppDownloader class.
 
-from unittest.mock import Mock, patch
+import json
+import os
+from pathlib import Path
+from unittest.mock import ANY, Mock, patch
 
 import pytest
 
@@ -18,7 +21,7 @@ class TestMeshtasticAndroidAppDownloader:
     def mock_config(self):
         """
         Provide a mock configuration dictionary used by tests.
-        
+
         Returns:
             dict: Configuration with keys:
                 DOWNLOAD_DIR (str): base download directory path.
@@ -39,11 +42,16 @@ class TestMeshtasticAndroidAppDownloader:
     def mock_cache_manager(self):
         """
         Provide a Mock configured to mimic CacheManager behavior for tests.
-        
+
         Returns:
             Mock: A unittest.mock.Mock instance with its spec set to CacheManager.
         """
-        return Mock(spec=CacheManager)
+        mock = Mock(spec=CacheManager)
+        mock.cache_dir = "/tmp/cache"
+        mock.get_cache_file_path.side_effect = lambda file_name: os.path.join(
+            mock.cache_dir, file_name
+        )
+        return mock
 
     @pytest.fixture
     def downloader(self, mock_config, mock_cache_manager):
@@ -253,11 +261,24 @@ class TestMeshtasticAndroidAppDownloader:
 
         # Mock atomic write
         downloader.cache_manager.atomic_write_json = Mock(return_value=True)
+        downloader.cache_manager.get_cache_file_path.return_value = (
+            "/tmp/cache/latest_android_release.json"
+        )
 
         result = downloader.update_latest_release_tag("v1.0.0")
 
         assert result is True
-        downloader.cache_manager.atomic_write_json.assert_called_once()
+        downloader.cache_manager.atomic_write_json.assert_called_once_with(
+            "/tmp/cache/latest_android_release.json", ANY
+        )
+
+    def test_get_latest_release_tag_from_cache(self, mock_config, tmp_path):
+        cache_manager = CacheManager(str(tmp_path))
+        downloader = MeshtasticAndroidAppDownloader(mock_config, cache_manager)
+        json_path = cache_manager.get_cache_file_path(downloader.latest_release_file)
+        Path(json_path).write_text(json.dumps({"latest_version": "v1.0.0"}))
+
+        assert downloader.get_latest_release_tag() == "v1.0.0"
 
     def test_get_current_iso_timestamp(self, downloader):
         """Test ISO timestamp generation."""
