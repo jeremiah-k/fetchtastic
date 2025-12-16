@@ -9,11 +9,22 @@ from fetchtastic.download.orchestrator import DownloadOrchestrator
 
 class _NoSleep:
     def __call__(self, *_args, **_kwargs):
+        """
+        A no-op callable that accepts any positional and keyword arguments and always returns None.
+        
+        Returns:
+            None
+        """
         return None
 
 
 @pytest.fixture(autouse=True)
 def no_sleep(monkeypatch):
+    """
+    Replace time.sleep with a no-op callable for tests.
+    
+    This pytest fixture monkeypatches time.sleep so calls to sleep return immediately, preventing test delays.
+    """
     monkeypatch.setattr(time, "sleep", _NoSleep())
 
 
@@ -31,6 +42,16 @@ def test_retry_uses_real_download(monkeypatch, tmp_path):
     download_called = {}
 
     def fake_download(u, p):
+        """
+        Simulate a successful download by recording the requested URL and writing test data to the target path.
+        
+        Parameters:
+            u (str): URL that would be downloaded; stored into the shared `download_called["url"]`.
+            p (str | pathlib.Path): Filesystem path where the downloaded bytes are written.
+        
+        Returns:
+            bool: `True` to indicate the simulated download succeeded.
+        """
         download_called["url"] = u
         Path(p).write_bytes(b"data")
         return True
@@ -65,6 +86,11 @@ def test_orchestrator_refreshes_commits_before_processing(monkeypatch):
     calls = []
 
     def fake_refresh():
+        """
+        Record a refresh and populate the orchestrator's recent commits with a sample commit.
+        
+        Appends "refresh" to the outer `calls` list and sets `orch._recent_commits` to a single commit dict with key `sha` and value "abc1234".
+        """
         calls.append("refresh")
         orch._recent_commits = [{"sha": "abc1234"}]
 

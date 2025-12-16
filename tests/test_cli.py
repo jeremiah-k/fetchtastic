@@ -10,7 +10,24 @@ import fetchtastic.cli as cli
 
 @pytest.fixture
 def mock_cli_dependencies(mocker):
-    """Fixture to mock common CLI dependencies while allowing CLI code to run."""
+    """
+    Provide a pytest fixture that patches common CLI external dependencies and returns a mocked DownloadCLIIntegration instance.
+    
+    Patches:
+    - Network/HTTP classes and requests.get to avoid real network calls.
+    - fetchtastic.setup_config.load_config to return a default config.
+    - fetchtastic.log_utils.set_log_level and fetchtastic.log_utils.logger to prevent real logging side effects.
+    - fetchtastic.utils.reset_api_tracking and fetchtastic.utils.get_api_request_summary.
+    - time.time to a fixed value.
+    - Replaces fetchtastic.download.cli_integration.DownloadCLIIntegration so creating an integration returns the mock instance.
+    
+    Parameters:
+        mocker: The pytest-mock fixture used to apply patches.
+    
+    Returns:
+        mock_integration_instance (unittest.mock.MagicMock): A mock DownloadCLIIntegration instance whose
+        `main()` and `get_latest_versions()` methods are preset to safe default values for testing.
+    """
     # Mock SSL/urllib3 to prevent SystemTimeWarning
     mocker.patch("urllib3.connectionpool.HTTPSConnectionPool")
     mocker.patch("urllib3.connection.HTTPSConnection")
@@ -1409,10 +1426,9 @@ def test_cli_download_without_log_level_config(mocker):
 
 def test_cli_download_with_empty_config(mocker):
     """
-    Verify that when a config path exists but load_config returns None, the CLI `download` command:
-    - does not call `set_log_level`,
-    - invokes the downloader (`downloader.main`),
-    - and does not run setup (`run_setup`).
+    Ensure the CLI 'download' command proceeds to the downloader when a config path exists but load_config returns None.
+    
+    Verifies that `set_log_level` is not called, the download integration's `main()` is invoked exactly once, and `run_setup` is not invoked.
     """
     mocker.patch("sys.argv", ["fetchtastic", "download"])
     mock_set_log_level = mocker.patch("fetchtastic.log_utils.set_log_level")
@@ -1458,7 +1474,11 @@ def test_cli_download_with_empty_config(mocker):
 
 
 def test_cli_download_with_various_log_levels(mocker):
-    """Test the 'download' command with various LOG_LEVEL values."""
+    """
+    Verify that the download command applies configured log levels and invokes the download integration.
+    
+    For each log level in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], patches configuration to include that LOG_LEVEL, runs the CLI download command, and asserts that fetchtastic.log_utils.set_log_level is called once with the configured level and that DownloadCLIIntegration.main is invoked.
+    """
     mocker.patch("sys.argv", ["fetchtastic", "download"])
     mock_integration_main = mocker.patch(
         "fetchtastic.download.cli_integration.DownloadCLIIntegration.main",
@@ -1521,9 +1541,12 @@ def test_cli_download_parametrized_log_levels(mocker, log_level):
 @pytest.mark.parametrize("invalid_log_level", ["INVALID", "TRACE", "VERBOSE", "123"])
 def test_cli_download_with_invalid_log_levels(mocker, invalid_log_level):
     """
-    Verify that running the "download" command with an invalid LOG_LEVEL value does not raise,
-    that the CLI passes the raw value to set_log_level (letting that function handle validation),
-    and that downloader.main is invoked while setup_config.run_setup is not.
+    Verify the CLI passes an invalid LOG_LEVEL to set_log_level and still runs the download integration while not invoking setup.
+    
+    Asserts that set_log_level is called with the raw invalid value, DownloadCLIIntegration.main is invoked exactly once, and setup_config.run_setup is not called.
+    
+    Parameters:
+        invalid_log_level (str): A string representing an invalid log level value to pass through to the CLI.
     """
     mocker.patch("sys.argv", ["fetchtastic", "download"])
     mock_integration_main = mocker.patch(

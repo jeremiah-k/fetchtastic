@@ -20,7 +20,18 @@ from fetchtastic.download.interfaces import Asset, Release
 
 @pytest.fixture
 def test_config():
-    """Test configuration for firmware downloader."""
+    """
+    Provides a test configuration dictionary for the firmware downloader.
+    
+    Returns:
+        dict: Configuration mapping with keys:
+            - DOWNLOAD_DIR (str): base path for test downloads.
+            - FIRMWARE_VERSIONS_TO_KEEP (int): number of firmware version directories to retain.
+            - SELECTED_PATTERNS (list[str]): filename patterns to include.
+            - EXCLUDE_PATTERNS (list[str]): filename patterns to exclude.
+            - GITHUB_TOKEN (str): token used for GitHub API authentication in tests.
+            - CHECK_FIRMWARE_PRERELEASES (bool): whether prerelease firmware should be considered.
+    """
     return {
         "DOWNLOAD_DIR": "/tmp/test_firmware",
         "FIRMWARE_VERSIONS_TO_KEEP": 2,
@@ -33,7 +44,17 @@ def test_config():
 
 @pytest.fixture
 def firmware_downloader(test_config):
-    """Firmware release downloader instance."""
+    """
+    Create a FirmwareReleaseDownloader configured for tests.
+    
+    Parameters:
+        test_config (dict): Configuration dictionary for the downloader (e.g., download directory,
+            retention settings, GitHub token, prerelease check flag) used by tests.
+    
+    Returns:
+        FirmwareReleaseDownloader: An instance of FirmwareReleaseDownloader initialized with the
+        provided configuration and a fresh CacheManager.
+    """
     cache_manager = CacheManager()
     return FirmwareReleaseDownloader(test_config, cache_manager)
 

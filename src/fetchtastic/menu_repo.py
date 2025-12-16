@@ -292,15 +292,13 @@ Select "[Quit]" to exit without downloading."""
 
 def run_menu():
     """
-    Browse the Meshtastic GitHub Pages repository interactively and select files to download.
-
-    This function runs a CLI-based navigator that lets the user move between directories, multi-select files for download, go back to parent directories, or quit. It handles user cancellation and errors internally and is intended for interactive use.
-
+    Interactively browse the Meshtastic GitHub Pages repository and select one or more files to download.
+    
     Returns:
-        dict: On success, a dictionary with:
+        result (dict or None): If files were selected, a dict with:
             - "directory" (str): repository path containing the selected files (empty string for root).
             - "files" (list): list of file dictionaries chosen by the user (each matches entries returned by fetch_repo_contents).
-        None: If the user cancels/quits, no items/files are found, or an error occurs.
+        If the user cancels, no files are selected, or an error occurs, returns None.
     """
     try:
         current_path = ""
@@ -368,16 +366,15 @@ def run_menu():
 
 def run_repository_downloader_menu(config):
     """
-    Run the complete repository downloader workflow using the new modular architecture.
-
-    This function integrates the menu system with the new RepositoryDownloader class
-    to provide a complete user experience for downloading repository files.
-
-    Args:
-        config (dict): Configuration dictionary containing download settings
-
+    Orchestrates an interactive repository-download workflow and returns the paths of downloaded files.
+    
+    Presents the repository browsing menu, downloads the user's selected files using RepositoryDownloader, and aggregates successful results.
+    
+    Parameters:
+        config (dict): Configuration for the downloader (download destination, network/timeouts, credentials, or other download-related settings).
+    
     Returns:
-        List[str]: List of paths to successfully downloaded files, or None if cancelled
+        List[str] | None: List of filesystem paths for successfully downloaded files, or `None` if no files were downloaded or the operation was cancelled/errored.
     """
     try:
         # Get user selection from the menu

@@ -65,20 +65,20 @@ class VersionManager:
         self, version: Optional[str]
     ) -> Optional[Union[Version, Any]]:
         """
-        Normalize repository-style version strings into a PEP 440-compatible form.
-
-        Recognizes and strips a leading "v", converts common prerelease markers
-        (e.g., "alpha"/"beta" with optional numeric fragment) into PEP 440
-        prerelease forms, and converts trailing commit/hash-like suffixes into
-        local version identifiers when possible.
-
-        Args:
-            version: Raw version string that may include a leading "v",
-                   prerelease words, or a hash suffix.
-
+        Normalize a repository-style version string into a PEP 440-compatible Version object.
+        
+        Converts and strips common repository formatting such as a leading "v", common
+        prerelease words ("alpha", "beta", "rc", "dev") into PEP 440 prerelease
+        notations, and converts trailing commit/hash-like suffixes into a local version
+        identifier when possible. Returns None for empty, missing, or unparsable input.
+        
+        Parameters:
+            version (Optional[str]): Raw version string that may include a leading "v",
+                prerelease words, or a hash suffix.
+        
         Returns:
-            A parsed Version or LegacyVersion-like object when parsing succeeds;
-            None for empty, missing, or unparsable inputs.
+            Optional[Version|Any]: A parsed Version (or LegacyVersion-like) object on
+            success, or `None` if the input is empty or cannot be parsed.
         """
         if version is None:
             return None
@@ -114,16 +114,15 @@ class VersionManager:
 
     def get_release_tuple(self, version: Optional[str]) -> Optional[Tuple[int, ...]]:
         """
-        Return the numeric release components extracted from a version string.
-
-        Args:
-            version: Version string to parse. May include a leading "v" and
-                   additional metadata; only the numeric leading segments are considered.
-
+        Extract numeric release components from a version string.
+        
+        Parses a version like "v1.2.3", "1.2.3+meta", or "1.2.3.<hash>" and returns the leading numeric components as a tuple of integers. Prefers a normalized PEP 440 release tuple when available; otherwise uses the numeric base found directly in the string. Returns None for empty, None, or unparseable inputs.
+        
+        Parameters:
+            version (Optional[str]): Version string that may include a leading "v" and additional metadata.
+        
         Returns:
-            Tuple of integer release components (e.g., (1, 2, 3)) when a numeric
-            release can be determined, or None if the input is empty or no numeric
-            release segments can be parsed.
+            Optional[Tuple[int, ...]]: Tuple of integer release components (e.g., (1, 2, 3)) when determinable, or `None` if no numeric release can be parsed.
         """
         if version is None:
             return None
@@ -187,7 +186,16 @@ class VersionManager:
 
         # Natural comparison fallback for truly non-standard versions
         def _nat_key(s: str) -> List[Tuple[int, Union[int, str]]]:
-            """Produce a natural-sort key by splitting into digit and alphabetic runs."""
+            """
+            Return a natural-sort key by splitting the input into runs of digits and letters.
+            
+            Parameters:
+                s (str): Input string to convert into a natural-sort key.
+            
+            Returns:
+                key (List[Tuple[int, Union[int, str]]]): A list of tuples representing consecutive runs;
+                    each tuple is (1, int_value) for a numeric run or (0, str_value) for an alphabetic run (lowercased).
+            """
             parts = re.findall(r"\d+|[A-Za-z]+", s.lower())
             return [(1, int(p)) if p.isdigit() else (0, p) for p in parts]
 
@@ -201,15 +209,13 @@ class VersionManager:
 
     def ensure_v_prefix_if_missing(self, version: Optional[str]) -> Optional[str]:
         """
-        Ensure a version string begins with a leading "v".
-
-        Args:
-            version: Version string to normalize; leading/trailing whitespace is stripped.
-                   If None, no normalization is performed.
-
+        Ensure the version string starts with a leading "v".
+        
+        Parameters:
+            version (Optional[str]): Version string to normalize; leading/trailing whitespace is stripped. If `None`, no normalization is performed.
+        
         Returns:
-            None if version is None; otherwise the input string with a leading "v"
-            added if it did not already start with "v" or "V".
+            Optional[str]: `None` if `version` is `None`; otherwise the input string with a leading "v" added if it did not already start with "v" or "V".
         """
         if version is None:
             return None
@@ -246,16 +252,15 @@ class VersionManager:
 
     def calculate_expected_prerelease_version(self, release_version: str) -> str:
         """
-        Calculate the expected prerelease version for a given release.
-
-        This is used to determine what the next prerelease version should be
-        based on the current release version.
-
-        Args:
-            release_version: Current release version (e.g., "v1.2.3")
-
+        Compute the next prerelease version based on a release version.
+        
+        Strips a leading "v"/"V", parses the numeric release components, and returns the release with the patch component incremented by one. Returns an empty string when the next prerelease cannot be determined from the input.
+        
+        Parameters:
+            release_version (str): Release version string (e.g., "v1.2.3" or "1.2.3").
+        
         Returns:
-            Expected prerelease version (e.g., "1.2.4")
+            str: Next prerelease version with the patch bumped (e.g., "1.2.4"), or an empty string if undeterminable.
         """
         if not release_version:
             return ""
@@ -297,22 +302,16 @@ class VersionManager:
         self, commit_history: List[str], base_version: str
     ) -> Optional[str]:
         """
-        Parse commit history to determine expected prerelease version.
-
-        This method analyzes commit messages and history to determine what the
-        expected prerelease version should be based on commit patterns.
-        Matches legacy behavior for prerelease version detection.
-
-        Expected commit message shapes: base_version followed by dot and suffix
-        (e.g., "2.7.13.abc123" for commit hash.)
-        The regex may capture unintended tokens if commit formats vary widely.
-
-        Args:
-            commit_history: List of commit messages/history entries
-            base_version: Base version to use as starting point (without 'v' prefix)
-
+        Infer the expected prerelease version from a list of commit messages using the provided base version.
+        
+        Searches commit messages for explicit prerelease suffixes and returns the first match. Commits matching the prerelease-add pattern are checked first; if none are found the function looks for any version-like suffix adjacent to the base version (ignoring common non-version tokens). If no suffix is discovered, falls back to calculating the next patch-based prerelease version.
+        
+        Parameters:
+            commit_history (List[str]): Commit message strings to inspect.
+            base_version (str): Base version to use as the prefix (may include a leading 'v').
+        
         Returns:
-            Optional[str]: Expected prerelease version or None if cannot be determined
+            Optional[str]: A string combining the cleaned base version and the inferred suffix (suffix is lowercased), or `None` if `commit_history` or `base_version` is empty.
         """
         if not commit_history or not base_version:
             return None
@@ -346,7 +345,16 @@ class VersionManager:
         return self.calculate_expected_prerelease_version(base_version)
 
     def summarize_rate_limit(self, response: Any) -> Optional[Dict[str, Any]]:
-        """Extract rate-limit info from a GitHub API response for logging/reporting."""
+        """
+        Extract rate-limit information from an HTTP response (e.g., GitHub API) for logging or reporting.
+        
+        Returns:
+            dict: A mapping with keys:
+                - `remaining` (int): the number of remaining requests.
+                - `reset` (int): the UNIX epoch second when the rate limit resets.
+                - `limit` (int|None): the total request limit, or `None` if not present.
+            `None` if the response does not expose expected headers or values cannot be parsed.
+        """
         try:
             headers = response.headers
             remaining = headers.get("X-RateLimit-Remaining")
@@ -364,13 +372,13 @@ class VersionManager:
 
     def get_commit_hash_suffix(self, commit_hash: str) -> str:
         """
-        Extract and format commit hash suffix for version strings.
-
-        Args:
-            commit_hash: Full commit hash
-
+        Return a cleaned short commit-hash suffix suitable for embedding in version identifiers.
+        
+        Parameters:
+            commit_hash (str): Full commit hash or identifier; may contain non-alphanumeric characters.
+        
         Returns:
-            str: Formatted commit hash suffix (e.g., short hash)
+            str: Short alphanumeric hash (first 7 characters if available) with non-alphanumeric characters removed, or an empty string if input is falsy.
         """
         if not commit_hash:
             return ""
@@ -387,15 +395,15 @@ class VersionManager:
         self, base_version: str, commit_hash: str, prerelease_type: str = "rc"
     ) -> str:
         """
-        Create a prerelease version string with commit hash suffix.
-
-        Args:
-            base_version: Base version (e.g., "1.2.3")
-            commit_hash: Commit hash for suffix
-            prerelease_type: Type of prerelease (rc, alpha, beta, etc.)
-
+        Builds a prerelease version string from a base version and a commit hash suffix.
+        
+        Parameters:
+            base_version (str): Base version (e.g., "1.2.3"); returns an empty string if falsy.
+            commit_hash (str): Full commit hash used to generate the short suffix; may be empty.
+            prerelease_type (str): Prerelease identifier to use (default: "rc").
+        
         Returns:
-            str: Full prerelease version with hash suffix
+            str: Prerelease version like "1.2.3-rc1+abcdef0" or "1.2.3-rc1" if no hash is provided; empty string if base_version is falsy.
         """
         if not base_version:
             return ""
@@ -412,13 +420,15 @@ class VersionManager:
 
     def is_prerelease_version(self, version: str) -> bool:
         """
-        Check if a version string represents a prerelease.
-
-        Args:
-            version: Version string to check
-
+        Determine whether a version string denotes a prerelease.
+        
+        Uses normalized PEP 440 parsing when available; if parsing is not possible, falls back to matching common prerelease indicators (rc, alpha, beta, dev) and short commit-hash patterns.
+        
+        Parameters:
+            version (str): Version string to evaluate.
+        
         Returns:
-            bool: True if version is a prerelease, False otherwise
+            `true` if the version is a prerelease, `false` otherwise.
         """
         if not version:
             return False
@@ -455,12 +465,18 @@ class VersionManager:
     def get_prerelease_metadata_from_version(self, version: str) -> Dict[str, Any]:
         """
         Extract prerelease metadata from a version string.
-
-        Args:
-            version: Version string to parse
-
+        
+        Parameters:
+            version (str): Version text to analyze (may include PEP 440 prerelease/local segments or commit-hash suffixes).
+        
         Returns:
-            Dict: Prerelease metadata including base version, prerelease type, etc.
+            dict: Metadata with keys:
+                - original_version (str): The input version string.
+                - is_prerelease (bool): `true` if the version represents a prerelease, `false` otherwise.
+                - base_version (str): Numeric base version like "1.2.3" when available, otherwise an empty string.
+                - prerelease_type (str): Prerelease identifier such as "rc", "a", "b", or "dev", or empty string if none.
+                - prerelease_number (str): Numeric or string component following the prerelease type, or empty string if none.
+                - commit_hash (str): Local/commit-hash portion extracted from the version when present, or empty string if none.
         """
         if not version:
             return {}
@@ -512,15 +528,15 @@ class VersionManager:
         exclude_patterns: List[str],
     ) -> List[str]:
         """
-        Filter prereleases based on include/exclude patterns.
-
-        Args:
-            prereleases: List of prerelease versions
-            include_patterns: Patterns to include
-            exclude_patterns: Patterns to exclude
-
+        Filter prerelease versions by case-insensitive substring include/exclude patterns.
+        
+        Parameters:
+            prereleases (List[str]): Candidate prerelease version strings.
+            include_patterns (List[str]): Substring patterns; if empty, all prereleases are considered included.
+            exclude_patterns (List[str]): Substring patterns; any prerelease containing an exclude pattern is omitted.
+        
         Returns:
-            List[str]: Filtered list of prerelease versions
+            List[str]: Prereleases that match at least one include pattern (or all when include_patterns is empty) and do not match any exclude pattern. Matching is case-insensitive and uses simple substring containment.
         """
         filtered = []
 
@@ -558,17 +574,18 @@ class VersionManager:
         include_latest_key: bool = True,
     ) -> Dict[str, Any]:
         """
-        Create a version tracking JSON structure matching legacy format.
-
-        Args:
-            version: Version string to track
-            release_type: Type of release (e.g., 'latest', 'prerelease')
-            timestamp: Optional timestamp, uses current time if None
-            additional_data: Optional additional data to include
-            include_latest_key: When True, also include legacy "latest_version" key
-
+        Create a version-tracking JSON object compatible with the legacy tracking format.
+        
+        Parameters:
+            version (str): Version string to record (e.g., "v1.2.3").
+            release_type (str): Release category used to infer legacy fields (e.g., "android-prerelease", "firmware-release").
+            timestamp (Optional[str]): ISO-8601 timestamp to store; if None, the current UTC time is used.
+            additional_data (Optional[Dict[str, Any]]): Extra key/value pairs merged into the resulting JSON.
+            include_latest_key (bool): If True, include legacy keys "latest_version" and "last_updated" mirroring the version and timestamp.
+        
         Returns:
-            Dict: Version tracking JSON structure
+            Dict[str, Any]: A dictionary containing version, type, timestamp, source, and legacy compatibility fields such as
+            "latest_version", "last_updated", and "file_type" when applicable.
         """
         tracking_data = {
             "version": version,
@@ -602,17 +619,16 @@ class VersionManager:
         additional_data: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """
-        Write a version tracking file with atomic write and timestamp.
-
-        Args:
-            file_path: Path to write the tracking file
-            version: Version string to track
-            release_type: Type of release
-            cache_manager: CacheManager instance for atomic writes
-            additional_data: Optional additional data
-
+        Write version-tracking JSON (including timestamp and metadata) to the given path using an atomic write.
+        
+        Parameters:
+            file_path (str): Destination file path for the tracking JSON.
+            version (str): Version string to record.
+            release_type (str): Release type used to derive file metadata.
+            additional_data (Optional[Dict[str, Any]]): Optional data to merge into the tracking JSON.
+        
         Returns:
-            bool: True if write succeeded, False otherwise
+            bool: `True` if the file was written successfully, `False` otherwise.
         """
         tracking_data = self.create_version_tracking_json(
             version, release_type, additional_data=additional_data
@@ -627,15 +643,17 @@ class VersionManager:
         backward_compatible_keys: Optional[Dict[str, str]] = None,
     ) -> Optional[Dict[str, Any]]:
         """
-        Read a version tracking file with backward compatibility.
-
-        Args:
-            file_path: Path to the tracking file
-            cache_manager: CacheManager instance for reading
-            backward_compatible_keys: Optional legacy key mapping
-
+        Read a version tracking JSON file and apply legacy key mappings for backward compatibility.
+        
+        Parameters:
+            file_path (str): Path to the tracking JSON file.
+            cache_manager: Object providing `read_json_with_backward_compatibility` to read the file.
+            backward_compatible_keys (Optional[Dict[str, str]]): Mapping from new keys to legacy keys to accept;
+                defaults to {"version": "latest_version", "last_updated": "timestamp"}.
+        
         Returns:
-            Optional[Dict]: Version tracking data or None if file doesn't exist
+            Optional[Dict[str, Any]]: Parsed tracking data with keys normalized according to `backward_compatible_keys`,
+            or `None` if the file does not exist or cannot be read.
         """
         return cache_manager.read_json_with_backward_compatibility(
             file_path,
@@ -673,14 +691,14 @@ class VersionManager:
         self, tracking_data: Dict[str, Any], required_keys: List[str]
     ) -> bool:
         """
-        Validate version tracking data structure.
-
-        Args:
-            tracking_data: Version tracking data to validate
-            required_keys: List of required keys
-
+        Check that the version tracking data contains all required keys.
+        
+        Parameters:
+            tracking_data (Dict[str, Any]): Mapping representing version tracking data to validate.
+            required_keys (List[str]): Keys that must be present in tracking_data.
+        
         Returns:
-            bool: True if data is valid, False otherwise
+            bool: `True` if every key in `required_keys` exists in `tracking_data`, `False` otherwise.
         """
         for key in required_keys:
             if key not in tracking_data:
@@ -691,14 +709,12 @@ class VersionManager:
         self, tracking_files: List[str], cache_manager: Any
     ) -> Optional[str]:
         """
-        Get the latest version from multiple tracking files.
-
-        Args:
-            tracking_files: List of tracking file paths
-            cache_manager: CacheManager instance for reading
-
+        Determine the highest version string present in the given tracking files.
+        
+        Reads each tracking file using the provided cache manager, validates presence of a version key, and compares versions to select the latest one.
+        
         Returns:
-            Optional[str]: Latest version found, or None if no valid tracking files
+            The latest version string found across the provided tracking files, or `None` if no valid version was found.
         """
         latest_version = None
 
@@ -724,16 +740,16 @@ class VersionManager:
         additional_data: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
-        Create prerelease tracking JSON matching legacy format.
-
-        Args:
-            current_release: Current stable release version
-            commits: List of commit identifiers
-            expected_version: Expected prerelease version
-            additional_data: Optional additional data
-
+        Builds a prerelease tracking JSON object compatible with the legacy format.
+        
+        Parameters:
+            current_release (str): Stable release version to record as the tracked release.
+            commits (List[str]): Ordered list of commit identifiers associated with the prerelease.
+            expected_version (Optional[str]): Optional expected prerelease version to include.
+            additional_data (Optional[Dict[str, Any]]): Optional extra keys to merge into the tracking data.
+        
         Returns:
-            Dict: Prerelease tracking JSON structure
+            Dict[str, Any]: Tracking data containing at minimum `version`, `commits`, `timestamp`, and `source`. Also includes legacy keys `latest_version` and `last_updated`, and will include a `hash` key if a commit hash can be derived from the first commit.
         """
         tracking_data = {
             "version": current_release,
@@ -766,16 +782,18 @@ class VersionManager:
         self, tracking_data: Dict[str, Any]
     ) -> Tuple[List[str], Optional[str], Optional[str]]:
         """
-        Parse legacy prerelease tracking data format.
-
-        Args:
-            tracking_data: Legacy tracking data dictionary
-
+        Parse legacy prerelease tracking data and return normalized components.
+        
+        Parameters:
+            tracking_data (Dict[str, Any]): Legacy tracking dictionary; may contain keys like
+                "version" or "latest_version" (release tag), "commits" (list of commit identifiers),
+                "hash" (single commit hash), and "last_updated" or "timestamp".
+        
         Returns:
-            Tuple containing:
-            - List of commit identifiers
-            - Current release version
-            - Last updated timestamp
+            Tuple[List[str], Optional[str], Optional[str]]:
+                - commits: Ordered list of normalized, lowercase commit identifiers with duplicates removed.
+                - current_release: Release tag prefixed with 'v' when present, otherwise None.
+                - last_updated: Timestamp string from "last_updated" or "timestamp", or None if absent.
         """
         version = tracking_data.get("version") or tracking_data.get("latest_version")
         hash_val = tracking_data.get("hash")
@@ -820,15 +838,17 @@ class VersionManager:
         delete_patterns: List[str],
     ) -> bool:
         """
-        Determine if a prerelease should be cleaned up based on legacy logic.
-
-        Args:
-            commit_identifier: Commit identifier to check
-            active_commits: List of currently active commits
-            delete_patterns: Patterns that indicate deletion
-
+        Decide whether a prerelease identified by commit_identifier should be removed.
+        
+        Checks membership against active_commits first; if not active, scans each pattern in delete_patterns for a hexadecimal commit hash (6–40 chars) and returns True if any found hash appears in commit_identifier (case-insensitive).
+        
+        Parameters:
+            commit_identifier (str): Commit identifier or directory name for the prerelease.
+            active_commits (List[str]): Currently active commit identifiers that must not be removed.
+            delete_patterns (List[str]): Patterns that may contain a hexadecimal commit hash indicating deletion.
+        
         Returns:
-            bool: True if prerelease should be cleaned up
+            bool: True if the prerelease should be cleaned up, False otherwise.
         """
         # Check if it's in active commits
         if commit_identifier in active_commits:
@@ -857,23 +877,69 @@ _version_manager = VersionManager()
 
 
 def _normalize_version(version: Optional[str]) -> Optional[Union[Version, Any]]:
+    """
+    Normalize a version string into a canonical Version-like form.
+    
+    Parameters:
+        version (Optional[str]): Version string to normalize (may include leading "v", prerelease tags, or hash suffixes); may be None.
+    
+    Returns:
+        Optional[Union[Version, Any]]: A Version-like object for the normalized version, or `None` if the input cannot be parsed.
+    """
     return _version_manager.normalize_version(version)
 
 
 def _get_release_tuple(version: Optional[str]) -> Optional[Tuple[int, ...]]:
+    """
+    Extracts the numeric release components (major, minor, patch, ...) from a version string.
+    
+    Parameters:
+        version (Optional[str]): Version string to parse; may include a leading 'v', prerelease tag, or trailing hash.
+    
+    Returns:
+        Optional[Tuple[int, ...]]: Tuple of integer release components (e.g., (1, 2, 3)) if determinable, otherwise `None`.
+    """
     return _version_manager.get_release_tuple(version)
 
 
 def _ensure_v_prefix_if_missing(version: Optional[str]) -> Optional[str]:
+    """
+    Ensure a version string begins with a leading "v" if a version is provided.
+    
+    Returns:
+        The input string prefixed with "v" if it was not None and did not already start with "v" (preserving other content), or `None` if the input was `None`.
+    """
     return _version_manager.ensure_v_prefix_if_missing(version)
 
 
 def _extract_clean_version(version_with_hash: Optional[str]) -> Optional[str]:
+    """
+    Produce a cleaned version string by removing trailing commit-hash suffixes and ensuring a leading 'v' when appropriate.
+    
+    Parameters:
+        version_with_hash (Optional[str]): A version identifier that may include a leading "v"/"V" and an appended commit-hash (e.g., "v1.2.3.abcdef" or "1.2.3-abcdef").
+    
+    Returns:
+        Optional[str]: A cleaned version string prefixed with "v" and containing the numeric base (e.g., "v1.2.3") when a base version can be determined; if the input is None returns None; if no numeric base is found returns the input normalized with a "v" prefix.
+    """
     return _version_manager.extract_clean_version(version_with_hash)
 
 
 def _normalize_commit_identifier(commit_id: str, release_version: Optional[str]) -> str:
     # This was a standalone helper, might need to be in VersionManager or kept here
+    """
+    Normalize a commit identifier into a version-like string when appropriate.
+    
+    Parameters:
+        commit_id (str): The commit identifier or candidate string (may be a full version with hash, a short/long hex hash, or other).
+        release_version (Optional[str]): A release version used as the base when the commit_id is a pure hex hash; ignored if not provided or not parseable.
+    
+    Returns:
+        str: A normalized identifier:
+            - If `commit_id` already matches "<major>.<minor>.<patch>.<hash>", returns it unchanged (lowercased).
+            - If `commit_id` is a hex hash and `release_version` yields a clean base (e.g., "v1.2.3"), returns "<major>.<minor>.<patch>.<hash>" (no leading "v").
+            - Otherwise returns the lowercased `commit_id`.
+    """
     commit_id = (commit_id or "").lower()
 
     if re.search(r"^\d+\.\d+\.\d+\.[a-f0-9]{6,40}$", commit_id):
@@ -893,12 +959,35 @@ def _normalize_commit_identifier(commit_id: str, release_version: Optional[str])
 def _parse_new_json_format(
     tracking_data: Dict[str, Any],
 ) -> Tuple[List[str], Optional[str], Optional[str]]:
-    """Parse new JSON format using VersionManager for better consistency."""
+    """
+    Parse prerelease tracking JSON data in the new format into commits, current release, and last-updated timestamp.
+    
+    Parameters:
+        tracking_data (Dict[str, Any]): Parsed JSON object representing prerelease tracking information.
+    
+    Returns:
+        Tuple[List[str], Optional[str], Optional[str]]: A tuple with
+            - commits: list of commit identifiers (strings),
+            - current_release: normalized current prerelease version string or None,
+            - last_updated: ISO 8601 timestamp string when the tracking was last updated, or None.
+    """
     return _version_manager.parse_legacy_prerelease_tracking(tracking_data)
 
 
 def _read_prerelease_tracking_data(tracking_file: str):
     # This function is used by tests
+    """
+    Read a prerelease tracking JSON file and extract commits, the current release tag, and last-updated timestamp.
+    
+    Parameters:
+        tracking_file (str): Path to the prerelease tracking JSON file.
+    
+    Returns:
+        tuple: A 3-tuple (commits, current_release, last_updated) where
+            commits (List[str]) is the list of commit identifiers (empty if none or on error),
+            current_release (Optional[str]) is the current prerelease version tag or None,
+            last_updated (Optional[str]) is the ISO timestamp string from the file or None.
+    """
     commits: List[str] = []
     current_release: Optional[str] = None
     last_updated: Optional[str] = None
@@ -934,6 +1023,15 @@ def _read_prerelease_tracking_data(tracking_file: str):
 
 
 def _read_latest_release_tag(json_file: str) -> Optional[str]:
+    """
+    Extracts the 'latest_version' value from a JSON file if present and valid.
+    
+    Parameters:
+        json_file (str): Path to a JSON file expected to contain a top-level "latest_version" key.
+    
+    Returns:
+        str: The trimmed `"latest_version"` string when present and non-empty, `None` if the file is missing, unreadable, malformed, or the key is absent/empty.
+    """
     if os.path.exists(json_file):
         try:
             with open(json_file, "r", encoding="utf-8") as f:
@@ -953,6 +1051,19 @@ def _read_latest_release_tag(json_file: str) -> Optional[str]:
 def _write_latest_release_tag(
     json_file: str, version_tag: str, release_type: str
 ) -> bool:
+    """
+    Write a small JSON file recording the latest release tag, file type, and update timestamp.
+    
+    Parameters:
+        json_file (str): Path to the JSON file to write.
+        version_tag (str): Version string to record under `latest_version`.
+        release_type (str): Human-readable release type; used to derive the `file_type` slug
+            (contains "android" -> "android", contains "firmware" -> "firmware", otherwise
+            whitespace is replaced with underscores).
+    
+    Returns:
+        success (bool): `True` if the file was written successfully, `False` otherwise.
+    """
     release_type_l = release_type.lower()
     file_type_slug = (
         "android"
@@ -975,6 +1086,16 @@ def _write_latest_release_tag(
 
 
 def _get_json_release_basename(release_type: str) -> str:
+    """
+    Return the appropriate JSON filename basename for a given release type.
+    
+    Parameters:
+        release_type (str): Human-readable release type; matching is case-insensitive and looks for the substrings
+            "firmware prerelease", "firmware", "android apk prerelease", or "android" to choose a filename.
+    
+    Returns:
+        str: The basename of the JSON file to use for the provided release type.
+    """
     release_type_lower = release_type.lower()
     if "firmware prerelease" in release_type_lower:
         return LATEST_FIRMWARE_PRERELEASE_JSON_FILE
@@ -988,10 +1109,28 @@ def _get_json_release_basename(release_type: str) -> str:
 
 
 def extract_version(dir_name: str) -> str:
+    """
+    Strip the firmware directory prefix from a directory name to obtain the version portion.
+    
+    Parameters:
+        dir_name (str): Directory name that may start with the firmware prefix (FIRMWARE_DIR_PREFIX).
+    
+    Returns:
+        str: The directory name with the firmware prefix removed.
+    """
     return dir_name.removeprefix(FIRMWARE_DIR_PREFIX)
 
 
 def _get_commit_hash_from_dir(dir_name: str) -> Optional[str]:
+    """
+    Extracts a commit hash from a directory name that contains a version plus an embedded hash suffix.
+    
+    Parameters:
+        dir_name (str): Directory name or path segment that may include a version and a trailing commit hash (e.g., "v1.2.3-abcdef1" or "firmware_v1.2.3.abcdef1").
+    
+    Returns:
+        Optional[str]: The extracted commit hash in lowercase (6–40 hex characters) if present, otherwise `None`.
+    """
     version_part = extract_version(dir_name)
     commit_match = re.search(
         r"[.-]([a-f0-9]{6,40})(?:[.-]|$)", version_part, re.IGNORECASE
@@ -1002,11 +1141,25 @@ def _get_commit_hash_from_dir(dir_name: str) -> Optional[str]:
 
 
 def calculate_expected_prerelease_version(latest_version: str) -> str:
+    """
+    Derives the expected next prerelease version from a latest release version.
+    
+    Parameters:
+        latest_version (str): The latest release version tag (for example "1.2.3" or "v1.2.3").
+    
+    Returns:
+        expected_prerelease (str): The computed prerelease version string (for example "1.2.4rc1" or "v1.2.4-rc1"); returns an empty string if an expected prerelease cannot be determined.
+    """
     return _version_manager.calculate_expected_prerelease_version(latest_version)
 
 
 def is_prerelease_directory(dir_name: str) -> bool:
-    """Check if directory name represents a prerelease version."""
+    """
+    Determine whether a directory name denotes a prerelease version.
+    
+    Returns:
+        bool: `True` if the directory name indicates a prerelease (contains prerelease tags like "alpha", "beta", "dev" or a commit hash), `False` otherwise.
+    """
     version_part = extract_version(dir_name).lower()
 
     # Check for prerelease indicators
@@ -1021,5 +1174,14 @@ def is_prerelease_directory(dir_name: str) -> bool:
 
 
 def normalize_commit_identifier(commit_id: str, release_version: Optional[str]) -> str:
-    """Normalize commit identifier to version+hash format."""
+    """
+    Normalize a commit identifier into a version+hash form for consistent tracking.
+    
+    Parameters:
+        commit_id (str): Commit identifier or directory/version string to normalize.
+        release_version (Optional[str]): Optional base release version to use when deriving a version portion.
+    
+    Returns:
+        str: A normalized identifier in "version+hash" form when determinable, otherwise the original input.
+    """
     return _normalize_commit_identifier(commit_id, release_version)

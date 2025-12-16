@@ -16,7 +16,17 @@ class TestMeshtasticAndroidAppDownloader:
 
     @pytest.fixture
     def mock_config(self):
-        """Mock configuration dictionary."""
+        """
+        Provide a mock configuration dictionary used by tests.
+        
+        Returns:
+            dict: Configuration with keys:
+                DOWNLOAD_DIR (str): base download directory path.
+                CHECK_APK_PRERELEASES (bool): whether APK prereleases should be considered.
+                SELECTED_APK_ASSETS (list[str]): substrings used to select APK assets.
+                EXCLUDE_PATTERNS (list[str]): glob patterns to exclude assets.
+                GITHUB_TOKEN (str): placeholder GitHub API token.
+        """
         return {
             "DOWNLOAD_DIR": "/tmp/test",
             "CHECK_APK_PRERELEASES": True,
@@ -27,7 +37,12 @@ class TestMeshtasticAndroidAppDownloader:
 
     @pytest.fixture
     def mock_cache_manager(self):
-        """Mock CacheManager instance."""
+        """
+        Provide a Mock configured to mimic CacheManager behavior for tests.
+        
+        Returns:
+            Mock: A unittest.mock.Mock instance with its spec set to CacheManager.
+        """
         return Mock(spec=CacheManager)
 
     @pytest.fixture

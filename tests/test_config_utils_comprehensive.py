@@ -39,7 +39,9 @@ class TestConfigUtils:
         assert result == ["value1", "value2", "value3"]
 
     def test_get_string_list_from_config_mixed_types(self):
-        """Test _get_string_list_from_config with mixed types in list."""
+        """
+        Verify that when a config value is a list with mixed types, each element is converted to its string representation and returned in the same order.
+        """
         config = {"key": ["string", 123, True, None, "another_string"]}
         result = _get_string_list_from_config(config, "key")
         assert result == ["string", "123", "True", "None", "another_string"]

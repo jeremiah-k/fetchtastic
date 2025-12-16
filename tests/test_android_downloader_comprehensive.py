@@ -18,7 +18,18 @@ from fetchtastic.download.interfaces import Asset, Release
 
 @pytest.fixture
 def test_config():
-    """Test configuration for Android downloader."""
+    """
+    Provide a dictionary fixture with default configuration values used by Android downloader tests.
+    
+    Returns:
+        config (dict): Test configuration containing:
+            - DOWNLOAD_DIR (str): Path where test downloads are placed.
+            - ANDROID_VERSIONS_TO_KEEP (int): Number of Android version directories to retain.
+            - SELECTED_PATTERNS (list[str]): Glob patterns of asset filenames to include.
+            - EXCLUDE_PATTERNS (list[str]): Glob patterns of asset filenames to exclude.
+            - GITHUB_TOKEN (str): Token used for authenticated API requests in tests.
+            - CHECK_ANDROID_PRERELEASES (bool): Whether prerelease Android versions are considered.
+    """
     return {
         "DOWNLOAD_DIR": "/tmp/test_android",
         "ANDROID_VERSIONS_TO_KEEP": 2,
@@ -31,7 +42,15 @@ def test_config():
 
 @pytest.fixture
 def android_downloader(test_config):
-    """Android release downloader instance."""
+    """
+    Create a MeshtasticAndroidAppDownloader configured for tests.
+    
+    Parameters:
+        test_config (dict): Configuration dictionary used to initialize the downloader (e.g., DOWNLOAD_DIR, ANDROID_VERSIONS_TO_KEEP).
+    
+    Returns:
+        MeshtasticAndroidAppDownloader: Initialized downloader instance using a new CacheManager.
+    """
     cache_manager = CacheManager()
     return MeshtasticAndroidAppDownloader(test_config, cache_manager)
 

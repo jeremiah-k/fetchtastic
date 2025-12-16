@@ -37,10 +37,22 @@ copy_to_clipboard_func = setup_config.copy_to_clipboard_func
 
 
 def display_version_info():
+    """
+    Retrieve version information for the installed package and the latest available release.
+    
+    Returns:
+        Version information suitable for display (e.g., details about the current installed version and the latest available version).
+    """
     return setup_config.display_version_info()
 
 
 def get_upgrade_command():
+    """
+    Get the platform-appropriate shell command that performs an upgrade of Fetchtastic.
+    
+    Returns:
+        upgrade_command (str): A command string suitable for display or execution to upgrade Fetchtastic on the current platform.
+    """
     return setup_config.get_upgrade_command()
 
 
@@ -456,19 +468,9 @@ def show_help(
 
 def run_clean():
     """
-    Remove Fetchtastic configuration, managed downloads, and system integrations.
-
-    Prompts for confirmation before proceeding. This operation is irreversible and will
-    modify or remove files and system entries.
-
-    Deletes:
-    - Current and legacy config files and their config directory when empty
-    - Only Fetchtastic-managed directories (matching configured MANAGED_DIRECTORIES
-      or FIRMWARE_DIR_PREFIX) and managed files (matching MANAGED_FILES) inside the
-      configured download/base directory while preserving other user files
-    - Platform-specific integrations such as Windows Start Menu/startup shortcuts,
-      non-Windows crontab entries that reference Fetchtastic, a Termux boot script
-      (~/.termux/boot/fetchtastic.sh), and the Fetchtastic log file
+    Delete Fetchtastic configuration, managed downloads, and platform integrations after explicit user confirmation.
+    
+    This operation removes current and legacy configuration files, Fetchtastic-managed directories and files inside the configured download directory, platform-specific integrations (Windows Start Menu and startup shortcuts, non-Windows crontab entries, Termux boot script), and the Fetchtastic log file. The action is irreversible and preserves files not identified as managed.
     """
     print(
         "This will remove Fetchtastic configuration files, downloaded files, and cron job entries."
@@ -586,10 +588,9 @@ def run_clean():
 
     def _remove_managed_file(item_path: str) -> None:
         """
-        Remove a managed file at the given path and log whether the removal succeeded.
-
-        Parameters:
-            item_path (str): Filesystem path of the managed file to remove.
+        Remove the managed file at the given filesystem path.
+        
+        If removal fails, the error is logged and not propagated.
         """
         try:
             os.remove(item_path)
@@ -692,7 +693,12 @@ def run_clean():
 
 def run_repo_clean(config):
     """
-    Cleans the repository download directory using the new RepositoryDownloader.
+    Prompt the user and remove all files downloaded from the meshtastic.github.io repository for the given configuration.
+    
+    Prompts for confirmation; if the user confirms, uses RepositoryDownloader to clean the repository download directory and prints whether the operation succeeded or was cancelled.
+    
+    Parameters:
+        config: Configuration object used to locate and manage the repository download directory.
     """
     print(
         "This will remove all files downloaded from the meshtastic.github.io repository."
@@ -715,6 +721,12 @@ def run_repo_clean(config):
 
 
 def get_fetchtastic_version():
+    """
+    Retrieve the installed Fetchtastic package version.
+    
+    Returns:
+        version (str): The installed Fetchtastic version string, or "unknown" if the version cannot be determined.
+    """
     try:
         from importlib.metadata import version
     except ImportError:

@@ -110,19 +110,16 @@ def track_api_cache_miss() -> None:
 
 def get_api_request_summary() -> Dict[str, Any]:
     """
-    Builds a session-wide summary of API request and cache statistics.
-
-    The returned dictionary contains aggregate request counters and authentication usage for the current session only,
-    and may include cached rate-limit details if available for the last used token.
-
+    Produce a session-wide summary of API request and cache statistics.
+    
     Returns:
-        summary (dict): Keys include:
-            - "total_requests" (int): Total number of API requests made this session.
+        summary (dict): Aggregate information for the current session with keys:
+            - "total_requests" (int): Total API requests made this session.
             - "cache_hits" (int): Number of API cache hits during this session.
             - "cache_misses" (int): Number of API cache misses during this session.
-            - "auth_used" (bool): Whether any request used authentication during this session.
-            - "rate_limit_remaining" (int, optional): Remaining requests for the last token (includes consumption from previous sessions).
-            - "rate_limit_reset" (datetime.datetime, optional): Reset timestamp for the cached rate limit, present when available.
+            - "auth_used" (bool): True if any request used authentication this session, False otherwise.
+            - "rate_limit_remaining" (int, optional): Remaining requests for the last-used token, if cached.
+            - "rate_limit_reset" (datetime.datetime, optional): Reset timestamp for the cached rate limit, if available.
     """
     with _api_tracking_lock:
         summary: Dict[str, Any] = {
@@ -146,9 +143,19 @@ def get_api_request_summary() -> Dict[str, Any]:
 
 def format_api_summary(summary: Dict[str, Any]) -> str:
     """
-    Format API request statistics into a concise, human-readable string for logging.
-
-    Note: This tracks GitHub API calls only, not file downloads from release assets.
+    Format a dictionary of GitHub API statistics into a concise, human-readable log string.
+    
+    Parameters:
+        summary (Dict[str, Any]): Summary dictionary with keys:
+            - total_requests (int): total API requests performed this session.
+            - cache_hits (int): number of cached lookups served.
+            - cache_misses (int): number of cache misses that triggered network fetches.
+            - auth_used (bool): whether an authentication token was used for requests.
+            - rate_limit_remaining (Optional[int]): optional cached remaining requests.
+            - rate_limit_reset (Optional[datetime.datetime]): optional UTC reset time for the rate limit.
+    
+    Returns:
+        str: A single string summarizing the API activity suitable for logging.
     """
     auth_status = "🔐 authenticated" if summary["auth_used"] else "🌐 unauthenticated"
     requests_str = "request" if summary["total_requests"] == 1 else "requests"
@@ -501,21 +508,18 @@ def make_github_api_request(
     custom_403_message: Optional[str] = None,
 ) -> requests.Response:
     """
-    Perform a GitHub API GET request with optional token authentication, update in-memory and on-disk rate-limit tracking, and retry once without authentication if token-based auth returns 401.
-
+    Perform a GitHub API GET request, update persistent and in-memory rate-limit tracking, and retry once without credentials if token authentication fails.
+    
     Parameters:
-        url (str): GitHub API URL to request.
-        github_token (Optional[str]): Explicit GitHub token to prefer for Authorization; trimmed before use.
-        allow_env_token (bool): If True, allow falling back to the GITHUB_TOKEN environment variable when no explicit token is provided.
-        params (Optional[Dict[str, Any]]): Query parameters to include in the request.
-        timeout (Optional[int]): Request timeout in seconds; if omitted the module default is used.
-        custom_403_message (Optional[str]): Custom message to use when raising on 403 responses; if omitted a default rate-limit message is used.
-
+        github_token (Optional[str]): Explicit token to use for Authorization; leading/trailing whitespace is trimmed. If omitted and allow_env_token is True, the GITHUB_TOKEN environment variable may be used.
+        allow_env_token (bool): If True, allow falling back to the GITHUB_TOKEN environment variable when no explicit github_token is provided.
+        custom_403_message (Optional[str]): Optional message to use when a 403 rate-limit condition is raised; if omitted a default explanatory message is used.
+    
     Returns:
         requests.Response: The HTTP response returned by GitHub.
-
+    
     Raises:
-        requests.HTTPError: For HTTP error responses (including handled 401/403 conditions where a descriptive message is raised).
+        requests.HTTPError: For HTTP error responses (including handled 401/403 cases surfaced with descriptive messages).
         requests.RequestException: For lower-level network or request errors.
     """
     from fetchtastic.log_utils import logger
@@ -1301,10 +1305,23 @@ def matches_extract_patterns(
     device_manager: Optional[Any] = None,
 ) -> bool:
     """
-    Legacy-compatible prerelease selection matcher.
-
-    This is used for prerelease repo file selection where patterns are typically
-    device identifiers (e.g. "rak4631-") or file-type prefixes (e.g. "device-").
+    Match a filename against legacy prerelease extract selection patterns.
+    
+    Performs case-insensitive matching of filename against each pattern in extract_patterns.
+    - The literal pattern "littlefs-" matches filenames that start with "littlefs-".
+    - Patterns that start with any FILE_TYPE_PREFIXES element match when the pattern appears anywhere in the filename.
+    - Patterns identified as device patterns (either device_manager.is_device_pattern(pattern) returns true, or the pattern ends with '-' or '_') are matched as device identifiers:
+      - For device patterns of length 1–2, matches a whole-word boundary in the filename.
+      - For longer device patterns, matches when the pattern appears as a separate token delimited by '-' or '_' or at the filename ends.
+    - Any other pattern matches when it appears as a substring of the filename.
+    
+    Parameters:
+        filename (str): The filename to test.
+        extract_patterns (List[str]): Legacy selection patterns to test against the filename.
+        device_manager (Optional[Any]): Optional object exposing is_device_pattern(pattern) -> bool to classify device patterns; if absent, patterns ending with '-' or '_' are treated as device patterns.
+    
+    Returns:
+        bool: `True` if any pattern matches the filename according to the rules above, `False` otherwise.
     """
     filename_lower = filename.lower()
 
