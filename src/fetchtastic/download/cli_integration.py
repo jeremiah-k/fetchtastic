@@ -10,7 +10,11 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from fetchtastic.log_utils import logger
-from fetchtastic.utils import format_api_summary, get_api_request_summary
+from fetchtastic.utils import (
+    format_api_summary,
+    get_api_request_summary,
+    get_effective_github_token,
+)
 
 from .android import MeshtasticAndroidAppDownloader
 from .firmware import FirmwareReleaseDownloader
@@ -329,6 +333,17 @@ class DownloadCLIIntegration:
                 if config is None:
                     logger.error("Configuration file exists but could not be loaded.")
                     return [], [], [], [], [], "", ""
+
+            # Normalize token once for the run so all downstream call sites see the
+            # same effective value (config token preferred, env token fallback).
+            config_token = get_effective_github_token(
+                config.get("GITHUB_TOKEN"),
+                allow_env_token=True,
+            )
+            if config_token:
+                config["GITHUB_TOKEN"] = config_token
+            else:
+                config.pop("GITHUB_TOKEN", None)
 
             results = self.run_download(config, force_refresh)
             return results

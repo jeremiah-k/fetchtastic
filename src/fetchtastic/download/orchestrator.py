@@ -139,7 +139,10 @@ class DownloadOrchestrator:
                 logger.info("No firmware releases found")
                 return
 
-            latest_release = firmware_releases[0] if firmware_releases else None
+            latest_release = next(
+                (release for release in firmware_releases if not release.prerelease),
+                firmware_releases[0] if firmware_releases else None,
+            )
 
             # Limit releases to process to match legacy behavior
             keep_count = self.config.get(
@@ -208,24 +211,13 @@ class DownloadOrchestrator:
         Returns:
             List[Release]: Filtered list of releases to download
         """
-        filtered_releases = []
-
-        # Get existing releases for this artifact type
-        existing_releases = self._get_existing_releases(artifact_type)
-
-        for release in releases:
-            # Skip if we already have this release
-            if release.tag_name in existing_releases:
-                logger.debug(
-                    f"Skipping {artifact_type} release {release.tag_name} - already downloaded"
-                )
-                continue
-
-            # Check if this release should be downloaded based on patterns
-            if self._should_download_release(release, artifact_type):
-                filtered_releases.append(release)
-
-        return filtered_releases
+        # Legacy parity: scan newest N releases and rely on per-asset completeness
+        # checks to decide whether anything actually needs downloading.
+        return [
+            release
+            for release in releases
+            if self._should_download_release(release, artifact_type)
+        ]
 
     def _get_existing_releases(self, artifact_type: str) -> List[str]:
         """

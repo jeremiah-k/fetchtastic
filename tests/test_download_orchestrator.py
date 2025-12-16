@@ -154,17 +154,15 @@ class TestDownloadOrchestrator:
 
         releases = [release1, release2]
 
-        # Mock existing releases and should_download checks
-        orchestrator._get_existing_releases = Mock(return_value=["v1.0.0"])
+        # Mock should_download checks
         orchestrator._should_download_release = Mock(return_value=True)
 
         filtered = orchestrator._filter_releases(releases, "firmware")
 
-        assert len(filtered) == 1
-        assert filtered[0] == release2
-        orchestrator._should_download_release.assert_called_once_with(
-            release2, "firmware"
-        )
+        assert len(filtered) == 2
+        assert filtered == releases
+        orchestrator._should_download_release.assert_any_call(release1, "firmware")
+        orchestrator._should_download_release.assert_any_call(release2, "firmware")
 
     def test_should_download_release_prerelease_enabled(self, orchestrator):
         """Test should_download_release with prereleases enabled."""

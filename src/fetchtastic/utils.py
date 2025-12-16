@@ -550,6 +550,22 @@ def make_github_api_request(
     global _last_rate_limit_token_hash
     _last_rate_limit_token_hash = token_hash
 
+    # If we already know we're rate-limited for this token (or no-token), avoid
+    # repeatedly hitting the API until the cached reset time.
+    cached_info = get_rate_limit_info(token_hash)
+    if cached_info:
+        cached_remaining, cached_reset = cached_info
+        if (
+            cached_remaining == 0
+            and isinstance(cached_reset, datetime)
+            and cached_reset > datetime.now(timezone.utc)
+        ):
+            reset_time_str = cached_reset.strftime("%Y-%m-%d %H:%M:%S UTC")
+            raise requests.HTTPError(
+                f"GitHub API rate limit exceeded. Resets at {reset_time_str}. "
+                "Set GITHUB_TOKEN environment variable for higher rate limits."
+            )
+
     try:
         # Make the request
         actual_timeout = timeout or GITHUB_API_TIMEOUT
@@ -582,11 +598,18 @@ def make_github_api_request(
             remaining_val = _parse_rate_limit_header(rate_limit_remaining)
             if remaining_val == 0:
                 reset_time = e.response.headers.get("X-RateLimit-Reset")
+                reset_timestamp = None
+                if reset_time:
+                    try:
+                        reset_timestamp = datetime.fromtimestamp(
+                            int(reset_time), timezone.utc
+                        )
+                    except (ValueError, TypeError, OSError):
+                        reset_timestamp = None
+                _update_rate_limit(token_hash, 0, reset_timestamp)
                 reset_time_str = (
-                    datetime.fromtimestamp(int(reset_time), timezone.utc).strftime(
-                        "%Y-%m-%d %H:%M:%S UTC"
-                    )
-                    if reset_time
+                    reset_timestamp.strftime("%Y-%m-%d %H:%M:%S UTC")
+                    if reset_timestamp
                     else "unknown"
                 )
                 error_msg = (
