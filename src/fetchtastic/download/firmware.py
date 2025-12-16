@@ -26,6 +26,7 @@ from fetchtastic.utils import (
     download_file_with_retry,
     make_github_api_request,
     matches_extract_patterns,
+    matches_selected_patterns,
     verify_file_integrity,
 )
 
