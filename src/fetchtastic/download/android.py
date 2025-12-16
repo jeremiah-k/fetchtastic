@@ -280,11 +280,22 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         if not os.path.isdir(version_dir):
             return False
 
-        for asset in release.assets:
-            if self.should_download_asset(asset.name):
-                asset_path = os.path.join(version_dir, asset.name)
-                if not os.path.exists(asset_path):
+        expected_assets = [
+            asset for asset in release.assets if self.should_download_asset(asset.name)
+        ]
+
+        if not expected_assets:
+            return False
+
+        for asset in expected_assets:
+            asset_path = os.path.join(version_dir, asset.name)
+            if not os.path.exists(asset_path):
+                return False
+            try:
+                if os.path.getsize(asset_path) != asset.size:
                     return False
+            except (OSError, TypeError):
+                return False
         return True
 
     def cleanup_old_versions(self, keep_limit: int) -> None:

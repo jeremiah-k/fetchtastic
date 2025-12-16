@@ -106,7 +106,10 @@ class DownloadOrchestrator:
             android_releases = android_releases[:keep_count]
 
             # Download each release, skipping if already complete
-            for release in android_releases:
+            total_to_check = len(android_releases)
+            for i, release in enumerate(android_releases):
+                logger.debug(f"Checking {release.tag_name} ({i + 1} of {total_to_check})")
+                logger.info(f"Checking {release.tag_name}…")
                 if self.android_downloader.is_release_complete(release):
                     logger.debug(
                         f"Release {release.tag_name} already exists and is complete, skipping download"
@@ -288,8 +291,6 @@ class DownloadOrchestrator:
             release: The Android release to download
         """
         try:
-            logger.info(f"Processing release: {release.tag_name}")
-
             # Download each asset in the release
             for asset in release.assets:
                 if not self.android_downloader.should_download_asset(asset.name):
@@ -308,8 +309,6 @@ class DownloadOrchestrator:
             release: The firmware release to download
         """
         try:
-            logger.info(f"Processing release: {release.tag_name}")
-
             # Get extraction patterns from configuration
             extract_patterns = self._get_extraction_patterns()
             exclude_patterns = self._get_exclude_patterns()

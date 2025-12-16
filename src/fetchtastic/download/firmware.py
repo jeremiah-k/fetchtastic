@@ -277,11 +277,30 @@ class FirmwareReleaseDownloader(BaseDownloader):
         if not os.path.isdir(version_dir):
             return False
 
-        for asset in release.assets:
-            if self.should_download_release(release.tag_name, asset.name):
-                asset_path = os.path.join(version_dir, asset.name)
-                if not os.path.exists(asset_path):
+        expected_assets = [
+            asset for asset in release.assets if self.should_download_release(release.tag_name, asset.name)
+        ]
+
+        if not expected_assets:
+            return False
+
+        for asset in expected_assets:
+            asset_path = os.path.join(version_dir, asset.name)
+            if not os.path.exists(asset_path):
+                return False
+            if asset.name.lower().endswith(".zip"):
+                try:
+                    import zipfile
+                    with zipfile.ZipFile(asset_path, "r") as zf:
+                        if zf.testzip() is not None:
+                            return False
+                except (zipfile.BadZipFile, IOError, OSError):
                     return False
+            try:
+                if os.path.getsize(asset_path) != asset.size:
+                    return False
+            except (OSError, TypeError):
+                return False
         return True
 
     def validate_extraction_patterns(
