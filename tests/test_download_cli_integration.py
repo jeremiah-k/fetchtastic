@@ -119,7 +119,12 @@ def test_run_download_successful(mocker):
 
     config = {"DOWNLOAD_DIR": "/tmp"}
     mock_results = [
-        MagicMock(release_tag="v1.0", file_path="/tmp/firmware.zip", was_skipped=False)
+        MagicMock(
+            release_tag="v1.0",
+            file_path="/tmp/firmware.zip",
+            was_skipped=False,
+            file_type="firmware",
+        )
     ]
     mock_orchestrator.run_download_pipeline.return_value = (mock_results, [])
 
@@ -261,6 +266,7 @@ def test_convert_results_to_legacy_format_firmware():
     mock_result.release_tag = "v1.0"
     mock_result.file_path = "/tmp/firmware/firmware.zip"
     mock_result.was_skipped = False
+    mock_result.file_type = "firmware"
 
     results = [mock_result]
 
@@ -297,6 +303,7 @@ def test_convert_results_to_legacy_format_android():
     mock_result.release_tag = "v1.0"
     mock_result.file_path = "/tmp/android/app.apk"
     mock_result.was_skipped = False
+    mock_result.file_type = "android"
 
     results = [mock_result]
 
