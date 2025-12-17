@@ -7,7 +7,8 @@ from unittest.mock import MagicMock, mock_open, patch
 import pytest
 import yaml
 
-from fetchtastic import setup_config
+# Import package module (matches real usage)
+import fetchtastic.setup_config as setup_config
 from tests.test_constants import TEST_CONFIG
 
 
@@ -28,6 +29,19 @@ def test_is_termux_true():
     """Test is_termux returns True when PREFIX contains com.termux."""
     with patch.dict(os.environ, {"PREFIX": "/data/data/com.termux/files/usr"}):
         assert setup_config.is_termux() is True
+
+    # Test with different PREFIX values
+    test_cases = [
+        ({"PREFIX": "/data/data/com.termux/files/usr"}, True),
+        ({"PREFIX": "/data/data/com.termux"}, True),
+        ({"PREFIX": "/data/data/other/files/usr"}, False),
+        ({"PREFIX": "/usr"}, False),
+    ]
+
+    for env_vars, expected in test_cases:
+        with patch.dict(os.environ, env_vars):
+            result = setup_config.is_termux()
+            assert result == expected
 
 
 @pytest.mark.configuration
@@ -58,7 +72,7 @@ def test_is_termux_no_prefix():
     ],
 )
 def test_get_platform(mocker, is_termux_val, platform_system, expected):
-    """Test the platform detection logic."""
+    """Test platform detection logic."""
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=is_termux_val)
     mocker.patch("platform.system", return_value=platform_system)
     assert setup_config.get_platform() == expected
@@ -114,7 +128,8 @@ def test_is_fetchtastic_installed_via_pipx_false(mock_run):
 def test_get_fetchtastic_installation_method_pipx():
     """Test installation method detection for pipx."""
     with patch(
-        "fetchtastic.setup_config.is_fetchtastic_installed_via_pipx", return_value=True
+        "fetchtastic.setup_config.is_fetchtastic_installed_via_pipx",
+        return_value=True,
     ):
         with patch(
             "fetchtastic.setup_config.is_fetchtastic_installed_via_pip",
@@ -142,7 +157,8 @@ def test_get_fetchtastic_installation_method_pip():
 def test_get_fetchtastic_installation_method_unknown():
     """Test installation method detection when unknown."""
     with patch(
-        "fetchtastic.setup_config.is_fetchtastic_installed_via_pipx", return_value=False
+        "fetchtastic.setup_config.is_fetchtastic_installed_via_pipx",
+        return_value=False,
     ):
         with patch(
             "fetchtastic.setup_config.is_fetchtastic_installed_via_pip",
@@ -172,11 +188,13 @@ def test_load_config_no_file(tmp_path, mocker):
 @pytest.mark.configuration
 @pytest.mark.unit
 def test_load_config_new_location(tmp_path, mocker):
-    """Test loading config from the new (platformdirs) location."""
+    """Test loading config from new (platformdirs) location."""
     new_config_path = tmp_path / "new_config.yaml"
     old_config_path = tmp_path / "old_config.yaml"
-    mocker.patch("fetchtastic.setup_config.CONFIG_FILE", str(new_config_path))
-    mocker.patch("fetchtastic.setup_config.OLD_CONFIG_FILE", str(old_config_path))
+
+    # Patch the config file path directly in the module
+    mocker.patch.object(setup_config, "CONFIG_FILE", str(new_config_path))
+    mocker.patch.object(setup_config, "OLD_CONFIG_FILE", str(old_config_path))
 
     config_data = {"SAVE_APKS": True}
     with open(new_config_path, "w") as f:
@@ -193,8 +211,8 @@ def test_load_config_old_location_suggests_migration(tmp_path, mocker):
     """Test loading config from old location suggests migration."""
     new_config_path = tmp_path / "new_config.yaml"
     old_config_path = tmp_path / "old_config.yaml"
-    mocker.patch("fetchtastic.setup_config.CONFIG_FILE", str(new_config_path))
-    mocker.patch("fetchtastic.setup_config.OLD_CONFIG_FILE", str(old_config_path))
+    mocker.patch.object(setup_config, "CONFIG_FILE", str(new_config_path))
+    mocker.patch.object(setup_config, "OLD_CONFIG_FILE", str(old_config_path))
 
     # Create config in old location
     config_data = TEST_CONFIG.copy()
@@ -217,7 +235,7 @@ def test_load_config_invalid_yaml(tmp_path, mocker):
 
     # Create invalid YAML that will cause a parsing error
     with open(new_config_path, "w") as f:
-        f.write("invalid: yaml: content: [unclosed")
+        f.write("invalid: [unclosed")
 
     # The function should raise a YAML parsing error
     with pytest.raises(yaml.YAMLError):
@@ -230,8 +248,8 @@ def test_config_exists_new_location(tmp_path, mocker):
     """Test config_exists detects config in new location."""
     new_config_path = tmp_path / "new_config.yaml"
     old_config_path = tmp_path / "old_config.yaml"
-    mocker.patch("fetchtastic.setup_config.CONFIG_FILE", str(new_config_path))
-    mocker.patch("fetchtastic.setup_config.OLD_CONFIG_FILE", str(old_config_path))
+    mocker.patch.object(setup_config, "CONFIG_FILE", str(new_config_path))
+    mocker.patch.object(setup_config, "OLD_CONFIG_FILE", str(old_config_path))
 
     # Create config in new location
     new_config_path.write_text("test: config")
@@ -247,8 +265,8 @@ def test_config_exists_old_location(tmp_path, mocker):
     """Test config_exists detects config in old location."""
     new_config_path = tmp_path / "new_config.yaml"
     old_config_path = tmp_path / "old_config.yaml"
-    mocker.patch("fetchtastic.setup_config.CONFIG_FILE", str(new_config_path))
-    mocker.patch("fetchtastic.setup_config.OLD_CONFIG_FILE", str(old_config_path))
+    mocker.patch.object(setup_config, "CONFIG_FILE", str(new_config_path))
+    mocker.patch.object(setup_config, "OLD_CONFIG_FILE", str(old_config_path))
 
     # Create config in old location only
     old_config_path.write_text("test: config")
@@ -264,8 +282,8 @@ def test_config_exists_none(tmp_path, mocker):
     """Test config_exists when no config exists."""
     new_config_path = tmp_path / "new_config.yaml"
     old_config_path = tmp_path / "old_config.yaml"
-    mocker.patch("fetchtastic.setup_config.CONFIG_FILE", str(new_config_path))
-    mocker.patch("fetchtastic.setup_config.OLD_CONFIG_FILE", str(old_config_path))
+    mocker.patch.object(setup_config, "CONFIG_FILE", str(new_config_path))
+    mocker.patch.object(setup_config, "OLD_CONFIG_FILE", str(old_config_path))
 
     exists, path = setup_config.config_exists()
     assert exists is False
@@ -397,8 +415,8 @@ def test_load_config_old_location(tmp_path, mocker):
     """Test loading config from the old location when new one doesn't exist."""
     new_config_path = tmp_path / "new_config.yaml"
     old_config_path = tmp_path / "old_config.yaml"
-    mocker.patch("fetchtastic.setup_config.CONFIG_FILE", str(new_config_path))
-    mocker.patch("fetchtastic.setup_config.OLD_CONFIG_FILE", str(old_config_path))
+    mocker.patch.object(setup_config, "CONFIG_FILE", str(new_config_path))
+    mocker.patch.object(setup_config, "OLD_CONFIG_FILE", str(old_config_path))
 
     config_data = {"SAVE_FIRMWARE": True}
     with open(old_config_path, "w") as f:
@@ -415,8 +433,8 @@ def test_load_config_prefers_new_location(tmp_path, mocker):
     """Test that the new config location is preferred when both exist."""
     new_config_path = tmp_path / "new_config.yaml"
     old_config_path = tmp_path / "old_config.yaml"
-    mocker.patch("fetchtastic.setup_config.CONFIG_FILE", str(new_config_path))
-    mocker.patch("fetchtastic.setup_config.OLD_CONFIG_FILE", str(old_config_path))
+    mocker.patch.object(setup_config, "CONFIG_FILE", str(new_config_path))
+    mocker.patch.object(setup_config, "OLD_CONFIG_FILE", str(old_config_path))
 
     new_config_data = {"key": "new"}
     old_config_data = {"key": "old"}
@@ -434,8 +452,8 @@ def test_migrate_config(tmp_path, mocker):
     """Test the configuration migration logic."""
     new_config_path = tmp_path / "new_config.yaml"
     old_config_path = tmp_path / "old_config.yaml"
-    mocker.patch("fetchtastic.setup_config.CONFIG_FILE", str(new_config_path))
-    mocker.patch("fetchtastic.setup_config.OLD_CONFIG_FILE", str(old_config_path))
+    mocker.patch.object(setup_config, "CONFIG_FILE", str(new_config_path))
+    mocker.patch.object(setup_config, "OLD_CONFIG_FILE", str(old_config_path))
     mocker.patch("fetchtastic.setup_config.CONFIG_DIR", str(tmp_path))
 
     # Create an old config file
@@ -465,7 +483,7 @@ def test_migrate_config(tmp_path, mocker):
     ],
 )
 def test_get_upgrade_command(mocker, is_termux_val, install_method, expected):
-    """Test the upgrade command generation logic."""
+    """Test upgrade command generation logic."""
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=is_termux_val)
     mocker.patch(
         "fetchtastic.setup_config.get_fetchtastic_installation_method",
@@ -474,8 +492,227 @@ def test_get_upgrade_command(mocker, is_termux_val, install_method, expected):
     assert setup_config.get_upgrade_command() == expected
 
 
+def test_get_upgrade_command_fallback(mocker):
+    """Test upgrade command when both install methods fail."""
+    mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
+    mocker.patch(
+        "fetchtastic.setup_config.get_fetchtastic_installation_method",
+        return_value="pipx",
+    )
+    mocker.patch(
+        "fetchtastic.setup_config.is_fetchtastic_installed_via_pipx",
+        return_value=False,
+    )
+
+    # Should fall back to pipx command when is_termux=True and installation_method="pipx"
+    assert setup_config.get_upgrade_command() == "pipx upgrade fetchtastic"
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_config_exists(mocker):
+    """Test config_exists function returns tuple."""
+    # Test when config file exists
+    mocker.patch("os.path.exists", return_value=True)
+    result = setup_config.config_exists()
+    assert isinstance(result, tuple)
+    assert len(result) == 2
+    assert result[0] is True  # exists flag
+    assert isinstance(result[1], str)  # path
+
+    # Test when config file doesn't exist
+    mocker.patch("os.path.exists", return_value=False)
+    result = setup_config.config_exists()
+    assert isinstance(result, tuple)
+    assert len(result) == 2
+    assert result[0] is False  # exists flag
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_load_config(mocker):
+    """Test load_config function."""
+    # Test when config doesn't exist
+    mocker.patch("os.path.exists", return_value=False)
+    config = setup_config.load_config()
+    assert config is None
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_platform_functions():
+    """Test platform detection functions."""
+    # Test get_platform function
+    platform = setup_config.get_platform()
+    assert isinstance(platform, str)
+    assert platform in ["linux", "darwin", "windows"]
+
+    # Test get_downloads_dir function
+    downloads_dir = setup_config.get_downloads_dir()
+    assert isinstance(downloads_dir, str)
+    # Just check it's a valid path, not necessarily ending in Downloads
+    assert len(downloads_dir) > 0
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_installation_detection_functions(mocker):
+    """Test installation detection functions."""
+    # Test is_fetchtastic_installed_via_pip
+    mocker.patch("shutil.which", return_value="/usr/bin/pip")
+    mocker.patch("subprocess.run", return_value=mocker.MagicMock(stdout="fetchtastic"))
+
+    result = setup_config.is_fetchtastic_installed_via_pip()
+    assert isinstance(result, bool)
+
+    # Test is_fetchtastic_installed_via_pipx
+    mocker.patch("shutil.which", return_value="/usr/bin/pipx")
+    result = setup_config.is_fetchtastic_installed_via_pipx()
+    assert isinstance(result, bool)
+
+    # Test get_fetchtastic_installation_method
+    method = setup_config.get_fetchtastic_installation_method()
+    assert isinstance(method, str)
+    assert method in ["pip", "pipx", "source", "unknown"]
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_storage_function(mocker):
+    """Test setup_storage function."""
+    mock_subprocess = mocker.patch("subprocess.run")
+    mocker.patch("fetchtastic.log_utils.logger")
+
+    result = setup_config.setup_storage()
+
+    # Function doesn't return anything, just runs
+    assert result is None
+    mock_subprocess.assert_called_once_with(["termux-setup-storage"], check=True)
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_migration_functions_simple(mocker):
+    """Test migration-related functions with simpler mocking."""
+    # Test install_crond function returns None by default
+    result = setup_config.install_crond()
+    assert result is None
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_get_upgrade_command_basic(mocker):
+    """Test get_upgrade_command basic scenarios."""
+    # Test with non-Termux environment (should default to pipx)
+    mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
+
+    result = setup_config.get_upgrade_command()
+
+    # Should return pipx upgrade command for non-Termux
+    assert result == "pipx upgrade fetchtastic"
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_windows_functions(mocker):
+    """Test Windows-related functions."""
+    # Test that Windows functions exist when not on Windows
+    assert hasattr(setup_config, "create_windows_menu_shortcuts") is True
+    assert hasattr(setup_config, "should_recommend_setup") is True
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_upgrade_command_termux_scenarios(mocker):
+    """Test get_upgrade_command in Termux scenarios."""
+    # Test with Termux and pip installation
+    mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
+    mocker.patch(
+        "fetchtastic.setup_config.get_fetchtastic_installation_method",
+        return_value="pip",
+    )
+
+    result = setup_config.get_upgrade_command()
+    assert result == "pip install --upgrade fetchtastic"
+
+    # Test with Termux and pipx installation
+    mocker.patch(
+        "fetchtastic.setup_config.get_fetchtastic_installation_method",
+        return_value="pipx",
+    )
+
+    result = setup_config.get_upgrade_command()
+    assert result == "pipx upgrade fetchtastic"
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_config_file_operations(mocker):
+    """Test config file operations."""
+    import os
+    import tempfile
+
+    # Test with temporary directory
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # Use the correct config file name
+        config_file = os.path.join(temp_dir, "fetchtastic.yaml")
+
+        # Create a test config file
+        with open(config_file, "w") as f:
+            f.write("TEST_KEY: test_value\nBASE_DIR: /test/dir")
+
+        # Test config_exists with explicit directory
+        exists, path = setup_config.config_exists(temp_dir)
+        assert exists is True
+        assert path == config_file
+
+        # Test load_config with explicit directory
+        config = setup_config.load_config(temp_dir)
+        assert config is not None
+        assert config["TEST_KEY"] == "test_value"
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_get_platform_comprehensive(mocker):
+    """Test get_platform function comprehensively."""
+    # Test each platform by mocking system()
+    platforms = ["Linux", "Darwin", "Windows"]
+    expected_results = ["linux", "mac", "unknown"]  # Note: Darwin returns "mac"
+
+    for platform, expected in zip(platforms, expected_results, strict=False):
+        mocker.patch("platform.system", return_value=platform)
+        mocker.patch(
+            "fetchtastic.setup_config.is_termux", return_value=False
+        )  # Not Termux
+        result = setup_config.get_platform()
+        assert result == expected
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_get_downloads_dir_comprehensive(mocker):
+    """Test get_downloads_dir function."""
+    # Test with Termux environment
+    mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
+    mocker.patch("os.path.exists", return_value=True)
+
+    result = setup_config.get_downloads_dir()
+    # With the mock above, should return the Termux downloads path
+    assert isinstance(result, str)
+
+    # Test with non-Termux environment - mock the actual path checks
+    mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
+    mock_home = "/test/home"
+    mocker.patch("os.path.expanduser", return_value=mock_home)
+
+    result = setup_config.get_downloads_dir()
+    assert isinstance(result, str)
+
+
 def test_cron_job_setup(mocker):
     """Test the cron job setup and removal logic."""
+    mocker.patch("fetchtastic.setup_config._crontab_available", return_value=True)
     mock_run = mocker.patch("subprocess.run")
     mock_popen = mocker.patch("subprocess.Popen")
     mock_communicate = mock_popen.return_value.communicate
@@ -499,6 +736,7 @@ def test_cron_job_setup(mocker):
 
 def test_cron_job_setup_hourly(mocker):
     """Test the cron job setup for hourly frequency."""
+    mocker.patch("fetchtastic.setup_config._crontab_available", return_value=True)
     mock_run = mocker.patch("subprocess.run")
     mock_popen = mocker.patch("subprocess.Popen")
     mock_communicate = mock_popen.return_value.communicate
@@ -524,6 +762,7 @@ def test_cron_job_setup_windows(mocker):
 
 def test_cron_job_setup_invalid_frequency(mocker):
     """Test cron job setup with invalid frequency parameter."""
+    mocker.patch("fetchtastic.setup_config._crontab_available", return_value=True)
     mock_run = mocker.patch("subprocess.run")
     mock_popen = mocker.patch("subprocess.Popen")
     mock_communicate = mock_popen.return_value.communicate
@@ -639,6 +878,7 @@ def test_setup_automation_linux_new_setup(mocker):
     """Test _setup_automation on Linux for new cron job setup."""
     mocker.patch("fetchtastic.setup_config.platform.system", return_value="Linux")
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
+    mocker.patch("fetchtastic.setup_config._crontab_available", return_value=True)
     mocker.patch(
         "fetchtastic.setup_config.check_any_cron_jobs_exist", return_value=False
     )
@@ -704,7 +944,7 @@ def test_windows_shortcut_creation(mocker):
 @patch("fetchtastic.setup_config.check_any_cron_jobs_exist", return_value=False)
 @patch("fetchtastic.setup_config.setup_cron_job")
 @patch("fetchtastic.setup_config.setup_reboot_cron_job")
-@patch("fetchtastic.downloader.main")
+@patch("fetchtastic.cli.main")
 @patch("shutil.which")
 @patch(
     "fetchtastic.setup_config.platformdirs.user_config_dir",
@@ -785,7 +1025,7 @@ def test_run_setup_first_run_linux_simple(
 @patch("fetchtastic.setup_config.create_windows_menu_shortcuts")
 @patch("fetchtastic.setup_config.create_config_shortcut")
 @patch("fetchtastic.setup_config.create_startup_shortcut")
-@patch("fetchtastic.downloader.main")
+@patch("fetchtastic.cli.main")
 @patch("shutil.which")
 @patch(
     "fetchtastic.setup_config.platformdirs.user_config_dir",
@@ -852,6 +1092,7 @@ def test_run_setup_first_run_windows(
 @pytest.mark.configuration
 @pytest.mark.unit
 @patch("builtins.input")
+@patch("getpass.getpass", return_value="")
 @patch("fetchtastic.setup_config.platform.system", return_value="Linux")
 @patch("fetchtastic.setup_config.is_termux", return_value=True)
 @patch("fetchtastic.setup_config.config_exists", return_value=(False, None))
@@ -870,7 +1111,7 @@ def test_run_setup_first_run_windows(
 @patch("fetchtastic.setup_config.setup_boot_script")
 @patch("fetchtastic.setup_config.check_cron_job_exists", return_value=False)
 @patch("fetchtastic.setup_config.check_boot_script_exists", return_value=False)
-@patch("fetchtastic.downloader.main")
+@patch("fetchtastic.cli.main")
 @patch("shutil.which")
 @patch("fetchtastic.setup_config.subprocess.run")
 @patch(
@@ -898,6 +1139,7 @@ def test_run_setup_first_run_termux(  # noqa: ARG001
     mock_config_exists,
     mock_is_termux,
     mock_platform_system,
+    mock_getpass,
     mock_input,
 ):
     """Test a simple first-run setup process on a Termux system."""
@@ -954,7 +1196,7 @@ def test_run_setup_first_run_termux(  # noqa: ARG001
 @patch("fetchtastic.setup_config.remove_reboot_cron_job")
 @patch("fetchtastic.setup_config.setup_cron_job")
 @patch("fetchtastic.setup_config.setup_reboot_cron_job")
-@patch("fetchtastic.downloader.main")
+@patch("fetchtastic.cli.main")
 @patch("shutil.which")
 @patch(
     "fetchtastic.setup_config.platformdirs.user_config_dir",
@@ -1061,7 +1303,7 @@ def test_run_setup_existing_config(
 @patch("fetchtastic.setup_config.remove_reboot_cron_job")
 @patch("fetchtastic.setup_config.setup_cron_job")
 @patch("fetchtastic.setup_config.setup_reboot_cron_job")
-@patch("fetchtastic.downloader.main")
+@patch("fetchtastic.cli.main")
 @patch("shutil.which")
 @patch(
     "fetchtastic.setup_config.platformdirs.user_config_dir",
@@ -1553,12 +1795,12 @@ def test_setup_firmware_selected_prerelease_assets_migration_empty_input(mock_in
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_get_prerelease_patterns_selected_assets_key():
-    """Test _get_prerelease_patterns with SELECTED_PRERELEASE_ASSETS key."""
-    from fetchtastic.downloader import _get_prerelease_patterns
+def testget_prerelease_patterns_selected_assets_key():
+    """Test get_prerelease_patterns with SELECTED_PRERELEASE_ASSETS key."""
+    from fetchtastic.download import get_prerelease_patterns
 
     config = {"SELECTED_PRERELEASE_ASSETS": ["rak4631-", "tbeam"]}
-    result = _get_prerelease_patterns(config)
+    result = get_prerelease_patterns(config)
 
     assert result == ["rak4631-", "tbeam"]
 
@@ -1678,38 +1920,38 @@ def test_setup_github_set_new_token(capsys, monkeypatch):
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_get_prerelease_patterns_selected_assets_none():
-    """Test _get_prerelease_patterns with SELECTED_PRERELEASE_ASSETS set to None."""
-    from fetchtastic.downloader import _get_prerelease_patterns
+def testget_prerelease_patterns_selected_assets_none():
+    """Test get_prerelease_patterns with SELECTED_PRERELEASE_ASSETS set to None."""
+    from fetchtastic.download import get_prerelease_patterns
 
     config = {"SELECTED_PRERELEASE_ASSETS": None}
-    result = _get_prerelease_patterns(config)
+    result = get_prerelease_patterns(config)
 
     assert result == []  # Should return empty list, not None
 
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_get_prerelease_patterns_selected_assets_empty():
-    """Test _get_prerelease_patterns with empty SELECTED_PRERELEASE_ASSETS."""
-    from fetchtastic.downloader import _get_prerelease_patterns
+def testget_prerelease_patterns_selected_assets_empty():
+    """Test get_prerelease_patterns with empty SELECTED_PRERELEASE_ASSETS."""
+    from fetchtastic.download import get_prerelease_patterns
 
     config = {"SELECTED_PRERELEASE_ASSETS": []}
-    result = _get_prerelease_patterns(config)
+    result = get_prerelease_patterns(config)
 
     assert result == []
 
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_get_prerelease_patterns_fallback_to_extract_patterns():
-    """Test _get_prerelease_patterns fallback to EXTRACT_PATTERNS."""
-    from fetchtastic.downloader import _get_prerelease_patterns
+def testget_prerelease_patterns_fallback_to_extract_patterns():
+    """Test get_prerelease_patterns fallback to EXTRACT_PATTERNS."""
+    from fetchtastic.download import get_prerelease_patterns
 
     config = {"EXTRACT_PATTERNS": ["station-", "heltec-"]}
 
-    with patch("fetchtastic.downloader.logger") as mock_logger:
-        result = _get_prerelease_patterns(config)
+    with patch("fetchtastic.log_utils.logger") as mock_logger:
+        result = get_prerelease_patterns(config)
 
         assert result == ["station-", "heltec-"]
         mock_logger.warning.assert_called_once()
@@ -1718,29 +1960,29 @@ def test_get_prerelease_patterns_fallback_to_extract_patterns():
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_get_prerelease_patterns_no_keys():
-    """Test _get_prerelease_patterns with no configuration keys."""
-    from fetchtastic.downloader import _get_prerelease_patterns
+def testget_prerelease_patterns_no_keys():
+    """Test get_prerelease_patterns with no configuration keys."""
+    from fetchtastic.download import get_prerelease_patterns
 
     config = {}
-    result = _get_prerelease_patterns(config)
+    result = get_prerelease_patterns(config)
 
     assert result == []
 
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_get_prerelease_patterns_precedence():
+def testget_prerelease_patterns_precedence():
     """Test that SELECTED_PRERELEASE_ASSETS takes precedence over EXTRACT_PATTERNS."""
-    from fetchtastic.downloader import _get_prerelease_patterns
+    from fetchtastic.download import get_prerelease_patterns
 
     config = {
         "SELECTED_PRERELEASE_ASSETS": ["new-pattern"],
         "EXTRACT_PATTERNS": ["old-pattern"],
     }
 
-    with patch("fetchtastic.downloader.logger") as mock_logger:
-        result = _get_prerelease_patterns(config)
+    with patch("fetchtastic.log_utils.logger") as mock_logger:
+        result = get_prerelease_patterns(config)
 
         assert result == ["new-pattern"]
         mock_logger.warning.assert_not_called()  # No deprecation warning when using new key

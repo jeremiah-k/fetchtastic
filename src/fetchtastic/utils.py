@@ -25,6 +25,7 @@ from fetchtastic.constants import (
     DEFAULT_CHUNK_SIZE,
     DEFAULT_CONNECT_RETRIES,
     DEFAULT_REQUEST_TIMEOUT,
+    FILE_TYPE_PREFIXES,
     GITHUB_API_TIMEOUT,
     WINDOWS_INITIAL_RETRY_DELAY,
     WINDOWS_MAX_REPLACE_RETRIES,
@@ -109,22 +110,19 @@ def track_api_cache_miss() -> None:
 
 def get_api_request_summary() -> Dict[str, Any]:
     """
-    Builds a session-wide summary of API request and cache statistics.
-
-    The returned dictionary contains aggregate request counters and authentication usage for the current session only,
-    and may include cached rate-limit details if available for the last used token.
+    Produce a session-wide summary of API request and cache statistics.
 
     Returns:
-        summary (dict): Keys include:
-            - "total_requests" (int): Total number of API requests made this session.
+        summary (dict): Aggregate information for the current session with keys:
+            - "total_requests" (int): Total API requests made this session.
             - "cache_hits" (int): Number of API cache hits during this session.
             - "cache_misses" (int): Number of API cache misses during this session.
-            - "auth_used" (bool): Whether any request used authentication during this session.
-            - "rate_limit_remaining" (int, optional): Remaining requests for the last token (includes consumption from previous sessions).
-            - "rate_limit_reset" (datetime.datetime, optional): Reset timestamp for the cached rate limit, present when available.
+            - "auth_used" (bool): True if any request used authentication this session, False otherwise.
+            - "rate_limit_remaining" (int, optional): Remaining requests for the last-used token, if cached.
+            - "rate_limit_reset" (datetime.datetime, optional): Reset timestamp for the cached rate limit, if available.
     """
     with _api_tracking_lock:
-        summary = {
+        summary: Dict[str, Any] = {
             "total_requests": _api_request_count,
             "cache_hits": _api_cache_hits,
             "cache_misses": _api_cache_misses,
@@ -141,6 +139,65 @@ def get_api_request_summary() -> Dict[str, Any]:
             summary["rate_limit_reset"] = reset_timestamp
 
     return summary
+
+
+def format_api_summary(summary: Dict[str, Any]) -> str:
+    """
+    Format a dictionary of GitHub API statistics into a concise, human-readable log string.
+
+    Parameters:
+        summary (Dict[str, Any]): Summary dictionary with keys:
+            - total_requests (int): total API requests performed this session.
+            - cache_hits (int): number of cached lookups served.
+            - cache_misses (int): number of cache misses that triggered network fetches.
+            - auth_used (bool): whether an authentication token was used for requests.
+            - rate_limit_remaining (Optional[int]): optional cached remaining requests.
+            - rate_limit_reset (Optional[datetime.datetime]): optional UTC reset time for the rate limit.
+
+    Returns:
+        str: A single string summarizing the API activity suitable for logging.
+    """
+    auth_status = "🔐 authenticated" if summary["auth_used"] else "🌐 unauthenticated"
+    requests_str = "request" if summary["total_requests"] == 1 else "requests"
+    log_parts = [
+        f"📊 GitHub API Summary: {summary['total_requests']} API {requests_str} ({auth_status})"
+    ]
+
+    total_cache_lookups = summary["cache_hits"] + summary["cache_misses"]
+    if total_cache_lookups > 0:
+        cache_hit_rate = (summary["cache_hits"] / total_cache_lookups) * 100
+        hits_str = "hit" if summary["cache_hits"] == 1 else "hits"
+        misses_str = "miss" if summary["cache_misses"] == 1 else "misses"
+        log_parts.append(
+            f"{total_cache_lookups} cache lookups → "
+            f"{summary['cache_hits']} {hits_str} (skipped), "
+            f"{summary['cache_misses']} {misses_str} (fetched) "
+            f"[{cache_hit_rate:.1f}% hit rate]"
+        )
+
+    uncached_requests = max(0, summary["total_requests"] - summary["cache_misses"])
+    if uncached_requests > 0 and total_cache_lookups > 0:
+        direct_label = (
+            "direct API request" if uncached_requests == 1 else "direct API requests"
+        )
+        log_parts.append(
+            f"{uncached_requests} {direct_label} (pagination/non-cacheable)"
+        )
+
+    remaining = summary.get("rate_limit_remaining")
+    reset_time = summary.get("rate_limit_reset")
+    if remaining is not None:
+        remaining_str = "request" if remaining == 1 else "requests"
+        if isinstance(reset_time, datetime):
+            time_until_reset = reset_time - datetime.now(timezone.utc)
+            minutes_until_reset = max(0, int(time_until_reset.total_seconds() / 60))
+            log_parts.append(
+                f"{remaining} {remaining_str} remaining (resets in {minutes_until_reset} min)"
+            )
+        else:
+            log_parts.append(f"{remaining} {remaining_str} remaining")
+
+    return ", ".join(log_parts)
 
 
 def reset_api_tracking() -> None:
@@ -451,21 +508,18 @@ def make_github_api_request(
     custom_403_message: Optional[str] = None,
 ) -> requests.Response:
     """
-    Perform a GitHub API GET request with optional token authentication, update in-memory and on-disk rate-limit tracking, and retry once without authentication if token-based auth returns 401.
+    Perform a GitHub API GET request, update persistent and in-memory rate-limit tracking, and retry once without credentials if token authentication fails.
 
     Parameters:
-        url (str): GitHub API URL to request.
-        github_token (Optional[str]): Explicit GitHub token to prefer for Authorization; trimmed before use.
-        allow_env_token (bool): If True, allow falling back to the GITHUB_TOKEN environment variable when no explicit token is provided.
-        params (Optional[Dict[str, Any]]): Query parameters to include in the request.
-        timeout (Optional[int]): Request timeout in seconds; if omitted the module default is used.
-        custom_403_message (Optional[str]): Custom message to use when raising on 403 responses; if omitted a default rate-limit message is used.
+        github_token (Optional[str]): Explicit token to use for Authorization; leading/trailing whitespace is trimmed. If omitted and allow_env_token is True, the GITHUB_TOKEN environment variable may be used.
+        allow_env_token (bool): If True, allow falling back to the GITHUB_TOKEN environment variable when no explicit github_token is provided.
+        custom_403_message (Optional[str]): Optional message to use when a 403 rate-limit condition is raised; if omitted a default explanatory message is used.
 
     Returns:
         requests.Response: The HTTP response returned by GitHub.
 
     Raises:
-        requests.HTTPError: For HTTP error responses (including handled 401/403 conditions where a descriptive message is raised).
+        requests.HTTPError: For HTTP error responses (including handled 401/403 cases surfaced with descriptive messages).
         requests.RequestException: For lower-level network or request errors.
     """
     from fetchtastic.log_utils import logger
@@ -500,6 +554,22 @@ def make_github_api_request(
     global _last_rate_limit_token_hash
     _last_rate_limit_token_hash = token_hash
 
+    # If we already know we're rate-limited for this token (or no-token), avoid
+    # repeatedly hitting the API until the cached reset time.
+    cached_info = get_rate_limit_info(token_hash)
+    if cached_info:
+        cached_remaining, cached_reset = cached_info
+        if (
+            cached_remaining == 0
+            and isinstance(cached_reset, datetime)
+            and cached_reset > datetime.now(timezone.utc)
+        ):
+            reset_time_str = cached_reset.strftime("%Y-%m-%d %H:%M:%S UTC")
+            raise requests.HTTPError(
+                f"GitHub API rate limit exceeded. Resets at {reset_time_str}. "
+                "Set GITHUB_TOKEN environment variable for higher rate limits."
+            )
+
     try:
         # Make the request
         actual_timeout = timeout or GITHUB_API_TIMEOUT
@@ -532,11 +602,18 @@ def make_github_api_request(
             remaining_val = _parse_rate_limit_header(rate_limit_remaining)
             if remaining_val == 0:
                 reset_time = e.response.headers.get("X-RateLimit-Reset")
+                reset_timestamp = None
+                if reset_time:
+                    try:
+                        reset_timestamp = datetime.fromtimestamp(
+                            int(reset_time), timezone.utc
+                        )
+                    except (ValueError, TypeError, OSError):
+                        reset_timestamp = None
+                _update_rate_limit(token_hash, 0, reset_timestamp)
                 reset_time_str = (
-                    datetime.fromtimestamp(int(reset_time), timezone.utc).strftime(
-                        "%Y-%m-%d %H:%M:%S UTC"
-                    )
-                    if reset_time
+                    reset_timestamp.strftime("%Y-%m-%d %H:%M:%S UTC")
+                    if reset_timestamp
                     else "unknown"
                 )
                 error_msg = (
@@ -620,10 +697,10 @@ def make_github_api_request(
                     logger.debug(f"Invalid rate-limit header value: {rl_header}")
         else:
             # No rate limit info available (might be a different endpoint)
-            cached_remaining = _get_cached_rate_limit(token_hash)
-            if cached_remaining is not None:
+            cached_remaining_estimate = _get_cached_rate_limit(token_hash)
+            if cached_remaining_estimate is not None:
                 logger.debug(
-                    f"GitHub API rate-limit remaining: ~{cached_remaining} (cached estimate)"
+                    f"GitHub API rate-limit remaining: ~{cached_remaining_estimate} (cached estimate)"
                 )
             else:
                 logger.debug("No rate limit information available")
@@ -906,10 +983,6 @@ def download_file_with_retry(
                     file.write(chunk)
                     downloaded_chunks += 1
                     downloaded_bytes += len(chunk)
-                    if downloaded_chunks % 100 == 0:
-                        logger.debug(
-                            f"Downloaded {downloaded_chunks} chunks ({downloaded_bytes} bytes) so far for {url}"
-                        )
 
         elapsed = time.time() - start_time
         file_size_mb = downloaded_bytes / (1024 * 1024)
@@ -1222,5 +1295,76 @@ def matches_selected_patterns(
                 or pat_sanitised in base_legacy_sanitised
             ):
                 return True
+
+    return False
+
+
+def matches_extract_patterns(
+    filename: str,
+    extract_patterns: List[str],
+    device_manager: Optional[Any] = None,
+) -> bool:
+    """
+    Match a filename against legacy prerelease extract selection patterns.
+
+    Performs case-insensitive matching of filename against each pattern in extract_patterns.
+    - The literal pattern "littlefs-" matches filenames that start with "littlefs-".
+    - Patterns that start with any FILE_TYPE_PREFIXES element match when the pattern appears anywhere in the filename.
+    - Patterns identified as device patterns (either device_manager.is_device_pattern(pattern) returns true, or the pattern ends with '-' or '_') are matched as device identifiers:
+      - For device patterns of length 1–2, matches a whole-word boundary in the filename.
+      - For longer device patterns, matches when the pattern appears as a separate token delimited by '-' or '_' or at the filename ends.
+    - Any other pattern matches when it appears as a substring of the filename.
+
+    Parameters:
+        filename (str): The filename to test.
+        extract_patterns (List[str]): Legacy selection patterns to test against the filename.
+        device_manager (Optional[Any]): Optional object exposing is_device_pattern(pattern) -> bool to classify device patterns; if absent, patterns ending with '-' or '_' are treated as device patterns.
+
+    Returns:
+        bool: `True` if any pattern matches the filename according to the rules above, `False` otherwise.
+    """
+    filename_lower = filename.lower()
+
+    for pattern in extract_patterns:
+        pattern_lower = str(pattern).strip().lower()
+        if not pattern_lower:
+            continue
+
+        if pattern_lower == "littlefs-":
+            if filename_lower.startswith("littlefs-"):
+                return True
+            continue
+
+        if any(pattern_lower.startswith(prefix) for prefix in FILE_TYPE_PREFIXES):
+            if pattern_lower in filename_lower:
+                return True
+            continue
+
+        is_device_pattern_match = False
+        if device_manager and getattr(device_manager, "is_device_pattern", None):
+            try:
+                if device_manager.is_device_pattern(pattern):
+                    is_device_pattern_match = True
+            except (AttributeError, TypeError, ValueError):
+                is_device_pattern_match = False
+        elif pattern_lower.endswith(("-", "_")):
+            is_device_pattern_match = True
+
+        if is_device_pattern_match:
+            clean_pattern = pattern_lower.rstrip("-_ ")
+            if not clean_pattern:
+                continue
+            if len(clean_pattern) <= 2:
+                if re.search(rf"\b{re.escape(clean_pattern)}\b", filename_lower):
+                    return True
+            else:
+                if re.search(
+                    rf"(^|[-_]){re.escape(clean_pattern)}([-_]|$)", filename_lower
+                ):
+                    return True
+            continue
+
+        if pattern_lower in filename_lower:
+            return True
 
     return False
