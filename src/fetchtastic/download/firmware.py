@@ -13,6 +13,8 @@ import zipfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import requests
+
 from fetchtastic.constants import (
     EXECUTABLE_PERMISSIONS,
     FIRMWARE_DIR_PREFIX,
@@ -268,7 +270,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
             return self.create_download_result(
                 success=False,
                 release_tag=release.tag_name,
-                file_path=str(Path(safe_path)),
+                file_path=safe_path,
                 error_message=str(e),
                 download_url=getattr(asset, "download_url", None),
                 file_size=getattr(asset, "size", None),

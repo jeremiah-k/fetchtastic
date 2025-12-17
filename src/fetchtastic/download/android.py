@@ -293,7 +293,8 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         Returns:
             bool: `true` if every selected asset file exists and its file size equals the asset's expected size, `false` otherwise.
         """
-        version_dir = os.path.join(self.download_dir, "android", release.tag_name)
+        safe_tag = self._sanitize_required(release.tag_name, "release tag")
+        version_dir = os.path.join(self.download_dir, "android", safe_tag)
         if not os.path.isdir(version_dir):
             return False
 
@@ -464,7 +465,6 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             return []
 
         version_manager = VersionManager()
-        PrereleaseHistoryManager()
 
         # Filter prereleases
         prereleases = [r for r in releases if r.prerelease]

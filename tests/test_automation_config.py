@@ -61,7 +61,8 @@ class TestAutomationConfiguration:
     def test_crontab_available_false_when_missing(self, mocker, capsys):
         mocker.patch("fetchtastic.setup_config.shutil.which", return_value=None)
         assert setup_config._crontab_available() is False
-        assert "crontab" in capsys.readouterr().out.lower()
+        # Function is now pure and doesn't print
+        assert capsys.readouterr().out == ""
 
     def test_setup_cron_job_returns_early_without_crontab(self, mocker):
         mocker.patch("fetchtastic.setup_config.platform.system", return_value="Linux")

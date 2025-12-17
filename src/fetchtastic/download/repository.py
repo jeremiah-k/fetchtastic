@@ -452,7 +452,7 @@ class RepositoryDownloader(BaseDownloader):
 
         return results
 
-    def cleanup_old_versions(self, keep_limit: int) -> None:
+    def cleanup_old_versions(self, _keep_limit: int) -> None:
         """
         Remove all downloaded repository files; retention limits are ignored.
 
@@ -473,7 +473,7 @@ class RepositoryDownloader(BaseDownloader):
         """
         return "repository-latest"
 
-    def update_latest_release_tag(self, release_tag: str) -> bool:
+    def update_latest_release_tag(self, _release_tag: str) -> bool:
         """
         Update the latest repository release tag.
 
@@ -509,10 +509,10 @@ class RepositoryDownloader(BaseDownloader):
 
     def check_extraction_needed(
         self,
-        file_path: str,
-        extract_dir: str,
-        patterns: List[str],
-        exclude_patterns: List[str],
+        _file_path: str,
+        _extract_dir: str,
+        _patterns: List[str],
+        _exclude_patterns: List[str],
     ) -> bool:
         """
         Check if extraction is needed for repository files.
@@ -535,7 +535,7 @@ class RepositoryDownloader(BaseDownloader):
         )
         return False
 
-    def should_download_release(self, release_tag: str, asset_name: str) -> bool:
+    def should_download_release(self, _release_tag: str, _asset_name: str) -> bool:
         """
         Decide whether a repository release asset should be downloaded.
 

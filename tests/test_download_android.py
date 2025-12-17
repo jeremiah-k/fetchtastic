@@ -328,7 +328,6 @@ class TestMeshtasticAndroidAppDownloader:
     def test_get_prerelease_tracking_file(self, downloader):
         """Test prerelease tracking file path generation."""
         path = downloader.get_prerelease_tracking_file()
-        path = downloader.get_prerelease_tracking_file()
         assert "latest_android_prerelease.json" in path
 
     @patch("fetchtastic.download.android.datetime")

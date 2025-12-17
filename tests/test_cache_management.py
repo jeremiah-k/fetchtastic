@@ -560,7 +560,7 @@ class TestValidation:
     def test_get_cache_expiry_timestamp(self):
         """Test getting cache expiry timestamp."""
         cache_manager = CacheManager()
-        result = cache_manager.get_cache_expiry_timestamp("/fake/cache.json", 2.0)
+        result = cache_manager.get_cache_expiry_timestamp(2.0)
 
         # Should be a valid ISO timestamp
         datetime.fromisoformat(result.replace("Z", "+00:00"))

@@ -706,12 +706,11 @@ class CacheManager:
             )
             return False
 
-    def get_cache_expiry_timestamp(self, cache_file: str, expiry_hours: float) -> str:
+    def get_cache_expiry_timestamp(self, expiry_hours: float) -> str:
         """
         Compute the UTC expiry timestamp for a cache entry expiry_hours hours from now.
 
         Parameters:
-            cache_file (str): Path to the cache file (not used when calculating the timestamp).
             expiry_hours (float): Number of hours from now when the cache should expire.
 
         Returns:

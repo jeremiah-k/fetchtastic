@@ -16,10 +16,11 @@ def test_crontab_available_true_when_present(mocker):
 @pytest.mark.configuration
 @pytest.mark.unit
 def test_crontab_available_false_when_missing_prints_message(mocker, capsys):
-    mocker.patch("shutil.which", return_value=None)
-    assert setup_config._crontab_available() is False
+    mocker.patch("fetchtastic.setup_config.shutil.which", return_value=None)
+    # Function is now pure and doesn't print anything directly
+    setup_config._crontab_available()
     captured = capsys.readouterr()
-    assert "Cron configuration skipped" in captured.out
+    assert captured.out == ""
 
 
 @pytest.mark.configuration
