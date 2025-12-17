@@ -474,11 +474,12 @@ class DownloadOrchestrator:
             f"Retrying {len(self.failed_downloads)} failed downloads with enhanced retry logic..."
         )
 
-        retryable_failures = []
-        non_retryable_failures = []
+        retryable_failures: List[DownloadResult] = []
+        non_retryable_failures: List[DownloadResult] = []
 
         # Separate retryable and non-retryable failures
-        for failed_result in self.failed_downloads:
+        original_failures = list(self.failed_downloads)
+        for failed_result in original_failures:
             if failed_result.is_retryable and failed_result.retry_count < max_retries:
                 retryable_failures.append(failed_result)
             else:
@@ -487,6 +488,8 @@ class DownloadOrchestrator:
         logger.info(
             f"Found {len(retryable_failures)} retryable failures and {len(non_retryable_failures)} non-retryable failures"
         )
+
+        remaining_failures: List[DownloadResult] = list(non_retryable_failures)
 
         # Process retryable failures with exponential backoff
         for i, failed_result in enumerate(retryable_failures):
@@ -518,17 +521,56 @@ class DownloadOrchestrator:
 
                 retry_result = self._retry_single_failure(failed_result)
                 operation = f"{retry_result.file_type or 'unknown'}_retry"
-                self._handle_download_result(retry_result, operation)
+                if retry_result.success:
+                    failed_result.success = True
+                    failed_result.file_path = retry_result.file_path
+                    failed_result.extracted_files = retry_result.extracted_files
+                    failed_result.error_message = None
+                    failed_result.error_type = None
+                    failed_result.error_details = None
+                    failed_result.http_status_code = None
+                    failed_result.is_retryable = False
+                    failed_result.was_skipped = retry_result.was_skipped
+
+                    self.download_results.append(failed_result)
+                    logger.debug(
+                        "Completed %s: %s", operation, failed_result.release_tag
+                    )
+                else:
+                    failed_result.success = False
+                    failed_result.file_path = (
+                        retry_result.file_path or failed_result.file_path
+                    )
+                    failed_result.extracted_files = retry_result.extracted_files
+                    failed_result.error_message = (
+                        retry_result.error_message or failed_result.error_message
+                    )
+                    failed_result.error_type = retry_result.error_type
+                    failed_result.error_details = retry_result.error_details
+                    failed_result.http_status_code = retry_result.http_status_code
+                    failed_result.is_retryable = retry_result.is_retryable
+                    failed_result.was_skipped = False
+
+                    remaining_failures.append(failed_result)
+                    error_msg = failed_result.error_message or "Unknown error"
+                    logger.error(
+                        "Failed %s for %s: %s",
+                        operation,
+                        failed_result.release_tag,
+                        error_msg,
+                    )
+                    if failed_result.download_url:
+                        logger.error("URL: %s", failed_result.download_url)
 
             except Exception as e:
                 logger.error(f"Retry failed for {failed_result.release_tag}: {e}")
                 # Mark as non-retryable after max attempts
                 failed_result.is_retryable = False
                 failed_result.error_message = f"Max retries exceeded: {str(e)}"
-                non_retryable_failures.append(failed_result)
+                remaining_failures.append(failed_result)
 
-        # Update the failed downloads list with only non-retryable failures
-        self.failed_downloads = non_retryable_failures
+        # Update the failed downloads list with remaining failures (including failed retries)
+        self.failed_downloads = remaining_failures
 
         # Generate detailed retry report
         self._generate_retry_report(retryable_failures, non_retryable_failures)

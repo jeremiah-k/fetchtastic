@@ -2601,9 +2601,6 @@ def setup_reboot_cron_job():
         print("Cron configuration skipped: 'crontab' command not found on this system.")
         return
 
-    if not _crontab_available():
-        return
-
     try:
         # Get current crontab entries
         result = subprocess.run(
@@ -2667,9 +2664,6 @@ def remove_reboot_cron_job():
     if not _crontab_available():
         print("Cron configuration skipped: 'crontab' command not found on this system.")
         return
-
-    if not _crontab_available():
-        return
     try:
         # Get current crontab entries
         result = subprocess.run(
@@ -2720,9 +2714,6 @@ def check_cron_job_exists():
 
     if not _crontab_available():
         print("Cron configuration skipped: 'crontab' command not found on this system.")
-        return False
-
-    if not _crontab_available():
         return False
 
     try:

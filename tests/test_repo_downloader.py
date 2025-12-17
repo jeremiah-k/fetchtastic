@@ -9,6 +9,7 @@ import os
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
 
 from fetchtastic.download.repository import RepositoryDownloader
 
@@ -391,7 +392,9 @@ def test_download_repository_file_exception(
 
     # Mock download to raise an exception
     with patch.object(
-        repository_downloader, "download", side_effect=RuntimeError("Network error")
+        repository_downloader,
+        "download",
+        side_effect=requests.RequestException("Network error"),
     ):
         result = repository_downloader.download_repository_file(
             mock_file_info, "test-dir"

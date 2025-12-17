@@ -176,14 +176,13 @@ class TestMeshtasticAndroidAppDownloader:
     @patch("fetchtastic.utils.download_file_with_retry")
     @patch("os.path.exists")
     @patch("os.path.getsize")
-    def test_download_apk_success(
+    def test_download_apk_already_complete(
         self, mock_getsize, mock_exists, mock_download, downloader
     ):
-        """Test successful APK download."""
+        """Test APK download skip when file already complete."""
         # Setup mocks
         mock_exists.return_value = True
         mock_getsize.return_value = 1000000
-        mock_download.return_value = True
 
         release = Mock(spec=Release)
         release.tag_name = "v1.0.0"
@@ -195,13 +194,15 @@ class TestMeshtasticAndroidAppDownloader:
 
         # Mock verification
         downloader.verify = Mock(return_value=True)
+        downloader.file_operations.get_file_size = Mock(return_value=1000000)
 
         result = downloader.download_apk(release, asset)
 
         assert result.success is True
+        assert result.was_skipped is True
         assert result.release_tag == "v1.0.0"
         assert "meshtastic.apk" in str(result.file_path)
-        mock_download.assert_called_once()
+        mock_download.assert_not_called()
 
     @patch("fetchtastic.utils.download_file_with_retry")
     def test_download_apk_download_failure(self, mock_download, downloader):

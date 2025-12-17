@@ -10,19 +10,6 @@ def test_cli_integration_main_loads_config_and_runs(mocker):
     mocker.patch(
         "fetchtastic.setup_config.load_config", return_value={"DOWNLOAD_DIR": "/tmp"}
     )
-    mock_run_download = mocker.patch.object(
-        integration,
-        "run_download",
-        return_value=(
-            ["fw"],
-            ["new_fw"],
-            ["apk"],
-            ["new_apk"],
-            [],
-            "fw_latest",
-            "apk_latest",
-        ),
-    )
     mocker.patch(
         "fetchtastic.download.cli_integration.get_effective_github_token",
         return_value=None,
@@ -230,29 +217,17 @@ def test_run_download_handles_exception(mocker):
 
 
 def test_clear_caches_successful(mocker):
-    """_clear_caches should call clear methods on both managers."""
+    """_clear_caches should clear shared caches."""
     integration = DownloadCLIIntegration()
 
-    # Mock the downloaders and orchestrator
-    mock_android_downloader = mocker.MagicMock()
-    mock_firmware_downloader = mocker.MagicMock()
-    mock_orchestrator = mocker.MagicMock()
-    integration.android_downloader = mock_android_downloader
-    integration.firmware_downloader = mock_firmware_downloader
-    integration.orchestrator = mock_orchestrator
-
-    mock_android_cache_clear = mocker.patch.object(
-        integration.android_downloader.cache_manager, "clear"
-    )
-    mock_firmware_cache_clear = mocker.patch.object(
-        integration.firmware_downloader.cache_manager, "clear"
-    )
-    mock_orchestrator_cache_clear = mocker.patch.object(
-        integration.orchestrator.cache_manager, "clear"
+    integration.android_downloader = mocker.MagicMock()
+    mock_clear_all = mocker.patch.object(
+        integration.android_downloader.cache_manager, "clear_all_caches"
     )
 
     # Should not raise exception
     integration._clear_caches()
+    mock_clear_all.assert_called_once()
 
 
 def test_convert_results_to_legacy_format_firmware(mocker):

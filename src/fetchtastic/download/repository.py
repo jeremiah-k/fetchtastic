@@ -5,10 +5,13 @@ This module implements the specific downloader for Meshtastic repository files
 from the meshtastic.github.io repository.
 """
 
+import json
 import os
 import re
 from typing import Any, Dict, List, Optional
 from urllib.parse import urljoin, urlparse
+
+import requests
 
 from fetchtastic.constants import (
     MESHTASTIC_REPO_URL,
@@ -117,7 +120,7 @@ class RepositoryDownloader(BaseDownloader):
             )
             return files
 
-        except Exception as e:
+        except (requests.RequestException, ValueError, json.JSONDecodeError) as e:
             logger.error(f"Error fetching repository files: {e}")
             return []
 
@@ -226,7 +229,7 @@ class RepositoryDownloader(BaseDownloader):
                     error_type="network_error",
                 )
 
-        except Exception as e:
+        except (requests.RequestException, OSError, ValueError) as e:
             error_msg = f"Error downloading repository file {file_info.get('name', 'unknown')}: {e}"
             logger.error(error_msg)
             return self.create_download_result(
@@ -398,7 +401,7 @@ class RepositoryDownloader(BaseDownloader):
             self._cleanup_summary["success"] = True
             return True
 
-        except Exception as e:
+        except OSError as e:
             logger.error(f"Error cleaning repository directory: {e}")
             self._cleanup_summary["errors"].append(str(e))
             return False

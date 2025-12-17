@@ -163,7 +163,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
             return releases
 
-        except Exception as e:
+        except (
+            requests.RequestException,
+            ValueError,
+            KeyError,
+            json.JSONDecodeError,
+        ) as e:
             logger.error(f"Error fetching firmware releases: {e}")
             return []
 
@@ -264,7 +269,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     error_type="network_error",
                 )
 
-        except Exception as e:
+        except (requests.RequestException, OSError, ValueError) as e:
             logger.error(f"Error downloading firmware {asset.name}: {e}")
             safe_path = target_path or os.path.join(self.download_dir, "firmware")
             return self.create_download_result(
@@ -495,7 +500,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     is_retryable=False,
                 )
 
-        except Exception as e:
+        except (zipfile.BadZipFile, OSError, ValueError) as e:
             logger.error(f"Error extracting firmware {asset.name}: {e}")
             return self.create_download_result(
                 success=False,
@@ -550,7 +555,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         f"Error removing old firmware version {old_version}: {e}"
                     )
 
-        except Exception as e:
+        except OSError as e:
             logger.error(f"Error cleaning up old firmware versions: {e}")
 
     def _get_version_sort_key(self, version_dir: str) -> tuple:
@@ -822,7 +827,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                             error_type="network_error",
                         )
                     )
-            except Exception as exc:
+            except (requests.RequestException, OSError, ValueError) as exc:
                 failures.append(
                     self.create_download_result(
                         success=False,
@@ -900,6 +905,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     github_token=self.config.get("GITHUB_TOKEN"),
                     allow_env_token=True,
                 )
+                if not isinstance(dirs, list):
+                    logger.debug(
+                        "Expected list of repo directories from cache manager, got %s",
+                        type(dirs),
+                    )
+                    dirs = []
                 matches = prerelease_manager.scan_prerelease_directories(
                     [d for d in dirs if isinstance(d, str)], expected_version
                 )
@@ -913,7 +924,11 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         reverse=True,
                     )
                     active_dir = f"{FIRMWARE_DIR_PREFIX}{matches[0]}"
-            except Exception:
+            except (requests.RequestException, OSError, ValueError, TypeError) as exc:
+                logger.debug(
+                    "Fallback prerelease directory scan failed; skipping prerelease detection: %s",
+                    exc,
+                )
                 active_dir = None
 
         if not active_dir:
@@ -1214,7 +1229,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         prerelease_tag, current_prerelease
                     )
                     return comparison > 0  # Download if newer
-            except Exception:
+            except (OSError, ValueError, json.JSONDecodeError) as exc:
+                logger.debug(
+                    "Error reading firmware prerelease tracking file %s: %s; defaulting to download",
+                    tracking_file,
+                    exc,
+                )
                 return True
 
         # No tracking file or unreadable; default to download
@@ -1245,7 +1265,11 @@ class FirmwareReleaseDownloader(BaseDownloader):
             tracking_data = None
             try:
                 tracking_data = self.cache_manager.read_json(file_path)
-            except Exception as exc:  # pragma: no cover - defensive
+            except (
+                OSError,
+                ValueError,
+                json.JSONDecodeError,
+            ) as exc:  # pragma: no cover - defensive
                 logger.debug(
                     "Skipping prerelease tracking file %s due to read error: %s",
                     file_path,
@@ -1344,7 +1368,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
             return cleaned_up
 
-        except Exception as e:
+        except (OSError, ValueError) as e:
             logger.error(f"Error cleaning up superseded prereleases: {e}")
             return False
 

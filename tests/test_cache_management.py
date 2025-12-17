@@ -16,9 +16,13 @@ import os
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from fetchtastic.download.cache import (
     CacheManager,
 )
+
+pytestmark = [pytest.mark.unit, pytest.mark.infrastructure]
 
 
 class TestCacheManagerInitialization:

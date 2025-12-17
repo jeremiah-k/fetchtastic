@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+import requests
 
 from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.firmware import FirmwareReleaseDownloader
@@ -288,7 +289,7 @@ class TestFirmwareReleaseDownloader:
         with (
             patch(
                 "fetchtastic.download.firmware.make_github_api_request",
-                side_effect=Exception("API Error"),
+                side_effect=requests.RequestException("API Error"),
             ),
             patch(
                 "fetchtastic.download.cache.CacheManager.read_releases_cache_entry",

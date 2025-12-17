@@ -623,7 +623,13 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                         prerelease_tag, current_prerelease
                     )
                     return comparison > 0
-            except Exception:
+            except Exception as exc:
+                logger.debug(
+                    "Error reading Android prerelease tracking file %s: %s; "
+                    "defaulting to download",
+                    tracking_file,
+                    exc,
+                )
                 return True
 
         # No tracking file or unreadable; default to download
