@@ -564,10 +564,14 @@ class TestValidation:
     def test_get_cache_expiry_timestamp(self):
         """Test getting cache expiry timestamp."""
         cache_manager = CacheManager()
+        before = datetime.now(timezone.utc) + timedelta(hours=2)
         result = cache_manager.get_cache_expiry_timestamp(2.0)
 
-        # Should be a valid ISO timestamp
-        datetime.fromisoformat(result.replace("Z", "+00:00"))
+        after = datetime.now(timezone.utc) + timedelta(hours=2)
+
+        # Should be a valid ISO timestamp ~2 hours in the future
+        result_dt = datetime.fromisoformat(result.replace("Z", "+00:00"))
+        assert before <= result_dt <= after
 
     def test_atomic_write_with_timestamp(self, tmp_path):
         """Test atomic write with timestamp."""

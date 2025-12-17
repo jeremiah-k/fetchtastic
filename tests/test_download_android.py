@@ -14,6 +14,8 @@ from fetchtastic.download.android import MeshtasticAndroidAppDownloader
 from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.interfaces import Asset, Release
 
+pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
+
 
 class TestMeshtasticAndroidAppDownloader:
     """Test suite for MeshtasticAndroidAppDownloader."""
@@ -333,7 +335,7 @@ class TestMeshtasticAndroidAppDownloader:
         assert "latest_android_prerelease.json" in path
 
     @patch("fetchtastic.download.android.datetime")
-    def test_update_prerelease_tracking(self, mock_datetime, downloader):
+    def test_update_prerelease_tracking(self, _mock_datetime, downloader):
         downloader.cache_manager.atomic_write_json = Mock(return_value=True)
 
         result = downloader.update_prerelease_tracking("v1.0.0-beta")

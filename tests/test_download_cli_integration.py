@@ -1,6 +1,10 @@
 from unittest.mock import MagicMock
 
+import pytest
+
 from fetchtastic.download.cli_integration import DownloadCLIIntegration
+
+pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
 
 
 def test_cli_integration_main_loads_config_and_runs(mocker):
@@ -219,10 +223,14 @@ def test_run_download_handles_exception(mocker):
 def test_clear_caches_successful(mocker):
     """_clear_caches should clear shared caches."""
     integration = DownloadCLIIntegration()
-
-    integration.android_downloader = mocker.MagicMock()
+    integration.orchestrator = MagicMock()
+    integration.orchestrator.cache_manager = MagicMock()
+    integration.android_downloader = MagicMock()
+    integration.android_downloader.cache_manager = (
+        integration.orchestrator.cache_manager
+    )
     mock_clear_all = mocker.patch.object(
-        integration.android_downloader.cache_manager, "clear_all_caches"
+        integration.orchestrator.cache_manager, "clear_all_caches"
     )
 
     # Should not raise exception
@@ -230,7 +238,7 @@ def test_clear_caches_successful(mocker):
     mock_clear_all.assert_called_once()
 
 
-def test_convert_results_to_legacy_format_firmware(mocker):
+def test_convert_results_to_legacy_format_firmware():
     """_convert_results_to_legacy_format should handle firmware results."""
     integration = DownloadCLIIntegration()
     integration.orchestrator = MagicMock()
@@ -266,7 +274,7 @@ def test_convert_results_to_legacy_format_firmware(mocker):
     assert new_apk_versions == []
 
 
-def test_convert_results_to_legacy_format_android(mocker):
+def test_convert_results_to_legacy_format_android():
     """_convert_results_to_legacy_format should handle android results."""
     integration = DownloadCLIIntegration()
     integration.orchestrator = MagicMock()
@@ -302,7 +310,7 @@ def test_convert_results_to_legacy_format_android(mocker):
     assert new_apk_versions == ["v1.0"]
 
 
-def test_convert_results_to_legacy_format_skipped(mocker):
+def test_convert_results_to_legacy_format_skipped():
     """_convert_results_to_legacy_format should skip results marked as was_skipped."""
     integration = DownloadCLIIntegration()
     integration.orchestrator = MagicMock()
@@ -330,7 +338,7 @@ def test_convert_results_to_legacy_format_skipped(mocker):
     assert new_apk_versions == []
 
 
-def test_is_newer_version(mocker):
+def test_is_newer_version():
     """_is_newer_version should compare versions correctly."""
     integration = DownloadCLIIntegration()
     integration.android_downloader = MagicMock()
@@ -347,7 +355,7 @@ def test_is_newer_version(mocker):
     mock_version_manager.compare_versions.assert_called_once_with("v1.1", "v1.0")
 
 
-def test_is_newer_version_older(mocker):
+def test_is_newer_version_older():
     """_is_newer_version should return False for older version."""
     integration = DownloadCLIIntegration()
     integration.android_downloader = MagicMock()
@@ -364,7 +372,7 @@ def test_is_newer_version_older(mocker):
     mock_version_manager.compare_versions.assert_called_once_with("v1.0", "v1.1")
 
 
-def test_is_newer_version_equal(mocker):
+def test_is_newer_version_equal():
     """_is_newer_version should return False for equal versions."""
     integration = DownloadCLIIntegration()
     integration.android_downloader = MagicMock()
@@ -381,7 +389,7 @@ def test_is_newer_version_equal(mocker):
     mock_version_manager.compare_versions.assert_called_once_with("v1.0", "v1.0")
 
 
-def test_get_failed_downloads(mocker):
+def test_get_failed_downloads():
     """get_failed_downloads should format failed downloads correctly."""
     integration = DownloadCLIIntegration()
     integration.orchestrator = MagicMock()
@@ -420,7 +428,7 @@ def test_get_failed_downloads_no_orchestrator():
     assert result == []
 
 
-def test_get_download_statistics(mocker):
+def test_get_download_statistics():
     """get_download_statistics should delegate to orchestrator."""
     integration = DownloadCLIIntegration()
     integration.orchestrator = MagicMock()
@@ -447,7 +455,7 @@ def test_get_download_statistics_no_orchestrator():
     assert result["success_rate"] == 0.0
 
 
-def test_get_latest_versions(mocker):
+def test_get_latest_versions():
     """get_latest_versions should delegate to orchestrator and convert None to empty string."""
     integration = DownloadCLIIntegration()
     integration.orchestrator = MagicMock()

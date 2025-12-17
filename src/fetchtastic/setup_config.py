@@ -819,12 +819,7 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
 
         # Configure exclude patterns only if extraction is enabled and patterns are set
         if config.get("AUTO_EXTRACT") and config.get("EXTRACT_PATTERNS"):
-            # In non-interactive environments (like CI), skip interactive prompts
-            if not sys.stdin.isatty() or os.environ.get("CI"):
-                config["EXCLUDE_PATTERNS"] = RECOMMENDED_EXCLUDE_PATTERNS.copy()
-                print("Using recommended exclude patterns (non-interactive mode).")
-            else:
-                configure_exclude_patterns(config)
+            configure_exclude_patterns(config)
         else:
             config["EXCLUDE_PATTERNS"] = []
     else:
