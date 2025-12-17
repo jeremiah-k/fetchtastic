@@ -212,6 +212,12 @@ class DownloadOrchestrator:
             )
             if prerelease_dir.exists():
                 for item in prerelease_dir.iterdir():
+                    # Skip symlinks to prevent path traversal attacks
+                    if item.is_symlink():
+                        logger.warning(
+                            f"Skipping symlink in prerelease folder: {item.name}"
+                        )
+                        continue
                     # A pre-release directory should contain a hash, a stable release directory will not.
                     if item.is_dir() and not is_prerelease_directory(item.name):
                         logger.info(

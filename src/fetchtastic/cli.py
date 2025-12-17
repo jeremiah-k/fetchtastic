@@ -322,7 +322,7 @@ def main():
                     else:
                         print("Topic URL copied to clipboard.")
                 else:
-                    print("Failed to copy to clipboard.")
+                    print("Failed to copy to clipboard.", file=sys.stderr)
             else:
                 print("You can copy the topic information from above.")
         else:
@@ -493,7 +493,10 @@ def run_clean():
             os.remove(config_file)
             print(f"Removed configuration file: {config_file}")
         except OSError as e:
-            print(f"Failed to delete configuration file {config_file}. Reason: {e}")
+            print(
+                f"Failed to delete configuration file {config_file}. Reason: {e}",
+                file=sys.stderr,
+            )
 
     if os.path.exists(old_config_file):
         try:
@@ -501,7 +504,8 @@ def run_clean():
             print(f"Removed old configuration file: {old_config_file}")
         except OSError as e:
             print(
-                f"Failed to delete old configuration file {old_config_file}. Reason: {e}"
+                f"Failed to delete old configuration file {old_config_file}. Reason: {e}",
+                file=sys.stderr,
             )
 
     # Remove config directory if empty
@@ -514,7 +518,10 @@ def run_clean():
                 shutil.rmtree(batch_dir)
                 print(f"Removed batch files directory: {batch_dir}")
             except OSError as e:
-                print(f"Failed to delete batch directory {batch_dir}. Reason: {e}")
+                print(
+                    f"Failed to delete batch directory {batch_dir}. Reason: {e}",
+                    file=sys.stderr,
+                )
 
         # Check if config directory is now empty
         if os.path.exists(config_dir) and not os.listdir(config_dir):
@@ -522,7 +529,10 @@ def run_clean():
                 os.rmdir(config_dir)
                 print(f"Removed empty config directory: {config_dir}")
             except OSError as e:
-                print(f"Failed to delete config directory {config_dir}. Reason: {e}")
+                print(
+                    f"Failed to delete config directory {config_dir}. Reason: {e}",
+                    file=sys.stderr,
+                )
 
     # Windows-specific cleanup
     if platform.system() == "Windows":
@@ -547,7 +557,10 @@ def run_clean():
                         f"Removed Start Menu shortcuts folder: {windows_start_menu_folder}"
                     )
                 except OSError as e:
-                    print(f"Failed to remove Start Menu shortcuts folder. Reason: {e}")
+                    print(
+                        f"Failed to remove Start Menu shortcuts folder. Reason: {e}",
+                        file=sys.stderr,
+                    )
                     # Try to remove individual files
                     try:
                         for item in os.listdir(windows_start_menu_folder):
@@ -560,9 +573,15 @@ def run_clean():
                                     shutil.rmtree(item_path)
                                     print(f"Removed Start Menu directory: {item}")
                             except OSError as e2:
-                                print(f"Failed to remove {item}. Reason: {e2}")
+                                print(
+                                    f"Failed to remove {item}. Reason: {e2}",
+                                    file=sys.stderr,
+                                )
                     except OSError as e3:
-                        print(f"Failed to list Start Menu shortcuts. Reason: {e3}")
+                        print(
+                            f"Failed to list Start Menu shortcuts. Reason: {e3}",
+                            file=sys.stderr,
+                        )
 
             # Remove startup shortcut
             try:
@@ -572,7 +591,9 @@ def run_clean():
                     os.remove(startup_shortcut_path)
                     print(f"Removed startup shortcut: {startup_shortcut_path}")
             except (OSError, AttributeError) as e:
-                print(f"Failed to remove startup shortcut. Reason: {e}")
+                print(
+                    f"Failed to remove startup shortcut. Reason: {e}", file=sys.stderr
+                )
 
             # Remove config shortcut in base directory
             download_dir = setup_config.BASE_DIR
@@ -582,7 +603,10 @@ def run_clean():
                     os.remove(config_shortcut_path)
                     print(f"Removed configuration shortcut: {config_shortcut_path}")
                 except OSError as e:
-                    print(f"Failed to remove configuration shortcut. Reason: {e}")
+                    print(
+                        f"Failed to remove configuration shortcut. Reason: {e}",
+                        file=sys.stderr,
+                    )
 
     # Remove only managed directories from download directory
     download_dir = setup_config.BASE_DIR
@@ -672,7 +696,9 @@ def run_clean():
                     process.communicate(input=new_cron)
                     print("Removed Fetchtastic cron job entries.")
             except (OSError, subprocess.SubprocessError) as e:
-                print(f"An error occurred while removing cron jobs: {e}")
+                print(
+                    f"An error occurred while removing cron jobs: {e}", file=sys.stderr
+                )
 
     # Remove boot script if exists (Termux-specific)
     boot_script = os.path.expanduser("~/.termux/boot/fetchtastic.sh")
@@ -681,7 +707,10 @@ def run_clean():
             os.remove(boot_script)
             print(f"Removed boot script: {boot_script}")
         except OSError as e:
-            print(f"Failed to remove boot script {boot_script}. Reason: {e}")
+            print(
+                f"Failed to remove boot script {boot_script}. Reason: {e}",
+                file=sys.stderr,
+            )
 
     # Remove log file
     log_dir = platformdirs.user_log_dir("fetchtastic")
@@ -691,7 +720,7 @@ def run_clean():
             os.remove(log_file)
             print(f"Removed log file: {log_file}")
         except OSError as e:
-            print(f"Failed to remove log file. Reason: {e}")
+            print(f"Failed to remove log file. Reason: {e}", file=sys.stderr)
 
     print(
         "The downloaded files and Fetchtastic configuration have been removed from your system."
@@ -724,7 +753,7 @@ def run_repo_clean(config):
     if success:
         print("Repository directory cleaned successfully.")
     else:
-        print("Failed to clean repository directory.")
+        print("Failed to clean repository directory.", file=sys.stderr)
 
     cleanup_summary = repo_downloader.get_cleanup_summary()
     log_utils.logger.info(
