@@ -590,8 +590,14 @@ def _setup_downloads(
                     "selected_assets"
                 ]
 
-    # If both save_apks and save_firmware are False, inform the user and exit setup
-    if not save_apks and not save_firmware:
+    # If both save_apks and save_firmware are False, inform the user and exit setup.
+    # During partial runs that only update non-download sections (e.g. automation),
+    # allow setup to proceed even when downloads are disabled.
+    if (
+        not save_apks
+        and not save_firmware
+        and (not is_partial_run or wants("android") or wants("firmware"))
+    ):
         print("Please select at least one type of asset to download (APK or firmware).")
         print("Run 'fetchtastic setup' again and select at least one asset.")
         return config, save_apks, save_firmware
@@ -1613,8 +1619,13 @@ def run_setup(sections: Optional[Sequence[str]] = None):
     # Handle download type selection and asset menus
     config, save_apks, save_firmware = _setup_downloads(config, is_partial_run, wants)
 
-    # If both save_apks and save_firmware are False, exit setup
-    if not save_apks and not save_firmware:
+    # If both save_apks and save_firmware are False, exit setup.
+    # During partial runs that only update non-download sections, continue instead.
+    if (
+        not save_apks
+        and not save_firmware
+        and (not is_partial_run or wants("android") or wants("firmware"))
+    ):
         return
 
     # Determine default number of versions to keep based on platform

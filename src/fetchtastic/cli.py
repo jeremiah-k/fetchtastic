@@ -10,6 +10,7 @@ import time
 from typing import List
 
 import platformdirs
+import yaml
 
 from fetchtastic import log_utils, setup_config
 from fetchtastic.constants import (
@@ -248,7 +249,7 @@ def main():
                     # Re-load the configuration from the new location
                     try:
                         config = setup_config.load_config(config_path)
-                    except Exception as e:
+                    except (OSError, TypeError, ValueError, yaml.YAMLError) as e:
                         log_utils.logger.error(
                             f"Failed to load migrated configuration: {e}"
                         )
@@ -744,13 +745,16 @@ def get_fetchtastic_version():
         version (str): The installed Fetchtastic version string, or "unknown" if the version cannot be determined.
     """
     try:
-        from importlib.metadata import version
+        from importlib.metadata import PackageNotFoundError, version
     except ImportError:
         # For Python < 3.8
-        from importlib_metadata import version  # type: ignore[import]
+        from importlib_metadata import (  # type: ignore[import]
+            PackageNotFoundError,
+            version,
+        )
     try:
         return version("fetchtastic")
-    except Exception:
+    except PackageNotFoundError:
         return "unknown"
 
 

@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import ANY, Mock, patch
 
 import pytest
+import requests
 
 from fetchtastic.download.android import MeshtasticAndroidAppDownloader
 from fetchtastic.download.cache import CacheManager
@@ -117,7 +118,7 @@ class TestMeshtasticAndroidAppDownloader:
     @patch("fetchtastic.download.android.make_github_api_request")
     def test_get_releases_api_error(self, mock_request, downloader):
         """Test handling of GitHub API errors."""
-        mock_request.side_effect = Exception("API Error")
+        mock_request.side_effect = requests.RequestException("API Error")
 
         # Force cache miss so the API is called and the exception path is exercised
         downloader.cache_manager.read_releases_cache_entry.return_value = None

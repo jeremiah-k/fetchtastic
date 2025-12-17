@@ -112,7 +112,7 @@ class TestDownloadIntegration:
             patch.object(
                 orchestrator.firmware_downloader,
                 "get_releases",
-                side_effect=Exception("API Error"),
+                side_effect=ValueError("API Error"),
             ),
             patch.object(
                 orchestrator.android_downloader, "get_releases", return_value=[]

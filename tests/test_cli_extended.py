@@ -272,7 +272,7 @@ def test_cli_download_config_load_failure(mocker, capsys):
     mocker.patch("fetchtastic.setup_config.migrate_config", return_value=True)
     mocker.patch(
         "fetchtastic.setup_config.load_config",
-        side_effect=Exception("Config load failed"),
+        side_effect=ValueError("Config load failed"),
     )
     mocker.patch("builtins.input", side_effect=EOFError)
 

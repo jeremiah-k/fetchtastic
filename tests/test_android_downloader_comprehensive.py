@@ -10,6 +10,7 @@ import os
 from unittest.mock import patch
 
 import pytest
+import requests
 
 from fetchtastic.download.android import MeshtasticAndroidAppDownloader
 from fetchtastic.download.cache import CacheManager
@@ -259,7 +260,7 @@ class TestMeshtasticAndroidAppDownloader:
         """Test error handling with API failures."""
         with patch(
             "fetchtastic.download.android.make_github_api_request",
-            side_effect=Exception("API Error"),
+            side_effect=requests.RequestException("API Error"),
         ):
             releases = android_downloader.get_releases()
             assert releases == []

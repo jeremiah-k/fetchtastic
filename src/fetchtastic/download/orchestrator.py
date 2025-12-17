@@ -10,6 +10,8 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import requests
+
 from fetchtastic.constants import (
     DEFAULT_ANDROID_VERSIONS_TO_KEEP,
     DEFAULT_FIRMWARE_VERSIONS_TO_KEEP,
@@ -150,7 +152,7 @@ class DownloadOrchestrator:
             if not any_android_downloaded and not releases_to_download:
                 logger.info("All Android APK assets are up to date.")
 
-        except Exception as e:
+        except (requests.RequestException, OSError, ValueError, TypeError) as e:
             logger.error(f"Error processing Android downloads: {e}", exc_info=True)
 
     def _process_firmware_downloads(self) -> None:
@@ -220,7 +222,7 @@ class DownloadOrchestrator:
                         )
                         shutil.rmtree(item)
 
-        except Exception as e:
+        except (requests.RequestException, OSError, ValueError, TypeError) as e:
             logger.error(f"Error processing firmware downloads: {e}", exc_info=True)
 
     def _select_latest_release_by_version(
@@ -350,7 +352,7 @@ class DownloadOrchestrator:
                     any_downloaded = True
                 self._handle_download_result(result, "android")
             return any_downloaded
-        except Exception as e:
+        except (requests.RequestException, OSError, ValueError, TypeError) as e:
             logger.error(f"Error downloading Android release {release.tag_name}: {e}")
             return False
 
@@ -403,7 +405,7 @@ class DownloadOrchestrator:
                     )
                     self._handle_download_result(extract_result, "firmware_extraction")
             return any_downloaded
-        except Exception as e:
+        except (requests.RequestException, OSError, ValueError, TypeError) as e:
             logger.error(f"Error downloading firmware release {release.tag_name}: {e}")
             return False
 
@@ -562,7 +564,7 @@ class DownloadOrchestrator:
                     if failed_result.download_url:
                         logger.error("URL: %s", failed_result.download_url)
 
-            except Exception as e:
+            except (requests.RequestException, OSError, ValueError, TypeError) as e:
                 logger.error(f"Retry failed for {failed_result.release_tag}: {e}")
                 # Mark as non-retryable after max attempts
                 failed_result.is_retryable = False
@@ -655,7 +657,7 @@ class DownloadOrchestrator:
                 < self.config.get("MAX_RETRIES", 3),
             )
 
-        except Exception as exc:
+        except (requests.RequestException, OSError, ValueError, TypeError) as exc:
             logger.error(f"Retry exception for {failed_result.release_tag}: {exc}")
             return DownloadResult(
                 success=False,
@@ -947,7 +949,7 @@ class DownloadOrchestrator:
 
             logger.info("Old version cleanup completed")
 
-        except Exception as e:
+        except (OSError, ValueError, TypeError) as e:
             logger.error(f"Error cleaning up old versions: {e}")
 
     def _cleanup_deleted_prereleases(self) -> None:
@@ -999,7 +1001,7 @@ class DownloadOrchestrator:
                     except OSError as e:
                         logger.error(f"Error removing directory {dir_to_delete}: {e}")
 
-        except Exception as e:
+        except (requests.RequestException, OSError, ValueError, TypeError) as e:
             logger.error(f"Error during deleted prerelease cleanup: {e}", exc_info=True)
 
     def get_latest_versions(self) -> Dict[str, Optional[str]]:
@@ -1085,7 +1087,7 @@ class DownloadOrchestrator:
             # Manage prerelease tracking files
             self._manage_prerelease_tracking()
 
-        except Exception as e:
+        except (requests.RequestException, OSError, ValueError, TypeError) as e:
             logger.error(f"Error updating version tracking: {e}")
 
     def _manage_prerelease_tracking(self) -> None:
@@ -1107,7 +1109,7 @@ class DownloadOrchestrator:
 
             logger.info("Prerelease tracking management completed")
 
-        except Exception as e:
+        except (OSError, ValueError, TypeError) as e:
             logger.error(f"Error managing prerelease tracking: {e}")
 
     def _refresh_commit_history_cache(self) -> None:
@@ -1120,5 +1122,5 @@ class DownloadOrchestrator:
                 allow_env_token=True,
                 force_refresh=False,
             )
-        except Exception as e:
+        except (requests.RequestException, OSError, ValueError, TypeError) as e:
             logger.debug(f"Skipping commit history refresh: {e}")

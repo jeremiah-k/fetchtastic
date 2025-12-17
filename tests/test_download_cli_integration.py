@@ -208,7 +208,7 @@ def test_run_download_handles_exception(mocker):
     # Force an exception during initialization
     mocker.patch(
         "fetchtastic.download.cli_integration.DownloadOrchestrator",
-        side_effect=Exception("test error"),
+        side_effect=ValueError("test error"),
     )
 
     result = integration.run_download({"DOWNLOAD_DIR": "/tmp"})

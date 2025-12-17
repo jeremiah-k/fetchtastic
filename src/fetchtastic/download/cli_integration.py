@@ -9,6 +9,8 @@ import sys
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
+import requests
+
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import (
     format_api_summary,
@@ -109,7 +111,7 @@ class DownloadCLIIntegration:
                 latest_apk_version,
             )
 
-        except Exception as e:
+        except (requests.RequestException, OSError, ValueError, TypeError) as e:
             logger.exception("Error in CLI integration: %s", e)
             # Return empty results and error information
             return [], [], [], [], [], "", ""
@@ -127,7 +129,7 @@ class DownloadCLIIntegration:
 
             logger.info("All caches cleared")
 
-        except Exception as e:
+        except (OSError, ValueError) as e:
             logger.error(f"Error clearing caches: {e}")
 
     def log_download_results_summary(
@@ -374,7 +376,7 @@ class DownloadCLIIntegration:
             results = self.run_download(config, force_refresh)
             return results
 
-        except Exception as error:
+        except (requests.RequestException, OSError, ValueError, TypeError) as error:
             self.handle_cli_error(error)
             return [], [], [], [], [], "", ""
 
@@ -448,7 +450,7 @@ class DownloadCLIIntegration:
 
             return True
 
-        except Exception as e:
+        except (requests.RequestException, OSError, ValueError, TypeError) as e:
             logger.error(f"Integration validation failed: {e}")
             return False
 
@@ -780,7 +782,7 @@ class DownloadCLIIntegration:
                     allow_env_token=allow_env_token,
                 )
             )
-        except Exception as exc:
+        except (requests.RequestException, OSError, ValueError, TypeError) as exc:
             logger.debug(f"Failed to get prerelease commit history: {exc}")
             remote_dir = None
 

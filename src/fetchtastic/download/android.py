@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import requests
+
 from fetchtastic.constants import (
     LATEST_ANDROID_PRERELEASE_JSON_FILE,
     LATEST_ANDROID_RELEASE_JSON_FILE,
@@ -147,8 +149,14 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
             return releases
 
-        except Exception:
-            logger.exception("Error fetching Android releases")
+        except (
+            requests.RequestException,
+            ValueError,
+            KeyError,
+            json.JSONDecodeError,
+            TypeError,
+        ) as exc:
+            logger.exception("Error fetching Android releases: %s", exc)
             return []
 
     def get_assets(self, release: Release) -> List[Asset]:
@@ -268,14 +276,14 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                     error_type="network_error",
                 )
 
-        except Exception:
-            logger.exception("Error downloading APK %s", asset.name)
+        except (requests.RequestException, OSError, ValueError, TypeError) as exc:
+            logger.exception("Error downloading APK %s: %s", asset.name, exc)
             safe_path = target_path or os.path.join(self.download_dir, "android")
             return self.create_download_result(
                 success=False,
                 release_tag=release.tag_name,
                 file_path=str(Path(safe_path)),
-                error_message="Error downloading APK",
+                error_message=str(exc),
                 download_url=getattr(asset, "download_url", None),
                 file_size=getattr(asset, "size", None),
                 file_type="android",
@@ -355,7 +363,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                         f"Error removing old Android version {old_version}: {e}"
                     )
 
-        except Exception:
+        except OSError:
             logger.exception("Error cleaning up old Android versions")
 
     def _is_version_directory(self, dir_name: str) -> bool:
@@ -623,7 +631,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                         prerelease_tag, current_prerelease
                     )
                     return comparison > 0
-            except Exception as exc:
+            except (OSError, ValueError, json.JSONDecodeError) as exc:
                 logger.debug(
                     "Error reading Android prerelease tracking file %s: %s; "
                     "defaulting to download",
@@ -673,7 +681,11 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             tracking_data = None
             try:
                 tracking_data = self.cache_manager.read_json(file_path)
-            except Exception as exc:  # pragma: no cover - defensive
+            except (
+                OSError,
+                ValueError,
+                json.JSONDecodeError,
+            ) as exc:  # pragma: no cover - defensive
                 logger.debug(
                     "Skipping prerelease tracking file %s due to read error: %s",
                     file_path,

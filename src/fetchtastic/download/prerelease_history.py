@@ -6,10 +6,13 @@ from GitHub commits and repository directories.
 """
 
 import fnmatch
+import json
 import os
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
+
+import requests
 
 from fetchtastic.constants import (
     DEFAULT_PRERELEASE_ACTIVE,
@@ -138,7 +141,13 @@ class PrereleaseHistoryManager:
                 },
             )
             return all_commits[:limit]
-        except Exception as e:
+        except (
+            requests.RequestException,
+            ValueError,
+            KeyError,
+            json.JSONDecodeError,
+            TypeError,
+        ) as e:
             logger.warning("Could not fetch repo commits (%s): %s", type(e).__name__, e)
             return []
 
@@ -758,7 +767,7 @@ class PrereleaseHistoryManager:
                     # Check if it's a prerelease
                     if self.version_manager.is_prerelease_version(version):
                         found_versions.append(version)
-            except Exception:
+            except (OSError, ValueError, TypeError):
                 logger.debug("Failed to extract version from file: %s", file_path)
                 continue
 
@@ -819,7 +828,7 @@ class PrereleaseHistoryManager:
                 force_refresh=force_refresh,
                 max_commits=max_commits,
             )
-        except Exception as exc:
+        except (requests.RequestException, OSError, ValueError, TypeError) as exc:
             logger.debug(
                 "Failed to build prerelease commit history for %s: %s",
                 expected_version,
@@ -839,7 +848,13 @@ class PrereleaseHistoryManager:
                 github_token=github_token,
                 allow_env_token=allow_env_token,
             )
-        except Exception as exc:
+            if not isinstance(repo_dirs, list):
+                logger.debug(
+                    "Expected list of repo directories from cache manager, got %s",
+                    type(repo_dirs),
+                )
+                return None
+        except (requests.RequestException, OSError, ValueError, TypeError) as exc:
             logger.debug(
                 "Failed to fetch prerelease directories for %s: %s",
                 expected_version,
