@@ -518,7 +518,7 @@ def test_validate_integration_missing_components():
     assert result is False
 
 
-def test_validate_integration_fetch_failure(mocker):
+def test_validate_integration_fetch_failure():
     """validate_integration should return False when releases cannot be fetched."""
     integration = DownloadCLIIntegration()
     integration.orchestrator = MagicMock()

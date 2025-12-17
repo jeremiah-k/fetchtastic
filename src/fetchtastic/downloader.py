@@ -93,6 +93,8 @@ from fetchtastic.constants import (
     ZIP_EXTENSION,
 )
 from fetchtastic.device_hardware import DeviceHardwareManager
+from fetchtastic.download.cache import CacheManager
+from fetchtastic.download.prerelease_history import PrereleaseHistoryManager
 from fetchtastic.log_utils import logger
 from fetchtastic.setup_config import display_version_info, get_upgrade_command
 from fetchtastic.utils import (

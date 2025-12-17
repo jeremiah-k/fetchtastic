@@ -191,10 +191,10 @@ class TestFirmwareReleaseDownloader:
         assert "firmware-rak4631.zip" in str(result.file_path)
         mock_download.assert_called_once()
 
-    @patch("fetchtastic.download.firmware.download_file_with_retry")
-    def test_download_firmware_download_failure(self, mock_download, downloader):
+    def test_download_firmware_download_failure(self, downloader):
         """Test firmware download failure."""
-        mock_download.return_value = False
+        # Force the internal download call to report a failure without real I/O
+        downloader.download = Mock(return_value=False)
 
         release = Mock(spec=Release)
         release.tag_name = "v1.0.0"
