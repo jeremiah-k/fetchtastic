@@ -279,6 +279,15 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         except (requests.RequestException, OSError, ValueError, TypeError) as exc:
             logger.exception("Error downloading APK %s: %s", asset.name, exc)
             safe_path = target_path or os.path.join(self.download_dir, "android")
+            if isinstance(exc, requests.RequestException):
+                error_type = "network_error"
+                is_retryable = True
+            elif isinstance(exc, OSError):
+                error_type = "filesystem_error"
+                is_retryable = False
+            else:
+                error_type = "validation_error"
+                is_retryable = False
             return self.create_download_result(
                 success=False,
                 release_tag=release.tag_name,
@@ -287,8 +296,8 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                 download_url=getattr(asset, "download_url", None),
                 file_size=getattr(asset, "size", None),
                 file_type="android",
-                is_retryable=True,
-                error_type="network_error",
+                is_retryable=is_retryable,
+                error_type=error_type,
             )
 
     def is_release_complete(self, release: Release) -> bool:
@@ -349,8 +358,12 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                 if os.path.isdir(item_path) and self._is_version_directory(item):
                     version_dirs.append(item)
 
-            # Sort versions and keep only the newest ones
-            version_dirs.sort(reverse=True, key=self._get_version_sort_key)
+            # Sort versions (newest first) using VersionManager tuples
+            version_dirs.sort(
+                reverse=True,
+                key=lambda version: self.version_manager.get_release_tuple(version)
+                or (),
+            )
 
             # Remove old versions
             for old_version in version_dirs[keep_limit:]:
@@ -377,29 +390,6 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             `true` if the name matches a version pattern optionally prefixed with "v" and containing one to two dot-separated numeric components (major.minor or major.minor.patch), `false` otherwise.
         """
         return bool(re.match(r"^(v)?\d+(\.\d+){1,2}$", dir_name))
-
-    def _get_version_sort_key(self, version_dir: str) -> tuple:
-        """
-        Generate a sort key based on the semantic version components of a version directory name.
-
-        Strips a leading "v" if present, parses up to three dot-separated numeric components, and pads missing components with zeros. If the name cannot be parsed as numeric version components, returns (0, 0, 0).
-
-        Parameters:
-            version_dir (str): Directory name containing the version (may start with 'v' and use dot-separated numeric segments).
-
-        Returns:
-            tuple: A 3-tuple of integers (major, minor, patch) to use as a sort key; returns (0, 0, 0) for unparsable names.
-        """
-        # Extract version numbers for sorting
-        version = version_dir.lstrip("v")
-        try:
-            parts = list(map(int, version.split(".")))
-            # Pad to 3 parts for consistent sorting
-            while len(parts) < 3:
-                parts.append(0)
-            return tuple(parts[:3])  # Ensure exactly 3 parts
-        except ValueError:
-            return (0, 0, 0)
 
     def get_latest_release_tag(self) -> Optional[str]:
         """

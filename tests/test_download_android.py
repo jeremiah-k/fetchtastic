@@ -13,6 +13,7 @@ import requests
 from fetchtastic.download.android import MeshtasticAndroidAppDownloader
 from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.interfaces import Asset, Release
+from fetchtastic.download.version import VersionManager
 
 pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
 
@@ -64,6 +65,10 @@ class TestMeshtasticAndroidAppDownloader:
         dl.cache_manager = mock_cache_manager
         dl.version_manager = Mock()
         dl.file_operations = Mock()
+        real_version_manager = VersionManager()
+        dl.version_manager.get_release_tuple.side_effect = (
+            real_version_manager.get_release_tuple
+        )
         return dl
 
     def test_init(self, mock_config, mock_cache_manager):
@@ -245,20 +250,13 @@ class TestMeshtasticAndroidAppDownloader:
         mock_rmtree.assert_called_once()
         args = mock_rmtree.call_args[0][0]
         assert "v1.0.0" in args
+        assert downloader.version_manager.get_release_tuple.call_count == 3
 
     def test_is_version_directory(self, downloader):
         """Test version directory detection."""
         assert downloader._is_version_directory("v1.0.0") is True
         assert downloader._is_version_directory("v1.0") is True
         assert downloader._is_version_directory("not_version") is False
-
-    def test_get_version_sort_key(self, downloader):
-        """Test version sorting key generation."""
-        key = downloader._get_version_sort_key("v2.1.3")
-        assert key == (2, 1, 3)
-
-        key = downloader._get_version_sort_key("v1.0")
-        assert key == (1, 0, 0)
 
     @patch("fetchtastic.download.android.datetime")
     def test_update_latest_release_tag(self, mock_datetime, downloader):

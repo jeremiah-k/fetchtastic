@@ -456,7 +456,7 @@ class PrereleaseHistoryManager:
         ]
         if not active:
             return None, entries
-        return str(active[0]["directory"]), entries
+        return str(active[-1]["directory"]), entries
 
     def summarize_prerelease_history(
         self, entries: List[Dict[str, Any]]

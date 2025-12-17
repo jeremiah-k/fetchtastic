@@ -823,15 +823,11 @@ class DownloadCLIIntegration:
                 return False, []
 
         # Download assets for the selected prerelease
-        files_downloaded = firmware_downloader.download_prerelease_assets(
+        _, _, files_downloaded = firmware_downloader.download_prerelease_assets(
             remote_dir,
-            prerelease_base_dir,
             selected_patterns or [],
             exclude_patterns or [],
-            device_manager,
-            force_refresh,
-            github_token=github_token,
-            allow_env_token=allow_env_token,
+            force_refresh=force_refresh,
         )
 
         # Update tracking information

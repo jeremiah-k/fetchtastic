@@ -135,11 +135,7 @@ class DownloadOrchestrator:
                     if self._download_android_release(release):
                         any_android_downloaded = True
 
-            if any(r.prerelease for r in android_releases):
-                self._refresh_commit_history_cache()
-            prereleases = self.android_downloader.handle_prereleases(
-                android_releases, recent_commits=getattr(self, "_recent_commits", None)
-            )
+            prereleases = self.android_downloader.handle_prereleases(android_releases)
             for prerelease in prereleases:
                 for asset in prerelease.assets:
                     if not self.android_downloader.should_download_asset(asset.name):
@@ -991,7 +987,13 @@ class DownloadOrchestrator:
                 if not directory_name:
                     continue
 
-                dir_to_delete = prerelease_base_dir / directory_name
+                safe_name = os.path.basename(directory_name)
+                if not safe_name or safe_name != directory_name:
+                    logger.warning(
+                        "Skipping unsafe prerelease directory name: %s", directory_name
+                    )
+                    continue
+                dir_to_delete = prerelease_base_dir / safe_name
                 if dir_to_delete.exists() and dir_to_delete.is_dir():
                     logger.info(
                         f"Removing deleted prerelease directory: {directory_name}"

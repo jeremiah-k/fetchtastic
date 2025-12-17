@@ -12,6 +12,7 @@ import pytest
 from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.firmware import FirmwareReleaseDownloader
 from fetchtastic.download.interfaces import Asset, Release
+from fetchtastic.download.version import VersionManager
 
 
 class TestFirmwareReleaseDownloader:
@@ -55,6 +56,10 @@ class TestFirmwareReleaseDownloader:
         dl.cache_manager = mock_cache_manager
         dl.version_manager = Mock()
         dl.file_operations = Mock()
+        real_version_manager = VersionManager()
+        dl.version_manager.get_release_tuple.side_effect = (
+            real_version_manager.get_release_tuple
+        )
         return dl
 
     def test_init(self, mock_config, mock_cache_manager):
@@ -277,14 +282,7 @@ class TestFirmwareReleaseDownloader:
         mock_rmtree.assert_called_once()
         args = mock_rmtree.call_args[0][0]
         assert "v1.0.0" in args
-
-    def test_get_version_sort_key(self, downloader):
-        """Test version sorting key generation."""
-        key = downloader._get_version_sort_key("v2.1.3")
-        assert key == (2, 1, 3)
-
-        key = downloader._get_version_sort_key("v1.0")
-        assert key == (1, 0, 0)
+        assert downloader.version_manager.get_release_tuple.call_count == 3
 
     def test_get_latest_release_tag(self, mock_config, tmp_path):
         """Test getting latest release tag from cache file."""

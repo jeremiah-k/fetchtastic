@@ -418,5 +418,5 @@ def run_repository_downloader_menu(config):
             return None
 
     except Exception as e:
-        logger.error(f"Error in repository downloader workflow: {e}")
+        logger.error(f"Error in repository downloader workflow: {e}", exc_info=True)
         return None

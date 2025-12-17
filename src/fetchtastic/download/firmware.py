@@ -542,7 +542,11 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     version_dirs.append(item)
 
             # Sort versions and keep only the newest ones
-            version_dirs.sort(reverse=True, key=self._get_version_sort_key)
+            version_dirs.sort(
+                reverse=True,
+                key=lambda version: self.version_manager.get_release_tuple(version)
+                or (),
+            )
 
             # Remove old versions
             for old_version in version_dirs[keep_limit:]:
@@ -557,27 +561,6 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
         except OSError as e:
             logger.error(f"Error cleaning up old firmware versions: {e}")
-
-    def _get_version_sort_key(self, version_dir: str) -> tuple:
-        """
-        Convert a version directory name into a sortable (major, minor, patch) tuple.
-
-        Parameters:
-            version_dir (str): Directory name containing a version (e.g., "v1.2.3", "1.2").
-
-        Returns:
-            tuple: A three-integer tuple (major, minor, patch) for sorting. Non-numeric or unparsable names return (0, 0, 0).
-        """
-        # Extract version numbers for sorting
-        version = version_dir.lstrip("v")
-        try:
-            parts = list(map(int, version.split(".")))
-            # Pad to 3 components for consistent sorting
-            while len(parts) < 3:
-                parts.append(0)
-            return tuple(parts)
-        except ValueError:
-            return (0, 0, 0)
 
     def get_latest_release_tag(self) -> Optional[str]:
         """
@@ -844,6 +827,27 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
         return successes, failures, any_downloaded
 
+    def download_prerelease_assets(
+        self,
+        remote_dir: str,
+        selected_patterns: Optional[List[str]] = None,
+        exclude_patterns: Optional[List[str]] = None,
+        *,
+        force_refresh: bool = False,
+    ) -> tuple[list[DownloadResult], list[DownloadResult], bool]:
+        """
+        Public entry-point for downloading prerelease assets with optional pattern filters.
+
+        Delegates to `_download_prerelease_assets` while exposing a stable signature
+        for consumers like the CLI integration.
+        """
+        return self._download_prerelease_assets(
+            remote_dir,
+            selected_patterns=selected_patterns or [],
+            exclude_patterns=exclude_patterns or [],
+            force_refresh=force_refresh,
+        )
+
     def download_repo_prerelease_firmware(
         self,
         latest_release_tag: str,
@@ -1080,7 +1084,6 @@ class FirmwareReleaseDownloader(BaseDownloader):
             return []
 
         version_manager = VersionManager()
-        PrereleaseHistoryManager()
 
         # Filter prereleases (GitHub's prerelease flag can be noisy for hash-suffixed tags)
         prereleases = [
