@@ -232,6 +232,15 @@ def test_run_download_handles_exception(mocker):
 def test_clear_caches_successful(mocker):
     """_clear_caches should call clear methods on both managers."""
     integration = DownloadCLIIntegration()
+
+    # Mock the downloaders and orchestrator
+    mock_android_downloader = mocker.MagicMock()
+    mock_firmware_downloader = mocker.MagicMock()
+    mock_orchestrator = mocker.MagicMock()
+    integration.android_downloader = mock_android_downloader
+    integration.firmware_downloader = mock_firmware_downloader
+    integration.orchestrator = mock_orchestrator
+
     mock_android_cache_clear = mocker.patch.object(
         integration.android_downloader.cache_manager, "clear"
     )
