@@ -5,6 +5,7 @@ This module implements the orchestration layer that coordinates multiple
 downloaders in a single fetchtastic download run.
 """
 
+import os
 import shutil
 import time
 from pathlib import Path
