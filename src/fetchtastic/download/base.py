@@ -7,6 +7,7 @@ that can be extended by specific artifact downloaders.
 
 import fnmatch
 import os
+import zipfile
 from abc import ABC
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -400,8 +401,6 @@ class BaseDownloader(Downloader, ABC):
         Returns:
             bool: `True` if the archive contains no corrupt members, `False` otherwise.
         """
-        import zipfile
-
         try:
             with zipfile.ZipFile(file_path, "r") as zf:
                 return zf.testzip() is None

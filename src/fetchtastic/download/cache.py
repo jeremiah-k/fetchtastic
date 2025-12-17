@@ -1042,7 +1042,14 @@ def _load_commit_cache() -> None:
         try:
             manager = CacheManager(_ensure_cache_dir())
             _commit_timestamp_cache = manager.read_commit_timestamp_cache()
-        except (IOError, OSError, json.JSONDecodeError, UnicodeDecodeError, TypeError):
+        except (
+            IOError,
+            OSError,
+            json.JSONDecodeError,
+            UnicodeDecodeError,
+            TypeError,
+        ) as e:
+            logger.warning("Failed to load commit cache: %s", e)
             _commit_timestamp_cache = {}
 
 
@@ -1063,7 +1070,14 @@ def _load_releases_cache() -> None:
             cache_file = _get_releases_cache_file()
             data = manager.read_json(cache_file)
             _releases_cache = data if isinstance(data, dict) else {}
-        except (IOError, OSError, json.JSONDecodeError, UnicodeDecodeError, TypeError):
+        except (
+            IOError,
+            OSError,
+            json.JSONDecodeError,
+            UnicodeDecodeError,
+            TypeError,
+        ) as e:
+            logger.warning("Failed to load releases cache: %s", e)
             _releases_cache = {}
 
 

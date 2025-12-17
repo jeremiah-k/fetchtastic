@@ -8,6 +8,7 @@ import fnmatch
 import json
 import os
 import re
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -346,8 +347,6 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             for old_version in version_dirs[keep_limit:]:
                 old_dir = os.path.join(android_dir, old_version)
                 try:
-                    import shutil
-
                     shutil.rmtree(old_dir)
                     logger.info(f"Removed old Android version: {old_version}")
                 except OSError as e:

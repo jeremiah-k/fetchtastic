@@ -8,6 +8,8 @@ import fnmatch
 import json
 import os
 import re
+import shutil
+import zipfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -325,8 +327,6 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
             if asset.name.lower().endswith(".zip"):
                 try:
-                    import zipfile
-
                     with zipfile.ZipFile(asset_path, "r") as zf:
                         if zf.testzip() is not None:
                             logger.debug(f"Corrupted zip file detected: {asset_path}")
@@ -541,8 +541,6 @@ class FirmwareReleaseDownloader(BaseDownloader):
             for old_version in version_dirs[keep_limit:]:
                 old_dir = os.path.join(firmware_dir, old_version)
                 try:
-                    import shutil
-
                     shutil.rmtree(old_dir)
                     logger.info(f"Removed old firmware version: {old_version}")
                 except OSError as e:
@@ -768,11 +766,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     zip_ok = True
                     if name.lower().endswith(".zip"):
                         try:
-                            import zipfile
-
                             with zipfile.ZipFile(target_path, "r") as zf:
                                 zip_ok = zf.testzip() is None
-                        except Exception:
+                        except (zipfile.BadZipFile, IOError):
                             zip_ok = False
 
                     if zip_ok and verify_file_integrity(target_path):
@@ -1331,8 +1327,6 @@ class FirmwareReleaseDownloader(BaseDownloader):
                                         prerelease_dir, raw_dir_name
                                     )
                                     try:
-                                        import shutil
-
                                         shutil.rmtree(prerelease_path)
                                         logger.info(
                                             f"Removed superseded prerelease: {raw_dir_name}"
@@ -1366,7 +1360,10 @@ class FirmwareReleaseDownloader(BaseDownloader):
         cache_manager=None,
     ):
         """
-        Check provided release data against selection/exclude patterns, download matching assets, optionally extract them, and prune older versions.
+        DEPRECATED: Check provided release data against selection/exclude patterns, download matching assets, optionally extract them, and prune older versions.
+
+        This method is deprecated and maintained for backward compatibility only.
+        Consider using DownloadOrchestrator for new implementations.
 
         Parameters:
             releases (list): List of release dicts in the shape produced by the GitHub Releases API or tests. Each release dict must include 'tag_name' and may include 'prerelease', 'published_at', 'body', and 'assets' (where 'assets' is a list of dicts containing at least 'name' and 'browser_download_url', and optionally 'size' and 'content_type').
@@ -1386,21 +1383,33 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 new_versions (list): Release tags that were considered newer than the tracked latest tag and had download attempts.
                 failures (list): List of dicts describing failures; each dict contains 'release_tag', 'asset', and 'reason'.
         """
-        # Create a mock config for the downloader
-        mock_config = {
+        import warnings
+
+        warnings.warn(
+            "check_and_download is deprecated. Use DownloadOrchestrator for new implementations.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
+        # Use the cache manager if provided, create one if not
+        if cache_manager is None:
+            from .cache import CacheManager
+
+            cache_manager = CacheManager()
+
+        # Create downloader with direct parameter passing instead of mock config
+        # Using a minimal config dict that's immediately used and discarded
+        temp_config = {
             "DOWNLOAD_DIR": download_dir,
-            "VERSIONS_TO_KEEP": versions_to_keep,
             "FIRMWARE_VERSIONS_TO_KEEP": versions_to_keep,
-            "ANDROID_VERSIONS_TO_KEEP": versions_to_keep,
             "SELECTED_PATTERNS": selected_patterns or [],
             "EXCLUDE_PATTERNS": exclude_patterns or [],
             "EXTRACT_PATTERNS": extract_patterns or [],
             "AUTO_EXTRACT": auto_extract,
-            "GITHUB_TOKEN": None,
         }
 
         # Create downloader instance
-        downloader = FirmwareReleaseDownloader(mock_config, cache_manager)
+        downloader = FirmwareReleaseDownloader(temp_config, cache_manager)
         downloader.download_dir = download_dir
 
         # Convert releases to the expected format

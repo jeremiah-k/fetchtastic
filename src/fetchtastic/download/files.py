@@ -783,8 +783,6 @@ class FileOperations:
         try:
             if algorithm.lower() == "sha256":
                 hash_func = hashlib.sha256
-            elif algorithm.lower() == "md5":
-                hash_func = hashlib.md5
             else:
                 logger.warning(
                     f"Unsupported hash algorithm: {algorithm}, using SHA-256"

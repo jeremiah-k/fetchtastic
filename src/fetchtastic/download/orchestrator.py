@@ -151,7 +151,7 @@ class DownloadOrchestrator:
                 logger.info("All Android APK assets are up to date.")
 
         except Exception as e:
-            logger.error(f"Error processing Android downloads: {e}")
+            logger.error(f"Error processing Android downloads: {e}", exc_info=True)
 
     def _process_firmware_downloads(self) -> None:
         """
