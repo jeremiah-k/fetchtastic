@@ -261,49 +261,39 @@ class TestFirmwareReleaseDownloader:
         assert len(filtered_prereleases) == 2
         assert all(r.prerelease for r in filtered_prereleases)
 
-    def test_static_check_and_download(self, tmp_path):
-        """Test backward compatibility static method."""
-        mock_releases = [
-            {
-                "tag_name": "v2.7.14",
-                "prerelease": False,
-                "assets": [
-                    {
-                        "name": "test.bin",
-                        "browser_download_url": "https://example.com/test.bin",
-                        "size": 1000,
-                    }
-                ],
-            }
-        ]
+    def test_orchestrator_firmware_download_config(self, tmp_path):
+        """Test DownloadOrchestrator firmware download configuration."""
+        from fetchtastic.download.orchestrator import DownloadOrchestrator
 
-        from fetchtastic.download.cache import CacheManager
+        # Test orchestrator can be initialized with proper configuration
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path),
+            "FIRMWARE_VERSIONS_TO_KEEP": 2,
+            "SELECTED_FIRMWARE_ASSETS": ["test"],
+            "CHECK_FIRMWARE_PRERELEASES": True,
+            "GITHUB_TOKEN": "test_token",
+        }
 
-        cache_manager = CacheManager()
+        orchestrator = DownloadOrchestrator(config)
 
-        # Test static method exists and works
-        result = FirmwareReleaseDownloader.check_and_download(
-            releases=mock_releases,
-            cache_dir=str(tmp_path / "cache"),
-            release_type="Firmware",
-            download_dir=str(tmp_path),
-            versions_to_keep=2,
-            selected_patterns=["test"],
-            cache_manager=cache_manager,
-        )
-
-        # Should return tuple of (downloaded, new_versions, failures)
-        assert isinstance(result, tuple)
-        assert len(result) == 3
+        # Verify orchestrator is properly initialized
+        assert orchestrator.config == config
+        assert orchestrator.firmware_downloader is not None
+        assert orchestrator.cache_manager is not None
+        assert orchestrator.download_results == []
+        assert orchestrator.failed_downloads == []
 
     def test_error_handling_api_failure(self, firmware_downloader):
         """Test error handling with API failures."""
-        with patch(
-            "fetchtastic.download.firmware.make_github_api_request",
-            side_effect=Exception("API Error"),
-        ), patch(
-            "fetchtastic.download.cache.CacheManager.read_releases_cache_entry",
-            return_value=None,
+        with (
+            patch(
+                "fetchtastic.download.firmware.make_github_api_request",
+                side_effect=Exception("API Error"),
+            ),
+            patch(
+                "fetchtastic.download.cache.CacheManager.read_releases_cache_entry",
+                return_value=None,
+            ),
         ):
             releases = firmware_downloader.get_releases()
             assert releases == []
