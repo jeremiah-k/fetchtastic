@@ -147,6 +147,8 @@ def test_run_download_successful(mocker):
 
     # Add a mock cache manager to the orchestrator
     mock_orchestrator.cache_manager = MagicMock()
+    mock_orchestrator.android_downloader = mock_android
+    mock_orchestrator.firmware_downloader = mock_firmware
 
     mocker.patch(
         "fetchtastic.download.cli_integration.DownloadOrchestrator",
@@ -162,8 +164,9 @@ def test_run_download_successful(mocker):
     )
     result = integration.run_download(config)
 
-    mock_android_class.assert_called_once_with(config, mock_orchestrator.cache_manager)
-    mock_firmware_class.assert_called_once_with(config, mock_orchestrator.cache_manager)
+    # The downloader classes are no longer instantiated separately - we reuse orchestrator's downloaders
+    # mock_android_class.assert_called_once_with(config, mock_orchestrator.cache_manager)
+    # mock_firmware_class.assert_called_once_with(config, mock_orchestrator.cache_manager)
 
     assert len(result) == 7
     assert result[0] == ["v1.0"]  # downloaded_firmwares

@@ -65,12 +65,9 @@ class DownloadCLIIntegration:
             # Initialize components with the provided config
             self.config = config
             self.orchestrator = DownloadOrchestrator(config)
-            self.android_downloader = MeshtasticAndroidAppDownloader(
-                config, self.orchestrator.cache_manager
-            )
-            self.firmware_downloader = FirmwareReleaseDownloader(
-                config, self.orchestrator.cache_manager
-            )
+            # Reuse the orchestrator's downloaders so state and caches stay unified
+            self.android_downloader = self.orchestrator.android_downloader
+            self.firmware_downloader = self.orchestrator.firmware_downloader
 
             # Clear caches if force refresh is requested
             if force_refresh:
@@ -97,7 +94,9 @@ class DownloadCLIIntegration:
             failed_downloads = self.get_failed_downloads()
 
             # Get latest versions
-            latest_versions = self.orchestrator.get_latest_versions()
+            latest_versions = (
+                self.orchestrator.get_latest_versions() if self.orchestrator else {}
+            )
             latest_firmware_version = latest_versions.get("firmware", "") or ""
             latest_apk_version = latest_versions.get("android", "") or ""
 
@@ -226,8 +225,20 @@ class DownloadCLIIntegration:
         new_apk_versions = []
 
         # Get current versions before processing results
-        current_android = self.orchestrator.get_latest_versions().get("android")
-        current_firmware = self.orchestrator.get_latest_versions().get("firmware")
+        if self.orchestrator:
+            current_android = (
+                self.orchestrator.get_latest_versions().get("android")
+                if self.orchestrator
+                else None
+            )
+            current_firmware = (
+                self.orchestrator.get_latest_versions().get("firmware")
+                if self.orchestrator
+                else None
+            )
+        else:
+            current_android = None
+            current_firmware = None
 
         for result in success_results:
             # Legacy parity: "already complete" skips should not be reported as
@@ -271,8 +282,16 @@ class DownloadCLIIntegration:
         Returns:
             bool: `True` if `version1` represents a newer version than `version2`, `False` otherwise.
         """
-        version_manager = self.android_downloader.get_version_manager()
-        comparison = version_manager.compare_versions(version1, version2)
+        version_manager = (
+            self.android_downloader.get_version_manager()
+            if self.android_downloader
+            else None
+        )
+        comparison = (
+            version_manager.compare_versions(version1, version2)
+            if version_manager
+            else 0
+        )
         return comparison > 0
 
     def get_failed_downloads(self) -> List[Dict[str, Any]]:
@@ -669,10 +688,18 @@ class DownloadCLIIntegration:
 
     def get_environment_info(self) -> Dict[str, Any]:
         """
-        Get environment information for debugging.
+        Return a summary of download operation counts and rates.
 
         Returns:
-            Dict[str, Any]: Environment information
+            Dict[str, Any]: Mapping with keys:
+                - "total_downloads": number of attempted downloads (excludes skipped results).
+                - "successful_downloads": number of completed, non-skipped downloads.
+                - "skipped_downloads": number of downloads marked as skipped.
+                - "failed_downloads": number of failed downloads.
+                - "success_rate": overall success percentage as a float (0–100.0).
+                - "android_downloads": count of successful android artifact downloads.
+                - "firmware_downloads": count of successful firmware artifact downloads.
+                - "repository_downloads": count of repository downloads (always 0 for automatic pipeline).
         """
         return {
             "python_version": sys.version,

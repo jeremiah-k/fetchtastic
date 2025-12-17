@@ -714,7 +714,11 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 - any_downloaded: True if at least one file was freshly downloaded during this call, False otherwise.
         """
         prerelease_base_dir = self._get_prerelease_base_dir()
-        target_dir = os.path.join(prerelease_base_dir, remote_dir)
+        safe_dir = os.path.basename(str(remote_dir))
+        if not safe_dir or safe_dir != remote_dir:
+            logger.warning("Skipping unsafe prerelease directory name: %s", remote_dir)
+            return [], [], False
+        target_dir = os.path.join(prerelease_base_dir, safe_dir)
         os.makedirs(target_dir, exist_ok=True)
 
         device_manager = DeviceHardwareManager()
