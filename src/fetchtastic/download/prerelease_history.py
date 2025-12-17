@@ -792,6 +792,79 @@ class PrereleaseHistoryManager:
                 matching.append(dir_name)
         return matching
 
+    def find_latest_remote_prerelease_dir(
+        self,
+        expected_version: str,
+        *,
+        cache_manager: Any,
+        github_token: Optional[str] = None,
+        allow_env_token: bool = True,
+        force_refresh: bool = False,
+        max_commits: int = DEFAULT_PRERELEASE_COMMITS_TO_FETCH,
+    ) -> Optional[str]:
+        """
+        Determine the newest prerelease directory that exists remotely in the repo.
+
+        Uses cached prerelease history to prefer commits that actually correspond to
+        git history entries, and then evaluates the repository directory listing to
+        find directories that match the expected version.
+        """
+        preferred_hashes: set[str] = set()
+        try:
+            history_entries = self.get_prerelease_commit_history(
+                expected_version,
+                cache_manager=cache_manager,
+                github_token=github_token,
+                allow_env_token=allow_env_token,
+                force_refresh=force_refresh,
+                max_commits=max_commits,
+            )
+        except Exception as exc:
+            logger.debug(
+                "Failed to build prerelease commit history for %s: %s",
+                expected_version,
+                exc,
+            )
+            history_entries = []
+
+        for entry in history_entries:
+            identifier = _extract_identifier_from_entry(entry)
+            if identifier and "." in identifier:
+                preferred_hashes.add(identifier.rsplit(".", 1)[-1].lower())
+
+        try:
+            repo_dirs = cache_manager.get_repo_directories(
+                "",
+                force_refresh=force_refresh,
+                github_token=github_token,
+                allow_env_token=allow_env_token,
+            )
+        except Exception as exc:
+            logger.debug(
+                "Failed to fetch prerelease directories for %s: %s",
+                expected_version,
+                exc,
+            )
+            return None
+
+        candidate_suffixes = self.scan_prerelease_directories(
+            [d for d in repo_dirs if isinstance(d, str)], expected_version
+        )
+        if not candidate_suffixes:
+            return None
+
+        def _score_suffix(suffix: str) -> Tuple[int, Tuple[int, ...], str]:
+            cmp_tuple = self.version_manager.get_release_tuple(suffix) or ()
+            suffix_hash = suffix.rsplit(".", 1)[-1].lower() if "." in suffix else ""
+            return (
+                int(suffix_hash in preferred_hashes),
+                cmp_tuple,
+                suffix,
+            )
+
+        candidate_suffixes.sort(key=_score_suffix, reverse=True)
+        return f"{FIRMWARE_DIR_PREFIX}{candidate_suffixes[0]}"
+
 
 def _extract_identifier_from_entry(entry: Dict[str, Any]) -> str:
     """

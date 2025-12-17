@@ -747,6 +747,7 @@ class DownloadCLIIntegration:
         # Use the orchestrator's components
         version_manager = self.orchestrator.version_manager
         prerelease_manager = self.orchestrator.prerelease_manager
+        cache_manager = self.orchestrator.cache_manager
         firmware_downloader = self.firmware_downloader
 
         # Calculate expected prerelease version
@@ -768,40 +769,29 @@ class DownloadCLIIntegration:
         # Check for existing prereleases locally
         existing_dirs = self._get_existing_prerelease_dirs(prerelease_base_dir)
 
-        # Try to get latest active prerelease from history
+        history_entries: List[Dict[str, Any]] = []
         try:
-            latest_active_dir = (
+            remote_dir, history_entries = (
                 prerelease_manager.get_latest_active_prerelease_from_history(
                     expected_version,
+                    cache_manager=cache_manager,
                     github_token=github_token,
                     force_refresh=force_refresh,
                     allow_env_token=allow_env_token,
                 )
             )
-
-            if latest_active_dir and latest_active_dir in existing_dirs:
-                # Latest active prerelease already exists locally
-                remote_dir = latest_active_dir
-                logger.debug(f"Using existing active prerelease: {remote_dir}")
-                return False, [remote_dir]
-            elif latest_active_dir:
-                # Latest active prerelease found remotely but not local
-                remote_dir = latest_active_dir
-                logger.debug(f"Found remote active prerelease: {remote_dir}")
-            else:
-                # No active prerelease found, fall back to directory scanning
-                remote_dir = None
-                logger.debug("No active prerelease found in commit history")
-
         except Exception as exc:
             logger.debug(f"Failed to get prerelease commit history: {exc}")
             remote_dir = None
 
-        # Fallback to directory scanning
+        if remote_dir and remote_dir in existing_dirs:
+            logger.debug(f"Using existing active prerelease: {remote_dir}")
+            return False, [remote_dir]
+
         if not remote_dir:
             logger.debug("Falling back to directory scanning approach")
 
-            # Find newest matching prerelease directory
+            # Find newest matching prerelease directory locally
             matching_dirs = [
                 d
                 for d in existing_dirs
@@ -810,7 +800,6 @@ class DownloadCLIIntegration:
             ]
 
             if matching_dirs:
-                # Sort by version
                 matching_dirs.sort(
                     key=lambda d: version_manager.get_release_tuple(d) or (),
                     reverse=True,
@@ -819,15 +808,16 @@ class DownloadCLIIntegration:
                 logger.debug(f"Found existing prerelease: {newest_dir}")
                 return False, [newest_dir]
 
-            # Find latest remote prerelease directory
             remote_dir = prerelease_manager.find_latest_remote_prerelease_dir(
                 expected_version,
+                cache_manager=cache_manager,
                 github_token=github_token,
                 force_refresh=force_refresh,
                 allow_env_token=allow_env_token,
             )
 
             if not remote_dir:
+                logger.debug("No remote prerelease directories available")
                 return False, []
 
         # Download assets for the selected prerelease

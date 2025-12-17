@@ -5,11 +5,16 @@ This module contains tests for prerelease discovery, tracking, cleanup,
 and related functionality using the new modular components.
 """
 
-from datetime import datetime
+import os
+from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch
 
 import pytest
 
+from fetchtastic.constants import (
+    PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS,
+    PRERELEASE_COMMITS_CACHE_FILE,
+)
 from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.firmware import FirmwareReleaseDownloader
 from fetchtastic.download.prerelease_history import PrereleaseHistoryManager
@@ -238,3 +243,191 @@ def test_firmware_downloader_prerelease_cleanup(firmware_downloader, tmp_path):
     # Test cleanup (this would need to be implemented in FirmwareReleaseDownloader)
     # For now, just test that the directories exist
     assert len(list(prerelease_dir.iterdir())) == 2
+
+
+def _make_cache_manager(tmp_path):
+    return CacheManager(str(tmp_path))
+
+
+def _make_manager():
+    return PrereleaseHistoryManager()
+
+
+def _fresh_cache_entry():
+    return {
+        "commits": [{"sha": "abc123"}],
+        "cached_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _stale_cache_entry():
+    return {
+        "commits": [],
+        "cached_at": (
+            datetime.now(timezone.utc)
+            - timedelta(seconds=PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS + 30)
+        ).isoformat(),
+    }
+
+
+def test_fetch_recent_repo_commits_uses_cached_data(tmp_path):
+    cache_manager = _make_cache_manager(tmp_path)
+    manager = _make_manager()
+    cache_file = os.path.join(cache_manager.cache_dir, PRERELEASE_COMMITS_CACHE_FILE)
+    entry = _fresh_cache_entry()
+
+    with patch.object(
+        cache_manager, "read_json", return_value=entry
+    ) as mock_read, patch(
+        "fetchtastic.download.prerelease_history.make_github_api_request"
+    ) as mock_request:
+        commits = manager.fetch_recent_repo_commits(
+            5, cache_manager=cache_manager, github_token=None
+        )
+
+    assert commits == entry["commits"]
+    mock_request.assert_not_called()
+    mock_read.assert_called_once_with(cache_file)
+
+
+def test_fetch_recent_repo_commits_refreshes_expired_cache(tmp_path):
+    cache_manager = _make_cache_manager(tmp_path)
+    manager = _make_manager()
+    entry = _stale_cache_entry()
+    mock_response = Mock()
+    mock_response.json.return_value = [{"sha": "fresh"}]
+
+    with patch.object(cache_manager, "read_json", return_value=entry), patch(
+        "fetchtastic.download.prerelease_history.make_github_api_request",
+        return_value=mock_response,
+    ) as mock_request, patch.object(
+        cache_manager, "atomic_write_json", return_value=True
+    ) as mock_write:
+        commits = manager.fetch_recent_repo_commits(
+            1,
+            cache_manager=cache_manager,
+            github_token="token",  # nosec B106
+            allow_env_token=False,
+        )
+
+    assert commits == [{"sha": "fresh"}]
+    mock_request.assert_called_once()
+    mock_write.assert_called_once()
+
+
+def test_prerelease_history_uses_cached_entries(tmp_path):
+    cache_manager = _make_cache_manager(tmp_path)
+    manager = _make_manager()
+    version = "2.7.14"
+    cache_value = {
+        version: {
+            "entries": [{"status": "active", "directory": "firmware-2.7.14.abcd"}],
+            "last_checked": datetime.now(timezone.utc).isoformat(),
+        }
+    }
+
+    with patch.object(
+        cache_manager, "read_json", return_value=cache_value
+    ) as mock_read, patch.object(manager, "fetch_recent_repo_commits") as mock_fetch:
+        entries = manager.get_prerelease_commit_history(
+            version,
+            cache_manager=cache_manager,
+            github_token=None,
+            allow_env_token=True,
+        )
+
+    assert entries == cache_value[version]["entries"]
+    mock_fetch.assert_not_called()
+    mock_read.assert_called()
+
+
+def test_prerelease_history_refreshes_stale_cache(tmp_path):
+    cache_manager = _make_cache_manager(tmp_path)
+    manager = _make_manager()
+    version = "2.7.15"
+    stale_value = {
+        version: {
+            "entries": [],
+            "last_checked": (
+                datetime.now(timezone.utc)
+                - timedelta(seconds=PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS + 30)
+            ).isoformat(),
+        }
+    }
+
+    with patch.object(
+        cache_manager, "read_json", return_value=stale_value
+    ), patch.object(
+        manager, "fetch_recent_repo_commits", return_value=[{"sha": "newsha"}]
+    ) as mock_fetch, patch.object(
+        manager,
+        "build_simplified_prerelease_history",
+        return_value=([{"sha": "newsha"}], {"newsha"}),
+    ) as mock_build, patch.object(
+        cache_manager, "atomic_write_json", return_value=True
+    ) as mock_write:
+        entries = manager.get_prerelease_commit_history(
+            version,
+            cache_manager=cache_manager,
+            github_token="token",  # nosec B106
+            allow_env_token=False,
+        )
+
+    assert entries == [{"sha": "newsha"}]
+    mock_fetch.assert_called_once()
+    mock_build.assert_called_once()
+    mock_write.assert_called_once()
+
+
+def test_find_latest_remote_prerelease_dir_prefers_commit_history(
+    tmp_path, prerelease_manager
+):
+    cache_manager = CacheManager(str(tmp_path))
+    directories = [
+        "firmware-2.7.17.acomm1",
+        "firmware-2.7.17.def456",
+    ]
+    history_entries = [
+        {"identifier": "2.7.17.def456"},
+    ]
+
+    with patch.object(
+        cache_manager,
+        "get_repo_directories",
+        return_value=directories,
+    ), patch.object(
+        prerelease_manager,
+        "get_prerelease_commit_history",
+        return_value=history_entries,
+    ):
+        result = prerelease_manager.find_latest_remote_prerelease_dir(
+            "2.7.17",
+            cache_manager=cache_manager,
+            github_token="token",  # nosec B106
+            allow_env_token=False,
+        )
+
+    assert result == "firmware-2.7.17.def456"
+
+
+def test_find_latest_remote_prerelease_dir_returns_none_when_no_match(
+    tmp_path, prerelease_manager
+):
+    cache_manager = CacheManager(str(tmp_path))
+    with patch.object(
+        cache_manager,
+        "get_repo_directories",
+        return_value=["firmware-2.7.16.acomm1"],
+    ), patch.object(
+        prerelease_manager,
+        "get_prerelease_commit_history",
+        return_value=[],
+    ):
+        result = prerelease_manager.find_latest_remote_prerelease_dir(
+            "2.7.17",
+            cache_manager=cache_manager,
+            github_token="token",  # nosec B106
+            allow_env_token=False,
+        )
+
+    assert result is None

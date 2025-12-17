@@ -10,6 +10,8 @@ This document tracks the ongoing modular refactor. It is intentionally detailed 
 4. Repository download flows and repo cleanup command are routed through `RepositoryDownloader` and its new menu helpers.
 5. Major shared utilities (`utils`, version management, prerelease history) have been split into dedicated modules.
 6. `run_clean` now gracefully skips cron cleanup when `crontab` is missing to avoid noisy errors in containerized environments.
+7. Added pytest coverage for prerelease history caching/expiry plus CLI repository-clean logging so the new cache invariants and summary warnings are locked in.
+8. `PrereleaseHistoryManager` now exposes `find_latest_remote_prerelease_dir`, the CLI prerelease check uses it together with the orchestrator cache manager, and new unit tests ensure the commit-history-aware directory selection behaves as expected.
 
 These items are checkboxes only when both implementation and automated coverage (pytest+mypy) confirm parity with `v0.8.9` behavior.
 
@@ -52,8 +54,11 @@ Update Available` block exactly as in legacy CLI.
 ## Near-Term Verification Steps
 
 1. Confirm no `latest_*_release.json` files exist in the repo root or any non-cache directory. Delete any leftovers.
-2. Ensure CLI commands that rely on `log_utils.logger` (setup updates, repo clean, topic, version, help) are exercised by unit tests with mocks that assert side effects and logging calls.
-3. Add regression tests for `CacheManager.get_cache_file_path` and `CacheManager.clear_all_caches` showing everything stays inside `~/.cache/fetchtastic`.
+2. Use the new prerelease history cache tests to isolate regressions when touching `PrereleaseHistoryManager` or the cache expiry constants.
+3. Ensure the CLI `run_repo_clean` tests cover both success and failure summaries so repository cleanup warnings remain stable.
+4. Ensure CLI commands that rely on `log_utils.logger` (setup updates, repo clean, topic, version, help) are exercised by unit tests with mocks that assert side effects and logging calls.
+5. Add regression tests for `CacheManager.get_cache_file_path` and `CacheManager.clear_all_caches` showing everything stays inside `~/.cache/fetchtastic`.
+6. Capture the full pytest suite run (`python -m pytest tests/ -v --cov=src/fetchtastic --cov-report=term-missing --cov-report=xml --junitxml=junit.xml`) to demonstrate parity before merging.
 
 ## Notes for Future Handovers
 
