@@ -235,8 +235,8 @@ class DownloadCLIIntegration:
             if getattr(result, "was_skipped", False):
                 continue
             if result.release_tag:
-                # Determine if this is firmware or Android based on file path
-                if result.file_path and "firmware" in str(result.file_path):
+                # Determine if this is firmware or Android based on file type
+                if result.file_type and "firmware" in result.file_type:
                     if result.release_tag not in downloaded_firmwares:
                         downloaded_firmwares.append(result.release_tag)
                         # Check if this is a new version
@@ -244,7 +244,7 @@ class DownloadCLIIntegration:
                             result.release_tag, current_firmware
                         ):
                             new_firmware_versions.append(result.release_tag)
-                elif result.file_path and "android" in str(result.file_path):
+                elif result.file_type and "android" in result.file_type:
                     if result.release_tag not in downloaded_apks:
                         downloaded_apks.append(result.release_tag)
                         # Check if this is a new version
@@ -610,7 +610,7 @@ class DownloadCLIIntegration:
         Parameters:
             error (Exception): The exception that occurred; used to select and log specific, actionable guidance for common error categories (import, file-not-found, permission, connection, or other).
         """
-        logger.error(f"CLI Error: {str(error)}")
+        logger.error(f"CLI Error: {error!s}")
 
         # Provide specific guidance based on error type
         if isinstance(error, ImportError):
@@ -718,7 +718,7 @@ class DownloadCLIIntegration:
         latest_release_tag: str,
         selected_patterns: Optional[List[str]] = None,
         exclude_patterns: Optional[List[str]] = None,
-        device_manager=None,
+        _device_manager=None,  # Reserved for future device-specific asset selection
         github_token: Optional[str] = None,
         force_refresh: bool = False,
         allow_env_token: bool = True,
@@ -771,9 +771,8 @@ class DownloadCLIIntegration:
         # Check for existing prereleases locally
         existing_dirs = self._get_existing_prerelease_dirs(prerelease_base_dir)
 
-        history_entries: List[Dict[str, Any]] = []
         try:
-            remote_dir, history_entries = (
+            remote_dir, _history_entries = (
                 prerelease_manager.get_latest_active_prerelease_from_history(
                     expected_version,
                     cache_manager=cache_manager,

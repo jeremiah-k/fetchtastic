@@ -565,7 +565,7 @@ class DownloadOrchestrator:
                 logger.error(f"Retry failed for {failed_result.release_tag}: {e}")
                 # Mark as non-retryable after max attempts
                 failed_result.is_retryable = False
-                failed_result.error_message = f"Max retries exceeded: {str(e)}"
+                failed_result.error_message = f"Max retries exceeded: {e!s}"
                 remaining_failures.append(failed_result)
 
         # Update the failed downloads list with remaining failures (including failed retries)

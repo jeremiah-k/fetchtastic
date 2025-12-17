@@ -411,7 +411,7 @@ class TestFirmwareReleaseDownloader:
             patch("os.listdir", return_value=[]),
             patch(
                 "fetchtastic.download.files._atomic_write",
-                side_effect=lambda *args, **kwargs: None,
+                return_value=None,
             ),  # Prevent temp file creation
             patch("os.remove"),
         ):
@@ -437,5 +437,5 @@ class TestFirmwareReleaseDownloader:
         result = downloader.handle_prereleases(releases)
 
         # Should return prereleases
-        assert len(result) >= 0
+        assert len(result) > 0
         assert isinstance(result, list)

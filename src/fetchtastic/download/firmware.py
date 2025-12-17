@@ -10,7 +10,6 @@ import os
 import re
 import shutil
 import zipfile
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -168,8 +167,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
             ValueError,
             KeyError,
             json.JSONDecodeError,
-        ) as e:
-            logger.error(f"Error fetching firmware releases: {e}")
+        ) as exc:
+            logger.exception("Error fetching firmware releases: %s", exc)
             return []
 
     def get_assets(self, release: Release) -> List[Asset]:
@@ -269,19 +268,28 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     error_type="network_error",
                 )
 
-        except (requests.RequestException, OSError, ValueError) as e:
-            logger.error(f"Error downloading firmware {asset.name}: {e}")
+        except (requests.RequestException, OSError, ValueError) as exc:
+            logger.exception("Error downloading firmware %s: %s", asset.name, exc)
             safe_path = target_path or os.path.join(self.download_dir, "firmware")
+            if isinstance(exc, requests.RequestException):
+                error_type = "network_error"
+                is_retryable = True
+            elif isinstance(exc, OSError):
+                error_type = "filesystem_error"
+                is_retryable = False
+            else:
+                error_type = "validation_error"
+                is_retryable = False
             return self.create_download_result(
                 success=False,
                 release_tag=release.tag_name,
                 file_path=safe_path,
-                error_message=str(e),
+                error_message=str(exc),
                 download_url=getattr(asset, "download_url", None),
                 file_size=getattr(asset, "size", None),
                 file_type="firmware",
-                is_retryable=True,
-                error_type="network_error",
+                is_retryable=is_retryable,
+                error_type=error_type,
             )
 
     def is_release_complete(self, release: Release) -> bool:
@@ -811,6 +819,15 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         )
                     )
             except (requests.RequestException, OSError, ValueError) as exc:
+                if isinstance(exc, requests.RequestException):
+                    error_type = "network_error"
+                    is_retryable = True
+                elif isinstance(exc, OSError):
+                    error_type = "filesystem_error"
+                    is_retryable = False
+                else:
+                    error_type = "validation_error"
+                    is_retryable = False
                 failures.append(
                     self.create_download_result(
                         success=False,
@@ -820,8 +837,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         download_url=str(url),
                         file_size=item.get("size"),
                         file_type="firmware_prerelease",
-                        is_retryable=True,
-                        error_type="network_error",
+                        is_retryable=is_retryable,
+                        error_type=error_type,
                     )
                 )
 

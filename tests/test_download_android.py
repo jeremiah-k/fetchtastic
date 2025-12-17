@@ -378,7 +378,7 @@ class TestMeshtasticAndroidAppDownloader:
         assert _is_apk_prerelease(release_data) is False
 
     @patch("fetchtastic.download.android.logger")
-    def test_handle_prereleases_with_tracking(self, mock_logger, downloader):
+    def test_handle_prereleases_with_tracking(self, _mock_logger, downloader):
         """Test prerelease handling with tracking updates."""
         # Mock prerelease data - GitHub prereleases are identified by prerelease=True
         prerelease_releases = [
