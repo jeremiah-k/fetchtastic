@@ -8,7 +8,7 @@ from the meshtastic.github.io repository.
 import os
 import re
 from typing import Any, Dict, List, Optional
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 from fetchtastic.constants import (
     MESHTASTIC_REPO_URL,
@@ -414,12 +414,16 @@ class RepositoryDownloader(BaseDownloader):
             str: Absolute download URL for the specified repository file.
 
         Raises:
-            ValueError: If `file_path` contains "://" or starts with "/", indicating an absolute path or URL.
+            ValueError: If `file_path` contains a scheme, netloc, or is an absolute path.
         """
         file_path = str(file_path)
-        if "://" in file_path or file_path.startswith("/"):
+        parsed = urlparse(file_path)
+        if parsed.scheme or parsed.netloc or file_path.startswith("/"):
             raise ValueError(f"Repository file_path must be relative: {file_path}")
-        return urljoin(self.repo_url.rstrip("/") + "/", file_path)
+
+        # Strip leading "./" for robustness
+        normalized = file_path.lstrip("./")
+        return urljoin(self.repo_url.rstrip("/") + "/", normalized)
 
     def download_repository_files_batch(
         self, files_info: List[Dict[str, Any]], subdirectory: str = ""

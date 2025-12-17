@@ -10,6 +10,10 @@ def test_cli_integration_main_loads_config_and_runs(mocker):
     mocker.patch(
         "fetchtastic.setup_config.load_config", return_value={"DOWNLOAD_DIR": "/tmp"}
     )
+    mocker.patch(
+        "fetchtastic.download.cli_integration.get_effective_github_token",
+        return_value=None,
+    )
     run_download = mocker.patch.object(
         integration,
         "run_download",
@@ -73,6 +77,10 @@ def test_cli_integration_main_with_force_refresh(mocker):
     mocker.patch("fetchtastic.setup_config.config_exists", return_value=(True, "cfg"))
     mocker.patch(
         "fetchtastic.setup_config.load_config", return_value={"DOWNLOAD_DIR": "/tmp"}
+    )
+    mocker.patch(
+        "fetchtastic.download.cli_integration.get_effective_github_token",
+        return_value=None,
     )
     run_download = mocker.patch.object(
         integration, "run_download", return_value=([], [], [], [], [], "", "")

@@ -119,9 +119,12 @@ class TestMeshtasticAndroidAppDownloader:
         """Test handling of GitHub API errors."""
         mock_request.side_effect = Exception("API Error")
 
+        # Force cache miss so the API is called and the exception path is exercised
+        downloader.cache_manager.read_releases_cache_entry.return_value = None
         releases = downloader.get_releases()
 
         assert releases == []
+        mock_request.assert_called_once()
 
     def test_get_assets_apk_only(self, downloader):
         """Test that only APK assets are returned."""
