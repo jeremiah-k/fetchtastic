@@ -161,7 +161,7 @@ def test_run_clean_permission_errors(mocker, capsys):
     cli.run_clean()
 
     captured = capsys.readouterr()
-    assert "Failed to delete" in captured.out
+    assert "Failed to delete" in captured.err
 
 
 @pytest.mark.user_interface
@@ -505,7 +505,7 @@ def test_cli_topic_command_clipboard_failure(mocker, capsys):
         cli.main()
 
     captured = capsys.readouterr()
-    assert "Failed to copy to clipboard" in captured.out
+    assert "Failed to copy to clipboard" in captured.err
 
 
 @pytest.mark.user_interface
