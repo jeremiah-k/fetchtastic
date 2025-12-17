@@ -148,8 +148,8 @@ DEVICE_HARDWARE_CACHE_HOURS = 24
 
 # Cache configuration
 COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS = 24
-# Legacy behavior: releases API responses are cached on an hours-scale to avoid
-# burning GitHub API requests unnecessarily.
+# Releases API responses are cached for 1 minute to avoid burning GitHub API
+# requests unnecessarily while maintaining relatively fresh data.
 RELEASES_CACHE_EXPIRY_HOURS = 1 / 60  # 1 minute (in hours)
 # Prerelease contents rarely change once a commit is published, so cache for a longer duration.
 FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS = 24 * 60 * 60  # 24 hours

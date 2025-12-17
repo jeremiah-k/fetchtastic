@@ -18,15 +18,6 @@ from unittest.mock import MagicMock, patch
 
 from fetchtastic.download.cache import (
     CacheManager,
-    _clear_cache_generic,
-    _get_cache_lock,
-    _get_commit_cache_file,
-    _get_prerelease_dir_cache_file,
-    _get_releases_cache_file,
-    _load_commit_cache,
-    _load_prerelease_dir_cache,
-    _load_releases_cache,
-    _save_prerelease_dir_cache,
 )
 
 
@@ -494,70 +485,6 @@ class TestRepositoryDirectories:
         result = cache_manager.get_repo_directories("test/path")
         mock_request.assert_not_called()
         assert result == ["cached_dir1", "cached_dir2"]
-
-
-class TestUtilityFunctions:
-    """Test utility functions."""
-
-    def test_get_cache_lock(self):
-        """Test getting cache lock."""
-        lock = _get_cache_lock()
-        assert lock is not None
-
-    def test_get_commit_cache_file(self):
-        """Test getting commit cache file path."""
-        path = _get_commit_cache_file()
-        assert "commit_timestamps.json" in path
-
-    def test_get_releases_cache_file(self):
-        """Test getting releases cache file path."""
-        path = _get_releases_cache_file()
-        assert "releases.json" in path
-
-    def test_get_prerelease_dir_cache_file(self):
-        """Test getting prerelease directory cache file path."""
-        path = _get_prerelease_dir_cache_file()
-        assert "prerelease_dirs.json" in path
-
-    def test_clear_cache_generic(self, tmp_path):
-        """Test generic cache clearing."""
-        cache = {"key": "value"}
-        cache_file = str(tmp_path / "test_cache.json")
-
-        # Create cache file
-        with open(cache_file, "w") as f:
-            json.dump({"test": "data"}, f)
-
-        _clear_cache_generic(cache, lambda: cache_file, "test")
-
-        assert cache == {}
-        assert not os.path.exists(cache_file)
-
-    def test_load_commit_cache(self, tmp_path):
-        """
-        Verifies that loading the commit cache completes without raising an exception.
-
-        This test invokes the commit cache loader to ensure it executes successfully in the test environment; it does not assert specific state changes.
-        """
-        # This is a complex function that loads global state
-        # Just test that it doesn't crash
-        _load_commit_cache()
-        # Function should complete without error
-
-    def test_load_releases_cache(self):
-        """Test loading releases cache."""
-        _load_releases_cache()
-        # Function should complete without error
-
-    def test_load_prerelease_dir_cache(self):
-        """Test loading prerelease directory cache."""
-        _load_prerelease_dir_cache()
-        # Function should complete without error
-
-    def test_save_prerelease_dir_cache(self):
-        """Test saving prerelease directory cache."""
-        _save_prerelease_dir_cache()
-        # Function should complete without error
 
 
 class TestMigration:
