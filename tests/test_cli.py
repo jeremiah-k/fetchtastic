@@ -9,7 +9,7 @@ import fetchtastic.cli as cli
 
 
 @pytest.fixture
-def mock_cli_dependencies(mocker):
+def mock_cli_dependencies(mocker, tmp_path):
     """
     Provide a pytest fixture that patches common CLI external dependencies and returns a mocked DownloadCLIIntegration instance.
 
@@ -38,7 +38,7 @@ def mock_cli_dependencies(mocker):
     # Mock external dependencies to avoid side effects - patch at actual import locations
     mocker.patch(
         "fetchtastic.setup_config.load_config",
-        return_value={"LOG_LEVEL": "", "DOWNLOAD_DIR": "/tmp/downloads"},
+        return_value={"LOG_LEVEL": "", "DOWNLOAD_DIR": str(tmp_path / "downloads")},
     )
     mocker.patch("fetchtastic.log_utils.set_log_level")
     mocker.patch("fetchtastic.log_utils.logger")
@@ -300,7 +300,8 @@ def test_cli_topic_command(mocker):
 
 @pytest.mark.user_interface
 @pytest.mark.unit
-def test_cli_repo_browse_command(mocker, mock_cli_dependencies):
+@pytest.mark.usefixtures("mock_cli_dependencies")
+def test_cli_repo_browse_command(mocker):
     """Test 'repo browse' command dispatch."""
     mocker.patch("sys.argv", ["fetchtastic", "repo", "browse"])
     mock_repo_menu = mocker.patch(
@@ -325,7 +326,8 @@ def test_cli_repo_browse_command(mocker, mock_cli_dependencies):
 
 @pytest.mark.user_interface
 @pytest.mark.unit
-def test_cli_repo_clean_command(mocker, mock_cli_dependencies):
+@pytest.mark.usefixtures("mock_cli_dependencies")
+def test_cli_repo_clean_command(mocker):
     """Test 'repo clean' command by running CLI with mocked dependencies."""
     mocker.patch("sys.argv", ["fetchtastic", "repo", "clean"])
 
@@ -350,7 +352,8 @@ def test_cli_repo_clean_command(mocker, mock_cli_dependencies):
 
 @pytest.mark.user_interface
 @pytest.mark.unit
-def test_cli_no_command_basic(mocker, mock_cli_dependencies):
+@pytest.mark.usefixtures("mock_cli_dependencies")
+def test_cli_no_command_basic(mocker):
     """Test CLI when no command is provided."""
     mocker.patch("sys.argv", ["fetchtastic"])
 
@@ -640,7 +643,7 @@ def test_cli_clean_command(mocker):
 @patch("fetchtastic.setup_config.CONFIG_DIR", "/tmp/config/fetchtastic")  # nosec B108
 @patch("os.path.isfile")
 @patch("os.path.isdir")
-def test_run_clean(
+def test_run_clean(  # noqa: ARG001
     mock_isdir,
     mock_isfile,
     mock_platform_system,
@@ -1671,7 +1674,8 @@ def test_cli_download_force_flag(mocker, mock_cli_dependencies):
 
 @pytest.mark.user_interface
 @pytest.mark.unit
-def test_cli_setup_with_multiple_sections(mocker, mock_cli_dependencies):
+@pytest.mark.usefixtures("mock_cli_dependencies")
+def test_cli_setup_with_multiple_sections(mocker):
     """Test 'setup' command with multiple --section arguments."""
     mocker.patch(
         "sys.argv",

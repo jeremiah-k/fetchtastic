@@ -756,7 +756,10 @@ class FileOperations:
         try:
             # Validate algorithm is available
             try:
-                hash_func = lambda: hashlib.new(algorithm.lower())
+
+                def hash_func():
+                    return hashlib.new(algorithm.lower())
+
                 hash_func()  # Test that algorithm is valid
             except ValueError:
                 logger.warning(

@@ -111,7 +111,7 @@ def test_cli_integration_main_handles_config_load_failure(mocker):
     assert result == ([], [], [], [], [], "", "")
 
 
-def test_run_download_successful(mocker):
+def test_run_download_successful(mocker, tmp_path):
     """run_download should orchestrate successful download pipeline."""
     integration = DownloadCLIIntegration()
 
@@ -120,11 +120,11 @@ def test_run_download_successful(mocker):
     mock_android = MagicMock()
     mock_firmware = MagicMock()
 
-    config = {"DOWNLOAD_DIR": "/tmp"}
+    config = {"DOWNLOAD_DIR": str(tmp_path)}
     mock_results = [
         MagicMock(
             release_tag="v1.0",
-            file_path="/tmp/firmware.zip",
+            file_path=str(tmp_path / "firmware.zip"),
             was_skipped=False,
             file_type="firmware",
         )
@@ -233,7 +233,7 @@ def test_clear_caches_successful(mocker):
     mock_clear_all.assert_called_once()
 
 
-def test_convert_results_to_legacy_format_firmware():
+def test_convert_results_to_legacy_format_firmware(tmp_path):
     """_convert_results_to_legacy_format should handle firmware results."""
     integration = DownloadCLIIntegration()
     integration.orchestrator = MagicMock()
@@ -254,7 +254,7 @@ def test_convert_results_to_legacy_format_firmware():
 
     mock_result = MagicMock()
     mock_result.release_tag = "v1.0"
-    mock_result.file_path = "/tmp/firmware/firmware.zip"
+    mock_result.file_path = str(tmp_path / "firmware" / "firmware.zip")
     mock_result.was_skipped = False
     mock_result.file_type = "firmware"
 
@@ -270,7 +270,7 @@ def test_convert_results_to_legacy_format_firmware():
     assert new_apk_versions == []
 
 
-def test_convert_results_to_legacy_format_android():
+def test_convert_results_to_legacy_format_android(tmp_path):
     """_convert_results_to_legacy_format should handle android results."""
     integration = DownloadCLIIntegration()
     integration.orchestrator = MagicMock()
@@ -291,7 +291,7 @@ def test_convert_results_to_legacy_format_android():
 
     mock_result = MagicMock()
     mock_result.release_tag = "v1.0"
-    mock_result.file_path = "/tmp/android/app.apk"
+    mock_result.file_path = str(tmp_path / "android" / "app.apk")
     mock_result.was_skipped = False
     mock_result.file_type = "android"
 
@@ -565,10 +565,10 @@ def test_fallback_to_legacy():
     assert result is False
 
 
-def test_validate_configuration_valid():
+def test_validate_configuration_valid(tmp_path):
     """_validate_configuration should return True when required keys exist."""
     integration = DownloadCLIIntegration()
-    integration.config = {"DOWNLOAD_DIR": "/tmp"}
+    integration.config = {"DOWNLOAD_DIR": str(tmp_path)}
 
     result = integration._validate_configuration()
 
@@ -585,11 +585,13 @@ def test_validate_configuration_invalid():
     assert result is False
 
 
-def test_check_download_directory_exists(mocker):
+def test_check_download_directory_exists(mocker, tmp_path):
     """_check_download_directory should return True when directory exists."""
     integration = DownloadCLIIntegration()
     integration.android_downloader = MagicMock()
-    integration.android_downloader.get_download_dir.return_value = "/tmp/android"
+    integration.android_downloader.get_download_dir.return_value = str(
+        tmp_path / "android"
+    )
 
     mocker.patch("os.path.exists", return_value=True)
     result = integration._check_download_directory()
@@ -716,10 +718,10 @@ def test_update_cli_progress(mocker):
     mock_logger.info.assert_called_with("Status: Processing")
 
 
-def test_get_environment_info():
+def test_get_environment_info(tmp_path):
     """get_environment_info should return environment details."""
     integration = DownloadCLIIntegration()
-    integration.config = {"DOWNLOAD_DIR": "/tmp"}
+    integration.config = {"DOWNLOAD_DIR": str(tmp_path)}
 
     result = integration.get_environment_info()
 
