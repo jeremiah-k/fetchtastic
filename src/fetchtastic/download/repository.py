@@ -376,6 +376,7 @@ class RepositoryDownloader(BaseDownloader):
                 logger.info(
                     "Repository downloads directory does not exist - nothing to clean"
                 )
+                self._cleanup_summary["success"] = True
                 return True
 
             # Remove all contents of the repository directory

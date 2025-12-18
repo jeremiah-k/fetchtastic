@@ -2484,9 +2484,13 @@ def setup_cron_job(frequency="hourly"):
     frequency_desc = schedule_info["desc"]
 
     try:
-        # Get current crontab entries
+        # Get current crontab entries (use full path for security)
+        crontab_path = shutil.which("crontab")
+        if not crontab_path:
+            logger.warning("crontab command not found in PATH")
+            return
         result = subprocess.run(
-            ["crontab", "-l"],
+            [crontab_path, "-l"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -2548,9 +2552,13 @@ def remove_cron_job():
         return
 
     try:
-        # Get current crontab entries
+        # Get current crontab entries (use full path for security)
+        crontab_path = shutil.which("crontab")
+        if not crontab_path:
+            print("crontab command not found in PATH")
+            return
         result = subprocess.run(
-            ["crontab", "-l"],
+            [crontab_path, "-l"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,

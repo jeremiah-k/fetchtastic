@@ -315,11 +315,8 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         if not os.path.isdir(version_dir):
             return False
 
-        selected_patterns = self.config.get("SELECTED_APK_ASSETS", [])
         expected_assets = [
-            asset
-            for asset in release.assets
-            if matches_selected_patterns(asset.name, selected_patterns)
+            asset for asset in release.assets if self.should_download_asset(asset.name)
         ]
 
         if not expected_assets:

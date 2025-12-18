@@ -17,6 +17,7 @@ from fetchtastic.constants import (
     DEFAULT_ANDROID_VERSIONS_TO_KEEP,
     DEFAULT_FIRMWARE_VERSIONS_TO_KEEP,
     DEFAULT_PRERELEASE_COMMITS_TO_FETCH,
+    MAX_RETRY_DELAY,
 )
 from fetchtastic.log_utils import logger
 
@@ -504,6 +505,7 @@ class DownloadOrchestrator:
                 current_delay = retry_delay * (
                     retry_backoff_factor**failed_result.retry_count
                 )
+                current_delay = min(current_delay, MAX_RETRY_DELAY)
                 logger.info(
                     f"Waiting {current_delay:.1f} seconds before retry attempt {failed_result.retry_count + 1}/{max_retries}..."
                 )

@@ -120,7 +120,7 @@ class DownloadCLIIntegration:
         Attempts to clear all caches managed by the integration (currently the Android downloader's cache manager). Exceptions raised during clearing are caught and logged; this method does not propagate errors.
         """
         try:
-            # Clear cache manager caches
+            # Clear shared cache manager (same instance used by all downloaders)
             if self.android_downloader:
                 self.android_downloader.cache_manager.clear_all_caches()
 
@@ -555,12 +555,12 @@ class DownloadCLIIntegration:
                 - statistics: current download statistics from get_download_statistics()
         """
         return {
-            "cli_integration_ready": True,
-            "expected_interface_compatibility": True,
-            "return_format_compatibility": True,
-            "error_handling_compatibility": True,
-            "configuration_compatibility": True,
-            "repository_reporting": True,
+            "cli_integration_ready": True,  # CLI integration initialized and ready
+            "expected_interface_compatibility": True,  # Public interface matches legacy expectations
+            "return_format_compatibility": True,  # Return formats follow legacy conventions
+            "error_handling_compatibility": True,  # Error handling compatible with legacy behavior
+            "configuration_compatibility": True,  # Configuration keys and layout are compatible
+            "repository_reporting": True,  # Repository reporting/support available
             "statistics": self.get_download_statistics(),
         }
 

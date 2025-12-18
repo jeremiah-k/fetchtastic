@@ -128,29 +128,6 @@ def _get_existing_prerelease_dirs(prerelease_dir: str) -> list[str]:
     return entries
 
 
-def _get_string_list_from_config(config: Dict[str, Any], key: str) -> List[str]:
-    """
-    Normalize a configuration entry into a list of strings.
-
-    If the value at `key` is a single string, returns a one-element list containing that string.
-    If the value is a list, returns a list containing only elements that are `str` or `bytes`, each converted to `str`.
-    If the key is missing or the value is neither a string nor a list, returns an empty list.
-
-    Parameters:
-        config (Dict[str, Any]): Mapping containing configuration values.
-        key (str): Key to retrieve from the config.
-
-    Returns:
-        List[str]: A list of strings derived from the config value.
-    """
-    value = config.get(key, [])
-    if isinstance(value, str):
-        value = [value]
-    if not isinstance(value, list):
-        return []
-    return [str(p) for p in value if isinstance(p, (str, bytes))]
-
-
 def _is_release_complete(
     release_data: Dict[str, Any],
     release_dir: str,
