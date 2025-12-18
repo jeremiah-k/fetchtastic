@@ -54,12 +54,12 @@ def cron_command_required(func):
 
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        crontab_path = shutil.which("crontab")
-        if not crontab_path:
+        if not _crontab_available():
             print(
                 "Cron configuration skipped: 'crontab' command not found on this system."
             )
             return None
+        crontab_path = shutil.which("crontab")
         return func(*args, crontab_path=crontab_path, **kwargs)
 
     return wrapper
