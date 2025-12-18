@@ -188,7 +188,8 @@ def test_cli_setup_command_windows_integration_update_non_windows(mocker):
 
 @pytest.mark.user_interface
 @pytest.mark.unit
-def test_cli_help_command(mocker, mock_cli_dependencies):
+@pytest.mark.usefixtures("mock_cli_dependencies")
+def test_cli_help_command(mocker):
     """Test 'help' command dispatch."""
     mocker.patch("sys.argv", ["fetchtastic", "help"])
 
@@ -198,7 +199,8 @@ def test_cli_help_command(mocker, mock_cli_dependencies):
 
 @pytest.mark.user_interface
 @pytest.mark.unit
-def test_cli_help_command_with_subcommand(mocker, mock_cli_dependencies):
+@pytest.mark.usefixtures("mock_cli_dependencies")
+def test_cli_help_command_with_subcommand(mocker):
     """Test 'help' command with specific command argument."""
     mocker.patch("sys.argv", ["fetchtastic", "help", "download"])
 
@@ -208,7 +210,8 @@ def test_cli_help_command_with_subcommand(mocker, mock_cli_dependencies):
 
 @pytest.mark.user_interface
 @pytest.mark.unit
-def test_cli_invalid_repo_command(mocker, mock_cli_dependencies):
+@pytest.mark.usefixtures("mock_cli_dependencies")
+def test_cli_invalid_repo_command(mocker):
     """Test 'repo' command with invalid subcommand."""
     mocker.patch("sys.argv", ["fetchtastic", "repo", "invalid"])
 
@@ -219,7 +222,8 @@ def test_cli_invalid_repo_command(mocker, mock_cli_dependencies):
 
 @pytest.mark.user_interface
 @pytest.mark.unit
-def test_cli_setup_invalid_section(mocker, mock_cli_dependencies):
+@pytest.mark.usefixtures("mock_cli_dependencies")
+def test_cli_setup_invalid_section(mocker):
     """Test 'setup' command with invalid section."""
     mocker.patch("sys.argv", ["fetchtastic", "setup", "--section", "invalid"])
 
@@ -230,7 +234,8 @@ def test_cli_setup_invalid_section(mocker, mock_cli_dependencies):
 
 @pytest.mark.user_interface
 @pytest.mark.unit
-def test_cli_version_with_update_available(mocker, mock_cli_dependencies):
+@pytest.mark.usefixtures("mock_cli_dependencies")
+def test_cli_version_with_update_available(mocker):
     """Test 'version' command when update is available."""
     mocker.patch("sys.argv", ["fetchtastic", "version"])
     mock_display = mocker.patch(
@@ -244,7 +249,8 @@ def test_cli_version_with_update_available(mocker, mock_cli_dependencies):
 
 @pytest.mark.user_interface
 @pytest.mark.unit
-def test_cli_version_with_update_available_v2(mocker, mock_cli_dependencies):
+@pytest.mark.usefixtures("mock_cli_dependencies")
+def test_cli_version_with_update_available_v2(mocker):
     """Test 'version' command when update is available."""
     mocker.patch("sys.argv", ["fetchtastic", "version"])
     mock_display = mocker.patch(
@@ -258,7 +264,8 @@ def test_cli_version_with_update_available_v2(mocker, mock_cli_dependencies):
 
 @pytest.mark.user_interface
 @pytest.mark.unit
-def test_cli_clean_command_enhanced(mocker, mock_cli_dependencies):
+@pytest.mark.usefixtures("mock_cli_dependencies")
+def test_cli_clean_command_enhanced(mocker):
     """Test 'clean' command dispatch with enhanced checks."""
     mocker.patch("sys.argv", ["fetchtastic", "clean"])
     mock_clean = mocker.patch("fetchtastic.cli.run_clean")
@@ -271,7 +278,8 @@ def test_cli_clean_command_enhanced(mocker, mock_cli_dependencies):
 
 @pytest.mark.user_interface
 @pytest.mark.unit
-def test_cli_topic_command(mocker, mock_cli_dependencies):
+@pytest.mark.usefixtures("mock_cli_dependencies")
+def test_cli_topic_command(mocker):
     """Test 'topic' command dispatch."""
     mocker.patch("sys.argv", ["fetchtastic", "topic"])
     mock_config = mocker.patch(

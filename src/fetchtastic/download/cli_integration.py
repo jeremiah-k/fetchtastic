@@ -460,7 +460,7 @@ class DownloadCLIIntegration:
                 return False
 
             # Check that download directories exist
-            download_dir = self.android_downloader._get_download_dir()
+            download_dir = self.android_downloader.get_download_dir()
             if not os.path.exists(download_dir):
                 os.makedirs(download_dir, exist_ok=True)
 
@@ -543,7 +543,7 @@ class DownloadCLIIntegration:
         """
         if not self.android_downloader:
             return False
-        download_dir = self.android_downloader._get_download_dir()
+        download_dir = self.android_downloader.get_download_dir()
         return os.path.exists(download_dir)
 
     def get_legacy_compatibility_report(self) -> Dict[str, Any]:

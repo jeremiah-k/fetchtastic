@@ -1,13 +1,7 @@
 import os
 import subprocess
 
-# Add src to path so we can import the module
-import sys
-from pathlib import Path
-
 import pytest
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 import fetchtastic.setup_config as setup_config
 
@@ -161,11 +155,22 @@ def test_display_version_info_request_failure(mocker):
 @pytest.mark.configuration
 @pytest.mark.unit
 def test_prompt_for_migration(mocker):
-    """Test prompt_for_migration function."""
+    """Test prompt_for_migration function logs appropriate messages."""
     mocker.patch("fetchtastic.setup_config.OLD_CONFIG_FILE", "/old/config.yaml")
     mocker.patch("fetchtastic.setup_config.CONFIG_FILE", "/new/config.yaml")
-    mocker.patch("fetchtastic.log_utils.logger")
+
+    # Mock logger to capture calls
+    mock_logger = mocker.patch("fetchtastic.log_utils.logger")
 
     result = setup_config.prompt_for_migration()
 
+    # Verify function returns True
     assert result is True
+
+    # Verify appropriate logging calls were made
+    mock_logger.info.assert_any_call(
+        "Found configuration file at old location: /old/config.yaml"
+    )
+    mock_logger.info.assert_any_call(
+        "Automatically migrating to the new location: /new/config.yaml"
+    )

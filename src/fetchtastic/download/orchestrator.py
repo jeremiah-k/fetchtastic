@@ -383,10 +383,11 @@ class DownloadOrchestrator:
                 if result.success and not result.was_skipped:
                     any_downloaded = True
                 self._handle_download_result(result, "android")
-            return any_downloaded
         except (requests.RequestException, OSError, ValueError, TypeError) as e:
             logger.error(f"Error downloading Android release {release.tag_name}: {e}")
             return False
+        else:
+            return any_downloaded
 
     def _download_firmware_release(self, release: Release) -> bool:
         """
@@ -640,25 +641,15 @@ class DownloadOrchestrator:
             )
 
         try:
+            downloader = None
             if file_type == "android":
-                ok = self.android_downloader.download(url, target_path)
-                if ok and self.android_downloader.verify(target_path):
-                    return DownloadResult(
-                        success=True,
-                        release_tag=failed_result.release_tag,
-                        file_path=Path(target_path),
-                        download_url=url,
-                        file_size=failed_result.file_size,
-                        file_type=file_type,
-                        retry_count=failed_result.retry_count,
-                        retry_timestamp=failed_result.retry_timestamp,
-                        error_message=None,
-                        is_retryable=False,
-                    )
-
+                downloader = self.android_downloader
             elif file_type == "firmware":
-                ok = self.firmware_downloader.download(url, target_path)
-                if ok and self.firmware_downloader.verify(target_path):
+                downloader = self.firmware_downloader
+
+            if downloader:
+                ok = downloader.download(url, target_path)
+                if ok and downloader.verify(target_path):
                     return DownloadResult(
                         success=True,
                         release_tag=failed_result.release_tag,

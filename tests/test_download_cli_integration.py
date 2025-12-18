@@ -492,7 +492,7 @@ def test_validate_integration_success(mocker):
 
     integration.android_downloader.get_releases.return_value = [MagicMock()]
     integration.firmware_downloader.get_releases.return_value = [MagicMock()]
-    integration.android_downloader._get_download_dir.return_value = "/tmp/android"
+    integration.android_downloader.get_download_dir.return_value = "/tmp/android"
 
     mocker.patch("os.path.exists", return_value=True)
     result = integration.validate_integration()
@@ -589,7 +589,7 @@ def test_check_download_directory_exists(mocker):
     """_check_download_directory should return True when directory exists."""
     integration = DownloadCLIIntegration()
     integration.android_downloader = MagicMock()
-    integration.android_downloader._get_download_dir.return_value = "/tmp/android"
+    integration.android_downloader.get_download_dir.return_value = "/tmp/android"
 
     mocker.patch("os.path.exists", return_value=True)
     result = integration._check_download_directory()
@@ -730,11 +730,9 @@ def test_get_environment_info():
     assert result["configuration_loaded"] is True
 
 
-def test_get_existing_prerelease_dirs(mocker):
+def test_get_existing_prerelease_dirs():
     """_get_existing_prerelease_dirs should list firmware directories."""
     # Create a temporary directory for testing
-    import tempfile
-
     with tempfile.TemporaryDirectory() as temp_dir:
         prerelease_dir = os.path.join(temp_dir, "prerelease")
         os.makedirs(prerelease_dir)
@@ -754,7 +752,7 @@ def test_get_existing_prerelease_dirs(mocker):
         assert "other-file" not in result
 
 
-def test_get_existing_prerelease_dirs_no_directory(mocker):
+def test_get_existing_prerelease_dirs_no_directory():
     """_get_existing_prerelease_dirs should return empty list when directory doesn't exist."""
     result = _get_existing_prerelease_dirs("/nonexistent/directory")
     assert result == []

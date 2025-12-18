@@ -139,19 +139,9 @@ def test_run_clean_permission_errors(mocker, capsys):
     mocker.patch("fetchtastic.setup_config.OLD_CONFIG_FILE", "/path/to/old_config")
 
     def mock_remove_with_error(path):
-        """
-        Simulates removing a filesystem path and raises a permission error for paths containing "config".
-
-        Parameters:
-            path (str): Filesystem path to remove.
-
-        Raises:
-            PermissionError: If the string "config" is present in `path`.
-        """
+        """Mock remove function that raises PermissionError for paths containing 'config'."""
         if "config" in path:
             raise PermissionError("Permission denied")
-        else:
-            pass
 
     mocker.patch("os.remove", side_effect=mock_remove_with_error)
     mocker.patch("os.path.exists", return_value=True)

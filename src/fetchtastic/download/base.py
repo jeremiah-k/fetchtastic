@@ -55,10 +55,10 @@ class BaseDownloader(Downloader, ABC):
         self.file_operations = FileOperations()
 
         # Initialize common configuration with normalized paths
-        self.download_dir = str(Path(self._get_download_dir()))
+        self.download_dir = str(Path(self.get_download_dir()))
         self.versions_to_keep = self._get_versions_to_keep()
 
-    def _get_download_dir(self) -> str:
+    def get_download_dir(self) -> str:
         """
         Determine the directory used for downloads from configuration.
 

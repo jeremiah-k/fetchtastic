@@ -130,6 +130,16 @@ def _get_existing_prerelease_dirs(prerelease_dir: str) -> list[str]:
     return entries
 
 
+def _find_asset_by_name(
+    release_data: Dict[str, Any], asset_name: str
+) -> Optional[Dict[str, Any]]:
+    """Find an asset dict by name in release data."""
+    for asset in release_data.get("assets", []) or []:
+        if asset.get("name") == asset_name:
+            return asset
+    return None
+
+
 def _is_release_complete(
     release_data: Dict[str, Any],
     release_dir: str,
@@ -186,14 +196,7 @@ def _is_release_complete(
                         logger.debug("Corrupted zip file detected: %s", asset_path)
                         return False
                 actual_size = os.path.getsize(asset_path)
-                asset_data = next(
-                    (
-                        a
-                        for a in (release_data.get("assets", []) or [])
-                        if a.get("name") == asset_name
-                    ),
-                    None,
-                )
+                asset_data = _find_asset_by_name(release_data, asset_name)
                 if asset_data:
                     expected_size = asset_data.get("size")
                     if expected_size is not None and actual_size != expected_size:
@@ -209,18 +212,17 @@ def _is_release_complete(
         else:
             try:
                 actual_size = os.path.getsize(asset_path)
-                for asset in release_data.get("assets", []) or []:
-                    if asset.get("name") == asset_name:
-                        expected_size = asset.get("size")
-                        if expected_size is not None and actual_size != expected_size:
-                            logger.debug(
-                                "File size mismatch for %s: expected %s, got %s",
-                                asset_path,
-                                expected_size,
-                                actual_size,
-                            )
-                            return False
-                        break
+                asset_data = _find_asset_by_name(release_data, asset_name)
+                if asset_data:
+                    expected_size = asset_data.get("size")
+                    if expected_size is not None and actual_size != expected_size:
+                        logger.debug(
+                            "File size mismatch for %s: expected %s, got %s",
+                            asset_path,
+                            expected_size,
+                            actual_size,
+                        )
+                        return False
             except (OSError, TypeError):
                 return False
 
@@ -744,7 +746,7 @@ class FileOperations:
 
         Parameters:
             extracted_files (List[Path]): Paths to files for which to generate sidecar hashes.
-            algorithm (str): Hash algorithm to use (e.g., "sha256", "md5"); case-insensitive.
+            algorithm (str): Hash algorithm to use (e.g., "sha256", "md5", "sha1"); case-insensitive.
 
         Returns:
             Dict[str, str]: Mapping of file path strings to their hex digest values for files that were successfully hashed.
@@ -752,9 +754,11 @@ class FileOperations:
         hash_dict = {}
 
         try:
-            if algorithm.lower() == "sha256":
-                hash_func = hashlib.sha256
-            else:
+            # Validate algorithm is available
+            try:
+                hash_func = lambda: hashlib.new(algorithm.lower())
+                hash_func()  # Test that algorithm is valid
+            except ValueError:
                 logger.warning(
                     f"Unsupported hash algorithm: {algorithm}, using SHA-256"
                 )
@@ -790,7 +794,7 @@ class FileOperations:
 
             return hash_dict
 
-        except Exception as e:
+        except (IOError, OSError) as e:
             logger.error("Error generating hashes for extracted files: %s", e)
             return {}
 
