@@ -794,9 +794,11 @@ class DownloadOrchestrator:
             # Set file type based on file path if not already set
             if not result.file_type and result.file_path:
                 file_path_str = str(result.file_path)
-                if "android" in file_path_str:
+                if "android" in file_path_str or file_path_str.endswith(".apk"):
                     result.file_type = "android"
-                elif "firmware" in file_path_str:
+                elif "firmware" in file_path_str or file_path_str.endswith(
+                    (".zip", ".bin", ".elf")
+                ):
                     result.file_type = "firmware"
                 elif "repository" in file_path_str or "repo-dls" in file_path_str:
                     result.file_type = "repository"
@@ -804,7 +806,7 @@ class DownloadOrchestrator:
                     result.file_type = "unknown"
 
             # Set retry metadata for failed downloads
-            if not result.success and result.retry_count == 0:
+            if not result.success and result.retry_count is None:
                 result.is_retryable = self._is_download_retryable(result)
                 result.retry_count = 0
 

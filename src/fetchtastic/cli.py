@@ -651,8 +651,6 @@ def run_clean():
     # Remove cron job entries (non-Windows platforms)
     if platform.system() != "Windows":
         try:
-            from fetchtastic import setup_config
-
             setup_config.remove_cron_job()
             setup_config.remove_reboot_cron_job()
             print("Removed Fetchtastic cron job entries.")

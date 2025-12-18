@@ -1,8 +1,11 @@
+import os
+import tempfile
 from unittest.mock import MagicMock
 
 import pytest
 
 from fetchtastic.download.cli_integration import DownloadCLIIntegration
+from fetchtastic.download.files import _get_existing_prerelease_dirs
 
 pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
 
@@ -729,26 +732,29 @@ def test_get_environment_info():
 
 def test_get_existing_prerelease_dirs(mocker):
     """_get_existing_prerelease_dirs should list firmware directories."""
-    integration = DownloadCLIIntegration()
+    # Create a temporary directory for testing
+    import tempfile
 
-    mocker.patch("os.path.exists", return_value=True)
-    mocker.patch(
-        "os.listdir", return_value=["firmware-v1.0", "firmware-v1.1", "other-file"]
-    )
-    mocker.patch("os.path.isdir", return_value=True)
-    mocker.patch("os.path.islink", return_value=False)
-    result = integration._get_existing_prerelease_dirs("/tmp/prerelease")
+    with tempfile.TemporaryDirectory() as temp_dir:
+        prerelease_dir = os.path.join(temp_dir, "prerelease")
+        os.makedirs(prerelease_dir)
 
-    assert "firmware-v1.0" in result
-    assert "firmware-v1.1" in result
-    assert "other-file" not in result
+        # Create test directories
+        os.makedirs(os.path.join(prerelease_dir, "firmware-v1.0"))
+        os.makedirs(os.path.join(prerelease_dir, "firmware-v1.1"))
+
+        # Create a file that should be ignored
+        with open(os.path.join(prerelease_dir, "other-file"), "w") as f:
+            f.write("test")
+
+        result = _get_existing_prerelease_dirs(prerelease_dir)
+
+        assert "firmware-v1.0" in result
+        assert "firmware-v1.1" in result
+        assert "other-file" not in result
 
 
 def test_get_existing_prerelease_dirs_no_directory(mocker):
     """_get_existing_prerelease_dirs should return empty list when directory doesn't exist."""
-    integration = DownloadCLIIntegration()
-
-    mocker.patch("os.path.exists", return_value=False)
-    result = integration._get_existing_prerelease_dirs("/tmp/prerelease")
-
+    result = _get_existing_prerelease_dirs("/nonexistent/directory")
     assert result == []

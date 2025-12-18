@@ -689,7 +689,7 @@ def test_run_clean(
         mock_proc = mock_popen.return_value
         mock_proc.communicate.return_value = (None, None)
         cli.run_clean()
-        mock_popen.assert_called_once()
+        assert mock_popen.call_count == 2
 
     # Check that config files are removed
     mock_os_remove.assert_any_call("/tmp/config/fetchtastic.yaml")  # nosec B108

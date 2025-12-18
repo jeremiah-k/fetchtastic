@@ -2513,9 +2513,6 @@ def setup_cron_job(frequency="hourly"):
             existing_cron = ""
         else:
             existing_cron = result.stdout.strip()
-    except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError) as e:
-        logger.error(f"Error reading crontab: {e}")
-        return
 
         # Remove existing Fetchtastic cron jobs (excluding @reboot ones)
         cron_lines = [line for line in existing_cron.splitlines() if line.strip()]
@@ -2559,6 +2556,10 @@ def setup_cron_job(frequency="hourly"):
             print(f"Cron job added to run Fetchtastic {frequency_desc}.")
         except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError) as e:
             print(f"An error occurred while setting up the cron job: {e}")
+
+    except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError) as e:
+        logger.error(f"Error reading crontab: {e}")
+        return
 
 
 @cron_command_required
@@ -2758,7 +2759,7 @@ def remove_reboot_cron_job():
         print(f"An error occurred while removing the reboot cron job: {e}")
 
 
-@cron_command_required
+@cron_check_command_required
 def check_cron_job_exists():
     """
     Check if any Fetchtastic cron jobs exist in the current user's crontab.
@@ -2802,7 +2803,7 @@ def check_boot_script_exists():
     return os.path.exists(boot_script)
 
 
-@cron_command_required
+@cron_check_command_required
 def check_any_cron_jobs_exist():
     """
     Check if any cron jobs exist in the current user's crontab.

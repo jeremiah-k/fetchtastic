@@ -486,6 +486,6 @@ class TestDownloadOrchestrator:
         orchestrator._enhance_download_results_with_metadata()
 
         # Verify metadata was populated
-        assert result.file_type == "apk"
+        assert result.file_type == "android"
         assert result.retry_count == 0
         assert hasattr(result, "is_retryable")
