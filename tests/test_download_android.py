@@ -186,8 +186,9 @@ class TestMeshtasticAndroidAppDownloader:
     @patch("fetchtastic.utils.download_file_with_retry")
     @patch("os.path.exists")
     @patch("os.path.getsize")
+    @patch("os.makedirs")
     def test_download_apk_already_complete(
-        self, mock_getsize, mock_exists, mock_download, downloader
+        self, mock_makedirs, mock_getsize, mock_exists, mock_download, downloader
     ):
         """Test APK download skip when file already complete."""
         # Setup mocks
@@ -351,7 +352,20 @@ class TestMeshtasticAndroidAppDownloader:
         mock_prerelease_manager = Mock()
         mock_prerelease_manager_class.return_value = mock_prerelease_manager
 
-        downloader.manage_prerelease_tracking_files()
+        # Mock config to enable prerelease checking
+        downloader.config["CHECK_PRERELEASES"] = True
+
+        # Mock directory existence check and cache manager read_json to return empty dict
+        with (
+            patch("os.path.exists", return_value=True),
+            patch("os.listdir", return_value=[]),
+            patch(
+                "fetchtastic.download.android.MeshtasticAndroidAppDownloader.get_releases",
+                return_value=[],
+            ),
+            patch.object(downloader.cache_manager, "read_json", return_value={}),
+        ):
+            downloader.manage_prerelease_tracking_files()
 
         mock_prerelease_manager.manage_prerelease_tracking_files.assert_called_once()
 

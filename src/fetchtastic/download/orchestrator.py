@@ -1099,6 +1099,23 @@ class DownloadOrchestrator:
         except (requests.RequestException, OSError, ValueError, TypeError) as e:
             logger.error(f"Error updating version tracking: {e}")
 
+    def _refresh_commit_history_cache(self) -> None:
+        """
+        Refresh the commit history cache for prerelease filtering.
+
+        Uses the prerelease manager to fetch recent repository commits with the configured GitHub token.
+        This is used to determine which prereleases should be kept or filtered out.
+        """
+        try:
+            logger.debug("Refreshing commit history cache...")
+            self.prerelease_manager.fetch_recent_repo_commits(
+                github_token=self.config.get("GITHUB_TOKEN"),
+                allow_env_token=True,
+            )
+            logger.debug("Commit history cache refreshed")
+        except (requests.RequestException, OSError, ValueError, TypeError) as e:
+            logger.error(f"Error refreshing commit history cache: {e}")
+
     def _manage_prerelease_tracking(self) -> None:
         """
         Manage prerelease tracking files for Android and firmware.

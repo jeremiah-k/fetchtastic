@@ -154,14 +154,6 @@ def test_run_download_successful(mocker):
         "fetchtastic.download.cli_integration.DownloadOrchestrator",
         return_value=mock_orchestrator,
     )
-    mocker.patch(
-        "fetchtastic.download.cli_integration.MeshtasticAndroidAppDownloader",
-        return_value=mock_android,
-    )
-    mocker.patch(
-        "fetchtastic.download.cli_integration.FirmwareReleaseDownloader",
-        return_value=mock_firmware,
-    )
     result = integration.run_download(config)
 
     # The downloader classes are no longer instantiated separately - we reuse orchestrator's downloaders
@@ -199,18 +191,10 @@ def test_run_download_with_force_refresh(mocker):
         "fetchtastic.download.cli_integration.DownloadOrchestrator",
         return_value=mock_orchestrator,
     )
-    mocker.patch(
-        "fetchtastic.download.cli_integration.MeshtasticAndroidAppDownloader",
-        return_value=mock_android,
-    )
-    mocker.patch(
-        "fetchtastic.download.cli_integration.FirmwareReleaseDownloader",
-        return_value=mock_firmware,
-    )
     integration.run_download(config, force_refresh=True)
 
-    # Since the cache manager is shared, we can check if it was called on any downloader
-    integration.android_downloader.cache_manager.clear_all_caches.assert_called_once()
+    # The orchestrator's android_downloader should have its cache cleared
+    mock_orchestrator.android_downloader.cache_manager.clear_all_caches.assert_called_once()
 
 
 def test_run_download_handles_exception(mocker):
