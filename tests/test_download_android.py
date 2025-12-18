@@ -183,7 +183,7 @@ class TestMeshtasticAndroidAppDownloader:
         # Asset matches exclude patterns
         assert downloader.should_download_asset("meshtastic-beta.apk") is False
 
-    @patch("fetchtastic.utils.download_file_with_retry")
+    @patch("fetchtastic.download.base.utils.download_file_with_retry")
     @patch("os.path.exists")
     @patch("os.path.getsize")
     @patch("os.makedirs")
@@ -215,7 +215,7 @@ class TestMeshtasticAndroidAppDownloader:
         assert "meshtastic.apk" in str(result.file_path)
         mock_download.assert_not_called()
 
-    @patch("fetchtastic.utils.download_file_with_retry")
+    @patch("fetchtastic.download.base.utils.download_file_with_retry")
     def test_download_apk_download_failure(self, mock_download, downloader):
         """Test APK download failure."""
         mock_download.return_value = False

@@ -870,7 +870,7 @@ class DownloadOrchestrator:
                 - "successful_downloads": number of completed, non-skipped downloads.
                 - "skipped_downloads": number of downloads marked as skipped.
                 - "failed_downloads": number of failed downloads.
-                - "success_rate": overall success percentage as a float (0–100).
+                - "success_rate": overall success percentage as a float (0-100).
                 - "android_downloads": count of successful android artifact downloads.
                 - "firmware_downloads": count of successful firmware artifact downloads.
                 - "repository_downloads": count of repository downloads (always 0 for automatic pipeline).
@@ -904,7 +904,7 @@ class DownloadOrchestrator:
         Compute the percentage of attempted downloads that completed successfully.
 
         Returns:
-            float: Percentage (0.0–100.0) of successful downloads. Returns 100.0 when there were no attempted downloads.
+            float: Percentage (0.0-100.0) of successful downloads. Returns 100.0 when there were no attempted downloads.
         """
         downloaded_count = sum(
             1
@@ -1126,6 +1126,7 @@ class DownloadOrchestrator:
             logger.info("Managing prerelease tracking files...")
 
             # Share recent commits with downloaders for prerelease filtering
+            self._refresh_commit_history_cache()
 
             # Manage Android prerelease tracking
             self.android_downloader.manage_prerelease_tracking_files()

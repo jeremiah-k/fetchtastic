@@ -1,4 +1,5 @@
 import argparse
+import os
 import subprocess
 from unittest.mock import patch
 
@@ -190,7 +191,8 @@ def test_run_clean_managed_file_filtering(mocker):
     mocker.patch("os.path.exists", return_value=True)
     mocker.patch("os.listdir", return_value=mock_files)
     mocker.patch(
-        "os.path.isdir", side_effect=lambda path: path in ["firmware", "documents"]
+        "os.path.isdir",
+        side_effect=lambda path: os.path.basename(path) in {"firmware", "documents"},
     )
     mocker.patch(
         "os.path.isfile",
@@ -230,6 +232,14 @@ def test_run_clean_managed_file_filtering(mocker):
     # Should only remove managed files, not personal files
     assert "/path/to/config" in removed_files  # Config file is always removed
     assert "/path/to/old_config" in removed_files  # Old config is always removed
+
+    # Should remove managed firmware directory
+    assert "firmware" in removed_dirs or any("firmware" in d for d in removed_dirs)
+
+    # Should NOT remove personal files and unmanaged directories
+    assert "personal_file.txt" not in removed_files
+    assert "documents" not in removed_dirs
+    assert "config.yaml" not in removed_files  # Unmanaged config should not be removed
 
 
 @pytest.mark.user_interface
@@ -399,7 +409,7 @@ def test_run_repo_clean_confirmation_cancelled(mocker, capsys):
 
 @pytest.mark.user_interface
 @pytest.mark.unit
-def test_windows_specific_cleanup_logic(mocker, capsys):
+def test_windows_specific_cleanup_logic(mocker):
     """Test Windows-specific cleanup with winshell available."""
 
     # Mock Windows environment
@@ -510,7 +520,7 @@ def test_cli_topic_command_clipboard_failure(mocker, capsys):
 
 @pytest.mark.user_interface
 @pytest.mark.unit
-def test_cli_version_command_update_available(mocker, capsys):
+def test_cli_version_command_update_available(mocker):
     """Test version command when update is available."""
     mocker.patch(
         "fetchtastic.cli.display_version_info", return_value=("0.8.0", "0.9.0", True)
@@ -530,7 +540,7 @@ def test_cli_version_command_update_available(mocker, capsys):
 
 @pytest.mark.user_interface
 @pytest.mark.unit
-def test_cli_repo_command_no_subcommand(mocker, capsys):
+def test_cli_repo_command_no_subcommand(mocker):
     """Test repo command without subcommand."""
     mocker.patch(
         "fetchtastic.setup_config.config_exists", return_value=(True, "/config.yaml")

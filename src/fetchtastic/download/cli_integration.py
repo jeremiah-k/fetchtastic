@@ -224,16 +224,9 @@ class DownloadCLIIntegration:
 
         # Get current versions before processing results
         if self.orchestrator:
-            current_android = (
-                self.orchestrator.get_latest_versions().get("android")
-                if self.orchestrator
-                else None
-            )
-            current_firmware = (
-                self.orchestrator.get_latest_versions().get("firmware")
-                if self.orchestrator
-                else None
-            )
+            latest_versions = self.orchestrator.get_latest_versions()
+            current_android = latest_versions.get("android")
+            current_firmware = latest_versions.get("firmware")
         else:
             current_android = None
             current_firmware = None
@@ -405,7 +398,7 @@ class DownloadCLIIntegration:
             A dictionary with the following keys:
             - "total_downloads" (int): Total number of attempted downloads.
             - "failed_downloads" (int): Number of downloads that failed.
-            - "success_rate" (float): Fraction of successful downloads (0.0–1.0).
+            - "success_rate" (float): Percentage of successful downloads (0.0-100.0).
             - "android_downloads" (int): Number of Android artifacts downloaded.
             - "firmware_downloads" (int): Number of firmware artifacts downloaded.
         """
@@ -686,18 +679,17 @@ class DownloadCLIIntegration:
 
     def get_environment_info(self) -> Dict[str, Any]:
         """
-        Return a summary of download operation counts and rates.
+        Return environment and configuration information for debugging and diagnostics.
 
         Returns:
             Dict[str, Any]: Mapping with keys:
-                - "total_downloads": number of attempted downloads (excludes skipped results).
-                - "successful_downloads": number of completed, non-skipped downloads.
-                - "skipped_downloads": number of downloads marked as skipped.
-                - "failed_downloads": number of failed downloads.
-                - "success_rate": overall success percentage as a float (0–100.0).
-                - "android_downloads": count of successful android artifact downloads.
-                - "firmware_downloads": count of successful firmware artifact downloads.
-                - "repository_downloads": count of repository downloads (always 0 for automatic pipeline).
+                - "python_version": Python interpreter version string.
+                - "working_directory": Current working directory path.
+                - "download_directory": Configured download directory or "Not configured".
+                - "configuration_loaded": Boolean indicating if configuration was successfully loaded.
+                - "orchestrator_initialized": Boolean indicating if orchestrator was initialized.
+                - "platform": Operating system platform identifier.
+                - "executable": Path to Python executable.
         """
         return {
             "python_version": sys.version,

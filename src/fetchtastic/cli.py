@@ -242,18 +242,10 @@ def main():
                 setup_config.prompt_for_migration()  # Just logs the migration message
                 if setup_config.migrate_config():
                     log_utils.logger.info(
-                        "Configuration successfully migrated to the new location."
+                        "Configuration successfully migrated to new location."
                     )
                     # Update config_path to the new location
                     config_path = setup_config.CONFIG_FILE
-                    # Re-load the configuration from the new location
-                    try:
-                        config = setup_config.load_config(config_path)
-                    except (OSError, TypeError, ValueError, yaml.YAMLError) as e:
-                        log_utils.logger.error(
-                            f"Failed to load migrated configuration: {e}"
-                        )
-                        sys.exit(1)
                 else:
                     log_utils.logger.error(
                         "Failed to migrate configuration. Continuing with old location."

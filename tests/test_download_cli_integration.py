@@ -456,14 +456,16 @@ def test_get_latest_versions():
     integration.orchestrator.get_latest_versions.return_value = {
         "firmware": "v1.0",
         "android": "v2.0",
-        "prerelease": None,
+        "firmware_prerelease": None,
+        "android_prerelease": None,
     }
 
     result = integration.get_latest_versions()
 
     assert result["firmware"] == "v1.0"
     assert result["android"] == "v2.0"
-    assert result["prerelease"] == ""
+    assert result["firmware_prerelease"] == ""
+    assert result["android_prerelease"] == ""
 
 
 def test_get_latest_versions_no_orchestrator():
