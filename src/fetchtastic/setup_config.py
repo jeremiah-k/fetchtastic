@@ -2485,10 +2485,6 @@ def setup_cron_job(frequency="hourly"):
         print("Cron jobs are not supported on Windows.")
         return
 
-    if not _crontab_available():
-        print("Cron configuration skipped: 'crontab' command not found on this system.")
-        return
-
     # Validate frequency and get schedule info
     if frequency not in CRON_SCHEDULES:
         print(f"Warning: Invalid cron frequency '{frequency}'. Defaulting to hourly.")
@@ -2661,10 +2657,6 @@ def setup_reboot_cron_job():
         print("Cron jobs are not supported on Windows.")
         return
 
-    if not _crontab_available():
-        print("Cron configuration skipped: 'crontab' command not found on this system.")
-        return
-
     try:
         # Get current crontab entries
         result = subprocess.run(
@@ -2723,9 +2715,6 @@ def remove_reboot_cron_job():
         print("Cron jobs are not supported on Windows.")
         return
 
-    if not _crontab_available():
-        print("Cron configuration skipped: 'crontab' command not found on this system.")
-        return
     try:
         # Get current crontab entries
         result = subprocess.run(
@@ -2773,10 +2762,6 @@ def check_cron_job_exists():
         print("Cron jobs are not supported on Windows.")
         return False
 
-    if not _crontab_available():
-        print("Cron configuration skipped: 'crontab' command not found on this system.")
-        return False
-
     try:
         result = subprocess.run(
             ["crontab", "-l"],
@@ -2815,10 +2800,6 @@ def check_any_cron_jobs_exist():
     # Skip cron job checking on Windows
     if platform.system() == "Windows":
         print("Cron jobs are not supported on Windows.")
-        return False
-
-    if not _crontab_available():
-        print("Cron configuration skipped: 'crontab' command not found on this system.")
         return False
 
     try:
