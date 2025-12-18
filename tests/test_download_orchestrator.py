@@ -474,12 +474,18 @@ class TestDownloadOrchestrator:
 
     def test_enhance_download_results_with_metadata(self, orchestrator):
         """Test enhancing results with metadata."""
-        # This method adds timing and other metadata to results
-        # Test that it runs without error
-        orchestrator.successful_downloads = []
-        orchestrator.failed_downloads = []
+        # Setup test data
+        result = Mock(spec=DownloadResult)
+        result.success = False
+        result.file_path = "/path/to/file.apk"
+        result.file_type = None
+        result.retry_count = None
+        orchestrator.download_results = []
+        orchestrator.failed_downloads = [result]
 
         orchestrator._enhance_download_results_with_metadata()
 
-        # Should not crash
-        assert True
+        # Verify metadata was populated
+        assert result.file_type == "apk"
+        assert result.retry_count == 0
+        assert hasattr(result, "is_retryable")

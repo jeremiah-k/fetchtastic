@@ -49,8 +49,7 @@ def cron_command_required(func):
     """
     Decorator to check crontab availability before executing function.
 
-    If crontab is not available, prints an informative message and returns early.
-    For 'check' functions, returns False. For other functions, returns None.
+    If crontab is not available, prints an informative message and returns None.
     """
 
     @functools.wraps(func)
@@ -59,10 +58,23 @@ def cron_command_required(func):
             print(
                 "Cron configuration skipped: 'crontab' command not found on this system."
             )
-            # Return appropriate default based on function name
-            if "check" in func.__name__:
-                return False
             return None
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
+# Convenience decorator for check functions that should return False when crontab unavailable
+def cron_check_command_required(func):
+    """Decorator for check functions that should return False when crontab unavailable."""
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        if not _crontab_available():
+            print(
+                "Cron configuration skipped: 'crontab' command not found on this system."
+            )
+            return False
         return func(*args, **kwargs)
 
     return wrapper
@@ -2495,11 +2507,15 @@ def setup_cron_job(frequency="hourly"):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            timeout=30,  # Add timeout to prevent hanging
         )
         if result.returncode != 0:
             existing_cron = ""
         else:
             existing_cron = result.stdout.strip()
+    except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError) as e:
+        logger.error(f"Error reading crontab: {e}")
+        return
 
         # Remove existing Fetchtastic cron jobs (excluding @reboot ones)
         cron_lines = [line for line in existing_cron.splitlines() if line.strip()]
@@ -2533,13 +2549,16 @@ def setup_cron_job(frequency="hourly"):
             new_cron += "\n"
 
         # Update crontab
-        process = subprocess.Popen(
-            [crontab_path, "-"], stdin=subprocess.PIPE, text=True
-        )
-        process.communicate(input=new_cron)
-        print(f"Cron job added to run Fetchtastic {frequency_desc}.")
-    except Exception as e:
-        print(f"An error occurred while setting up the cron job: {e}")
+        try:
+            process = subprocess.Popen(
+                [crontab_path, "-"], stdin=subprocess.PIPE, text=True
+            )
+            process.communicate(
+                input=new_cron, timeout=30
+            )  # Add timeout to prevent hanging
+            print(f"Cron job added to run Fetchtastic {frequency_desc}.")
+        except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError) as e:
+            print(f"An error occurred while setting up the cron job: {e}")
 
 
 @cron_command_required

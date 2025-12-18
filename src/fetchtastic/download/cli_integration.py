@@ -348,7 +348,13 @@ class DownloadCLIIntegration:
         force_refresh: bool = False,
         config: Optional[Dict[str, Any]] = None,
     ) -> Tuple[
-        List[str], List[str], List[str], List[str], List[Dict[str, str]], str, str
+        List[str],
+        List[str],
+        List[str],
+        List[str],
+        List[Dict[str, Any]],  # Updated to match actual payload types
+        str,
+        str,
     ]:
         """
         Entry point for CLI commands and setup workflows.
@@ -704,27 +710,3 @@ class DownloadCLIIntegration:
             "platform": sys.platform,
             "executable": sys.executable,
         }
-
-    def _get_existing_prerelease_dirs(self, prerelease_dir: str) -> List[str]:
-        """
-        Return the names of existing prerelease subdirectories under the given directory.
-
-        Parameters:
-            prerelease_dir (str): Path to the prerelease base directory to scan.
-
-        Returns:
-            List[str]: Directory names (not full paths) that exist under `prerelease_dir`, are real directories (not symlinks), and start with the prefix "firmware-". Returns an empty list if `prerelease_dir` does not exist or an OS error occurs during scanning.
-        """
-        if not os.path.exists(prerelease_dir):
-            return []
-
-        entries = []
-        try:
-            for entry in os.listdir(prerelease_dir):
-                full_path = os.path.join(prerelease_dir, entry)
-                if os.path.isdir(full_path) and not os.path.islink(full_path):
-                    if entry.startswith("firmware-"):
-                        entries.append(entry)
-        except OSError:
-            pass
-        return entries

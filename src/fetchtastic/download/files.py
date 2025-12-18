@@ -774,7 +774,7 @@ class FileOperations:
                         hash_file_path = f"{file_path}.{algorithm}"
                         _atomic_write(
                             hash_file_path,
-                            lambda f: f.write(hash_value),
+                            lambda f, hv=hash_value: f.write(hv),
                             suffix=f".{algorithm}",
                         )
 
