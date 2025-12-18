@@ -240,13 +240,13 @@ class TestExpectedPrereleaseVersion:
         """Test calculating expected prerelease from invalid version."""
         vm = VersionManager()
         result = vm.calculate_expected_prerelease_version("invalid")
-        assert result == ""
+        assert result is None
 
     def test_calculate_expected_prerelease_empty(self):
         """Test calculating expected prerelease from empty string."""
         vm = VersionManager()
         result = vm.calculate_expected_prerelease_version("")
-        assert result == ""
+        assert result is None
 
 
 class TestPrereleaseVersionParsing:

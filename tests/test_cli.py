@@ -1626,7 +1626,7 @@ def test_cli_download_force_flag(mocker, mock_cli_dependencies):
     cli.main()
 
     # Verify main was called with force_refresh=True
-    args, kwargs = mock_cli_dependencies.main.call_args
+    _args, kwargs = mock_cli_dependencies.main.call_args
     assert kwargs.get("force_refresh") is True
 
 

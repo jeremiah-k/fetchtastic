@@ -204,11 +204,21 @@ class TestDownloadOrchestrator:
         """Test getting download statistics."""
         stats = orchestrator.get_download_statistics()
         assert isinstance(stats, dict)
+        # Verify expected keys are present
+        expected_keys = {
+            "total_downloads",
+            "successful_downloads",
+            "failed_downloads",
+            "success_rate",
+        }
+        assert set(stats.keys()) >= expected_keys
+        assert all(isinstance(v, (int, float)) for v in stats.values())
 
     def test_calculate_success_rate(self, orchestrator):
         """Test calculating success rate."""
         rate = orchestrator._calculate_success_rate()
         assert isinstance(rate, float)
+        assert 0.0 <= rate <= 100.0  # Success rate should be percentage
 
     def test_count_artifact_downloads(self, orchestrator):
         """Test counting artifact downloads."""
@@ -224,6 +234,11 @@ class TestDownloadOrchestrator:
         """Test getting latest versions."""
         versions = orchestrator.get_latest_versions()
         assert isinstance(versions, dict)
+        # Should contain version information for different components
+        assert len(versions) >= 0  # May be empty initially
+        for key, value in versions.items():
+            assert isinstance(key, str)
+            assert isinstance(value, (str, type(None)))
 
     def test_update_version_tracking(self, orchestrator):
         """Test updating version tracking."""

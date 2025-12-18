@@ -250,20 +250,22 @@ class VersionManager:
         # If it doesn't look like version+hash, return as-is with v prefix
         return self.ensure_v_prefix_if_missing(version_with_hash)
 
-    def calculate_expected_prerelease_version(self, release_version: str) -> str:
+    def calculate_expected_prerelease_version(
+        self, release_version: str
+    ) -> Optional[str]:
         """
         Compute the next prerelease version based on a release version.
 
-        Strips a leading "v"/"V", parses the numeric release components, and returns the release with the patch component incremented by one. Returns an empty string when the next prerelease cannot be determined from the input.
+        Strips a leading "v"/"V", parses the numeric release components, and returns the release with the patch component incremented by one. Returns None when the next prerelease cannot be determined from the input.
 
         Parameters:
             release_version (str): Release version string (e.g., "v1.2.3" or "1.2.3").
 
         Returns:
-            str: Next prerelease version with the patch bumped (e.g., "1.2.4"), or an empty string if undeterminable.
+            Optional[str]: Next prerelease version with the patch bumped (e.g., "1.2.4"), or None if undeterminable.
         """
         if not release_version:
-            return ""
+            return None
 
         normalized_version = (
             self.extract_clean_version(release_version) or release_version
@@ -289,7 +291,7 @@ class VersionManager:
             except (ValueError, IndexError):
                 pass
 
-        return ""
+        return None
 
     def parse_commit_history_for_prerelease_version(
         self, commit_history: List[str], base_version: str
@@ -1133,7 +1135,7 @@ def _get_commit_hash_from_dir(dir_name: str) -> Optional[str]:
     return None
 
 
-def calculate_expected_prerelease_version(latest_version: str) -> str:
+def calculate_expected_prerelease_version(latest_version: str) -> Optional[str]:
     """
     Derives the expected next prerelease version from a latest release version.
 
@@ -1141,7 +1143,7 @@ def calculate_expected_prerelease_version(latest_version: str) -> str:
         latest_version (str): The latest release version tag (for example "1.2.3" or "v1.2.3").
 
     Returns:
-        expected_prerelease (str): The computed prerelease version string (for example "1.2.4rc1" or "v1.2.4-rc1"); returns an empty string if an expected prerelease cannot be determined.
+        expected_prerelease (Optional[str]): The computed prerelease version string (for example "1.2.4rc1" or "v1.2.4-rc1"); returns None if an expected prerelease cannot be determined.
     """
     return _version_manager.calculate_expected_prerelease_version(latest_version)
 

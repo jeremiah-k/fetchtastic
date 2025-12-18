@@ -963,7 +963,7 @@ def _prompt_for_cron_frequency() -> str:
             return choices[cron_choice]
         else:
             print(
-                f"Invalid choice '{cron_choice}'. Please enter 'h', 'd', 'n', or the full word."
+                f"Invalid choice '{cron_choice}'. Please enter 'h'/'hourly', 'd'/'daily', or 'n'/'none'."
             )
 
 
@@ -2550,7 +2550,7 @@ def setup_cron_job(frequency="hourly", *, crontab_path: str):
             )  # Add timeout to prevent hanging
             print(f"Cron job added to run Fetchtastic {frequency_desc}.")
         except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError) as e:
-            print(f"An error occurred while setting up the cron job: {e}")
+            logger.error(f"An error occurred while setting up the cron job: {e}")
 
     except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError) as e:
         logger.error(f"Error reading crontab: {e}")
