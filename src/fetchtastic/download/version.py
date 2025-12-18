@@ -1167,6 +1167,7 @@ def is_prerelease_directory(dir_name: str) -> bool:
         r".*alpha.*",
         r".*beta.*",
         r".*dev.*",
+        r".*rc.*",  # Release Candidate
         r".*[a-f0-9]{6,40}.*",  # Contains commit hash
     ]
 

@@ -258,21 +258,6 @@ def test_cli_version_with_update_available(mocker):
 @pytest.mark.user_interface
 @pytest.mark.unit
 @pytest.mark.usefixtures("mock_cli_dependencies")
-def test_cli_version_with_update_available_v2(mocker):
-    """Test 'version' command when update is available."""
-    mocker.patch("sys.argv", ["fetchtastic", "version"])
-    mock_display = mocker.patch(
-        "fetchtastic.cli.display_version_info", return_value=("1.0.0", "2.0.0", True)
-    )
-
-    cli.main()
-
-    mock_display.assert_called_once()
-
-
-@pytest.mark.user_interface
-@pytest.mark.unit
-@pytest.mark.usefixtures("mock_cli_dependencies")
 def test_cli_clean_command_enhanced(mocker):
     """Test 'clean' command dispatch with enhanced checks."""
     mocker.patch("sys.argv", ["fetchtastic", "clean"])

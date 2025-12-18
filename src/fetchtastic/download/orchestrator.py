@@ -245,14 +245,9 @@ class DownloadOrchestrator:
                             "Removing unexpected directory from prerelease folder: %s",
                             item.name,
                         )
-                        try:
-                            shutil.rmtree(item)
-                        except OSError as exc:
-                            logger.error(
-                                "Error removing directory from prerelease folder %s: %s",
-                                item,
-                                exc,
-                                exc_info=True,
+                        if not _safe_rmtree(str(item), str(prerelease_dir), item.name):
+                            logger.warning(
+                                "Failed to safely remove directory: %s", item.name
                             )
 
         except (requests.RequestException, OSError, ValueError, TypeError) as e:

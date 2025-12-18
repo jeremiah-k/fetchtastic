@@ -610,7 +610,8 @@ class FileOperations:
                     return False
 
                 # Check for patterns with dangerous wildcards
-                if pattern.count("*") > 3 or pattern.count("?") > 5:
+                # Limits increased to allow more specific patterns while preventing overly broad matches
+                if pattern.count("*") > 5 or pattern.count("?") > 10:
                     logger.warning(f"Overly broad pattern detected: {pattern}")
                     return False
 

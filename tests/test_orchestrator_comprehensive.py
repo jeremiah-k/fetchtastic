@@ -112,12 +112,13 @@ class TestDownloadOrchestrator:
         with (
             patch.object(
                 orchestrator.android_downloader, "download", return_value=True
-            ),
+            ) as mock_download,
             patch.object(orchestrator.android_downloader, "verify", return_value=True),
         ):
             result = orchestrator._retry_single_failure(mock_failed_result)
             # Should return a DownloadResult
             assert hasattr(result, "success")
+            mock_download.assert_called_once()
 
     def test_generate_retry_report(self, orchestrator):
         """Test generating retry reports."""

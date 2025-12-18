@@ -13,10 +13,10 @@ import pytest
 import requests
 
 from fetchtastic.download.android import MeshtasticAndroidAppDownloader
-
-pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
 from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.interfaces import Asset, Release
+
+pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
 
 
 @pytest.fixture

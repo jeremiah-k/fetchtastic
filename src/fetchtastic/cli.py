@@ -690,6 +690,11 @@ def run_repo_clean(config):
         print("Failed to clean repository directory.", file=sys.stderr)
 
     cleanup_summary = repo_downloader.get_cleanup_summary()
+    summary_msg = (
+        f"Repository cleanup summary: {cleanup_summary.get('removed_files', 0)} file(s), "
+        f"{cleanup_summary.get('removed_dirs', 0)} dir(s) removed"
+    )
+    print(summary_msg)
     log_utils.logger.info(
         "Repository cleanup summary: %d file(s), %d dir(s) removed",
         cleanup_summary.get("removed_files", 0),
@@ -697,6 +702,7 @@ def run_repo_clean(config):
     )
     if cleanup_summary.get("errors"):
         for err in cleanup_summary.get("errors", []):
+            print(f"Cleanup error: {err}", file=sys.stderr)
             log_utils.logger.warning(f"Repository cleanup error: {err}")
 
 
