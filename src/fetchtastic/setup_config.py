@@ -54,12 +54,13 @@ def cron_command_required(func):
 
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        if not _crontab_available():
+        crontab_path = shutil.which("crontab")
+        if not crontab_path:
             print(
                 "Cron configuration skipped: 'crontab' command not found on this system."
             )
             return None
-        return func(*args, **kwargs)
+        return func(*args, crontab_path=crontab_path, **kwargs)
 
     return wrapper
 
@@ -2471,7 +2472,7 @@ def _crontab_available() -> bool:
 
 
 @cron_command_required
-def setup_cron_job(frequency="hourly"):
+def setup_cron_job(frequency="hourly", *, crontab_path: str):
     """
     Configure or replace the user's crontab entry to run Fetchtastic on a regular schedule.
 
@@ -2495,9 +2496,7 @@ def setup_cron_job(frequency="hourly"):
     frequency_desc = schedule_info["desc"]
 
     try:
-        # Get current crontab entries (use full path for security)
-        crontab_path = shutil.which("crontab")
-        # Decorator ensures crontab is available, but verify path for security
+        # Use the pre-validated crontab path
         result = subprocess.run(
             [crontab_path, "-l"],
             stdout=subprocess.PIPE,
@@ -2559,7 +2558,7 @@ def setup_cron_job(frequency="hourly"):
 
 
 @cron_command_required
-def remove_cron_job():
+def remove_cron_job(*, crontab_path: str):
     """
     Remove Fetchtastic's daily cron entries from the current user's crontab.
 
@@ -2571,11 +2570,6 @@ def remove_cron_job():
         return
 
     try:
-        # Get current crontab entries (use full path for security)
-        crontab_path = shutil.which("crontab")
-        if not crontab_path:
-            print("crontab command not found in PATH")
-            return
         result = subprocess.run(
             [crontab_path, "-l"],
             stdout=subprocess.PIPE,
@@ -2644,7 +2638,7 @@ def remove_boot_script():
 
 
 @cron_command_required
-def setup_reboot_cron_job():
+def setup_reboot_cron_job(*, crontab_path: str):
     """
     Add a @reboot crontab entry to run Fetchtastic after system reboots.
 
@@ -2658,7 +2652,7 @@ def setup_reboot_cron_job():
     try:
         # Get current crontab entries
         result = subprocess.run(
-            ["crontab", "-l"],
+            [crontab_path, "-l"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -2694,7 +2688,9 @@ def setup_reboot_cron_job():
             new_cron += "\n"
 
         # Update crontab
-        process = subprocess.Popen(["crontab", "-"], stdin=subprocess.PIPE, text=True)
+        process = subprocess.Popen(
+            [crontab_path, "-"], stdin=subprocess.PIPE, text=True
+        )
         process.communicate(input=new_cron)
         print("Reboot cron job added to run Fetchtastic on system startup.")
     except Exception as e:
@@ -2702,7 +2698,7 @@ def setup_reboot_cron_job():
 
 
 @cron_command_required
-def remove_reboot_cron_job():
+def remove_reboot_cron_job(*, crontab_path: str):
     """
     Remove the @reboot crontab entry for Fetchtastic from the current user's crontab.
 
@@ -2716,7 +2712,7 @@ def remove_reboot_cron_job():
     try:
         # Get current crontab entries
         result = subprocess.run(
-            ["crontab", "-l"],
+            [crontab_path, "-l"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -2740,7 +2736,7 @@ def remove_reboot_cron_job():
                 new_cron += "\n"
             # Update crontab
             process = subprocess.Popen(
-                ["crontab", "-"], stdin=subprocess.PIPE, text=True
+                [crontab_path, "-"], stdin=subprocess.PIPE, text=True
             )
             process.communicate(input=new_cron)
             print("Reboot cron job removed.")

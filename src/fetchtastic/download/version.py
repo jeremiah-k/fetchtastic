@@ -270,32 +270,25 @@ class VersionManager:
         )
         clean_version = normalized_version.lstrip("vV")
 
-        try:
-            # Parse version and increment patch version
-            version = parse_version(clean_version)
-            if version.release and len(version.release) >= 2:
-                major = version.release[0]
-                minor = version.release[1]
-                patch = version.release[2] if len(version.release) > 2 else 0
+        parts = clean_version.split(".")
+        if len(parts) >= 2:
+            try:
+                version = parse_version(clean_version)
+                if version.release and len(version.release) >= 2:
+                    major = version.release[0]
+                    minor = version.release[1]
+                    patch = version.release[2] if len(version.release) > 2 else 0
+                    return f"{major}.{minor}.{patch + 1}"
+            except (InvalidVersion, IndexError):
+                pass
+
+            try:
+                major, minor = parts[0], parts[1]
+                patch = int(parts[2]) if len(parts) > 2 else 0
                 return f"{major}.{minor}.{patch + 1}"
-        except (InvalidVersion, IndexError):
-            pass
+            except (ValueError, IndexError):
+                pass
 
-        # Fallback: simple string manipulation
-        if "." in clean_version:
-            parts = clean_version.split(".")
-            if len(parts) >= 3:
-                try:
-                    fallback_major, fallback_minor, fallback_patch = (
-                        parts[0],
-                        parts[1],
-                        int(parts[2]),
-                    )
-                    return f"{fallback_major}.{fallback_minor}.{fallback_patch + 1}"
-                except ValueError:
-                    pass
-
-        # If we can't parse it, just return empty string
         return ""
 
     def parse_commit_history_for_prerelease_version(
@@ -478,17 +471,17 @@ class VersionManager:
                 - prerelease_number (str): Numeric or string component following the prerelease type, or empty string if none.
                 - commit_hash (str): Local/commit-hash portion extracted from the version when present, or empty string if none.
         """
-        if not version:
-            return {}
-
         metadata = {
-            "original_version": version,
+            "original_version": version if version else "",
             "is_prerelease": False,
             "base_version": "",
             "prerelease_type": "",
             "prerelease_number": "",
             "commit_hash": "",
         }
+
+        if not version:
+            return metadata
 
         # Check if it's a prerelease
         if not self.is_prerelease_version(version):

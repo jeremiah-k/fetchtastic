@@ -1486,43 +1486,6 @@ def test_cli_download_with_empty_config(mocker):
     mock_setup_run.assert_not_called()
 
 
-def test_cli_download_with_various_log_levels(mocker):
-    """
-    Verify that the download command applies configured log levels and invokes the download integration.
-
-    For each log level in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], patches configuration to include that LOG_LEVEL, runs the CLI download command, and asserts that fetchtastic.log_utils.set_log_level is called once with the configured level and that DownloadCLIIntegration.main is invoked.
-    """
-    mocker.patch("sys.argv", ["fetchtastic", "download"])
-    mock_integration_main = mocker.patch(
-        "fetchtastic.download.cli_integration.DownloadCLIIntegration.main",
-        return_value=([], [], [], [], [], "", ""),
-    )
-    mock_set_log_level = mocker.patch("fetchtastic.log_utils.set_log_level")
-    mocker.patch("fetchtastic.setup_config.run_setup")
-
-    mocker.patch(
-        "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
-    )
-    mocker.patch("fetchtastic.setup_config.prompt_for_migration")
-    mocker.patch("fetchtastic.setup_config.migrate_config")
-
-    # Test different log levels
-    log_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
-
-    for log_level in log_levels:
-        mock_set_log_level.reset_mock()
-        mock_integration_main.reset_mock()
-
-        mock_config = {"LOG_LEVEL": log_level}
-        mocker.patch("fetchtastic.setup_config.load_config", return_value=mock_config)
-
-        cli.main()
-
-        # Verify that set_log_level was called with the correct level
-        mock_set_log_level.assert_called_once_with(log_level)
-        mock_integration_main.assert_called_once()
-
-
 @pytest.mark.parametrize("log_level", ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
 def test_cli_download_parametrized_log_levels(mocker, log_level):
     """Test the 'download' command with parametrized LOG_LEVEL values."""
@@ -1664,7 +1627,7 @@ def test_cli_download_force_flag(mocker, mock_cli_dependencies):
 
     # Verify main was called with force_refresh=True
     args, kwargs = mock_cli_dependencies.main.call_args
-    assert kwargs.get("force_refresh") is True or (len(args) > 0 and args[0] is True)
+    assert kwargs.get("force_refresh") is True
 
 
 @pytest.mark.user_interface

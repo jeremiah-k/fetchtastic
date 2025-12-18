@@ -6,21 +6,22 @@ previously handled by the legacy downloader module, ensuring they work
 correctly with the new modular architecture.
 """
 
+import logging
 from unittest.mock import Mock, patch
 
 import pytest
 
-from fetchtastic.download.interfaces import Asset, Release
+from fetchtastic.download.interfaces import Asset, DownloadResult, Release
 from fetchtastic.download.orchestrator import DownloadOrchestrator
 
 pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
 
 
 @pytest.fixture
-def test_config():
+def test_config(tmp_path):
     """Test configuration for download orchestrator."""
     return {
-        "DOWNLOAD_DIR": "/tmp/test_orchestrator",
+        "DOWNLOAD_DIR": str(tmp_path / "test_orchestrator"),
         "FIRMWARE_VERSIONS_TO_KEEP": 2,
         "ANDROID_VERSIONS_TO_KEEP": 2,
         "REPO_VERSIONS_TO_KEEP": 2,
@@ -58,18 +59,20 @@ class TestDownloadOrchestrator:
         """Test running the complete download pipeline."""
         # Mock the actual download methods to avoid network calls
         with (
-            patch.object(orchestrator, "_process_android_downloads"),
-            patch.object(orchestrator, "_process_firmware_downloads"),
-            patch.object(orchestrator, "cleanup_old_versions"),
-            patch.object(orchestrator, "update_version_tracking"),
-            patch.object(orchestrator, "_manage_prerelease_tracking"),
-            patch.object(orchestrator, "_log_download_summary"),
+            patch.object(
+                orchestrator, "_process_android_downloads"
+            ) as mock_android_process,
+            patch.object(
+                orchestrator, "_process_firmware_downloads"
+            ) as mock_firmware_process,
+            patch.object(orchestrator, "_log_download_summary") as mock_summary,
         ):
-            # Method should exist and be callable without raising an exception
             result = orchestrator.run_download_pipeline()
-            # Verify the method returns a tuple of two lists
             assert isinstance(result, tuple)
             assert len(result) == 2
+            mock_android_process.assert_called_once()
+            mock_firmware_process.assert_called_once()
+            mock_summary.assert_called_once()
 
     def test_get_extraction_patterns(self, orchestrator):
         """Test getting extraction patterns."""
@@ -88,13 +91,36 @@ class TestDownloadOrchestrator:
         mock_result.success = True
         mock_result.file_path = "/tmp/test/file.bin"
 
-        # Method should handle the result without error
         orchestrator._handle_download_result(mock_result, "test_operation")
+        assert orchestrator.download_results[-1] is mock_result
+        assert not orchestrator.failed_downloads
 
     def test_retry_failed_downloads(self, orchestrator):
         """Test retrying failed downloads."""
-        # Method should exist and be callable
-        orchestrator._retry_failed_downloads()
+        retry_result = DownloadResult(
+            success=False,
+            error_type="network_error",
+            file_type="android",
+            download_url="https://example.com/file",
+            file_path="/tmp/test.apk",
+            is_retryable=True,
+        )
+        orchestrator.failed_downloads = [retry_result]
+
+        with patch.object(
+            orchestrator,
+            "_retry_single_failure",
+            return_value=DownloadResult(
+                success=True,
+                file_type="android",
+                file_path="/tmp/test.apk",
+                download_url="https://example.com/file",
+            ),
+        ) as mock_retry_single:
+            orchestrator._retry_failed_downloads()
+            mock_retry_single.assert_called_once_with(retry_result)
+            assert not orchestrator.failed_downloads
+            assert any(r.success for r in orchestrator.download_results)
 
     def test_retry_single_failure(self, orchestrator):
         """Test retrying a single failed download."""
@@ -124,10 +150,37 @@ class TestDownloadOrchestrator:
 
     def test_generate_retry_report(self, orchestrator):
         """Test generating retry reports."""
-        # Method should exist and be callable
-        retryable_failures = []
-        non_retryable_failures = []
-        orchestrator._generate_retry_report(retryable_failures, non_retryable_failures)
+        retryable_failures = [
+            DownloadResult(
+                success=False,
+                file_type="firmware",
+                error_type="network_error",
+                retry_count=1,
+                is_retryable=True,
+            )
+        ]
+        non_retryable_failures = [
+            DownloadResult(
+                success=False,
+                file_type="android",
+                error_type="validation_error",
+                retry_count=0,
+                is_retryable=False,
+            )
+        ]
+        orchestrator.failed_downloads = [retryable_failures[0]]
+        with patch("fetchtastic.download.orchestrator.logger.info") as mock_info:
+            orchestrator._generate_retry_report(
+                retryable_failures, non_retryable_failures
+            )
+        assert any(
+            "Retry success rate" in str(call.args[0])
+            for call in mock_info.call_args_list
+        )
+        assert any(
+            "Non-Retryable Failures Summary" in str(call.args[0])
+            for call in mock_info.call_args_list
+        )
 
     def test_enhance_download_results_with_metadata(self, orchestrator):
         """Test enhancing download results with metadata."""

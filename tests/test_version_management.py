@@ -427,7 +427,15 @@ class TestPrereleaseMetadata:
         """Test extracting metadata from empty string."""
         vm = VersionManager()
         result = vm.get_prerelease_metadata_from_version("")
-        assert result == {}
+        expected = {
+            "original_version": "",
+            "is_prerelease": False,
+            "base_version": "",
+            "prerelease_type": "",
+            "prerelease_number": "",
+            "commit_hash": "",
+        }
+        assert result == expected
 
 
 class TestPrereleaseFiltering:
