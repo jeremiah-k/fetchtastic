@@ -24,6 +24,7 @@ from fetchtastic.log_utils import logger
 
 from .android import MeshtasticAndroidAppDownloader
 from .cache import CacheManager
+from .files import _safe_rmtree
 from .firmware import FirmwareReleaseDownloader
 from .interfaces import DownloadResult, Release
 from .prerelease_history import PrereleaseHistoryManager
@@ -946,10 +947,12 @@ class DownloadOrchestrator:
                     logger.info(
                         f"Removing deleted prerelease directory: {directory_name}"
                     )
-                    try:
-                        shutil.rmtree(dir_to_delete)
-                    except OSError as e:
-                        logger.error(f"Error removing directory {dir_to_delete}: {e}")
+                    if not _safe_rmtree(
+                        str(dir_to_delete), str(prerelease_base_dir), directory_name
+                    ):
+                        logger.warning(
+                            f"Failed to safely remove directory: {directory_name}"
+                        )
 
         except (requests.RequestException, OSError, ValueError, TypeError) as e:
             logger.error(f"Error during deleted prerelease cleanup: {e}", exc_info=True)

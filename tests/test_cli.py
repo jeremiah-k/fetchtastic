@@ -67,6 +67,9 @@ def mock_cli_dependencies(mocker, tmp_path):
     return mock_integration_instance
 
 
+@pytest.mark.user_interface
+@pytest.mark.unit
+@pytest.mark.usefixtures("mock_cli_dependencies")
 def test_cli_download_command(mocker, mock_cli_dependencies):
     """Test 'download' command dispatch."""
     mocker.patch("sys.argv", ["fetchtastic", "download"])
@@ -93,6 +96,9 @@ def test_cli_download_command(mocker, mock_cli_dependencies):
     mock_cli_dependencies.assert_not_called()
 
 
+@pytest.mark.user_interface
+@pytest.mark.unit
+@pytest.mark.usefixtures("mock_cli_dependencies")
 def test_cli_download_with_migration(mocker, mock_cli_dependencies):
     """Test the 'download' command with an old config file that needs migration."""
     mocker.patch("sys.argv", ["fetchtastic", "download"])
@@ -110,6 +116,8 @@ def test_cli_download_with_migration(mocker, mock_cli_dependencies):
     mock_cli_dependencies.main.assert_called_once()
 
 
+@pytest.mark.user_interface
+@pytest.mark.unit
 def test_cli_setup_command_windows_integration_update(mocker):
     """Test the 'setup' command with Windows integration update."""
     mocker.patch("sys.argv", ["fetchtastic", "setup", "--update-integrations"])
@@ -609,6 +617,8 @@ def test_cli_setup_command_with_update_available(mocker):
     )
 
 
+@pytest.mark.user_interface
+@pytest.mark.unit
 def test_cli_clean_command(mocker):
     """Test the 'clean' command dispatch."""
     mocker.patch("sys.argv", ["fetchtastic", "clean"])
@@ -643,12 +653,12 @@ def test_cli_clean_command(mocker):
 @patch("fetchtastic.setup_config.CONFIG_DIR", "/tmp/config/fetchtastic")  # nosec B108
 @patch("os.path.isfile")
 @patch("os.path.isdir")
-def test_run_clean(  # noqa: ARG001
+def test_run_clean(
     mock_isdir,
     mock_isfile,
-    mock_platform_system,
-    mock_crontab_available,
-    mock_shutil_which,
+    _mock_platform_system,
+    _mock_crontab_available,
+    _mock_shutil_which,
     mock_subprocess_run,
     mock_rmdir,
     mock_listdir,

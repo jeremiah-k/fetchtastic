@@ -510,8 +510,12 @@ class FileOperations:
 
                     # Check if file matches any pattern
                     if matches_selected_patterns(base_name, patterns):
-                        # Extract the file
-                        extract_path = os.path.join(extract_dir, file_name)
+                        # Extract the file with safe path resolution
+                        try:
+                            extract_path = safe_extract_path(extract_dir, file_name)
+                        except ValueError as e:
+                            logger.warning(f"Skipping unsafe extraction path: {e}")
+                            continue
 
                         # Ensure parent directory exists
                         os.makedirs(os.path.dirname(extract_path), exist_ok=True)
@@ -675,7 +679,11 @@ class FileOperations:
 
                     if matches_selected_patterns(base_name, patterns):
                         files_to_extract += 1
-                        extract_path = os.path.join(extract_dir, file_name)
+                        try:
+                            extract_path = safe_extract_path(extract_dir, file_name)
+                        except ValueError:
+                            # Skip unsafe paths for extraction check
+                            continue
                         if os.path.exists(extract_path):
                             # Check if file size matches
                             if os.path.getsize(extract_path) == file_info.file_size:
@@ -765,6 +773,7 @@ class FileOperations:
                 logger.warning(
                     f"Unsupported hash algorithm: {algorithm}, using SHA-256"
                 )
+                algorithm = "sha256"
                 hash_func = hashlib.sha256
 
             for file_path in extracted_files:

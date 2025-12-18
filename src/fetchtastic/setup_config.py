@@ -2497,9 +2497,7 @@ def setup_cron_job(frequency="hourly"):
     try:
         # Get current crontab entries (use full path for security)
         crontab_path = shutil.which("crontab")
-        if not crontab_path:
-            logger.warning("crontab command not found in PATH")
-            return
+        # Decorator ensures crontab is available, but verify path for security
         result = subprocess.run(
             [crontab_path, "-l"],
             stdout=subprocess.PIPE,

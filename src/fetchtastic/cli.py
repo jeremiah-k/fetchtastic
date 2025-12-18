@@ -514,14 +514,7 @@ def run_clean():
 
         # Check if config directory is now empty
         if os.path.exists(config_dir) and not os.listdir(config_dir):
-            try:
-                os.rmdir(config_dir)
-                print(f"Removed empty config directory: {config_dir}")
-            except OSError as e:
-                print(
-                    f"Failed to delete config directory {config_dir}. Reason: {e}",
-                    file=sys.stderr,
-                )
+            _try_remove(config_dir, is_dir=True, description="empty config directory")
 
     # Windows-specific cleanup
     if platform.system() == "Windows":
@@ -656,25 +649,12 @@ def run_clean():
 
     # Remove boot script if exists (Termux-specific)
     boot_script = os.path.expanduser("~/.termux/boot/fetchtastic.sh")
-    if os.path.exists(boot_script):
-        try:
-            os.remove(boot_script)
-            print(f"Removed boot script: {boot_script}")
-        except OSError as e:
-            print(
-                f"Failed to remove boot script {boot_script}. Reason: {e}",
-                file=sys.stderr,
-            )
+    _try_remove(boot_script, description="boot script")
 
     # Remove log file
     log_dir = platformdirs.user_log_dir("fetchtastic")
     log_file = os.path.join(log_dir, "fetchtastic.log")
-    if os.path.exists(log_file):
-        try:
-            os.remove(log_file)
-            print(f"Removed log file: {log_file}")
-        except OSError as e:
-            print(f"Failed to remove log file. Reason: {e}", file=sys.stderr)
+    _try_remove(log_file, description="log file")
 
     print(
         "The downloaded files and Fetchtastic configuration have been removed from your system."

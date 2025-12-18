@@ -13,6 +13,8 @@ import pytest
 from fetchtastic.download.interfaces import Asset, Release
 from fetchtastic.download.orchestrator import DownloadOrchestrator
 
+pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
+
 
 @pytest.fixture
 def test_config():
@@ -63,10 +65,9 @@ class TestDownloadOrchestrator:
             patch.object(orchestrator, "_manage_prerelease_tracking"),
             patch.object(orchestrator, "_log_download_summary"),
         ):
-            # Method should exist and be callable
+            # Method should exist and be callable without raising an exception
             result = orchestrator.run_download_pipeline()
-            # Should return some result (could be None or a summary)
-            assert result is not None or True  # Allow None return
+            # Test passes as long as no exception is raised during execution
 
     def test_get_extraction_patterns(self, orchestrator):
         """Test getting extraction patterns."""
@@ -99,10 +100,24 @@ class TestDownloadOrchestrator:
         mock_failed_result.success = False
         mock_failed_result.error_type = "network_error"
         mock_failed_result.is_retryable = True
+        mock_failed_result.download_url = "https://example.com/file.apk"
+        mock_failed_result.file_path = "/tmp/test.apk"
+        mock_failed_result.file_type = "android"
+        mock_failed_result.retry_count = 0
+        mock_failed_result.retry_timestamp = None
+        mock_failed_result.release_tag = "test-tag"
+        mock_failed_result.file_size = 1000
 
-        result = orchestrator._retry_single_failure(mock_failed_result)
-        # Should return a DownloadResult
-        assert hasattr(result, "success")
+        # Patch downloader methods to avoid real I/O
+        with (
+            patch.object(
+                orchestrator.android_downloader, "download", return_value=True
+            ),
+            patch.object(orchestrator.android_downloader, "verify", return_value=True),
+        ):
+            result = orchestrator._retry_single_failure(mock_failed_result)
+            # Should return a DownloadResult
+            assert hasattr(result, "success")
 
     def test_generate_retry_report(self, orchestrator):
         """Test generating retry reports."""

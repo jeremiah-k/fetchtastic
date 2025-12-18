@@ -13,6 +13,8 @@ import pytest
 import requests
 
 from fetchtastic.download.android import MeshtasticAndroidAppDownloader
+
+pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
 from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.interfaces import Asset, Release
 
@@ -113,13 +115,13 @@ class TestMeshtasticAndroidAppDownloader:
 
     def test_should_download_asset_matching_patterns(self, android_downloader):
         """Test asset selection based on patterns."""
-        # Test APK asset (should be True since no selection patterns configured)
+        # Test APK asset (should be True since no APK selection patterns configured - uses SELECTED_APK_ASSETS)
         assert android_downloader.should_download_asset("meshtastic.apk") is True
 
         # Test excluded asset
         assert android_downloader.should_download_asset("meshtastic-debug.apk") is False
 
-        # Test non-APK asset (should be True since no selection patterns configured)
+        # Test non-APK asset (should be True since no APK selection patterns configured - uses SELECTED_APK_ASSETS)
         assert android_downloader.should_download_asset("readme.txt") is True
 
     @patch("fetchtastic.download.android.MeshtasticAndroidAppDownloader.download")
