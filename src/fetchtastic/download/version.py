@@ -840,7 +840,7 @@ class VersionManager:
         """
         Decide whether a prerelease identified by commit_identifier should be removed.
 
-        Checks membership against active_commits first; if not active, scans each pattern in delete_patterns for a hexadecimal commit hash (6–40 chars) and returns True if any found hash appears in commit_identifier (case-insensitive).
+        Checks membership against active_commits first; if not active, scans each pattern in delete_patterns for a hexadecimal commit hash (6-40 chars) and returns True if any found hash appears in commit_identifier (case-insensitive).
 
         Parameters:
             commit_identifier (str): Commit identifier or directory name for the prerelease.
@@ -1129,7 +1129,7 @@ def _get_commit_hash_from_dir(dir_name: str) -> Optional[str]:
         dir_name (str): Directory name or path segment that may include a version and a trailing commit hash (e.g., "v1.2.3-abcdef1" or "firmware_v1.2.3.abcdef1").
 
     Returns:
-        Optional[str]: The extracted commit hash in lowercase (6–40 hex characters) if present, otherwise `None`.
+        Optional[str]: The extracted commit hash in lowercase (6-40 hex characters) if present, otherwise `None`.
     """
     version_part = extract_version(dir_name)
     commit_match = re.search(

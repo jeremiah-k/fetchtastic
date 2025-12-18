@@ -4,7 +4,6 @@ import argparse
 import os
 import platform
 import shutil
-import subprocess
 import sys
 import time
 from typing import List
@@ -55,6 +54,16 @@ def get_upgrade_command():
         upgrade_command (str): A command string suitable for display or execution to upgrade Fetchtastic on the current platform.
     """
     return setup_config.get_upgrade_command()
+
+
+def _display_update_reminder(latest_version: str) -> None:
+    """Display update availability reminder to the user."""
+    upgrade_cmd = get_upgrade_command()
+    log_utils.logger.info("\nUpdate Available")
+    log_utils.logger.info(
+        f"A newer version (v{latest_version}) of Fetchtastic is available!"
+    )
+    log_utils.logger.info(f"Run '{upgrade_cmd}' to upgrade.")
 
 
 def main():
@@ -215,14 +224,9 @@ def main():
 
             setup_config.run_setup(sections=combined_sections or None)
 
-        # Remind about updates at the end if available
-        if update_available:
-            upgrade_cmd = get_upgrade_command()
-            log_utils.logger.info("\nUpdate Available")
-            log_utils.logger.info(
-                f"A newer version (v{latest_version}) of Fetchtastic is available!"
-            )
-            log_utils.logger.info(f"Run '{upgrade_cmd}' to upgrade.")
+            # Remind about updates at the end if available
+            if update_available:
+                _display_update_reminder(latest_version)
     elif args.command == "download":
         # Check if configuration exists
         exists, config_path = setup_config.config_exists()
@@ -389,12 +393,7 @@ def main():
 
             # Remind about updates at the end if available
             if update_available:
-                upgrade_cmd = get_upgrade_command()
-                log_utils.logger.info("\nUpdate Available")
-                log_utils.logger.info(
-                    f"A newer version (v{latest_version}) of Fetchtastic is available!"
-                )
-                log_utils.logger.info(f"Run '{upgrade_cmd}' to upgrade.")
+                _display_update_reminder(latest_version)
         else:
             # No repo subcommand provided
             repo_parser.print_help()

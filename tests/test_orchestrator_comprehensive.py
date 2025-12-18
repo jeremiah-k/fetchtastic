@@ -67,7 +67,9 @@ class TestDownloadOrchestrator:
         ):
             # Method should exist and be callable without raising an exception
             result = orchestrator.run_download_pipeline()
-            # Test passes as long as no exception is raised during execution
+            # Verify the method returns a tuple of two lists
+            assert isinstance(result, tuple)
+            assert len(result) == 2
 
     def test_get_extraction_patterns(self, orchestrator):
         """Test getting extraction patterns."""
