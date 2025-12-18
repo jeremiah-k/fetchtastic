@@ -16,6 +16,7 @@ import requests
 from fetchtastic.constants import (
     DEFAULT_ANDROID_VERSIONS_TO_KEEP,
     DEFAULT_FIRMWARE_VERSIONS_TO_KEEP,
+    DEFAULT_PRERELEASE_COMMITS_TO_FETCH,
 )
 from fetchtastic.log_utils import logger
 
@@ -1109,6 +1110,8 @@ class DownloadOrchestrator:
         try:
             logger.debug("Refreshing commit history cache...")
             self.prerelease_manager.fetch_recent_repo_commits(
+                DEFAULT_PRERELEASE_COMMITS_TO_FETCH,
+                cache_manager=self.cache_manager,
                 github_token=self.config.get("GITHUB_TOKEN"),
                 allow_env_token=True,
             )
