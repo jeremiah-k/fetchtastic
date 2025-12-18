@@ -1308,17 +1308,24 @@ def matches_extract_patterns(
     Match a filename against legacy prerelease extract selection patterns.
 
     Performs case-insensitive matching of filename against each pattern in extract_patterns.
-    - The literal pattern "littlefs-" matches filenames that start with "littlefs-".
-    - Patterns that start with any FILE_TYPE_PREFIXES element match when the pattern appears anywhere in the filename.
-    - Patterns identified as device patterns (either device_manager.is_device_pattern(pattern) returns true, or the pattern ends with '-' or '_') are matched as device identifiers:
-      - For device patterns of length 1–2, matches a whole-word boundary in the filename.
-      - For longer device patterns, matches when the pattern appears as a separate token delimited by '-' or '_' or at the filename ends.
-    - Any other pattern matches when it appears as a substring of the filename.
+    The matching strategy is determined by the pattern type:
+
+    1. Special pattern "littlefs-" - matches filenames that start with "littlefs-"
+    2. File type patterns - patterns starting with FILE_TYPE_PREFIXES match as substrings
+    3. Device patterns - patterns ending with '-' or '_' (or identified by device_manager):
+       - Short patterns (1-2 chars): match whole-word boundaries
+       - Long patterns: match as separate tokens delimited by '-' or '_' or at filename ends
+    4. Default patterns - match as simple substrings
+
+    NOTE: This function maintains backward compatibility with existing configurations.
+    For new use cases, consider using fnmatch-style glob patterns instead.
 
     Parameters:
         filename (str): The filename to test.
         extract_patterns (List[str]): Legacy selection patterns to test against the filename.
-        device_manager (Optional[Any]): Optional object exposing is_device_pattern(pattern) -> bool to classify device patterns; if absent, patterns ending with '-' or '_' are treated as device patterns.
+        device_manager (Optional[Any]): Optional object exposing is_device_pattern(pattern) -> bool
+                                      to classify device patterns; if absent, patterns ending
+                                      with '-' or '_' are treated as device patterns.
 
     Returns:
         bool: `True` if any pattern matches the filename according to the rules above, `False` otherwise.
@@ -1330,16 +1337,19 @@ def matches_extract_patterns(
         if not pattern_lower:
             continue
 
+        # Rule 1: Special case for "littlefs-" prefix pattern
         if pattern_lower == "littlefs-":
             if filename_lower.startswith("littlefs-"):
                 return True
             continue
 
+        # Rule 2: File type patterns (starting with known prefixes) - match as substring
         if any(pattern_lower.startswith(prefix) for prefix in FILE_TYPE_PREFIXES):
             if pattern_lower in filename_lower:
                 return True
             continue
 
+        # Rule 3: Device patterns - check if this is a device identifier pattern
         is_device_pattern_match = False
         if device_manager and getattr(device_manager, "is_device_pattern", None):
             try:
@@ -1348,22 +1358,27 @@ def matches_extract_patterns(
             except (AttributeError, TypeError, ValueError):
                 is_device_pattern_match = False
         elif pattern_lower.endswith(("-", "_")):
+            # Fallback: patterns ending with dash or underscore are treated as device patterns
             is_device_pattern_match = True
 
         if is_device_pattern_match:
+            # Remove trailing separators for device pattern matching
             clean_pattern = pattern_lower.rstrip("-_ ")
             if not clean_pattern:
                 continue
+            # Short device patterns (1-2 chars): match whole-word boundaries
             if len(clean_pattern) <= 2:
                 if re.search(rf"\b{re.escape(clean_pattern)}\b", filename_lower):
                     return True
             else:
+                # Longer device patterns: match as separate tokens delimited by '-' or '_'
                 if re.search(
                     rf"(^|[-_]){re.escape(clean_pattern)}([-_]|$)", filename_lower
                 ):
                     return True
             continue
 
+        # Rule 4: Default behavior - simple substring matching
         if pattern_lower in filename_lower:
             return True
 

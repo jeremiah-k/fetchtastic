@@ -240,7 +240,7 @@ class DownloadOrchestrator:
                     # A prerelease directory should contain a hash; if it doesn't, it's likely a
                     # stable release directory misplaced into the prerelease folder.
                     if not is_prerelease_directory(item.name):
-                        logger.info(
+                        logger.warning(
                             "Removing unexpected directory from prerelease folder: %s",
                             item.name,
                         )

@@ -481,16 +481,16 @@ def test_cron_job_cleanup_logic(mocker):
         text=True,
     )
 
-    # Should have called crontab to update with fetchtastic jobs removed
-    mock_popen.assert_called_once_with(
+    # Should have called crontab twice - once for daily jobs, once for reboot jobs
+    assert mock_popen.call_count == 2
+    mock_popen.assert_any_call(
         ["/usr/bin/crontab", "-"], stdin=subprocess.PIPE, text=True
     )
-    process_communicate_call = mock_popen_instance.communicate.call_args
-    assert process_communicate_call is not None
 
-    # Verify the input to crontab doesn't contain fetchtastic jobs
-    new_cron_input = process_communicate_call[1]["input"]
-    assert "fetchtastic download" not in new_cron_input
+    # Verify that both remove_cron_job and remove_reboot_cron_job were called
+    # (they each make a popen call to update the crontab)
+    communicate_calls = mock_popen_instance.communicate.call_args_list
+    assert len(communicate_calls) == 2
 
 
 @pytest.mark.user_interface

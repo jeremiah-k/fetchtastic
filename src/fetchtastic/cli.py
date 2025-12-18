@@ -650,12 +650,9 @@ def run_clean():
 
     # Remove cron job entries (non-Windows platforms)
     if platform.system() != "Windows":
-        try:
-            setup_config.remove_cron_job()
-            setup_config.remove_reboot_cron_job()
-            print("Removed Fetchtastic cron job entries.")
-        except Exception as e:
-            print(f"An error occurred while removing cron jobs: {e}", file=sys.stderr)
+        setup_config.remove_cron_job()
+        setup_config.remove_reboot_cron_job()
+        print("Removed Fetchtastic cron job entries.")
 
     # Remove boot script if exists (Termux-specific)
     boot_script = os.path.expanduser("~/.termux/boot/fetchtastic.sh")
