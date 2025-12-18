@@ -621,6 +621,7 @@ def test_cli_clean_command(mocker):
     "fetchtastic.setup_config._crontab_available",
     return_value=True,
 )
+@patch("shutil.which", return_value="/usr/bin/crontab")
 @patch(
     "fetchtastic.setup_config.CONFIG_FILE", "/tmp/config/fetchtastic.yaml"
 )  # nosec B108
@@ -636,6 +637,7 @@ def test_run_clean(
     mock_isfile,
     mock_platform_system,
     mock_crontab_available,
+    mock_shutil_which,
     mock_subprocess_run,
     mock_rmdir,
     mock_listdir,
@@ -714,7 +716,7 @@ def test_run_clean(
 
     # Check that cron jobs are removed
     mock_subprocess_run.assert_any_call(
-        ["crontab", "-l"],
+        ["/usr/bin/crontab", "-l"],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,

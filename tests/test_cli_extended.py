@@ -451,6 +451,7 @@ def test_cron_job_cleanup_logic(mocker):
     # Mock Linux environment
     mocker.patch("platform.system", return_value="Linux")
     mocker.patch("fetchtastic.setup_config._crontab_available", return_value=True)
+    mocker.patch("shutil.which", return_value="/usr/bin/crontab")
 
     # Mock crontab operations
     mock_crontab_output = "# Existing cron\n# fetchtastic download\n0 3 * * * /usr/bin/fetchtastic download\n# Other cron\n"
@@ -474,11 +475,16 @@ def test_cron_job_cleanup_logic(mocker):
 
     # Should have called crontab -l to list jobs
     mock_subprocess.assert_any_call(
-        ["crontab", "-l"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        ["/usr/bin/crontab", "-l"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
     )
 
     # Should have called crontab to update with fetchtastic jobs removed
-    mock_popen.assert_called_once()
+    mock_popen.assert_called_once_with(
+        ["/usr/bin/crontab", "-"], stdin=subprocess.PIPE, text=True
+    )
     process_communicate_call = mock_popen_instance.communicate.call_args
     assert process_communicate_call is not None
 
