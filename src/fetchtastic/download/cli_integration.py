@@ -631,7 +631,7 @@ class DownloadCLIIntegration:
             logger.error("File not found - please check your configuration and paths")
         elif isinstance(error, PermissionError):
             logger.error("Permission error - please check file system permissions")
-        elif isinstance(error, ConnectionError):
+        elif isinstance(error, (ConnectionError, requests.Timeout)):
             logger.error(
                 "Network connection error - please check your internet connection"
             )

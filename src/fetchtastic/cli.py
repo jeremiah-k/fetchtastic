@@ -650,13 +650,15 @@ def run_clean():
 
     # Remove cron job entries (non-Windows platforms)
     if platform.system() != "Windows":
-        if not setup_config._crontab_available():
+        crontab_path = shutil.which("crontab")
+        if not crontab_path:
             print("Cron cleanup skipped: 'crontab' command not found on this system.")
+            return
         else:
             try:
                 # Get current crontab entries
                 result = subprocess.run(
-                    ["crontab", "-l"],
+                    [crontab_path, "-l"],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
@@ -680,7 +682,7 @@ def run_clean():
                         new_cron += "\n"
                     # Update crontab
                     process = subprocess.Popen(
-                        ["crontab", "-"], stdin=subprocess.PIPE, text=True
+                        [crontab_path, "-"], stdin=subprocess.PIPE, text=True
                     )
                     process.communicate(input=new_cron)
                     print("Removed Fetchtastic cron job entries.")

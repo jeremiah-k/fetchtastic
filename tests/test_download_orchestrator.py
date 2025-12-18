@@ -272,17 +272,30 @@ class TestDownloadOrchestrator:
 
         assert result is False
 
-    def test_get_existing_releases(self, orchestrator):
+    def test_get_existing_releases(self, orchestrator, tmp_path):
         """Test getting existing releases from filesystem."""
-        # Mock the entire method to return expected result
+        # Mock the get_latest_release_tag to return a known latest version
         with patch.object(
-            orchestrator, "_get_existing_releases", return_value=["v1.0.0", "v2.0.0"]
+            orchestrator.firmware_downloader,
+            "get_latest_release_tag",
+            return_value="v2.0.0",
         ):
-            result = orchestrator._get_existing_releases("firmware")
+            # Create fake firmware directories in temp path
+            firmware_dir = tmp_path / "firmware"
+            firmware_dir.mkdir()
+            (firmware_dir / "v1.0.0").mkdir()
+            (firmware_dir / "v1.5.0").mkdir()
 
-            # Should return both latest tag and directory versions
-            assert "v1.0.0" in result
-            assert "v2.0.0" in result
+            # Patch the download_dir to use our temp path
+            with patch.object(
+                orchestrator.firmware_downloader, "download_dir", str(tmp_path)
+            ):
+                result = orchestrator._get_existing_releases("firmware")
+
+                # Should return latest tag first, then directory versions
+                assert "v2.0.0" in result  # Latest tag
+                assert "v1.0.0" in result  # Directory
+                assert "v1.5.0" in result  # Directory
 
     def test_download_android_release_success(self, orchestrator):
         """Test successful Android release download."""
@@ -301,9 +314,6 @@ class TestDownloadOrchestrator:
         orchestrator._download_android_release(release)
 
         orchestrator.android_downloader.download_apk.assert_called_once()
-        orchestrator._handle_download_result.assert_called_once_with(
-            mock_result, "android"
-        )
         orchestrator._handle_download_result.assert_called_once_with(
             mock_result, "android"
         )

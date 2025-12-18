@@ -459,7 +459,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         if not check_prereleases:
             return []
 
-        version_manager = VersionManager()
+        version_manager = self.version_manager
 
         # Filter prereleases
         prereleases = [r for r in releases if r.prerelease]
@@ -535,8 +535,9 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         tracking_file = self.get_prerelease_tracking_file()
 
         # Extract metadata from prerelease tag
-        version_manager = VersionManager()
-        metadata = version_manager.get_prerelease_metadata_from_version(prerelease_tag)
+        metadata = self.version_manager.get_prerelease_metadata_from_version(
+            prerelease_tag
+        )
 
         # Create tracking data with enhanced metadata
         data = {
@@ -614,7 +615,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                 data = self.cache_manager.read_json(tracking_file) or {}
                 current_prerelease = data.get("latest_version")
                 if current_prerelease:
-                    comparison = VersionManager().compare_versions(
+                    comparison = self.version_manager.compare_versions(
                         prerelease_tag, current_prerelease
                     )
                     return comparison > 0
@@ -661,7 +662,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
         # Read all existing prerelease tracking data
         existing_prereleases = []
-        version_manager = VersionManager()
+        version_manager = self.version_manager
         prerelease_manager = PrereleaseHistoryManager()
 
         for file_path in tracking_files:

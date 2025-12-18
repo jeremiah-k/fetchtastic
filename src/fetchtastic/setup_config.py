@@ -22,6 +22,7 @@ from fetchtastic.constants import (
     DEFAULT_CHECK_APK_PRERELEASES,
     MESHTASTIC_DIR_NAME,
 )
+from fetchtastic.log_utils import logger
 
 # Recommended default exclude patterns for firmware extraction
 # These patterns exclude specialized variants and debug files that most users don't need
@@ -2532,7 +2533,9 @@ def setup_cron_job(frequency="hourly"):
             new_cron += "\n"
 
         # Update crontab
-        process = subprocess.Popen(["crontab", "-"], stdin=subprocess.PIPE, text=True)
+        process = subprocess.Popen(
+            [crontab_path, "-"], stdin=subprocess.PIPE, text=True
+        )
         process.communicate(input=new_cron)
         print(f"Cron job added to run Fetchtastic {frequency_desc}.")
     except Exception as e:
@@ -2582,7 +2585,7 @@ def remove_cron_job():
                 new_cron += "\n"
             # Update crontab
             process = subprocess.Popen(
-                ["crontab", "-"], stdin=subprocess.PIPE, text=True
+                [crontab_path, "-"], stdin=subprocess.PIPE, text=True
             )
             process.communicate(input=new_cron)
             print("Daily cron job removed.")

@@ -455,18 +455,10 @@ class FileOperations:
             # If no expected hash, just verify file exists
             return True
 
-        try:
-            sha256_hash = hashlib.sha256()
-            with open(file_path, "rb") as f:
-                # Read and update hash in chunks of 4K
-                for byte_block in iter(lambda: f.read(4096), b""):
-                    sha256_hash.update(byte_block)
-
-            actual_hash = sha256_hash.hexdigest()
-            return actual_hash == expected_hash
-        except IOError as e:
-            logger.error(f"Error reading file {file_path} for hash verification: {e}")
+        actual_hash = self._get_file_hash(file_path)
+        if actual_hash is None:
             return False
+        return actual_hash == expected_hash
 
     def extract_archive(
         self,
@@ -624,7 +616,7 @@ class FileOperations:
 
             return True
 
-        except Exception as e:
+        except (TypeError, AttributeError) as e:
             logger.error(f"Error validating extraction patterns: {e}")
             return False
 
@@ -780,8 +772,11 @@ class FileOperations:
 
                         # Create sidecar file
                         hash_file_path = f"{file_path}.{algorithm}"
-                        with open(hash_file_path, "w", encoding="utf-8") as hash_file:
-                            hash_file.write(hash_value)
+                        _atomic_write(
+                            hash_file_path,
+                            lambda f: f.write(hash_value),
+                            suffix=f".{algorithm}",
+                        )
 
                         logger.debug(f"Created hash file: {hash_file_path}")
 
