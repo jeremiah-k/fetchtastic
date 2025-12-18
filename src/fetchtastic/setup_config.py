@@ -44,6 +44,16 @@ RECOMMENDED_EXCLUDE_PATTERNS = [
 ]
 
 
+def _crontab_available() -> bool:
+    """
+    Return whether the system has the 'crontab' command available.
+
+    Returns:
+        bool: True if the 'crontab' command is available, False otherwise.
+    """
+    return shutil.which("crontab") is not None
+
+
 # Decorator for functions that require crontab command
 def cron_command_required(func):
     """
@@ -2459,16 +2469,6 @@ def install_crond():
     else:
         # For non-Termux environments, crond installation is not needed
         pass
-
-
-def _crontab_available() -> bool:
-    """
-    Return whether the system has the 'crontab' command available.
-
-    Returns:
-        bool: True if the 'crontab' command is available, False otherwise.
-    """
-    return shutil.which("crontab") is not None
 
 
 @cron_command_required
