@@ -264,7 +264,13 @@ def main():
             log_utils.logger.info(f"Using configuration from: {config_path}")
 
             # Load config and set log level if specified
-            config = setup_config.load_config()
+            try:
+                config = setup_config.load_config()
+            except (OSError, TypeError, ValueError, yaml.YAMLError) as e:
+                log_utils.logger.error(
+                    f"Failed to load configuration from {config_path}: {e}"
+                )
+                sys.exit(1)
             if config and config.get("LOG_LEVEL"):
                 log_utils.set_log_level(config["LOG_LEVEL"])
 

@@ -22,7 +22,7 @@ class TestMeshtasticAndroidAppDownloader:
     """Test suite for MeshtasticAndroidAppDownloader."""
 
     @pytest.fixture
-    def mock_config(self):
+    def mock_config(self, tmp_path):
         """
         Provide a mock configuration dictionary used by tests.
 
@@ -35,7 +35,7 @@ class TestMeshtasticAndroidAppDownloader:
                 GITHUB_TOKEN (str): placeholder GitHub API token.
         """
         return {
-            "DOWNLOAD_DIR": "/tmp/test",
+            "DOWNLOAD_DIR": str(tmp_path / "downloads"),
             "CHECK_APK_PRERELEASES": True,
             "SELECTED_APK_ASSETS": ["universal"],
             "EXCLUDE_PATTERNS": ["*beta*"],
@@ -43,7 +43,7 @@ class TestMeshtasticAndroidAppDownloader:
         }
 
     @pytest.fixture
-    def mock_cache_manager(self):
+    def mock_cache_manager(self, tmp_path):
         """
         Provide a Mock configured to mimic CacheManager behavior for tests.
 
@@ -51,7 +51,7 @@ class TestMeshtasticAndroidAppDownloader:
             Mock: A unittest.mock.Mock instance with its spec set to CacheManager.
         """
         mock = Mock(spec=CacheManager)
-        mock.cache_dir = "/tmp/cache"
+        mock.cache_dir = str(tmp_path / "cache")
         mock.get_cache_file_path.side_effect = lambda file_name: os.path.join(
             mock.cache_dir, file_name
         )
@@ -84,11 +84,13 @@ class TestMeshtasticAndroidAppDownloader:
             assert dl.latest_release_file == "latest_android_release.json"
             mock_version.assert_called_once()
 
-    def test_get_target_path_for_release(self, downloader):
+    def test_get_target_path_for_release(self, downloader, tmp_path):
         """Test target path generation for APK releases."""
         path = downloader.get_target_path_for_release("v1.0.0", "meshtastic.apk")
 
-        expected = os.path.join("/tmp/test", "android", "v1.0.0", "meshtastic.apk")
+        expected = os.path.join(
+            str(tmp_path / "downloads"), "android", "v1.0.0", "meshtastic.apk"
+        )
         assert path == expected
 
     @patch("fetchtastic.download.android.make_github_api_request")
@@ -260,22 +262,22 @@ class TestMeshtasticAndroidAppDownloader:
         assert downloader._is_version_directory("not_version") is False
 
     @patch("fetchtastic.download.android.datetime")
-    def test_update_latest_release_tag(self, mock_datetime, downloader):
+    def test_update_latest_release_tag(self, mock_datetime, downloader, tmp_path):
         """Test updating latest release tag."""
         mock_datetime.now.return_value = Mock()
         mock_datetime.now.return_value.isoformat.return_value = "2023-01-01T00:00:00"
 
         # Mock atomic write
         downloader.cache_manager.atomic_write_json = Mock(return_value=True)
-        downloader.cache_manager.get_cache_file_path.return_value = (
-            "/tmp/cache/latest_android_release.json"
+        downloader.cache_manager.get_cache_file_path.return_value = str(
+            tmp_path / "cache" / "latest_android_release.json"
         )
 
         result = downloader.update_latest_release_tag("v1.0.0")
 
         assert result is True
         downloader.cache_manager.atomic_write_json.assert_called_once_with(
-            "/tmp/cache/latest_android_release.json", ANY
+            str(tmp_path / "cache" / "latest_android_release.json"), ANY
         )
 
     def test_get_latest_release_tag_from_cache(self, mock_config, tmp_path):
@@ -304,11 +306,11 @@ class TestMeshtasticAndroidAppDownloader:
         result = downloader.validate_extraction_patterns(["*.zip"], ["*.tmp"])
         assert result is False
 
-    def test_check_extraction_needed(self, downloader):
+    def test_check_extraction_needed(self, downloader, tmp_path):
         """Test extraction needed check."""
         # APK downloader doesn't support extraction
         result = downloader.check_extraction_needed(
-            "/tmp/test.apk", "/tmp", ["*.zip"], ["*.tmp"]
+            str(tmp_path / "test.apk"), str(tmp_path), ["*.zip"], ["*.tmp"]
         )
         assert result is False
 

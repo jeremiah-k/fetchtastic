@@ -256,7 +256,7 @@ def test_cli_download_config_migration_failure(mocker, capsys):
 
 @pytest.mark.user_interface
 @pytest.mark.unit
-def test_cli_download_config_load_failure(mocker, capsys):
+def test_cli_download_config_load_failure(mocker):
     """Test CLI download command when config loading fails after migration."""
     # Mock successful migration but config load fails
     mocker.patch(
@@ -287,7 +287,7 @@ def test_cli_download_config_load_failure(mocker, capsys):
 
 @pytest.mark.user_interface
 @pytest.mark.unit
-def test_cli_download_failed_downloads_reporting(mocker, capsys):
+def test_cli_download_failed_downloads_reporting(mocker):
     """Test CLI download command error reporting for failed downloads."""
     mock_integration = mocker.MagicMock()
     failed_downloads = [
@@ -349,7 +349,7 @@ def test_cli_download_failed_downloads_reporting(mocker, capsys):
 
 @pytest.mark.user_interface
 @pytest.mark.unit
-def test_run_repo_clean_config_missing(mocker, capsys):
+def test_run_repo_clean_config_missing(mocker):
     """Test run_repo_clean when config is missing."""
     mocker.patch("builtins.input", return_value="y")
     mock_repo_downloader = mocker.patch("fetchtastic.cli.RepositoryDownloader")

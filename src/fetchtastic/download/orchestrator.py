@@ -1120,16 +1120,3 @@ class DownloadOrchestrator:
 
         except (OSError, ValueError, TypeError) as e:
             logger.error(f"Error managing prerelease tracking: {e}")
-
-    def _refresh_commit_history_cache(self) -> None:
-        """Refresh commit history cache used for prerelease expected-version selection."""
-        try:
-            self._recent_commits = self.prerelease_manager.fetch_recent_repo_commits(
-                limit=10,
-                cache_manager=self.cache_manager,
-                github_token=self.config.get("GITHUB_TOKEN"),
-                allow_env_token=True,
-                force_refresh=False,
-            )
-        except (requests.RequestException, OSError, ValueError, TypeError) as e:
-            logger.debug(f"Skipping commit history refresh: {e}")

@@ -154,11 +154,11 @@ def test_run_download_successful(mocker):
         "fetchtastic.download.cli_integration.DownloadOrchestrator",
         return_value=mock_orchestrator,
     )
-    mock_android_class = mocker.patch(
+    mocker.patch(
         "fetchtastic.download.cli_integration.MeshtasticAndroidAppDownloader",
         return_value=mock_android,
     )
-    mock_firmware_class = mocker.patch(
+    mocker.patch(
         "fetchtastic.download.cli_integration.FirmwareReleaseDownloader",
         return_value=mock_firmware,
     )

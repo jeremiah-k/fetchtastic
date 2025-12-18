@@ -18,8 +18,6 @@ from fetchtastic.utils import (
     get_effective_github_token,
 )
 
-from .android import MeshtasticAndroidAppDownloader
-from .firmware import FirmwareReleaseDownloader
 from .orchestrator import DownloadOrchestrator
 
 
