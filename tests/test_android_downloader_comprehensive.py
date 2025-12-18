@@ -258,9 +258,16 @@ class TestMeshtasticAndroidAppDownloader:
 
     def test_error_handling_api_failure(self, android_downloader):
         """Test error handling with API failures."""
-        with patch(
-            "fetchtastic.download.android.make_github_api_request",
-            side_effect=requests.RequestException("API Error"),
+        with (
+            patch(
+                "fetchtastic.download.android.make_github_api_request",
+                side_effect=requests.RequestException("API Error"),
+            ),
+            patch.object(
+                android_downloader.cache_manager,
+                "read_releases_cache_entry",
+                return_value=None,
+            ),
         ):
             releases = android_downloader.get_releases()
             assert releases == []

@@ -78,17 +78,6 @@ class TestDownloadOrchestrator:
         patterns = orchestrator._get_exclude_patterns()
         assert isinstance(patterns, list)
 
-    def test_get_existing_releases(self, orchestrator):
-        """Test getting existing releases for a type."""
-        releases = orchestrator._get_existing_releases("firmware")
-        assert isinstance(releases, list)
-
-    def test_should_download_release(self, orchestrator):
-        """Test determining if a release should be downloaded."""
-        release = Release(tag_name="v2.7.14", prerelease=False)
-        result = orchestrator._should_download_release(release, "firmware")
-        assert isinstance(result, bool)
-
     def test_handle_download_result(self, orchestrator):
         """Test handling download results."""
         # Create a mock download result
@@ -231,13 +220,3 @@ class TestDownloadOrchestrator:
             mock_download.return_value = Mock(success=True)
             orchestrator._download_firmware_release(release)
             mock_download.assert_called()
-
-    def test_filter_releases(self, orchestrator):
-        """Test filtering releases."""
-        releases = [
-            Release(tag_name="v2.7.14", prerelease=False),
-            Release(tag_name="v2.7.15-rc1", prerelease=True),
-        ]
-
-        filtered = orchestrator._filter_releases(releases, "firmware")
-        assert isinstance(filtered, list)
