@@ -1215,13 +1215,13 @@ def test_copy_to_clipboard_func_termux_failure(mocker):
     """Test clipboard functionality on Termux (failure)."""
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
     mocker.patch("subprocess.run", side_effect=Exception("Termux error"))
-    mock_print = mocker.patch("builtins.print")
+    mock_logger = mocker.patch("fetchtastic.setup_config.logger")
 
     result = cli.copy_to_clipboard_func("test text")
 
     assert result is False
-    mock_print.assert_called_with(
-        "An error occurred while copying to clipboard: Termux error"
+    mock_logger.error.assert_called_once_with(
+        "Error copying to Termux clipboard: %s", mocker.ANY
     )
 
 
@@ -1276,12 +1276,12 @@ def test_copy_to_clipboard_func_linux_no_tools(mocker):
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
     mocker.patch("platform.system", return_value="Linux")
     mocker.patch("shutil.which", return_value=None)  # No clipboard tools available
-    mock_print = mocker.patch("builtins.print")
+    mock_logger = mocker.patch("fetchtastic.setup_config.logger")
 
     result = cli.copy_to_clipboard_func("test text")
 
     assert result is False
-    mock_print.assert_called_with(
+    mock_logger.warning.assert_called_once_with(
         "xclip or xsel not found. Install xclip or xsel to use clipboard functionality."
     )
 
@@ -1290,12 +1290,12 @@ def test_copy_to_clipboard_func_unsupported_platform(mocker):
     """Test clipboard functionality on unsupported platform."""
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
     mocker.patch("platform.system", return_value="FreeBSD")
-    mock_print = mocker.patch("builtins.print")
+    mock_logger = mocker.patch("fetchtastic.setup_config.logger")
 
     result = cli.copy_to_clipboard_func("test text")
 
     assert result is False
-    mock_print.assert_called_with(
+    mock_logger.warning.assert_called_once_with(
         "Clipboard functionality is not supported on this platform."
     )
 
@@ -1305,13 +1305,13 @@ def test_copy_to_clipboard_func_subprocess_error(mocker):
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
     mocker.patch("platform.system", return_value="Darwin")
     mocker.patch("subprocess.run", side_effect=Exception("Subprocess error"))
-    mock_print = mocker.patch("builtins.print")
+    mock_logger = mocker.patch("fetchtastic.setup_config.logger")
 
     result = cli.copy_to_clipboard_func("test text")
 
     assert result is False
-    mock_print.assert_called_with(
-        "An error occurred while copying to clipboard: Subprocess error"
+    mock_logger.error.assert_called_once_with(
+        "Error copying to clipboard on %s: %s", "Darwin", mocker.ANY
     )
 
 

@@ -577,11 +577,14 @@ def test_copy_to_clipboard_termux_failure(mocker):
         "subprocess.run",
         side_effect=subprocess.CalledProcessError(1, "termux-clipboard-set"),
     )
-    mocker.patch("builtins.print")
+    mock_logger = mocker.patch("fetchtastic.setup_config.logger")
 
     result = setup_config.copy_to_clipboard_func("test text")
 
     assert result is False
+    mock_logger.error.assert_called_once_with(
+        "Error copying to Termux clipboard: %s", mocker.ANY
+    )
 
 
 @pytest.mark.configuration
@@ -676,16 +679,14 @@ def test_copy_to_clipboard_linux_no_tools(mocker):
     mocker.patch.dict(os.environ, {}, clear=True)  # Remove Termux env
     mocker.patch("platform.system", return_value="Linux")
     mocker.patch("shutil.which", return_value=None)  # No clipboard tools
-    mock_print = mocker.patch("builtins.print")
+    mock_logger = mocker.patch("fetchtastic.setup_config.logger")
 
     result = setup_config.copy_to_clipboard_func("test text")
 
     assert result is False
-    # Should print message about missing tools
-    print_calls = [
-        call for call in mock_print.call_args_list if "xclip or xsel" in str(call)
-    ]
-    assert len(print_calls) > 0
+    mock_logger.warning.assert_called_once_with(
+        "xclip or xsel not found. Install xclip or xsel to use clipboard functionality."
+    )
 
 
 @pytest.mark.configuration
