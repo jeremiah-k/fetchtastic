@@ -17,6 +17,7 @@ from fetchtastic.constants import (
     DEFAULT_ANDROID_VERSIONS_TO_KEEP,
     DEFAULT_FIRMWARE_VERSIONS_TO_KEEP,
     DEFAULT_PRERELEASE_COMMITS_TO_FETCH,
+    FIRMWARE_DIR_PREFIX,
     MAX_RETRY_DELAY,
 )
 from fetchtastic.log_utils import logger
@@ -220,12 +221,38 @@ class DownloadOrchestrator:
                             f"Skipping symlink in prerelease folder: {item.name}"
                         )
                         continue
-                    # A pre-release directory should contain a hash, a stable release directory will not.
-                    if item.is_dir() and not is_prerelease_directory(item.name):
-                        logger.info(
-                            f"Removing incorrect directory from prerelease folder: {item.name}"
+                    if not item.is_dir():
+                        continue
+
+                    # Only remove directories that are clearly Fetchtastic-managed prerelease
+                    # directories (firmware prefix + parseable version). This prevents accidental
+                    # deletion of user-created directories under the prerelease folder.
+                    if not item.name.startswith(FIRMWARE_DIR_PREFIX):
+                        continue
+                    suffix = item.name[len(FIRMWARE_DIR_PREFIX) :]
+                    if self.version_manager.get_release_tuple(suffix) is None:
+                        logger.warning(
+                            "Skipping unexpected directory in prerelease folder: %s",
+                            item.name,
                         )
-                        shutil.rmtree(item)
+                        continue
+
+                    # A prerelease directory should contain a hash; if it doesn't, it's likely a
+                    # stable release directory misplaced into the prerelease folder.
+                    if not is_prerelease_directory(item.name):
+                        logger.info(
+                            "Removing unexpected directory from prerelease folder: %s",
+                            item.name,
+                        )
+                        try:
+                            shutil.rmtree(item)
+                        except OSError as exc:
+                            logger.error(
+                                "Error removing directory from prerelease folder %s: %s",
+                                item,
+                                exc,
+                                exc_info=True,
+                            )
 
         except (requests.RequestException, OSError, ValueError, TypeError) as e:
             logger.error(f"Error processing firmware downloads: {e}", exc_info=True)

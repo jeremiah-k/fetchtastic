@@ -486,40 +486,31 @@ def run_clean():
     config_file = setup_config.CONFIG_FILE
     old_config_file = setup_config.OLD_CONFIG_FILE
 
-    if os.path.exists(config_file):
+    def _try_remove(path: str, *, is_dir: bool = False, description: str) -> None:
+        if not os.path.exists(path):
+            return
         try:
-            os.remove(config_file)
-            print(f"Removed configuration file: {config_file}")
+            if is_dir:
+                shutil.rmtree(path)
+                print(f"Removed {description}: {path}")
+            else:
+                os.remove(path)
+                print(f"Removed {description}: {path}")
         except OSError as e:
             print(
-                f"Failed to delete configuration file {config_file}. Reason: {e}",
+                f"Failed to delete {description} {path}. Reason: {e}",
                 file=sys.stderr,
             )
 
-    if os.path.exists(old_config_file):
-        try:
-            os.remove(old_config_file)
-            print(f"Removed old configuration file: {old_config_file}")
-        except OSError as e:
-            print(
-                f"Failed to delete old configuration file {old_config_file}. Reason: {e}",
-                file=sys.stderr,
-            )
+    _try_remove(config_file, description="configuration file")
+    _try_remove(old_config_file, description="old configuration file")
 
     # Remove config directory if empty
     config_dir = setup_config.CONFIG_DIR
     if os.path.exists(config_dir):
         # If on Windows, remove batch files directory
         batch_dir = os.path.join(config_dir, "batch")
-        if os.path.exists(batch_dir):
-            try:
-                shutil.rmtree(batch_dir)
-                print(f"Removed batch files directory: {batch_dir}")
-            except OSError as e:
-                print(
-                    f"Failed to delete batch directory {batch_dir}. Reason: {e}",
-                    file=sys.stderr,
-                )
+        _try_remove(batch_dir, is_dir=True, description="batch files directory")
 
         # Check if config directory is now empty
         if os.path.exists(config_dir) and not os.listdir(config_dir):

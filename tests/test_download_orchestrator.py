@@ -9,6 +9,8 @@ import pytest
 from fetchtastic.download.interfaces import DownloadResult, Release
 from fetchtastic.download.orchestrator import DownloadOrchestrator
 
+pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
+
 
 class TestDownloadOrchestrator:
     """Test suite for DownloadOrchestrator."""
@@ -89,6 +91,51 @@ class TestDownloadOrchestrator:
         selected = orch._select_latest_release_by_version(releases)
         assert selected is not None
         assert selected.tag_name == "v2.7.16.a597230"
+
+    def test_firmware_prerelease_cleanup_only_removes_managed_dirs(self, tmp_path):
+        """
+        Ensure prerelease cleanup doesn't delete user-created directories.
+
+        The orchestrator should only remove directories that look like Fetchtastic-managed
+        firmware prerelease directories (firmware prefix + parseable version) and that
+        are not recognized as prerelease directories.
+        """
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path),
+            "CHECK_APK_PRERELEASES": False,
+            "CHECK_FIRMWARE_PRERELEASES": True,
+            "SELECTED_FIRMWARE_ASSETS": [],
+            "EXCLUDE_PATTERNS": [],
+            "GITHUB_TOKEN": "test_token",
+        }
+        orch = DownloadOrchestrator(config)
+
+        prerelease_dir = tmp_path / "firmware" / "prerelease"
+        prerelease_dir.mkdir(parents=True)
+
+        stable_like = prerelease_dir / "firmware-2.0.0"
+        stable_like.mkdir()
+        user_dir = prerelease_dir / "notes"
+        user_dir.mkdir()
+        custom_prefixed = prerelease_dir / "firmware-custom"
+        custom_prefixed.mkdir()
+        valid_prerelease = prerelease_dir / "firmware-2.0.0.abcdef"
+        valid_prerelease.mkdir()
+
+        orch.firmware_downloader.get_releases = Mock(
+            return_value=[Release(tag_name="v1.0.0", prerelease=False)]
+        )
+        orch.firmware_downloader.is_release_complete = Mock(return_value=True)
+        orch.firmware_downloader.download_repo_prerelease_firmware = Mock(
+            return_value=([], [], None)
+        )
+
+        orch._process_firmware_downloads()
+
+        assert not stable_like.exists()
+        assert user_dir.exists()
+        assert custom_prefixed.exists()
+        assert valid_prerelease.exists()
 
     @patch("fetchtastic.download.orchestrator.time.time")
     def test_run_download_pipeline_success(self, mock_time, orchestrator):
