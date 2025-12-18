@@ -651,10 +651,7 @@ def run_clean():
     # Remove cron job entries (non-Windows platforms)
     if platform.system() != "Windows":
         crontab_path = shutil.which("crontab")
-        if not crontab_path:
-            print("Cron cleanup skipped: 'crontab' command not found on this system.")
-            return
-        else:
+        if crontab_path:
             try:
                 # Get current crontab entries
                 result = subprocess.run(
@@ -690,6 +687,8 @@ def run_clean():
                 print(
                     f"An error occurred while removing cron jobs: {e}", file=sys.stderr
                 )
+        else:
+            print("Cron cleanup skipped: 'crontab' command not found on this system.")
 
     # Remove boot script if exists (Termux-specific)
     boot_script = os.path.expanduser("~/.termux/boot/fetchtastic.sh")
