@@ -47,7 +47,7 @@ def strip_unwanted_chars(text: str) -> str:
 
 def _matches_exclude(name: str, patterns: List[str]) -> bool:
     """
-    Check whether a name matches any of the provided exclude glob patterns (case-insensitive).
+    Shared case-insensitive glob exclude matcher.
 
     Parameters:
         name (str): The name to test (typically a filename or path component).
@@ -56,6 +56,8 @@ def _matches_exclude(name: str, patterns: List[str]) -> bool:
     Returns:
         bool: `True` if `name` matches at least one pattern, `False` otherwise.
     """
+    if not patterns:
+        return False
     name_l = name.lower()
     return any(fnmatch.fnmatch(name_l, p.lower()) for p in patterns)
 
@@ -537,7 +539,7 @@ class FileOperations:
 
     def _matches_exclude(self, filename: str, patterns: List[str]) -> bool:
         """
-        Determine whether a filename matches any exclusion glob pattern using case-insensitive matching.
+        Instance wrapper around module-level exclude matcher.
 
         Parameters:
             filename (str): The name to test; comparison is performed against the pattern(s).
@@ -546,10 +548,7 @@ class FileOperations:
         Returns:
             bool: `True` if `filename` matches any pattern in `patterns`, `False` otherwise.
         """
-        if not patterns:
-            return False
-        name_lower = filename.lower()
-        return any(fnmatch.fnmatch(name_lower, pat.lower()) for pat in patterns)
+        return _matches_exclude(filename, patterns)
 
     def _is_safe_archive_member(self, member_name: str) -> bool:
         """
@@ -565,6 +564,9 @@ class FileOperations:
         ):
             return False
         normalized = os.path.normpath(member_name)
+        # Reject absolute paths (including Windows drive-letter paths)
+        if os.path.isabs(normalized):
+            return False
         if normalized == "..":
             return False
         if normalized.startswith(f"..{os.sep}"):
@@ -772,13 +774,16 @@ class FileOperations:
 
                         # Create sidecar file
                         hash_file_path = f"{file_path}.{algorithm}"
-                        _atomic_write(
+                        if _atomic_write(
                             hash_file_path,
                             lambda f, hv=hash_value: f.write(hv),
                             suffix=f".{algorithm}",
-                        )
-
-                        logger.debug(f"Created hash file: {hash_file_path}")
+                        ):
+                            logger.debug("Created hash file: %s", hash_file_path)
+                        else:
+                            logger.warning(
+                                "Failed to write hash sidecar for %s", file_path
+                            )
 
                     except IOError as e:
                         logger.error(f"Error generating hash for {file_path}: {e}")
@@ -786,7 +791,7 @@ class FileOperations:
             return hash_dict
 
         except Exception as e:
-            logger.error(f"Error generating hashes for extracted files: {e}")
+            logger.error("Error generating hashes for extracted files: %s", e)
             return {}
 
     def cleanup_file(self, file_path: str) -> bool:

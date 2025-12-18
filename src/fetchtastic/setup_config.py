@@ -2344,7 +2344,7 @@ def copy_to_clipboard_func(text):
             )
             return True
         except Exception as e:
-            print(f"An error occurred while copying to clipboard: {e}")
+            logger.error("Error copying to Termux clipboard: %s", e)
             return False
     elif platform.system() == "Windows" and WINDOWS_MODULES_AVAILABLE:
         # Windows environment with win32com available
@@ -2357,7 +2357,7 @@ def copy_to_clipboard_func(text):
             win32clipboard.CloseClipboard()
             return True
         except Exception as e:
-            print(f"An error occurred while copying to clipboard: {e}")
+            logger.error("Error copying to Windows clipboard: %s", e)
             return False
     else:
         # Other platforms
@@ -2384,15 +2384,17 @@ def copy_to_clipboard_func(text):
                     )
                     return True
                 else:
-                    print(
+                    logger.warning(
                         "xclip or xsel not found. Install xclip or xsel to use clipboard functionality."
                     )
                     return False
             else:
-                print("Clipboard functionality is not supported on this platform.")
+                logger.warning(
+                    "Clipboard functionality is not supported on this platform."
+                )
                 return False
         except Exception as e:
-            print(f"An error occurred while copying to clipboard: {e}")
+            logger.error("Error copying to clipboard on %s: %s", system, e)
             return False
 
 

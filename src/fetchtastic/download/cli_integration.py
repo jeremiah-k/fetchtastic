@@ -404,7 +404,7 @@ class DownloadCLIIntegration:
             A dictionary with the following keys:
             - "total_downloads" (int): Total number of attempted downloads.
             - "failed_downloads" (int): Number of downloads that failed.
-            - "success_rate" (float): Percentage of successful downloads (0.0-100.0).
+            - "success_rate" (float): Percentage of successful downloads (0.0–100.0).
             - "android_downloads" (int): Number of Android artifacts downloaded.
             - "firmware_downloads" (int): Number of firmware artifacts downloaded.
         """
