@@ -530,6 +530,52 @@ class DownloadOrchestrator:
         # Generate detailed retry report
         self._generate_retry_report(retryable_failures, non_retryable_failures)
 
+    def _create_failure_result(
+        self,
+        failed_result: DownloadResult,
+        file_path: Path,
+        download_url: str,
+        file_type: str,
+        error_message: str,
+        exception_message: Optional[str] = None,
+        is_retryable_override: Optional[bool] = None,
+    ) -> DownloadResult:
+        """
+        Create a standardized failure DownloadResult for retry attempts.
+
+        Parameters:
+            failed_result: The original failed download result.
+            file_path: Path where file would have been saved.
+            download_url: URL that was being downloaded.
+            file_type: Type of file being downloaded.
+            error_message: Description of the failure.
+            exception_message: Optional exception message to include.
+            is_retryable_override: Optional override for retryability determination.
+
+        Returns:
+            DownloadResult: A failure result with consistent retry metadata.
+        """
+        if is_retryable_override is not None:
+            is_retryable = is_retryable_override
+        else:
+            is_retryable = failed_result.retry_count < self.config.get("MAX_RETRIES", 3)
+
+        final_message = exception_message or error_message
+
+        return DownloadResult(
+            success=False,
+            release_tag=failed_result.release_tag,
+            file_path=file_path,
+            download_url=download_url,
+            file_size=failed_result.file_size,
+            file_type=file_type,
+            retry_count=failed_result.retry_count,
+            retry_timestamp=failed_result.retry_timestamp,
+            error_message=final_message,
+            error_type="retry_failure",
+            is_retryable=is_retryable,
+        )
+
     def _retry_single_failure(self, failed_result: DownloadResult) -> DownloadResult:
         """
         Attempt a single retry of a previously failed download using metadata from the provided DownloadResult.
@@ -585,35 +631,20 @@ class DownloadOrchestrator:
                 logger.debug("Retry not supported for file type: %s", file_type)
 
             # If we reach here, retry failed verification or download
-            return DownloadResult(
-                success=False,
-                release_tag=failed_result.release_tag,
-                file_path=Path(target_path),
-                download_url=url,
-                file_size=failed_result.file_size,
-                file_type=file_type,
-                retry_count=failed_result.retry_count,
-                retry_timestamp=failed_result.retry_timestamp,
-                error_message="Retry attempt failed",
-                error_type="retry_failure",
-                is_retryable=failed_result.retry_count
-                < self.config.get("MAX_RETRIES", 3),
+            return self._create_failure_result(
+                failed_result, Path(target_path), url, file_type, "Retry attempt failed"
             )
 
         except (requests.RequestException, OSError, ValueError, TypeError) as exc:
             logger.error(f"Retry exception for {failed_result.release_tag}: {exc}")
-            return DownloadResult(
-                success=False,
-                release_tag=failed_result.release_tag,
-                file_path=Path(target_path),
-                download_url=url,
-                file_size=failed_result.file_size,
-                file_type=file_type,
-                retry_count=failed_result.retry_count,
-                retry_timestamp=failed_result.retry_timestamp,
-                error_message=str(exc),
-                error_type="retry_failure",
-                is_retryable=False,
+            return self._create_failure_result(
+                failed_result,
+                Path(target_path),
+                url,
+                file_type,
+                "",
+                str(exc),
+                is_retryable_override=False,
             )
 
     def _generate_retry_report(
