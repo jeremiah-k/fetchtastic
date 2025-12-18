@@ -379,6 +379,7 @@ class RepositoryDownloader(BaseDownloader):
                 return True
 
             # Remove all contents of the repository directory
+            had_errors = False
             for item in os.listdir(repo_dir):
                 item_path = os.path.join(repo_dir, item)
                 try:
@@ -395,11 +396,12 @@ class RepositoryDownloader(BaseDownloader):
                 except OSError as e:
                     logger.error(f"Error removing {item_path}: {e}")
                     self._cleanup_summary["errors"].append(f"{item_path}: {e}")
-                    return False
+                    had_errors = True
 
-            logger.info(f"Successfully cleaned repository directory: {repo_dir}")
-            self._cleanup_summary["success"] = True
-            return True
+            if not had_errors:
+                logger.info(f"Successfully cleaned repository directory: {repo_dir}")
+            self._cleanup_summary["success"] = not had_errors
+            return not had_errors
 
         except OSError as e:
             logger.error(f"Error cleaning repository directory: {e}")

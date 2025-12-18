@@ -1,5 +1,6 @@
 # src/fetchtastic/setup_config.py
 
+import functools
 import getpass
 import os
 import platform
@@ -40,6 +41,31 @@ RECOMMENDED_EXCLUDE_PATTERNS = [
     "*_epaper*",  # e-paper display variants
     "*_eink*",  # e-ink display variants
 ]
+
+
+# Decorator for functions that require crontab command
+def cron_command_required(func):
+    """
+    Decorator to check crontab availability before executing function.
+
+    If crontab is not available, prints an informative message and returns early.
+    For 'check' functions, returns False. For other functions, returns None.
+    """
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        if not _crontab_available():
+            print(
+                "Cron configuration skipped: 'crontab' command not found on this system."
+            )
+            # Return appropriate default based on function name
+            if "check" in func.__name__:
+                return False
+            return None
+        return func(*args, **kwargs)
+
+    return wrapper
+
 
 # Cron job schedule configurations
 CRON_SCHEDULES = {
@@ -2429,11 +2455,12 @@ def _crontab_available() -> bool:
     return shutil.which("crontab") is not None
 
 
+@cron_command_required
 def setup_cron_job(frequency="hourly"):
     """
     Configure or replace the user's crontab entry to run Fetchtastic on a regular schedule.
 
-    This will remove existing Fetchtastic cron entries (excluding any `@reboot` lines) and write a single scheduled entry that invokes the Fetchtastic downloader. On Windows the function does nothing; when a system crontab is not available it returns without making changes. An invalid or unknown frequency key falls back to the hourly schedule.
+    This will remove existing Fetchtastic cron entries (excluding any `@reboot` lines) and write a single scheduled entry that invokes the Fetchtastic downloader. On Windows the function does nothing; when a system crontab is not available it returns without making changes. An invalid or unknown frequency key falls back to hourly schedule.
 
     Parameters:
         frequency (str): Schedule key from CRON_SCHEDULES (e.g., "hourly", "daily"). Defaults to "hourly"; unknown values will be treated as "hourly".
@@ -2508,6 +2535,7 @@ def setup_cron_job(frequency="hourly"):
         print(f"An error occurred while setting up the cron job: {e}")
 
 
+@cron_command_required
 def remove_cron_job():
     """
     Remove Fetchtastic's daily cron entries from the current user's crontab.
@@ -2517,10 +2545,6 @@ def remove_cron_job():
     # Skip cron job removal on Windows
     if platform.system() == "Windows":
         print("Cron jobs are not supported on Windows.")
-        return
-
-    if not _crontab_available():
-        print("Cron configuration skipped: 'crontab' command not found on this system.")
         return
 
     try:
@@ -2592,11 +2616,12 @@ def remove_boot_script():
         print("Boot script removed.")
 
 
+@cron_command_required
 def setup_reboot_cron_job():
     """
-    Ensure that user's crontab contains an @reboot entry that runs Fetchtastic at system startup.
+    Add a @reboot crontab entry to run Fetchtastic after system reboots.
 
-    This function removes any existing `@reboot` cron lines that are marked for Fetchtastic and adds a single `@reboot <path-to-fetchtastic> download  # fetchtastic` entry. It is a no-op on Windows and will also skip when a crontab implementation is not available. If the `fetchtastic` executable cannot be found in PATH or an error occurs while updating the crontab, a message is printed and the crontab is left unchanged.
+    This function is a no-op on Windows and if the system crontab is unavailable. It reads the existing crontab, preserves any current @reboot entries, adds the Fetchtastic reboot command, and writes the updated crontab back. Status messages and errors are printed to stdout.
     """
     # Skip cron job setup on Windows
     if platform.system() == "Windows":
@@ -2653,14 +2678,12 @@ def setup_reboot_cron_job():
         print(f"An error occurred while setting up the reboot cron job: {e}")
 
 
+@cron_command_required
 def remove_reboot_cron_job():
     """
-    Remove any Fetchtastic @reboot entry from the user's crontab.
+    Remove the @reboot crontab entry for Fetchtastic from the current user's crontab.
 
-    If run on Windows or when a system crontab is unavailable, the function makes no changes.
-    This updates the user's crontab in-place by removing lines that start with `@reboot` and reference
-    `fetchtastic` (for example `# fetchtastic` or `fetchtastic download`). Errors encountered while
-    editing the crontab are reported to stdout but not propagated.
+    This function is a no-op on Windows and if the system crontab is unavailable. It reads the existing crontab, filters out lines containing the Fetchtastic reboot command while preserving all other entries, and writes the updated crontab back. Status and error messages are printed to stdout.
     """
     # Skip cron job removal on Windows
     if platform.system() == "Windows":
@@ -2705,17 +2728,16 @@ def remove_reboot_cron_job():
         print(f"An error occurred while removing the reboot cron job: {e}")
 
 
+@cron_command_required
 def check_cron_job_exists():
     """
-    Determine whether a non-@reboot crontab entry for Fetchtastic exists on the current system.
+    Check if any Fetchtastic cron jobs exist in the current user's crontab.
 
-    Checks the user's crontab for any line (excluding @reboot entries) containing either a comment "# fetchtastic" or substring "fetchtastic download". Returns False on Windows, when crontab is unavailable, or if an error occurs while checking.
-
-    Returns:
-        bool: `True` if a matching crontab entry is present, `False` otherwise.
+    This function is a no-op on Windows and if the system crontab is unavailable. Returns False if no Fetchtastic entries are found; True if any matching entries are detected.
     """
-    # Skip cron job check on Windows
+    # Skip cron job checking on Windows
     if platform.system() == "Windows":
+        print("Cron jobs are not supported on Windows.")
         return False
 
     if not _crontab_available():
@@ -2750,15 +2772,16 @@ def check_boot_script_exists():
     return os.path.exists(boot_script)
 
 
+@cron_command_required
 def check_any_cron_jobs_exist():
     """
-    Determine whether any Fetchtastic cron jobs (daily or reboot) are present for the current user.
+    Check if any cron jobs exist in the current user's crontab.
 
-    Returns:
-        bool: `True` if any cron lines containing "# fetchtastic" or "fetchtastic download" exist for the current user, `False` otherwise.
+    This function is a no-op on Windows and if the system crontab is unavailable. Returns False if no cron entries are found; True if any entries are detected.
     """
-    # Skip cron job check on Windows
+    # Skip cron job checking on Windows
     if platform.system() == "Windows":
+        print("Cron jobs are not supported on Windows.")
         return False
 
     if not _crontab_available():
