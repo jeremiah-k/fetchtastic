@@ -54,11 +54,11 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
     def __init__(self, config: Dict[str, Any], cache_manager: "CacheManager"):
         """
-        Initialize the firmware downloader with configuration and a cache manager.
-
+        Initialize the firmware downloader with runtime configuration and a cache manager.
+        
         Parameters:
-            config (Dict[str, Any]): Runtime configuration used to locate download directories, selected assets, and feature flags.
-            cache_manager (CacheManager): Cache manager used for API responses and remote directory listings.
+            config: Runtime configuration dict used to determine download directories, selected asset patterns, and feature flags (e.g., prerelease checks).
+            cache_manager: CacheManager used for cached API responses, tracking files, and remote directory listings.
         """
         super().__init__(config)
         self.cache_manager = cache_manager
@@ -71,16 +71,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
     def get_target_path_for_release(self, release_tag: str, file_name: str) -> str:
         """
-        Compute a legacy-preserving filesystem path for a firmware asset under the downloader's firmware directory.
-
-        The function ensures the release and file name are sanitized and that the target version directory exists.
-
-        Parameters:
-            release_tag (str): Release tag used to create the version subdirectory.
-            file_name (str): Name of the firmware asset file.
-
+        Compute the sanitized filesystem path for a firmware asset inside the downloader's firmware directory and ensure the version directory exists.
+        
+        Ensures the release tag and file name are sanitized and creates the version subdirectory if missing.
+        
         Returns:
-            target_path (str): Absolute path to where the firmware asset should be stored.
+            Absolute path to the target location for the firmware asset.
         """
         safe_release = self._sanitize_required(release_tag, "release tag")
         safe_name = self._sanitize_required(file_name, "file name")
@@ -91,13 +87,13 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
     def get_releases(self, limit: Optional[int] = None) -> List[Release]:
         """
-        Fetch and parse firmware releases from GitHub into Release objects.
-
+        Fetch firmware releases from GitHub and produce Release objects with their associated assets.
+        
         Parameters:
-            limit (Optional[int]): Maximum number of releases to return; if omitted returns all available.
-
+            limit (Optional[int]): Maximum number of releases to return; when omitted returns all parsed releases.
+        
         Returns:
-            List[Release]: Parsed releases (each with associated Asset entries); returns an empty list on error or if GitHub data is invalid.
+            List[Release]: Parsed Release objects (each includes its Asset entries); returns an empty list if no valid releases are found or an error occurs.
         """
         try:
             params = {"per_page": 8}
@@ -185,24 +181,23 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
     def get_download_url(self, asset: Asset) -> str:
         """
-        Get the direct download URL for the given firmware asset.
-
+        Return the direct download URL for the asset.
+        
         Returns:
-            download_url (str): Direct download URL for the asset.
+            str: Direct download URL for the asset.
         """
         return asset.download_url
 
     def download_firmware(self, release: Release, asset: Asset) -> DownloadResult:
         """
-        Download and verify a firmware asset for a given release and report the outcome.
-
+        Download and verify a firmware asset for a release and return a structured result.
+        
         Parameters:
-            release (Release): Release metadata containing the asset's release tag.
-            asset (Asset): Asset metadata describing the firmware file (e.g., name, size, download_url).
-
+            release (Release): Release containing the asset.
+            asset (Asset): Asset describing the firmware file to download.
+        
         Returns:
-            DownloadResult: Result object describing success or failure, including file_path, download_url,
-            file_size, file_type and additional flags such as `was_skipped` or `is_retryable`.
+            DownloadResult: Result describing the outcome. On success includes `file_path`, `download_url`, `file_size`, and `file_type`; when the download was unnecessary includes `was_skipped`; on failure includes `error_message`, `error_type` (e.g., `"network_error"`, `"validation_error"`, `"filesystem_error"`) and `is_retryable`.
         """
         target_path: Optional[str] = None
         try:
@@ -383,14 +378,14 @@ class FirmwareReleaseDownloader(BaseDownloader):
         self, patterns: List[str], exclude_patterns: List[str]
     ) -> bool:
         """
-        Check whether the provided extraction include and exclude patterns are safe and well-formed.
-
+        Validate that the provided include and exclude glob patterns for extraction are well-formed and safe.
+        
         Parameters:
             patterns (List[str]): Filename glob patterns to include during extraction.
             exclude_patterns (List[str]): Filename glob patterns to exclude during extraction.
-
+        
         Returns:
-            bool: `True` if the patterns are valid, `False` otherwise.
+            `True` if the patterns are valid, `False` otherwise.
         """
         return self.file_operations.validate_extraction_patterns(
             patterns, exclude_patterns
@@ -404,10 +399,16 @@ class FirmwareReleaseDownloader(BaseDownloader):
         exclude_patterns: List[str],
     ) -> bool:
         """
-        Determine whether files should be extracted from the archive.
-
+        Determines whether files should be extracted from an archive into a target directory based on include/exclude patterns and current extracted contents.
+        
+        Parameters:
+            file_path (str): Path to the archive file.
+            extract_dir (str): Directory where files would be extracted.
+            patterns (List[str]): Glob patterns of files to include.
+            exclude_patterns (List[str]): Glob patterns of files to exclude.
+        
         Returns:
-            True if extraction is needed, False otherwise.
+            bool: `True` if extraction is needed (files are missing, outdated, or do not match the patterns), `False` otherwise.
         """
         return self.file_operations.check_extraction_needed(
             file_path, extract_dir, patterns, exclude_patterns
@@ -572,10 +573,10 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
     def get_latest_release_tag(self) -> Optional[str]:
         """
-        Get the latest firmware release tag from the tracking file.
-
+        Return the latest firmware release tag stored in the tracking JSON file.
+        
         Returns:
-            Optional[str]: Latest release tag, or None if not found
+            latest_version (Optional[str]): The tracked latest release tag, or None if the tracking file is missing or contains invalid JSON.
         """
         latest_file = self.latest_release_path
         if os.path.exists(latest_file):
@@ -589,13 +590,13 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
     def update_latest_release_tag(self, release_tag: str) -> bool:
         """
-        Update the tracked latest firmware release tag stored in the downloader's tracking file.
-
+        Record the provided firmware release tag as the latest tracked release.
+        
         Parameters:
-            release_tag: The release tag to record.
-
+            release_tag (str): The release tag to persist (for example, "v1.2.3").
+        
         Returns:
-            `True` if the tracking file was written successfully, `False` otherwise.
+            `true` if the tracking file was written successfully, `false` otherwise.
         """
         latest_file = self.latest_release_path
         data = {
@@ -607,10 +608,10 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
     def _get_current_iso_timestamp(self) -> str:
         """
-        Get the current UTC timestamp in ISO 8601 format.
-
+        Return the current UTC timestamp in ISO 8601 format.
+        
         Returns:
-            iso_timestamp (str): ISO 8601 formatted UTC timestamp (UTC timezone).
+            iso_timestamp (str): ISO 8601 formatted UTC timestamp including the UTC timezone offset.
         """
         from datetime import datetime, timezone
 
@@ -640,10 +641,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
     def _get_prerelease_patterns(self) -> List[str]:
         """
-        Return the normalized list of prerelease asset selection patterns from the configuration.
-
+        Normalize and return the prerelease asset selection patterns from the configuration.
+        
+        If the configuration key "SELECTED_PRERELEASE_ASSETS" is missing or falsy, returns an empty list. If the configured value is already a list, it is returned unchanged; if it is a single non-list value, it is converted to a single-item list containing its string representation.
+        
         Returns:
-            A list of patterns used to select prerelease assets. If the config value is a single non-list value, it is converted to a single-item list containing its string representation.
+            List[str]: Patterns used to select prerelease assets; empty list if none configured.
         """
         patterns = self.config.get("SELECTED_PRERELEASE_ASSETS") or []
         return patterns if isinstance(patterns, list) else [str(patterns)]
@@ -857,10 +860,19 @@ class FirmwareReleaseDownloader(BaseDownloader):
         force_refresh: bool = False,
     ) -> tuple[list[DownloadResult], list[DownloadResult], bool]:
         """
-        Public entry-point for downloading prerelease assets with optional pattern filters.
-
-        Delegates to `_download_prerelease_assets` while exposing a stable signature
-        for consumers like the CLI integration.
+        Download prerelease assets from a remote prerelease directory into the local prerelease store using include and exclude patterns.
+        
+        Parameters:
+            remote_dir (str): Remote prerelease directory identifier or path to fetch files from.
+            selected_patterns (Optional[List[str]]): Glob patterns to include; empty list means include all.
+            exclude_patterns (Optional[List[str]]): Glob patterns to exclude; empty list means exclude none.
+            force_refresh (bool): If true, refresh remote listing/cache before deciding which files to download.
+        
+        Returns:
+            tuple[list[DownloadResult], list[DownloadResult], bool]: A 3-tuple containing:
+                - successes: list of successful DownloadResult entries,
+                - failures: list of failed DownloadResult entries,
+                - any_downloaded: `True` if any file was downloaded during this call, `False` otherwise.
         """
         return self._download_prerelease_assets(
             remote_dir,
@@ -1079,22 +1091,22 @@ class FirmwareReleaseDownloader(BaseDownloader):
         recent_commits: Optional[List[Dict[str, Any]]] = None,
     ) -> List[Release]:
         """
-        Filter and return prerelease Release objects that match configured patterns, the expected base version derived from the latest stable release, and (optionally) recent commit hashes.
-
+        Filter prerelease Release objects according to configuration, the expected base version derived from the latest stable release, and optional recent commit hashes.
+        
         This function:
         - Returns an empty list when prerelease checking is disabled via configuration.
         - Excludes prereleases whose tag appears to be a hash-suffixed version.
         - Sorts remaining prereleases by published date (newest first).
-        - Applies include/exclude pattern filtering using configuration values "FIRMWARE_PRERELEASE_INCLUDE_PATTERNS" and "FIRMWARE_PRERELEASE_EXCLUDE_PATTERNS" when provided.
+        - Applies include/exclude pattern filtering using configuration keys "FIRMWARE_PRERELEASE_INCLUDE_PATTERNS" and "FIRMWARE_PRERELEASE_EXCLUDE_PATTERNS" when provided.
         - Derives an expected prerelease base version from the latest stable release and keeps only prereleases whose cleaned version starts with that base.
         - If recent_commits is provided, further prefers prereleases whose tag contains any 7-character commit SHA present in that list.
-
+        
         Parameters:
             releases (List[Release]): All releases to consider.
-            recent_commits (Optional[List[Dict[str, Any]]]): Optional list of recent commit objects; commit dicts are expected to contain a "sha" key used to derive 7-character hashes for tag matching.
-
+            recent_commits (Optional[List[Dict[str, Any]]]): Optional list of recent commit objects; each commit dict is expected to contain a "sha" key used to derive 7-character hashes for tag matching.
+        
         Returns:
-            List[Release]: Filtered list of prerelease Release objects satisfying the configured and derived constraints.
+            List[Release]: Filtered list of prerelease Release objects that satisfy the configured and derived constraints.
         """
         # Check if prereleases are enabled in config
         check_prereleases = self.config.get(
@@ -1193,17 +1205,15 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
     def update_prerelease_tracking(self, prerelease_tag: str) -> bool:
         """
-        Record the given prerelease tag and its enhanced metadata to the prerelease tracking file.
-
+        Record a prerelease tag and its metadata to the prerelease tracking file.
+        
+        The stored metadata includes base version, prerelease type and number, commit hash, file type, and last updated timestamp.
+        
         Parameters:
             prerelease_tag (str): Prerelease tag to record.
-
+        
         Returns:
-            `true` if the tracking file was written successfully, `false` otherwise.
-
-        Description:
-            The tracking entry includes the prerelease tag, file type, timestamp, base version,
-            prerelease type and number, and commit hash.
+            bool: True if the tracking file was written successfully, False otherwise.
         """
         tracking_file = self.get_prerelease_tracking_file()
 
@@ -1226,13 +1236,13 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
     def should_download_prerelease(self, prerelease_tag: str) -> bool:
         """
-        Decides whether the given prerelease tag should be downloaded based on configuration and prerelease tracking.
-
+        Decides whether a prerelease tag is newer than the currently tracked prerelease and should be downloaded.
+        
         Parameters:
-            prerelease_tag (str): The prerelease tag to evaluate.
-
+        	prerelease_tag (str): The prerelease tag to evaluate.
+        
         Returns:
-            bool: `true` if the tag represents a newer prerelease and should be downloaded; `false` if prerelease checks are disabled or the tag is not newer. If no tracking file exists or the tracking data is unreadable, returns `true`.
+        	True if prerelease checks are enabled and `prerelease_tag` is newer than the tracked prerelease, or if no valid tracking data exists; `False` otherwise.
         """
         # Check if prereleases are enabled in config
         if not self.config.get(
@@ -1331,11 +1341,11 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
     def cleanup_superseded_prereleases(self, latest_release_tag: str) -> bool:
         """
-        Remove prerelease firmware directories that are superseded by a given official release.
-
+        Remove prerelease firmware directories whose semantic version is less than or equal to a given official release.
+        
         Parameters:
-            latest_release_tag (str): Official release tag (may include a leading "v") used to determine which prerelease versions are older or equal.
-
+            latest_release_tag (str): Official release tag used for comparison; may include a leading "v".
+        
         Returns:
             bool: `True` if any prerelease directories were removed, `False` otherwise.
         """

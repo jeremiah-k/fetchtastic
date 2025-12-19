@@ -45,10 +45,12 @@ class TestMeshtasticAndroidAppDownloader:
     @pytest.fixture
     def mock_cache_manager(self, tmp_path):
         """
-        Provide a Mock configured to mimic CacheManager behavior for tests.
-
+        Create a Mock configured to emulate CacheManager behavior for tests.
+        
+        The mock has its spec set to CacheManager, a `cache_dir` attribute pointing to a temporary cache directory, and `get_cache_file_path(file_name)` configured to return a path within that cache directory.
+        
         Returns:
-            Mock: A unittest.mock.Mock instance with its spec set to CacheManager.
+            Mock: A unittest.mock.Mock instance with spec=CacheManager and cache helpers configured.
         """
         mock = Mock(spec=CacheManager)
         mock.cache_dir = str(tmp_path / "cache")

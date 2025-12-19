@@ -38,10 +38,11 @@ copy_to_clipboard_func = setup_config.copy_to_clipboard_func
 
 def display_version_info():
     """
-    Retrieve version information for the installed package and the latest available release.
-
+    Get version information for the installed Fetchtastic package and the latest available release.
+    
     Returns:
-        Version information suitable for display (e.g., details about the current installed version and the latest available version).
+        Mapping: Details about the installed version and the latest release (for example keys like
+        'installed_version' and 'latest_version').
     """
     return setup_config.display_version_info()
 
@@ -57,7 +58,12 @@ def get_upgrade_command():
 
 
 def _display_update_reminder(latest_version: str) -> None:
-    """Display update availability reminder to the user."""
+    """
+    Announces that a newer Fetchtastic version is available to the user.
+    
+    Parameters:
+        latest_version (str): The latest available version string (for example, "1.2.3").
+    """
     upgrade_cmd = get_upgrade_command()
     log_utils.logger.info("\nUpdate Available")
     log_utils.logger.info(
@@ -71,22 +77,11 @@ def main():
 
     """
     Entry point for the Fetchtastic command-line interface.
-
-    Parses CLI arguments and dispatches subcommands:
-    - `setup`: Run initial configuration or update Windows integrations.
-    - `download`: Ensure/migrate config and run the downloader.
-    - `topic`: Show NTFY topic and optionally copy to clipboard.
-    - `clean`: Perform a destructive cleanup.
-    - `version`: Show current/available versions.
-    - `repo`: Browse/clean repository downloads.
-    - `help`: Display contextual help.
-
-    Side effects:
-    - Reads, creates, migrates, or removes configuration files and directories.
-    - Modifies system startup/cron entries and repository download directories.
-    - Invokes interactive setup, downloader, or repository routines.
-    - Copies text to the clipboard.
-    - Emits informational output to stdout and log messages.
+    
+    Parses command-line arguments and dispatches subcommands: setup, download, topic,
+    clean, version, repo, and help. Subcommands may read, create, migrate, or remove
+    configuration; run interactive setup flows; invoke download or repository
+    operations; modify system startup/cron entries; and copy text to the clipboard.
     """
     parser = argparse.ArgumentParser(
         description="Fetchtastic - Meshtastic Firmware and APK Downloader"
@@ -461,9 +456,9 @@ def show_help(
 
 def run_clean():
     """
-    Delete Fetchtastic configuration, managed downloads, and platform integrations after explicit user confirmation.
-
-    This operation removes current and legacy configuration files, Fetchtastic-managed directories and files inside the configured download directory, platform-specific integrations (Windows Start Menu and startup shortcuts, non-Windows crontab entries, Termux boot script), and the Fetchtastic log file. The action is irreversible and preserves files not identified as managed.
+    Permanently remove Fetchtastic configuration, managed downloads, and platform integrations after explicit user confirmation.
+    
+    Prompts the user for confirmation and, if confirmed, deletes current and legacy configuration files, Fetchtastic-managed files and directories within the configured download directory, platform-specific integrations (Windows Start Menu and startup shortcuts, non-Windows crontab entries, Termux boot script), and the Fetchtastic log file. Preserves files not identified as managed. This action is irreversible.
     """
     print(
         "This will remove Fetchtastic configuration files, downloaded files, and cron job entries."
@@ -481,6 +476,16 @@ def run_clean():
     old_config_file = setup_config.OLD_CONFIG_FILE
 
     def _try_remove(path: str, *, is_dir: bool = False, description: str) -> None:
+        """
+        Attempt to remove a filesystem path and report the outcome.
+        
+        If the given path does not exist, the function does nothing. If removal succeeds, a confirmation message is printed to stdout; if it fails, an error message with the failure reason is printed to stderr.
+        
+        Parameters:
+            path (str): Path to the file or directory to remove.
+            is_dir (bool): If true, treat `path` as a directory and remove it recursively; otherwise remove it as a file.
+            description (str): Human-readable name for the item being removed used in status messages.
+        """
         if not os.path.exists(path):
             return
         try:
@@ -589,9 +594,12 @@ def run_clean():
 
     def _remove_managed_file(item_path: str) -> None:
         """
-        Remove the managed file at the given filesystem path.
-
-        If removal fails, the error is logged and not propagated.
+        Remove a managed file at the given filesystem path.
+        
+        If removal fails, logs an error and does not raise an exception.
+        
+        Parameters:
+        	item_path (str): Filesystem path of the managed file to remove.
         """
         try:
             os.remove(item_path)
@@ -656,10 +664,10 @@ def run_clean():
 
 def run_repo_clean(config):
     """
-    Prompt the user and remove all files downloaded from the meshtastic.github.io repository for the given configuration.
-
-    Prompts for confirmation; if the user confirms, uses RepositoryDownloader to clean the repository download directory and prints whether the operation succeeded or was cancelled.
-
+    Prompt the user and, if confirmed, remove all files downloaded from the meshtastic.github.io repository for the given configuration.
+    
+    If the user confirms (default is no), the function deletes repository download files referenced by the provided configuration, prints a summary of removed files and directories, and logs the cleanup results. Any cleanup errors are printed to stderr and recorded in the logger.
+    
     Parameters:
         config: Configuration object used to locate and manage the repository download directory.
     """

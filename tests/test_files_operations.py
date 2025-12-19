@@ -213,7 +213,11 @@ class TestIsReleaseComplete:
         assert result is False
 
     def test_corrupted_zip_file(self, tmp_path):
-        """Test with corrupted zip file."""
+        """
+        Verify _is_release_complete returns False when an asset's ZIP file is present but is corrupted or not a valid ZIP.
+        
+        Creates a non-ZIP file named as the expected asset and asserts the function reports the release as incomplete.
+        """
         release_dir = tmp_path / "release"
         release_dir.mkdir()
 
@@ -539,7 +543,11 @@ class TestSafeExtractPath:
             safe_extract_path(str(tmp_path), "/etc/passwd")
 
     def test_null_byte_attack(self, tmp_path):
-        """Test protection against null byte."""
+        """
+        Ensure safe_extract_path propagates a ValueError when the requested extraction path contains a null byte.
+        
+        Asserts that calling safe_extract_path with a path containing a null byte raises ValueError.
+        """
         # os.path.realpath raises ValueError for null bytes before our check
         with pytest.raises(ValueError):
             safe_extract_path(str(tmp_path), "safe/file.txt\x00evil.txt")

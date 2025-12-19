@@ -120,36 +120,35 @@ class DownloadTask(ABC):
     def validate(self) -> bool:
         """
         Determine whether the download task is ready to be executed.
-
+        
         Returns:
-            bool: `True` if the task is valid and ready to execute, `False` otherwise.
+            true if the task is ready to execute, false otherwise.
         """
 
     @abstractmethod
     def execute(self) -> DownloadResult:
         """
-        Perform the download operation and return a structured result describing its outcome.
-
+        Perform the download operation and report its outcome.
+        
         Returns:
-            DownloadResult: Result containing success flag, file and extraction details, error information, and retry metadata.
+            DownloadResult: Object containing the success flag, optional release tag and target file path, extracted file paths when applicable, error message and details, HTTP status code if available, retry count and timestamp, retryability flag, skip indicator, and other related metadata.
         """
 
     @abstractmethod
     def get_target_path(self) -> Pathish:
         """
-        Provide the intended filesystem path where the downloaded artifact should be saved.
-
+        Return the filesystem path where the download should be saved.
+        
         Returns:
-            Pathish: The intended file path for the download.
+            The intended filesystem path for the downloaded artifact.
         """
 
     @abstractmethod
     def cleanup(self) -> None:
         """
-        Clean up any temporary files or resources.
-
-        This method should be called after a download operation to clean up
-        any temporary files, even if the download failed.
+        Release temporary files and other resources used by the task.
+        
+        Intended to be invoked after a download operation to ensure resources are released even if the download failed.
         """
 
 
@@ -176,22 +175,25 @@ class DownloadSource(ABC):
     @abstractmethod
     def get_assets(self, release: Release) -> List[Asset]:
         """
-        Retrieve the downloadable assets associated with a release.
-
+        Retrieve downloadable assets for the given release.
+        
+        Parameters:
+            release (Release): Release whose assets should be returned.
+        
         Returns:
-            A list of assets belonging to the provided release.
+            List[Asset]: Assets belonging to the provided release.
         """
 
     @abstractmethod
     def get_download_url(self, asset: Asset) -> str:
         """
-        Get the download URL for a specific asset.
-
-        Args:
-            asset: The asset to get download URL for
-
+        Return the direct download URL for the given asset.
+        
+        Parameters:
+            asset (Asset): The asset whose direct download URL is requested.
+        
         Returns:
-            str: Direct download URL for the asset
+            str: Direct download URL for the asset.
         """
 
 
@@ -206,27 +208,25 @@ class Downloader(ABC):
     @abstractmethod
     def download(self, url: str, target_path: Pathish) -> bool:
         """
-        Download the resource at the given URL and save it to the specified path.
-
-        Parameters:
-            url (str): URL of the resource to download.
-            target_path (Pathish): Destination filesystem path for the downloaded file.
-
+        Download the resource at url and save it to target_path.
+        
         Returns:
-            True if the download and write completed successfully, False otherwise.
+            True if the resource was successfully downloaded and written to target_path, False otherwise.
         """
 
     @abstractmethod
     def verify(self, file_path: Pathish, expected_hash: Optional[str] = None) -> bool:
         """
-        Verify that a downloaded file's integrity matches expectations.
-
+        Validate that the file at file_path matches an expected integrity check.
+        
+        If an expected_hash is provided, the file's digest is compared against that hex-encoded value; otherwise the downloader's default verification is applied.
+        
         Parameters:
-            file_path (Pathish): Path to the downloaded file to verify.
-            expected_hash (Optional[str]): Optional expected hash (hex string) to validate the file against.
-
+            file_path (Pathish): Path to the file to verify.
+            expected_hash (Optional[str]): Optional hex-encoded digest to check against.
+        
         Returns:
-            bool: `true` if the file passes verification, `false` otherwise.
+            `true` if the file's contents match the expected hash or pass verification, `false` otherwise.
         """
 
     @abstractmethod
@@ -253,14 +253,14 @@ class Downloader(ABC):
         self, patterns: List[str], exclude_patterns: List[str]
     ) -> bool:
         """
-        Validate that extraction include and exclude patterns are syntactically valid and safe for use during archive extraction.
-
+        Determine whether include and exclude extraction patterns are well-formed and safe for archive extraction.
+        
         Parameters:
-            patterns (List[str]): File-matching patterns to include during extraction.
-            exclude_patterns (List[str]): File-matching patterns to exclude during extraction.
-
+            patterns (List[str]): File-glob patterns to include when extracting archive contents.
+            exclude_patterns (List[str]): File-glob patterns to exclude from extraction.
+        
         Returns:
-            bool: `True` if all patterns are well-formed and considered safe, `False` otherwise.
+            `true` if all patterns are well-formed and considered safe for extraction, `false` otherwise.
         """
 
     @abstractmethod
@@ -272,16 +272,16 @@ class Downloader(ABC):
         exclude_patterns: List[str],
     ) -> bool:
         """
-        Determine whether extraction should run by checking for presence of files that match the given extraction patterns under the target extraction directory, excluding any exclude patterns.
-
+        Decides whether archive extraction is necessary by checking for files matching the provided include and exclude patterns in the extraction directory.
+        
         Parameters:
-            file_path (str): Path to the archive file that would be extracted.
-            extract_dir (str): Directory where extraction output should reside.
-            patterns (List[str]): Filename or glob patterns that specify which files to extract.
-            exclude_patterns (List[str]): Filename or glob patterns to exclude from extraction.
-
+            file_path (str): Path to the archive file intended for extraction.
+            extract_dir (str): Directory where extracted files are expected to be located.
+            patterns (List[str]): Glob or filename patterns that identify files required from the archive.
+            exclude_patterns (List[str]): Glob or filename patterns to ignore when checking for required files.
+        
         Returns:
-            `true` if extraction is needed (expected files are missing or incomplete), `false` otherwise.
+            `true` if extraction should be performed because required files are missing or incomplete, `false` otherwise.
         """
 
     @abstractmethod
@@ -296,17 +296,17 @@ class Downloader(ABC):
     @abstractmethod
     def get_version_manager(self) -> "VersionManager":
         """
-        Return the downloader's associated VersionManager.
-
+        Get the VersionManager associated with this downloader.
+        
         Returns:
-            VersionManager: The associated version manager instance.
+            VersionManager: The associated VersionManager instance.
         """
 
     @abstractmethod
     def get_cache_manager(self) -> "CacheManager":
         """
-        Retrieve the cache manager associated with this downloader.
-
+        Get the cache manager associated with this downloader.
+        
         Returns:
-            CacheManager: The cache manager instance used by this downloader.
+            CacheManager: The cache manager used by this downloader.
         """

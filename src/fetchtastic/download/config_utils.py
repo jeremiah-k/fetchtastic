@@ -12,9 +12,17 @@ from fetchtastic.log_utils import logger
 
 def _get_string_list_from_config(config: Dict[str, Any], key: str) -> List[str]:
     """
-    Extract a list of strings from a configuration key.
-
-    Handles both string and list values, always returning a list.
+    Extract a list of strings from the given configuration key.
+    
+    Parameters:
+        config (Dict[str, Any]): Configuration mapping to read the value from.
+        key (str): The configuration key whose value should be extracted.
+    
+    Returns:
+        List[str]: A list of strings derived from the configuration value:
+            - empty list if the key is missing or the value is falsy,
+            - if the value is a list, each item converted to a string,
+            - otherwise a single-element list containing the stringified value.
     """
     value = config.get(key)
     if not value:
