@@ -2759,9 +2759,9 @@ def check_any_cron_jobs_exist():
         return False
 
     try:
-        crontab_path = shutil.which("crontab")
-        if not crontab_path:
-            return False
+        crontab_path = shutil.which(
+            "crontab"
+        )  # Decorator already validated, safe to call
         result = subprocess.run(
             [crontab_path, "-l"],
             stdout=subprocess.PIPE,
@@ -2772,14 +2772,6 @@ def check_any_cron_jobs_exist():
             return False
         existing_cron = result.stdout.strip()
         return any(line.strip() for line in existing_cron.splitlines())
-        if result.returncode != 0:
-            return False
-        existing_cron = result.stdout.strip()
-        return any(
-            ("# fetchtastic" in line or "fetchtastic download" in line)
-            for line in existing_cron.splitlines()
-            if not line.strip().startswith("@reboot")
-        )
     except Exception as e:
         print(f"An error occurred while checking for existing cron jobs: {e}")
         return False
@@ -2806,21 +2798,14 @@ def check_cron_job_exists():
         return False
 
     try:
-        crontab_path = shutil.which("crontab")
-        if not crontab_path:
-            return False
+        crontab_path = shutil.which(
+            "crontab"
+        )  # Decorator already validated, safe to call
         result = subprocess.run(
             [crontab_path, "-l"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-        )
-        if result.returncode != 0:
-            return False
-        existing_cron = result.stdout.strip()
-        return any(
-            ("# fetchtastic" in line or "fetchtastic download" in line)
-            for line in existing_cron.splitlines()
         )
         if result.returncode != 0:
             return False
