@@ -66,12 +66,12 @@ def cron_command_required(func):
 
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        if not _crontab_available():
+        crontab_path = shutil.which("crontab")
+        if not crontab_path:
             print(
                 "Cron configuration skipped: 'crontab' command not found on this system."
             )
             return None
-        crontab_path = shutil.which("crontab")
         return func(*args, crontab_path=crontab_path, **kwargs)
 
     return wrapper
@@ -2747,6 +2747,53 @@ def remove_reboot_cron_job(*, crontab_path: str):
 
 
 @cron_check_command_required
+def check_any_cron_jobs_exist():
+    """
+    Check if any cron jobs exist in the current user's crontab.
+
+    This function is a no-op on Windows and if system crontab is unavailable. Returns False if no cron entries are found; True if any entries are detected.
+    """
+    # Skip cron job checking on Windows
+    if platform.system() == "Windows":
+        print("Cron jobs are not supported on Windows.")
+        return False
+
+    try:
+        crontab_path = shutil.which("crontab")
+        if not crontab_path:
+            return False
+        result = subprocess.run(
+            [crontab_path, "-l"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        if result.returncode != 0:
+            return False
+        existing_cron = result.stdout.strip()
+        return any(line.strip() for line in existing_cron.splitlines())
+        if result.returncode != 0:
+            return False
+        existing_cron = result.stdout.strip()
+        return any(
+            ("# fetchtastic" in line or "fetchtastic download" in line)
+            for line in existing_cron.splitlines()
+            if not line.strip().startswith("@reboot")
+        )
+    except Exception as e:
+        print(f"An error occurred while checking for existing cron jobs: {e}")
+        return False
+
+
+def check_boot_script_exists():
+    """
+    Checks if a Fetchtastic boot script already exists (Termux).
+    """
+    boot_script = os.path.expanduser("~/.termux/boot/fetchtastic.sh")
+    return os.path.exists(boot_script)
+
+
+@cron_check_command_required
 def check_cron_job_exists():
     """
     Check if any Fetchtastic cron jobs exist in current user's crontab.
@@ -2774,42 +2821,6 @@ def check_cron_job_exists():
         return any(
             ("# fetchtastic" in line or "fetchtastic download" in line)
             for line in existing_cron.splitlines()
-            if not line.strip().startswith("@reboot")
-        )
-    except Exception as e:
-        print(f"An error occurred while checking for existing cron jobs: {e}")
-        return False
-
-
-def check_boot_script_exists():
-    """
-    Checks if a Fetchtastic boot script already exists (Termux).
-    """
-    boot_script = os.path.expanduser("~/.termux/boot/fetchtastic.sh")
-    return os.path.exists(boot_script)
-
-
-@cron_check_command_required
-def check_any_cron_jobs_exist():
-    """
-    Check if any cron jobs exist in the current user's crontab.
-
-    This function is a no-op on Windows and if system crontab is unavailable. Returns False if no cron entries are found; True if any entries are detected.
-    """
-    # Skip cron job checking on Windows
-    if platform.system() == "Windows":
-        print("Cron jobs are not supported on Windows.")
-        return False
-
-    try:
-        crontab_path = shutil.which("crontab")
-        if not crontab_path:
-            return False
-        result = subprocess.run(
-            [crontab_path, "-l"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
         )
         if result.returncode != 0:
             return False
