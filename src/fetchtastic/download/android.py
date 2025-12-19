@@ -572,8 +572,13 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         if not available_releases:
             return None
 
+        sorted_releases = sorted(
+            available_releases,
+            key=lambda release: release.published_at or "",
+            reverse=True,
+        )
         latest_stable = next(
-            (release for release in available_releases if not release.prerelease), None
+            (release for release in sorted_releases if not release.prerelease), None
         )
         latest_stable_tuple = (
             self.version_manager.get_release_tuple(latest_stable.tag_name)
@@ -581,7 +586,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             else None
         )
 
-        for release in available_releases:
+        for release in sorted_releases:
             if not release.prerelease:
                 continue
             prerelease_tuple = self.version_manager.get_release_tuple(release.tag_name)

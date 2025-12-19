@@ -196,7 +196,7 @@ def test_run_clean_managed_file_filtering(mocker):
     def mock_remove(path):
         """
         Record a filesystem path in the module-level removed_files list.
-        
+
         Parameters:
             path (str): Filesystem path to record as removed.
         """
@@ -205,7 +205,7 @@ def test_run_clean_managed_file_filtering(mocker):
     def mock_rmtree(path):
         """
         Record a directory path as removed by appending it to the test tracking list `removed_dirs`.
-        
+
         Parameters:
             path (str): Filesystem path of the directory to record as removed.
         """
@@ -249,7 +249,8 @@ def test_cli_download_config_migration_failure(mocker, capsys):
     mocker.patch("builtins.input", side_effect=EOFError)  # Skip interactive
 
     with patch("sys.argv", ["fetchtastic", "download"]):
-        cli.main()
+        with pytest.raises(SystemExit):
+            cli.main()
 
     captured = capsys.readouterr()
     assert "Failed to migrate configuration" in captured.out

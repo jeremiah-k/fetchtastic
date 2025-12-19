@@ -41,8 +41,7 @@ def display_version_info():
     Return version information for the installed Fetchtastic package and the latest available release.
 
     Returns:
-        Mapping: A mapping containing version details, typically including keys such as
-        'installed_version' and 'latest_version'.
+        Tuple[str | None, str | None, bool]: (current_version, latest_version, update_available)
     """
     return setup_config.display_version_info()
 
@@ -158,7 +157,7 @@ def _prepare_command_run() -> Tuple[
         return None, None
     if config is None:
         log_utils.logger.error("Configuration file exists but could not be loaded.")
-        sys.exit(1)
+        return None, None
 
     # Apply configured log level if present and not empty
     if config and config.get("LOG_LEVEL"):
@@ -411,7 +410,7 @@ def main():
     elif args.command == "download":
         config, integration = _prepare_command_run()
         if integration is None:
-            return
+            sys.exit(1)
 
         # Run the downloader
         reset_api_tracking()
@@ -419,7 +418,7 @@ def main():
     elif args.command == "cache":
         config, integration = _prepare_command_run()
         if integration is None:
-            return
+            sys.exit(1)
 
         _perform_cache_update(integration, config)
     elif args.command == "topic":

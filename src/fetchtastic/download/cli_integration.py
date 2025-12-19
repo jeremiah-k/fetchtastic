@@ -392,7 +392,7 @@ class DownloadCLIIntegration:
         Entry point for CLI commands that uses a provided configuration, normalizes tokens, and runs the download workflow to produce legacy-compatible results.
 
          Parameters:
-            config (Dict[str, Any]): Configuration mapping for the download run. Required parameter.
+            config (Dict[str, Any]): Configuration mapping for the download run. Must not be None; passing None raises TypeError.
             force_refresh (bool): When True, forces refresh behavior for downloaders (e.g., clears caches) for this run.
 
         Returns:

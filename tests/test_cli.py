@@ -12,9 +12,9 @@ import fetchtastic.cli as cli
 def mock_cli_dependencies(mocker, tmp_path):
     """
     Pytest fixture that patches Fetchtastic CLI external dependencies (network, config, logging, time, and API-tracking) and supplies a mocked DownloadCLIIntegration for tests.
-    
+
     The mock's `main()` returns empty result tuples, `update_cache()` returns `True`, and `get_latest_versions()` returns empty version strings.
-    
+
     Returns:
         MagicMock: Mocked DownloadCLIIntegration instance configured for tests.
     """
@@ -1411,9 +1411,9 @@ def test_cli_download_without_log_level_config(mocker):
 
 def test_cli_download_with_empty_config(mocker):
     """
-    Ensure the CLI 'download' command proceeds to the downloader when a config path exists but load_config returns None.
+    Ensure the CLI 'download' command exits when a config path exists but load_config returns None.
 
-    Verifies that `set_log_level` is not called, the download integration's `main()` is invoked exactly once, and `run_setup` is not invoked.
+    Verifies that `set_log_level` is not called, the download integration's `main()` is not invoked, and `run_setup` is not invoked.
     """
     mocker.patch("sys.argv", ["fetchtastic", "download"])
     mock_set_log_level = mocker.patch("fetchtastic.log_utils.set_log_level")
@@ -1450,11 +1450,12 @@ def test_cli_download_with_empty_config(mocker):
     # Mock load_config to return None
     mocker.patch("fetchtastic.setup_config.load_config", return_value=None)
 
-    cli.main()
+    with pytest.raises(SystemExit):
+        cli.main()
 
     # Verify that set_log_level was NOT called
     mock_set_log_level.assert_not_called()
-    mock_integration.main.assert_called_once()
+    mock_integration.main.assert_not_called()
     mock_setup_run.assert_not_called()
 
 
@@ -1463,9 +1464,9 @@ def test_cli_download_with_empty_config(mocker):
 def test_cli_download_parametrized_log_levels(mocker, log_level):
     """
     Ensure the download command uses the LOG_LEVEL from configuration to set the logging level.
-    
+
     Ensures that when a loaded configuration contains `LOG_LEVEL`, the CLI passes that value to `fetchtastic.log_utils.set_log_level`.
-    
+
     Parameters:
         log_level: The configured log level value that should be forwarded to `set_log_level`.
     """

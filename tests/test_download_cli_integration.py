@@ -39,7 +39,7 @@ def test_cli_integration_main_loads_config_and_runs(mocker):
     assert result[5] == "fw_latest"
 
 
-def test_cli_integration_main_requires_config_argument(mocker):
+def test_cli_integration_main_requires_config_argument():
     """main should require a config argument."""
     integration = DownloadCLIIntegration()
 
@@ -119,7 +119,7 @@ def test_cli_integration_update_cache_loads_config(mocker):
     assert result is True
 
 
-def test_cli_integration_update_cache_requires_config(mocker):
+def test_cli_integration_update_cache_requires_config():
     """update_cache should require config parameter."""
     integration = DownloadCLIIntegration()
 
