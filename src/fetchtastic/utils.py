@@ -1307,7 +1307,7 @@ def matches_extract_patterns(
     """
     Determine whether a filename matches any legacy prerelease extract selection patterns.
 
-    Matches are case-insensitive and follow legacy rules: the special "littlefs-" prefix, file-type prefixes (from FILE_TYPE_PREFIXES) as substring matches, device patterns (patterns identified by device_manager.is_device_pattern or ending with '-'/'_') which match either whole-word (for 1–2 character patterns) or token-delimited boundaries, and a default substring match.
+    Matches are case-insensitive and follow legacy rules: the special "littlefs-" prefix, file-type prefixes (from FILE_TYPE_PREFIXES) as substring matches, device patterns (patterns identified by device_manager.is_device_pattern or ending with '-'/'_') which match either whole-word (for 1-2 character patterns) or token-delimited boundaries, and a default substring match.
 
     Parameters:
         filename (str): The filename to test.

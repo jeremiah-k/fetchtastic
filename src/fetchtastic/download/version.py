@@ -253,13 +253,13 @@ class VersionManager:
         self, release_version: str
     ) -> Optional[str]:
         """
-        Compute the next prerelease version by incrementing the patch component of a release version.
+        Compute the next base version for prereleases by incrementing the patch component of a release version.
 
         Parameters:
             release_version (str): Release version string (e.g., "v1.2.3" or "1.2.3"); leading "v" is allowed.
 
         Returns:
-            Optional[str]: The next prerelease version with the patch bumped (e.g., "1.2.4"), or `None` if a next prerelease cannot be determined.
+            Optional[str]: The next base version for prereleases with the patch bumped (e.g., "1.2.4"), or `None` if a next version cannot be determined.
         """
         if not release_version:
             return None
@@ -1136,13 +1136,13 @@ def _get_commit_hash_from_dir(dir_name: str) -> Optional[str]:
 
 def calculate_expected_prerelease_version(latest_version: str) -> Optional[str]:
     """
-    Derives the expected next prerelease version from a latest release version.
+    Derives the expected next base version for prereleases from a latest release version.
 
     Parameters:
         latest_version (str): The latest release version tag (for example "1.2.3" or "v1.2.3").
 
     Returns:
-        expected_prerelease (Optional[str]): The computed prerelease version string (for example "1.2.4rc1" or "v1.2.4-rc1"); returns None if an expected prerelease cannot be determined.
+        expected_base_version (Optional[str]): The computed base version for prereleases (for example "1.2.4"); returns None if an expected version cannot be determined.
     """
     return _version_manager.calculate_expected_prerelease_version(latest_version)
 

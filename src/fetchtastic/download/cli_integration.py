@@ -7,7 +7,7 @@ This module provides integration between the new download subsystem and the exis
 import os
 import sys
 import time
-from typing import Any, Dict, List, Optional, Tuple, cast
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
@@ -90,9 +90,8 @@ class DownloadCLIIntegration:
         """
         try:
             self._initialize_components(config)
-            if self.orchestrator is None:
-                raise RuntimeError("Orchestrator not initialized")
-            orchestrator = cast(DownloadOrchestrator, self.orchestrator)
+            assert self.orchestrator is not None  # guaranteed by _initialize_components
+            orchestrator = self.orchestrator
 
             # Clear caches if force refresh is requested
             if force_refresh:
