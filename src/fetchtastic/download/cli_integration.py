@@ -34,14 +34,13 @@ class DownloadCLIIntegration:
 
     def __init__(self):
         """
-        Create a DownloadCLIIntegration instance and initialize internal state.
-
-        Initializes attributes used to wire the CLI to the new download subsystem:
-
+        Initialize a DownloadCLIIntegration instance and set initial internal state.
+        
+        Sets attributes used to connect the CLI to the download subsystem:
         - orchestrator: Orchestrator instance or None until initialized.
         - android_downloader: Android downloader instance or None until initialized.
         - firmware_downloader: Firmware downloader instance or None until initialized.
-        - config: Loaded configuration mapping or None until set.
+        - config: Configuration mapping or None until provided.
         """
         self.orchestrator = None
         self.android_downloader = None
@@ -50,13 +49,12 @@ class DownloadCLIIntegration:
 
     def _initialize_components(self, config: Dict[str, Any]) -> None:
         """
-        Initialize the orchestrator and downloaders with the provided config.
-
-        This method centralizes the component initialization logic that is
-        reused across multiple methods to avoid code duplication.
-
+        Set up the DownloadOrchestrator and expose its downloaders on the integration instance.
+        
+        Stores the provided configuration on self, constructs a DownloadOrchestrator using that configuration, and assigns the orchestrator's android_downloader and firmware_downloader to instance attributes for shared state and caches.
+        
         Parameters:
-            config (Dict[str, Any]): Configuration used to initialize the components.
+            config (Dict[str, Any]): Configuration used to initialize the orchestrator and downloaders.
         """
         self.config = config
         self.orchestrator = DownloadOrchestrator(config)
@@ -70,18 +68,16 @@ class DownloadCLIIntegration:
         List[str], List[str], List[str], List[str], List[Dict[str, str]], str, str
     ]:
         """
-        Run the download pipeline with the given configuration and return results formatted for legacy CLI consumption.
-
-        Initializes the orchestrator and downloaders from `config`, optionally clears downloader caches when `force_refresh` is True, executes the download pipeline, performs cleanup and version tracking, collects failed download records, and returns the downloaded items plus latest known versions. On network, OS, or value/type errors this returns empty collections and empty latest-version strings.
-
+        Run the download pipeline using the provided configuration and return results formatted for the legacy CLI.
+        
+        Initializes the orchestrator and downloaders from `config`, optionally clears downloader caches when `force_refresh` is True, executes the download pipeline, performs cleanup and version tracking, and collects failed download records.
+        
         Parameters:
             config (Dict[str, Any]): Configuration used to initialize the orchestrator and downloaders.
             force_refresh (bool): If True, clear downloader caches before running the pipeline.
-
+        
         Returns:
-            Tuple[
-                List[str], List[str], List[str], List[str], List[Dict[str, str]], str, str
-            ]: A 7-tuple containing:
+            Tuple[List[str], List[str], List[str], List[str], List[Dict[str, str]], str, str]:
                 - downloaded_firmwares: Paths or identifiers of firmware files that were downloaded.
                 - new_firmware_versions: Firmware release tags that are newer than the currently tracked firmware.
                 - downloaded_apks: Paths or identifiers of Android APK files that were downloaded.
@@ -452,7 +448,15 @@ class DownloadCLIIntegration:
         self, config: Optional[Dict[str, Any]]
     ) -> Optional[Dict[str, Any]]:
         """
-        Load configuration if not provided, returning None on failure.
+        Return the provided configuration or load it from the user's setup if none is given.
+        
+        If `config` is None, checks for an existing configuration via fetchtastic.setup_config; if no configuration exists or loading fails, logs an error and returns None.
+        
+        Parameters:
+            config (Optional[Dict[str, Any]]): An already-loaded configuration dictionary, or None to load from disk.
+        
+        Returns:
+            Optional[Dict[str, Any]]: The configuration dictionary if available, or `None` on failure or when no configuration exists.
         """
         if config is not None:
             return config
@@ -475,15 +479,15 @@ class DownloadCLIIntegration:
 
     def get_download_statistics(self) -> Dict[str, Any]:
         """
-        Provide download statistics for reporting.
-
+        Return aggregated download statistics for reporting.
+        
         Returns:
-            A dictionary with the following keys:
-            - "total_downloads" (int): Total number of attempted downloads.
-            - "failed_downloads" (int): Number of downloads that failed.
-            - "success_rate" (float): Percentage of successful downloads (0.0-100.0).
-            - "android_downloads" (int): Number of Android artifacts downloaded.
-            - "firmware_downloads" (int): Number of firmware artifacts downloaded.
+            dict: Aggregated download statistics with keys:
+                - total_downloads (int): Total number of attempted downloads.
+                - failed_downloads (int): Number of downloads that failed.
+                - success_rate (float): Percentage of successful downloads from 0.0 to 100.0.
+                - android_downloads (int): Number of Android artifacts downloaded.
+                - firmware_downloads (int): Number of firmware artifacts downloaded.
         """
         if self.orchestrator:
             return self.orchestrator.get_download_statistics()
@@ -498,9 +502,9 @@ class DownloadCLIIntegration:
     def get_latest_versions(self) -> Dict[str, str]:
         """
         Get the latest known version strings for each artifact type.
-
+        
         Returns:
-            dict: Mapping of artifact keys ('android', 'firmware', 'firmware_prerelease', 'android_prerelease') to their latest version string; empty string if unavailable.
+            dict: Mapping with keys 'android', 'firmware', 'firmware_prerelease', and 'android_prerelease' to the latest version string for each; an empty string indicates the version is not available.
         """
         if self.orchestrator:
             versions = self.orchestrator.get_latest_versions()
@@ -549,20 +553,20 @@ class DownloadCLIIntegration:
 
     def get_migration_report(self) -> Dict[str, Any]:
         """
-        Report integration initialization and readiness.
-
-        Returns a mapping describing whether the orchestrator and downloaders are initialized, whether configuration and the download directory are valid, current download statistics, and an overall status.
-
+        Produce a report describing the initialization and readiness of the download CLI integration.
+        
+        The returned mapping summarizes whether core components are initialized, whether configuration and download directory checks pass, and includes current download statistics.
+        
         Returns:
             Dict[str, Any]: A mapping with keys:
-                - status: "completed" when core components are initialized, otherwise "not_initialized".
+                - status (str): "completed" when core components are initialized, otherwise "not_initialized".
                 - android_downloader_initialized (bool)
                 - firmware_downloader_initialized (bool)
                 - orchestrator_initialized (bool)
-                - configuration_valid (bool)
-                - download_directory_exists (bool)
+                - configuration_valid (bool): result of configuration validation.
+                - download_directory_exists (bool): whether the configured download directory exists.
                 - statistics (Dict[str, Any]): current download statistics from get_download_statistics().
-                - repository_support (bool): present only when status is "not_initialized" and set to False.
+                - repository_support (bool): included only when `status` is "not_initialized" and set to False.
         """
         if self.orchestrator and self.android_downloader and self.firmware_downloader:
             return {
@@ -588,10 +592,10 @@ class DownloadCLIIntegration:
 
     def fallback_to_legacy(self) -> bool:
         """
-        Signal that the integration will not fall back to the legacy downloader.
-
+        Indicates that the integration does not fall back to the legacy downloader.
+        
         Returns:
-            bool: `false` indicating no fallback to the legacy downloader will occur.
+            bool: `false` indicating fallback to the legacy downloader will not occur.
         """
         # Fallback is no longer needed since we're using the new architecture directly
         logger.warning(
@@ -601,10 +605,8 @@ class DownloadCLIIntegration:
 
     def _validate_configuration(self) -> bool:
         """
-        Determine whether a loaded configuration contains the required "DOWNLOAD_DIR" key.
-
-        Checks that the instance has a configured `config` and that the "DOWNLOAD_DIR" key is present.
-
+        Determine whether the currently loaded configuration contains the required "DOWNLOAD_DIR" key.
+        
         Returns:
             `True` if a configuration is loaded and contains the "DOWNLOAD_DIR" key, `False` otherwise.
         """
@@ -729,18 +731,19 @@ class DownloadCLIIntegration:
 
     def get_cli_help_integration(self) -> Dict[str, str]:
         """
-        Provide help text entries describing the CLI integration for the new download subsystem.
-
+        Return a mapping of short help text entries describing the CLI integration for the download subsystem.
+        
         Returns:
-            A mapping with the following keys and short instructional strings:
-            - `description`: brief name or summary of the subsystem
-            - `usage`: high-level usage note for the CLI command
-            - `features`: notable features of the new architecture
-            - `android_info`: brief note about Android APK downloads
-            - `firmware_info`: brief note about firmware downloads
-            - `configuration`: how configuration is used or extended
-            - `force_refresh`: how to trigger cache clearing / recheck
-            - `troubleshooting`: where to look for more detailed error information
+            dict: Mapping of help keys to short instructional strings. Keys:
+                - description: brief name or summary of the subsystem
+                - usage: high-level usage note for the CLI command
+                - features: notable features of the new architecture
+                - android_info: brief note about Android APK downloads
+                - firmware_info: brief note about firmware downloads
+                - configuration: how configuration is used or extended
+                - force_refresh: how to trigger cache clearing / recheck
+                - cache_update: how to clear caches without running downloads
+                - troubleshooting: where to look for more detailed error information
         """
         return {
             "description": "Fetchtastic Download Subsystem (New Architecture)",
@@ -769,17 +772,17 @@ class DownloadCLIIntegration:
 
     def get_environment_info(self) -> Dict[str, Any]:
         """
-        Return environment and configuration information for debugging and diagnostics.
-
+        Collects environment and configuration diagnostics.
+        
         Returns:
             Dict[str, Any]: Mapping with keys:
                 - "python_version": Python interpreter version string.
                 - "working_directory": Current working directory path.
                 - "download_directory": Configured download directory or "Not configured".
-                - "configuration_loaded": Boolean indicating if configuration was successfully loaded.
-                - "orchestrator_initialized": Boolean indicating if orchestrator was initialized.
+                - "configuration_loaded": `True` if a configuration is loaded, `False` otherwise.
+                - "orchestrator_initialized": `True` if the orchestrator has been initialized, `False` otherwise.
                 - "platform": Operating system platform identifier.
-                - "executable": Path to Python executable.
+                - "executable": Path to the Python executable.
         """
         return {
             "python_version": sys.version,
