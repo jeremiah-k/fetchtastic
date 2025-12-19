@@ -1363,7 +1363,7 @@ def test_cli_download_with_log_level_config(mocker):
     mocker.patch("fetchtastic.setup_config.migrate_config")
 
     # Override config from mock_cli_dependencies to set specific LOG_LEVEL
-    mock_config = {"LOG_LEVEL": "DEBUG", "DOWNLOAD_DIR": "/tmp/test"}
+    mock_config = {"LOG_LEVEL": "DEBUG", "DOWNLOAD_DIR": "/tmp/test"}  # nosec B108
     mocker.patch("fetchtastic.setup_config.load_config", return_value=mock_config)
 
     cli.main()
@@ -1481,7 +1481,7 @@ def test_cli_download_parametrized_log_levels(mocker, log_level):
     mocker.patch("fetchtastic.setup_config.migrate_config")
 
     # Override the config from mock_cli_dependencies to set specific log level
-    mock_config = {"LOG_LEVEL": log_level, "DOWNLOAD_DIR": "/tmp/test"}
+    mock_config = {"LOG_LEVEL": log_level, "DOWNLOAD_DIR": "/tmp/test"}  # nosec B108
     mocker.patch("fetchtastic.setup_config.load_config", return_value=mock_config)
     mock_set_log_level = mocker.patch("fetchtastic.log_utils.set_log_level")
 
@@ -1513,7 +1513,10 @@ def test_cli_download_with_invalid_log_levels(mocker, invalid_log_level):
     mocker.patch("fetchtastic.setup_config.migrate_config")
 
     # Override the config from mock_cli_dependencies to set specific invalid log level
-    mock_config = {"LOG_LEVEL": invalid_log_level, "DOWNLOAD_DIR": "/tmp/test"}
+    mock_config = {
+        "LOG_LEVEL": invalid_log_level,
+        "DOWNLOAD_DIR": "/tmp/test",
+    }  # nosec B108
     mocker.patch("fetchtastic.setup_config.load_config", return_value=mock_config)
 
     # Should not raise an exception, but set_log_level might handle invalid values
@@ -1544,7 +1547,7 @@ def test_cli_download_with_empty_log_level(mocker):
     mocker.patch("fetchtastic.setup_config.migrate_config")
 
     # Override config from mock_cli_dependencies to set empty log level
-    mock_config = {"LOG_LEVEL": "", "DOWNLOAD_DIR": "/tmp/test"}
+    mock_config = {"LOG_LEVEL": "", "DOWNLOAD_DIR": "/tmp/test"}  # nosec B108
     mocker.patch("fetchtastic.setup_config.load_config", return_value=mock_config)
 
     cli.main()

@@ -72,11 +72,6 @@ def cron_command_required(func):
             )
             return None
         crontab_path = shutil.which("crontab")
-        if not crontab_path:
-            logger.error(
-                "Cron configuration skipped: detected crontab availability but path lookup failed."
-            )
-            return None
         return func(*args, crontab_path=crontab_path, **kwargs)
 
     return wrapper
@@ -1130,7 +1125,7 @@ def _setup_automation(
                 return config
 
             # Linux/Mac: Check if any Fetchtastic cron jobs exist
-            any_cron_jobs_exist = check_any_cron_jobs_exist()
+            any_cron_jobs_exist = check_cron_job_exists()
             if any_cron_jobs_exist:
                 cron_prompt = (
                     input(
@@ -2596,8 +2591,6 @@ def remove_cron_job(*, crontab_path: str):
                     and not line.strip().startswith("@reboot")
                 )
             ]
-            if not cron_lines:
-                cron_lines = []
             # Join cron lines
             new_cron = "\n".join(cron_lines)
             # Ensure new_cron ends with a newline

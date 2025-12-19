@@ -178,6 +178,7 @@ def test_run_clean_managed_file_filtering(mocker):
     )
     mocker.patch("fetchtastic.setup_config.CONFIG_FILE", "/path/to/config")
     mocker.patch("fetchtastic.setup_config.OLD_CONFIG_FILE", "/path/to/old_config")
+    mocker.patch("fetchtastic.setup_config.BASE_DIR", "/test/base")
     mocker.patch("os.path.exists", return_value=True)
     mocker.patch("os.listdir", return_value=mock_files)
     mocker.patch(
@@ -224,12 +225,14 @@ def test_run_clean_managed_file_filtering(mocker):
     assert "/path/to/old_config" in removed_files  # Old config is always removed
 
     # Should remove managed firmware directory
-    assert "firmware" in removed_dirs or any("firmware" in d for d in removed_dirs)
+    assert "/test/base/firmware" in removed_dirs
 
     # Should NOT remove personal files and unmanaged directories
-    assert "personal_file.txt" not in removed_files
-    assert "documents" not in removed_dirs
-    assert "config.yaml" not in removed_files  # Unmanaged config should not be removed
+    assert not any("personal_file.txt" in f for f in removed_files)
+    assert "/test/base/documents" not in removed_dirs
+    assert not any(
+        "config.yaml" in f for f in removed_files
+    )  # Unmanaged config should not be removed
 
 
 @pytest.mark.user_interface
