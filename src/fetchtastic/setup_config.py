@@ -61,15 +61,20 @@ def cron_command_required(func):
     """
     Decorator to check crontab availability before executing function.
 
-    If crontab is not available, prints an informative message and returns None.
+    If crontab is not available, logs and returns None.
     """
 
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
+        if not _crontab_available():
+            logger.warning(
+                "Cron configuration skipped: 'crontab' command not found on this system."
+            )
+            return None
         crontab_path = shutil.which("crontab")
         if not crontab_path:
-            print(
-                "Cron configuration skipped: 'crontab' command not found on this system."
+            logger.error(
+                "Cron configuration skipped: detected crontab availability but path lookup failed."
             )
             return None
         return func(*args, crontab_path=crontab_path, **kwargs)
@@ -84,7 +89,7 @@ def cron_check_command_required(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         if not _crontab_available():
-            print(
+            logger.warning(
                 "Cron configuration skipped: 'crontab' command not found on this system."
             )
             return False
@@ -2577,6 +2582,7 @@ def remove_cron_job(*, crontab_path: str):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            timeout=30,
         )
         if result.returncode == 0:
             existing_cron = result.stdout.strip()
@@ -2590,19 +2596,27 @@ def remove_cron_job(*, crontab_path: str):
                     and not line.strip().startswith("@reboot")
                 )
             ]
+            if not cron_lines:
+                cron_lines = []
             # Join cron lines
             new_cron = "\n".join(cron_lines)
             # Ensure new_cron ends with a newline
             if not new_cron.endswith("\n"):
                 new_cron += "\n"
-            # Update crontab
-            process = subprocess.Popen(
-                [crontab_path, "-"], stdin=subprocess.PIPE, text=True
-            )
-            process.communicate(input=new_cron)
-            print("Daily cron job removed.")
-    except Exception as e:
-        print(f"An error occurred while removing the cron job: {e}")
+            try:
+                process = subprocess.Popen(
+                    [crontab_path, "-"], stdin=subprocess.PIPE, text=True
+                )
+                process.communicate(input=new_cron, timeout=30)
+                print("Daily cron job removed.")
+            except (
+                subprocess.SubprocessError,
+                subprocess.TimeoutExpired,
+                OSError,
+            ) as exc:
+                logger.error(f"An error occurred while removing the cron job: {exc}")
+    except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError) as exc:
+        logger.error(f"An error occurred while removing the cron job: {exc}")
 
 
 def setup_boot_script():
@@ -2658,6 +2672,7 @@ def setup_reboot_cron_job(*, crontab_path: str):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            timeout=30,
         )
         if result.returncode != 0:
             existing_cron = ""
@@ -2690,13 +2705,18 @@ def setup_reboot_cron_job(*, crontab_path: str):
             new_cron += "\n"
 
         # Update crontab
-        process = subprocess.Popen(
-            [crontab_path, "-"], stdin=subprocess.PIPE, text=True
-        )
-        process.communicate(input=new_cron)
-        print("Reboot cron job added to run Fetchtastic on system startup.")
-    except Exception as e:
-        print(f"An error occurred while setting up the reboot cron job: {e}")
+        try:
+            process = subprocess.Popen(
+                [crontab_path, "-"], stdin=subprocess.PIPE, text=True
+            )
+            process.communicate(input=new_cron, timeout=30)
+            print("Reboot cron job added to run Fetchtastic on system startup.")
+        except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError) as exc:
+            logger.error(
+                f"An error occurred while setting up the reboot cron job: {exc}"
+            )
+    except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError) as exc:
+        logger.error(f"An error occurred while setting up the reboot cron job: {exc}")
 
 
 @cron_command_required
@@ -2718,6 +2738,7 @@ def remove_reboot_cron_job(*, crontab_path: str):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            timeout=30,
         )
         if result.returncode == 0:
             existing_cron = result.stdout.strip()
@@ -2736,14 +2757,22 @@ def remove_reboot_cron_job(*, crontab_path: str):
             # Ensure new_cron ends with a newline
             if not new_cron.endswith("\n"):
                 new_cron += "\n"
-            # Update crontab
-            process = subprocess.Popen(
-                [crontab_path, "-"], stdin=subprocess.PIPE, text=True
-            )
-            process.communicate(input=new_cron)
-            print("Reboot cron job removed.")
-    except Exception as e:
-        print(f"An error occurred while removing the reboot cron job: {e}")
+            try:
+                process = subprocess.Popen(
+                    [crontab_path, "-"], stdin=subprocess.PIPE, text=True
+                )
+                process.communicate(input=new_cron, timeout=30)
+                print("Reboot cron job removed.")
+            except (
+                subprocess.SubprocessError,
+                subprocess.TimeoutExpired,
+                OSError,
+            ) as exc:
+                logger.error(
+                    f"An error occurred while removing the reboot cron job: {exc}"
+                )
+    except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError) as exc:
+        logger.error(f"An error occurred while removing the reboot cron job: {exc}")
 
 
 @cron_check_command_required
@@ -2753,27 +2782,20 @@ def check_any_cron_jobs_exist():
 
     This function is a no-op on Windows and if system crontab is unavailable. Returns False if no cron entries are found; True if any entries are detected.
     """
-    # Skip cron job checking on Windows
-    if platform.system() == "Windows":
-        print("Cron jobs are not supported on Windows.")
-        return False
-
     try:
-        crontab_path = shutil.which(
-            "crontab"
-        )  # Decorator already validated, safe to call
         result = subprocess.run(
-            [crontab_path, "-l"],
+            ["crontab", "-l"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            timeout=30,
         )
         if result.returncode != 0:
             return False
         existing_cron = result.stdout.strip()
         return any(line.strip() for line in existing_cron.splitlines())
-    except Exception as e:
-        print(f"An error occurred while checking for existing cron jobs: {e}")
+    except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError) as exc:
+        logger.error(f"An error occurred while checking for existing cron jobs: {exc}")
         return False
 
 
@@ -2792,20 +2814,13 @@ def check_cron_job_exists():
 
     This function is a no-op on Windows and if system crontab is unavailable. Returns False if no Fetchtastic entries are found; True if any matching entries are detected.
     """
-    # Skip cron job checking on Windows
-    if platform.system() == "Windows":
-        print("Cron jobs are not supported on Windows.")
-        return False
-
     try:
-        crontab_path = shutil.which(
-            "crontab"
-        )  # Decorator already validated, safe to call
         result = subprocess.run(
-            [crontab_path, "-l"],
+            ["crontab", "-l"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            timeout=30,
         )
         if result.returncode != 0:
             return False
@@ -2813,9 +2828,10 @@ def check_cron_job_exists():
         return any(
             ("# fetchtastic" in line or "fetchtastic download" in line)
             for line in existing_cron.splitlines()
+            if not line.strip().startswith("@reboot")
         )
-    except Exception as e:
-        print(f"An error occurred while checking for existing cron jobs: {e}")
+    except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError) as exc:
+        logger.error(f"An error occurred while checking for existing cron jobs: {exc}")
         return False
 
 
