@@ -11,15 +11,12 @@ import fetchtastic.cli as cli
 @pytest.fixture
 def mock_cli_dependencies(mocker, tmp_path):
     """
-    Fixture that patches common Fetchtastic CLI external dependencies and returns a mocked DownloadCLIIntegration for tests.
-
-    The fixture stubs network/HTTP calls, config loading, logging utilities, API-tracking helpers, and time to avoid real I/O and side effects during tests.
-
-    Parameters:
-        mocker: The pytest-mock fixture used to apply patches.
-
+    Pytest fixture that patches Fetchtastic CLI external dependencies (network, config, logging, time, and API-tracking) and supplies a mocked DownloadCLIIntegration for tests.
+    
+    The mock's `main()` returns empty result tuples, `update_cache()` returns `True`, and `get_latest_versions()` returns empty version strings.
+    
     Returns:
-        A MagicMock acting as the DownloadCLIIntegration instance whose `main()` method returns empty/default results and whose `get_latest_versions()` returns empty version strings.
+        MagicMock: Mocked DownloadCLIIntegration instance configured for tests.
     """
     # Mock SSL/urllib3 to prevent SystemTimeWarning
     mocker.patch("urllib3.connectionpool.HTTPSConnectionPool")
@@ -1465,12 +1462,12 @@ def test_cli_download_with_empty_config(mocker):
 @pytest.mark.usefixtures("mock_cli_dependencies")
 def test_cli_download_parametrized_log_levels(mocker, log_level):
     """
-    Verify that the 'download' command applies the configured LOG_LEVEL to the logging subsystem.
-
-    Patches the environment so the CLI loads a config containing LOG_LEVEL and asserts that fetchtastic.log_utils.set_log_level is invoked with the provided value.
-
+    Ensure the download command uses the LOG_LEVEL from configuration to set the logging level.
+    
+    Ensures that when a loaded configuration contains `LOG_LEVEL`, the CLI passes that value to `fetchtastic.log_utils.set_log_level`.
+    
     Parameters:
-        log_level: The LOG_LEVEL value from the loaded configuration to validate is passed to set_log_level.
+        log_level: The configured log level value that should be forwarded to `set_log_level`.
     """
     mocker.patch("sys.argv", ["fetchtastic", "download"])
 
