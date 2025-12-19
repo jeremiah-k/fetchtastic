@@ -85,7 +85,10 @@ def test_cli_download_command(mocker, mock_cli_dependencies):
     # 2. Test when config does not exist
     mock_cli_dependencies.reset_mock()
     mocker.patch("fetchtastic.setup_config.config_exists", return_value=(False, None))
-    cli.main()
+    with pytest.raises(SystemExit):
+        cli.main()
+
+    mock_cli_dependencies.main.assert_not_called()
     mock_setup_run.assert_called_once()
     mock_cli_dependencies.main.assert_not_called()
 
