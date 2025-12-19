@@ -469,6 +469,7 @@ def test_cron_job_cleanup_logic(mocker):
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        timeout=30,
     )
 
     # Should have called crontab twice - once for daily jobs, once for reboot jobs

@@ -729,6 +729,7 @@ def test_run_clean(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        timeout=30,
     )
 
 
