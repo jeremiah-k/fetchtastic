@@ -88,7 +88,13 @@ def cron_check_command_required(func):
                 "Cron configuration skipped: 'crontab' command not found on this system."
             )
             return False
-        return func(*args, **kwargs)
+        crontab_path = shutil.which("crontab")
+        if not crontab_path:
+            logger.warning(
+                "Cron configuration skipped: 'crontab' command not found on this system."
+            )
+            return False
+        return func(*args, crontab_path=crontab_path, **kwargs)
 
     return wrapper
 
@@ -2769,7 +2775,7 @@ def remove_reboot_cron_job(*, crontab_path: str):
 
 
 @cron_check_command_required
-def check_any_cron_jobs_exist():
+def check_any_cron_jobs_exist(*, crontab_path: str):
     """
     Check if any cron jobs exist in the current user's crontab.
 
@@ -2777,7 +2783,7 @@ def check_any_cron_jobs_exist():
     """
     try:
         result = subprocess.run(
-            ["crontab", "-l"],
+            [crontab_path, "-l"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -2801,7 +2807,7 @@ def check_boot_script_exists():
 
 
 @cron_check_command_required
-def check_cron_job_exists():
+def check_cron_job_exists(*, crontab_path: str):
     """
     Check if any Fetchtastic cron jobs exist in current user's crontab.
 
