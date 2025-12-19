@@ -66,6 +66,7 @@ fetchtastic repo browse
 ```bash
 fetchtastic setup      # Run the setup process
 fetchtastic download   # Download firmware and APKs
+fetchtastic cache update # Clear cached API data
 fetchtastic repo browse # Browse repository files
 fetchtastic repo clean  # Clean repository downloads
 fetchtastic topic      # Show NTFY topic

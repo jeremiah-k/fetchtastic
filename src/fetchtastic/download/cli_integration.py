@@ -35,9 +35,9 @@ class DownloadCLIIntegration:
     def __init__(self):
         """
         Create a DownloadCLIIntegration instance and initialize internal state.
-        
+
         Initializes attributes used to wire the CLI to the new download subsystem:
-        
+
         - orchestrator: Orchestrator instance or None until initialized.
         - android_downloader: Android downloader instance or None until initialized.
         - firmware_downloader: Firmware downloader instance or None until initialized.
@@ -55,13 +55,13 @@ class DownloadCLIIntegration:
     ]:
         """
         Run the download pipeline with the given configuration and return results formatted for legacy CLI consumption.
-        
+
         Initializes the orchestrator and downloaders from `config`, optionally clears downloader caches when `force_refresh` is True, executes the download pipeline, performs cleanup and version tracking, collects failed download records, and returns the downloaded items plus latest known versions. On network, OS, or value/type errors this returns empty collections and empty latest-version strings.
-        
+
         Parameters:
             config (Dict[str, Any]): Configuration used to initialize the orchestrator and downloaders.
             force_refresh (bool): If True, clear downloader caches before running the pipeline.
-        
+
         Returns:
             Tuple[
                 List[str], List[str], List[str], List[str], List[Dict[str, str]], str, str
@@ -131,7 +131,7 @@ class DownloadCLIIntegration:
     def _clear_caches(self) -> None:
         """
         Clear downloader caches managed by this integration.
-        
+
         This calls the Android downloader's cache manager to remove all cached data; exceptions raised during the clear operation (e.g., OSError, ValueError) are caught and logged and are not propagated.
         """
         try:
@@ -303,7 +303,7 @@ class DownloadCLIIntegration:
     def get_failed_downloads(self) -> List[Dict[str, Any]]:
         """
         Builds a legacy-formatted list describing failed downloads.
-        
+
         Each item is a dict with the following keys:
             file_name: Base filename of the intended download or "unknown".
             release_tag: Associated release tag or "unknown".
@@ -313,7 +313,7 @@ class DownloadCLIIntegration:
             error: Error message for the failure, or empty string if none.
             retryable: Whether the failure is considered retryable.
             http_status: HTTP status code associated with the failure, or None if not applicable.
-        
+
         Returns:
             List[Dict[str, Any]]: The list of failed download records. Returns an empty list if the integration is not initialized or there are no failures.
         """
@@ -373,13 +373,13 @@ class DownloadCLIIntegration:
     ]:
         """
         Entry point for CLI commands that ensures configuration is available, normalizes tokens, and runs the download workflow to produce legacy-compatible results.
-        
+
         If `config` is not provided, the function attempts to load the CLI configuration before running the download pipeline.
-        
+
         Parameters:
             force_refresh (bool): When True, forces refresh behavior for the downloaders (e.g., clears caches) for this run.
             config (Optional[Dict[str, Any]]): Configuration mapping for the download run; if omitted, the CLI configuration will be loaded.
-        
+
         Returns:
             Tuple containing:
                 downloaded_firmwares (List[str]): List of firmware release tags or identifiers that were downloaded during the run.
@@ -424,6 +424,44 @@ class DownloadCLIIntegration:
             self.handle_cli_error(error)
             return [], [], [], [], [], "", ""
 
+    def update_cache(self, config: Optional[Dict[str, Any]] = None) -> bool:
+        """
+        Clear all download caches without running the download pipeline.
+
+        Parameters:
+            config (Optional[Dict[str, Any]]): Configuration mapping for the cache refresh; if omitted, the CLI configuration will be loaded.
+
+        Returns:
+            bool: True if caches were cleared successfully, False otherwise.
+        """
+        try:
+            if config is None:
+                from fetchtastic import setup_config
+
+                exists, _config_path = setup_config.config_exists()
+                if not exists:
+                    logger.error(
+                        "No configuration found. Please run 'fetchtastic setup' first."
+                    )
+                    return False
+
+                config = setup_config.load_config()
+                if config is None:
+                    logger.error("Configuration file exists but could not be loaded.")
+                    return False
+
+            self.config = config
+            self.orchestrator = DownloadOrchestrator(config)
+            self.android_downloader = self.orchestrator.android_downloader
+            self.firmware_downloader = self.orchestrator.firmware_downloader
+
+            self._clear_caches()
+            return True
+
+        except (requests.RequestException, OSError, ValueError, TypeError) as error:
+            self.handle_cli_error(error)
+            return False
+
     def get_download_statistics(self) -> Dict[str, Any]:
         """
         Provide download statistics for reporting.
@@ -449,7 +487,7 @@ class DownloadCLIIntegration:
     def get_latest_versions(self) -> Dict[str, str]:
         """
         Get the latest known version strings for each artifact type.
-        
+
         Returns:
             dict: Mapping of artifact keys ('android', 'firmware', 'firmware_prerelease', 'android_prerelease') to their latest version string; empty string if unavailable.
         """
@@ -501,9 +539,9 @@ class DownloadCLIIntegration:
     def get_migration_report(self) -> Dict[str, Any]:
         """
         Report integration initialization and readiness.
-        
+
         Returns a mapping describing whether the orchestrator and downloaders are initialized, whether configuration and the download directory are valid, current download statistics, and an overall status.
-        
+
         Returns:
             Dict[str, Any]: A mapping with keys:
                 - status: "completed" when core components are initialized, otherwise "not_initialized".
@@ -540,7 +578,7 @@ class DownloadCLIIntegration:
     def fallback_to_legacy(self) -> bool:
         """
         Signal that the integration will not fall back to the legacy downloader.
-        
+
         Returns:
             bool: `false` indicating no fallback to the legacy downloader will occur.
         """
@@ -553,9 +591,9 @@ class DownloadCLIIntegration:
     def _validate_configuration(self) -> bool:
         """
         Determine whether a loaded configuration contains the required "DOWNLOAD_DIR" key.
-        
+
         Checks that the instance has a configured `config` and that the "DOWNLOAD_DIR" key is present.
-        
+
         Returns:
             `True` if a configuration is loaded and contains the "DOWNLOAD_DIR" key, `False` otherwise.
         """
@@ -567,7 +605,7 @@ class DownloadCLIIntegration:
     def _check_download_directory(self) -> bool:
         """
         Check whether the Android downloader is initialized and its configured download directory exists.
-        
+
         Returns:
             `True` if the Android downloader is initialized and its download directory exists, `False` otherwise.
         """
@@ -579,9 +617,9 @@ class DownloadCLIIntegration:
     def get_legacy_compatibility_report(self) -> Dict[str, Any]:
         """
         Produce a compatibility report describing how the integration aligns with legacy CLI expectations.
-        
+
         The report includes boolean flags for compatibility checks and the current download statistics.
-        
+
         Returns:
             Dict[str, Any]: Mapping with the following keys:
                 - cli_integration_ready: `True` if the CLI integration is initialized and ready.
@@ -700,7 +738,8 @@ class DownloadCLIIntegration:
             "android_info": "Downloads Meshtastic Android APK files from GitHub releases",
             "firmware_info": "Downloads Meshtastic firmware releases and extracts files based on patterns",
             "configuration": "Uses existing configuration with additional options for version retention",
-            "force_refresh": "Use --force or -f to clear caches and recheck all downloads",
+            "force_refresh": "Use --force-download or -f to clear caches and recheck all downloads",
+            "cache_update": "Use 'fetchtastic cache update' or 'download --update-cache' to clear caches without downloading",
             "troubleshooting": "Check logs for detailed error information and use --verbose for debugging",
         }
 

@@ -111,6 +111,41 @@ def test_cli_integration_main_handles_config_load_failure(mocker):
     assert result == ([], [], [], [], [], "", "")
 
 
+def test_cli_integration_update_cache_loads_config(mocker):
+    """update_cache should load config and clear caches."""
+    integration = DownloadCLIIntegration()
+    mocker.patch("fetchtastic.setup_config.config_exists", return_value=(True, "cfg"))
+    mocker.patch(
+        "fetchtastic.setup_config.load_config", return_value={"DOWNLOAD_DIR": "/tmp"}
+    )
+    mock_orchestrator = mocker.MagicMock(
+        android_downloader=mocker.MagicMock(),
+        firmware_downloader=mocker.MagicMock(),
+    )
+    mocker.patch(
+        "fetchtastic.download.cli_integration.DownloadOrchestrator",
+        return_value=mock_orchestrator,
+    )
+    mock_clear = mocker.patch.object(integration, "_clear_caches")
+
+    result = integration.update_cache()
+
+    mock_clear.assert_called_once()
+    assert result is True
+
+
+def test_cli_integration_update_cache_handles_missing_config(mocker):
+    """update_cache should return False when no config exists."""
+    integration = DownloadCLIIntegration()
+    mocker.patch("fetchtastic.setup_config.config_exists", return_value=(False, None))
+    mock_clear = mocker.patch.object(integration, "_clear_caches")
+
+    result = integration.update_cache()
+
+    mock_clear.assert_not_called()
+    assert result is False
+
+
 def test_run_download_successful(mocker, tmp_path):
     """run_download should orchestrate successful download pipeline."""
     integration = DownloadCLIIntegration()

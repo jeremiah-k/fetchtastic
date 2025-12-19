@@ -12,12 +12,12 @@ import fetchtastic.cli as cli
 def mock_cli_dependencies(mocker, tmp_path):
     """
     Fixture that patches common Fetchtastic CLI external dependencies and returns a mocked DownloadCLIIntegration for tests.
-    
+
     The fixture stubs network/HTTP calls, config loading, logging utilities, API-tracking helpers, and time to avoid real I/O and side effects during tests.
-    
+
     Parameters:
         mocker: The pytest-mock fixture used to apply patches.
-    
+
     Returns:
         A MagicMock acting as the DownloadCLIIntegration instance whose `main()` method returns empty/default results and whose `get_latest_versions()` returns empty version strings.
     """
@@ -47,6 +47,7 @@ def mock_cli_dependencies(mocker, tmp_path):
     # Create a mock integration instance that prevents real downloads
     mock_integration_instance = mocker.MagicMock()
     mock_integration_instance.main.return_value = ([], [], [], [], [], "", "")
+    mock_integration_instance.update_cache.return_value = True
     mock_integration_instance.get_latest_versions.return_value = {
         "firmware": "",
         "android": "",
@@ -1465,9 +1466,9 @@ def test_cli_download_with_empty_config(mocker):
 def test_cli_download_parametrized_log_levels(mocker, log_level):
     """
     Verify that the 'download' command applies the configured LOG_LEVEL to the logging subsystem.
-    
+
     Patches the environment so the CLI loads a config containing LOG_LEVEL and asserts that fetchtastic.log_utils.set_log_level is invoked with the provided value.
-    
+
     Parameters:
         log_level: The LOG_LEVEL value from the loaded configuration to validate is passed to set_log_level.
     """
@@ -1530,7 +1531,7 @@ def test_cli_download_with_invalid_log_levels(mocker, invalid_log_level):
 def test_cli_download_with_empty_log_level(mocker):
     """
     Verify that an empty LOG_LEVEL in the configuration does not trigger a log level change while the downloader still runs and setup is not invoked.
-    
+
     Patches the CLI environment so load_config returns a config with "LOG_LEVEL" set to an empty string and asserts that:
     - fetchtastic.log_utils.set_log_level is not called,
     - the downloader is invoked once,
@@ -1587,8 +1588,8 @@ def test_cli_download_with_case_insensitive_log_levels(mocker, mock_cli_dependen
 @pytest.mark.user_interface
 @pytest.mark.unit
 def test_cli_download_force_flag(mocker, mock_cli_dependencies):
-    """Test 'download' command with --force flag."""
-    mocker.patch("sys.argv", ["fetchtastic", "download", "--force"])
+    """Test 'download' command with --force-download flag."""
+    mocker.patch("sys.argv", ["fetchtastic", "download", "--force-download"])
     mocker.patch(
         "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
     )
@@ -1600,6 +1601,40 @@ def test_cli_download_force_flag(mocker, mock_cli_dependencies):
     # Verify main was called with force_refresh=True
     _args, kwargs = mock_cli_dependencies.main.call_args
     assert kwargs.get("force_refresh") is True
+
+
+@pytest.mark.user_interface
+@pytest.mark.unit
+def test_cli_download_update_cache_flag(mocker, mock_cli_dependencies):
+    """Test 'download' command with --update-cache flag."""
+    mocker.patch("sys.argv", ["fetchtastic", "download", "--update-cache"])
+    mocker.patch(
+        "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
+    )
+    mocker.patch("fetchtastic.setup_config.prompt_for_migration")
+    mocker.patch("fetchtastic.setup_config.migrate_config")
+
+    cli.main()
+
+    mock_cli_dependencies.update_cache.assert_called_once()
+    mock_cli_dependencies.main.assert_not_called()
+
+
+@pytest.mark.user_interface
+@pytest.mark.unit
+def test_cli_cache_update_command(mocker, mock_cli_dependencies):
+    """Test 'cache update' command dispatch."""
+    mocker.patch("sys.argv", ["fetchtastic", "cache", "update"])
+    mocker.patch(
+        "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
+    )
+    mocker.patch("fetchtastic.setup_config.prompt_for_migration")
+    mocker.patch("fetchtastic.setup_config.migrate_config")
+
+    cli.main()
+
+    mock_cli_dependencies.update_cache.assert_called_once()
+    mock_cli_dependencies.main.assert_not_called()
 
 
 @pytest.mark.user_interface

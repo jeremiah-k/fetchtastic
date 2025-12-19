@@ -39,7 +39,7 @@ copy_to_clipboard_func = setup_config.copy_to_clipboard_func
 def display_version_info():
     """
     Get version information for the installed Fetchtastic package and the latest available release.
-    
+
     Returns:
         Mapping: Details about the installed version and the latest release (for example keys like
         'installed_version' and 'latest_version').
@@ -60,7 +60,7 @@ def get_upgrade_command():
 def _display_update_reminder(latest_version: str) -> None:
     """
     Announces that a newer Fetchtastic version is available to the user.
-    
+
     Parameters:
         latest_version (str): The latest available version string (for example, "1.2.3").
     """
@@ -77,7 +77,7 @@ def main():
 
     """
     Entry point for the Fetchtastic command-line interface.
-    
+
     Parses command-line arguments and dispatches subcommands: setup, download, topic,
     clean, version, repo, and help. Subcommands may read, create, migrate, or remove
     configuration; run interactive setup flows; invoke download or repository
@@ -115,15 +115,35 @@ def main():
     download_parser = subparsers.add_parser(
         "download", help="Download firmware and APKs"
     )
-    download_parser.add_argument(
-        "--force",
+    download_mode_group = download_parser.add_mutually_exclusive_group()
+    download_mode_group.add_argument(
+        "--force-download",
         "-f",
+        dest="force_download",
         action="store_true",
         help="Force refresh by bypassing cache and rechecking all downloads",
+    )
+    download_mode_group.add_argument(
+        "--update-cache",
+        action="store_true",
+        help="Clear cached data and exit without running downloads",
     )
 
     # Command to display NTFY topic
     subparsers.add_parser("topic", help="Display the current NTFY topic")
+
+    # Command to manage caches
+    cache_parser = subparsers.add_parser(
+        "cache",
+        help="Manage cached data",
+        description="Clear or refresh cached API data without downloading assets.",
+    )
+    cache_subparsers = cache_parser.add_subparsers(dest="cache_command")
+    cache_subparsers.add_parser(
+        "update",
+        help="Clear cached data and exit",
+        description="Clear cached API data and exit without running downloads.",
+    )
 
     # Command to clean/remove Fetchtastic files and settings
     subparsers.add_parser(
@@ -267,8 +287,17 @@ def main():
 
             # Run the downloader
             reset_api_tracking()
-            start_time = time.time()
             integration = download_cli_integration.DownloadCLIIntegration()
+
+            if args.update_cache:
+                success = integration.update_cache(config=config)
+                if success:
+                    log_utils.logger.info("Caches cleared.")
+                else:
+                    log_utils.logger.error("Failed to clear caches.")
+                return
+
+            start_time = time.time()
             (
                 downloaded_firmwares,
                 _new_firmware_versions,
@@ -277,7 +306,7 @@ def main():
                 failed_downloads,
                 latest_firmware_version,
                 latest_apk_version,
-            ) = integration.main(force_refresh=args.force, config=config)
+            ) = integration.main(force_refresh=args.force_download, config=config)
 
             elapsed = time.time() - start_time
             integration.log_download_results_summary(
@@ -289,6 +318,57 @@ def main():
                 latest_firmware_version=latest_firmware_version,
                 latest_apk_version=latest_apk_version,
             )
+    elif args.command == "cache":
+        if args.cache_command != "update":
+            cache_parser.print_help()
+            return
+
+        exists, config_path = setup_config.config_exists()
+        if not exists:
+            log_utils.logger.error(
+                "No configuration found. Run 'fetchtastic setup' first."
+            )
+            return
+
+        # Check if config is in old location and needs migration
+        if config_path == setup_config.OLD_CONFIG_FILE and not os.path.exists(
+            setup_config.CONFIG_FILE
+        ):
+            separator = "=" * 80
+            log_utils.logger.info(f"\n{separator}")
+            log_utils.logger.info("Configuration Migration")
+            log_utils.logger.info(separator)
+            setup_config.prompt_for_migration()
+            if setup_config.migrate_config():
+                log_utils.logger.info(
+                    "Configuration successfully migrated to new location."
+                )
+                config_path = setup_config.CONFIG_FILE
+            else:
+                log_utils.logger.error(
+                    "Failed to migrate configuration. Continuing with old location."
+                )
+            log_utils.logger.info(f"{separator}\n")
+
+        log_utils.logger.info(f"Using configuration from: {config_path}")
+
+        try:
+            config = setup_config.load_config()
+        except (OSError, TypeError, ValueError, yaml.YAMLError) as e:
+            log_utils.logger.error(
+                f"Failed to load configuration from {config_path}: {e}"
+            )
+            sys.exit(1)
+
+        if config and config.get("LOG_LEVEL"):
+            log_utils.set_log_level(config["LOG_LEVEL"])
+
+        integration = download_cli_integration.DownloadCLIIntegration()
+        success = integration.update_cache(config=config)
+        if success:
+            log_utils.logger.info("Caches cleared.")
+        else:
+            log_utils.logger.error("Failed to clear caches.")
     elif args.command == "topic":
         # Display the NTFY topic and prompt to copy to clipboard
         config = setup_config.load_config()
@@ -457,7 +537,7 @@ def show_help(
 def run_clean():
     """
     Permanently remove Fetchtastic configuration, managed downloads, and platform integrations after explicit user confirmation.
-    
+
     Prompts the user for confirmation and, if confirmed, deletes current and legacy configuration files, Fetchtastic-managed files and directories within the configured download directory, platform-specific integrations (Windows Start Menu and startup shortcuts, non-Windows crontab entries, Termux boot script), and the Fetchtastic log file. Preserves files not identified as managed. This action is irreversible.
     """
     print(
@@ -478,9 +558,9 @@ def run_clean():
     def _try_remove(path: str, *, is_dir: bool = False, description: str) -> None:
         """
         Attempt to remove a filesystem path and report the outcome.
-        
+
         If the given path does not exist, the function does nothing. If removal succeeds, a confirmation message is printed to stdout; if it fails, an error message with the failure reason is printed to stderr.
-        
+
         Parameters:
             path (str): Path to the file or directory to remove.
             is_dir (bool): If true, treat `path` as a directory and remove it recursively; otherwise remove it as a file.
@@ -595,11 +675,11 @@ def run_clean():
     def _remove_managed_file(item_path: str) -> None:
         """
         Remove a managed file at the given filesystem path.
-        
+
         If removal fails, logs an error and does not raise an exception.
-        
+
         Parameters:
-        	item_path (str): Filesystem path of the managed file to remove.
+                item_path (str): Filesystem path of the managed file to remove.
         """
         try:
             os.remove(item_path)
@@ -665,9 +745,9 @@ def run_clean():
 def run_repo_clean(config):
     """
     Prompt the user and, if confirmed, remove all files downloaded from the meshtastic.github.io repository for the given configuration.
-    
+
     If the user confirms (default is no), the function deletes repository download files referenced by the provided configuration, prints a summary of removed files and directories, and logs the cleanup results. Any cleanup errors are printed to stderr and recorded in the logger.
-    
+
     Parameters:
         config: Configuration object used to locate and manage the repository download directory.
     """

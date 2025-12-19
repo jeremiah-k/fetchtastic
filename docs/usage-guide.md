@@ -31,11 +31,25 @@ Available commands:
 
 - `setup` - Run the setup process
 - `download` - Download firmware and APKs from GitHub releases
+- `cache` - Clear cached API data without downloading
 - `topic` - Display the current NTFY topic
 - `clean` - Remove Fetchtastic configuration, downloads, and cron jobs
 - `version` - Display Fetchtastic version
 - `help` - Display help information
 - `repo` - Interact with the meshtastic.github.io repository
+
+### Download Options
+
+```bash
+fetchtastic download --force-download   # Bypass caches and recheck all downloads
+fetchtastic download --update-cache     # Clear cached data and exit without downloading
+```
+
+### Cache Management
+
+```bash
+fetchtastic cache update  # Clear cached API data without downloading
+```
 
 ## Setup Process
 
