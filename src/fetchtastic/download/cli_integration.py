@@ -422,20 +422,25 @@ class DownloadCLIIntegration:
             self.handle_cli_error(error)
             return [], [], [], [], [], "", ""
 
-    def update_cache(self, config: Optional[Dict[str, Any]] = None) -> bool:
+    def update_cache(self, config: Dict[str, Any]) -> bool:
         """
         Clear all download caches without running the download pipeline.
 
         Parameters:
-            config (Optional[Dict[str, Any]]): Configuration mapping for the cache refresh; if omitted, the CLI configuration will be loaded.
+            config (Dict[str, Any]): Configuration mapping for cache refresh.
 
         Returns:
             bool: True if caches were cleared successfully, False otherwise.
         """
         try:
-            if config is None:
-                logger.error("Configuration must be provided for cache update.")
-                return False
+            self._initialize_components(config)
+
+            self._clear_caches()
+            return True
+
+        except (requests.RequestException, OSError, ValueError, TypeError) as error:
+            self.handle_cli_error(error)
+            return False
 
             self._initialize_components(config)
 
@@ -452,20 +457,26 @@ class DownloadCLIIntegration:
 
         Returns:
             dict: Aggregated download statistics with keys:
-                - total_downloads (int): Total number of attempted downloads.
+                - total_downloads (int): Number of attempted downloads (excludes skipped results).
+                - successful_downloads (int): Number of completed, non-skipped downloads.
+                - skipped_downloads (int): Number of downloads marked as skipped.
                 - failed_downloads (int): Number of downloads that failed.
-                - success_rate (float): Percentage of successful downloads from 0.0 to 100.0.
-                - android_downloads (int): Number of Android artifacts downloaded.
-                - firmware_downloads (int): Number of firmware artifacts downloaded.
+                - success_rate (float): Overall success percentage as a float (0-100).
+                - android_downloads (int): Number of successful Android artifact downloads.
+                - firmware_downloads (int): Number of successful firmware artifact downloads.
+                - repository_downloads (int): Number of repository downloads (always 0 for automatic pipeline).
         """
         if self.orchestrator:
             return self.orchestrator.get_download_statistics()
         return {
             "total_downloads": 0,
+            "successful_downloads": 0,
+            "skipped_downloads": 0,
             "failed_downloads": 0,
             "success_rate": 0.0,
             "android_downloads": 0,
             "firmware_downloads": 0,
+            "repository_downloads": 0,
         }
 
     def get_latest_versions(self) -> Dict[str, str]:
