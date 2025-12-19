@@ -94,6 +94,12 @@ def cron_check_command_required(func):
                 "Cron configuration skipped: 'crontab' command not found on this system."
             )
             return False
+        if not isinstance(crontab_path, str):
+            logger.debug(
+                "shutil.which returned non-str (%s); falling back to literal 'crontab'.",
+                type(crontab_path).__name__,
+            )
+            crontab_path = "crontab"
         return func(*args, crontab_path=crontab_path, **kwargs)
 
     return wrapper
@@ -1131,7 +1137,7 @@ def _setup_automation(
                 return config
 
             # Linux/Mac: Check if any Fetchtastic cron jobs exist
-            any_cron_jobs_exist = check_cron_job_exists()
+            any_cron_jobs_exist = check_cron_job_exists() or check_any_cron_jobs_exist()
             if any_cron_jobs_exist:
                 cron_prompt = (
                     input(
