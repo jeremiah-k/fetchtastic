@@ -9,7 +9,6 @@ import time
 from typing import List
 
 import platformdirs
-import yaml
 
 from fetchtastic import log_utils, setup_config
 from fetchtastic.constants import (
