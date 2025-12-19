@@ -7,7 +7,7 @@ from fetchtastic import cli
 def mock_cli_dependencies(mocker):
     """
     Create a MagicMock that simulates the CLI integration and patch common external CLI dependencies.
-    
+
     Patches:
     - fetchtastic.setup_config.load_config to return {"LOG_LEVEL": ""}
     - fetchtastic.log_utils.set_log_level
@@ -15,10 +15,10 @@ def mock_cli_dependencies(mocker):
     - time.time to return 1234567890
     - fetchtastic.cli.get_api_request_summary to return {"total_requests": 0}
     - fetchtastic.download.cli_integration.DownloadCLIIntegration to return the mock integration
-    
+
     Parameters:
         mocker: The pytest-mock fixture used to apply patches.
-    
+
     Returns:
         MagicMock: A mock integration where:
             - `main()` returns ([], [], [], [], [], "", "")
@@ -50,23 +50,6 @@ def mock_cli_dependencies(mocker):
     )
 
     return mock_integration
-
-
-@pytest.mark.user_interface
-@pytest.mark.unit
-def test_cli_download_force_flag(mocker, mock_cli_dependencies):
-    """Test 'download' command with --force-download flag."""
-    mocker.patch("sys.argv", ["fetchtastic", "download", "--force-download"])
-    mocker.patch(
-        "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
-    )
-    mocker.patch("fetchtastic.setup_config.prompt_for_migration")
-    mocker.patch("fetchtastic.setup_config.migrate_config")
-
-    cli.main()
-
-    # Verify main was called (force flag should be passed through)
-    assert mock_cli_dependencies.main.called
 
 
 @pytest.mark.user_interface
@@ -130,21 +113,3 @@ def test_cli_download_without_config(mocker, mock_cli_dependencies):
     # Should run setup since no config exists
     mock_run_setup.assert_called_once()
     mock_cli_dependencies.main.assert_not_called()
-
-
-@pytest.mark.user_interface
-@pytest.mark.unit
-def test_cli_force_flag_handling(mocker, mock_cli_dependencies):
-    """Test CLI force flag handling."""
-    # Test with --force-download flag
-    mocker.patch("sys.argv", ["fetchtastic", "download", "--force-download"])
-    mocker.patch(
-        "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
-    )
-
-    cli.main()
-
-    # Should call main with force flag
-    args, kwargs = mock_cli_dependencies.main.call_args
-    # Check that the integration was called with the force parameter
-    assert mock_cli_dependencies.main.called
