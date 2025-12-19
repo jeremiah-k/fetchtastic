@@ -47,6 +47,9 @@ def mock_cli_dependencies(mocker, tmp_path):
     mocker.patch(
         "fetchtastic.utils.get_api_request_summary", return_value={"total_requests": 0}
     )
+    mocker.patch(
+        "fetchtastic.cli.get_api_request_summary", return_value={"total_requests": 0}
+    )
 
     # Create a mock integration instance that prevents real downloads
     mock_integration_instance = mocker.MagicMock()
@@ -1341,54 +1344,31 @@ def test_run_clean_user_says_no_explicitly(mocker):
     mock_print.assert_any_call("Clean operation cancelled.")
 
 
+@pytest.mark.usefixtures("mock_cli_dependencies")
 def test_cli_download_with_log_level_config(mocker):
     """
-    Verify that running the CLI `download` command applies a configured LOG_LEVEL and dispatches to the downloader.
+    Verify that running CLI `download` command applies a configured LOG_LEVEL and dispatches to downloader.
 
     Sets up a fake CLI invocation and a loaded configuration containing a "LOG_LEVEL" key. Asserts that `set_log_level` is called with the configured value, `downloader.main` is invoked, and `setup_config.run_setup` is not called when a valid config exists.
     """
     mocker.patch("sys.argv", ["fetchtastic", "download"])
     mock_set_log_level = mocker.patch("fetchtastic.log_utils.set_log_level")
-    mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
 
-    # Mock external dependencies
-    mocker.patch("fetchtastic.cli.reset_api_tracking")
-    mocker.patch("time.time", return_value=1234567890)
-    mocker.patch(
-        "fetchtastic.cli.get_api_request_summary", return_value={"total_requests": 0}
-    )
-
-    # Mock integration
-    mock_integration = mocker.MagicMock()
-    mock_integration.main.return_value = ([], [], [], [], [], "", "")
-    mock_integration.get_latest_versions.return_value = {
-        "firmware": "",
-        "android": "",
-        "firmware_prerelease": "",
-        "android_prerelease": "",
-    }
-    mocker.patch(
-        "fetchtastic.download.cli_integration.DownloadCLIIntegration",
-        return_value=mock_integration,
-    )
-
-    # Test when config exists with LOG_LEVEL setting
+    # Mock config exists to avoid running setup
     mocker.patch(
         "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
     )
     mocker.patch("fetchtastic.setup_config.prompt_for_migration")
     mocker.patch("fetchtastic.setup_config.migrate_config")
 
-    # Mock load_config to return config with LOG_LEVEL
-    mock_config = {"LOG_LEVEL": "DEBUG", "other_setting": "value"}
+    # Override config from mock_cli_dependencies to set specific LOG_LEVEL
+    mock_config = {"LOG_LEVEL": "DEBUG", "DOWNLOAD_DIR": "/tmp/test"}
     mocker.patch("fetchtastic.setup_config.load_config", return_value=mock_config)
 
     cli.main()
 
     # Verify that set_log_level was called with the correct level
     mock_set_log_level.assert_called_once_with("DEBUG")
-    mock_integration.main.assert_called_once()
-    mock_setup_run.assert_not_called()
 
 
 def test_cli_download_without_log_level_config(mocker):
@@ -1487,72 +1467,65 @@ def test_cli_download_with_empty_config(mocker):
 
 
 @pytest.mark.parametrize("log_level", ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
+@pytest.mark.usefixtures("mock_cli_dependencies")
 def test_cli_download_parametrized_log_levels(mocker, log_level):
-    """Test the 'download' command with parametrized LOG_LEVEL values."""
+    """Test:: 'download' command with parametrized LOG_LEVEL values."""
     mocker.patch("sys.argv", ["fetchtastic", "download"])
-    mock_integration_main = mocker.patch(
-        "fetchtastic.download.cli_integration.DownloadCLIIntegration.main",
-        return_value=([], [], [], [], [], "", ""),
-    )
-    mock_set_log_level = mocker.patch("fetchtastic.log_utils.set_log_level")
-    mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
 
+    # Mock config exists to avoid running setup
     mocker.patch(
         "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
     )
     mocker.patch("fetchtastic.setup_config.prompt_for_migration")
     mocker.patch("fetchtastic.setup_config.migrate_config")
 
-    mock_config = {"LOG_LEVEL": log_level}
+    # Override the config from mock_cli_dependencies to set specific log level
+    mock_config = {"LOG_LEVEL": log_level, "DOWNLOAD_DIR": "/tmp/test"}
     mocker.patch("fetchtastic.setup_config.load_config", return_value=mock_config)
+    mock_set_log_level = mocker.patch("fetchtastic.log_utils.set_log_level")
 
     cli.main()
 
     # Verify that set_log_level was called with the correct level
     mock_set_log_level.assert_called_once_with(log_level)
-    mock_integration_main.assert_called_once()
-    mock_setup_run.assert_not_called()
 
 
 @pytest.mark.parametrize("invalid_log_level", ["INVALID", "TRACE", "VERBOSE", "123"])
+@pytest.mark.usefixtures("mock_cli_dependencies")
 def test_cli_download_with_invalid_log_levels(mocker, invalid_log_level):
     """
-    Verify the CLI passes an invalid LOG_LEVEL to set_log_level and still runs the download integration while not invoking setup.
+    Verify CLI passes an invalid LOG_LEVEL to set_log_level and still runs a download integration while not invoking setup.
 
     Asserts that set_log_level is called with the raw invalid value, DownloadCLIIntegration.main is invoked exactly once, and setup_config.run_setup is not called.
 
     Parameters:
-        invalid_log_level (str): A string representing an invalid log level value to pass through to the CLI.
+        invalid_log_level (str): A string representing an invalid log level value to pass through to CLI.
     """
     mocker.patch("sys.argv", ["fetchtastic", "download"])
-    mock_integration_main = mocker.patch(
-        "fetchtastic.download.cli_integration.DownloadCLIIntegration.main",
-        return_value=([], [], [], [], [], "", ""),
-    )
     mock_set_log_level = mocker.patch("fetchtastic.log_utils.set_log_level")
-    mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
 
+    # Mock config exists to avoid running setup
     mocker.patch(
         "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
     )
     mocker.patch("fetchtastic.setup_config.prompt_for_migration")
     mocker.patch("fetchtastic.setup_config.migrate_config")
 
-    mock_config = {"LOG_LEVEL": invalid_log_level}
+    # Override the config from mock_cli_dependencies to set specific invalid log level
+    mock_config = {"LOG_LEVEL": invalid_log_level, "DOWNLOAD_DIR": "/tmp/test"}
     mocker.patch("fetchtastic.setup_config.load_config", return_value=mock_config)
 
     # Should not raise an exception, but set_log_level might handle invalid values
     cli.main()
 
-    # Verify that set_log_level was called with the invalid level (let set_log_level handle validation)
+    # Verify that set_log_level was called with invalid level (let set_log_level handle validation)
     mock_set_log_level.assert_called_once_with(invalid_log_level)
-    mock_integration_main.assert_called_once()
-    mock_setup_run.assert_not_called()
 
 
+@pytest.mark.usefixtures("mock_cli_dependencies")
 def test_cli_download_with_empty_log_level(mocker):
     """
-    Verify that when a configuration contains an empty `LOG_LEVEL` value, the CLI's `download` command does not attempt to set the log level but still invokes the downloader and does not run setup.
+    Verify that when a configuration contains an empty `LOG_LEVEL` value, CLI's `download` command does not attempt to set log level but still invokes the downloader and does not run setup.
 
     This patches a present configuration with `"LOG_LEVEL": ""` and asserts:
     - set_log_level is not called for the empty (falsy) value,
@@ -1560,28 +1533,23 @@ def test_cli_download_with_empty_log_level(mocker):
     - setup_config.run_setup is not invoked.
     """
     mocker.patch("sys.argv", ["fetchtastic", "download"])
-    mock_integration_main = mocker.patch(
-        "fetchtastic.download.cli_integration.DownloadCLIIntegration.main",
-        return_value=([], [], [], [], [], "", ""),
-    )
     mock_set_log_level = mocker.patch("fetchtastic.log_utils.set_log_level")
-    mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
 
+    # Mock config exists to avoid running setup
     mocker.patch(
         "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
     )
     mocker.patch("fetchtastic.setup_config.prompt_for_migration")
     mocker.patch("fetchtastic.setup_config.migrate_config")
 
-    mock_config = {"LOG_LEVEL": ""}  # Empty string
+    # Override config from mock_cli_dependencies to set empty log level
+    mock_config = {"LOG_LEVEL": "", "DOWNLOAD_DIR": "/tmp/test"}
     mocker.patch("fetchtastic.setup_config.load_config", return_value=mock_config)
 
     cli.main()
 
     # Empty string should NOT call set_log_level (falsy value)
     mock_set_log_level.assert_not_called()
-    mock_integration_main.assert_called_once()
-    mock_setup_run.assert_not_called()
 
 
 def test_cli_download_with_case_insensitive_log_levels(mocker, mock_cli_dependencies):

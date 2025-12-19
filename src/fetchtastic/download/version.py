@@ -447,9 +447,13 @@ class VersionManager:
 
         version_lower = version.lower()
 
-        # Check for explicit prerelease indicators
-        if any(indicator in version_lower for indicator in prerelease_indicators):
-            return True
+        # Check for explicit prerelease indicators with word boundaries
+        import re
+
+        for indicator in prerelease_indicators:
+            # Use word boundaries to avoid matching within words
+            if re.search(rf"\b{re.escape(indicator.lstrip('-'))}\b", version_lower):
+                return True
 
         # Check for commit hash patterns (indicates prerelease)
         if re.search(r"[a-f0-9]{6,}", version_lower):

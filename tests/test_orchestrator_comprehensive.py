@@ -84,25 +84,25 @@ class TestDownloadOrchestrator:
         patterns = orchestrator._get_exclude_patterns()
         assert isinstance(patterns, list)
 
-    def test_handle_download_result(self, orchestrator):
+    def test_handle_download_result(self, orchestrator, tmp_path):
         """Test handling download results."""
         # Create a mock download result
         mock_result = Mock()
         mock_result.success = True
-        mock_result.file_path = "/tmp/test/file.bin"
+        mock_result.file_path = str(tmp_path / "test" / "file.bin")
 
         orchestrator._handle_download_result(mock_result, "test_operation")
         assert orchestrator.download_results[-1] is mock_result
         assert not orchestrator.failed_downloads
 
-    def test_retry_failed_downloads(self, orchestrator):
+    def test_retry_failed_downloads(self, orchestrator, tmp_path):
         """Test retrying failed downloads."""
         retry_result = DownloadResult(
             success=False,
             error_type="network_error",
             file_type="android",
             download_url="https://example.com/file",
-            file_path="/tmp/test.apk",
+            file_path=str(tmp_path / "test.apk"),
             is_retryable=True,
         )
         orchestrator.failed_downloads = [retry_result]
@@ -113,7 +113,7 @@ class TestDownloadOrchestrator:
             return_value=DownloadResult(
                 success=True,
                 file_type="android",
-                file_path="/tmp/test.apk",
+                file_path=str(tmp_path / "test.apk"),
                 download_url="https://example.com/file",
             ),
         ) as mock_retry_single:
@@ -122,14 +122,14 @@ class TestDownloadOrchestrator:
             assert not orchestrator.failed_downloads
             assert any(r.success for r in orchestrator.download_results)
 
-    def test_retry_single_failure(self, orchestrator):
+    def test_retry_single_failure(self, orchestrator, tmp_path):
         """Test retrying a single failed download."""
         mock_failed_result = Mock()
         mock_failed_result.success = False
         mock_failed_result.error_type = "network_error"
         mock_failed_result.is_retryable = True
         mock_failed_result.download_url = "https://example.com/file.apk"
-        mock_failed_result.file_path = "/tmp/test.apk"
+        mock_failed_result.file_path = str(tmp_path / "test.apk")
         mock_failed_result.file_type = "android"
         mock_failed_result.retry_count = 0
         mock_failed_result.retry_timestamp = None
@@ -144,8 +144,11 @@ class TestDownloadOrchestrator:
             patch.object(orchestrator.android_downloader, "verify", return_value=True),
         ):
             result = orchestrator._retry_single_failure(mock_failed_result)
-            # Should return a DownloadResult
-            assert hasattr(result, "success")
+            # Should return a DownloadResult with success=True
+            from fetchtastic.download.interfaces import DownloadResult
+
+            assert isinstance(result, DownloadResult)
+            assert result.success is True
             mock_download.assert_called_once()
 
     def test_generate_retry_report(self, orchestrator):
@@ -182,10 +185,27 @@ class TestDownloadOrchestrator:
             for call in mock_info.call_args_list
         )
 
-    def test_enhance_download_results_with_metadata(self, orchestrator):
+    def test_enhance_download_results_with_metadata(self, orchestrator, tmp_path):
         """Test enhancing download results with metadata."""
-        # Method should exist and be callable
+        # Add some mock download results to test enhancement
+        from fetchtastic.download.interfaces import DownloadResult
+
+        mock_result = DownloadResult(
+            success=True,
+            file_type="firmware",
+            download_url="https://example.com/firmware.bin",
+            file_path=str(tmp_path / "firmware.bin"),
+            file_size=1000,
+            release_tag="v1.0.0",
+        )
+        orchestrator.download_results = [mock_result]
+
+        # Method should enhance results with metadata
         orchestrator._enhance_download_results_with_metadata()
+
+        # Verify that download_results still contains result and wasn't corrupted
+        assert len(orchestrator.download_results) == 1
+        assert orchestrator.download_results[0].success is True
 
     def test_is_download_retryable(self, orchestrator):
         """Test checking if download is retryable."""
@@ -195,10 +215,35 @@ class TestDownloadOrchestrator:
         result = orchestrator._is_download_retryable(mock_result)
         assert isinstance(result, bool)
 
-    def test_log_download_summary(self, orchestrator):
+    def test_log_download_summary(self, orchestrator, tmp_path):
         """Test logging download summary."""
-        # Method should exist and be callable (may log to stdout/stderr)
+        # Add some mock download results to test summary
+        from fetchtastic.download.interfaces import DownloadResult
+
+        orchestrator.download_results = [
+            DownloadResult(
+                success=True,
+                file_type="firmware",
+                download_url="https://example.com/firmware.bin",
+                file_path=str(tmp_path / "firmware.bin"),
+                file_size=1000,
+                release_tag="v1.0.0",
+            ),
+            DownloadResult(
+                success=False,
+                file_type="android",
+                error_type="network_error",
+                download_url="https://example.com/android.apk",
+            ),
+        ]
+
+        # Method should log summary without errors
         orchestrator._log_download_summary(100.0)
+
+        # Verify that download_results still contains expected results
+        assert len(orchestrator.download_results) == 2
+        assert orchestrator.download_results[0].success is True
+        assert orchestrator.download_results[1].success is False
 
     def test_get_download_statistics(self, orchestrator):
         """Test getting download statistics."""
@@ -216,19 +261,73 @@ class TestDownloadOrchestrator:
 
     def test_calculate_success_rate(self, orchestrator):
         """Test calculating success rate."""
+        # Test with empty results
+        rate = orchestrator._calculate_success_rate()
+        assert isinstance(rate, float)
+        assert rate == 0.0  # No downloads should give 0% success rate
+
+        # Add some mock download results
+        from fetchtastic.download.interfaces import DownloadResult
+
+        orchestrator.download_results = [
+            DownloadResult(success=True, file_type="firmware"),
+            DownloadResult(success=True, file_type="android"),
+            DownloadResult(success=False, file_type="firmware"),
+            DownloadResult(success=True, file_type="firmware"),
+        ]
+
         rate = orchestrator._calculate_success_rate()
         assert isinstance(rate, float)
         assert 0.0 <= rate <= 100.0  # Success rate should be percentage
+        assert rate == 75.0  # 3 successful out of 4 = 75%
 
     def test_count_artifact_downloads(self, orchestrator):
         """Test counting artifact downloads."""
-        count = orchestrator._count_artifact_downloads("firmware")
-        assert isinstance(count, int)
+        # Add some mock download results to test counting
+        from fetchtastic.download.interfaces import DownloadResult
+
+        orchestrator.download_results = [
+            DownloadResult(
+                success=True,
+                file_type="firmware",
+                download_url="https://example.com/firmware1.bin",
+            ),
+            DownloadResult(
+                success=True,
+                file_type="firmware",
+                download_url="https://example.com/firmware2.bin",
+            ),
+            DownloadResult(
+                success=True,
+                file_type="android",
+                download_url="https://example.com/android.apk",
+            ),
+            DownloadResult(
+                success=False,
+                file_type="firmware",
+                download_url="https://example.com/firmware3.bin",
+            ),
+        ]
+
+        # Test counting firmware downloads (should count both successful and failed)
+        firmware_count = orchestrator._count_artifact_downloads("firmware")
+        assert isinstance(firmware_count, int)
+        assert firmware_count == 3  # 3 firmware entries total
+
+        # Test counting android downloads
+        android_count = orchestrator._count_artifact_downloads("android")
+        assert android_count == 1  # 1 android entry
 
     def test_cleanup_old_versions(self, orchestrator):
         """Test cleanup of old versions."""
+        # Store original download results count
+        original_count = len(orchestrator.download_results)
+
         # Method should exist and be callable
         orchestrator.cleanup_old_versions()
+
+        # Verify that method completed without errors and didn't corrupt data
+        assert len(orchestrator.download_results) >= original_count
 
     def test_get_latest_versions(self, orchestrator):
         """Test getting latest versions."""

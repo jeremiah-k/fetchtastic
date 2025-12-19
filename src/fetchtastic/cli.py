@@ -225,7 +225,7 @@ def main():
             setup_config.run_setup(sections=combined_sections or None)
 
             # Remind about updates at the end if available
-            if update_available:
+            if update_available and latest_version:
                 _display_update_reminder(latest_version)
     elif args.command == "download":
         # Check if configuration exists
@@ -380,19 +380,14 @@ def main():
             run_repository_downloader_menu(config)
 
             # Remind about updates at the end if available
-            if update_available:
-                upgrade_cmd = get_upgrade_command()
-                log_utils.logger.info("\nUpdate Available")
-                log_utils.logger.info(
-                    f"A newer version (v{latest_version}) of Fetchtastic is available!"
-                )
-                log_utils.logger.info(f"Run '{upgrade_cmd}' to upgrade.")
+            if update_available and latest_version:
+                _display_update_reminder(latest_version)
         elif args.repo_command == "clean":
             # Clean the repository directory
             run_repo_clean(config)
 
             # Remind about updates at the end if available
-            if update_available:
+            if update_available and latest_version:
                 _display_update_reminder(latest_version)
         else:
             # No repo subcommand provided

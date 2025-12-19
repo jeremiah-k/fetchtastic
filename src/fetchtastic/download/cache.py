@@ -262,6 +262,85 @@ class CacheManager:
 
         return cache_data.get("data")
 
+    def _get_cached_github_data(
+        self,
+        cache_key: str,
+        cache_file: str,
+        data_field_name: str,
+        fetcher_func: Callable[[], Any],
+        *,
+        force_refresh: bool = False,
+        cache_expiry_seconds: int = FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
+        path_description: str = "",
+    ) -> Any:
+        """
+        Generic helper for fetching GitHub API data with TTL-based caching.
+
+        This method encapsulates the common pattern of:
+        1. Checking cache for fresh data
+        2. Fetching from API on cache miss or expiry
+        3. Updating cache with fresh data
+        4. Handling errors gracefully
+
+        Parameters:
+            cache_key (str): Key to identify the cached data entry
+            cache_file (str): Path to the cache file
+            data_field_name (str): Field name to store/retrieve data in cache
+            fetcher_func (Callable): Function that fetches fresh data from API
+            force_refresh (bool): If True, bypass cache and fetch fresh data
+            cache_expiry_seconds (int): Cache TTL in seconds
+            path_description (str): Description for logging (e.g., "repo contents for /path")
+
+        Returns:
+            Any: The requested data (type depends on fetcher_func return type)
+        """
+        now = datetime.now(timezone.utc)
+
+        cache = self.read_json(cache_file)
+        if not isinstance(cache, dict):
+            cache = {}
+
+        cached = cache.get(cache_key) if not force_refresh else None
+        if isinstance(cached, dict) and not force_refresh:
+            data = cached.get(data_field_name)
+            cached_at_raw = cached.get("cached_at")
+            if data is not None and cached_at_raw:
+                cached_at = _parse_iso_datetime_utc(cached_at_raw)
+                if cached_at:
+                    age_s = (now - cached_at).total_seconds()
+                    if age_s < cache_expiry_seconds:
+                        logger.debug(
+                            "Using cached %s (cached %.0fs ago)",
+                            path_description or "data",
+                            age_s,
+                        )
+                        return data
+                    logger.debug(
+                        "Cache stale for %s (age %.0fs >= %ss); refreshing",
+                        path_description or "data",
+                        age_s,
+                        cache_expiry_seconds,
+                    )
+
+        try:
+            fresh_data = fetcher_func()
+            cache[cache_key] = {
+                data_field_name: fresh_data,
+                "cached_at": now.isoformat(),
+            }
+            self.atomic_write_json(cache_file, cache)
+            return fresh_data
+        except (ValueError, KeyError, TypeError) as e:
+            # Note: The specific error message will be logged by the fetcher_func
+            # to maintain context about what operation failed
+            logger.debug(
+                "Error parsing response for %s: %s", path_description or "data", e
+            )
+            return []
+        except requests.RequestException as exc:
+            logger.debug("Could not fetch %s: %s", path_description or "data", exc)
+            return []
+
     def get_repo_directories(
         self,
         path: str = "",
@@ -287,40 +366,13 @@ class CacheManager:
         normalized_path = (path or "").strip("/")
         cache_key = f"repo:{normalized_path or '/'}"
         cache_file = os.path.join(self.cache_dir, "prerelease_dirs.json")
-        now = datetime.now(timezone.utc)
-
-        cache = self.read_json(cache_file)
-        if not isinstance(cache, dict):
-            cache = {}
-
-        cached = cache.get(cache_key) if not force_refresh else None
-        if isinstance(cached, dict) and not force_refresh:
-            directories = cached.get("directories")
-            cached_at_raw = cached.get("cached_at")
-            if isinstance(directories, list) and cached_at_raw:
-                cached_at = _parse_iso_datetime_utc(cached_at_raw)
-                if cached_at:
-                    age_s = (now - cached_at).total_seconds()
-                    if age_s < FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS:
-                        logger.debug(
-                            "Using cached prerelease directories for %s (cached %.0fs ago)",
-                            normalized_path or "/",
-                            age_s,
-                        )
-                        return [d for d in directories if isinstance(d, str)]
-                    logger.debug(
-                        "Prerelease directory cache stale for %s (age %.0fs >= %ss); refreshing",
-                        normalized_path or "/",
-                        age_s,
-                        FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
-                    )
-
         api_url = (
             f"{MESHTASTIC_GITHUB_IO_CONTENTS_URL}/{normalized_path}"
             if normalized_path
             else MESHTASTIC_GITHUB_IO_CONTENTS_URL
         )
-        try:
+
+        def fetch_directories() -> List[str]:
             response = make_github_api_request(
                 api_url,
                 github_token=github_token,
@@ -337,19 +389,22 @@ class CacheManager:
                 and item.get("type") == "dir"
                 and item.get("name")
             ]
-            cache[cache_key] = {
-                "directories": directories,
-                "cached_at": now.isoformat(),
-            }
-            self.atomic_write_json(cache_file, cache)
             return [d for d in directories if isinstance(d, str)]
+
+        try:
+            return self._get_cached_github_data(
+                cache_key=cache_key,
+                cache_file=cache_file,
+                data_field_name="directories",
+                fetcher_func=fetch_directories,
+                force_refresh=force_refresh,
+                cache_expiry_seconds=FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
+                path_description=f"prerelease directories for {normalized_path or '/'}",
+            )
         except (ValueError, KeyError, TypeError) as e:
             logger.error(
                 "Invalid JSON or structure in GitHub response for %s: %s", api_url, e
             )
-            return []
-        except requests.RequestException as exc:
-            logger.debug("Could not fetch repo directories for %s: %s", api_url, exc)
             return []
 
     def get_repo_contents(
@@ -376,40 +431,13 @@ class CacheManager:
         normalized_path = (path or "").strip("/")
         cache_key = f"contents:{normalized_path or '/'}"
         cache_file = os.path.join(self.cache_dir, "repo_contents.json")
-        now = datetime.now(timezone.utc)
-
-        cache = self.read_json(cache_file)
-        if not isinstance(cache, dict):
-            cache = {}
-
-        cached = cache.get(cache_key) if not force_refresh else None
-        if isinstance(cached, dict) and not force_refresh:
-            contents = cached.get("contents")
-            cached_at_raw = cached.get("cached_at")
-            if isinstance(contents, list) and cached_at_raw:
-                cached_at = _parse_iso_datetime_utc(cached_at_raw)
-                if cached_at:
-                    age_s = (now - cached_at).total_seconds()
-                    if age_s < FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS:
-                        logger.debug(
-                            "Using cached repo contents for %s (cached %.0fs ago)",
-                            normalized_path or "/",
-                            age_s,
-                        )
-                        return [c for c in contents if isinstance(c, dict)]
-                    logger.debug(
-                        "Repo contents cache stale for %s (age %.0fs >= %ss); refreshing",
-                        normalized_path or "/",
-                        age_s,
-                        FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
-                    )
-
         api_url = (
             f"{MESHTASTIC_GITHUB_IO_CONTENTS_URL}/{normalized_path}"
             if normalized_path
             else MESHTASTIC_GITHUB_IO_CONTENTS_URL
         )
-        try:
+
+        def fetch_contents() -> List[Dict[str, Any]]:
             response = make_github_api_request(
                 api_url,
                 github_token=github_token,
@@ -419,19 +447,22 @@ class CacheManager:
             contents = response.json()
             if not isinstance(contents, list):
                 return []
-            cache[cache_key] = {
-                "contents": contents,
-                "cached_at": now.isoformat(),
-            }
-            self.atomic_write_json(cache_file, cache)
             return [c for c in contents if isinstance(c, dict)]
+
+        try:
+            return self._get_cached_github_data(
+                cache_key=cache_key,
+                cache_file=cache_file,
+                data_field_name="contents",
+                fetcher_func=fetch_contents,
+                force_refresh=force_refresh,
+                cache_expiry_seconds=FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
+                path_description=f"repo contents for {normalized_path or '/'}",
+            )
         except (ValueError, KeyError, TypeError) as e:
             logger.error(
                 "Invalid JSON or structure in GitHub response for %s: %s", api_url, e
             )
-            return []
-        except requests.RequestException as exc:
-            logger.debug("Could not fetch repo contents for %s: %s", api_url, exc)
             return []
 
     def clear_cache(self, cache_file: str) -> bool:

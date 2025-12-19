@@ -32,6 +32,8 @@ RECOMMENDED_EXCLUDE_PATTERNS = [
     "*tcxo*",  # TCXO related files (crystal oscillator)
     "*s3-core*",  # S3 core files (specific hardware)
     "*request*",  # request files (debug/test files) - NOTE: May be too broad, consider review
+    # TODO: This pattern could exclude legitimate firmware assets containing "request" in their names.
+    # Consider making this pattern more specific or moving it to optional patterns if false positives are reported.
     "*rak4631_*",  # RAK4631 underscore variants (like rak4631_eink)
     "*heltec_*",  # Heltec underscore variants
     "*tbeam_*",  # T-Beam underscore variants
@@ -2745,11 +2747,12 @@ def remove_reboot_cron_job(*, crontab_path: str):
 
 
 @cron_check_command_required
-def check_cron_job_exists():
+@cron_command_required
+def check_cron_job_exists(*, crontab_path: str):
     """
-    Check if any Fetchtastic cron jobs exist in the current user's crontab.
+    Check if any Fetchtastic cron jobs exist in current user's crontab.
 
-    This function is a no-op on Windows and if the system crontab is unavailable. Returns False if no Fetchtastic entries are found; True if any matching entries are detected.
+    This function is a no-op on Windows and if system crontab is unavailable. Returns False if no Fetchtastic entries are found; True if any matching entries are detected.
     """
     # Skip cron job checking on Windows
     if platform.system() == "Windows":
@@ -2758,7 +2761,7 @@ def check_cron_job_exists():
 
     try:
         result = subprocess.run(
-            ["crontab", "-l"],
+            [crontab_path, "-l"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -2785,11 +2788,12 @@ def check_boot_script_exists():
 
 
 @cron_check_command_required
-def check_any_cron_jobs_exist():
+@cron_command_required
+def check_any_cron_jobs_exist(*, crontab_path: str):
     """
     Check if any cron jobs exist in the current user's crontab.
 
-    This function is a no-op on Windows and if the system crontab is unavailable. Returns False if no cron entries are found; True if any entries are detected.
+    This function is a no-op on Windows and if system crontab is unavailable. Returns False if no cron entries are found; True if any entries are detected.
     """
     # Skip cron job checking on Windows
     if platform.system() == "Windows":
@@ -2798,7 +2802,7 @@ def check_any_cron_jobs_exist():
 
     try:
         result = subprocess.run(
-            ["crontab", "-l"],
+            [crontab_path, "-l"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
