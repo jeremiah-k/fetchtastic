@@ -1645,7 +1645,9 @@ def _setup_base(
     return config
 
 
-def run_setup(sections: Optional[Sequence[str]] = None):
+def run_setup(
+    sections: Optional[Sequence[str]] = None, perform_initial_download: bool = True
+):
     """
     Run the interactive Fetchtastic setup wizard.
 
@@ -1777,7 +1779,7 @@ def run_setup(sections: Optional[Sequence[str]] = None):
         yaml.dump(config, f)
     print(f"Configuration saved to: {CONFIG_FILE}")
 
-    if not is_partial_run:
+    if not is_partial_run and perform_initial_download:
         # Ask if the user wants to perform a first run
         if platform.system() == "Windows":
             # On Windows, we'll just tell them how to run it

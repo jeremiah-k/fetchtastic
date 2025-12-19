@@ -129,7 +129,7 @@ def _ensure_config_loaded() -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     config, config_path = _load_and_prepare_config()
     if config_path is None:
         log_utils.logger.info("No configuration found. Running setup.")
-        setup_config.run_setup()
+        setup_config.run_setup(perform_initial_download=False)
         config, config_path = _load_and_prepare_config()
         if config_path is None:
             log_utils.logger.error("Setup did not create a valid configuration.")
@@ -490,7 +490,7 @@ def main():
         exists, _ = setup_config.config_exists()
         if not exists:
             print("No configuration found. Running setup.")
-            setup_config.run_setup()
+            setup_config.run_setup(perform_initial_download=False)
 
         config = setup_config.load_config()
         if not config:
