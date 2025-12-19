@@ -1337,49 +1337,70 @@ def matches_extract_patterns(
         if not pattern_lower:
             continue
 
-        # Rule 1: Special case for "littlefs-" prefix pattern
-        if pattern_lower == "littlefs-":
-            if filename_lower.startswith("littlefs-"):
-                return True
-            continue
+        if _matches_littlefs_pattern(filename_lower, pattern_lower):
+            return True
 
-        # Rule 2: File type patterns (starting with known prefixes) - match as substring
-        if any(pattern_lower.startswith(prefix) for prefix in FILE_TYPE_PREFIXES):
-            if pattern_lower in filename_lower:
-                return True
-            continue
+        if _matches_file_type_pattern(filename_lower, pattern_lower):
+            return True
 
-        # Rule 3: Device patterns - check if this is a device identifier pattern
-        is_device_pattern_match = False
-        if device_manager and getattr(device_manager, "is_device_pattern", None):
-            try:
-                if device_manager.is_device_pattern(pattern):
-                    is_device_pattern_match = True
-            except (AttributeError, TypeError, ValueError):
-                is_device_pattern_match = False
-        elif pattern_lower.endswith(("-", "_")):
-            # Fallback: patterns ending with dash or underscore are treated as device patterns
-            is_device_pattern_match = True
+        if _matches_device_pattern(
+            filename_lower, pattern_lower, pattern, device_manager
+        ):
+            return True
 
-        if is_device_pattern_match:
-            # Remove trailing separators for device pattern matching
-            clean_pattern = pattern_lower.rstrip("-_ ")
-            if not clean_pattern:
-                continue
-            # Short device patterns (1-2 chars): match whole-word boundaries
-            if len(clean_pattern) <= 2:
-                if re.search(rf"\b{re.escape(clean_pattern)}\b", filename_lower):
-                    return True
-            else:
-                # Longer device patterns: match as separate tokens delimited by '-' or '_'
-                if re.search(
-                    rf"(^|[-_]){re.escape(clean_pattern)}([-_]|$)", filename_lower
-                ):
-                    return True
-            continue
-
-        # Rule 4: Default behavior - simple substring matching
-        if pattern_lower in filename_lower:
+        if _matches_substring_pattern(filename_lower, pattern_lower):
             return True
 
     return False
+
+
+def _matches_littlefs_pattern(filename_lower: str, pattern_lower: str) -> bool:
+    """Rule 1: Matches filenames beginning with the special littlefs prefix."""
+    return pattern_lower == "littlefs-" and filename_lower.startswith("littlefs-")
+
+
+def _matches_file_type_pattern(filename_lower: str, pattern_lower: str) -> bool:
+    """Rule 2: File-type patterns match as substrings when prefixed."""
+    if any(pattern_lower.startswith(prefix) for prefix in FILE_TYPE_PREFIXES):
+        return pattern_lower in filename_lower
+    return False
+
+
+def _matches_device_pattern(
+    filename_lower: str,
+    pattern_lower: str,
+    pattern: str,
+    device_manager: Optional[Any],
+) -> bool:
+    """
+    Rule 3: Device identifier patterns either come from the device manager or end with
+    special separators (- or _). Matches tokens according to legacy rules.
+    """
+    is_device_pattern_match = False
+    if device_manager and getattr(device_manager, "is_device_pattern", None):
+        try:
+            if device_manager.is_device_pattern(pattern):
+                is_device_pattern_match = True
+        except (AttributeError, TypeError, ValueError):
+            is_device_pattern_match = False
+    elif pattern_lower.endswith(("-", "_")):
+        is_device_pattern_match = True
+
+    if not is_device_pattern_match:
+        return False
+
+    clean_pattern = pattern_lower.rstrip("-_ ")
+    if not clean_pattern:
+        return False
+
+    if len(clean_pattern) <= 2:
+        return bool(re.search(rf"\b{re.escape(clean_pattern)}\b", filename_lower))
+
+    return bool(
+        re.search(rf"(^|[-_]){re.escape(clean_pattern)}([-_]|$)", filename_lower)
+    )
+
+
+def _matches_substring_pattern(filename_lower: str, pattern_lower: str) -> bool:
+    """Rule 4: Default substring matching for other patterns."""
+    return pattern_lower in filename_lower
