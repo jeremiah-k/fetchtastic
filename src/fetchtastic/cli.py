@@ -11,11 +11,6 @@ from typing import List
 import platformdirs
 import yaml
 
-try:
-    import winshell  # type: ignore[import]
-except ImportError:
-    winshell = None
-
 from fetchtastic import log_utils, setup_config
 from fetchtastic.constants import (
     FIRMWARE_DIR_PREFIX,
@@ -625,7 +620,17 @@ def run_clean():
     # Windows-specific cleanup
     if platform.system() == "Windows":
         # Check if Windows modules are available
-        if winshell is not None:
+        windows_modules_available = False
+        try:
+            import winshell  # type: ignore[import]
+
+            windows_modules_available = True
+        except ImportError:
+            print(
+                "Windows modules not available. Some Windows-specific items may not be removed."
+            )
+
+        if windows_modules_available:
             # Remove Start Menu shortcuts
             windows_start_menu_folder = setup_config.WINDOWS_START_MENU_FOLDER
             if os.path.exists(windows_start_menu_folder):
