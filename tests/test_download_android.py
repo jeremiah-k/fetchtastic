@@ -46,9 +46,9 @@ class TestMeshtasticAndroidAppDownloader:
     def mock_cache_manager(self, tmp_path):
         """
         Create a Mock configured to emulate CacheManager behavior for tests.
-        
+
         The mock has its spec set to CacheManager, a `cache_dir` attribute pointing to a temporary cache directory, and `get_cache_file_path(file_name)` configured to return a path within that cache directory.
-        
+
         Returns:
             Mock: A unittest.mock.Mock instance with spec=CacheManager and cache helpers configured.
         """
@@ -125,6 +125,71 @@ class TestMeshtasticAndroidAppDownloader:
         assert releases[0].prerelease is False
         assert len(releases[0].assets) == 1
         assert releases[0].assets[0].name == "meshtastic.apk"
+
+    @patch("fetchtastic.download.android.make_github_api_request")
+    def test_get_releases_filters_legacy_android_tags(self, mock_request, downloader):
+        """Legacy pre-2.7.0 tags should be skipped entirely."""
+        mock_response = Mock()
+        mock_response.json.return_value = [
+            {
+                "tag_name": "v2.6.9-open.1",
+                "prerelease": False,
+                "published_at": "2022-01-01T00:00:00Z",
+                "assets": [
+                    {
+                        "name": "meshtastic.apk",
+                        "browser_download_url": "https://example.com/old.apk",
+                        "size": 1000000,
+                    }
+                ],
+            },
+            {
+                "tag_name": "v2.7.0",
+                "prerelease": False,
+                "published_at": "2023-01-01T00:00:00Z",
+                "assets": [
+                    {
+                        "name": "meshtastic.apk",
+                        "browser_download_url": "https://example.com/new.apk",
+                        "size": 1000000,
+                    }
+                ],
+            },
+        ]
+        mock_request.return_value = mock_response
+        downloader.cache_manager.read_releases_cache_entry.return_value = None
+
+        releases = downloader.get_releases(limit=10)
+
+        assert [release.tag_name for release in releases] == ["v2.7.0"]
+
+    @patch("fetchtastic.download.android.make_github_api_request")
+    def test_get_releases_marks_legacy_prerelease_by_tag(
+        self, mock_request, downloader
+    ):
+        """Legacy -open/-closed tags should mark releases as prerelease."""
+        mock_response = Mock()
+        mock_response.json.return_value = [
+            {
+                "tag_name": "v2.7.1-open.1",
+                "prerelease": False,
+                "published_at": "2023-01-01T00:00:00Z",
+                "assets": [
+                    {
+                        "name": "meshtastic.apk",
+                        "browser_download_url": "https://example.com/pr.apk",
+                        "size": 1000000,
+                    }
+                ],
+            }
+        ]
+        mock_request.return_value = mock_response
+        downloader.cache_manager.read_releases_cache_entry.return_value = None
+
+        releases = downloader.get_releases(limit=10)
+
+        assert len(releases) == 1
+        assert releases[0].prerelease is True
 
     @patch("fetchtastic.download.android.make_github_api_request")
     def test_get_releases_api_error(self, mock_request, downloader):

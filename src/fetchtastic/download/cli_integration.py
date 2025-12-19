@@ -193,8 +193,12 @@ class DownloadCLIIntegration:
         latest_apk_prerelease = latest_versions.get("android_prerelease")
         if latest_firmware_prerelease:
             log.info(f"Latest firmware prerelease: {latest_firmware_prerelease}")
+        else:
+            log.info("Latest firmware prerelease: none")
         if latest_apk_prerelease:
             log.info(f"Latest APK prerelease: {latest_apk_prerelease}")
+        else:
+            log.info("Latest APK prerelease: none")
 
         if failed_downloads:
             log.info(f"{len(failed_downloads)} downloads failed:")

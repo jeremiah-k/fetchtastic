@@ -19,7 +19,7 @@ class TestDownloadOrchestrator:
     def mock_config(self):
         """
         Provide a mock configuration dictionary for tests.
-        
+
         Returns:
             dict: Configuration used by tests with keys:
                 DOWNLOAD_DIR: path to the download directory.
@@ -42,10 +42,10 @@ class TestDownloadOrchestrator:
     def orchestrator(self, mock_config):
         """
         Create a DownloadOrchestrator configured for tests with key dependencies replaced by mocks.
-        
+
         Parameters:
             mock_config (dict): Configuration dictionary passed to the DownloadOrchestrator constructor.
-        
+
         Returns:
             orchestrator (DownloadOrchestrator): Instance whose cache_manager, version_manager, prerelease_manager,
             android_downloader, and firmware_downloader are Mock objects and whose downloader download_dir attributes are set to "/tmp/test".
@@ -90,6 +90,24 @@ class TestDownloadOrchestrator:
         selected = orch._select_latest_release_by_version(releases)
         assert selected is not None
         assert selected.tag_name == "v2.7.16.a597230"
+
+    def test_get_latest_versions_reports_android_prerelease(self, orchestrator):
+        """Latest versions should prefer stable Android releases and surface prereleases."""
+        orchestrator.android_releases = [
+            Release(tag_name="v2.7.10-open.1", prerelease=True, assets=[]),
+            Release(tag_name="v2.7.9", prerelease=False, assets=[]),
+        ]
+        orchestrator.android_downloader.get_latest_prerelease_tag = Mock(
+            return_value="v2.7.10-open.1"
+        )
+        orchestrator.firmware_downloader.get_latest_release_tag = Mock(
+            return_value=None
+        )
+
+        versions = orchestrator.get_latest_versions()
+
+        assert versions["android"] == "v2.7.9"
+        assert versions["android_prerelease"] == "v2.7.10-open.1"
 
     def test_firmware_prerelease_cleanup_only_removes_managed_dirs(self, tmp_path):
         """

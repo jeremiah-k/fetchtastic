@@ -16,9 +16,11 @@ from typing import Any, Dict, List, Optional
 import requests
 
 from fetchtastic.constants import (
+    GITHUB_MAX_PER_PAGE,
     LATEST_ANDROID_PRERELEASE_JSON_FILE,
     LATEST_ANDROID_RELEASE_JSON_FILE,
     MESHTASTIC_ANDROID_RELEASES_URL,
+    RELEASE_SCAN_COUNT,
     RELEASES_CACHE_EXPIRY_HOURS,
 )
 from fetchtastic.log_utils import logger
@@ -79,77 +81,120 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     def get_releases(self, limit: Optional[int] = None) -> List[Release]:
         """
         Fetches Android APK releases from GitHub, using a cached response when available.
-        
+
         Builds and returns Release objects populated with their Asset entries, filters out releases that have no assets, and respects the optional limit on the number of releases returned.
-        
+
         Parameters:
             limit (Optional[int]): Maximum number of releases to return.
-        
+
         Returns:
             List[Release]: List of Release objects; empty list on error or if no valid releases are found.
         """
         try:
-            params = {"per_page": 10}
-            url_key = self.cache_manager.build_url_cache_key(
-                self.android_releases_url, params
+            max_scan = GITHUB_MAX_PER_PAGE
+            min_stable_releases = int(
+                self.config.get("ANDROID_VERSIONS_TO_KEEP", RELEASE_SCAN_COUNT)
             )
-            releases_data = self.cache_manager.read_releases_cache_entry(
-                url_key, expiry_seconds=int(RELEASES_CACHE_EXPIRY_HOURS * 3600)
+            scan_count = (
+                int(limit)
+                if limit
+                else min(max_scan, max(min_stable_releases * 2, RELEASE_SCAN_COUNT))
             )
 
-            if releases_data is None:
-                response = make_github_api_request(
-                    self.android_releases_url,
-                    self.config.get("GITHUB_TOKEN"),
-                    allow_env_token=True,
-                    params=params,
+            while True:
+                params = {"per_page": scan_count}
+                url_key = self.cache_manager.build_url_cache_key(
+                    self.android_releases_url, params
                 )
-                releases_data = response.json() if hasattr(response, "json") else []
-                if isinstance(releases_data, list):
-                    logger.debug(
-                        "Cached %d releases for %s (fetched from API)",
-                        len(releases_data),
+                releases_data = self.cache_manager.read_releases_cache_entry(
+                    url_key, expiry_seconds=int(RELEASES_CACHE_EXPIRY_HOURS * 3600)
+                )
+
+                if releases_data is None:
+                    response = make_github_api_request(
                         self.android_releases_url,
+                        self.config.get("GITHUB_TOKEN"),
+                        allow_env_token=True,
+                        params=params,
                     )
-                self.cache_manager.write_releases_cache_entry(
-                    url_key, releases_data if isinstance(releases_data, list) else []
-                )
-
-            if releases_data is None or not isinstance(releases_data, list):
-                logger.error("Invalid releases data received from GitHub API")
-                return []
-
-            releases = []
-            for release_data in releases_data:
-                # Filter out releases without assets
-                if not release_data.get("assets"):
-                    continue
-
-                release = Release(
-                    tag_name=release_data["tag_name"],
-                    prerelease=release_data.get("prerelease", False),
-                    published_at=release_data.get("published_at"),
-                    body=release_data.get("body"),
-                )
-
-                # Add assets to the release
-                for asset_data in release_data["assets"]:
-                    asset = Asset(
-                        name=asset_data["name"],
-                        download_url=asset_data["browser_download_url"],
-                        size=asset_data["size"],
-                        browser_download_url=asset_data.get("browser_download_url"),
-                        content_type=asset_data.get("content_type"),
+                    releases_data = response.json() if hasattr(response, "json") else []
+                    if isinstance(releases_data, list):
+                        logger.debug(
+                            "Cached %d releases for %s (fetched from API)",
+                            len(releases_data),
+                            self.android_releases_url,
+                        )
+                    self.cache_manager.write_releases_cache_entry(
+                        url_key,
+                        releases_data if isinstance(releases_data, list) else [],
                     )
-                    release.assets.append(asset)
 
-                releases.append(release)
+                if releases_data is None or not isinstance(releases_data, list):
+                    logger.error("Invalid releases data received from GitHub API")
+                    return []
 
-                # Respect limit if specified
-                if limit and len(releases) >= limit:
-                    break
+                releases: List[Release] = []
+                stable_count = 0
+                for release_data in releases_data:
+                    # Filter out releases without assets
+                    if not release_data.get("assets"):
+                        continue
 
-            return releases
+                    tag_name = release_data.get("tag_name", "")
+                    if not _is_supported_android_release(
+                        tag_name, version_manager=self.version_manager
+                    ):
+                        logger.debug(
+                            "Skipping legacy Android release %s (pre-2.7.0 tagging scheme)",
+                            tag_name or "<unknown>",
+                        )
+                        continue
+
+                    release = Release(
+                        tag_name=tag_name,
+                        prerelease=_is_apk_prerelease(release_data),
+                        published_at=release_data.get("published_at"),
+                        body=release_data.get("body"),
+                    )
+
+                    # Add assets to the release
+                    for asset_data in release_data["assets"]:
+                        asset = Asset(
+                            name=asset_data["name"],
+                            download_url=asset_data["browser_download_url"],
+                            size=asset_data["size"],
+                            browser_download_url=asset_data.get("browser_download_url"),
+                            content_type=asset_data.get("content_type"),
+                        )
+                        release.assets.append(asset)
+
+                    releases.append(release)
+                    if not release.prerelease:
+                        stable_count += 1
+
+                    # Respect limit if specified
+                    if limit and len(releases) >= limit:
+                        break
+
+                if limit:
+                    return releases
+
+                if (
+                    stable_count >= min_stable_releases
+                    or len(releases_data) < scan_count
+                ):
+                    return releases
+
+                if scan_count >= max_scan:
+                    logger.debug(
+                        "Reached maximum APK scan window (%d) without finding %d stable releases; proceeding with %d stable release(s).",
+                        max_scan,
+                        min_stable_releases,
+                        stable_count,
+                    )
+                    return releases
+
+                scan_count = min(max_scan, scan_count * 2)
 
         except (
             requests.RequestException,
@@ -164,7 +209,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     def get_assets(self, release: Release) -> List[Asset]:
         """
         Get APK assets included in the given release.
-        
+
         Returns:
             List[Asset]: Assets from the release whose names end with ".apk" (case-insensitive).
         """
@@ -175,7 +220,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     def get_download_url(self, asset: Asset) -> str:
         """
         Get the direct download URL for the given asset.
-        
+
         Returns:
             str: The asset's direct download URL.
         """
@@ -184,9 +229,9 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     def should_download_asset(self, asset_name: str) -> bool:
         """
         Determine if an APK asset should be downloaded based on configured include and exclude patterns.
-        
+
         Exclude patterns take precedence over include (selected) patterns. If no selected patterns are configured, the asset is allowed.
-        
+
         Returns:
             `True` if the asset should be downloaded, `False` otherwise.
         """
@@ -206,13 +251,13 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     def download_apk(self, release: Release, asset: Asset) -> DownloadResult:
         """
         Download and verify an APK asset for a specific release and return a DownloadResult describing the outcome.
-        
+
         If the asset already exists and matches expectations the download is skipped; on a successful download the saved file is verified and returned; on verification or transfer failures a result is returned that includes an error message, an error_type (e.g., "network_error", "validation_error", or "filesystem_error"), and whether the failure is retryable.
-        
+
         Parameters:
             release (Release): Release object containing the APK asset (used for tag and metadata).
             asset (Asset): Asset object describing the APK to download (includes name, size, and download_url).
-        
+
         Returns:
             DownloadResult: An object describing success or failure. On success contains the saved `file_path`, `download_url`, `file_size`, and `file_type`; if the download was skipped `was_skipped` will be true. On failure contains `error_message` and may set `is_retryable` and `error_type`.
         """
@@ -304,10 +349,10 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     def is_release_complete(self, release: Release) -> bool:
         """
         Return True if every APK asset selected for the given release exists on disk and its file size equals the asset's expected size.
-        
+
         Parameters:
             release (Release): Release whose APK assets are checked. Only assets that pass the downloader's selection rules are considered.
-        
+
         Returns:
             bool: True if all selected assets are present with matching sizes, False otherwise.
         """
@@ -380,10 +425,10 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     def _is_version_directory(self, dir_name: str) -> bool:
         """
         Determine whether a directory name matches a semantic version-like pattern.
-        
+
         Parameters:
             dir_name (str): Directory name to test.
-        
+
         Returns:
             `true` if the name matches a version pattern optionally prefixed with 'v' and containing one to two dot-separated numeric components (e.g., '1.2', 'v1.2.3'), `false` otherwise.
         """
@@ -392,7 +437,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     def get_latest_release_tag(self) -> Optional[str]:
         """
         Get the latest Android release tag recorded in the downloader's tracking file.
-        
+
         Returns:
             The tracked release tag string (value of "latest_version") if present, `None` otherwise.
         """
@@ -409,7 +454,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     def update_latest_release_tag(self, release_tag: str) -> bool:
         """
         Record the given release tag as the latest Android release in the tracking file.
-        
+
         Returns:
             `True` if the tracking file was written successfully, `False` otherwise.
         """
@@ -424,7 +469,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     def _get_current_iso_timestamp(self) -> str:
         """
         Get the current UTC time as an ISO 8601 formatted timestamp.
-        
+
         Returns:
             iso_timestamp (str): ISO 8601 formatted UTC timestamp (e.g., "2025-12-16T12:34:56+00:00").
         """
@@ -486,9 +531,10 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             filtered_prereleases = []
             for pr in prereleases:
                 clean_version = version_manager.extract_clean_version(pr.tag_name)
-                if clean_version and clean_version.lstrip("vV").startswith(
-                    expected_base
-                ):
+                if not clean_version:
+                    filtered_prereleases.append(pr)
+                    continue
+                if clean_version.lstrip("vV").startswith(expected_base):
                     filtered_prereleases.append(pr)
             prereleases = filtered_prereleases
 
@@ -509,10 +555,48 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
         return prereleases
 
+    def get_latest_prerelease_tag(
+        self, releases: Optional[List[Release]] = None
+    ) -> Optional[str]:
+        """
+        Return the newest APK prerelease tag, filtering out prereleases that are obsolete compared to the latest stable release.
+
+        Parameters:
+            releases (Optional[List[Release]]): Optional release list to inspect; when omitted, releases are fetched from GitHub.
+
+        Returns:
+            Optional[str]: The tag name for the newest relevant prerelease, or None if none are found.
+        """
+        available_releases = releases or self.get_releases()
+        if not available_releases:
+            return None
+
+        latest_stable = next(
+            (release for release in available_releases if not release.prerelease), None
+        )
+        latest_stable_tuple = (
+            self.version_manager.get_release_tuple(latest_stable.tag_name)
+            if latest_stable
+            else None
+        )
+
+        for release in available_releases:
+            if not release.prerelease:
+                continue
+            prerelease_tuple = self.version_manager.get_release_tuple(release.tag_name)
+            if (
+                latest_stable_tuple is None
+                or prerelease_tuple is None
+                or prerelease_tuple > latest_stable_tuple
+            ):
+                return release.tag_name
+
+        return None
+
     def get_prerelease_tracking_file(self) -> str:
         """
         Get the filesystem path to the Android prerelease tracking JSON file.
-        
+
         Returns:
             str: Path to the prerelease tracking JSON file located in the downloader's download directory.
         """
@@ -521,10 +605,10 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     def update_prerelease_tracking(self, prerelease_tag: str) -> bool:
         """
         Record the prerelease tag and extracted prerelease metadata to the Android prerelease tracking JSON file.
-        
+
         Parameters:
             prerelease_tag (str): Prerelease tag to record (e.g., "v1.2.3-open-1"); used to extract base version, prerelease type/number, and commit hash.
-        
+
         Returns:
             bool: `True` if the tracking file was written successfully, `False` otherwise.
         """
@@ -577,9 +661,9 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     ) -> bool:
         """
         Indicates whether the given APK file requires extraction (always false for APKs).
-        
+
         This downloader does not perform APK extraction; extraction is never needed or performed.
-        
+
         Returns:
             `False` always — APK files are not extracted.
         """
@@ -630,7 +714,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     def manage_prerelease_tracking_files(self) -> None:
         """
         Remove Android prerelease tracking files that are superseded or expired when prerelease handling is enabled.
-        
+
         Scans the prerelease tracking directory for existing tracking JSON files, determines the currently relevant prereleases from remote releases, builds corresponding tracking entries, and delegates deletion of superseded or expired tracking files to the PrereleaseHistoryManager. No value is returned.
         """
         check_prereleases = self.config.get(
@@ -707,11 +791,39 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 def _is_apk_prerelease_by_name(tag_name: str) -> bool:
     """
     Check if a tag name indicates an APK prerelease.
-    
+
     Returns:
         True if the tag contains "-open" or "-closed" (case-insensitive), False otherwise.
     """
     return "-open" in (tag_name or "").lower() or "-closed" in (tag_name or "").lower()
+
+
+MIN_ANDROID_TRACKED_VERSION = (2, 7, 0)
+
+
+def _is_supported_android_release(
+    tag_name: str, version_manager: Optional[VersionManager] = None
+) -> bool:
+    """
+    Return True when the tag_name represents an Android release at or beyond the
+    version where the new tagging scheme began (2.7.0+).
+
+    Older prerelease tags (e.g., 2.6.x-open) should be ignored so they are not
+    treated as current prereleases. Unparsable tags are allowed through to
+    avoid blocking future formats.
+    """
+    manager = version_manager or VersionManager()
+    version_tuple = manager.get_release_tuple(tag_name)
+    if not version_tuple:
+        return True
+
+    max_len = max(len(version_tuple), len(MIN_ANDROID_TRACKED_VERSION))
+    padded_version = version_tuple + (0,) * (max_len - len(version_tuple))
+    padded_minimum = MIN_ANDROID_TRACKED_VERSION + (0,) * (
+        max_len - len(MIN_ANDROID_TRACKED_VERSION)
+    )
+
+    return padded_version >= padded_minimum
 
 
 def _is_apk_prerelease(release: Dict[str, Any]) -> bool:
