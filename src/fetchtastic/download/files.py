@@ -147,16 +147,16 @@ def _is_release_complete(
     exclude_patterns: List[str],
 ) -> bool:
     """
-    Determine whether a release directory contains all expected assets and that those assets appear intact.
-
+    Check that a release directory contains every expected asset (filtered by inclusion/exclusion patterns) and that each asset appears intact.
+    
     Parameters:
-        release_data (Dict[str, Any]): Release metadata containing an "assets" list with objects that include at least a "name" and optionally a "size".
-        release_dir (str): Filesystem path to the directory containing downloaded release assets.
-        selected_patterns (Optional[List[str]]): Optional glob-style patterns used to include only assets that match; when provided, assets not matching these patterns are ignored.
-        exclude_patterns (List[str]): Glob-style patterns; assets matching any of these are ignored.
-
+        release_data (Dict[str, Any]): Release metadata with an "assets" list; each asset object should include at least a "name" and may include a "size".
+        release_dir (str): Path to the directory holding downloaded release assets.
+        selected_patterns (Optional[List[str]]): Optional glob-style inclusion patterns; when provided, only assets matching these patterns are considered.
+        exclude_patterns (List[str]): Glob-style exclusion patterns; assets matching any of these are ignored.
+    
     Returns:
-        bool: `True` if every expected asset (after applying selected and exclude patterns) exists in release_dir and passes integrity checks (ZIP members not corrupted and file sizes match any declared sizes in release_data), `False` otherwise.
+        bool: `True` if every expected asset (after applying inclusion/exclusion patterns) exists in release_dir and passes integrity checks (ZIP files are not corrupted and file sizes match any declared sizes), `False` otherwise.
     """
     if not os.path.exists(release_dir):
         return False
@@ -261,12 +261,12 @@ def _prepare_for_redownload(file_path: str) -> bool:
 
 def _prerelease_needs_download(file_path: str) -> bool:
     """
-    Determines whether a prerelease file at the given path needs to be downloaded.
-
-    If the file is missing, this reports that a download is needed. If the file exists but fails an integrity check, it attempts to prepare the file for re-download and reports that a download is needed only if preparation succeeds.
-
+    Decides whether a prerelease file should be downloaded.
+    
+    Reports that a download is needed when the target file does not exist or when an integrity check fails and preparation for re-download (cleanup) succeeds.
+    
     Returns:
-        bool: `True` if the file is missing or (exists and failed integrity check and preparation for re-download succeeded), `False` otherwise.
+        bool: `True` if the file is missing or failed integrity check and was prepared for re-download, `False` otherwise.
     """
     if not os.path.exists(file_path):
         return True
@@ -429,10 +429,10 @@ class FileOperations:
 
         def _write_content(f):
             """
-            Write provided content to a writable file-like object.
-
+            Write the provided string content to the given writable file-like object.
+            
             Parameters:
-                f (typing.IO): A writable file-like object to which content will be written.
+                f (typing.IO): Writable file-like object to receive the content.
             """
             f.write(content)
 
@@ -472,16 +472,16 @@ class FileOperations:
         exclude_patterns: List[str],
     ) -> List[Path]:
         """
-        Extract matching files from a ZIP archive into a target directory.
-
+        Extract files from a ZIP archive whose basenames match the given inclusion patterns and do not match the exclusion patterns into the target directory.
+        
         Parameters:
             zip_path (str): Path to the ZIP archive.
             extract_dir (str): Destination directory for extracted files.
-            patterns (List[str]): Filename glob patterns to select files for extraction; an empty list means no files will be extracted (legacy behavior).
-            exclude_patterns (List[str]): Filename glob patterns to exclude from extraction (case-insensitive).
-
+            patterns (List[str]): Filename glob patterns to include; an empty list results in no extraction (legacy behavior).
+            exclude_patterns (List[str]): Filename glob patterns to exclude (case-insensitive).
+        
         Returns:
-            List[Path]: Paths of files that were successfully extracted; returns an empty list on error or if no files were extracted.
+            List[Path]: Paths of files that were successfully extracted; returns an empty list if no files were extracted or on error.
         """
         if not patterns:
             # Legacy behavior: empty pattern list means do not extract anything
@@ -712,16 +712,16 @@ class FileOperations:
         exclude_patterns: List[str],
     ) -> List[Path]:
         """
-        Extract matching files from a ZIP archive after validating patterns and extraction necessity.
-
+        Extract files from a ZIP archive that match the provided include/exclude patterns after validating patterns and confirming extraction is necessary.
+        
         Parameters:
             zip_path (str): Path to the ZIP archive to extract from.
             extract_dir (str): Destination directory for extracted files.
-            patterns (List[str]): Filename/glob patterns selecting which files to extract.
-            exclude_patterns (List[str]): Filename/glob patterns to exclude from extraction.
-
+            patterns (List[str]): Glob patterns selecting which file basenames to include.
+            exclude_patterns (List[str]): Glob patterns selecting which file basenames to exclude.
+        
         Returns:
-            List[Path]: Paths of files that were extracted; empty list if no files were extracted or extraction was aborted.
+            List[Path]: Paths of files that were actually extracted; empty list if extraction was skipped or failed.
         """
         # Validate patterns first
         if not self.validate_extraction_patterns(patterns, exclude_patterns):
@@ -749,16 +749,16 @@ class FileOperations:
         self, extracted_files: List[Path], algorithm: str = "sha256"
     ) -> Dict[str, str]:
         """
-        Generate hash sidecar files for a list of extracted files using the specified algorithm.
-
-        Creates a sidecar file next to each existing file with the name "<file>.<algorithm>" containing the file's hex digest, and returns a mapping from the file path (string) to its hex hash. If an unsupported algorithm is provided, the method logs a warning and defaults to SHA-256.
-
+        Generate a hash sidecar file for each existing path in extracted_files using the specified algorithm.
+        
+        Creates a file named "<original_path>.<algorithm>" containing the file's hexadecimal digest. If the provided algorithm is unsupported, defaults to "sha256".
+        
         Parameters:
-            extracted_files (List[Path]): Paths to files for which to generate sidecar hashes.
-            algorithm (str): Hash algorithm to use (e.g., "sha256", "md5", "sha1"); case-insensitive.
-
+            extracted_files (List[Path]): Files to hash; only existing files are processed.
+            algorithm (str): Hash algorithm to use (e.g., "sha256", "md5"); case-insensitive. Defaults to "sha256".
+        
         Returns:
-            Dict[str, str]: Mapping of file path strings to their hex digest values for files that were successfully hashed.
+            Dict[str, str]: Mapping from each processed file's path string to its hex digest.
         """
         hash_dict = {}
 
@@ -767,6 +767,12 @@ class FileOperations:
             try:
 
                 def hash_func():
+                    """
+                    Create and return a new hash object for the configured algorithm.
+                    
+                    Returns:
+                        A new hash object suitable for incremental updates and digest computation using the selected algorithm.
+                    """
                     return hashlib.new(algorithm.lower())
 
                 hash_func()  # Test that algorithm is valid
@@ -813,11 +819,13 @@ class FileOperations:
 
     def cleanup_file(self, file_path: str) -> bool:
         """
-        Remove the specified file and any associated temporary sidecar files.
-
+        Remove a file and its temporary sidecar files.
+        
+        Removes the file at `file_path`, its exact `.tmp` sibling, and any files matching the `<file_path>.tmp.*` pattern.
+        
         Parameters:
-            file_path (str): Path to the target file; the function will remove the file itself, an exact ".tmp" sibling, and any files matching the ".tmp.*" pattern for that path.
-
+            file_path (str): Path to the target file to remove.
+        
         Returns:
             bool: `True` if all removal operations completed without error, `False` otherwise.
         """
@@ -840,13 +848,10 @@ class FileOperations:
 
     def ensure_directory_exists(self, directory: str) -> bool:
         """
-        Ensure the directory exists, creating parent directories as needed.
-
-        Parameters:
-            directory (str): Path to the directory to ensure exists.
-
+        Ensure a directory path exists by creating any missing parent directories.
+        
         Returns:
-            bool: True if the directory exists or was created successfully, False on error.
+            bool: `True` if the directory exists or was created successfully, `False` otherwise.
         """
         try:
             os.makedirs(directory, exist_ok=True)
@@ -870,13 +875,13 @@ class FileOperations:
     def compare_file_hashes(self, file1: str, file2: str) -> bool:
         """
         Determine whether two files have identical SHA-256 hashes.
-
+        
         Parameters:
             file1 (str): Path to the first file.
             file2 (str): Path to the second file.
-
+        
         Returns:
-            True if both files exist and their SHA-256 hex digests are identical, False otherwise.
+            `true` if both files exist and their SHA-256 hex digests are identical, `false` otherwise.
         """
         hash1 = self._get_file_hash(file1)
         hash2 = self._get_file_hash(file2)
@@ -911,20 +916,19 @@ class FileOperations:
 
 def safe_extract_path(extract_dir: str, file_path: str) -> str:
     """
-    Safely resolves the extraction path for a file to prevent directory traversal.
-
-    It ensures that the resolved path is within the specified extraction directory.
-
-    Args:
-        extract_dir (str): The intended base directory for extraction.
-        file_path (str): The relative path of the file to be extracted,
-                         as obtained from the archive.
-
+    Resolve a safe absolute extraction path and prevent directory traversal.
+    
+    Ensures the absolute path for file_path, when joined to extract_dir, resides within extract_dir.
+    
+    Parameters:
+        extract_dir (str): Base directory intended for extraction.
+        file_path (str): Member path from the archive to be extracted.
+    
     Returns:
-        str: The safe, absolute path for extraction.
-
+        str: Absolute, normalized path inside extract_dir suitable for extraction.
+    
     Raises:
-        ValueError: If the resolved path is outside the `extract_dir`.
+        ValueError: If the resolved path is outside extract_dir.
     """
     real_extract_dir = os.path.realpath(extract_dir)
     prospective_path = os.path.join(real_extract_dir, file_path)

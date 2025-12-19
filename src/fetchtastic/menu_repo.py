@@ -366,15 +366,15 @@ def run_menu():
 
 def run_repository_downloader_menu(config):
     """
-    Orchestrates an interactive repository-download workflow and returns the paths of downloaded files.
-
+    Orchestrates an interactive repository browsing and download workflow.
+    
     Presents the repository browsing menu, downloads the user's selected files using RepositoryDownloader, and aggregates successful results.
-
+    
     Parameters:
-        config (dict): Configuration for the downloader (download destination, network/timeouts, credentials, or other download-related settings).
-
+        config (dict): Configuration options for the downloader (e.g., destination directory, timeouts, credentials, and other download-related settings).
+    
     Returns:
-        List[str] | None: List of filesystem paths for successfully downloaded files, or `None` if no files were downloaded or the operation was cancelled/errored.
+        List[str] | None: List of filesystem paths for successfully downloaded files, or `None` if the operation was cancelled, errored, or no files were downloaded.
     """
     try:
         # Get user selection from the menu

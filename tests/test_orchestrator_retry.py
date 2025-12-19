@@ -10,10 +10,10 @@ from fetchtastic.download.orchestrator import DownloadOrchestrator
 class _NoSleep:
     def __call__(self, *_args, **_kwargs):
         """
-        A no-op callable that accepts any positional and keyword arguments and always returns None.
-
+        A callable that ignores all positional and keyword arguments and always returns None.
+        
         Returns:
-            None
+            None: Always returns None.
         """
         return None
 
@@ -22,8 +22,8 @@ class _NoSleep:
 def no_sleep(monkeypatch):
     """
     Replace time.sleep with a no-op callable for tests.
-
-    This pytest fixture monkeypatches time.sleep so calls to sleep return immediately, preventing test delays.
+    
+    This pytest fixture monkeypatches time.sleep to a callable that ignores arguments and returns None so sleep calls return immediately and tests avoid delays.
     """
     monkeypatch.setattr(time, "sleep", _NoSleep())
 
@@ -43,14 +43,14 @@ def test_retry_uses_real_download(monkeypatch, tmp_path):
 
     def fake_download(u, p):
         """
-        Simulate a successful download by recording the requested URL and writing test data to the target path.
-
+        Simulate a successful download by recording the requested URL and writing test bytes to the given target path.
+        
         Parameters:
             u (str): URL that would be downloaded; stored into the shared `download_called["url"]`.
             p (str | pathlib.Path): Filesystem path where the downloaded bytes are written.
-
+        
         Returns:
-            bool: `True` to indicate the simulated download succeeded.
+            bool: `True` if the simulated download succeeded, `False` otherwise.
         """
         download_called["url"] = u
         Path(p).write_bytes(b"data")
@@ -87,9 +87,9 @@ def test_orchestrator_refreshes_commits_before_processing(monkeypatch):
 
     def fake_refresh():
         """
-        Record a refresh and populate the orchestrator's recent commits with a sample commit.
-
-        Appends "refresh" to the outer `calls` list and sets `orch._recent_commits` to a single commit dict with key `sha` and value "abc1234".
+        Record a repository refresh and inject a sample recent commit into the orchestrator.
+        
+        Appends "refresh" to the surrounding `calls` list and sets `orch._recent_commits` to a single commit dictionary with `sha` set to "abc1234".
         """
         calls.append("refresh")
         orch._recent_commits = [{"sha": "abc1234"}]

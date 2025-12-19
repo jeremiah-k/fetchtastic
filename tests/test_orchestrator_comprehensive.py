@@ -19,7 +19,21 @@ pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
 
 @pytest.fixture
 def test_config(tmp_path):
-    """Test configuration for download orchestrator."""
+    """
+    Provide a test configuration dictionary for initializing a DownloadOrchestrator.
+    
+    Returns:
+        dict: Configuration mapping with keys:
+            - "DOWNLOAD_DIR" (str): base directory for downloads.
+            - "FIRMWARE_VERSIONS_TO_KEEP" (int): number of firmware versions to retain.
+            - "ANDROID_VERSIONS_TO_KEEP" (int): number of Android versions to retain.
+            - "REPO_VERSIONS_TO_KEEP" (int): number of repository versions to retain.
+            - "SELECTED_PATTERNS" (list[str]): filename patterns to include.
+            - "EXCLUDE_PATTERNS" (list[str]): filename patterns to exclude.
+            - "GITHUB_TOKEN" (str): token used for authenticated GitHub access.
+            - "CHECK_FIRMWARE_PRERELEASES" (bool): whether to consider firmware prereleases.
+            - "CHECK_ANDROID_PRERELEASES" (bool): whether to consider Android prereleases.
+    """
     return {
         "DOWNLOAD_DIR": str(tmp_path / "test_orchestrator"),
         "FIRMWARE_VERSIONS_TO_KEEP": 2,
@@ -36,13 +50,13 @@ def test_config(tmp_path):
 @pytest.fixture
 def orchestrator(test_config):
     """
-    Create a DownloadOrchestrator configured from the provided test configuration.
-
+    Create a DownloadOrchestrator using the provided test configuration.
+    
     Parameters:
-        test_config (dict): Configuration dictionary used to construct the orchestrator. Expected keys include directories, retention counts, include/exclude patterns, GitHub token, and prerelease handling options.
-
+        test_config (dict): Configuration dictionary containing directories, retention counts, include/exclude patterns, GitHub token, and prerelease handling options.
+    
     Returns:
-        DownloadOrchestrator: An orchestrator instance initialized with the given configuration.
+        DownloadOrchestrator: An orchestrator initialized with the provided configuration.
     """
     return DownloadOrchestrator(test_config)
 
@@ -381,7 +395,11 @@ class TestDownloadOrchestrator:
             orchestrator._process_firmware_downloads()
 
     def test_download_android_release(self, orchestrator):
-        """Test downloading Android release."""
+        """
+        Verify that an Android release containing an APK asset causes the orchestrator to attempt a download.
+        
+        Creates a Release with one APK Asset, patches the orchestrator's Android downloader to simulate a successful download, calls _download_android_release, and asserts a download was invoked.
+        """
         release = Release(tag_name="v2.7.14", prerelease=False)
         # Add an asset to the release
         asset = Asset(

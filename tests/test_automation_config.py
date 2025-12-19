@@ -98,13 +98,13 @@ class TestAutomationConfiguration:
 
         def wants(_section: str) -> bool:
             """
-            Allow running any setup section.
-
+            Indicates that every setup section should be executed.
+            
             Parameters:
-                _section (str): Name of the setup section (unused).
-
+                _section (str): Name of the setup section (ignored).
+            
             Returns:
-                `true` for every section.
+                True if the section should run, False otherwise.
             """
             return True
 

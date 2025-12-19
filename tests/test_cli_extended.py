@@ -195,10 +195,8 @@ def test_run_clean_managed_file_filtering(mocker):
 
     def mock_remove(path):
         """
-        Record the given filesystem path in the shared removed_files list.
-
-        This helper emulates file removal for tests by appending the provided path to the module-level removed_files list as a side effect.
-
+        Record a filesystem path in the module-level removed_files list.
+        
         Parameters:
             path (str): Filesystem path to record as removed.
         """
@@ -206,10 +204,10 @@ def test_run_clean_managed_file_filtering(mocker):
 
     def mock_rmtree(path):
         """
-        Record a directory path as removed by appending it to the `removed_dirs` list.
-
+        Record a directory path as removed by appending it to the test tracking list `removed_dirs`.
+        
         Parameters:
-            path (str): Filesystem path of the directory that would be removed.
+            path (str): Filesystem path of the directory to record as removed.
         """
         removed_dirs.append(path)
 

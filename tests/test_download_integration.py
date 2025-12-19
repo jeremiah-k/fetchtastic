@@ -15,18 +15,18 @@ from fetchtastic.download.orchestrator import DownloadOrchestrator
 @pytest.fixture
 def integration_config():
     """
-    Provide a default integration test configuration mapping used by orchestrator tests.
-
+    Default integration test configuration used by orchestrator tests.
+    
     Returns:
-        dict: Configuration containing:
-            - DOWNLOAD_DIR (str): path for test downloads.
-            - FIRMWARE_VERSIONS_TO_KEEP (int)
-            - ANDROID_VERSIONS_TO_KEEP (int)
-            - SELECTED_PATTERNS (list[str])
-            - EXCLUDE_PATTERNS (list[str])
-            - GITHUB_TOKEN (str)
-            - CHECK_FIRMWARE_PRERELEASES (bool)
-            - CHECK_ANDROID_PRERELEASES (bool)
+        dict: Mapping of configuration keys to values:
+            - DOWNLOAD_DIR (str): Path for test downloads.
+            - FIRMWARE_VERSIONS_TO_KEEP (int): Number of firmware versions to retain.
+            - ANDROID_VERSIONS_TO_KEEP (int): Number of Android versions to retain.
+            - SELECTED_PATTERNS (list[str]): Inclusion filename patterns.
+            - EXCLUDE_PATTERNS (list[str]): Exclusion filename patterns.
+            - GITHUB_TOKEN (str): Token used for GitHub API calls in tests.
+            - CHECK_FIRMWARE_PRERELEASES (bool): Whether to include firmware prereleases.
+            - CHECK_ANDROID_PRERELEASES (bool): Whether to include Android prereleases.
     """
     return {
         "DOWNLOAD_DIR": "/tmp/test_integration",

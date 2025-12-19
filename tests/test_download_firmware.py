@@ -20,7 +20,17 @@ class TestFirmwareReleaseDownloader:
 
     @pytest.fixture
     def mock_config(self):
-        """Mock configuration dictionary."""
+        """
+        Provide a mock configuration dictionary used by the test suite.
+        
+        Returns:
+            dict: Test configuration containing:
+                - DOWNLOAD_DIR (str): Base directory for downloads ("/tmp/test").
+                - CHECK_FIRMWARE_PRERELEASES (bool): Whether prereleases are considered.
+                - SELECTED_PRERELEASE_ASSETS (list[str]): Asset name substrings to select from prereleases.
+                - EXCLUDE_PATTERNS (list[str]): Filename glob patterns to exclude.
+                - GITHUB_TOKEN (str): Token used for GitHub API requests ("test_token").
+        """
         return {
             "DOWNLOAD_DIR": "/tmp/test",
             "CHECK_FIRMWARE_PRERELEASES": True,
@@ -43,13 +53,13 @@ class TestFirmwareReleaseDownloader:
     def downloader(self, mock_config, mock_cache_manager):
         """
         Create a FirmwareReleaseDownloader configured for tests with injected mocked dependencies.
-
+        
         Parameters:
-                mock_config (dict): Configuration dictionary to initialize the downloader.
-                mock_cache_manager (Mock): Mocked CacheManager used for cache interactions.
-
+            mock_config (dict): Configuration values used to initialize the downloader.
+            mock_cache_manager (Mock): Mocked CacheManager used for cache interactions.
+        
         Returns:
-                dl (FirmwareReleaseDownloader): Initialized downloader whose `cache_manager` is set to `mock_cache_manager` and whose `version_manager` and `file_operations` attributes are replaced with mocks.
+            FirmwareReleaseDownloader: Initialized downloader whose `cache_manager` is set to `mock_cache_manager` and whose `version_manager` and `file_operations` are replaced with mocks. The `version_manager.get_release_tuple` delegates to a real VersionManager implementation.
         """
         dl = FirmwareReleaseDownloader(mock_config, mock_cache_manager)
         # Mock the dependencies that are set in __init__

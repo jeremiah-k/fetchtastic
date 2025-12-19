@@ -1204,15 +1204,15 @@ def matches_selected_patterns(
 ) -> bool:
     """
     Determine whether a filename matches any of the provided selection patterns after normalization.
-
-    Compares the filename's normalized base forms (modern and legacy) against each non-empty pattern case-insensitively. For patterns that end with a separator ("-" or "_"), the legacy base is preferred; otherwise both bases are checked. If a pattern uses mixed case, contains a dot, or includes keywords like "release", "apk", "aab", or "fdroid", a punctuation-stripped fallback comparison is attempted. Very short patterns (≤3 characters) are also matched against the punctuation-stripped bases as a last-chance fallback. If `selected_patterns` is None or empty, all filenames match.
-
+    
+    Compares the filename's normalized modern and legacy base forms and returns True if any non-empty pattern matches. If `selected_patterns` is None or empty, the function always matches. Patterns that end with "-" or "_" preferentially match against the legacy base; other patterns are checked against both bases. A punctuation-stripped fallback is applied for patterns that contain mixed case, a dot, or keywords like "release", "apk", "aab", or "fdroid". Very short patterns (three characters or fewer) are also compared against punctuation-stripped bases as a last-chance fallback.
+    
     Parameters:
         filename (str): The filename to test.
-        selected_patterns (Optional[List[str]]): Iterable of substring patterns to search for; empty or None means match all.
-
+        selected_patterns (Optional[List[str]]): Iterable of substring patterns to search for; None or an empty list matches all filenames.
+    
     Returns:
-        bool: `true` if any non-empty pattern matches according to the above rules, `false` otherwise.
+        bool: True if any non-empty pattern matches according to the matching rules, False otherwise.
     """
 
     if not selected_patterns:
@@ -1305,30 +1305,17 @@ def matches_extract_patterns(
     device_manager: Optional[Any] = None,
 ) -> bool:
     """
-    Match a filename against legacy prerelease extract selection patterns.
-
-    Performs case-insensitive matching of filename against each pattern in extract_patterns.
-    The matching strategy is determined by the pattern type:
-
-    1. Special pattern "littlefs-" - matches filenames that start with "littlefs-"
-    2. File type patterns - patterns starting with FILE_TYPE_PREFIXES match as substrings
-    3. Device patterns - patterns ending with '-' or '_' (or identified by device_manager):
-       - Short patterns (1-2 chars): match whole-word boundaries
-       - Long patterns: match as separate tokens delimited by '-' or '_' or at filename ends
-    4. Default patterns - match as simple substrings
-
-    NOTE: This function maintains backward compatibility with existing configurations.
-    For new use cases, consider using fnmatch-style glob patterns instead.
-
+    Determine whether a filename matches any legacy prerelease extract selection patterns.
+    
+    Matches are case-insensitive and follow legacy rules: the special "littlefs-" prefix, file-type prefixes (from FILE_TYPE_PREFIXES) as substring matches, device patterns (patterns identified by device_manager.is_device_pattern or ending with '-'/'_') which match either whole-word (for 1–2 character patterns) or token-delimited boundaries, and a default substring match.
+    
     Parameters:
         filename (str): The filename to test.
         extract_patterns (List[str]): Legacy selection patterns to test against the filename.
-        device_manager (Optional[Any]): Optional object exposing is_device_pattern(pattern) -> bool
-                                      to classify device patterns; if absent, patterns ending
-                                      with '-' or '_' are treated as device patterns.
-
+        device_manager (Optional[Any]): Optional object with is_device_pattern(pattern) -> bool to classify device patterns; if omitted, patterns ending with '-' or '_' are treated as device patterns.
+    
     Returns:
-        bool: `True` if any pattern matches the filename according to the rules above, `False` otherwise.
+        bool: `True` if any pattern matches the filename according to the legacy rules, `False` otherwise.
     """
     filename_lower = filename.lower()
 
@@ -1355,12 +1342,26 @@ def matches_extract_patterns(
 
 
 def _matches_littlefs_pattern(filename_lower: str, pattern_lower: str) -> bool:
-    """Rule 1: Matches filenames beginning with the special littlefs prefix."""
+    """
+    Determine whether the pattern 'littlefs-' applies to filenames that start with 'littlefs-'.
+    
+    Returns:
+        `true` if pattern_lower equals 'littlefs-' and filename_lower starts with 'littlefs-', `false` otherwise.
+    """
     return pattern_lower == "littlefs-" and filename_lower.startswith("littlefs-")
 
 
 def _matches_file_type_pattern(filename_lower: str, pattern_lower: str) -> bool:
-    """Rule 2: File-type patterns match as substrings when prefixed."""
+    """
+    Check whether a pattern identifies a file-type prefix and appears in the filename.
+    
+    Parameters:
+        filename_lower (str): Lowercased filename to test.
+        pattern_lower (str): Lowercased pattern; expected to start with a file-type prefix.
+    
+    Returns:
+        `true` if `pattern_lower` starts with a known file-type prefix and is a substring of `filename_lower`, `false` otherwise.
+    """
     if any(pattern_lower.startswith(prefix) for prefix in FILE_TYPE_PREFIXES):
         return pattern_lower in filename_lower
     return False
@@ -1373,8 +1374,18 @@ def _matches_device_pattern(
     device_manager: Optional[Any],
 ) -> bool:
     """
-    Rule 3: Device identifier patterns either come from the device manager or end with
-    special separators (- or _). Matches tokens according to legacy rules.
+    Determine whether a lowercased filename matches a device-pattern rule.
+    
+    Checks if the provided pattern represents a device pattern (either via device_manager.is_device_pattern or by ending in '-' or '_'), then attempts to match the stripped pattern token against filename_lower. Short patterns (length <= 2) match as whole words; longer patterns match as tokens delimited by start, end, '-' or '_'.
+    
+    Parameters:
+    	filename_lower (str): The filename already converted to lowercase.
+    	pattern_lower (str): The pattern already converted to lowercase.
+    	pattern (str): The original (possibly mixed-case) pattern as provided by the caller.
+    	device_manager (Optional[Any]): Optional object with an is_device_pattern(pattern) method used to classify device patterns.
+    
+    Returns:
+    	bool: `true` if filename_lower matches the device-pattern rule for the given pattern, `false` otherwise.
     """
     is_device_pattern_match = False
     if device_manager and getattr(device_manager, "is_device_pattern", None):
@@ -1402,5 +1413,10 @@ def _matches_device_pattern(
 
 
 def _matches_substring_pattern(filename_lower: str, pattern_lower: str) -> bool:
-    """Rule 4: Default substring matching for other patterns."""
+    """
+    Checks whether pattern_lower occurs as a substring of filename_lower.
+    
+    Returns:
+        true if pattern_lower is a substring of filename_lower, false otherwise.
+    """
     return pattern_lower in filename_lower

@@ -18,16 +18,16 @@ class TestDownloadOrchestrator:
     @pytest.fixture
     def mock_config(self):
         """
-        Provide a mock configuration dictionary used for tests.
-
+        Provide a mock configuration dictionary for tests.
+        
         Returns:
-            dict: Configuration with the following keys:
-                DOWNLOAD_DIR (str): Path to the download directory.
-                CHECK_APK_PRERELEASES (bool): Whether to include Android prerelease APKs.
-                CHECK_FIRMWARE_PRERELEASES (bool): Whether to include firmware prereleases.
-                SELECTED_FIRMWARE_ASSETS (list[str]): Firmware asset names to select.
-                EXCLUDE_PATTERNS (list[str]): Glob patterns of assets/releases to exclude.
-                GITHUB_TOKEN (str): Token used for authenticated GitHub requests.
+            dict: Configuration used by tests with keys:
+                DOWNLOAD_DIR: path to the download directory.
+                CHECK_APK_PRERELEASES: whether to include Android prerelease APKs.
+                CHECK_FIRMWARE_PRERELEASES: whether to include firmware prereleases.
+                SELECTED_FIRMWARE_ASSETS: list of firmware asset names to select.
+                EXCLUDE_PATTERNS: glob patterns of assets/releases to exclude.
+                GITHUB_TOKEN: token used for authenticated GitHub requests.
         """
         return {
             "DOWNLOAD_DIR": "/tmp/test",
@@ -41,15 +41,14 @@ class TestDownloadOrchestrator:
     @pytest.fixture
     def orchestrator(self, mock_config):
         """
-        Create a DownloadOrchestrator with its external dependencies replaced by mocks for testing.
-
+        Create a DownloadOrchestrator configured for tests with key dependencies replaced by mocks.
+        
         Parameters:
             mock_config (dict): Configuration dictionary passed to the DownloadOrchestrator constructor.
-
+        
         Returns:
             orchestrator (DownloadOrchestrator): Instance whose cache_manager, version_manager, prerelease_manager,
-            android_downloader, and firmware_downloader have been replaced with Mock objects and whose downloader
-            download_dir attributes are set to "/tmp/test".
+            android_downloader, and firmware_downloader are Mock objects and whose downloader download_dir attributes are set to "/tmp/test".
         """
         orch = DownloadOrchestrator(mock_config)
         # Mock the dependencies that are set in __init__
