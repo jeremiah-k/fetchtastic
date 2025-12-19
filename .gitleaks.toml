@@ -1,0 +1,4 @@
+[[allowlist]]
+description = "Allow dummy cache key in cache management tests"
+regex = '''test_key'''
+paths = ["tests/test_cache_management.py"]

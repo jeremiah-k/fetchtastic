@@ -237,7 +237,7 @@ def test_fetch_prerelease_directories_uses_token(monkeypatch):
     """Ensure remote directory listing honours explicit GitHub token settings."""
 
     captured = {}
-    token = "test_token_placeholder"  # Not a secret; avoids B105 false positive
+    token = "FAKE_TEST_TOKEN_NOT_REAL"  # noqa: S105
 
     def _fake_fetch_repo_directories(*, allow_env_token, github_token):
         """

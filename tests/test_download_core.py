@@ -2067,15 +2067,15 @@ def test_calculate_expected_prerelease_version_edge_cases():
 
     # Test with empty string
     result = calculate_expected_prerelease_version("")
-    assert result == ""
+    assert result is None
 
     # Test with invalid version
     result = calculate_expected_prerelease_version("invalid")
-    assert result == ""
+    assert result is None
 
     # Test with version missing minor/patch
     result = calculate_expected_prerelease_version("v1")
-    assert result == ""
+    assert result is None
 
     # Test with valid version
     result = calculate_expected_prerelease_version("v1.2.3")
@@ -2867,8 +2867,8 @@ def test_calculate_expected_prerelease_version():
     assert calculate_expected_prerelease_version("v1.0") == "1.0.1"
 
     # Test with invalid versions
-    assert calculate_expected_prerelease_version("invalid") == ""
-    assert calculate_expected_prerelease_version("") == ""
+    assert calculate_expected_prerelease_version("invalid") is None
+    assert calculate_expected_prerelease_version("") is None
 
 
 @pytest.mark.core_downloads

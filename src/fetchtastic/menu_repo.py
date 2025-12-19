@@ -10,6 +10,7 @@ from fetchtastic.constants import (
     GITHUB_API_TIMEOUT,
     MESHTASTIC_GITHUB_IO_CONTENTS_URL,
 )
+from fetchtastic.download.repository import RepositoryDownloader
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import make_github_api_request
 
@@ -291,15 +292,13 @@ Select "[Quit]" to exit without downloading."""
 
 def run_menu():
     """
-    Browse the Meshtastic GitHub Pages repository interactively and select files to download.
-
-    This function runs a CLI-based navigator that lets the user move between directories, multi-select files for download, go back to parent directories, or quit. It handles user cancellation and errors internally and is intended for interactive use.
+    Interactively browse the Meshtastic GitHub Pages repository and select one or more files to download.
 
     Returns:
-        dict: On success, a dictionary with:
+        result (dict or None): If files were selected, a dict with:
             - "directory" (str): repository path containing the selected files (empty string for root).
             - "files" (list): list of file dictionaries chosen by the user (each matches entries returned by fetch_repo_contents).
-        None: If the user cancels/quits, no items/files are found, or an error occurs.
+        If the user cancels, no files are selected, or an error occurs, returns None.
     """
     try:
         current_path = ""
@@ -362,4 +361,62 @@ def run_menu():
         return {"directory": directory, "files": selected_files}
     except Exception as e:
         print(f"An error occurred: {e}")
+        return None
+
+
+def run_repository_downloader_menu(config):
+    """
+    Orchestrates an interactive repository browsing and download workflow.
+    
+    Presents the repository browsing menu, downloads the user's selected files using RepositoryDownloader, and aggregates successful results.
+    
+    Parameters:
+        config (dict): Configuration options for the downloader (e.g., destination directory, timeouts, credentials, and other download-related settings).
+    
+    Returns:
+        List[str] | None: List of filesystem paths for successfully downloaded files, or `None` if the operation was cancelled, errored, or no files were downloaded.
+    """
+    try:
+        # Get user selection from the menu
+        selected_files = run_menu()
+        if not selected_files:
+            logger.info("No files selected for download.")
+            return None
+
+        # Create repository downloader instance
+        repo_downloader = RepositoryDownloader(config)
+
+        # Convert selected files to the format expected by the new downloader
+        files_to_download = []
+        for file_info in selected_files["files"]:
+            file_data = {
+                "name": file_info["name"],
+                "download_url": file_info["download_url"],
+                "size": file_info.get("size", 0),
+            }
+            files_to_download.append(file_data)
+
+        # Download the files using the new downloader
+        download_results = repo_downloader.download_repository_files_batch(
+            files_to_download, selected_files["directory"]
+        )
+
+        # Process results
+        successful_downloads = []
+        for result in download_results:
+            if result.success:
+                successful_downloads.append(str(result.file_path))
+                logger.info(f"Successfully downloaded: {result.file_path}")
+            else:
+                logger.error(f"Failed to download: {result.error_message}")
+
+        if successful_downloads:
+            logger.info(f"Successfully downloaded {len(successful_downloads)} files.")
+            return successful_downloads
+        else:
+            logger.info("No files were downloaded successfully.")
+            return None
+
+    except Exception as e:
+        logger.error(f"Error in repository downloader workflow: {e}", exc_info=True)
         return None

@@ -1,5 +1,6 @@
 # src/fetchtastic/setup_config.py
 
+import functools
 import getpass
 import os
 import platform
@@ -21,6 +22,7 @@ from fetchtastic.constants import (
     DEFAULT_CHECK_APK_PRERELEASES,
     MESHTASTIC_DIR_NAME,
 )
+from fetchtastic.log_utils import logger
 
 # Recommended default exclude patterns for firmware extraction
 # These patterns exclude specialized variants and debug files that most users don't need
@@ -30,6 +32,8 @@ RECOMMENDED_EXCLUDE_PATTERNS = [
     "*tcxo*",  # TCXO related files (crystal oscillator)
     "*s3-core*",  # S3 core files (specific hardware)
     "*request*",  # request files (debug/test files) - NOTE: May be too broad, consider review
+    # TODO: This pattern could exclude legitimate firmware assets containing "request" in their names.
+    # Consider making this pattern more specific or moving it to optional patterns if false positives are reported.
     "*rak4631_*",  # RAK4631 underscore variants (like rak4631_eink)
     "*heltec_*",  # Heltec underscore variants
     "*tbeam_*",  # T-Beam underscore variants
@@ -41,6 +45,99 @@ RECOMMENDED_EXCLUDE_PATTERNS = [
     "*_eink*",  # e-ink display variants
 ]
 
+
+def _crontab_available() -> bool:
+    """
+    Check whether the system has the 'crontab' command available.
+    
+    Returns:
+        bool: True if the 'crontab' executable is present on PATH, False otherwise.
+    """
+    return shutil.which("crontab") is not None
+
+
+# Decorator for functions that require crontab command
+def cron_command_required(func):
+    """
+    Decorator that ensures the system 'crontab' command is available before running the wrapped function.
+    
+    If 'crontab' is not found, logs a warning and the decorated call returns None without invoking the wrapped function. If available, the wrapped function is called with an extra keyword argument `crontab_path` containing the resolved path to the 'crontab' executable.
+    """
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        """
+        Ensure the system `crontab` command is available and inject its path into the wrapped function.
+        
+        If `crontab` is not present, logs a warning and returns None. Otherwise, calls the wrapped function with the same arguments and an additional keyword argument `crontab_path` containing the path to the `crontab` executable.
+        
+        Returns:
+            The wrapped function's return value, or `None` if `crontab` is unavailable.
+        """
+        if not _crontab_available():
+            logger.warning(
+                "Cron configuration skipped: 'crontab' command not found on this system."
+            )
+            return None
+        crontab_path = shutil.which("crontab")
+        return func(*args, crontab_path=crontab_path, **kwargs)
+
+    return wrapper
+
+
+# Convenience decorator for check functions that should return False when crontab unavailable
+def cron_check_command_required(func):
+    """
+    Decorator for check-style functions that ensures the system 'crontab' command is available before running them.
+    
+    When the 'crontab' command is not found, the wrapped function is skipped and `False` is returned; otherwise the wrapped function is invoked with an extra keyword argument `crontab_path` containing the resolved path to the 'crontab' executable.
+    
+    Parameters:
+        func (callable): The check function to wrap. The wrapped function should accept a `crontab_path` keyword argument.
+    
+    Returns:
+        callable: A wrapped function that returns `False` if crontab is unavailable, or forwards to `func` with `crontab_path` when available.
+    """
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        """
+        Ensures the `crontab` command is present and injects its resolved path into the wrapped call.
+        
+        If `crontab` is not available, logs a warning and returns `False`. Otherwise resolves the `crontab`
+        executable path and calls the wrapped function with an added keyword argument `crontab_path` set
+        to that path (or the literal "crontab" if resolution returns a non-string).
+        
+        Parameters:
+            args: Positional arguments forwarded to the wrapped function.
+            kwargs: Keyword arguments forwarded to the wrapped function; the `crontab_path` key may be
+                added or overwritten.
+        
+        Returns:
+            The wrapped function's return value, or `False` if the `crontab` command is not available.
+        """
+        if not _crontab_available():
+            logger.warning(
+                "Cron configuration skipped: 'crontab' command not found on this system."
+            )
+            return False
+        crontab_path = shutil.which("crontab")
+        if not crontab_path:
+            logger.warning(
+                "Cron configuration skipped: 'crontab' command not found on this system."
+            )
+            return False
+        if not isinstance(crontab_path, str):
+            logger.debug(
+                "shutil.which returned non-str (%s); falling back to literal 'crontab'.",
+                type(crontab_path).__name__,
+            )
+            crontab_path = "crontab"
+        return func(*args, crontab_path=crontab_path, **kwargs)
+
+    return wrapper
+
+
 # Cron job schedule configurations
 CRON_SCHEDULES = {
     "hourly": {"schedule": "0 * * * *", "desc": "hourly"},
@@ -50,7 +147,7 @@ CRON_SCHEDULES = {
 # Import Windows-specific modules if on Windows
 if platform.system() == "Windows":
     try:
-        import winshell
+        import winshell  # type: ignore[import]
 
         WINDOWS_MODULES_AVAILABLE = True
     except ImportError:
@@ -453,23 +550,17 @@ def _setup_downloads(
     config: dict, is_partial_run: bool, wants: Callable[[str], bool]
 ) -> tuple[dict, bool, bool]:
     """
-    Configure which asset types to download (APKs, firmware, or both), optionally re-run selection menus, and update the provided config.
-
-    If running a full setup (is_partial_run is False) the user is prompted to choose APKs, firmware, or both. In a partial run the function will prompt only for sections indicated by the `wants` callable and will default to values already present in `config`.
-
-    Behavior and side effects:
-    - Updates `config["SAVE_APKS"]` and `config["SAVE_FIRMWARE"]`.
-    - When APKs are enabled and the APK menu is (re)run, sets `config["SELECTED_APK_ASSETS"]` to the chosen assets.
-    - When firmware is enabled and the firmware menu is (re)run, sets `config["SELECTED_FIRMWARE_ASSETS"]` to the chosen assets.
-    - Prints guidance and informational messages; may return early if neither asset type is selected.
-
+    Configure which asset types (APKs and/or firmware) to download and update the provided configuration.
+    
+    When appropriate this will prompt the user (or reuse existing values during a partial run), optionally re-run APK/firmware selection menus, and write final choices into the config. It updates the keys "SAVE_APKS", "SAVE_FIRMWARE", and when menus are run may set "SELECTED_APK_ASSETS" and "SELECTED_FIRMWARE_ASSETS". If neither asset type is selected and the current run is responsible for download sections, the function returns early to allow the caller to handle the empty selection.
+    
     Parameters:
-        config: Mutable configuration dictionary that will be updated.
-        is_partial_run: If True, only prompts sections for which `wants(section)` returns True and will reuse existing config defaults when appropriate.
-        wants: Callable that accepts a section name (e.g., "android" or "firmware") and returns True when that section should be processed in this run.
-
+        config (dict): Mutable configuration dictionary that will be updated in place.
+        is_partial_run (bool): If True, only prompt sections for which wants(section) is True and prefer existing config defaults.
+        wants (Callable[[str], bool]): Callable that accepts a section name (e.g., "android" or "firmware") and returns True when that section should be processed in this run.
+    
     Returns:
-        Tuple of (updated_config, save_apks, save_firmware) where save_apks and save_firmware are booleans indicating the final selection.
+        tuple[dict, bool, bool]: (updated_config, save_apks, save_firmware) where save_apks and save_firmware are booleans reflecting the final selection.
     """
     # Prompt to save APKs, firmware, or both
     if not is_partial_run:
@@ -590,8 +681,14 @@ def _setup_downloads(
                     "selected_assets"
                 ]
 
-    # If both save_apks and save_firmware are False, inform the user and exit setup
-    if not save_apks and not save_firmware:
+    # If both save_apks and save_firmware are False, inform the user and exit setup.
+    # During partial runs that only update non-download sections (e.g. automation),
+    # allow setup to proceed even when downloads are disabled.
+    if (
+        not save_apks
+        and not save_firmware
+        and (not is_partial_run or wants("android") or wants("firmware"))
+    ):
         print("Please select at least one type of asset to download (APK or firmware).")
         print("Run 'fetchtastic setup' again and select at least one asset.")
         return config, save_apks, save_firmware
@@ -632,18 +729,18 @@ def _setup_android(config: dict, is_first_run: bool, default_versions: int) -> d
 
 def configure_exclude_patterns(config: dict) -> None:
     """
-    Interactively configure firmware exclude patterns and save them to the provided config.
+    Configure firmware exclude patterns and store them in the given configuration dictionary.
 
-    This function runs an interactive prompt that:
-    - Offers the built-in RECOMMENDED_EXCLUDE_PATTERNS as a starting set.
-    - Lets the user accept the defaults and optionally add more patterns, or enter a fully custom space-separated list.
-    - Normalizes input by trimming whitespace, removing empty entries, and deduplicating while preserving order.
-    - Confirms the final list with the user before saving.
+    Interactively prompts the user to accept recommended patterns, add additional patterns, or provide a custom space-separated list. In non-interactive environments (CI or when stdin is not a TTY), the recommended patterns are applied automatically. Input is normalized by trimming whitespace, removing empty entries, and deduplicating while preserving order.
 
-    Effects:
-    - Writes the finalized list of patterns to config["EXCLUDE_PATTERNS"] (a list of strings).
-    - Does not persist the config to disk; callers should save the configuration if desired.
+    Parameters:
+        config (dict): Mutable configuration dictionary; this function sets config["EXCLUDE_PATTERNS"] to a list of string patterns. The function does not persist the configuration to disk.
     """
+    # In non-interactive environments, use recommended defaults
+    if not sys.stdin.isatty() or os.environ.get("CI"):
+        config["EXCLUDE_PATTERNS"] = RECOMMENDED_EXCLUDE_PATTERNS.copy()
+        print("Using recommended exclude patterns (non-interactive mode).")
+        return
     while True:  # Loop for retry capability
         print("\n--- Exclude Pattern Configuration ---")
         print(
@@ -732,18 +829,15 @@ def configure_exclude_patterns(config: dict) -> None:
 
 def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> dict:
     """
-    Configure firmware-related settings in the provided config via interactive prompts.
-
-    Updates the config in place with keys related to firmware retention, automatic extraction, extraction/exclusion patterns, and prerelease handling:
-    FIRMWARE_VERSIONS_TO_KEEP, AUTO_EXTRACT, EXTRACT_PATTERNS, EXCLUDE_PATTERNS, CHECK_PRERELEASES, SELECTED_PRERELEASE_ASSETS.
-
+    Configure firmware retention, automatic extraction, extraction/exclusion patterns, and prerelease handling in the provided config.
+    
     Parameters:
-        config (dict): Configuration mapping to read defaults from and write updated values into.
-        is_first_run (bool): When True, prompts use first-run wording and defaults.
+        config (dict): Configuration mapping to read defaults from and write updated firmware-related keys into.
+        is_first_run (bool): When True, use first-run wording and defaults for prompts.
         default_versions (int): Fallback number of firmware versions to keep when not present in config.
-
+    
     Returns:
-        dict: The same config object passed in, updated with firmware-related settings.
+        dict: The same config object updated with keys such as FIRMWARE_VERSIONS_TO_KEEP, AUTO_EXTRACT, EXTRACT_PATTERNS, EXCLUDE_PATTERNS, CHECK_PRERELEASES, and SELECTED_PRERELEASE_ASSETS.
     """
 
     # Prompt for firmware versions to keep
@@ -813,12 +907,7 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
 
         # Configure exclude patterns only if extraction is enabled and patterns are set
         if config.get("AUTO_EXTRACT") and config.get("EXTRACT_PATTERNS"):
-            # In non-interactive environments (like CI), skip interactive prompts
-            if not sys.stdin.isatty() or os.environ.get("CI"):
-                config["EXCLUDE_PATTERNS"] = RECOMMENDED_EXCLUDE_PATTERNS.copy()
-                print("Using recommended exclude patterns (non-interactive mode).")
-            else:
-                configure_exclude_patterns(config)
+            configure_exclude_patterns(config)
         else:
             config["EXCLUDE_PATTERNS"] = []
     else:
@@ -884,12 +973,21 @@ def _configure_cron_job(install_crond_needed: bool = False) -> None:
 
 def _prompt_for_cron_frequency() -> str:
     """
-    Prompt the user to choose how often Fetchtastic should run its scheduled check.
-
+    Prompt the user to choose a cron frequency for scheduled checks.
+    
+    Accepts short or full inputs: 'h' or 'hourly', 'd' or 'daily', 'n' or 'none'. If the user provides no input the default is hourly.
+    
     Returns:
-        frequency (str): 'hourly', 'daily', or 'none'.
+        'hourly', 'daily', or 'none'.
     """
-    choices = {"h": "hourly", "d": "daily", "n": "none"}
+    choices = {
+        "h": "hourly",
+        "hourly": "hourly",
+        "d": "daily",
+        "daily": "daily",
+        "n": "none",
+        "none": "none",
+    }
     while True:
         cron_choice = (
             input(
@@ -902,7 +1000,9 @@ def _prompt_for_cron_frequency() -> str:
         if cron_choice in choices:
             return choices[cron_choice]
         else:
-            print(f"Invalid choice '{cron_choice}'. Please enter 'h', 'd', or 'n'.")
+            print(
+                f"Invalid choice '{cron_choice}'. Please enter 'h'/'hourly', 'd'/'daily', or 'n'/'none'."
+            )
 
 
 def _setup_automation(
@@ -1054,8 +1154,14 @@ def _setup_automation(
                     print("Boot script has not been set up.")
 
         else:
+            if not _crontab_available():
+                print(
+                    "Cron configuration skipped: 'crontab' command not found on this system."
+                )
+                return config
+
             # Linux/Mac: Check if any Fetchtastic cron jobs exist
-            any_cron_jobs_exist = check_any_cron_jobs_exist()
+            any_cron_jobs_exist = check_cron_job_exists() or check_any_cron_jobs_exist()
             if any_cron_jobs_exist:
                 cron_prompt = (
                     input(
@@ -1543,12 +1649,12 @@ def run_setup(sections: Optional[Sequence[str]] = None):
     """
     Run the interactive Fetchtastic setup wizard.
 
-    Guides the user through creating or migrating configuration, selecting assets (APKs and/or firmware), retention and extraction settings, notification (NTFY) setup, and scheduling/startup options. Behavior is platform-aware: on Termux it may install required packages, configure storage, and offer pip→pipx migration; on Windows it can create Start Menu and startup shortcuts; on Linux/macOS/Termux it can install/remove cron or boot jobs. The function persists settings to the configured YAML file, updates the global BASE_DIR (and related config keys), may create or migrate CONFIG_FILE, and optionally triggers an initial download run (calls downloader.main()).
+    Guides the user through creating or migrating the Fetchtastic configuration, selecting assets and retention policies, configuring notifications and automation/startup behavior, and persisting the resulting settings to the user's YAML config file. Behavior adapts to the current platform (e.g., Termux, Windows, macOS/Linux) and will only prompt for sections requested via the `sections` parameter.
 
-    When ``sections`` is provided the wizard focuses only on those configuration areas (drawn from
-    :data:`SETUP_SECTION_CHOICES`). Other settings are preserved using the existing values from the
-    configuration file, so users can quickly tweak a single area without stepping through the full
-    workflow.
+    Parameters:
+        sections (Optional[Sequence[str]]): Optional sequence of setup section names to run (e.g., elements of
+            SETUP_SECTION_CHOICES). When provided, the wizard only prompts for those sections and preserves
+            other configuration values; when `None`, the full interactive setup is executed.
     """
     global BASE_DIR
     partial_sections: Optional[Set[str]] = None
@@ -1568,12 +1674,20 @@ def run_setup(sections: Optional[Sequence[str]] = None):
     is_partial_run = partial_sections is not None
 
     def wants(section: str) -> bool:
-        """Return True when the current run should prompt for the given section."""
+        """
+        Decide whether the given setup section should be included in the current run.
+        
+        Parameters:
+            section (str): Name of the setup section to check.
+        
+        Returns:
+            True if the section is requested for this run, False otherwise.
+        """
 
         return partial_sections is None or section in partial_sections
 
     if is_partial_run:
-        section_list = ", ".join(sorted(partial_sections))
+        section_list = ", ".join(sorted(partial_sections or []))
         print(f"Updating Fetchtastic setup sections: {section_list}")
     else:
         print("Running Fetchtastic Setup...")
@@ -1588,8 +1702,13 @@ def run_setup(sections: Optional[Sequence[str]] = None):
     # Handle download type selection and asset menus
     config, save_apks, save_firmware = _setup_downloads(config, is_partial_run, wants)
 
-    # If both save_apks and save_firmware are False, exit setup
-    if not save_apks and not save_firmware:
+    # If both save_apks and save_firmware are False, exit setup.
+    # During partial runs that only update non-download sections, continue instead.
+    if (
+        not save_apks
+        and not save_firmware
+        and (not is_partial_run or wants("android") or wants("firmware"))
+    ):
         return
 
     # Determine default number of versions to keep based on platform
@@ -1683,14 +1802,12 @@ def run_setup(sections: Optional[Sequence[str]] = None):
                 or "y"
             )
             if perform_first_run == "y":
-                from fetchtastic import (
-                    downloader,  # Local import to break circular dependency
-                )
+                from fetchtastic.download.cli_integration import DownloadCLIIntegration
 
                 print(
                     "Setup complete. Starting first run, this may take a few minutes..."
                 )
-                downloader.main()
+                DownloadCLIIntegration().main()
             else:
                 print(
                     "Setup complete. Run 'fetchtastic download' to start downloading."
@@ -2260,7 +2377,15 @@ def create_startup_shortcut():
 
 def copy_to_clipboard_func(text):
     """
-    Copies the provided text to the clipboard, depending on the platform.
+    Place the given text on the system clipboard using a platform-appropriate mechanism.
+    
+    Supports Termux (termux-clipboard-set), Windows (win32clipboard when available), macOS (pbcopy), and Linux (xclip or xsel). Falls back to logging a warning and returning False when no supported mechanism is available or an error occurs.
+    
+    Parameters:
+        text (str): The text to copy to the clipboard.
+    
+    Returns:
+        bool: `True` if the text was copied to the clipboard, `False` otherwise.
     """
     if is_termux():
         # Termux environment
@@ -2270,12 +2395,12 @@ def copy_to_clipboard_func(text):
             )
             return True
         except Exception as e:
-            print(f"An error occurred while copying to clipboard: {e}")
+            logger.error("Error copying to Termux clipboard: %s", e)
             return False
     elif platform.system() == "Windows" and WINDOWS_MODULES_AVAILABLE:
         # Windows environment with win32com available
         try:
-            import win32clipboard
+            import win32clipboard  # type: ignore[import]
 
             win32clipboard.OpenClipboard()
             win32clipboard.EmptyClipboard()
@@ -2283,7 +2408,7 @@ def copy_to_clipboard_func(text):
             win32clipboard.CloseClipboard()
             return True
         except Exception as e:
-            print(f"An error occurred while copying to clipboard: {e}")
+            logger.error("Error copying to Windows clipboard: %s", e)
             return False
     else:
         # Other platforms
@@ -2310,15 +2435,17 @@ def copy_to_clipboard_func(text):
                     )
                     return True
                 else:
-                    print(
+                    logger.warning(
                         "xclip or xsel not found. Install xclip or xsel to use clipboard functionality."
                     )
                     return False
             else:
-                print("Clipboard functionality is not supported on this platform.")
+                logger.warning(
+                    "Clipboard functionality is not supported on this platform."
+                )
                 return False
         except Exception as e:
-            print(f"An error occurred while copying to clipboard: {e}")
+            logger.error("Error copying to clipboard on %s: %s", system, e)
             return False
 
 
@@ -2360,7 +2487,9 @@ def setup_storage():
 
 def install_crond():
     """
-    Installs and enables the crond service in Termux.
+    Ensure the Termux crond service is installed and enabled.
+    
+    When running inside Termux, installs the 'cronie' package if it is not present and enables the 'crond' service; prints progress and error messages. On non-Termux platforms this function is a no-op.
     """
     if is_termux():
         try:
@@ -2382,14 +2511,15 @@ def install_crond():
         pass
 
 
-def setup_cron_job(frequency="hourly"):
+@cron_command_required
+def setup_cron_job(frequency="hourly", *, crontab_path: str):
     """
-    Configure or replace a system cron entry to run Fetchtastic on a regular schedule.
-
-    This function updates the user's crontab by removing existing Fetchtastic entries (except `@reboot` lines) and writing a single scheduled entry that invokes the Fetchtastic downloader. On Windows the function is a no-op. On Termux the entry uses the plain `fetchtastic download` command; on other platforms it uses the `fetchtastic` executable discovered in PATH. If an invalid frequency is provided, the function falls back to the hourly schedule.
-
+    Configure the user's crontab to run Fetchtastic on a regular schedule.
+    
+    Removes existing Fetchtastic scheduled entries (excluding any `@reboot` lines) and writes a single scheduled entry that invokes the Fetchtastic downloader using the specified schedule. If the provided frequency is unknown, it falls back to the hourly schedule. Requires a usable system crontab (on Windows or when crontab is unavailable the function will not modify cron). The decorator-injected `crontab_path` argument provides the crontab executable to use and does not need separate documentation here.
+    
     Parameters:
-        frequency (str): Schedule key specifying cadence; commonly `"hourly"` or `"daily"`. Defaults to `"hourly"` when omitted or invalid.
+        frequency (str): Schedule key from CRON_SCHEDULES (for example "hourly" or "daily"); unknown values default to "hourly".
     """
     # Skip cron job setup on Windows
     if platform.system() == "Windows":
@@ -2406,12 +2536,13 @@ def setup_cron_job(frequency="hourly"):
     frequency_desc = schedule_info["desc"]
 
     try:
-        # Get current crontab entries
+        # Use the pre-validated crontab path
         result = subprocess.run(
-            ["crontab", "-l"],
+            [crontab_path, "-l"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            timeout=30,  # Add timeout to prevent hanging
         )
         if result.returncode != 0:
             existing_cron = ""
@@ -2450,17 +2581,34 @@ def setup_cron_job(frequency="hourly"):
             new_cron += "\n"
 
         # Update crontab
-        process = subprocess.Popen(["crontab", "-"], stdin=subprocess.PIPE, text=True)
-        process.communicate(input=new_cron)
-        print(f"Cron job added to run Fetchtastic {frequency_desc}.")
-    except Exception as e:
-        print(f"An error occurred while setting up the cron job: {e}")
+        try:
+            process = subprocess.Popen(
+                [crontab_path, "-"], stdin=subprocess.PIPE, text=True
+            )
+            process.communicate(
+                input=new_cron, timeout=30
+            )  # Add timeout to prevent hanging
+            print(f"Cron job added to run Fetchtastic {frequency_desc}.")
+        except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError) as e:
+            logger.error(f"An error occurred while setting up the cron job: {e}")
+
+    except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError) as e:
+        logger.error(f"Error reading crontab: {e}")
+        return
 
 
-def remove_cron_job():
+@cron_command_required
+def remove_cron_job(*, crontab_path: str):
     """
-    Removes the Fetchtastic daily cron job from the crontab.
-    On Windows, this function does nothing as cron jobs are not supported.
+    Remove Fetchtastic's daily cron entries from the current user's crontab.
+    
+    This function edits the current user's crontab to remove entries that contain
+    "# fetchtastic" or "fetchtastic download" while preserving any lines that
+    start with "@reboot". It is a no-op on Windows or if the system crontab is
+    unavailable. Errors encountered during crontab access or update are logged
+    and not raised.
+    Parameters:
+        crontab_path (str): Path to the system crontab executable (for example "crontab").
     """
     # Skip cron job removal on Windows
     if platform.system() == "Windows":
@@ -2468,12 +2616,12 @@ def remove_cron_job():
         return
 
     try:
-        # Get current crontab entries
         result = subprocess.run(
-            ["crontab", "-l"],
+            [crontab_path, "-l"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            timeout=30,
         )
         if result.returncode == 0:
             existing_cron = result.stdout.strip()
@@ -2492,19 +2640,27 @@ def remove_cron_job():
             # Ensure new_cron ends with a newline
             if not new_cron.endswith("\n"):
                 new_cron += "\n"
-            # Update crontab
-            process = subprocess.Popen(
-                ["crontab", "-"], stdin=subprocess.PIPE, text=True
-            )
-            process.communicate(input=new_cron)
-            print("Daily cron job removed.")
-    except Exception as e:
-        print(f"An error occurred while removing the cron job: {e}")
+            try:
+                process = subprocess.Popen(
+                    [crontab_path, "-"], stdin=subprocess.PIPE, text=True
+                )
+                process.communicate(input=new_cron, timeout=30)
+                print("Daily cron job removed.")
+            except (
+                subprocess.SubprocessError,
+                subprocess.TimeoutExpired,
+                OSError,
+            ) as exc:
+                logger.error(f"An error occurred while removing the cron job: {exc}")
+    except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError) as exc:
+        logger.error(f"An error occurred while removing the cron job: {exc}")
 
 
 def setup_boot_script():
     """
-    Sets up a boot script in Termux to run Fetchtastic on device boot.
+    Create a Termux boot script that runs the `fetchtastic download` command on device startup.
+    
+    If necessary, creates the ~/.termux/boot directory and writes an executable shell script named fetchtastic.sh that sleeps briefly and then invokes the Fetchtastic download command. The function modifies file permissions to make the script executable. Requires Termux:Boot to be installed and launched at least once for boot scripts to run.
     """
     boot_dir = os.path.expanduser("~/.termux/boot")
     boot_script = os.path.join(boot_dir, "fetchtastic.sh")
@@ -2528,7 +2684,9 @@ def setup_boot_script():
 
 def remove_boot_script():
     """
-    Removes the boot script from Termux.
+    Remove Fetchtastic's Termux boot script if present.
+    
+    If a file exists at "~/.termux/boot/fetchtastic.sh", delete it and print a confirmation message.
     """
     boot_script = os.path.expanduser("~/.termux/boot/fetchtastic.sh")
     if os.path.exists(boot_script):
@@ -2536,10 +2694,14 @@ def remove_boot_script():
         print("Boot script removed.")
 
 
-def setup_reboot_cron_job():
+@cron_command_required
+def setup_reboot_cron_job(*, crontab_path: str):
     """
-    Sets up a cron job to run Fetchtastic on system startup (non-Termux).
-    On Windows, this function does nothing as cron jobs are not supported.
+    Add an @reboot crontab entry that runs "fetchtastic download" after system reboots.
+    
+    This is a no-op on Windows. It reads the current crontab, removes any existing Fetchtastic @reboot entries, locates the `fetchtastic` executable from PATH, appends a new `@reboot <fetchtastic> download  # fetchtastic` line, and writes the updated crontab back. If the `fetchtastic` executable is not found the function exits without modifying the crontab; subprocess and IO errors are logged.
+    Parameters:
+        crontab_path (str): Filesystem path to the `crontab` command to use when reading/updating the crontab.
     """
     # Skip cron job setup on Windows
     if platform.system() == "Windows":
@@ -2549,10 +2711,11 @@ def setup_reboot_cron_job():
     try:
         # Get current crontab entries
         result = subprocess.run(
-            ["crontab", "-l"],
+            [crontab_path, "-l"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            timeout=30,
         )
         if result.returncode != 0:
             existing_cron = ""
@@ -2585,29 +2748,43 @@ def setup_reboot_cron_job():
             new_cron += "\n"
 
         # Update crontab
-        process = subprocess.Popen(["crontab", "-"], stdin=subprocess.PIPE, text=True)
-        process.communicate(input=new_cron)
-        print("Reboot cron job added to run Fetchtastic on system startup.")
-    except Exception as e:
-        print(f"An error occurred while setting up the reboot cron job: {e}")
+        try:
+            process = subprocess.Popen(
+                [crontab_path, "-"], stdin=subprocess.PIPE, text=True
+            )
+            process.communicate(input=new_cron, timeout=30)
+            print("Reboot cron job added to run Fetchtastic on system startup.")
+        except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError) as exc:
+            logger.error(
+                f"An error occurred while setting up the reboot cron job: {exc}"
+            )
+    except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError) as exc:
+        logger.error(f"An error occurred while setting up the reboot cron job: {exc}")
 
 
-def remove_reboot_cron_job():
+@cron_command_required
+def remove_reboot_cron_job(*, crontab_path: str):
     """
-    Removes the reboot cron job from the crontab.
-    On Windows, this function does nothing as cron jobs are not supported.
+    Remove the user's @reboot cron entry that launches Fetchtastic.
+    
+    If running on Windows or if the system crontab is unavailable, the function performs no action. Otherwise it uses the provided crontab executable to read the current crontab, remove any @reboot entries that launch or are labeled for Fetchtastic, and write the updated crontab back.
+    
+    Parameters:
+        crontab_path (str): Path to the crontab executable used to read and write the user's crontab.
     """
     # Skip cron job removal on Windows
     if platform.system() == "Windows":
         print("Cron jobs are not supported on Windows.")
         return
+
     try:
         # Get current crontab entries
         result = subprocess.run(
-            ["crontab", "-l"],
+            [crontab_path, "-l"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            timeout=30,
         )
         if result.returncode == 0:
             existing_cron = result.stdout.strip()
@@ -2626,31 +2803,85 @@ def remove_reboot_cron_job():
             # Ensure new_cron ends with a newline
             if not new_cron.endswith("\n"):
                 new_cron += "\n"
-            # Update crontab
-            process = subprocess.Popen(
-                ["crontab", "-"], stdin=subprocess.PIPE, text=True
-            )
-            process.communicate(input=new_cron)
-            print("Reboot cron job removed.")
-    except Exception as e:
-        print(f"An error occurred while removing the reboot cron job: {e}")
+            try:
+                process = subprocess.Popen(
+                    [crontab_path, "-"], stdin=subprocess.PIPE, text=True
+                )
+                process.communicate(input=new_cron, timeout=30)
+                print("Reboot cron job removed.")
+            except (
+                subprocess.SubprocessError,
+                subprocess.TimeoutExpired,
+                OSError,
+            ) as exc:
+                logger.error(
+                    f"An error occurred while removing the reboot cron job: {exc}"
+                )
+    except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError) as exc:
+        logger.error(f"An error occurred while removing the reboot cron job: {exc}")
 
 
-def check_cron_job_exists():
+@cron_check_command_required
+def check_any_cron_jobs_exist(*, crontab_path: str):
     """
-    Checks if a Fetchtastic daily cron job already exists.
-    On Windows, always returns False as cron jobs are not supported.
+    Determine whether the current user's crontab contains any entries.
+    
+    Parameters:
+        crontab_path (str): Path to the `crontab` executable used to list the user's crontab.
+    
+    Returns:
+        bool: `True` if at least one cron entry exists for the current user, `False` if the crontab is empty or an error occurs.
     """
-    # Skip cron job check on Windows
-    if platform.system() == "Windows":
+    try:
+        result = subprocess.run(
+            [crontab_path, "-l"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            return False
+        existing_cron = result.stdout.strip()
+        return any(line.strip() for line in existing_cron.splitlines())
+    except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError) as exc:
+        logger.error(f"An error occurred while checking for existing cron jobs: {exc}")
         return False
 
+
+def check_boot_script_exists():
+    """
+    Determine whether the Fetchtastic Termux boot script is present.
+    
+    Checks for the existence of the file ~/.termux/boot/fetchtastic.sh.
+    
+    Returns:
+        True if ~/.termux/boot/fetchtastic.sh exists, False otherwise.
+    """
+    boot_script = os.path.expanduser("~/.termux/boot/fetchtastic.sh")
+    return os.path.exists(boot_script)
+
+
+@cron_check_command_required
+def check_cron_job_exists(*, crontab_path: str):
+    """
+    Check whether any Fetchtastic entries are present in the current user's crontab.
+    
+    This inspects the user's crontab output for lines that include the Fetchtastic marker (e.g., "# fetchtastic" or "fetchtastic download") and ignores lines that start with "@reboot" when determining presence. If the system crontab is unavailable or an error occurs, the function reports absence.
+    
+    Parameters:
+        crontab_path (str): Path or command name for the crontab executable injected by the caller/decorator.
+    
+    Returns:
+        `true` if any matching Fetchtastic cron entries are found (excluding `@reboot` lines), `false` otherwise.
+    """
     try:
         result = subprocess.run(
             ["crontab", "-l"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            timeout=30,
         )
         if result.returncode != 0:
             return False
@@ -2660,44 +2891,8 @@ def check_cron_job_exists():
             for line in existing_cron.splitlines()
             if not line.strip().startswith("@reboot")
         )
-    except Exception as e:
-        print(f"An error occurred while checking for existing cron jobs: {e}")
-        return False
-
-
-def check_boot_script_exists():
-    """
-    Checks if a Fetchtastic boot script already exists (Termux).
-    """
-    boot_script = os.path.expanduser("~/.termux/boot/fetchtastic.sh")
-    return os.path.exists(boot_script)
-
-
-def check_any_cron_jobs_exist():
-    """
-    Checks if any Fetchtastic cron jobs (daily or reboot) already exist.
-    On Windows, always returns False as cron jobs are not supported.
-    """
-    # Skip cron job check on Windows
-    if platform.system() == "Windows":
-        return False
-
-    try:
-        result = subprocess.run(
-            ["crontab", "-l"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        if result.returncode != 0:
-            return False
-        existing_cron = result.stdout.strip()
-        return any(
-            ("# fetchtastic" in line or "fetchtastic download" in line)
-            for line in existing_cron.splitlines()
-        )
-    except Exception as e:
-        print(f"An error occurred while checking for existing cron jobs: {e}")
+    except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError) as exc:
+        logger.error(f"An error occurred while checking for existing cron jobs: {exc}")
         return False
 
 

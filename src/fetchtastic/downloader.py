@@ -1613,7 +1613,7 @@ def _get_commit_hash_from_dir(dir_name: str) -> Optional[str]:
     return None
 
 
-def calculate_expected_prerelease_version(latest_version: str) -> str:
+def calculate_expected_prerelease_version(latest_version: str) -> Optional[str]:
     """
     Compute the expected prerelease version by incrementing the patch component of the given latest version.
 
@@ -1621,14 +1621,14 @@ def calculate_expected_prerelease_version(latest_version: str) -> str:
         latest_version (str): Version string of the latest official release (for example "2.7.6" or "v2.7.6").
 
     Returns:
-        str: Expected prerelease version in the form "MAJOR.MINOR.PATCH" where PATCH is incremented by one, or an empty string if the input cannot be parsed to determine major and minor components.
+        Optional[str]: Expected prerelease version in the form "MAJOR.MINOR.PATCH" where PATCH is incremented by one, or None if the input cannot be parsed to determine major and minor components.
     """
     latest_tuple = _get_release_tuple(latest_version)
     if not latest_tuple or len(latest_tuple) < 2:
         logger.warning(
             "Could not calculate expected prerelease version from: %s", latest_version
         )
-        return ""
+        return None
 
     # Increment the patch version (third position) by 1
     major, minor = latest_tuple[0], latest_tuple[1]

@@ -19,12 +19,12 @@ component_management:
         target: 40%
         threshold: 2%
   individual_components:
-    - component_id: core_downloads
+    - component_id: core
       name: Core Downloads
       paths:
-        - src/fetchtastic/downloader.py
-        - src/fetchtastic/repo_downloader.py
+        - src/fetchtastic/download/*.py
         - src/fetchtastic/utils.py
+        - src/fetchtastic/device_hardware.py
       statuses:
         - type: project
           target: 60%
@@ -32,7 +32,7 @@ component_management:
         - type: patch
           target: 60%
           threshold: 3%
-    - component_id: user_interface
+    - component_id: interface
       name: User Interface
       paths:
         - src/fetchtastic/cli.py

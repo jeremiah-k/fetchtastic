@@ -4,12 +4,14 @@ import argparse
 import os
 import platform
 import shutil
-import subprocess
+import sys
+import time
 from typing import List
 
 import platformdirs
+import yaml
 
-from fetchtastic import downloader, repo_downloader, setup_config
+from fetchtastic import log_utils, setup_config
 from fetchtastic.constants import (
     FIRMWARE_DIR_PREFIX,
     MANAGED_DIRECTORIES,
@@ -21,12 +23,53 @@ from fetchtastic.constants import (
     MSG_REMOVED_MANAGED_DIR,
     MSG_REMOVED_MANAGED_FILE,
 )
-from fetchtastic.log_utils import logger, set_log_level
-from fetchtastic.setup_config import (
-    copy_to_clipboard_func,
-    display_version_info,
-    get_upgrade_command,
+from fetchtastic.download import cli_integration as download_cli_integration
+from fetchtastic.download.repository import RepositoryDownloader
+from fetchtastic.utils import get_api_request_summary as _get_api_request_summary
+from fetchtastic.utils import (
+    reset_api_tracking,
 )
+
+get_api_request_summary = _get_api_request_summary
+
+# Patch-friendly aliases for CLI tests.
+copy_to_clipboard_func = setup_config.copy_to_clipboard_func
+
+
+def display_version_info():
+    """
+    Get version information for the installed Fetchtastic package and the latest available release.
+    
+    Returns:
+        Mapping: Details about the installed version and the latest release (for example keys like
+        'installed_version' and 'latest_version').
+    """
+    return setup_config.display_version_info()
+
+
+def get_upgrade_command():
+    """
+    Get the platform-appropriate shell command that performs an upgrade of Fetchtastic.
+
+    Returns:
+        upgrade_command (str): A command string suitable for display or execution to upgrade Fetchtastic on the current platform.
+    """
+    return setup_config.get_upgrade_command()
+
+
+def _display_update_reminder(latest_version: str) -> None:
+    """
+    Announces that a newer Fetchtastic version is available to the user.
+    
+    Parameters:
+        latest_version (str): The latest available version string (for example, "1.2.3").
+    """
+    upgrade_cmd = get_upgrade_command()
+    log_utils.logger.info("\nUpdate Available")
+    log_utils.logger.info(
+        f"A newer version (v{latest_version}) of Fetchtastic is available!"
+    )
+    log_utils.logger.info(f"Run '{upgrade_cmd}' to upgrade.")
 
 
 def main():
@@ -34,22 +77,11 @@ def main():
 
     """
     Entry point for the Fetchtastic command-line interface.
-
-    Parses CLI arguments and dispatches subcommands:
-    - `setup`: Run initial configuration or update Windows integrations.
-    - `download`: Ensure/migrate config and run the downloader.
-    - `topic`: Show NTFY topic and optionally copy to clipboard.
-    - `clean`: Perform a destructive cleanup.
-    - `version`: Show current/available versions.
-    - `repo`: Browse/clean repository downloads.
-    - `help`: Display contextual help.
-
-    Side effects:
-    - Reads, creates, migrates, or removes configuration files and directories.
-    - Modifies system startup/cron entries and repository download directories.
-    - Invokes interactive setup, downloader, or repository routines.
-    - Copies text to the clipboard.
-    - Emits informational output to stdout and log messages.
+    
+    Parses command-line arguments and dispatches subcommands: setup, download, topic,
+    clean, version, repo, and help. Subcommands may read, create, migrate, or remove
+    configuration; run interactive setup flows; invoke download or repository
+    operations; modify system startup/cron entries; and copy text to the clipboard.
     """
     parser = argparse.ArgumentParser(
         description="Fetchtastic - Meshtastic Firmware and APK Downloader"
@@ -148,7 +180,7 @@ def main():
         if hasattr(args, "update_integrations") and args.update_integrations:
             # Only update Windows integrations
             if platform.system() == "Windows":
-                logger.info("Updating Windows integrations...")
+                log_utils.logger.info("Updating Windows integrations...")
                 config = setup_config.load_config()
                 if config:
                     success = setup_config.create_windows_menu_shortcuts(
@@ -156,15 +188,19 @@ def main():
                         config.get("BASE_DIR", setup_config.BASE_DIR),
                     )
                     if success:
-                        logger.info("Windows integrations updated successfully!")
+                        log_utils.logger.info(
+                            "Windows integrations updated successfully!"
+                        )
                     else:
-                        logger.error("Failed to update Windows integrations.")
+                        log_utils.logger.error("Failed to update Windows integrations.")
                 else:
-                    logger.error(
+                    log_utils.logger.error(
                         "No configuration found. Run 'fetchtastic setup' first."
                     )
             else:
-                logger.info("Integration updates are only available on Windows.")
+                log_utils.logger.info(
+                    "Integration updates are only available on Windows."
+                )
         else:
             # Run the full setup process (optionally limited to specific sections)
             combined_sections: List[str] = (args.section or []) + (args.sections or [])
@@ -183,19 +219,14 @@ def main():
 
             setup_config.run_setup(sections=combined_sections or None)
 
-        # Remind about updates at the end if available
-        if update_available:
-            upgrade_cmd = get_upgrade_command()
-            logger.info("\nUpdate Available")
-            logger.info(
-                f"A newer version (v{latest_version}) of Fetchtastic is available!"
-            )
-            logger.info(f"Run '{upgrade_cmd}' to upgrade.")
+            # Remind about updates at the end if available
+            if update_available and latest_version:
+                _display_update_reminder(latest_version)
     elif args.command == "download":
         # Check if configuration exists
         exists, config_path = setup_config.config_exists()
         if not exists:
-            logger.info("No configuration found. Running setup.")
+            log_utils.logger.info("No configuration found. Running setup.")
             setup_config.run_setup()
         else:
             # Check if config is in old location and needs migration
@@ -203,35 +234,61 @@ def main():
                 setup_config.CONFIG_FILE
             ):
                 separator = "=" * 80
-                logger.info(f"\n{separator}")
-                logger.info("Configuration Migration")
-                logger.info(separator)
+                log_utils.logger.info(f"\n{separator}")
+                log_utils.logger.info("Configuration Migration")
+                log_utils.logger.info(separator)
                 # Automatically migrate without prompting
                 setup_config.prompt_for_migration()  # Just logs the migration message
                 if setup_config.migrate_config():
-                    logger.info(
-                        "Configuration successfully migrated to the new location."
+                    log_utils.logger.info(
+                        "Configuration successfully migrated to new location."
                     )
                     # Update config_path to the new location
                     config_path = setup_config.CONFIG_FILE
-                    # Re-load the configuration from the new location
-                    config = setup_config.load_config(config_path)
                 else:
-                    logger.error(
+                    log_utils.logger.error(
                         "Failed to migrate configuration. Continuing with old location."
                     )
-                logger.info(f"{separator}\n")
+                log_utils.logger.info(f"{separator}\n")
 
             # Display the config file location
-            logger.info(f"Using configuration from: {config_path}")
+            log_utils.logger.info(f"Using configuration from: {config_path}")
 
             # Load config and set log level if specified
-            config = setup_config.load_config()
+            try:
+                config = setup_config.load_config()
+            except (OSError, TypeError, ValueError, yaml.YAMLError) as e:
+                log_utils.logger.error(
+                    f"Failed to load configuration from {config_path}: {e}"
+                )
+                sys.exit(1)
             if config and config.get("LOG_LEVEL"):
-                set_log_level(config["LOG_LEVEL"])
+                log_utils.set_log_level(config["LOG_LEVEL"])
 
             # Run the downloader
-            downloader.main(force_refresh=args.force)
+            reset_api_tracking()
+            start_time = time.time()
+            integration = download_cli_integration.DownloadCLIIntegration()
+            (
+                downloaded_firmwares,
+                _new_firmware_versions,
+                downloaded_apks,
+                _new_apk_versions,
+                failed_downloads,
+                latest_firmware_version,
+                latest_apk_version,
+            ) = integration.main(force_refresh=args.force, config=config)
+
+            elapsed = time.time() - start_time
+            integration.log_download_results_summary(
+                logger_override=log_utils.logger,
+                elapsed_seconds=elapsed,
+                downloaded_firmwares=downloaded_firmwares,
+                downloaded_apks=downloaded_apks,
+                failed_downloads=failed_downloads,
+                latest_firmware_version=latest_firmware_version,
+                latest_apk_version=latest_apk_version,
+            )
     elif args.command == "topic":
         # Display the NTFY topic and prompt to copy to clipboard
         config = setup_config.load_config()
@@ -262,7 +319,7 @@ def main():
                     else:
                         print("Topic URL copied to clipboard.")
                 else:
-                    print("Failed to copy to clipboard.")
+                    print("Failed to copy to clipboard.", file=sys.stderr)
             else:
                 print("You can copy the topic information from above.")
         else:
@@ -277,11 +334,11 @@ def main():
         current_version, latest_version, update_available = display_version_info()
 
         # Log version information
-        logger.info(f"Fetchtastic v{current_version}")
+        log_utils.logger.info(f"Fetchtastic v{current_version}")
         if update_available and latest_version:
             upgrade_cmd = get_upgrade_command()
-            logger.info(f"A newer version (v{latest_version}) is available!")
-            logger.info(f"Run '{upgrade_cmd}' to upgrade.")
+            log_utils.logger.info(f"A newer version (v{latest_version}) is available!")
+            log_utils.logger.info(f"Run '{upgrade_cmd}' to upgrade.")
     elif args.command == "help":
         # Handle help command
         help_command = args.help_command
@@ -306,35 +363,27 @@ def main():
 
         config = setup_config.load_config()
         if not config:
-            logger.error(
+            log_utils.logger.error(
                 "Configuration not found. Please run 'fetchtastic setup' first."
             )
             return
 
         if args.repo_command == "browse":
-            # Run the repository downloader
-            repo_downloader.main(config)
+            # Run the repository downloader using the new menu integration
+            from fetchtastic.menu_repo import run_repository_downloader_menu
+
+            run_repository_downloader_menu(config)
 
             # Remind about updates at the end if available
-            if update_available:
-                upgrade_cmd = get_upgrade_command()
-                logger.info("\nUpdate Available")
-                logger.info(
-                    f"A newer version (v{latest_version}) of Fetchtastic is available!"
-                )
-                logger.info(f"Run '{upgrade_cmd}' to upgrade.")
+            if update_available and latest_version:
+                _display_update_reminder(latest_version)
         elif args.repo_command == "clean":
             # Clean the repository directory
             run_repo_clean(config)
 
             # Remind about updates at the end if available
-            if update_available:
-                upgrade_cmd = get_upgrade_command()
-                logger.info("\nUpdate Available")
-                logger.info(
-                    f"A newer version (v{latest_version}) of Fetchtastic is available!"
-                )
-                logger.info(f"Run '{upgrade_cmd}' to upgrade.")
+            if update_available and latest_version:
+                _display_update_reminder(latest_version)
         else:
             # No repo subcommand provided
             repo_parser.print_help()
@@ -407,19 +456,9 @@ def show_help(
 
 def run_clean():
     """
-    Remove Fetchtastic configuration, managed downloads, and system integrations.
-
-    Prompts for confirmation before proceeding. This operation is irreversible and will
-    modify or remove files and system entries.
-
-    Deletes:
-    - Current and legacy config files and their config directory when empty
-    - Only Fetchtastic-managed directories (matching configured MANAGED_DIRECTORIES
-      or FIRMWARE_DIR_PREFIX) and managed files (matching MANAGED_FILES) inside the
-      configured download/base directory while preserving other user files
-    - Platform-specific integrations such as Windows Start Menu/startup shortcuts,
-      non-Windows crontab entries that reference Fetchtastic, a Termux boot script
-      (~/.termux/boot/fetchtastic.sh), and the Fetchtastic log file
+    Permanently remove Fetchtastic configuration, managed downloads, and platform integrations after explicit user confirmation.
+    
+    Prompts the user for confirmation and, if confirmed, deletes current and legacy configuration files, Fetchtastic-managed files and directories within the configured download directory, platform-specific integrations (Windows Start Menu and startup shortcuts, non-Windows crontab entries, Termux boot script), and the Fetchtastic log file. Preserves files not identified as managed. This action is irreversible.
     """
     print(
         "This will remove Fetchtastic configuration files, downloaded files, and cron job entries."
@@ -436,40 +475,52 @@ def run_clean():
     config_file = setup_config.CONFIG_FILE
     old_config_file = setup_config.OLD_CONFIG_FILE
 
-    if os.path.exists(config_file):
-        os.remove(config_file)
-        print(f"Removed configuration file: {config_file}")
+    def _try_remove(path: str, *, is_dir: bool = False, description: str) -> None:
+        """
+        Attempt to remove a filesystem path and report the outcome.
+        
+        If the given path does not exist, the function does nothing. If removal succeeds, a confirmation message is printed to stdout; if it fails, an error message with the failure reason is printed to stderr.
+        
+        Parameters:
+            path (str): Path to the file or directory to remove.
+            is_dir (bool): If true, treat `path` as a directory and remove it recursively; otherwise remove it as a file.
+            description (str): Human-readable name for the item being removed used in status messages.
+        """
+        if not os.path.exists(path):
+            return
+        try:
+            if is_dir:
+                shutil.rmtree(path)
+                print(f"Removed {description}: {path}")
+            else:
+                os.remove(path)
+                print(f"Removed {description}: {path}")
+        except OSError as e:
+            print(
+                f"Failed to delete {description} {path}. Reason: {e}",
+                file=sys.stderr,
+            )
 
-    if os.path.exists(old_config_file):
-        os.remove(old_config_file)
-        print(f"Removed old configuration file: {old_config_file}")
+    _try_remove(config_file, description="configuration file")
+    _try_remove(old_config_file, description="old configuration file")
 
     # Remove config directory if empty
     config_dir = setup_config.CONFIG_DIR
     if os.path.exists(config_dir):
         # If on Windows, remove batch files directory
         batch_dir = os.path.join(config_dir, "batch")
-        if os.path.exists(batch_dir):
-            try:
-                shutil.rmtree(batch_dir)
-                print(f"Removed batch files directory: {batch_dir}")
-            except Exception as e:
-                print(f"Failed to delete batch directory {batch_dir}. Reason: {e}")
+        _try_remove(batch_dir, is_dir=True, description="batch files directory")
 
         # Check if config directory is now empty
         if os.path.exists(config_dir) and not os.listdir(config_dir):
-            try:
-                os.rmdir(config_dir)
-                print(f"Removed empty config directory: {config_dir}")
-            except Exception as e:
-                print(f"Failed to delete config directory {config_dir}. Reason: {e}")
+            _try_remove(config_dir, is_dir=True, description="empty config directory")
 
     # Windows-specific cleanup
     if platform.system() == "Windows":
         # Check if Windows modules are available
         windows_modules_available = False
         try:
-            import winshell
+            import winshell  # type: ignore[import]
 
             windows_modules_available = True
         except ImportError:
@@ -486,8 +537,11 @@ def run_clean():
                     print(
                         f"Removed Start Menu shortcuts folder: {windows_start_menu_folder}"
                     )
-                except Exception as e:
-                    print(f"Failed to remove Start Menu shortcuts folder. Reason: {e}")
+                except OSError as e:
+                    print(
+                        f"Failed to remove Start Menu shortcuts folder. Reason: {e}",
+                        file=sys.stderr,
+                    )
                     # Try to remove individual files
                     try:
                         for item in os.listdir(windows_start_menu_folder):
@@ -499,10 +553,16 @@ def run_clean():
                                 elif os.path.isdir(item_path):
                                     shutil.rmtree(item_path)
                                     print(f"Removed Start Menu directory: {item}")
-                            except Exception as e2:
-                                print(f"Failed to remove {item}. Reason: {e2}")
-                    except Exception as e3:
-                        print(f"Failed to list Start Menu shortcuts. Reason: {e3}")
+                            except OSError as e2:
+                                print(
+                                    f"Failed to remove {item}. Reason: {e2}",
+                                    file=sys.stderr,
+                                )
+                    except OSError as e3:
+                        print(
+                            f"Failed to list Start Menu shortcuts. Reason: {e3}",
+                            file=sys.stderr,
+                        )
 
             # Remove startup shortcut
             try:
@@ -511,8 +571,10 @@ def run_clean():
                 if os.path.exists(startup_shortcut_path):
                     os.remove(startup_shortcut_path)
                     print(f"Removed startup shortcut: {startup_shortcut_path}")
-            except Exception as e:
-                print(f"Failed to remove startup shortcut. Reason: {e}")
+            except (OSError, AttributeError) as e:
+                print(
+                    f"Failed to remove startup shortcut. Reason: {e}", file=sys.stderr
+                )
 
             # Remove config shortcut in base directory
             download_dir = setup_config.BASE_DIR
@@ -521,24 +583,31 @@ def run_clean():
                 try:
                     os.remove(config_shortcut_path)
                     print(f"Removed configuration shortcut: {config_shortcut_path}")
-                except Exception as e:
-                    print(f"Failed to remove configuration shortcut. Reason: {e}")
+                except OSError as e:
+                    print(
+                        f"Failed to remove configuration shortcut. Reason: {e}",
+                        file=sys.stderr,
+                    )
 
     # Remove only managed directories from download directory
     download_dir = setup_config.BASE_DIR
 
     def _remove_managed_file(item_path: str) -> None:
         """
-        Remove a managed file at the given path and log whether the removal succeeded.
-
+        Remove a managed file at the given filesystem path.
+        
+        If removal fails, logs an error and does not raise an exception.
+        
         Parameters:
-            item_path (str): Filesystem path of the managed file to remove.
+        	item_path (str): Filesystem path of the managed file to remove.
         """
         try:
             os.remove(item_path)
-            logger.info(MSG_REMOVED_MANAGED_FILE.format(path=item_path))
+            log_utils.logger.info(MSG_REMOVED_MANAGED_FILE.format(path=item_path))
         except OSError as e:
-            logger.error(MSG_FAILED_DELETE_MANAGED_FILE.format(path=item_path, error=e))
+            log_utils.logger.error(
+                MSG_FAILED_DELETE_MANAGED_FILE.format(path=item_path, error=e)
+            )
 
     if os.path.exists(download_dir):
         for item in os.listdir(download_dir):
@@ -560,69 +629,33 @@ def run_clean():
             if is_managed_dir and os.path.isdir(item_path):
                 try:
                     shutil.rmtree(item_path)
-                    logger.info(MSG_REMOVED_MANAGED_DIR.format(path=item_path))
+                    log_utils.logger.info(
+                        MSG_REMOVED_MANAGED_DIR.format(path=item_path)
+                    )
                 except OSError as e:
-                    logger.error(
+                    log_utils.logger.error(
                         MSG_FAILED_DELETE_MANAGED_DIR.format(path=item_path, error=e)
                     )
             # Handle actual files
             elif is_managed_file and os.path.isfile(item_path):
                 _remove_managed_file(item_path)
 
-        logger.info(MSG_CLEANED_MANAGED_DIRS.format(path=download_dir))
-        logger.info(MSG_PRESERVE_OTHER_FILES)
+        log_utils.logger.info(MSG_CLEANED_MANAGED_DIRS.format(path=download_dir))
+        log_utils.logger.info(MSG_PRESERVE_OTHER_FILES)
 
     # Remove cron job entries (non-Windows platforms)
     if platform.system() != "Windows":
-        try:
-            # Get current crontab entries
-            result = subprocess.run(
-                ["crontab", "-l"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-            if result.returncode == 0:
-                existing_cron = result.stdout.strip()
-                # Remove existing fetchtastic cron jobs
-                cron_lines = [
-                    line for line in existing_cron.splitlines() if line.strip()
-                ]
-                cron_lines = [
-                    line
-                    for line in cron_lines
-                    if "# fetchtastic" not in line
-                    and "fetchtastic download" not in line
-                ]
-                # Join cron lines
-                new_cron = "\n".join(cron_lines)
-                # Ensure new_cron ends with a newline
-                if not new_cron.endswith("\n"):
-                    new_cron += "\n"
-                # Update crontab
-                process = subprocess.Popen(
-                    ["crontab", "-"], stdin=subprocess.PIPE, text=True
-                )
-                process.communicate(input=new_cron)
-                print("Removed Fetchtastic cron job entries.")
-        except Exception as e:
-            print(f"An error occurred while removing cron jobs: {e}")
+        setup_config.remove_cron_job()
+        setup_config.remove_reboot_cron_job()
 
     # Remove boot script if exists (Termux-specific)
     boot_script = os.path.expanduser("~/.termux/boot/fetchtastic.sh")
-    if os.path.exists(boot_script):
-        os.remove(boot_script)
-        print(f"Removed boot script: {boot_script}")
+    _try_remove(boot_script, description="boot script")
 
     # Remove log file
     log_dir = platformdirs.user_log_dir("fetchtastic")
     log_file = os.path.join(log_dir, "fetchtastic.log")
-    if os.path.exists(log_file):
-        try:
-            os.remove(log_file)
-            print(f"Removed log file: {log_file}")
-        except Exception as e:
-            print(f"Failed to remove log file. Reason: {e}")
+    _try_remove(log_file, description="log file")
 
     print(
         "The downloaded files and Fetchtastic configuration have been removed from your system."
@@ -631,7 +664,12 @@ def run_clean():
 
 def run_repo_clean(config):
     """
-    Cleans the repository download directory.
+    Prompt the user and, if confirmed, remove all files downloaded from the meshtastic.github.io repository for the given configuration.
+    
+    If the user confirms (default is no), the function deletes repository download files referenced by the provided configuration, prints a summary of removed files and directories, and logs the cleanup results. Any cleanup errors are printed to stderr and recorded in the logger.
+    
+    Parameters:
+        config: Configuration object used to locate and manage the repository download directory.
     """
     print(
         "This will remove all files downloaded from the meshtastic.github.io repository."
@@ -644,28 +682,49 @@ def run_repo_clean(config):
         print("Clean operation cancelled.")
         return
 
-    # Clean the repo directory
-    download_dir = config.get("DOWNLOAD_DIR")
-    if not download_dir:
-        print("Download directory not configured.")
-        return
-
-    success = repo_downloader.clean_repo_directory(download_dir)
+    # Clean the repo directory using the new downloader
+    repo_downloader = RepositoryDownloader(config)
+    success = repo_downloader.clean_repository_directory()
     if success:
         print("Repository directory cleaned successfully.")
     else:
-        print("Failed to clean repository directory.")
+        print("Failed to clean repository directory.", file=sys.stderr)
+
+    cleanup_summary = repo_downloader.get_cleanup_summary()
+    summary_msg = (
+        f"Repository cleanup summary: {cleanup_summary.get('removed_files', 0)} file(s), "
+        f"{cleanup_summary.get('removed_dirs', 0)} dir(s) removed"
+    )
+    print(summary_msg)
+    log_utils.logger.info(
+        "Repository cleanup summary: %d file(s), %d dir(s) removed",
+        cleanup_summary.get("removed_files", 0),
+        cleanup_summary.get("removed_dirs", 0),
+    )
+    if cleanup_summary.get("errors"):
+        for err in cleanup_summary.get("errors", []):
+            print(f"Cleanup error: {err}", file=sys.stderr)
+            log_utils.logger.warning(f"Repository cleanup error: {err}")
 
 
 def get_fetchtastic_version():
+    """
+    Retrieve the installed Fetchtastic package version.
+
+    Returns:
+        version (str): The installed Fetchtastic version string, or "unknown" if the version cannot be determined.
+    """
     try:
-        from importlib.metadata import version
+        from importlib.metadata import PackageNotFoundError, version
     except ImportError:
         # For Python < 3.8
-        from importlib_metadata import version
+        from importlib_metadata import (  # type: ignore[import]
+            PackageNotFoundError,
+            version,
+        )
     try:
         return version("fetchtastic")
-    except Exception:
+    except PackageNotFoundError:
         return "unknown"
 
 

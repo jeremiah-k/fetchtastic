@@ -227,8 +227,8 @@ def test_calculate_expected_prerelease_version():
     )  # Missing patch
 
     # Invalid inputs
-    assert downloader.calculate_expected_prerelease_version("invalid") == ""
-    assert downloader.calculate_expected_prerelease_version("") == ""
+    assert downloader.calculate_expected_prerelease_version("invalid") is None
+    assert downloader.calculate_expected_prerelease_version("") is None
 
 
 # Tests for cleanup_old_versions function

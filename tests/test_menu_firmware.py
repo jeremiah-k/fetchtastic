@@ -25,10 +25,12 @@ def mock_firmware_assets():
 
 def test_fetch_firmware_assets(mocker, mock_firmware_assets):
     """Test fetching firmware assets from GitHub."""
-    mock_get = mocker.patch("requests.get")
     mock_response = mocker.MagicMock()
     mock_response.json.return_value = [{"assets": mock_firmware_assets}]
-    mock_get.return_value = mock_response
+    mock_make_request = mocker.patch(
+        "fetchtastic.menu_firmware.make_github_api_request"
+    )
+    mock_make_request.return_value = mock_response
 
     assets = menu_firmware.fetch_firmware_assets()
 

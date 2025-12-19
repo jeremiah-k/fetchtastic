@@ -14,6 +14,7 @@ MESHTASTIC_FIRMWARE_RELEASES_URL = f"{GITHUB_API_BASE}/meshtastic/firmware/relea
 MESHTASTIC_GITHUB_IO_CONTENTS_URL = (
     f"{GITHUB_API_BASE}/meshtastic/meshtastic.github.io/contents"
 )
+MESHTASTIC_REPO_URL = "https://meshtastic.github.io"
 
 # Network timeouts and delays (in seconds)
 GITHUB_API_TIMEOUT = 10
@@ -65,6 +66,7 @@ DEFAULT_PRERELEASE_COMMITS_TO_FETCH = 40
 DEFAULT_FIRMWARE_VERSIONS_TO_KEEP = 2
 DEFAULT_ANDROID_VERSIONS_TO_KEEP = 2
 DEFAULT_CHECK_APK_PRERELEASES = True
+MAX_RETRY_DELAY = 60  # Cap exponential backoff at 60 seconds
 EXECUTABLE_PERMISSIONS = 0o755
 
 # Download configuration defaults
@@ -147,8 +149,11 @@ DEVICE_HARDWARE_CACHE_HOURS = 24
 
 # Cache configuration
 COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS = 24
-RELEASES_CACHE_EXPIRY_HOURS = 1 / 60  # 1 minute
-FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS = 60  # 1 minute
+# Releases API responses are cached for 1 minute to avoid burning GitHub API
+# requests unnecessarily while maintaining relatively fresh data.
+RELEASES_CACHE_EXPIRY_HOURS = 1 / 60  # 1 minute (in hours)
+# Prerelease contents rarely change once a commit is published, so cache for a longer duration.
+FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS = 24 * 60 * 60  # 24 hours
 # Keep prerelease commit history fresh so we see new prereleases within a minute.
 PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS = 60
 

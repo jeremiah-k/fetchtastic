@@ -3,13 +3,14 @@ import importlib.metadata
 import json
 import os
 import zipfile
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
 
 from fetchtastic import utils
-from fetchtastic.downloader import _format_api_summary
+from fetchtastic.utils import format_api_summary
 
 
 @pytest.fixture
@@ -960,16 +961,12 @@ def test_make_github_api_request_cached_rate_limit():
 @pytest.mark.core_downloads
 @pytest.mark.unit
 def test_cache_thread_safety():
-    """Test that cache operations are thread-safe."""
+    """Test that rate limit cache operations are thread-safe."""
     import threading
     import time
-    from datetime import datetime, timezone
 
     # Clear caches before test
     utils.clear_rate_limit_cache()
-    from fetchtastic.downloader import clear_commit_timestamp_cache
-
-    clear_commit_timestamp_cache()
 
     # Test rate limit cache thread safety
     def update_rate_limit_worker(token_hash, value):
@@ -1011,39 +1008,6 @@ def test_cache_thread_safety():
         assert remaining == 100 + i
         assert isinstance(cached_at, datetime)
 
-    # Test commit timestamp cache thread safety
-    from fetchtastic.downloader import _cache_lock, _commit_timestamp_cache
-
-    def commit_cache_worker(key_suffix):
-        for i in range(5):
-            key = f"owner/repo/commit_{key_suffix}_{i}"
-            timestamp = datetime.now(timezone.utc)
-            with _cache_lock:
-                _commit_timestamp_cache[key] = (timestamp, datetime.now(timezone.utc))
-            time.sleep(0.001)
-
-    # Start multiple threads updating commit cache
-    commit_threads = []
-    for i in range(3):
-        t = threading.Thread(target=commit_cache_worker, args=(i,))
-        commit_threads.append(t)
-
-    for thread in commit_threads:
-        thread.start()
-
-    for thread in commit_threads:
-        thread.join()
-
-    # Verify all entries were added without corruption
-    expected_entries = 15  # 3 threads * 5 entries each
-    assert len(_commit_timestamp_cache) == expected_entries
-
-    # Verify cache structure is valid
-    for key, (timestamp, cached_at) in _commit_timestamp_cache.items():
-        assert isinstance(timestamp, datetime)
-        assert isinstance(cached_at, datetime)
-        assert "/" in key  # Valid cache key format
-
 
 @pytest.mark.core_downloads
 @pytest.mark.unit
@@ -1083,17 +1047,16 @@ def test_api_tracking_functions():
 @pytest.mark.core_downloads
 @pytest.mark.unit
 def test_format_api_summary():
-    """Test _format_api_summary function."""
-    from datetime import datetime, timedelta, timezone
-
-    # Test basic authenticated request with no cache lookups
+    """Test format_api_summary function."""
     summary = {
         "total_requests": 5,
         "auth_used": True,
-        "cache_hits": 0,
-        "cache_misses": 0,
+        "cache_hits": 2,
+        "cache_misses": 3,
+        "firmware": {"downloaded": ["1.2.3"], "skipped": [], "failed": []},
+        "android": {"downloaded": ["4.5.6"], "skipped": [], "failed": []},
     }
-    result = _format_api_summary(summary)
+    result = format_api_summary(summary)
     # Check key components rather than exact string match
     assert "📊 GitHub API Summary:" in result
     assert "5 API requests" in result
@@ -1106,7 +1069,7 @@ def test_format_api_summary():
         "cache_hits": 2,
         "cache_misses": 1,
     }
-    result = _format_api_summary(summary)
+    result = format_api_summary(summary)
     # Check key components rather than exact string match
     assert "📊 GitHub API Summary:" in result
     assert "3 API requests" in result
@@ -1122,7 +1085,7 @@ def test_format_api_summary():
         "cache_hits": 0,
         "cache_misses": 4,
     }
-    result = _format_api_summary(summary)
+    result = format_api_summary(summary)
     # Check key components rather than exact string match
     assert "📊 GitHub API Summary:" in result
     assert "4 API requests" in result
@@ -1143,7 +1106,7 @@ def test_format_api_summary():
         "rate_limit_remaining": 4500,
         "rate_limit_reset": future_time,
     }
-    result = _format_api_summary(summary)
+    result = format_api_summary(summary)
     # Should contain rate limit info with minutes
     assert "4500 requests remaining (resets in" in result
     assert "min)" in result
@@ -1164,7 +1127,7 @@ def test_format_api_summary():
         "rate_limit_remaining": 4999,
         "rate_limit_reset": past_time,
     }
-    result = _format_api_summary(summary)
+    result = format_api_summary(summary)
     # Check key components rather than exact string match
     assert "📊 GitHub API Summary:" in result
     assert "1 API request" in result
@@ -1309,11 +1272,11 @@ def test_matches_selected_patterns_edge_cases():
 
 @pytest.mark.core_downloads
 @pytest.mark.unit
-def test_format_api_summary_debug_coverage():
-    """Test _format_api_summary function to ensure debug logging path is covered."""
+def testformat_api_summary_debug_coverage():
+    """Test format_api_summary function to ensure debug logging path is covered."""
     from datetime import datetime, timezone
 
-    from fetchtastic.downloader import _format_api_summary
+    from fetchtastic.utils import format_api_summary
 
     # Test the function directly to ensure it's covered
     summary = {
@@ -1325,7 +1288,7 @@ def test_format_api_summary_debug_coverage():
         "rate_limit_reset": datetime.now(timezone.utc),
     }
 
-    result = _format_api_summary(summary)
+    result = format_api_summary(summary)
 
     # Verify the function returns expected format
     assert "📊 GitHub API Summary: 5 API requests (🌐 unauthenticated)" in result
@@ -1342,7 +1305,7 @@ def test_format_api_summary_debug_coverage():
         "cache_misses": 0,
     }
 
-    result_no_requests = _format_api_summary(summary_no_requests)
+    result_no_requests = format_api_summary(summary_no_requests)
     assert (
         "📊 GitHub API Summary: 0 API requests (🔐 authenticated)" in result_no_requests
     )
