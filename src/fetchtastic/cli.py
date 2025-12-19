@@ -6,7 +6,7 @@ import platform
 import shutil
 import sys
 import time
-from typing import List
+from typing import Any, Dict, List, Optional, Tuple
 
 import platformdirs
 import yaml
@@ -72,7 +72,7 @@ def _display_update_reminder(latest_version: str) -> None:
     log_utils.logger.info(f"Run '{upgrade_cmd}' to upgrade.")
 
 
-def _load_and_prepare_config():
+def _load_and_prepare_config() -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     """
     Load and prepare the configuration, handling migration if needed.
 
@@ -114,7 +114,7 @@ def _load_and_prepare_config():
     return config, config_path
 
 
-def _ensure_config_loaded():
+def _ensure_config_loaded() -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     """
     Ensure configuration is loaded, running setup if necessary.
 
@@ -136,7 +136,10 @@ def _ensure_config_loaded():
     return config, config_path
 
 
-def _prepare_command_run():
+def _prepare_command_run() -> Tuple[
+    Optional[Dict[str, Any]],
+    Optional[download_cli_integration.DownloadCLIIntegration],
+]:
     """
     Ensures config is loaded, sets log level, and returns config and integration.
 
@@ -159,7 +162,7 @@ def _prepare_command_run():
 
 def _perform_cache_update(
     integration: download_cli_integration.DownloadCLIIntegration,
-    config: dict | None,
+    config: Optional[Dict[str, Any]],
 ) -> bool:
     """Run cache update and log the result."""
     if config is None:
@@ -177,7 +180,7 @@ def _perform_cache_update(
 def _run_download(
     args,
     integration: download_cli_integration.DownloadCLIIntegration,
-    config: dict | None,
+    config: Optional[Dict[str, Any]],
 ) -> None:
     """Run the download command with the given arguments."""
     if args.update_cache:
@@ -193,7 +196,7 @@ def _run_download(
         failed_downloads,
         latest_firmware_version,
         latest_apk_version,
-    ) = integration.main(force_refresh=args.force_download, config=config)
+    ) = integration.main(config=config, force_refresh=args.force_download)
 
     elapsed = time.time() - start_time
     integration.log_download_results_summary(
