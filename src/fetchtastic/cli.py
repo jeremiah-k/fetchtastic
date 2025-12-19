@@ -287,8 +287,8 @@ def main():
             if update_available and latest_version:
                 _display_update_reminder(latest_version)
     elif args.command == "download":
-        config, _config_path = _load_and_prepare_config()
-        if config is None:
+        config, config_path = _load_and_prepare_config()
+        if config_path is None:
             log_utils.logger.info("No configuration found. Running setup.")
             setup_config.run_setup()
             return
@@ -298,6 +298,11 @@ def main():
         integration = download_cli_integration.DownloadCLIIntegration()
 
         if args.update_cache:
+            if config is None:
+                log_utils.logger.error(
+                    "Configuration file exists but could not be loaded."
+                )
+                return
             success = integration.update_cache(config=config)
             if success:
                 log_utils.logger.info("Caches cleared.")
@@ -331,11 +336,14 @@ def main():
             cache_parser.print_help()
             return
 
-        config, _config_path = _load_and_prepare_config()
-        if config is None:
+        config, config_path = _load_and_prepare_config()
+        if config_path is None:
             log_utils.logger.error(
                 "No configuration found. Run 'fetchtastic setup' first."
             )
+            return
+        if config is None:
+            log_utils.logger.error("Configuration file exists but could not be loaded.")
             return
 
         integration = download_cli_integration.DownloadCLIIntegration()
