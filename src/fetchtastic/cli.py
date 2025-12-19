@@ -116,6 +116,23 @@ def _load_and_prepare_config():
     return config, config_path
 
 
+def _perform_cache_update(
+    integration: download_cli_integration.DownloadCLIIntegration,
+    config: dict | None,
+) -> bool:
+    """Run cache update and log the result."""
+    if config is None:
+        log_utils.logger.error("Configuration file exists but could not be loaded.")
+        return False
+
+    success = integration.update_cache(config=config)
+    if success:
+        log_utils.logger.info("Caches cleared.")
+    else:
+        log_utils.logger.error("Failed to clear caches.")
+    return success
+
+
 def main():
     # Logging is automatically initialized by importing log_utils
 
@@ -182,7 +199,7 @@ def main():
         help="Manage cached data",
         description="Clear or refresh cached API data without downloading assets.",
     )
-    cache_subparsers = cache_parser.add_subparsers(dest="cache_command")
+    cache_subparsers = cache_parser.add_subparsers(dest="cache_command", required=True)
     cache_subparsers.add_parser(
         "update",
         help="Clear cached data and exit",
@@ -291,23 +308,17 @@ def main():
         if config_path is None:
             log_utils.logger.info("No configuration found. Running setup.")
             setup_config.run_setup()
-            return
+            config, config_path = _load_and_prepare_config()
+            if config_path is None:
+                log_utils.logger.error("Setup did not create a valid configuration.")
+                return
 
         # Run the downloader
         reset_api_tracking()
         integration = download_cli_integration.DownloadCLIIntegration()
 
         if args.update_cache:
-            if config is None:
-                log_utils.logger.error(
-                    "Configuration file exists but could not be loaded."
-                )
-                return
-            success = integration.update_cache(config=config)
-            if success:
-                log_utils.logger.info("Caches cleared.")
-            else:
-                log_utils.logger.error("Failed to clear caches.")
+            _perform_cache_update(integration, config)
             return
 
         start_time = time.time()
@@ -332,26 +343,17 @@ def main():
             latest_apk_version=latest_apk_version,
         )
     elif args.command == "cache":
-        if args.cache_command != "update":
-            cache_parser.print_help()
-            return
-
         config, config_path = _load_and_prepare_config()
         if config_path is None:
-            log_utils.logger.error(
-                "No configuration found. Run 'fetchtastic setup' first."
-            )
-            return
-        if config is None:
-            log_utils.logger.error("Configuration file exists but could not be loaded.")
-            return
+            log_utils.logger.info("No configuration found. Running setup.")
+            setup_config.run_setup()
+            config, config_path = _load_and_prepare_config()
+            if config_path is None:
+                log_utils.logger.error("Setup did not create a valid configuration.")
+                return
 
         integration = download_cli_integration.DownloadCLIIntegration()
-        success = integration.update_cache(config=config)
-        if success:
-            log_utils.logger.info("Caches cleared.")
-        else:
-            log_utils.logger.error("Failed to clear caches.")
+        _perform_cache_update(integration, config)
     elif args.command == "topic":
         # Display the NTFY topic and prompt to copy to clipboard
         config = setup_config.load_config()

@@ -391,20 +391,9 @@ class DownloadCLIIntegration:
                 latest_apk_version (str): The latest known Android APK version after the run (empty string if unknown).
         """
         try:
+            config = self._load_config_if_needed(config)
             if config is None:
-                from fetchtastic import setup_config
-
-                exists, _config_path = setup_config.config_exists()
-                if not exists:
-                    logger.error(
-                        "No configuration found. Please run 'fetchtastic setup' first."
-                    )
-                    return [], [], [], [], [], "", ""
-
-                config = setup_config.load_config()
-                if config is None:
-                    logger.error("Configuration file exists but could not be loaded.")
-                    return [], [], [], [], [], "", ""
+                return [], [], [], [], [], "", ""
 
             # Normalize token once for the run so all downstream call sites see the
             # same effective value (config token preferred, env token fallback).
@@ -435,20 +424,9 @@ class DownloadCLIIntegration:
             bool: True if caches were cleared successfully, False otherwise.
         """
         try:
+            config = self._load_config_if_needed(config)
             if config is None:
-                from fetchtastic import setup_config
-
-                exists, _config_path = setup_config.config_exists()
-                if not exists:
-                    logger.error(
-                        "No configuration found. Please run 'fetchtastic setup' first."
-                    )
-                    return False
-
-                config = setup_config.load_config()
-                if config is None:
-                    logger.error("Configuration file exists but could not be loaded.")
-                    return False
+                return False
 
             self.config = config
             self.orchestrator = DownloadOrchestrator(config)
@@ -461,6 +439,31 @@ class DownloadCLIIntegration:
         except (requests.RequestException, OSError, ValueError, TypeError) as error:
             self.handle_cli_error(error)
             return False
+
+    def _load_config_if_needed(
+        self, config: Optional[Dict[str, Any]]
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Load configuration if not provided, returning None on failure.
+        """
+        if config is not None:
+            return config
+
+        from fetchtastic import setup_config
+
+        exists, _config_path = setup_config.config_exists()
+        if not exists:
+            logger.error(
+                "No configuration found. Please run 'fetchtastic setup' first."
+            )
+            return None
+
+        loaded_config = setup_config.load_config()
+        if loaded_config is None:
+            logger.error("Configuration file exists but could not be loaded.")
+            return None
+
+        return loaded_config
 
     def get_download_statistics(self) -> Dict[str, Any]:
         """

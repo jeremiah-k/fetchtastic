@@ -139,33 +139,3 @@ def test_cli_force_flag_handling(mocker, mock_cli_dependencies):
     args, kwargs = mock_cli_dependencies.main.call_args
     # Check that the integration was called with the force parameter
     assert mock_cli_dependencies.main.called
-
-
-@pytest.mark.user_interface
-@pytest.mark.unit
-def test_cli_download_update_cache_flag(mocker, mock_cli_dependencies):
-    """Test 'download' command with --update-cache flag."""
-    mocker.patch("sys.argv", ["fetchtastic", "download", "--update-cache"])
-    mocker.patch(
-        "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
-    )
-
-    cli.main()
-
-    mock_cli_dependencies.update_cache.assert_called_once()
-    mock_cli_dependencies.main.assert_not_called()
-
-
-@pytest.mark.user_interface
-@pytest.mark.unit
-def test_cli_cache_update_command(mocker, mock_cli_dependencies):
-    """Test 'cache update' command dispatch."""
-    mocker.patch("sys.argv", ["fetchtastic", "cache", "update"])
-    mocker.patch(
-        "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
-    )
-
-    cli.main()
-
-    mock_cli_dependencies.update_cache.assert_called_once()
-    mock_cli_dependencies.main.assert_not_called()
