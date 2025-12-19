@@ -135,6 +135,27 @@ def _ensure_config_loaded():
     return config, config_path
 
 
+def _prepare_command_run():
+    """
+    Ensures config is loaded, sets log level, and returns config and integration.
+
+    Returns:
+        tuple: (config, integration) where config is the loaded configuration dict
+               and integration is the DownloadCLIIntegration instance.
+               Returns (None, None) if configuration loading fails.
+    """
+    config, config_path = _ensure_config_loaded()
+    if config_path is None:
+        return None, None
+
+    # Apply configured log level if present and not empty
+    if config and config.get("LOG_LEVEL"):
+        log_utils.set_log_level(config["LOG_LEVEL"])
+
+    integration = download_cli_integration.DownloadCLIIntegration()
+    return config, integration
+
+
 def _perform_cache_update(
     integration: download_cli_integration.DownloadCLIIntegration,
     config: dict | None,
@@ -323,17 +344,12 @@ def main():
             if update_available and latest_version:
                 _display_update_reminder(latest_version)
     elif args.command == "download":
-        config, config_path = _ensure_config_loaded()
-        if config_path is None:
+        config, integration = _prepare_command_run()
+        if integration is None:
             return
-
-        # Apply configured log level if present and not empty
-        if config and config.get("LOG_LEVEL"):
-            log_utils.set_log_level(config["LOG_LEVEL"])
 
         # Run the downloader
         reset_api_tracking()
-        integration = download_cli_integration.DownloadCLIIntegration()
 
         if args.update_cache:
             _perform_cache_update(integration, config)
@@ -361,15 +377,10 @@ def main():
             latest_apk_version=latest_apk_version,
         )
     elif args.command == "cache":
-        config, config_path = _ensure_config_loaded()
-        if config_path is None:
+        config, integration = _prepare_command_run()
+        if integration is None:
             return
 
-        # Apply configured log level if present and not empty
-        if config and config.get("LOG_LEVEL"):
-            log_utils.set_log_level(config["LOG_LEVEL"])
-
-        integration = download_cli_integration.DownloadCLIIntegration()
         _perform_cache_update(integration, config)
     elif args.command == "topic":
         # Display the NTFY topic and prompt to copy to clipboard
