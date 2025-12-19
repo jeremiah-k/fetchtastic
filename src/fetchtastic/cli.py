@@ -156,6 +156,9 @@ def _prepare_command_run() -> Tuple[
     config, config_path = _ensure_config_loaded()
     if config_path is None:
         return None, None
+    if config is None:
+        log_utils.logger.error("Configuration file exists but could not be loaded.")
+        sys.exit(1)
 
     # Apply configured log level if present and not empty
     if config and config.get("LOG_LEVEL"):
@@ -207,6 +210,9 @@ def _handle_download_subcommand(
     """
     if args.update_cache:
         _perform_cache_update(integration, config)
+        return
+    if config is None:
+        log_utils.logger.error("Configuration file exists but could not be loaded.")
         return
 
     start_time = time.time()

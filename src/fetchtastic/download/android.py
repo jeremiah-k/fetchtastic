@@ -532,6 +532,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             for pr in prereleases:
                 clean_version = version_manager.extract_clean_version(pr.tag_name)
                 if not clean_version:
+                    # Preserve unparseable tags to avoid discarding future formats.
                     filtered_prereleases.append(pr)
                     continue
                 if clean_version.lstrip("vV").startswith(expected_base):

@@ -377,7 +377,7 @@ class DownloadCLIIntegration:
 
     def main(
         self,
-        config: Optional[Dict[str, Any]],
+        config: Dict[str, Any],
         force_refresh: bool = False,
     ) -> Tuple[
         List[str],
@@ -390,8 +390,6 @@ class DownloadCLIIntegration:
     ]:
         """
         Entry point for CLI commands that uses a provided configuration, normalizes tokens, and runs the download workflow to produce legacy-compatible results.
-
-        The `config` parameter is required. If `None` is passed, the function will log an error and return empty results.
 
          Parameters:
             config (Dict[str, Any]): Configuration mapping for the download run. Required parameter.
@@ -407,13 +405,10 @@ class DownloadCLIIntegration:
                 latest_firmware_version (str): The latest known firmware version after the run (empty string if unknown).
                 latest_apk_version (str): The latest known Android APK version after the run (empty string if unknown).
         """
-        try:
-            if config is None:
-                logger.error(
-                    "Configuration must be provided to the download integration."
-                )
-                return [], [], [], [], [], "", ""
+        if config is None:
+            raise TypeError("config must be provided to the download integration.")
 
+        try:
             # Normalize token once for the run so all downstream call sites see the
             # same effective value (config token preferred, env token fallback).
             config_token = get_effective_github_token(

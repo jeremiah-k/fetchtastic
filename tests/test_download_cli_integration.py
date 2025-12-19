@@ -39,15 +39,12 @@ def test_cli_integration_main_loads_config_and_runs(mocker):
     assert result[5] == "fw_latest"
 
 
-def test_cli_integration_main_handles_missing_config(mocker):
-    """If no configuration provided, main should bail out cleanly."""
+def test_cli_integration_main_requires_config_argument(mocker):
+    """main should require a config argument."""
     integration = DownloadCLIIntegration()
-    run_download = mocker.patch.object(integration, "run_download")
 
-    result = integration.main(config=None)
-
-    run_download.assert_not_called()
-    assert result == ([], [], [], [], [], "", "")
+    with pytest.raises(TypeError):
+        integration.main()
 
 
 def test_cli_integration_main_with_config_parameter(mocker):
@@ -91,17 +88,15 @@ def test_cli_integration_main_with_force_refresh(mocker):
     run_download.assert_called_once_with({"DOWNLOAD_DIR": "/tmp"}, True)
 
 
-def test_cli_integration_main_handles_config_load_failure(mocker):
-    """main should handle config load failure gracefully."""
+def test_cli_integration_main_rejects_none_config(mocker):
+    """main should reject a None config."""
     integration = DownloadCLIIntegration()
-    mocker.patch("fetchtastic.setup_config.config_exists", return_value=(True, "cfg"))
-    mocker.patch("fetchtastic.setup_config.load_config", return_value=None)
     run_download = mocker.patch.object(integration, "run_download")
 
-    result = integration.main(config=None)
+    with pytest.raises(TypeError):
+        integration.main(config=None)
 
     run_download.assert_not_called()
-    assert result == ([], [], [], [], [], "", "")
 
 
 def test_cli_integration_update_cache_loads_config(mocker):
