@@ -367,8 +367,8 @@ class DownloadCLIIntegration:
 
     def main(
         self,
+        config: Dict[str, Any],
         force_refresh: bool = False,
-        config: Optional[Dict[str, Any]] = None,
     ) -> Tuple[
         List[str],
         List[str],
@@ -379,13 +379,13 @@ class DownloadCLIIntegration:
         str,
     ]:
         """
-        Entry point for CLI commands that ensures configuration is available, normalizes tokens, and runs the download workflow to produce legacy-compatible results.
+        Entry point for CLI commands that uses a provided configuration, normalizes tokens, and runs the download workflow to produce legacy-compatible results.
 
-        If `config` is not provided, the function attempts to load the CLI configuration before running the download pipeline.
+        The `config` parameter is required. If `None` is passed, the function will log an error and return empty results.
 
-        Parameters:
-            force_refresh (bool): When True, forces refresh behavior for the downloaders (e.g., clears caches) for this run.
-            config (Optional[Dict[str, Any]]): Configuration mapping for the download run; if omitted, the CLI configuration will be loaded.
+         Parameters:
+            config (Dict[str, Any]): Configuration mapping for the download run. Required parameter.
+            force_refresh (bool): When True, forces refresh behavior for downloaders (e.g., clears caches) for this run.
 
         Returns:
             Tuple containing:

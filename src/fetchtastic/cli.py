@@ -190,7 +190,7 @@ def _perform_cache_update(
     return success
 
 
-def _run_download(
+def _handle_download_subcommand(
     args: argparse.Namespace,
     integration: download_cli_integration.DownloadCLIIntegration,
     config: Optional[Dict[str, Any]],
@@ -409,7 +409,7 @@ def main():
 
         # Run the downloader
         reset_api_tracking()
-        _run_download(args, integration, config)
+        _handle_download_subcommand(args, integration, config)
     elif args.command == "cache":
         config, integration = _prepare_command_run()
         if integration is None:
