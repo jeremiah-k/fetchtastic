@@ -11,12 +11,9 @@ pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
 
 
 def test_cli_integration_main_loads_config_and_runs(mocker):
-    """main should load config and delegate to run_download."""
+    """main should use provided config and delegate to run_download."""
     integration = DownloadCLIIntegration()
-    mocker.patch("fetchtastic.setup_config.config_exists", return_value=(True, "cfg"))
-    mocker.patch(
-        "fetchtastic.setup_config.load_config", return_value={"DOWNLOAD_DIR": "/tmp"}
-    )
+    config = {"DOWNLOAD_DIR": "/tmp"}
     mocker.patch(
         "fetchtastic.download.cli_integration.get_effective_github_token",
         return_value=None,
@@ -35,7 +32,7 @@ def test_cli_integration_main_loads_config_and_runs(mocker):
         ),
     )
 
-    result = integration.main()
+    result = integration.main(config=config)
 
     run_download.assert_called_once_with({"DOWNLOAD_DIR": "/tmp"}, False)
     assert result[0] == ["fw"]
@@ -43,12 +40,11 @@ def test_cli_integration_main_loads_config_and_runs(mocker):
 
 
 def test_cli_integration_main_handles_missing_config(mocker):
-    """If no configuration exists, main should bail out cleanly."""
+    """If no configuration provided, main should bail out cleanly."""
     integration = DownloadCLIIntegration()
-    mocker.patch("fetchtastic.setup_config.config_exists", return_value=(False, None))
     run_download = mocker.patch.object(integration, "run_download")
 
-    result = integration.main()
+    result = integration.main(config=None)
 
     run_download.assert_not_called()
     assert result == ([], [], [], [], [], "", "")
@@ -81,10 +77,7 @@ def test_cli_integration_main_with_config_parameter(mocker):
 def test_cli_integration_main_with_force_refresh(mocker):
     """main should pass force_refresh parameter to run_download."""
     integration = DownloadCLIIntegration()
-    mocker.patch("fetchtastic.setup_config.config_exists", return_value=(True, "cfg"))
-    mocker.patch(
-        "fetchtastic.setup_config.load_config", return_value={"DOWNLOAD_DIR": "/tmp"}
-    )
+    config = {"DOWNLOAD_DIR": "/tmp"}
     mocker.patch(
         "fetchtastic.download.cli_integration.get_effective_github_token",
         return_value=None,
@@ -93,7 +86,7 @@ def test_cli_integration_main_with_force_refresh(mocker):
         integration, "run_download", return_value=([], [], [], [], [], "", "")
     )
 
-    integration.main(force_refresh=True)
+    integration.main(config=config, force_refresh=True)
 
     run_download.assert_called_once_with({"DOWNLOAD_DIR": "/tmp"}, True)
 
@@ -112,12 +105,9 @@ def test_cli_integration_main_handles_config_load_failure(mocker):
 
 
 def test_cli_integration_update_cache_loads_config(mocker):
-    """update_cache should load config and clear caches."""
+    """update_cache should use provided config and clear caches."""
     integration = DownloadCLIIntegration()
-    mocker.patch("fetchtastic.setup_config.config_exists", return_value=(True, "cfg"))
-    mocker.patch(
-        "fetchtastic.setup_config.load_config", return_value={"DOWNLOAD_DIR": "/tmp"}
-    )
+    config = {"DOWNLOAD_DIR": "/tmp"}
     mock_orchestrator = mocker.MagicMock(
         android_downloader=mocker.MagicMock(),
         firmware_downloader=mocker.MagicMock(),
@@ -128,19 +118,18 @@ def test_cli_integration_update_cache_loads_config(mocker):
     )
     mock_clear = mocker.patch.object(integration, "_clear_caches")
 
-    result = integration.update_cache()
+    result = integration.update_cache(config=config)
 
     mock_clear.assert_called_once()
     assert result is True
 
 
 def test_cli_integration_update_cache_handles_missing_config(mocker):
-    """update_cache should return False when no config exists."""
+    """update_cache should return False when no config provided."""
     integration = DownloadCLIIntegration()
-    mocker.patch("fetchtastic.setup_config.config_exists", return_value=(False, None))
     mock_clear = mocker.patch.object(integration, "_clear_caches")
 
-    result = integration.update_cache()
+    result = integration.update_cache(config=None)
 
     mock_clear.assert_not_called()
     assert result is False

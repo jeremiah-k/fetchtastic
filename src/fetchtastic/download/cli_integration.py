@@ -35,7 +35,7 @@ class DownloadCLIIntegration:
     def __init__(self):
         """
         Initialize a DownloadCLIIntegration instance and set initial internal state.
-        
+
         Sets attributes used to connect the CLI to the download subsystem:
         - orchestrator: Orchestrator instance or None until initialized.
         - android_downloader: Android downloader instance or None until initialized.
@@ -50,9 +50,9 @@ class DownloadCLIIntegration:
     def _initialize_components(self, config: Dict[str, Any]) -> None:
         """
         Set up the DownloadOrchestrator and expose its downloaders on the integration instance.
-        
+
         Stores the provided configuration on self, constructs a DownloadOrchestrator using that configuration, and assigns the orchestrator's android_downloader and firmware_downloader to instance attributes for shared state and caches.
-        
+
         Parameters:
             config (Dict[str, Any]): Configuration used to initialize the orchestrator and downloaders.
         """
@@ -69,13 +69,13 @@ class DownloadCLIIntegration:
     ]:
         """
         Run the download pipeline using the provided configuration and return results formatted for the legacy CLI.
-        
+
         Initializes the orchestrator and downloaders from `config`, optionally clears downloader caches when `force_refresh` is True, executes the download pipeline, performs cleanup and version tracking, and collects failed download records.
-        
+
         Parameters:
             config (Dict[str, Any]): Configuration used to initialize the orchestrator and downloaders.
             force_refresh (bool): If True, clear downloader caches before running the pipeline.
-        
+
         Returns:
             Tuple[List[str], List[str], List[str], List[str], List[Dict[str, str]], str, str]:
                 - downloaded_firmwares: Paths or identifiers of firmware files that were downloaded.
@@ -398,8 +398,10 @@ class DownloadCLIIntegration:
                 latest_apk_version (str): The latest known Android APK version after the run (empty string if unknown).
         """
         try:
-            config = self._load_config_if_needed(config)
             if config is None:
+                logger.error(
+                    "Configuration must be provided to the download integration."
+                )
                 return [], [], [], [], [], "", ""
 
             # Normalize token once for the run so all downstream call sites see the
@@ -431,8 +433,8 @@ class DownloadCLIIntegration:
             bool: True if caches were cleared successfully, False otherwise.
         """
         try:
-            config = self._load_config_if_needed(config)
             if config is None:
+                logger.error("Configuration must be provided for cache update.")
                 return False
 
             self._initialize_components(config)
@@ -444,43 +446,10 @@ class DownloadCLIIntegration:
             self.handle_cli_error(error)
             return False
 
-    def _load_config_if_needed(
-        self, config: Optional[Dict[str, Any]]
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Return the provided configuration or load it from the user's setup if none is given.
-        
-        If `config` is None, checks for an existing configuration via fetchtastic.setup_config; if no configuration exists or loading fails, logs an error and returns None.
-        
-        Parameters:
-            config (Optional[Dict[str, Any]]): An already-loaded configuration dictionary, or None to load from disk.
-        
-        Returns:
-            Optional[Dict[str, Any]]: The configuration dictionary if available, or `None` on failure or when no configuration exists.
-        """
-        if config is not None:
-            return config
-
-        from fetchtastic import setup_config
-
-        exists, _config_path = setup_config.config_exists()
-        if not exists:
-            logger.error(
-                "No configuration found. Please run 'fetchtastic setup' first."
-            )
-            return None
-
-        loaded_config = setup_config.load_config()
-        if loaded_config is None:
-            logger.error("Configuration file exists but could not be loaded.")
-            return None
-
-        return loaded_config
-
     def get_download_statistics(self) -> Dict[str, Any]:
         """
         Return aggregated download statistics for reporting.
-        
+
         Returns:
             dict: Aggregated download statistics with keys:
                 - total_downloads (int): Total number of attempted downloads.
@@ -502,7 +471,7 @@ class DownloadCLIIntegration:
     def get_latest_versions(self) -> Dict[str, str]:
         """
         Get the latest known version strings for each artifact type.
-        
+
         Returns:
             dict: Mapping with keys 'android', 'firmware', 'firmware_prerelease', and 'android_prerelease' to the latest version string for each; an empty string indicates the version is not available.
         """
@@ -554,9 +523,9 @@ class DownloadCLIIntegration:
     def get_migration_report(self) -> Dict[str, Any]:
         """
         Produce a report describing the initialization and readiness of the download CLI integration.
-        
+
         The returned mapping summarizes whether core components are initialized, whether configuration and download directory checks pass, and includes current download statistics.
-        
+
         Returns:
             Dict[str, Any]: A mapping with keys:
                 - status (str): "completed" when core components are initialized, otherwise "not_initialized".
@@ -593,7 +562,7 @@ class DownloadCLIIntegration:
     def fallback_to_legacy(self) -> bool:
         """
         Indicates that the integration does not fall back to the legacy downloader.
-        
+
         Returns:
             bool: `false` indicating fallback to the legacy downloader will not occur.
         """
@@ -606,7 +575,7 @@ class DownloadCLIIntegration:
     def _validate_configuration(self) -> bool:
         """
         Determine whether the currently loaded configuration contains the required "DOWNLOAD_DIR" key.
-        
+
         Returns:
             `True` if a configuration is loaded and contains the "DOWNLOAD_DIR" key, `False` otherwise.
         """
@@ -732,7 +701,7 @@ class DownloadCLIIntegration:
     def get_cli_help_integration(self) -> Dict[str, str]:
         """
         Return a mapping of short help text entries describing the CLI integration for the download subsystem.
-        
+
         Returns:
             dict: Mapping of help keys to short instructional strings. Keys:
                 - description: brief name or summary of the subsystem
@@ -773,7 +742,7 @@ class DownloadCLIIntegration:
     def get_environment_info(self) -> Dict[str, Any]:
         """
         Collects environment and configuration diagnostics.
-        
+
         Returns:
             Dict[str, Any]: Mapping with keys:
                 - "python_version": Python interpreter version string.
