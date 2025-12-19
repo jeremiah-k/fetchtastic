@@ -378,6 +378,7 @@ class TestDownloadOrchestrator:
         # Mock the return values for the downloaders
         mock_android_release = Mock(spec=Release)
         mock_android_release.tag_name = "v1.0.0"
+        mock_android_release.prerelease = False
         orchestrator.android_downloader.get_releases.return_value = [
             mock_android_release
         ]

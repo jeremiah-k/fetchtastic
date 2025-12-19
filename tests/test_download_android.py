@@ -101,7 +101,7 @@ class TestMeshtasticAndroidAppDownloader:
         mock_response = Mock()
         mock_response.json.return_value = [
             {
-                "tag_name": "v1.0.0",
+                "tag_name": "v2.7.0",
                 "prerelease": False,
                 "published_at": "2023-01-01T00:00:00Z",
                 "assets": [
@@ -121,7 +121,7 @@ class TestMeshtasticAndroidAppDownloader:
         releases = downloader.get_releases(limit=10)
 
         assert len(releases) == 1
-        assert releases[0].tag_name == "v1.0.0"
+        assert releases[0].tag_name == "v2.7.0"
         assert releases[0].prerelease is False
         assert len(releases[0].assets) == 1
         assert releases[0].assets[0].name == "meshtastic.apk"

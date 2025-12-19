@@ -130,7 +130,13 @@ class DownloadCLIIntegration:
                 latest_apk_version,
             )
 
-        except (requests.RequestException, OSError, ValueError, TypeError) as e:
+        except (
+            requests.RequestException,
+            OSError,
+            ValueError,
+            TypeError,
+            KeyError,
+        ) as e:
             logger.exception("Error in CLI integration: %s", e)
             # Return empty results and error information
             return [], [], [], [], [], "", ""
@@ -422,7 +428,13 @@ class DownloadCLIIntegration:
             results = self.run_download(config, force_refresh)
             return results
 
-        except (requests.RequestException, OSError, ValueError, TypeError) as error:
+        except (
+            requests.RequestException,
+            OSError,
+            ValueError,
+            TypeError,
+            KeyError,
+        ) as error:
             self.handle_cli_error(error)
             return [], [], [], [], [], "", ""
 
@@ -442,7 +454,13 @@ class DownloadCLIIntegration:
             self._clear_caches()
             return True
 
-        except (requests.RequestException, OSError, ValueError, TypeError) as error:
+        except (
+            requests.RequestException,
+            OSError,
+            ValueError,
+            TypeError,
+            KeyError,
+        ) as error:
             self.handle_cli_error(error)
             return False
 
@@ -522,7 +540,13 @@ class DownloadCLIIntegration:
 
             return True
 
-        except (requests.RequestException, OSError, ValueError, TypeError) as e:
+        except (
+            requests.RequestException,
+            OSError,
+            ValueError,
+            TypeError,
+            KeyError,
+        ) as e:
             logger.error(f"Integration validation failed: {e}")
             return False
 
