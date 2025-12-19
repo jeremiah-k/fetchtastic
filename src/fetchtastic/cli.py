@@ -169,21 +169,17 @@ def _prepare_command_run() -> Tuple[
 
 def _perform_cache_update(
     integration: download_cli_integration.DownloadCLIIntegration,
-    config: Optional[Dict[str, Any]],
+    config: Dict[str, Any],
 ) -> bool:
     """
     Attempt to update integration caches and log the outcome.
 
     Parameters:
-        config (Optional[Dict[str, Any]]): Loaded configuration; if `None`, no cache update is performed.
+        config (Dict[str, Any]): Loaded configuration.
 
     Returns:
-        bool: `True` if the cache update succeeded, `False` otherwise (also `False` when `config` is `None`).
+        bool: `True` if the cache update succeeded, `False` otherwise.
     """
-    if config is None:
-        log_utils.logger.error("Configuration file exists but could not be loaded.")
-        return False
-
     success = integration.update_cache(config=config)
     if success:
         log_utils.logger.info("Caches cleared.")
@@ -195,7 +191,7 @@ def _perform_cache_update(
 def _handle_download_subcommand(
     args: argparse.Namespace,
     integration: download_cli_integration.DownloadCLIIntegration,
-    config: Optional[Dict[str, Any]],
+    config: Dict[str, Any],
 ) -> None:
     """
     Perform either a cache update or a download run based on the parsed command-line arguments.
@@ -209,9 +205,6 @@ def _handle_download_subcommand(
     """
     if args.update_cache:
         _perform_cache_update(integration, config)
-        return
-    if config is None:
-        log_utils.logger.error("Configuration file exists but could not be loaded.")
         return
 
     start_time = time.time()
@@ -414,12 +407,18 @@ def main():
 
         # Run the downloader
         reset_api_tracking()
+        assert (
+            config is not None
+        ), "Config should be guaranteed to be non-None by _prepare_command_run"
         _handle_download_subcommand(args, integration, config)
     elif args.command == "cache":
         config, integration = _prepare_command_run()
         if integration is None:
             sys.exit(1)
 
+        assert (
+            config is not None
+        ), "Config should be guaranteed to be non-None by _prepare_command_run"
         _perform_cache_update(integration, config)
     elif args.command == "topic":
         # Display the NTFY topic and prompt to copy to clipboard

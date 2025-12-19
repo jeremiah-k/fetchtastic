@@ -165,7 +165,20 @@ def test_run_download_successful(mocker):
 
     # Mock version manager for comparisons
     mock_version_manager = MagicMock()
-    mock_version_manager.compare_versions.return_value = 1  # Newer version
+
+    # Configure side_effect to return specific comparison results
+    def compare_side_effect(version1, version2):
+        # v1.0.0 > v0.9.0 (firmware comparison)
+        if version1 == "v1.0.0" and version2 == "v0.9.0":
+            return 1
+        # v2.0.0 > v1.9.0 (android comparison)
+        elif version1 == "v2.0.0" and version2 == "v1.9.0":
+            return 1
+        # v0.9.0 is skipped, shouldn't be compared
+        else:
+            return 0
+
+    mock_version_manager.compare_versions.side_effect = compare_side_effect
     mock_android_downloader = MagicMock()
     mock_android_downloader.get_version_manager.return_value = mock_version_manager
     mock_orchestrator.android_downloader = mock_android_downloader
@@ -195,7 +208,12 @@ def test_run_download_successful(mocker):
     assert result[6] == "v1.9.0"  # latest_apk_version (from orchestrator)
 
     # Verify version comparison was called for new version detection
-    assert mock_version_manager.compare_versions.call_count >= 2
+    # Should be called for each non-skipped download (2 times in this test)
+    assert mock_version_manager.compare_versions.call_count == 2
+    # Verify it was called with the correct arguments
+    calls = mock_version_manager.compare_versions.call_args_list
+    assert any(call[0] == ("v1.0.0", "v0.9.0") for call in calls)
+    assert any(call[0] == ("v2.0.0", "v1.9.0") for call in calls)
 
 
 def test_run_download_with_force_refresh(mocker):
