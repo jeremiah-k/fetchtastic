@@ -99,10 +99,10 @@ class TestAutomationConfiguration:
         def wants(_section: str) -> bool:
             """
             Indicates that every setup section should be executed.
-            
+
             Parameters:
                 _section (str): Name of the setup section (ignored).
-            
+
             Returns:
                 True if the section should run, False otherwise.
             """

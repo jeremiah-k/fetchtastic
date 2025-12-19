@@ -23,11 +23,11 @@ class _SimpleCacheManager:
     def atomic_write_json(self, file_path: str, data):
         """
         Write JSON-serializable data to a file using UTF-8 encoding, overwriting any existing content.
-        
+
         Parameters:
             file_path (str): Destination file path.
             data: JSON-serializable object to write to the file.
-        
+
         Returns:
             `True` if the data was written successfully.
         """

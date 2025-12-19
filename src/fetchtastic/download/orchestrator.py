@@ -6,10 +6,9 @@ downloaders in a single fetchtastic download run.
 """
 
 import os
-import shutil
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import requests
 
@@ -58,10 +57,12 @@ class DownloadOrchestrator:
         self.cache_manager = CacheManager()
 
         # Initialize downloaders
-        self.android_downloader = MeshtasticAndroidAppDownloader(
+        self.android_downloader: MeshtasticAndroidAppDownloader = (
+            MeshtasticAndroidAppDownloader(config, self.cache_manager)
+        )
+        self.firmware_downloader: FirmwareReleaseDownloader = FirmwareReleaseDownloader(
             config, self.cache_manager
         )
-        self.firmware_downloader = FirmwareReleaseDownloader(config, self.cache_manager)
 
         # Track results
         self.download_results: List[DownloadResult] = []

@@ -7,7 +7,7 @@ This module provides integration between the new download subsystem and the exis
 import os
 import sys
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 import requests
 
@@ -42,10 +42,10 @@ class DownloadCLIIntegration:
         - firmware_downloader: Firmware downloader instance or None until initialized.
         - config: Configuration mapping or None until provided.
         """
-        self.orchestrator = None
-        self.android_downloader = None
-        self.firmware_downloader = None
-        self.config = None
+        self.orchestrator: Optional[DownloadOrchestrator] = None
+        self.android_downloader: Optional[MeshtasticAndroidAppDownloader] = None
+        self.firmware_downloader: Optional[FirmwareReleaseDownloader] = None
+        self.config: Optional[Dict[str, Any]] = None
 
     def _initialize_components(self, config: Dict[str, Any]) -> None:
         """

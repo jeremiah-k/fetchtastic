@@ -60,9 +60,9 @@ class RepositoryDownloader(BaseDownloader):
     def get_cleanup_summary(self) -> Dict[str, Any]:
         """
         Get a copy of the most recent repository cleanup summary.
-        
+
         The summary contains counts and status produced by clean_repository_directory.
-        
+
         Returns:
             dict: A copy of the cleanup summary with keys:
                 - "removed_files" (int): number of files removed
@@ -253,12 +253,12 @@ class RepositoryDownloader(BaseDownloader):
     def _get_safe_target_directory(self, subdirectory: str) -> Optional[str]:
         """
         Return the absolute path to a safe target directory inside the repository downloads area, creating it if necessary.
-        
+
         If `subdirectory` is empty the base repository downloads directory is returned. If `subdirectory` is determined to be unsafe, the base repository downloads directory is used instead.
-        
+
         Parameters:
             subdirectory (str): Relative path under the repository downloads directory to target; treated as a repository-local subpath.
-        
+
         Returns:
             str | None: Absolute path to the resolved target directory, or `None` if the directory could not be created.
         """
@@ -335,12 +335,12 @@ class RepositoryDownloader(BaseDownloader):
     def _set_executable_permissions(self, file_path: str) -> bool:
         """
         Set the file's executable permission bits on Unix-like systems.
-        
+
         On Unix-like systems this adds user/group/other execute bits; on Windows this is a no-op and returns True.
-        
+
         Parameters:
             file_path (str): Path to the target file.
-        
+
         Returns:
             bool: `True` if the file is executable after the call, `False` if an OSError occurred while setting permissions.
         """
@@ -422,13 +422,13 @@ class RepositoryDownloader(BaseDownloader):
     def get_repository_download_url(self, file_path: str) -> str:
         """
         Constructs an absolute download URL for a repository-relative file path.
-        
+
         Parameters:
             file_path (str): Relative repository path (must not be an absolute path or contain a URL scheme/host).
-        
+
         Returns:
             str: Absolute download URL for the specified repository file.
-        
+
         Raises:
             ValueError: If `file_path` contains a URL scheme, host, or is an absolute path.
         """
@@ -471,9 +471,9 @@ class RepositoryDownloader(BaseDownloader):
     def cleanup_old_versions(self, _keep_limit: int) -> None:
         """
         Clear the repository downloads directory, ignoring any retention limit.
-        
+
         The _keep_limit parameter is ignored because repository files are not versioned; this method removes all files under the repository downloads area.
-        
+
         Parameters:
             _keep_limit (int): Suggested number of versions to keep; ignored for repository downloads.
         """
@@ -483,7 +483,7 @@ class RepositoryDownloader(BaseDownloader):
     def get_latest_release_tag(self) -> Optional[str]:
         """
         Provide the fixed tag that identifies the latest repository release.
-        
+
         Returns:
             The string "repository-latest".
         """
@@ -492,12 +492,12 @@ class RepositoryDownloader(BaseDownloader):
     def update_latest_release_tag(self, _release_tag: str) -> bool:
         """
         No-op updater for the repository's latest release tag.
-        
+
         This method ignores the provided release tag because repository downloads are not versioned and always succeeds.
-        
+
         Parameters:
             _release_tag (str): Release tag value (ignored).
-        
+
         Returns:
             bool: `True` always, indicating success.
         """
@@ -531,9 +531,9 @@ class RepositoryDownloader(BaseDownloader):
     ) -> bool:
         """
         Indicates whether the given repository file requires extraction.
-        
+
         Repository assets are not treated as archives, so extraction is not applicable.
-        
+
         Returns:
             `False` indicating extraction is not required for repository files.
         """
@@ -546,9 +546,9 @@ class RepositoryDownloader(BaseDownloader):
     def should_download_release(self, _release_tag: str, _asset_name: str) -> bool:
         """
         Indicates whether a repository release asset should be downloaded.
-        
+
         Repository assets are always selected for download.
-        
+
         Returns:
             True for all repository assets, False otherwise.
         """

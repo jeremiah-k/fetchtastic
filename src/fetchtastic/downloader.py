@@ -954,7 +954,7 @@ def _read_prerelease_tracking_data(tracking_file):
         - Supports the current tracking schema containing a "version" key and either "hash" or "commits".
         - If the file is missing, unreadable, or contains unexpected/malformed JSON, the function returns ([], None, None).
     """
-    commits = []
+    commits: List[Dict[str, Any]] = []
     current_release = None
     last_updated = None
 
@@ -3134,11 +3134,12 @@ def _refresh_prerelease_commit_history(
     def _get_entry_key(entry: Dict[str, Any]) -> Optional[str]:
         return entry.get("identifier") or entry.get("directory") or entry.get("dir")
 
-    existing_map: Dict[str, Dict[str, Any]] = (
-        {_get_entry_key(e): e for e in existing_entries if _get_entry_key(e)}
-        if existing_entries
-        else {}
-    )
+    existing_map: Dict[str, Dict[str, Any]] = {}
+    if existing_entries:
+        for e in existing_entries:
+            key = _get_entry_key(e)
+            if key is not None:
+                existing_map[key] = e
 
     # Merge new entries into existing_map (newest-first list already from history_new)
     for new_entry in history_new:
@@ -5108,9 +5109,7 @@ def _finalize_and_notify(
             title="Fetchtastic Download Completed",
         )
     else:
-        message: str = (
-            f"All assets are up to date.\n{datetime.now().astimezone().isoformat(timespec='seconds')}"
-        )
+        message: str = f"All assets are up to date.\n{datetime.now().astimezone().isoformat(timespec='seconds')}"  # type: ignore[no-redef]
         logger.info(message)
         if not notify_on_download_only:
             _send_ntfy_notification(

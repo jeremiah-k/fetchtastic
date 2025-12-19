@@ -1649,14 +1649,16 @@ def run_setup(
     sections: Optional[Sequence[str]] = None, perform_initial_download: bool = True
 ):
     """
-    Run the interactive Fetchtastic setup wizard.
+        Run the interactive Fetchtastic setup wizard.
 
-    Guides the user through creating or migrating the Fetchtastic configuration, selecting assets and retention policies, configuring notifications and automation/startup behavior, and persisting the resulting settings to the user's YAML config file. Behavior adapts to the current platform (e.g., Termux, Windows, macOS/Linux) and will only prompt for sections requested via the `sections` parameter.
+        Guides the user through creating or migrating the Fetchtastic configuration, selecting assets and retention policies, configuring notifications and automation/startup behavior, and persisting the resulting settings to the user's YAML config file. Behavior adapts to the current platform (e.g., Termux, Windows, macOS/Linux) and will only prompt for sections requested via the `sections` parameter.
 
     Parameters:
-        sections (Optional[Sequence[str]]): Optional sequence of setup section names to run (e.g., elements of
-            SETUP_SECTION_CHOICES). When provided, the wizard only prompts for those sections and preserves
-            other configuration values; when `None`, the full interactive setup is executed.
+            sections (Optional[Sequence[str]]): Optional sequence of setup section names to run (e.g., elements of
+                SETUP_SECTION_CHOICES). When provided, wizard only prompts for those sections and preserves
+                other configuration values; when `None`, full interactive setup is executed.
+            perform_initial_download (bool): When True (default), offers to run an initial download after setup completes
+                on non-Windows platforms for full (non-partial) setup runs. When False, skips the initial download prompt.
     """
     global BASE_DIR
     partial_sections: Optional[Set[str]] = None

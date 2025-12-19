@@ -22,7 +22,7 @@ class TestFirmwareReleaseDownloader:
     def mock_config(self):
         """
         Provide a mock configuration dictionary used by the test suite.
-        
+
         Returns:
             dict: Test configuration containing:
                 - DOWNLOAD_DIR (str): Base directory for downloads ("/tmp/test").
@@ -53,11 +53,11 @@ class TestFirmwareReleaseDownloader:
     def downloader(self, mock_config, mock_cache_manager):
         """
         Create a FirmwareReleaseDownloader configured for tests with injected mocked dependencies.
-        
+
         Parameters:
             mock_config (dict): Configuration values used to initialize the downloader.
             mock_cache_manager (Mock): Mocked CacheManager used for cache interactions.
-        
+
         Returns:
             FirmwareReleaseDownloader: Initialized downloader whose `cache_manager` is set to `mock_cache_manager` and whose `version_manager` and `file_operations` are replaced with mocks. The `version_manager.get_release_tuple` delegates to a real VersionManager implementation.
         """

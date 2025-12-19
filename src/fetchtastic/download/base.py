@@ -61,9 +61,9 @@ class BaseDownloader(Downloader, ABC):
     def get_download_dir(self) -> str:
         """
         Return the configured download directory path.
-        
+
         If the configuration does not provide "DOWNLOAD_DIR", defaults to the user's home "meshtastic" directory.
-        
+
         Returns:
             download_dir (str): The resolved download directory path (e.g. '~/meshtastic' when not configured).
         """
@@ -72,9 +72,9 @@ class BaseDownloader(Downloader, ABC):
     def _get_versions_to_keep(self) -> int:
         """
         Return how many release versions should be retained.
-        
+
         Reads `VERSIONS_TO_KEEP` from the downloader configuration and returns its integer value; defaults to 5 when unset.
-        
+
         Returns:
             int: Number of versions to keep.
         """
@@ -83,9 +83,9 @@ class BaseDownloader(Downloader, ABC):
     def download(self, url: str, target_path: Pathish) -> bool:
         """
         Download a file to the specified target path.
-        
+
         Ensures the target's parent directory exists before attempting the download.
-        
+
         Returns:
             `True` if the file was downloaded successfully, `False` otherwise.
         """
@@ -152,9 +152,9 @@ class BaseDownloader(Downloader, ABC):
     def cleanup_old_versions(self, keep_limit: int) -> None:
         """
         Remove older downloaded versions to enforce a retention limit.
-        
+
         Concrete downloaders must override this method to remove older version artifacts so that at most `keep_limit` versions remain.
-        
+
         Parameters:
             keep_limit (int): Maximum number of version entries to retain; older versions beyond this limit should be removed.
         """
@@ -164,7 +164,7 @@ class BaseDownloader(Downloader, ABC):
     def get_version_manager(self) -> VersionManager:
         """
         Get the VersionManager associated with this downloader.
-        
+
         Returns:
             VersionManager: The VersionManager instance associated with this downloader.
         """
@@ -173,7 +173,7 @@ class BaseDownloader(Downloader, ABC):
     def get_cache_manager(self) -> CacheManager:
         """
         Retrieve the cache manager used by this downloader.
-        
+
         Returns:
             CacheManager: The cache manager instance.
         """
@@ -202,13 +202,13 @@ class BaseDownloader(Downloader, ABC):
     def should_download_release(self, _release_tag: str, asset_name: str) -> bool:
         """
         Decide whether an asset should be downloaded based on configured selection and exclusion patterns.
-        
+
         The asset is eligible only if it matches at least one configured selected pattern (when any are defined)
         and does not match any configured exclude pattern.
-        
+
         Parameters:
             asset_name (str): Name of the asset (filename) to evaluate.
-        
+
         Returns:
             True if the asset should be downloaded, False otherwise.
         """
@@ -336,7 +336,7 @@ class BaseDownloader(Downloader, ABC):
     ) -> DownloadResult:
         """
         Create a DownloadResult that encapsulates the outcome and metadata of a release asset download attempt.
-        
+
         Parameters:
             success (bool): Whether the download succeeded.
             release_tag (str): Release identifier associated with the asset.
@@ -351,7 +351,7 @@ class BaseDownloader(Downloader, ABC):
             error_details (Optional[Dict[str, Any]]): Additional structured information about the error.
             http_status_code (Optional[int]): HTTP status code returned by the request, if applicable.
             was_skipped (bool): Whether the asset was intentionally skipped (not attempted).
-        
+
         Returns:
             DownloadResult: Object containing the result fields and normalized Path for the file.
         """
@@ -374,11 +374,11 @@ class BaseDownloader(Downloader, ABC):
     def get_existing_file_path(self, release_tag: str, file_name: str) -> Optional[str]:
         """
         Get the filesystem path of an existing asset for the given release.
-        
+
         Parameters:
             release_tag (str): Release tag used to locate the version directory.
             file_name (str): Asset filename within the release directory.
-        
+
         Returns:
             Optional[str]: Path to the existing file as a string if present, `None` otherwise.
         """
@@ -416,9 +416,9 @@ class BaseDownloader(Downloader, ABC):
     def is_asset_complete(self, release_tag: str, asset: Asset) -> bool:
         """
         Determine whether the asset file for a release is present and valid.
-        
+
         Performs existence, size (when provided), hash/verification, and ZIP integrity checks.
-        
+
         Returns:
             `true` if the file exists and passes all applicable checks, `false` otherwise.
         """
@@ -447,12 +447,12 @@ class BaseDownloader(Downloader, ABC):
     ) -> bool:
         """
         Decide whether a release asset file must be downloaded.
-        
+
         Parameters:
             release_tag (str): Release tag used to locate the existing file.
             file_name (str): Name of the asset file.
             expected_size (int): Expected file size in bytes; used to detect incomplete or mismatched files.
-        
+
         Returns:
             true if the file should be downloaded, false otherwise.
         """

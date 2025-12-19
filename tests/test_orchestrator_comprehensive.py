@@ -6,7 +6,6 @@ previously handled by the legacy downloader module, ensuring they work
 correctly with the new modular architecture.
 """
 
-import logging
 from unittest.mock import Mock, patch
 
 import pytest
@@ -21,7 +20,7 @@ pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
 def test_config(tmp_path):
     """
     Provide a test configuration dictionary for initializing a DownloadOrchestrator.
-    
+
     Returns:
         dict: Configuration mapping with keys:
             - "DOWNLOAD_DIR" (str): base directory for downloads.
@@ -51,10 +50,10 @@ def test_config(tmp_path):
 def orchestrator(test_config):
     """
     Create a DownloadOrchestrator using the provided test configuration.
-    
+
     Parameters:
         test_config (dict): Configuration dictionary containing directories, retention counts, include/exclude patterns, GitHub token, and prerelease handling options.
-    
+
     Returns:
         DownloadOrchestrator: An orchestrator initialized with the provided configuration.
     """
@@ -397,7 +396,7 @@ class TestDownloadOrchestrator:
     def test_download_android_release(self, orchestrator):
         """
         Verify that an Android release containing an APK asset causes the orchestrator to attempt a download.
-        
+
         Creates a Release with one APK Asset, patches the orchestrator's Android downloader to simulate a successful download, calls _download_android_release, and asserts a download was invoked.
         """
         release = Release(tag_name="v2.7.14", prerelease=False)
