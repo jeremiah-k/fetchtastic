@@ -22,6 +22,7 @@ from fetchtastic.constants import (
 from fetchtastic.log_utils import logger
 
 from .android import MeshtasticAndroidAppDownloader
+from .base import BaseDownloader
 from .cache import CacheManager
 from .files import _safe_rmtree
 from .firmware import FirmwareReleaseDownloader
@@ -613,7 +614,7 @@ class DownloadOrchestrator:
             )
 
         try:
-            downloader = None
+            downloader: Optional[BaseDownloader] = None
             if file_type == "android":
                 downloader = self.android_downloader
             elif file_type == "firmware":

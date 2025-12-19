@@ -799,7 +799,7 @@ class FileOperations:
                         hash_file_path = f"{file_path}.{algorithm}"
                         if _atomic_write(
                             hash_file_path,
-                            lambda f, hv=hash_value: f.write(str(hv)),
+                            lambda f, hv=hash_value: f.write(str(hv)),  # type: ignore[misc]
                             suffix=f".{algorithm}",
                         ):
                             logger.debug("Created hash file: %s", hash_file_path)

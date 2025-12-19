@@ -7,7 +7,7 @@ This module provides integration between the new download subsystem and the exis
 import os
 import sys
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 import requests
 
@@ -90,13 +90,16 @@ class DownloadCLIIntegration:
         """
         try:
             self._initialize_components(config)
+            if self.orchestrator is None:
+                raise RuntimeError("Orchestrator not initialized")
+            orchestrator = cast(DownloadOrchestrator, self.orchestrator)
 
             # Clear caches if force refresh is requested
             if force_refresh:
                 self._clear_caches()
 
             # Run the download pipeline
-            success_results, _failed_results = self.orchestrator.run_download_pipeline()
+            success_results, _failed_results = orchestrator.run_download_pipeline()
 
             # Convert results to legacy format
             (
@@ -107,10 +110,10 @@ class DownloadCLIIntegration:
             ) = self._convert_results_to_legacy_format(success_results)
 
             # Handle cleanup
-            self.orchestrator.cleanup_old_versions()
+            orchestrator.cleanup_old_versions()
 
             # Update version tracking
-            self.orchestrator.update_version_tracking()
+            orchestrator.update_version_tracking()
 
             # Get failed downloads
             failed_downloads = self.get_failed_downloads()

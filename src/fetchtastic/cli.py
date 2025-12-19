@@ -849,7 +849,7 @@ def get_fetchtastic_version():
         from importlib.metadata import PackageNotFoundError, version
     except ImportError:
         # For Python < 3.8
-        from importlib_metadata import (  # type: ignore[import]
+        from importlib_metadata import (  # type: ignore[import,no-redef]
             PackageNotFoundError,
             version,
         )

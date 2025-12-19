@@ -282,7 +282,7 @@ class VersionManager:
                 pass
 
             try:
-                major, minor = parts[0], parts[1]
+                major, minor = int(parts[0]), int(parts[1])
                 patch_int = int(parts[2]) if len(parts) > 2 else 0
                 return f"{major}.{minor}.{patch_int + 1}"
             except (ValueError, IndexError):
