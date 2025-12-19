@@ -257,8 +257,11 @@ class CacheManager:
                     logger.debug(f"Cache expired for {cache_file}")
                     return None
         except (ValueError, TypeError):
-            # If expiry is malformed, treat the entry as non-expiring (legacy tolerant).
-            pass
+            # If expiry is malformed, treat the entry as non-expiring (legacy tolerant) and log it for diagnostics.
+            logger.debug(
+                "Malformed expiry timestamp in cache file %s; treating entry as non-expiring",
+                cache_file,
+            )
 
         return cache_data.get("data")
 
@@ -538,25 +541,6 @@ class CacheManager:
             return None
 
         now = datetime.now(timezone.utc)
-
-        # Log any expired entries we notice (parity with legacy logs)
-        for key, entry in list(cache.items()):
-            if not isinstance(entry, dict):
-                continue
-            cached_at_raw = entry.get("cached_at")
-            if not cached_at_raw:
-                continue
-            cached_at = _parse_iso_datetime_utc(cached_at_raw)
-            if not cached_at:
-                continue
-            age_s = (now - cached_at).total_seconds()
-            if age_s >= expiry_seconds:
-                logger.debug(
-                    "Skipping expired releases cache entry for %s (age %.0fs exceeds %ss)",
-                    key,
-                    age_s,
-                    expiry_seconds,
-                )
 
         entry = cache.get(url_cache_key)
         if not isinstance(entry, dict):
@@ -861,26 +845,35 @@ class CacheManager:
         now = datetime.now(timezone.utc)
 
         if not force_refresh and cache_key in cache:
-            try:
-                timestamp_str, cached_at_str = cache[cache_key]
+            entry = cache[cache_key]
+            entry_valid = (
+                isinstance(entry, (list, tuple))
+                and len(entry) == 2
+                and isinstance(entry[0], str)
+                and isinstance(entry[1], str)
+            )
+            if entry_valid:
+                timestamp_str, cached_at_str = entry
                 cached_at = _parse_iso_datetime_utc(cached_at_str)
                 timestamp = _parse_iso_datetime_utc(timestamp_str)
-                if cached_at is None or timestamp is None:
-                    raise ValueError("Invalid commit timestamp cache entry")
-                age = now - cached_at
-                if age.total_seconds() < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 60 * 60:
-                    track_api_cache_hit()
-                    logger.debug(
-                        "Using cached commit timestamp for %s (cached %.0fs ago)",
-                        commit_hash,
-                        age.total_seconds(),
-                    )
-                    return timestamp
-            except (ValueError, TypeError, KeyError) as exc:
+                if cached_at is not None and timestamp is not None:
+                    age = now - cached_at
+                    if (
+                        age.total_seconds()
+                        < COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS * 60 * 60
+                    ):
+                        track_api_cache_hit()
+                        logger.debug(
+                            "Using cached commit timestamp for %s (cached %.0fs ago)",
+                            commit_hash,
+                            age.total_seconds(),
+                        )
+                        return timestamp
+                else:
+                    entry_valid = False
+            if not entry_valid:
                 logger.debug(
-                    "Ignoring invalid commit timestamp cache entry for %s: %s",
-                    cache_key,
-                    exc,
+                    "Ignoring invalid commit timestamp cache entry for %s", cache_key
                 )
 
         track_api_cache_miss()

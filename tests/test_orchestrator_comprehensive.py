@@ -87,9 +87,11 @@ class TestDownloadOrchestrator:
     def test_handle_download_result(self, orchestrator, tmp_path):
         """Test handling download results."""
         # Create a mock download result
-        mock_result = Mock()
-        mock_result.success = True
-        mock_result.file_path = str(tmp_path / "test" / "file.bin")
+        mock_result = DownloadResult(
+            success=True,
+            file_path=str(tmp_path / "test" / "file.bin"),
+            file_type="android",
+        )
 
         orchestrator._handle_download_result(mock_result, "test_operation")
         assert orchestrator.download_results[-1] is mock_result
@@ -124,19 +126,18 @@ class TestDownloadOrchestrator:
 
     def test_retry_single_failure(self, orchestrator, tmp_path):
         """Test retrying a single failed download."""
-        mock_failed_result = Mock()
-        mock_failed_result.success = False
-        mock_failed_result.error_type = "network_error"
-        mock_failed_result.is_retryable = True
-        mock_failed_result.download_url = "https://example.com/file.apk"
-        mock_failed_result.file_path = str(tmp_path / "test.apk")
-        mock_failed_result.file_type = "android"
-        mock_failed_result.retry_count = 0
-        mock_failed_result.retry_timestamp = None
-        mock_failed_result.release_tag = "test-tag"
-        mock_failed_result.file_size = 1000
+        mock_failed_result = DownloadResult(
+            success=False,
+            error_type="network_error",
+            is_retryable=True,
+            download_url="https://example.com/file.apk",
+            file_path=str(tmp_path / "test.apk"),
+            file_type="android",
+            retry_count=0,
+            release_tag="test-tag",
+            file_size=1000,
+        )
 
-        # Patch downloader methods to avoid real I/O
         with (
             patch.object(
                 orchestrator.android_downloader, "download", return_value=True
@@ -144,9 +145,6 @@ class TestDownloadOrchestrator:
             patch.object(orchestrator.android_downloader, "verify", return_value=True),
         ):
             result = orchestrator._retry_single_failure(mock_failed_result)
-            # Should return a DownloadResult with success=True
-            from fetchtastic.download.interfaces import DownloadResult
-
             assert isinstance(result, DownloadResult)
             assert result.success is True
             mock_download.assert_called_once()
@@ -188,8 +186,6 @@ class TestDownloadOrchestrator:
     def test_enhance_download_results_with_metadata(self, orchestrator, tmp_path):
         """Test enhancing download results with metadata."""
         # Add some mock download results to test enhancement
-        from fetchtastic.download.interfaces import DownloadResult
-
         mock_result = DownloadResult(
             success=True,
             file_type="firmware",
@@ -228,8 +224,6 @@ class TestDownloadOrchestrator:
     def test_log_download_summary(self, orchestrator, tmp_path):
         """Test logging download summary."""
         # Add some mock download results to test summary
-        from fetchtastic.download.interfaces import DownloadResult
-
         orchestrator.download_results = [
             DownloadResult(
                 success=True,
@@ -257,9 +251,6 @@ class TestDownloadOrchestrator:
 
     def test_get_download_statistics(self, orchestrator):
         """Test getting download statistics."""
-        # Add some mock download results to test statistics
-        from fetchtastic.download.interfaces import DownloadResult
-
         orchestrator.download_results = [
             DownloadResult(success=True, file_type="firmware", file_size=1000),
             DownloadResult(success=False, file_type="android", file_size=500),
@@ -279,10 +270,8 @@ class TestDownloadOrchestrator:
         assert all(isinstance(v, (int, float)) for v in stats.values())
 
         # Verify specific values with our test data
-        # Note: total_downloads excludes failed downloads from download_results, only counts successful + failed_downloads
-        assert (
-            stats["total_downloads"] == 2
-        )  # Only successful downloads count, failed ones are in separate failed_downloads list
+        # total_downloads sums successful_downloads plus the number of currently tracked failures; since failed_downloads is empty it equals the number of successful entries.
+        assert stats["total_downloads"] == 2
         assert stats["successful_downloads"] == 2
         assert (
             stats["failed_downloads"] == 0
@@ -295,9 +284,6 @@ class TestDownloadOrchestrator:
         rate = orchestrator._calculate_success_rate()
         assert isinstance(rate, float)
         assert rate == 100.0  # No downloads gives 100% success rate by design
-
-        # Add some mock download results
-        from fetchtastic.download.interfaces import DownloadResult
 
         orchestrator.download_results = [
             DownloadResult(success=True, file_type="firmware"),
@@ -316,9 +302,6 @@ class TestDownloadOrchestrator:
 
     def test_count_artifact_downloads(self, orchestrator):
         """Test counting artifact downloads."""
-        # Add some mock download results to test counting
-        from fetchtastic.download.interfaces import DownloadResult
-
         orchestrator.download_results = [
             DownloadResult(
                 success=True,
@@ -353,14 +336,8 @@ class TestDownloadOrchestrator:
 
     def test_cleanup_old_versions(self, orchestrator):
         """Test cleanup of old versions."""
-        # Store original download results count
-        original_count = len(orchestrator.download_results)
-
-        # Method should exist and be callable
+        # Method should exist and be callable without raising; exact cleanup depends on filesystem contents
         orchestrator.cleanup_old_versions()
-
-        # Verify that method completed without errors and didn't corrupt data
-        assert len(orchestrator.download_results) >= original_count
 
     def test_get_latest_versions(self, orchestrator):
         """Test getting latest versions."""

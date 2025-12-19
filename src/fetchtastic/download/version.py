@@ -448,8 +448,6 @@ class VersionManager:
         version_lower = version.lower()
 
         # Check for explicit prerelease indicators with word boundaries
-        import re
-
         for indicator in prerelease_indicators:
             # Use word boundaries to avoid matching within words
             if re.search(rf"\b{re.escape(indicator.lstrip('-'))}\b", version_lower):
@@ -624,6 +622,7 @@ class VersionManager:
             file_path (str): Destination file path for the tracking JSON.
             version (str): Version string to record.
             release_type (str): Release type used to derive file metadata.
+            cache_manager (CacheManager): Cache manager providing `atomic_write_json`.
             additional_data (Optional[Dict[str, Any]]): Optional data to merge into the tracking JSON.
 
         Returns:

@@ -2747,8 +2747,7 @@ def remove_reboot_cron_job(*, crontab_path: str):
 
 
 @cron_check_command_required
-@cron_command_required
-def check_cron_job_exists(*, crontab_path: str):
+def check_cron_job_exists():
     """
     Check if any Fetchtastic cron jobs exist in current user's crontab.
 
@@ -2760,6 +2759,9 @@ def check_cron_job_exists(*, crontab_path: str):
         return False
 
     try:
+        crontab_path = shutil.which("crontab")
+        if not crontab_path:
+            return False
         result = subprocess.run(
             [crontab_path, "-l"],
             stdout=subprocess.PIPE,
@@ -2788,8 +2790,7 @@ def check_boot_script_exists():
 
 
 @cron_check_command_required
-@cron_command_required
-def check_any_cron_jobs_exist(*, crontab_path: str):
+def check_any_cron_jobs_exist():
     """
     Check if any cron jobs exist in the current user's crontab.
 
@@ -2801,6 +2802,9 @@ def check_any_cron_jobs_exist(*, crontab_path: str):
         return False
 
     try:
+        crontab_path = shutil.which("crontab")
+        if not crontab_path:
+            return False
         result = subprocess.run(
             [crontab_path, "-l"],
             stdout=subprocess.PIPE,
