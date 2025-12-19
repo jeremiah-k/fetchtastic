@@ -138,15 +138,42 @@ def test_run_download_successful(mocker):
     integration = DownloadCLIIntegration()
     config = {"DOWNLOAD_DIR": "/tmp"}
 
-    # Mock orchestrator and its methods
+    # Mock orchestrator and its methods with realistic download results
     mock_orchestrator = MagicMock()
-    mock_orchestrator.run_download_pipeline.return_value = ([], [])
+    mock_results = [
+        MagicMock(
+            release_tag="v1.0.0",
+            file_path="/tmp/firmware.zip",
+            was_skipped=False,
+            file_type="firmware",
+        ),
+        MagicMock(
+            release_tag="v2.0.0",
+            file_path="/tmp/android.apk",
+            was_skipped=False,
+            file_type="android",
+        ),
+        MagicMock(
+            release_tag="v0.9.0",
+            file_path="/tmp/old_firmware.zip",
+            was_skipped=True,  # Should be ignored
+            file_type="firmware",
+        ),
+    ]
+    mock_orchestrator.run_download_pipeline.return_value = (mock_results, [])
     mock_orchestrator.cleanup_old_versions.return_value = None
     mock_orchestrator.update_version_tracking.return_value = None
     mock_orchestrator.get_latest_versions.return_value = {
-        "firmware": "v1.0.0",
-        "android": "v2.0.0",
+        "firmware": "v0.9.0",
+        "android": "v1.9.0",
     }
+
+    # Mock version manager for comparisons
+    mock_version_manager = MagicMock()
+    mock_version_manager.compare_versions.return_value = 1  # Newer version
+    mock_android_downloader = MagicMock()
+    mock_android_downloader.get_version_manager.return_value = mock_version_manager
+    mock_orchestrator.android_downloader = mock_android_downloader
 
     mocker.patch(
         "fetchtastic.download.cli_integration.DownloadOrchestrator",
@@ -160,12 +187,20 @@ def test_run_download_successful(mocker):
     mock_orchestrator.run_download_pipeline.assert_called_once()
     mock_orchestrator.cleanup_old_versions.assert_called_once()
     mock_orchestrator.update_version_tracking.assert_called_once()
-    mock_orchestrator.get_latest_versions.assert_called()  # Called twice in run_download
+    mock_orchestrator.get_latest_versions.assert_called()
 
-    # Verify result format
+    # Verify conversion logic was exercised and result format
     assert len(result) == 7
-    assert result[5] == "v1.0.0"  # latest_firmware_version
-    assert result[6] == "v2.0.0"  # latest_apk_version
+    assert result[0] == ["v1.0.0"]  # downloaded_firmwares (skipped one excluded)
+    assert result[1] == ["v1.0.0"]  # new_firmware_versions (newer than v0.9.0)
+    assert result[2] == ["v2.0.0"]  # downloaded_apks
+    assert result[3] == ["v2.0.0"]  # new_apk_versions (newer than v1.9.0)
+    assert result[4] == []  # failed_downloads
+    assert result[5] == "v0.9.0"  # latest_firmware_version (from orchestrator)
+    assert result[6] == "v1.9.0"  # latest_apk_version (from orchestrator)
+
+    # Verify version comparison was called for new version detection
+    assert mock_version_manager.compare_versions.call_count >= 2
 
 
 def test_run_download_with_force_refresh(mocker):
