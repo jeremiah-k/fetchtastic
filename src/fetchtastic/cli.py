@@ -101,7 +101,11 @@ def _load_and_prepare_config():
             log_utils.logger.info(f"{separator}\n")
 
     if exists:
-        config = setup_config.load_config()
+        try:
+            config = setup_config.load_config()
+        except (ValueError, OSError, TypeError) as error:
+            log_utils.logger.error(f"Failed to load configuration: {error}")
+            config = None
     else:
         config = None
         config_path = None
