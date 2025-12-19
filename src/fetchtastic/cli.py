@@ -72,6 +72,50 @@ def _display_update_reminder(latest_version: str) -> None:
     log_utils.logger.info(f"Run '{upgrade_cmd}' to upgrade.")
 
 
+def _load_and_prepare_config():
+    """
+    Load configuration, handling migration and log-level setup.
+
+    Returns:
+        Tuple[dict | None, str | None]: Loaded config and its resolved path, or (None, None) if no config exists.
+    """
+    exists, config_path = setup_config.config_exists()
+    if not exists:
+        return None, None
+
+    if config_path == setup_config.OLD_CONFIG_FILE and not os.path.exists(
+        setup_config.CONFIG_FILE
+    ):
+        separator = "=" * 80
+        log_utils.logger.info(f"\n{separator}")
+        log_utils.logger.info("Configuration Migration")
+        log_utils.logger.info(separator)
+        setup_config.prompt_for_migration()
+        if setup_config.migrate_config():
+            log_utils.logger.info(
+                "Configuration successfully migrated to new location."
+            )
+            config_path = setup_config.CONFIG_FILE
+        else:
+            log_utils.logger.error(
+                "Failed to migrate configuration. Continuing with old location."
+            )
+        log_utils.logger.info(f"{separator}\n")
+
+    log_utils.logger.info(f"Using configuration from: {config_path}")
+
+    try:
+        config = setup_config.load_config()
+    except (OSError, TypeError, ValueError, yaml.YAMLError) as e:
+        log_utils.logger.error(f"Failed to load configuration from {config_path}: {e}")
+        sys.exit(1)
+
+    if config and config.get("LOG_LEVEL"):
+        log_utils.set_log_level(config["LOG_LEVEL"])
+
+    return config, config_path
+
+
 def main():
     # Logging is automatically initialized by importing log_utils
 
@@ -243,125 +287,56 @@ def main():
             if update_available and latest_version:
                 _display_update_reminder(latest_version)
     elif args.command == "download":
-        # Check if configuration exists
-        exists, config_path = setup_config.config_exists()
-        if not exists:
+        config, _config_path = _load_and_prepare_config()
+        if config is None:
             log_utils.logger.info("No configuration found. Running setup.")
             setup_config.run_setup()
-        else:
-            # Check if config is in old location and needs migration
-            if config_path == setup_config.OLD_CONFIG_FILE and not os.path.exists(
-                setup_config.CONFIG_FILE
-            ):
-                separator = "=" * 80
-                log_utils.logger.info(f"\n{separator}")
-                log_utils.logger.info("Configuration Migration")
-                log_utils.logger.info(separator)
-                # Automatically migrate without prompting
-                setup_config.prompt_for_migration()  # Just logs the migration message
-                if setup_config.migrate_config():
-                    log_utils.logger.info(
-                        "Configuration successfully migrated to new location."
-                    )
-                    # Update config_path to the new location
-                    config_path = setup_config.CONFIG_FILE
-                else:
-                    log_utils.logger.error(
-                        "Failed to migrate configuration. Continuing with old location."
-                    )
-                log_utils.logger.info(f"{separator}\n")
+            return
 
-            # Display the config file location
-            log_utils.logger.info(f"Using configuration from: {config_path}")
+        # Run the downloader
+        reset_api_tracking()
+        integration = download_cli_integration.DownloadCLIIntegration()
 
-            # Load config and set log level if specified
-            try:
-                config = setup_config.load_config()
-            except (OSError, TypeError, ValueError, yaml.YAMLError) as e:
-                log_utils.logger.error(
-                    f"Failed to load configuration from {config_path}: {e}"
-                )
-                sys.exit(1)
-            if config and config.get("LOG_LEVEL"):
-                log_utils.set_log_level(config["LOG_LEVEL"])
+        if args.update_cache:
+            success = integration.update_cache(config=config)
+            if success:
+                log_utils.logger.info("Caches cleared.")
+            else:
+                log_utils.logger.error("Failed to clear caches.")
+            return
 
-            # Run the downloader
-            reset_api_tracking()
-            integration = download_cli_integration.DownloadCLIIntegration()
+        start_time = time.time()
+        (
+            downloaded_firmwares,
+            _new_firmware_versions,
+            downloaded_apks,
+            _new_apk_versions,
+            failed_downloads,
+            latest_firmware_version,
+            latest_apk_version,
+        ) = integration.main(force_refresh=args.force_download, config=config)
 
-            if args.update_cache:
-                success = integration.update_cache(config=config)
-                if success:
-                    log_utils.logger.info("Caches cleared.")
-                else:
-                    log_utils.logger.error("Failed to clear caches.")
-                return
-
-            start_time = time.time()
-            (
-                downloaded_firmwares,
-                _new_firmware_versions,
-                downloaded_apks,
-                _new_apk_versions,
-                failed_downloads,
-                latest_firmware_version,
-                latest_apk_version,
-            ) = integration.main(force_refresh=args.force_download, config=config)
-
-            elapsed = time.time() - start_time
-            integration.log_download_results_summary(
-                logger_override=log_utils.logger,
-                elapsed_seconds=elapsed,
-                downloaded_firmwares=downloaded_firmwares,
-                downloaded_apks=downloaded_apks,
-                failed_downloads=failed_downloads,
-                latest_firmware_version=latest_firmware_version,
-                latest_apk_version=latest_apk_version,
-            )
+        elapsed = time.time() - start_time
+        integration.log_download_results_summary(
+            logger_override=log_utils.logger,
+            elapsed_seconds=elapsed,
+            downloaded_firmwares=downloaded_firmwares,
+            downloaded_apks=downloaded_apks,
+            failed_downloads=failed_downloads,
+            latest_firmware_version=latest_firmware_version,
+            latest_apk_version=latest_apk_version,
+        )
     elif args.command == "cache":
         if args.cache_command != "update":
             cache_parser.print_help()
             return
 
-        exists, config_path = setup_config.config_exists()
-        if not exists:
+        config, _config_path = _load_and_prepare_config()
+        if config is None:
             log_utils.logger.error(
                 "No configuration found. Run 'fetchtastic setup' first."
             )
             return
-
-        # Check if config is in old location and needs migration
-        if config_path == setup_config.OLD_CONFIG_FILE and not os.path.exists(
-            setup_config.CONFIG_FILE
-        ):
-            separator = "=" * 80
-            log_utils.logger.info(f"\n{separator}")
-            log_utils.logger.info("Configuration Migration")
-            log_utils.logger.info(separator)
-            setup_config.prompt_for_migration()
-            if setup_config.migrate_config():
-                log_utils.logger.info(
-                    "Configuration successfully migrated to new location."
-                )
-                config_path = setup_config.CONFIG_FILE
-            else:
-                log_utils.logger.error(
-                    "Failed to migrate configuration. Continuing with old location."
-                )
-            log_utils.logger.info(f"{separator}\n")
-
-        log_utils.logger.info(f"Using configuration from: {config_path}")
-
-        try:
-            config = setup_config.load_config()
-        except (OSError, TypeError, ValueError, yaml.YAMLError) as e:
-            log_utils.logger.error(
-                f"Failed to load configuration from {config_path}: {e}"
-            )
-            sys.exit(1)
-
-        if config and config.get("LOG_LEVEL"):
-            log_utils.set_log_level(config["LOG_LEVEL"])
 
         integration = download_cli_integration.DownloadCLIIntegration()
         success = integration.update_cache(config=config)

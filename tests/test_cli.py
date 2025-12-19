@@ -1516,7 +1516,7 @@ def test_cli_download_with_invalid_log_levels(mocker, invalid_log_level):
     # Override the config from mock_cli_dependencies to set specific invalid log level
     mock_config = {
         "LOG_LEVEL": invalid_log_level,
-        "DOWNLOAD_DIR": "/tmp/test",
+        "DOWNLOAD_DIR": "/tmp/test",  # nosec B108
     }  # nosec B108
     mocker.patch("fetchtastic.setup_config.load_config", return_value=mock_config)
 
