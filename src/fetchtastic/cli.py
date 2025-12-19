@@ -74,44 +74,60 @@ def _display_update_reminder(latest_version: str) -> None:
 
 def _load_and_prepare_config():
     """
-    Load configuration, handling migration and log-level setup.
+    Load and prepare the configuration, handling migration if needed.
 
     Returns:
-        Tuple[dict | None, str | None]: Loaded config and its resolved path, or (None, None) if no config exists.
+        tuple: (config, config_path) where config is the loaded configuration dict
+               and config_path is the path to the configuration file (or None if not found)
     """
     exists, config_path = setup_config.config_exists()
-    if not exists:
-        return None, None
+    if exists and config_path == setup_config.OLD_CONFIG_FILE:
+        # Check if config is in old location and needs migration
+        if not os.path.exists(setup_config.CONFIG_FILE):
+            separator = "=" * 80
+            log_utils.logger.info(f"\n{separator}")
+            log_utils.logger.info("Configuration Migration")
+            log_utils.logger.info(separator)
+            # Automatically migrate without prompting
+            setup_config.prompt_for_migration()  # Just logs the migration message
+            if setup_config.migrate_config():
+                log_utils.logger.info(
+                    "Configuration successfully migrated to new location."
+                )
+                config_path = setup_config.CONFIG_FILE
+            else:
+                log_utils.logger.error(
+                    "Failed to migrate configuration. Continuing with old location."
+                )
+            log_utils.logger.info(f"{separator}\n")
 
-    if config_path == setup_config.OLD_CONFIG_FILE and not os.path.exists(
-        setup_config.CONFIG_FILE
-    ):
-        separator = "=" * 80
-        log_utils.logger.info(f"\n{separator}")
-        log_utils.logger.info("Configuration Migration")
-        log_utils.logger.info(separator)
-        setup_config.prompt_for_migration()
-        if setup_config.migrate_config():
-            log_utils.logger.info(
-                "Configuration successfully migrated to new location."
-            )
-            config_path = setup_config.CONFIG_FILE
-        else:
-            log_utils.logger.error(
-                "Failed to migrate configuration. Continuing with old location."
-            )
-        log_utils.logger.info(f"{separator}\n")
-
-    log_utils.logger.info(f"Using configuration from: {config_path}")
-
-    try:
+    if exists:
         config = setup_config.load_config()
-    except (OSError, TypeError, ValueError, yaml.YAMLError) as e:
-        log_utils.logger.error(f"Failed to load configuration from {config_path}: {e}")
-        sys.exit(1)
+    else:
+        config = None
+        config_path = None
 
-    if config and config.get("LOG_LEVEL"):
-        log_utils.set_log_level(config["LOG_LEVEL"])
+    return config, config_path
+
+
+def _ensure_config_loaded():
+    """
+    Ensure configuration is loaded, running setup if necessary.
+
+    Returns:
+        tuple: (config, config_path) where config is the loaded configuration dict
+               and config_path is the path to the configuration file
+               Returns (None, None) if setup fails to create a valid configuration.
+               Note: config may be None even when config_path exists (if load_config returns None).
+    """
+    config, config_path = _load_and_prepare_config()
+    if config_path is None:
+        log_utils.logger.info("No configuration found. Running setup.")
+        setup_config.run_setup()
+        config, config_path = _load_and_prepare_config()
+        if config_path is None:
+            log_utils.logger.error("Setup did not create a valid configuration.")
+            return None, None
 
     return config, config_path
 
@@ -304,14 +320,13 @@ def main():
             if update_available and latest_version:
                 _display_update_reminder(latest_version)
     elif args.command == "download":
-        config, config_path = _load_and_prepare_config()
+        config, config_path = _ensure_config_loaded()
         if config_path is None:
-            log_utils.logger.info("No configuration found. Running setup.")
-            setup_config.run_setup()
-            config, config_path = _load_and_prepare_config()
-            if config_path is None:
-                log_utils.logger.error("Setup did not create a valid configuration.")
-                return
+            return
+
+        # Apply configured log level if present and not empty
+        if config and config.get("LOG_LEVEL"):
+            log_utils.set_log_level(config["LOG_LEVEL"])
 
         # Run the downloader
         reset_api_tracking()
@@ -343,14 +358,13 @@ def main():
             latest_apk_version=latest_apk_version,
         )
     elif args.command == "cache":
-        config, config_path = _load_and_prepare_config()
+        config, config_path = _ensure_config_loaded()
         if config_path is None:
-            log_utils.logger.info("No configuration found. Running setup.")
-            setup_config.run_setup()
-            config, config_path = _load_and_prepare_config()
-            if config_path is None:
-                log_utils.logger.error("Setup did not create a valid configuration.")
-                return
+            return
+
+        # Apply configured log level if present and not empty
+        if config and config.get("LOG_LEVEL"):
+            log_utils.set_log_level(config["LOG_LEVEL"])
 
         integration = download_cli_integration.DownloadCLIIntegration()
         _perform_cache_update(integration, config)

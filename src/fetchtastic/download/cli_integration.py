@@ -48,6 +48,22 @@ class DownloadCLIIntegration:
         self.firmware_downloader = None
         self.config = None
 
+    def _initialize_components(self, config: Dict[str, Any]) -> None:
+        """
+        Initialize the orchestrator and downloaders with the provided config.
+
+        This method centralizes the component initialization logic that is
+        reused across multiple methods to avoid code duplication.
+
+        Parameters:
+            config (Dict[str, Any]): Configuration used to initialize the components.
+        """
+        self.config = config
+        self.orchestrator = DownloadOrchestrator(config)
+        # Reuse the orchestrator's downloaders so state and caches stay unified
+        self.android_downloader = self.orchestrator.android_downloader
+        self.firmware_downloader = self.orchestrator.firmware_downloader
+
     def run_download(
         self, config: Dict[str, Any], force_refresh: bool = False
     ) -> Tuple[
@@ -75,12 +91,7 @@ class DownloadCLIIntegration:
                 - latest_apk_version: Latest known Android APK version (empty string if unavailable).
         """
         try:
-            # Initialize components with the provided config
-            self.config = config
-            self.orchestrator = DownloadOrchestrator(config)
-            # Reuse the orchestrator's downloaders so state and caches stay unified
-            self.android_downloader = self.orchestrator.android_downloader
-            self.firmware_downloader = self.orchestrator.firmware_downloader
+            self._initialize_components(config)
 
             # Clear caches if force refresh is requested
             if force_refresh:
@@ -428,10 +439,7 @@ class DownloadCLIIntegration:
             if config is None:
                 return False
 
-            self.config = config
-            self.orchestrator = DownloadOrchestrator(config)
-            self.android_downloader = self.orchestrator.android_downloader
-            self.firmware_downloader = self.orchestrator.firmware_downloader
+            self._initialize_components(config)
 
             self._clear_caches()
             return True
