@@ -9,6 +9,12 @@ import time
 from typing import List
 
 import platformdirs
+import yaml
+
+try:
+    import winshell  # type: ignore[import]
+except ImportError:
+    winshell = None
 
 from fetchtastic import log_utils, setup_config
 from fetchtastic.constants import (
@@ -103,7 +109,7 @@ def _load_and_prepare_config():
     if exists:
         try:
             config = setup_config.load_config()
-        except (ValueError, OSError, TypeError) as error:
+        except (ValueError, OSError, TypeError, yaml.YAMLError) as error:
             log_utils.logger.error(f"Failed to load configuration: {error}")
             config = None
     else:
@@ -171,6 +177,39 @@ def _perform_cache_update(
     else:
         log_utils.logger.error("Failed to clear caches.")
     return success
+
+
+def _run_download(
+    args,
+    integration: download_cli_integration.DownloadCLIIntegration,
+    config: dict | None,
+) -> None:
+    """Run the download command with the given arguments."""
+    if args.update_cache:
+        _perform_cache_update(integration, config)
+        return
+
+    start_time = time.time()
+    (
+        downloaded_firmwares,
+        _new_firmware_versions,
+        downloaded_apks,
+        _new_apk_versions,
+        failed_downloads,
+        latest_firmware_version,
+        latest_apk_version,
+    ) = integration.main(force_refresh=args.force_download, config=config)
+
+    elapsed = time.time() - start_time
+    integration.log_download_results_summary(
+        logger_override=log_utils.logger,
+        elapsed_seconds=elapsed,
+        downloaded_firmwares=downloaded_firmwares,
+        downloaded_apks=downloaded_apks,
+        failed_downloads=failed_downloads,
+        latest_firmware_version=latest_firmware_version,
+        latest_apk_version=latest_apk_version,
+    )
 
 
 def main():
@@ -350,32 +389,7 @@ def main():
 
         # Run the downloader
         reset_api_tracking()
-
-        if args.update_cache:
-            _perform_cache_update(integration, config)
-            return
-
-        start_time = time.time()
-        (
-            downloaded_firmwares,
-            _new_firmware_versions,
-            downloaded_apks,
-            _new_apk_versions,
-            failed_downloads,
-            latest_firmware_version,
-            latest_apk_version,
-        ) = integration.main(force_refresh=args.force_download, config=config)
-
-        elapsed = time.time() - start_time
-        integration.log_download_results_summary(
-            logger_override=log_utils.logger,
-            elapsed_seconds=elapsed,
-            downloaded_firmwares=downloaded_firmwares,
-            downloaded_apks=downloaded_apks,
-            failed_downloads=failed_downloads,
-            latest_firmware_version=latest_firmware_version,
-            latest_apk_version=latest_apk_version,
-        )
+        _run_download(args, integration, config)
     elif args.command == "cache":
         config, integration = _prepare_command_run()
         if integration is None:
@@ -611,17 +625,7 @@ def run_clean():
     # Windows-specific cleanup
     if platform.system() == "Windows":
         # Check if Windows modules are available
-        windows_modules_available = False
-        try:
-            import winshell  # type: ignore[import]
-
-            windows_modules_available = True
-        except ImportError:
-            print(
-                "Windows modules not available. Some Windows-specific items may not be removed."
-            )
-
-        if windows_modules_available:
+        if winshell is not None:
             # Remove Start Menu shortcuts
             windows_start_menu_folder = setup_config.WINDOWS_START_MENU_FOLDER
             if os.path.exists(windows_start_menu_folder):
@@ -692,7 +696,7 @@ def run_clean():
         If removal fails, logs an error and does not raise an exception.
 
         Parameters:
-                item_path (str): Filesystem path of the managed file to remove.
+            item_path (str): Filesystem path of the managed file to remove.
         """
         try:
             os.remove(item_path)
