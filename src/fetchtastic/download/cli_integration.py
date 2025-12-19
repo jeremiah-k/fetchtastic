@@ -442,15 +442,6 @@ class DownloadCLIIntegration:
             self.handle_cli_error(error)
             return False
 
-            self._initialize_components(config)
-
-            self._clear_caches()
-            return True
-
-        except (requests.RequestException, OSError, ValueError, TypeError) as error:
-            self.handle_cli_error(error)
-            return False
-
     def get_download_statistics(self) -> Dict[str, Any]:
         """
         Return aggregated download statistics for reporting.

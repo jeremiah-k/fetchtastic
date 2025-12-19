@@ -39,7 +39,7 @@ copy_to_clipboard_func = setup_config.copy_to_clipboard_func
 def display_version_info():
     """
     Return version information for the installed Fetchtastic package and the latest available release.
-    
+
     Returns:
         Mapping: A mapping containing version details, typically including keys such as
         'installed_version' and 'latest_version'.
@@ -75,10 +75,10 @@ def _display_update_reminder(latest_version: str) -> None:
 def _load_and_prepare_config() -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     """
     Load the Fetchtastic configuration file, migrating it from the old location if detected.
-    
+
     Attempts to load the current configuration; if a config exists in the legacy location and no new config file is present,
     a migration is attempted before loading.
-    
+
     Returns:
         tuple: (config, config_path)
             config (dict[str, Any] | None): Loaded configuration mapping, or None if loading failed or no configuration exists.
@@ -121,7 +121,7 @@ def _load_and_prepare_config() -> Tuple[Optional[Dict[str, Any]], Optional[str]]
 def _ensure_config_loaded() -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     """
     Ensure a valid configuration is available, running setup if none is found.
-    
+
     Returns:
         Tuple[Optional[Dict[str, Any]], Optional[str]]: (config, config_path) where `config` is the loaded
         configuration dictionary or `None`, and `config_path` is the path to the configuration file or
@@ -145,9 +145,9 @@ def _prepare_command_run() -> Tuple[
 ]:
     """
     Ensure a valid configuration is loaded and create a DownloadCLIIntegration instance.
-    
+
     If the loaded configuration contains a non-empty `LOG_LEVEL`, apply it before creating the integration.
-    
+
     Returns:
         tuple: (`config`, `integration`)
             `config` (dict[str, Any] | None): The loaded configuration mapping, or `None` if no configuration is available.
@@ -171,10 +171,10 @@ def _perform_cache_update(
 ) -> bool:
     """
     Attempt to update integration caches and log the outcome.
-    
+
     Parameters:
         config (Optional[Dict[str, Any]]): Loaded configuration; if `None`, no cache update is performed.
-    
+
     Returns:
         bool: `True` if the cache update succeeded, `False` otherwise (also `False` when `config` is `None`).
     """
@@ -191,15 +191,15 @@ def _perform_cache_update(
 
 
 def _run_download(
-    args,
+    args: argparse.Namespace,
     integration: download_cli_integration.DownloadCLIIntegration,
     config: Optional[Dict[str, Any]],
 ) -> None:
     """
     Perform either a cache update or a download run based on the parsed command-line arguments.
-    
+
     If args.update_cache is true, triggers a cache update via the provided integration and returns. Otherwise, invokes the integration to perform downloads (using args.force_download to control refresh), measures elapsed time, and logs a download results summary.
-    
+
     Parameters:
         args: Parsed command-line namespace expected to contain at least `update_cache` and `force_download` flags.
         integration: DownloadCLIIntegration instance used to run cache updates or perform downloads and to log results.
@@ -584,7 +584,7 @@ def show_help(
 def run_clean():
     """
     Permanently remove Fetchtastic configuration, Fetchtastic-managed downloads, and platform integrations after explicit user confirmation.
-    
+
     Removes current and legacy configuration files, Fetchtastic-managed files and directories inside the configured download directory, platform-specific integrations (Windows Start Menu and startup shortcuts; non-Windows crontab entries; Termux boot script), and the Fetchtastic log file. Files and directories not identified as managed are preserved. This operation is irreversible and requires interactive confirmation from the user.
     """
     print(
@@ -722,9 +722,9 @@ def run_clean():
     def _remove_managed_file(item_path: str) -> None:
         """
         Removes a managed file at the given filesystem path and logs the outcome.
-        
+
         If removal succeeds, logs an informational message. If removal fails, logs an error and does not raise an exception.
-        
+
         Parameters:
             item_path (str): Path of the file to remove.
         """
@@ -792,9 +792,9 @@ def run_clean():
 def run_repo_clean(config):
     """
     Prompt for confirmation and, if confirmed, remove downloaded files from the meshtastic.github.io repository for the given configuration.
-    
+
     Prompts the user before proceeding; if the user confirms, invokes RepositoryDownloader to remove repository files, prints success or failure and a summary of removed files and directories, and logs the cleanup summary and any errors. Cleanup errors are written to stderr and recorded in the logger.
-    
+
     Parameters:
         config: Configuration object used to locate the repository download directory and associated metadata.
     """

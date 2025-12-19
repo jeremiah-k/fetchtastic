@@ -133,6 +133,89 @@ def test_cli_integration_update_cache_requires_config(mocker):
         integration.update_cache()
 
 
+def test_run_download_successful(mocker):
+    """run_download should execute pipeline successfully and return expected results."""
+    integration = DownloadCLIIntegration()
+    config = {"DOWNLOAD_DIR": "/tmp"}
+
+    # Mock orchestrator and its methods
+    mock_orchestrator = MagicMock()
+    mock_orchestrator.run_download_pipeline.return_value = ([], [])
+    mock_orchestrator.cleanup_old_versions.return_value = None
+    mock_orchestrator.update_version_tracking.return_value = None
+    mock_orchestrator.get_latest_versions.return_value = {
+        "firmware": "v1.0.0",
+        "android": "v2.0.0",
+    }
+
+    mocker.patch(
+        "fetchtastic.download.cli_integration.DownloadOrchestrator",
+        return_value=mock_orchestrator,
+    )
+
+    # Test successful run
+    result = integration.run_download(config=config, force_refresh=False)
+
+    # Verify orchestrator was called correctly
+    mock_orchestrator.run_download_pipeline.assert_called_once()
+    mock_orchestrator.cleanup_old_versions.assert_called_once()
+    mock_orchestrator.update_version_tracking.assert_called_once()
+    mock_orchestrator.get_latest_versions.assert_called()  # Called twice in run_download
+
+    # Verify result format
+    assert len(result) == 7
+    assert result[5] == "v1.0.0"  # latest_firmware_version
+    assert result[6] == "v2.0.0"  # latest_apk_version
+
+
+def test_run_download_with_force_refresh(mocker):
+    """run_download should clear caches when force_refresh=True."""
+    integration = DownloadCLIIntegration()
+    config = {"DOWNLOAD_DIR": "/tmp"}
+
+    # Mock orchestrator
+    mock_orchestrator = MagicMock()
+    mock_orchestrator.run_download_pipeline.return_value = ([], [])
+    mock_orchestrator.cleanup_old_versions.return_value = None
+    mock_orchestrator.update_version_tracking.return_value = None
+    mock_orchestrator.get_latest_versions.return_value = {}
+
+    mocker.patch(
+        "fetchtastic.download.cli_integration.DownloadOrchestrator",
+        return_value=mock_orchestrator,
+    )
+
+    # Mock _clear_caches to verify it's called
+    mock_clear = mocker.patch.object(integration, "_clear_caches")
+
+    # Test with force refresh
+    integration.run_download(config=config, force_refresh=True)
+
+    # Verify caches were cleared
+    mock_clear.assert_called_once()
+
+
+def test_run_download_handles_exception(mocker):
+    """run_download should handle exceptions and return empty results."""
+    integration = DownloadCLIIntegration()
+    config = {"DOWNLOAD_DIR": "/tmp"}
+
+    # Mock orchestrator to raise exception
+    mock_orchestrator = MagicMock()
+    mock_orchestrator.run_download_pipeline.side_effect = ValueError("Test error")
+
+    mocker.patch(
+        "fetchtastic.download.cli_integration.DownloadOrchestrator",
+        return_value=mock_orchestrator,
+    )
+
+    # Test exception handling
+    result = integration.run_download(config=config, force_refresh=False)
+
+    # Verify empty results are returned on error
+    assert result == ([], [], [], [], [], "", "")
+
+
 def test_is_newer_version_equal():
     """_is_newer_version should return False for equal versions."""
     integration = DownloadCLIIntegration()
