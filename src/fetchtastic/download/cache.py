@@ -35,7 +35,7 @@ def _parse_iso_datetime_utc(value: Any) -> Optional[datetime]:
     Parse an ISO 8601 timestamp and normalize it to UTC.
 
     Parameters:
-        value (Any): An ISO 8601 datetime representation (commonly a string). Falsey values or unparseable values are treated as absent.
+        value (Any): An ISO 8601 datetime representation (commonly a string). Falsey values or unparsable values are treated as absent.
 
     Returns:
         A timezone-aware datetime in UTC if parsing succeeds, `None` otherwise.

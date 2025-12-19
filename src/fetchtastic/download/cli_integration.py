@@ -7,7 +7,7 @@ This module provides integration between the new download subsystem and the exis
 import os
 import sys
 import time
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
@@ -18,6 +18,8 @@ from fetchtastic.utils import (
     get_effective_github_token,
 )
 
+from .android import MeshtasticAndroidAppDownloader
+from .firmware import FirmwareReleaseDownloader
 from .orchestrator import DownloadOrchestrator
 
 
