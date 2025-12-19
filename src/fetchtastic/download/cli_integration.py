@@ -367,7 +367,7 @@ class DownloadCLIIntegration:
 
     def main(
         self,
-        config: Dict[str, Any],
+        config: Optional[Dict[str, Any]],
         force_refresh: bool = False,
     ) -> Tuple[
         List[str],

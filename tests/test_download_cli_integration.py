@@ -98,7 +98,7 @@ def test_cli_integration_main_handles_config_load_failure(mocker):
     mocker.patch("fetchtastic.setup_config.load_config", return_value=None)
     run_download = mocker.patch.object(integration, "run_download")
 
-    result = integration.main()
+    result = integration.main(config=None)
 
     run_download.assert_not_called()
     assert result == ([], [], [], [], [], "", "")
