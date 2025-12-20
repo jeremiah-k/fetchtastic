@@ -193,14 +193,14 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
     def download_firmware(self, release: Release, asset: Asset) -> DownloadResult:
         """
-        Download and verify a firmware asset for a release and return a structured result.
-
+        Download and verify a single firmware asset for a release and produce a structured DownloadResult.
+        
         Parameters:
-            release (Release): Release containing the asset.
-            asset (Asset): Asset describing the firmware file to download.
-
+            release (Release): Release that contains the asset being downloaded.
+            asset (Asset): Metadata for the firmware asset to download.
+        
         Returns:
-            DownloadResult: Result describing the outcome. On success includes `file_path`, `download_url`, `file_size`, and `file_type`; when the download was unnecessary includes `was_skipped`; on failure includes `error_message`, `error_type` (e.g., `"network_error"`, `"validation_error"`, `"filesystem_error"`) and `is_retryable`.
+            DownloadResult: Result describing the outcome. On success includes `file_path`, `download_url`, `file_size`, and `file_type`; when the download was skipped includes `was_skipped`; on failure includes `error_message`, `error_type` (e.g., `"network_error"`, `"validation_error"`, `"filesystem_error"`) and `is_retryable`.
         """
         target_path: Optional[str] = None
         try:
@@ -429,17 +429,18 @@ class FirmwareReleaseDownloader(BaseDownloader):
         exclude_patterns: Optional[List[str]] = None,
     ) -> DownloadResult:
         """
-        Extract files from a downloaded firmware ZIP according to include and exclude patterns.
-
+        Extract specified files from a firmware ZIP release into the release's version directory.
+        
+        Validates extraction patterns, skips extraction when files already match the patterns, performs extraction when needed, and returns a DownloadResult describing the outcome.
+        
         Parameters:
             release (Release): Release that owns the firmware asset.
-            asset (Asset): The downloaded firmware asset (ZIP) to extract.
-            patterns (List[str]): Glob patterns of files to extract from the archive.
-            exclude_patterns (Optional[List[str]]): Glob patterns to exclude from extraction.
-
+            asset (Asset): The firmware ZIP asset to extract.
+            patterns (List[str]): Glob patterns of files to include from the archive.
+            exclude_patterns (Optional[List[str]]): Glob patterns of files to exclude from extraction.
+        
         Returns:
-            DownloadResult: Result describing success or failure, extracted file list when successful,
-            and error details when extraction did not occur or failed.
+            DownloadResult: On success, contains extracted_files and file_path; on failure, contains error_message and error_type describing why extraction did not occur or failed.
         """
         zip_path: str = ""
         try:
@@ -1206,10 +1207,10 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
     def get_prerelease_tracking_file(self) -> str:
         """
-        Get the path to the firmware prerelease tracking file.
-
+        Return the path to the firmware prerelease tracking JSON file.
+        
         Returns:
-            str: Path to the prerelease tracking file
+            str: Absolute path to the prerelease tracking file used for firmware prerelease state.
         """
         return self.cache_manager.get_cache_file_path(self.latest_prerelease_file)
 

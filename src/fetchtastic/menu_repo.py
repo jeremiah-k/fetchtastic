@@ -251,8 +251,15 @@ def select_item(items, current_path=""):
 
 def select_files(files):
     """
-    Displays a menu for user to select files to download.
-    Returns a list of selected file information.
+    Present a multi-select menu for choosing repository files to download.
+    
+    Displays file names with a trailing "[Quit]" option and returns the chosen file descriptors in the same dict form as provided.
+    
+    Parameters:
+        files (list[dict]): List of file dictionaries as returned by the repository API. Each dictionary must include at least the "name" key; other keys (e.g., "download_url", "size") are preserved and returned.
+    
+    Returns:
+        list[dict] | None: A list of the selected file dictionaries in the same format as `files`, or `None` if the user cancels, chooses "[Quit]", or no files are selected.
     """
     if not files:
         print("No files found in the selected directory.")

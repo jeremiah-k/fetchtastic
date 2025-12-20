@@ -65,12 +65,12 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
     def get_target_path_for_release(self, release_tag: str, file_name: str) -> str:
         """
-        Compute the filesystem path for an Android release asset under the android/<release> directory.
-
-        Sanitizes the release tag and file name and ensures the version directory exists before returning the path.
-
+        Return the filesystem path for an APK asset inside the Android downloads directory, creating the release directory if it does not exist.
+        
+        Input values are sanitized before use; the function ensures the directory android/<release_tag> exists under the configured download directory.
+        
         Returns:
-            path (str): Filesystem path to the asset file.
+            str: Filesystem path to the asset file.
         """
         safe_release = self._sanitize_required(release_tag, "release tag")
         safe_name = self._sanitize_required(file_name, "file name")
@@ -349,13 +349,13 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
     def is_release_complete(self, release: Release) -> bool:
         """
-        Return True if every APK asset selected for the given release exists on disk and its file size equals the asset's expected size.
-
+        Check whether all APK assets selected for the given release exist on disk and match their expected sizes.
+        
         Parameters:
             release (Release): Release whose APK assets are checked. Only assets that pass the downloader's selection rules are considered.
-
+        
         Returns:
-            bool: True if all selected assets are present with matching sizes, False otherwise.
+            `true` if all selected assets are present and their file sizes equal the assets' expected sizes, `false` otherwise.
         """
         safe_tag = self._sanitize_required(release.tag_name, "release tag")
         version_dir = os.path.join(self.download_dir, APKS_DIR_NAME, safe_tag)
@@ -382,10 +382,10 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
     def cleanup_old_versions(self, keep_limit: int) -> None:
         """
-        Remove Android version directories older than the most recent `keep_limit` versions.
-
-        Scans the downloader's android subdirectory for directories whose names match version patterns, sorts them from newest to oldest, and permanently deletes directories beyond the `keep_limit` newest entries. Non-version directories are ignored. Deletion failures are logged; exceptions are caught and logged without raising.
-
+        Delete Android version directories older than the most recent specified number to keep.
+        
+        Ignores directories that do not match version-style names. Deletion failures are logged and exceptions are suppressed.
+        
         Parameters:
             keep_limit (int): Number of most-recent version directories to retain; directories older than this are removed.
         """
