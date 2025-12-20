@@ -16,7 +16,6 @@ from typing import Any, Dict, List, Optional
 import requests
 
 from fetchtastic.constants import (
-    APK_PRERELEASES_DIR_NAME,
     APKS_DIR_NAME,
     GITHUB_MAX_PER_PAGE,
     LATEST_ANDROID_PRERELEASE_JSON_FILE,
