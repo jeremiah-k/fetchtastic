@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from fetchtastic.constants import APKS_DIR_NAME, FIRMWARE_DIR_NAME
 from fetchtastic.download.cli_integration import DownloadCLIIntegration
 from fetchtastic.download.interfaces import DownloadResult
 
@@ -30,6 +31,7 @@ def test_migration_does_not_report_skipped_assets_as_downloads(tmp_path, monkeyp
                 (),
                 {"compare_versions": lambda self, v1, v2: 1 if v1 > v2 else -1},
             )(),
+            "get_version_manager": lambda self: self.version_manager,
         },
     )()
     mock_firmware = type(
@@ -42,14 +44,14 @@ def test_migration_does_not_report_skipped_assets_as_downloads(tmp_path, monkeyp
     skipped_firmware = DownloadResult(
         success=True,
         release_tag="v2.0.0",
-        file_path=Path(tmp_path / "firmware" / "v2.0.0" / "firmware.zip"),
+        file_path=Path(tmp_path / FIRMWARE_DIR_NAME / "v2.0.0" / "firmware.zip"),
         file_type="firmware",
         was_skipped=True,
     )
     skipped_android = DownloadResult(
         success=True,
         release_tag="v2.0.0",
-        file_path=Path(tmp_path / "android" / "v2.0.0" / "app.apk"),
+        file_path=Path(tmp_path / APKS_DIR_NAME / "v2.0.0" / "app.apk"),
         file_type="android",
         was_skipped=True,
     )
