@@ -3,13 +3,11 @@
 # Comprehensive unit tests for the FirmwareReleaseDownloader class.
 
 import json
-import logging
 import os
 from pathlib import Path
 from unittest.mock import ANY, Mock, patch
 
 import pytest
-import requests
 
 from fetchtastic import log_utils
 from fetchtastic.constants import FIRMWARE_DIR_NAME

@@ -12,6 +12,10 @@ from typing import Any, Dict, List, Optional, Tuple
 import requests
 
 from fetchtastic.log_utils import logger
+from fetchtastic.notifications import (
+    send_download_completion_notification,
+    send_up_to_date_notification,
+)
 from fetchtastic.utils import (
     format_api_summary,
     get_api_request_summary,
@@ -177,6 +181,8 @@ class DownloadCLIIntegration:
 
         Logs elapsed time, counts of downloaded firmware and APKs, reported latest release versions (including prereleases), details of any failed downloads, and a GitHub API usage summary. If no downloads or failures occurred, logs an "up to date" timestamp. Uses the instance's get_latest_versions() for prerelease info.
 
+        Note: self.config must be available for notification functionality to work.
+
         Parameters:
             logger_override (logging-like, optional): Logger to use instead of the module logger; if omitted, the module-level `logger` is used.
             elapsed_seconds (float): Total time elapsed for the download run.
@@ -228,6 +234,15 @@ class DownloadCLIIntegration:
                 "All assets are up to date.\n%s",
                 time.strftime("%Y-%m-%dT%H:%M:%S%z"),
             )
+
+        # Send notifications based on download results
+        if self.config:
+            if downloaded_count > 0:
+                send_download_completion_notification(
+                    self.config, downloaded_firmwares, downloaded_apks
+                )
+            elif downloaded_count == 0 and not failed_downloads:
+                send_up_to_date_notification(self.config)
 
         summary = get_api_request_summary()
         if summary.get("total_requests", 0) > 0:
