@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import requests
 
 from fetchtastic.constants import (
+    APKS_DIR_NAME,
     DEFAULT_ANDROID_VERSIONS_TO_KEEP,
     DEFAULT_FIRMWARE_VERSIONS_TO_KEEP,
     DEFAULT_PRERELEASE_COMMITS_TO_FETCH,
@@ -748,15 +749,13 @@ class DownloadOrchestrator:
             # Set file type based on file path if not already set
             if not result.file_type and result.file_path:
                 file_path_str = str(result.file_path)
-                if "android" in file_path_str or file_path_str.endswith(".apk"):
+                if APKS_DIR_NAME in file_path_str or file_path_str.endswith(".apk"):
                     result.file_type = "android"
-                elif "firmware" in file_path_str or file_path_str.endswith(
+                elif FIRMWARE_DIR_NAME in file_path_str or file_path_str.endswith(
                     (".zip", ".bin", ".elf")
                 ):
                     result.file_type = "firmware"
-                elif (
-                    "repository" in file_path_str or REPO_DOWNLOADS_DIR in file_path_str
-                ):
+                elif REPO_DOWNLOADS_DIR in file_path_str:
                     result.file_type = "repository"
                 else:
                     result.file_type = "unknown"
