@@ -128,6 +128,11 @@ def _ensure_config_loaded() -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     """
     config, config_path = _load_and_prepare_config()
     if config_path is None:
+        if not sys.stdin.isatty():
+            log_utils.logger.error(
+                "No configuration found. Please run 'fetchtastic setup' in an interactive session to create one."
+            )
+            return None, None
         log_utils.logger.info("No configuration found. Running setup.")
         setup_config.run_setup(perform_initial_download=False)
         config, config_path = _load_and_prepare_config()
@@ -402,7 +407,7 @@ def main():
                 _display_update_reminder(latest_version)
     elif args.command == "download":
         config, integration = _prepare_command_run()
-        if integration is None:
+        if integration is None or config is None:
             sys.exit(1)
 
         # Run the downloader
@@ -410,7 +415,7 @@ def main():
         _handle_download_subcommand(args, integration, config)
     elif args.command == "cache":
         config, integration = _prepare_command_run()
-        if integration is None:
+        if integration is None or config is None:
             sys.exit(1)
         _perform_cache_update(integration, config)
     elif args.command == "topic":
@@ -690,7 +695,7 @@ def run_clean():
 
             # Remove startup shortcut
             try:
-                startup_folder = winshell.startup()
+                startup_folder = winshell.startup()  # type: ignore[name-defined]
                 startup_shortcut_path = os.path.join(startup_folder, "Fetchtastic.lnk")
                 if os.path.exists(startup_shortcut_path):
                     os.remove(startup_shortcut_path)
@@ -769,8 +774,8 @@ def run_clean():
 
     # Remove cron job entries (non-Windows platforms)
     if platform.system() != "Windows":
-        setup_config.remove_cron_job()
-        setup_config.remove_reboot_cron_job()
+        setup_config.remove_cron_job()  # type: ignore[call-arg]
+        setup_config.remove_reboot_cron_job()  # type: ignore[call-arg]
 
     # Remove boot script if exists (Termux-specific)
     boot_script = os.path.expanduser("~/.termux/boot/fetchtastic.sh")
