@@ -16,6 +16,8 @@ from typing import Any, Dict, List, Optional
 import requests
 
 from fetchtastic.constants import (
+    APK_PRERELEASES_DIR_NAME,
+    APKS_DIR_NAME,
     GITHUB_MAX_PER_PAGE,
     LATEST_ANDROID_PRERELEASE_JSON_FILE,
     LATEST_ANDROID_RELEASE_JSON_FILE,
@@ -74,7 +76,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         safe_release = self._sanitize_required(release_tag, "release tag")
         safe_name = self._sanitize_required(file_name, "file name")
 
-        version_dir = os.path.join(self.download_dir, "android", safe_release)
+        version_dir = os.path.join(self.download_dir, APKS_DIR_NAME, safe_release)
         os.makedirs(version_dir, exist_ok=True)
         return os.path.join(version_dir, safe_name)
 
@@ -390,7 +392,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         """
         try:
             # Get all Android version directories
-            android_dir = os.path.join(self.download_dir, "android")
+            android_dir = os.path.join(self.download_dir, APKS_DIR_NAME)
             if not os.path.exists(android_dir):
                 return
 
@@ -606,7 +608,9 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         Returns:
             str: Path to the prerelease tracking JSON file located in the downloader's download directory.
         """
-        return os.path.join(self.download_dir, self.latest_prerelease_file)
+        return os.path.join(
+            self.download_dir, APKS_DIR_NAME, self.latest_prerelease_file
+        )
 
     def update_prerelease_tracking(self, prerelease_tag: str) -> bool:
         """

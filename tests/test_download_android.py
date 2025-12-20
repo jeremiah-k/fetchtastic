@@ -91,7 +91,7 @@ class TestMeshtasticAndroidAppDownloader:
         path = downloader.get_target_path_for_release("v1.0.0", "meshtastic.apk")
 
         expected = os.path.join(
-            str(tmp_path / "downloads"), "android", "v1.0.0", "meshtastic.apk"
+            str(tmp_path / "downloads"), "apks", "v1.0.0", "meshtastic.apk"
         )
         assert path == expected
 

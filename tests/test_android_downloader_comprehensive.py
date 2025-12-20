@@ -78,7 +78,7 @@ class TestMeshtasticAndroidAppDownloader:
         )
 
         expected_path = os.path.join(
-            android_downloader.download_dir, "android", release_tag, file_name
+            android_downloader.download_dir, "apks", release_tag, file_name
         )
         assert target_path == expected_path
 
@@ -180,13 +180,13 @@ class TestMeshtasticAndroidAppDownloader:
 
         # Create multiple version directories
         for version in ["v2.7.10", "v2.7.11", "v2.7.12", "v2.7.13", "v2.7.14"]:
-            version_dir = tmp_path / "android" / version
+            version_dir = tmp_path / "apks" / version
             version_dir.mkdir(parents=True)
 
         android_downloader.cleanup_old_versions(keep_limit=2)
 
         # Should keep 2 newest versions
-        remaining_dirs = list((tmp_path / "android").iterdir())
+        remaining_dirs = list((tmp_path / "apks").iterdir())
         assert len(remaining_dirs) == 2
 
         # Check that the newest versions are kept
@@ -224,7 +224,9 @@ class TestMeshtasticAndroidAppDownloader:
         tracking_file = android_downloader.get_prerelease_tracking_file()
 
         expected_path = os.path.join(
-            android_downloader.download_dir, android_downloader.latest_prerelease_file
+            android_downloader.download_dir,
+            "apks",
+            android_downloader.latest_prerelease_file,
         )
         assert tracking_file == expected_path
 
