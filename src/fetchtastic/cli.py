@@ -201,7 +201,7 @@ def _handle_download_subcommand(
     Parameters:
         args: Parsed command-line namespace expected to contain at least `update_cache` and `force_download` flags.
         integration: DownloadCLIIntegration instance used to run cache updates or perform downloads and to log results.
-        config: Optional configuration mapping passed to the integration for the operation.
+        config: Configuration mapping passed to the integration for the operation.
     """
     if args.update_cache:
         _perform_cache_update(integration, config)
@@ -407,18 +407,22 @@ def main():
 
         # Run the downloader
         reset_api_tracking()
-        assert (
-            config is not None
-        ), "Config should be guaranteed to be non-None by _prepare_command_run"
+        if config is None:
+            log_utils.logger.critical(
+                "Internal error: Configuration not found after preparation. Please report this bug."
+            )
+            sys.exit(1)
         _handle_download_subcommand(args, integration, config)
     elif args.command == "cache":
         config, integration = _prepare_command_run()
         if integration is None:
             sys.exit(1)
 
-        assert (
-            config is not None
-        ), "Config should be guaranteed to be non-None by _prepare_command_run"
+        if config is None:
+            log_utils.logger.critical(
+                "Internal error: Configuration not found after preparation. Please report this bug."
+            )
+            sys.exit(1)
         _perform_cache_update(integration, config)
     elif args.command == "topic":
         # Display the NTFY topic and prompt to copy to clipboard
