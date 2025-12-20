@@ -10,6 +10,7 @@ from unittest.mock import ANY, Mock, patch
 import pytest
 import requests
 
+from fetchtastic.constants import APKS_DIR_NAME
 from fetchtastic.download.android import MeshtasticAndroidAppDownloader
 from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.interfaces import Asset, Release
@@ -91,7 +92,7 @@ class TestMeshtasticAndroidAppDownloader:
         path = downloader.get_target_path_for_release("v1.0.0", "meshtastic.apk")
 
         expected = os.path.join(
-            str(tmp_path / "downloads"), "apks", "v1.0.0", "meshtastic.apk"
+            str(tmp_path / "downloads"), APKS_DIR_NAME, "v1.0.0", "meshtastic.apk"
         )
         assert path == expected
 

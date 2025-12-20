@@ -14,6 +14,7 @@ from urllib.parse import urljoin, urlparse
 import requests
 
 from fetchtastic.constants import (
+    FIRMWARE_DIR_NAME,
     MESHTASTIC_REPO_URL,
     REPO_DOWNLOADS_DIR,
     SHELL_SCRIPT_EXTENSION,
@@ -265,7 +266,7 @@ class RepositoryDownloader(BaseDownloader):
         try:
             # Create base repo downloads directory
             base_repo_dir = os.path.join(
-                self.download_dir, "firmware", self.repo_downloads_dir
+                self.download_dir, FIRMWARE_DIR_NAME, self.repo_downloads_dir
             )
             os.makedirs(base_repo_dir, exist_ok=True)
 
@@ -312,7 +313,7 @@ class RepositoryDownloader(BaseDownloader):
         # Check that the normalized path doesn't escape the base directory
         try:
             base_repo_dir = os.path.join(
-                self.download_dir, "firmware", self.repo_downloads_dir
+                self.download_dir, FIRMWARE_DIR_NAME, self.repo_downloads_dir
             )
 
             # Resolve real paths to handle symlinks and '..' components securely.
@@ -379,7 +380,7 @@ class RepositoryDownloader(BaseDownloader):
         }
         try:
             repo_dir = os.path.join(
-                self.download_dir, "firmware", self.repo_downloads_dir
+                self.download_dir, FIRMWARE_DIR_NAME, self.repo_downloads_dir
             )
 
             if not os.path.exists(repo_dir):

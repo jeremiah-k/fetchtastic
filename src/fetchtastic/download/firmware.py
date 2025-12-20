@@ -16,6 +16,7 @@ import requests
 
 from fetchtastic.constants import (
     EXECUTABLE_PERMISSIONS,
+    FIRMWARE_DIR_NAME,
     FIRMWARE_DIR_PREFIX,
     LATEST_FIRMWARE_PRERELEASE_JSON_FILE,
     LATEST_FIRMWARE_RELEASE_JSON_FILE,
@@ -81,7 +82,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
         safe_release = self._sanitize_required(release_tag, "release tag")
         safe_name = self._sanitize_required(file_name, "file name")
 
-        version_dir = os.path.join(self.download_dir, "firmware", safe_release)
+        version_dir = os.path.join(self.download_dir, FIRMWARE_DIR_NAME, safe_release)
         os.makedirs(version_dir, exist_ok=True)
         return os.path.join(version_dir, safe_name)
 
@@ -265,7 +266,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
         except (requests.RequestException, OSError, ValueError) as exc:
             logger.exception("Error downloading firmware %s: %s", asset.name, exc)
-            safe_path = target_path or os.path.join(self.download_dir, "firmware")
+            safe_path = target_path or os.path.join(
+                self.download_dir, FIRMWARE_DIR_NAME
+            )
             if isinstance(exc, requests.RequestException):
                 error_type = "network_error"
                 is_retryable = True
@@ -299,7 +302,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
         Returns:
             True if all selected assets exist and pass integrity and size checks, False otherwise.
         """
-        version_dir = os.path.join(self.download_dir, "firmware", release.tag_name)
+        version_dir = os.path.join(
+            self.download_dir, FIRMWARE_DIR_NAME, release.tag_name
+        )
         if not os.path.isdir(version_dir):
             return False
 
@@ -514,7 +519,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
             return self.create_download_result(
                 success=False,
                 release_tag=release.tag_name,
-                file_path=zip_path or os.path.join(self.download_dir, "firmware"),
+                file_path=zip_path
+                or os.path.join(self.download_dir, FIRMWARE_DIR_NAME),
                 error_message=str(e),
                 file_type="firmware",
                 error_type="extraction_error",
@@ -535,7 +541,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
         """
         try:
             # Get all firmware version directories
-            firmware_dir = os.path.join(self.download_dir, "firmware")
+            firmware_dir = os.path.join(self.download_dir, FIRMWARE_DIR_NAME)
             if not os.path.exists(firmware_dir):
                 return
 
@@ -635,7 +641,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
         Returns:
             str: Absolute path to the prerelease base directory under the downloader's download directory; the directory is created if it does not already exist.
         """
-        prerelease_dir = os.path.join(self.download_dir, "firmware", "prerelease")
+        prerelease_dir = os.path.join(
+            self.download_dir, FIRMWARE_DIR_NAME, "prerelease"
+        )
         os.makedirs(prerelease_dir, exist_ok=True)
         return prerelease_dir
 
@@ -1362,7 +1370,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 return False
 
             # Path to prerelease directory
-            prerelease_dir = os.path.join(self.download_dir, "firmware", "prerelease")
+            prerelease_dir = os.path.join(
+                self.download_dir, FIRMWARE_DIR_NAME, "prerelease"
+            )
             if not os.path.exists(prerelease_dir):
                 return False
 
