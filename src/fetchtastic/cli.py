@@ -13,6 +13,7 @@ import yaml
 
 from fetchtastic import log_utils, setup_config
 from fetchtastic.constants import (
+    FIRMWARE_DIR_NAME,
     FIRMWARE_DIR_PREFIX,
     MANAGED_DIRECTORIES,
     MANAGED_FILES,
@@ -22,6 +23,8 @@ from fetchtastic.constants import (
     MSG_PRESERVE_OTHER_FILES,
     MSG_REMOVED_MANAGED_DIR,
     MSG_REMOVED_MANAGED_FILE,
+    REPO_DOWNLOADS_DIR,
+    WINDOWS_SHORTCUT_FILE,
 )
 from fetchtastic.download import cli_integration as download_cli_integration
 from fetchtastic.download.repository import RepositoryDownloader
@@ -343,14 +346,20 @@ def main():
     repo_subparsers.add_parser(
         "browse",
         help="Browse and download files from the meshtastic.github.io repository",
-        description="Browse directories in the meshtastic.github.io repository, select files, and download them to the repo-dls directory.",
+        description=(
+            "Browse directories in the meshtastic.github.io repository, select files, "
+            f"and download them to the {REPO_DOWNLOADS_DIR} directory."
+        ),
     )
 
     # Repo clean command
     repo_subparsers.add_parser(
         "clean",
         help="Clean the repository download directory",
-        description="Remove all files and directories from the repository download directory (firmware/repo-dls).",
+        description=(
+            "Remove all files and directories from the repository download directory "
+            f"({FIRMWARE_DIR_NAME}/{REPO_DOWNLOADS_DIR})."
+        ),
     )
 
     args = parser.parse_args()
@@ -707,7 +716,7 @@ def run_clean():
 
             # Remove config shortcut in base directory
             download_dir = setup_config.BASE_DIR
-            config_shortcut_path = os.path.join(download_dir, "fetchtastic_yaml.lnk")
+            config_shortcut_path = os.path.join(download_dir, WINDOWS_SHORTCUT_FILE)
             if os.path.exists(config_shortcut_path):
                 try:
                     os.remove(config_shortcut_path)

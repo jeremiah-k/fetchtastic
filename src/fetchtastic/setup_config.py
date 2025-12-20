@@ -19,8 +19,12 @@ import yaml
 from fetchtastic import menu_apk, menu_firmware
 from fetchtastic.constants import (
     CONFIG_FILE_NAME,
+    CRON_COMMAND_TIMEOUT_SECONDS,
     DEFAULT_CHECK_APK_PRERELEASES,
+    DEFAULT_EXTRACTION_PATTERNS,
     MESHTASTIC_DIR_NAME,
+    NTFY_REQUEST_TIMEOUT,
+    WINDOWS_SHORTCUT_FILE,
 )
 from fetchtastic.log_utils import logger
 
@@ -874,7 +878,7 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
         print(
             "Enter the keywords to match for extraction from the firmware zip files, separated by spaces."
         )
-        print("Example: rak4631- tbeam t1000-e- tlora-v2-1-1_6- device-")
+        print(f"Example: {' '.join(DEFAULT_EXTRACTION_PATTERNS)}")
 
         current_patterns = config.get("EXTRACT_PATTERNS", [])
         if isinstance(current_patterns, str):
@@ -1278,6 +1282,7 @@ def _setup_notifications(config: dict) -> dict:
         # Update config
         config["NTFY_TOPIC"] = topic_name
         config["NTFY_SERVER"] = ntfy_server
+        config["NTFY_REQUEST_TIMEOUT"] = NTFY_REQUEST_TIMEOUT
 
         # Display information
         full_topic_url = f"{ntfy_server.rstrip('/')}/{topic_name}"
@@ -1342,6 +1347,7 @@ def _setup_notifications(config: dict) -> dict:
                 config["NTFY_TOPIC"] = ""
                 config["NTFY_SERVER"] = ""
                 config["NOTIFY_ON_DOWNLOAD_ONLY"] = False
+                config.pop("NTFY_REQUEST_TIMEOUT", None)
                 print("Notifications have been disabled.")
             else:
                 print("Keeping existing notification settings.")
@@ -1350,6 +1356,7 @@ def _setup_notifications(config: dict) -> dict:
             config["NTFY_TOPIC"] = ""
             config["NTFY_SERVER"] = ""
             config["NOTIFY_ON_DOWNLOAD_ONLY"] = False
+            config.pop("NTFY_REQUEST_TIMEOUT", None)
             print("Notifications will remain disabled.")
 
     return config
@@ -2299,7 +2306,7 @@ def create_config_shortcut(config_file_path, target_dir):
         return False
 
     try:
-        shortcut_path = os.path.join(target_dir, "fetchtastic_yaml.lnk")
+        shortcut_path = os.path.join(target_dir, WINDOWS_SHORTCUT_FILE)
 
         # Create the shortcut using winshell
         winshell.CreateShortcut(
@@ -2546,7 +2553,7 @@ def setup_cron_job(frequency="hourly", *, crontab_path: str):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            timeout=30,  # Add timeout to prevent hanging
+            timeout=CRON_COMMAND_TIMEOUT_SECONDS,  # Add timeout to prevent hanging
         )
         if result.returncode != 0:
             existing_cron = ""
@@ -2590,7 +2597,7 @@ def setup_cron_job(frequency="hourly", *, crontab_path: str):
                 [crontab_path, "-"], stdin=subprocess.PIPE, text=True
             )
             process.communicate(
-                input=new_cron, timeout=30
+                input=new_cron, timeout=CRON_COMMAND_TIMEOUT_SECONDS
             )  # Add timeout to prevent hanging
             print(f"Cron job added to run Fetchtastic {frequency_desc}.")
         except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError) as e:
@@ -2625,7 +2632,7 @@ def remove_cron_job(*, crontab_path: str):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            timeout=30,
+            timeout=CRON_COMMAND_TIMEOUT_SECONDS,
         )
         if result.returncode == 0:
             existing_cron = result.stdout.strip()
@@ -2648,7 +2655,9 @@ def remove_cron_job(*, crontab_path: str):
                 process = subprocess.Popen(
                     [crontab_path, "-"], stdin=subprocess.PIPE, text=True
                 )
-                process.communicate(input=new_cron, timeout=30)
+                process.communicate(
+                    input=new_cron, timeout=CRON_COMMAND_TIMEOUT_SECONDS
+                )
                 print("Daily cron job removed.")
             except (
                 subprocess.SubprocessError,
@@ -2719,7 +2728,7 @@ def setup_reboot_cron_job(*, crontab_path: str):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            timeout=30,
+            timeout=CRON_COMMAND_TIMEOUT_SECONDS,
         )
         if result.returncode != 0:
             existing_cron = ""
@@ -2756,7 +2765,7 @@ def setup_reboot_cron_job(*, crontab_path: str):
             process = subprocess.Popen(
                 [crontab_path, "-"], stdin=subprocess.PIPE, text=True
             )
-            process.communicate(input=new_cron, timeout=30)
+            process.communicate(input=new_cron, timeout=CRON_COMMAND_TIMEOUT_SECONDS)
             print("Reboot cron job added to run Fetchtastic on system startup.")
         except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError) as exc:
             logger.error(
@@ -2788,7 +2797,7 @@ def remove_reboot_cron_job(*, crontab_path: str):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            timeout=30,
+            timeout=CRON_COMMAND_TIMEOUT_SECONDS,
         )
         if result.returncode == 0:
             existing_cron = result.stdout.strip()
@@ -2811,7 +2820,9 @@ def remove_reboot_cron_job(*, crontab_path: str):
                 process = subprocess.Popen(
                     [crontab_path, "-"], stdin=subprocess.PIPE, text=True
                 )
-                process.communicate(input=new_cron, timeout=30)
+                process.communicate(
+                    input=new_cron, timeout=CRON_COMMAND_TIMEOUT_SECONDS
+                )
                 print("Reboot cron job removed.")
             except (
                 subprocess.SubprocessError,
@@ -2842,7 +2853,7 @@ def check_any_cron_jobs_exist(*, crontab_path: str):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            timeout=30,
+            timeout=CRON_COMMAND_TIMEOUT_SECONDS,
         )
         if result.returncode != 0:
             return False
@@ -2885,7 +2896,7 @@ def check_cron_job_exists(*, crontab_path: str):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            timeout=30,
+            timeout=CRON_COMMAND_TIMEOUT_SECONDS,
         )
         if result.returncode != 0:
             return False

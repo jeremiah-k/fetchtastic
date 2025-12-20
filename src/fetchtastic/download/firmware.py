@@ -18,10 +18,12 @@ from fetchtastic.constants import (
     EXECUTABLE_PERMISSIONS,
     FIRMWARE_DIR_NAME,
     FIRMWARE_DIR_PREFIX,
+    FIRMWARE_PRERELEASES_DIR_NAME,
     LATEST_FIRMWARE_PRERELEASE_JSON_FILE,
     LATEST_FIRMWARE_RELEASE_JSON_FILE,
     MESHTASTIC_FIRMWARE_RELEASES_URL,
     RELEASES_CACHE_EXPIRY_HOURS,
+    REPO_DOWNLOADS_DIR,
 )
 from fetchtastic.device_hardware import DeviceHardwareManager
 from fetchtastic.log_utils import logger
@@ -552,7 +554,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 if (
                     os.path.isdir(item_path)
                     and re.match(r"^(v)?\d+\.\d+(?:\.\d+)?", item)
-                    and item not in ["prerelease", "repo-dls"]
+                    and item not in [FIRMWARE_PRERELEASES_DIR_NAME, REPO_DOWNLOADS_DIR]
                 ):
                     version_dirs.append(item)
 
@@ -642,7 +644,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
             str: Absolute path to the prerelease base directory under the downloader's download directory; the directory is created if it does not already exist.
         """
         prerelease_dir = os.path.join(
-            self.download_dir, FIRMWARE_DIR_NAME, "prerelease"
+            self.download_dir, FIRMWARE_DIR_NAME, FIRMWARE_PRERELEASES_DIR_NAME
         )
         os.makedirs(prerelease_dir, exist_ok=True)
         return prerelease_dir
@@ -1371,7 +1373,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
             # Path to prerelease directory
             prerelease_dir = os.path.join(
-                self.download_dir, FIRMWARE_DIR_NAME, "prerelease"
+                self.download_dir, FIRMWARE_DIR_NAME, FIRMWARE_PRERELEASES_DIR_NAME
             )
             if not os.path.exists(prerelease_dir):
                 return False

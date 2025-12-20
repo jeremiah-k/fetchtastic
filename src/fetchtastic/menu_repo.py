@@ -9,6 +9,7 @@ from fetchtastic.constants import (
     FIRMWARE_DIR_PREFIX,
     GITHUB_API_TIMEOUT,
     MESHTASTIC_GITHUB_IO_CONTENTS_URL,
+    REPO_DOWNLOADS_DIR,
 )
 from fetchtastic.download.repository import RepositoryDownloader
 from fetchtastic.log_utils import logger
@@ -263,8 +264,8 @@ def select_files(files):
     # Add a quit option
     file_names.append("[Quit]")
 
-    title = """Select the files you want to download (press SPACE to select, ENTER to confirm):
-Note: Selected files will be downloaded to repo-dls directory.
+    title = f"""Select the files you want to download (press SPACE to select, ENTER to confirm):
+Note: Selected files will be downloaded to {REPO_DOWNLOADS_DIR} directory.
 Select "[Quit]" to exit without downloading."""
 
     selected_options = pick(

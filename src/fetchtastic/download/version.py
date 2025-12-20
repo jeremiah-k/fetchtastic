@@ -22,6 +22,7 @@ from fetchtastic.constants import (
     LATEST_FIRMWARE_RELEASE_JSON_FILE,
     PRERELEASE_ADD_COMMIT_PATTERN,
     PRERELEASE_DELETE_COMMIT_PATTERN,
+    VERSION_REGEX_PATTERN,
 )
 from fetchtastic.log_utils import logger
 
@@ -47,6 +48,7 @@ class VersionManager:
 
     # Compiled regex for performance
     NON_ASCII_RX = re.compile(r"[^\x00-\x7F]+")
+    VERSION_VALIDATION_RX = re.compile(VERSION_REGEX_PATTERN, re.IGNORECASE)
     PRERELEASE_VERSION_RX = re.compile(
         r"^(\d+(?:\.\d+)*)[.-](rc|dev|alpha|beta|b)\.?(\d*)$", re.IGNORECASE
     )
@@ -720,6 +722,12 @@ class VersionManager:
                 tracking_data, ["version"]
             ):
                 current_version = tracking_data["version"]
+                cleaned_version = str(current_version).lstrip("vV")
+                if not self.VERSION_VALIDATION_RX.match(cleaned_version):
+                    logger.debug(
+                        "Version string %s does not match expected pattern; comparing anyway.",
+                        current_version,
+                    )
                 if (
                     latest_version is None
                     or self.compare_versions(current_version, latest_version) > 0

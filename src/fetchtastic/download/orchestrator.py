@@ -16,8 +16,11 @@ from fetchtastic.constants import (
     DEFAULT_ANDROID_VERSIONS_TO_KEEP,
     DEFAULT_FIRMWARE_VERSIONS_TO_KEEP,
     DEFAULT_PRERELEASE_COMMITS_TO_FETCH,
+    FIRMWARE_DIR_NAME,
     FIRMWARE_DIR_PREFIX,
+    FIRMWARE_PRERELEASES_DIR_NAME,
     MAX_RETRY_DELAY,
+    REPO_DOWNLOADS_DIR,
 )
 from fetchtastic.log_utils import logger
 
@@ -226,7 +229,9 @@ class DownloadOrchestrator:
 
             # Clean up prerelease directory
             prerelease_dir = (
-                Path(self.firmware_downloader.download_dir) / "firmware" / "prerelease"
+                Path(self.firmware_downloader.download_dir)
+                / FIRMWARE_DIR_NAME
+                / FIRMWARE_PRERELEASES_DIR_NAME
             )
             if prerelease_dir.exists():
                 for item in prerelease_dir.iterdir():
@@ -749,7 +754,9 @@ class DownloadOrchestrator:
                     (".zip", ".bin", ".elf")
                 ):
                     result.file_type = "firmware"
-                elif "repository" in file_path_str or "repo-dls" in file_path_str:
+                elif (
+                    "repository" in file_path_str or REPO_DOWNLOADS_DIR in file_path_str
+                ):
                     result.file_type = "repository"
                 else:
                     result.file_type = "unknown"
@@ -974,7 +981,9 @@ class DownloadOrchestrator:
                 return
 
             prerelease_base_dir = (
-                Path(self.firmware_downloader.download_dir) / "firmware" / "prerelease"
+                Path(self.firmware_downloader.download_dir)
+                / FIRMWARE_DIR_NAME
+                / FIRMWARE_PRERELEASES_DIR_NAME
             )
             if not prerelease_base_dir.exists():
                 return
@@ -1040,8 +1049,8 @@ class DownloadOrchestrator:
                         force_refresh=False,
                     )
                 )
-                if active_dir and active_dir.startswith("firmware-"):
-                    firmware_prerelease = active_dir[len("firmware-") :]
+                if active_dir and active_dir.startswith(FIRMWARE_DIR_PREFIX):
+                    firmware_prerelease = active_dir[len(FIRMWARE_DIR_PREFIX) :]
                 else:
                     firmware_prerelease = active_dir
 

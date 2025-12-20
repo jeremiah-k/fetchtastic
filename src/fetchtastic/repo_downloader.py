@@ -7,6 +7,7 @@ import shutil
 from fetchtastic import menu_repo
 from fetchtastic.constants import (
     EXECUTABLE_PERMISSIONS,
+    FIRMWARE_DIR_NAME,
     REPO_DOWNLOADS_DIR,
     SHELL_SCRIPT_EXTENSION,
 )
@@ -46,7 +47,7 @@ def download_repo_files(selected_files, download_dir):  # log_message_func remov
     files = selected_files["files"]
 
     # Create repo downloads directory if it doesn't exist
-    repo_dir = os.path.join(download_dir, "firmware", REPO_DOWNLOADS_DIR)
+    repo_dir = os.path.join(download_dir, FIRMWARE_DIR_NAME, REPO_DOWNLOADS_DIR)
     try:
         os.makedirs(repo_dir, exist_ok=True)
 
@@ -163,7 +164,7 @@ def clean_repo_directory(download_dir):  # log_message_func removed
     """
     # Removed local log_message_func definition
 
-    repo_dir = os.path.join(download_dir, "firmware", REPO_DOWNLOADS_DIR)
+    repo_dir = os.path.join(download_dir, FIRMWARE_DIR_NAME, REPO_DOWNLOADS_DIR)
 
     if not os.path.exists(repo_dir):
         logger.info(
