@@ -16,11 +16,14 @@ import requests
 
 from fetchtastic.constants import (
     EXECUTABLE_PERMISSIONS,
+    FIRMWARE_DIR_NAME,
     FIRMWARE_DIR_PREFIX,
+    FIRMWARE_PRERELEASES_DIR_NAME,
     LATEST_FIRMWARE_PRERELEASE_JSON_FILE,
     LATEST_FIRMWARE_RELEASE_JSON_FILE,
     MESHTASTIC_FIRMWARE_RELEASES_URL,
     RELEASES_CACHE_EXPIRY_HOURS,
+    REPO_DOWNLOADS_DIR,
 )
 from fetchtastic.device_hardware import DeviceHardwareManager
 from fetchtastic.log_utils import logger
@@ -81,7 +84,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
         safe_release = self._sanitize_required(release_tag, "release tag")
         safe_name = self._sanitize_required(file_name, "file name")
 
-        version_dir = os.path.join(self.download_dir, "firmware", safe_release)
+        version_dir = os.path.join(self.download_dir, FIRMWARE_DIR_NAME, safe_release)
         os.makedirs(version_dir, exist_ok=True)
         return os.path.join(version_dir, safe_name)
 
@@ -190,14 +193,14 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
     def download_firmware(self, release: Release, asset: Asset) -> DownloadResult:
         """
-        Download and verify a firmware asset for a release and return a structured result.
-
+        Download and verify a single firmware asset for a release and produce a structured DownloadResult.
+        
         Parameters:
-            release (Release): Release containing the asset.
-            asset (Asset): Asset describing the firmware file to download.
-
+            release (Release): Release that contains the asset being downloaded.
+            asset (Asset): Metadata for the firmware asset to download.
+        
         Returns:
-            DownloadResult: Result describing the outcome. On success includes `file_path`, `download_url`, `file_size`, and `file_type`; when the download was unnecessary includes `was_skipped`; on failure includes `error_message`, `error_type` (e.g., `"network_error"`, `"validation_error"`, `"filesystem_error"`) and `is_retryable`.
+            DownloadResult: Result describing the outcome. On success includes `file_path`, `download_url`, `file_size`, and `file_type`; when the download was skipped includes `was_skipped`; on failure includes `error_message`, `error_type` (e.g., `"network_error"`, `"validation_error"`, `"filesystem_error"`) and `is_retryable`.
         """
         target_path: Optional[str] = None
         try:
@@ -265,7 +268,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
         except (requests.RequestException, OSError, ValueError) as exc:
             logger.exception("Error downloading firmware %s: %s", asset.name, exc)
-            safe_path = target_path or os.path.join(self.download_dir, "firmware")
+            safe_path = target_path or os.path.join(
+                self.download_dir, FIRMWARE_DIR_NAME
+            )
             if isinstance(exc, requests.RequestException):
                 error_type = "network_error"
                 is_retryable = True
@@ -299,7 +304,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
         Returns:
             True if all selected assets exist and pass integrity and size checks, False otherwise.
         """
-        version_dir = os.path.join(self.download_dir, "firmware", release.tag_name)
+        version_dir = os.path.join(
+            self.download_dir, FIRMWARE_DIR_NAME, release.tag_name
+        )
         if not os.path.isdir(version_dir):
             return False
 
@@ -422,17 +429,18 @@ class FirmwareReleaseDownloader(BaseDownloader):
         exclude_patterns: Optional[List[str]] = None,
     ) -> DownloadResult:
         """
-        Extract files from a downloaded firmware ZIP according to include and exclude patterns.
-
+        Extract specified files from a firmware ZIP release into the release's version directory.
+        
+        Validates extraction patterns, skips extraction when files already match the patterns, performs extraction when needed, and returns a DownloadResult describing the outcome.
+        
         Parameters:
             release (Release): Release that owns the firmware asset.
-            asset (Asset): The downloaded firmware asset (ZIP) to extract.
-            patterns (List[str]): Glob patterns of files to extract from the archive.
-            exclude_patterns (Optional[List[str]]): Glob patterns to exclude from extraction.
-
+            asset (Asset): The firmware ZIP asset to extract.
+            patterns (List[str]): Glob patterns of files to include from the archive.
+            exclude_patterns (Optional[List[str]]): Glob patterns of files to exclude from extraction.
+        
         Returns:
-            DownloadResult: Result describing success or failure, extracted file list when successful,
-            and error details when extraction did not occur or failed.
+            DownloadResult: On success, contains extracted_files and file_path; on failure, contains error_message and error_type describing why extraction did not occur or failed.
         """
         zip_path: str = ""
         try:
@@ -514,7 +522,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
             return self.create_download_result(
                 success=False,
                 release_tag=release.tag_name,
-                file_path=zip_path or os.path.join(self.download_dir, "firmware"),
+                file_path=zip_path
+                or os.path.join(self.download_dir, FIRMWARE_DIR_NAME),
                 error_message=str(e),
                 file_type="firmware",
                 error_type="extraction_error",
@@ -535,7 +544,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
         """
         try:
             # Get all firmware version directories
-            firmware_dir = os.path.join(self.download_dir, "firmware")
+            firmware_dir = os.path.join(self.download_dir, FIRMWARE_DIR_NAME)
             if not os.path.exists(firmware_dir):
                 return
 
@@ -546,7 +555,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 if (
                     os.path.isdir(item_path)
                     and re.match(r"^(v)?\d+\.\d+(?:\.\d+)?", item)
-                    and item not in ["prerelease", "repo-dls"]
+                    and item not in [FIRMWARE_PRERELEASES_DIR_NAME, REPO_DOWNLOADS_DIR]
                 ):
                     version_dirs.append(item)
 
@@ -635,7 +644,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
         Returns:
             str: Absolute path to the prerelease base directory under the downloader's download directory; the directory is created if it does not already exist.
         """
-        prerelease_dir = os.path.join(self.download_dir, "firmware", "prerelease")
+        prerelease_dir = os.path.join(
+            self.download_dir, FIRMWARE_DIR_NAME, FIRMWARE_PRERELEASES_DIR_NAME
+        )
         os.makedirs(prerelease_dir, exist_ok=True)
         return prerelease_dir
 
@@ -1196,12 +1207,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
     def get_prerelease_tracking_file(self) -> str:
         """
-        Get the path to the firmware prerelease tracking file.
-
+        Return the path to the firmware prerelease tracking JSON file.
+        
         Returns:
-            str: Path to the prerelease tracking file
+            str: Absolute path to the prerelease tracking file used for firmware prerelease state.
         """
-        return os.path.join(self.download_dir, self.latest_prerelease_file)
+        return self.cache_manager.get_cache_file_path(self.latest_prerelease_file)
 
     def update_prerelease_tracking(self, prerelease_tag: str) -> bool:
         """
@@ -1362,7 +1373,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 return False
 
             # Path to prerelease directory
-            prerelease_dir = os.path.join(self.download_dir, "firmware", "prerelease")
+            prerelease_dir = os.path.join(
+                self.download_dir, FIRMWARE_DIR_NAME, FIRMWARE_PRERELEASES_DIR_NAME
+            )
             if not os.path.exists(prerelease_dir):
                 return False
 

@@ -12,6 +12,7 @@ import pytest
 import requests
 
 from fetchtastic.download.repository import RepositoryDownloader
+from fetchtastic.repo_downloader import download_repo_files
 
 
 @pytest.fixture
@@ -429,3 +430,20 @@ def test_clean_repository_directory_partial_failure(repository_downloader, tmp_p
 
     # Should return False when cleanup fails
     assert result is False
+
+
+@pytest.mark.unit
+def test_download_repo_files_directory_creation_failure(
+    mock_config, mock_file_info, tmp_path
+):
+    """Test handling of directory creation failure during repository downloads."""
+    download_dir = str(tmp_path / "repo_base")
+    files_payload = {"directory": "", "files": [mock_file_info]}
+
+    with patch("fetchtastic.repo_downloader.os.makedirs", side_effect=OSError("boom")):
+        with patch("fetchtastic.repo_downloader.logger.error") as mock_error:
+            result = download_repo_files(files_payload, download_dir)
+
+    assert result == []
+    assert mock_error.call_args
+    assert "Error creating base directories" in mock_error.call_args[0][0]

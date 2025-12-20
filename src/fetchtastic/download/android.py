@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional
 import requests
 
 from fetchtastic.constants import (
+    APKS_DIR_NAME,
     GITHUB_MAX_PER_PAGE,
     LATEST_ANDROID_PRERELEASE_JSON_FILE,
     LATEST_ANDROID_RELEASE_JSON_FILE,
@@ -64,17 +65,17 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
     def get_target_path_for_release(self, release_tag: str, file_name: str) -> str:
         """
-        Compute the filesystem path for an Android release asset under the android/<release> directory.
+        Return filesystem path for an APK asset inside Android downloads directory, creating the release directory if it does not exist.
 
-        Sanitizes the release tag and file name and ensures the version directory exists before returning the path.
+        Input values are sanitized before use; function ensures directory {APKS_DIR_NAME}/<release_tag> exists under the configured download directory.
 
         Returns:
-            path (str): Filesystem path to the asset file.
+            str: Filesystem path to the asset file.
         """
         safe_release = self._sanitize_required(release_tag, "release tag")
         safe_name = self._sanitize_required(file_name, "file name")
 
-        version_dir = os.path.join(self.download_dir, "android", safe_release)
+        version_dir = os.path.join(self.download_dir, APKS_DIR_NAME, safe_release)
         os.makedirs(version_dir, exist_ok=True)
         return os.path.join(version_dir, safe_name)
 
@@ -324,7 +325,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
         except (requests.RequestException, OSError, ValueError, TypeError) as exc:
             logger.exception("Error downloading APK %s: %s", asset.name, exc)
-            safe_path = target_path or os.path.join(self.download_dir, "android")
+            safe_path = target_path or os.path.join(self.download_dir, APKS_DIR_NAME)
             if isinstance(exc, requests.RequestException):
                 error_type = "network_error"
                 is_retryable = True
@@ -348,16 +349,16 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
     def is_release_complete(self, release: Release) -> bool:
         """
-        Return True if every APK asset selected for the given release exists on disk and its file size equals the asset's expected size.
+        Check whether all APK assets selected for the given release exist on disk and match their expected sizes.
 
         Parameters:
             release (Release): Release whose APK assets are checked. Only assets that pass the downloader's selection rules are considered.
 
         Returns:
-            bool: True if all selected assets are present with matching sizes, False otherwise.
+            `true` if all selected assets are present and their file sizes equal the assets' expected sizes, `false` otherwise.
         """
         safe_tag = self._sanitize_required(release.tag_name, "release tag")
-        version_dir = os.path.join(self.download_dir, "android", safe_tag)
+        version_dir = os.path.join(self.download_dir, APKS_DIR_NAME, safe_tag)
         if not os.path.isdir(version_dir):
             return False
 
@@ -381,16 +382,17 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
     def cleanup_old_versions(self, keep_limit: int) -> None:
         """
-        Remove Android version directories older than the most recent `keep_limit` versions.
+        Delete Android version directories older than most recent specified number to keep.
 
-        Scans the downloader's android subdirectory for directories whose names match version patterns, sorts them from newest to oldest, and permanently deletes directories beyond the `keep_limit` newest entries. Non-version directories are ignored. Deletion failures are logged; exceptions are caught and logged without raising.
+        Ignores directories that do not match version-style names. Deletion failures are logged and exceptions are suppressed.
+        Operates on the {APKS_DIR_NAME} subdirectory within the configured download directory.
 
         Parameters:
             keep_limit (int): Number of most-recent version directories to retain; directories older than this are removed.
         """
         try:
             # Get all Android version directories
-            android_dir = os.path.join(self.download_dir, "android")
+            android_dir = os.path.join(self.download_dir, APKS_DIR_NAME)
             if not os.path.exists(android_dir):
                 return
 
@@ -604,9 +606,9 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         Get the filesystem path to the Android prerelease tracking JSON file.
 
         Returns:
-            str: Path to the prerelease tracking JSON file located in the downloader's download directory.
+            str: Path to prerelease tracking JSON file within the cache manager's directory.
         """
-        return os.path.join(self.download_dir, self.latest_prerelease_file)
+        return self.cache_manager.get_cache_file_path(self.latest_prerelease_file)
 
     def update_prerelease_tracking(self, prerelease_tag: str) -> bool:
         """

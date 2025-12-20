@@ -20,13 +20,13 @@ from fetchtastic.constants import (
     DEFAULT_PRERELEASE_STATUS,
     FIRMWARE_DIR_PREFIX,
     GITHUB_API_BASE,
-    GITHUB_API_TIMEOUT,
     GITHUB_MAX_PER_PAGE,
     PRERELEASE_ADD_COMMIT_PATTERN,
     PRERELEASE_COMMIT_HISTORY_FILE,
     PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS,
     PRERELEASE_COMMITS_CACHE_FILE,
     PRERELEASE_DELETE_COMMIT_PATTERN,
+    PRERELEASE_REQUEST_TIMEOUT,
     PRERELEASE_TRACKING_JSON_FILE,
 )
 from fetchtastic.log_utils import logger
@@ -115,7 +115,7 @@ class PrereleaseHistoryManager:
                     github_token=github_token,
                     allow_env_token=allow_env_token,
                     params={"per_page": per_page, "page": page},
-                    timeout=GITHUB_API_TIMEOUT,
+                    timeout=PRERELEASE_REQUEST_TIMEOUT,
                 )
                 commits_page = response.json()
                 if not isinstance(commits_page, list) or not commits_page:

@@ -22,6 +22,7 @@ from fetchtastic.constants import (
     LATEST_FIRMWARE_RELEASE_JSON_FILE,
     PRERELEASE_ADD_COMMIT_PATTERN,
     PRERELEASE_DELETE_COMMIT_PATTERN,
+    VERSION_REGEX_PATTERN,
 )
 from fetchtastic.log_utils import logger
 
@@ -47,6 +48,7 @@ class VersionManager:
 
     # Compiled regex for performance
     NON_ASCII_RX = re.compile(r"[^\x00-\x7F]+")
+    VERSION_VALIDATION_RX = re.compile(VERSION_REGEX_PATTERN, re.IGNORECASE)
     PRERELEASE_VERSION_RX = re.compile(
         r"^(\d+(?:\.\d+)*)[.-](rc|dev|alpha|beta|b)\.?(\d*)$", re.IGNORECASE
     )
@@ -705,12 +707,16 @@ class VersionManager:
         self, tracking_files: List[str], cache_manager: Any
     ) -> Optional[str]:
         """
-        Determine the highest version string present in the given tracking files.
-
-        Reads each tracking file using the provided cache manager, validates presence of a version key, and compares versions to select the latest one.
-
+        Selects the most recent version recorded in the provided tracking files.
+        
+        Reads each tracking file via the provided cache manager, considers only entries that contain a "version" key, and compares version strings using the manager's comparison rules to determine the latest version. If a file's version string does not match the manager's version-validation pattern it is still compared but a debug message is emitted.
+        
+        Parameters:
+            tracking_files (List[str]): Paths to tracking JSON files to examine.
+            cache_manager (Any): Cache/IO helper used to read tracking files.
+        
         Returns:
-            The latest version string found across the provided tracking files, or `None` if no valid version was found.
+            The latest version string found across the provided tracking files, or None if no valid version was found.
         """
         latest_version = None
 
@@ -720,6 +726,12 @@ class VersionManager:
                 tracking_data, ["version"]
             ):
                 current_version = tracking_data["version"]
+                cleaned_version = str(current_version).lstrip("vV")
+                if not self.VERSION_VALIDATION_RX.fullmatch(cleaned_version):
+                    logger.debug(
+                        "Version string %s does not match expected pattern; comparing anyway.",
+                        current_version,
+                    )
                 if (
                     latest_version is None
                     or self.compare_versions(current_version, latest_version) > 0

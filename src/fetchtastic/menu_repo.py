@@ -9,6 +9,7 @@ from fetchtastic.constants import (
     FIRMWARE_DIR_PREFIX,
     GITHUB_API_TIMEOUT,
     MESHTASTIC_GITHUB_IO_CONTENTS_URL,
+    REPO_DOWNLOADS_DIR,
 )
 from fetchtastic.download.repository import RepositoryDownloader
 from fetchtastic.log_utils import logger
@@ -250,8 +251,15 @@ def select_item(items, current_path=""):
 
 def select_files(files):
     """
-    Displays a menu for user to select files to download.
-    Returns a list of selected file information.
+    Present a multi-select menu for choosing repository files to download.
+    
+    Displays file names with a trailing "[Quit]" option and returns the chosen file descriptors in the same dict form as provided.
+    
+    Parameters:
+        files (list[dict]): List of file dictionaries as returned by the repository API. Each dictionary must include at least the "name" key; other keys (e.g., "download_url", "size") are preserved and returned.
+    
+    Returns:
+        list[dict] | None: A list of the selected file dictionaries in the same format as `files`, or `None` if the user cancels, chooses "[Quit]", or no files are selected.
     """
     if not files:
         print("No files found in the selected directory.")
@@ -263,8 +271,8 @@ def select_files(files):
     # Add a quit option
     file_names.append("[Quit]")
 
-    title = """Select the files you want to download (press SPACE to select, ENTER to confirm):
-Note: Selected files will be downloaded to repo-dls directory.
+    title = f"""Select the files you want to download (press SPACE to select, ENTER to confirm):
+Note: Selected files will be downloaded to {REPO_DOWNLOADS_DIR} directory.
 Select "[Quit]" to exit without downloading."""
 
     selected_options = pick(

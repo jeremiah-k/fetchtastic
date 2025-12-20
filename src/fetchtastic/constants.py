@@ -20,13 +20,10 @@ MESHTASTIC_REPO_URL = "https://meshtastic.github.io"
 GITHUB_API_TIMEOUT = 10
 NTFY_REQUEST_TIMEOUT = 10
 PRERELEASE_REQUEST_TIMEOUT = 30
+CRON_COMMAND_TIMEOUT_SECONDS = 30
 
 API_CALL_DELAY = 0.1  # Small delay to be respectful to GitHub API
 GITHUB_MAX_PER_PAGE = 100
-MIN_RATE_LIMIT_FOR_COMMIT_DETAILS = 10
-PRERELEASE_DETAIL_ATTEMPT_MULTIPLIER = 3
-PRERELEASE_DETAIL_FETCH_WORKERS = 4
-
 # Download and retry settings
 RELEASE_SCAN_COUNT = 10
 
@@ -156,9 +153,6 @@ RELEASES_CACHE_EXPIRY_HOURS = 1 / 60  # 1 minute (in hours)
 FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS = 24 * 60 * 60  # 24 hours
 # Keep prerelease commit history fresh so we see new prereleases within a minute.
 PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS = 60
-
-# Concurrent operations limits
-MAX_CONCURRENT_TIMESTAMP_FETCHES = 5
 
 # File Type Patterns (non-device-specific patterns)
 FILE_TYPE_PREFIXES = {

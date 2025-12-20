@@ -19,8 +19,12 @@ import yaml
 from fetchtastic import menu_apk, menu_firmware
 from fetchtastic.constants import (
     CONFIG_FILE_NAME,
+    CRON_COMMAND_TIMEOUT_SECONDS,
     DEFAULT_CHECK_APK_PRERELEASES,
+    DEFAULT_EXTRACTION_PATTERNS,
     MESHTASTIC_DIR_NAME,
+    NTFY_REQUEST_TIMEOUT,
+    WINDOWS_SHORTCUT_FILE,
 )
 from fetchtastic.log_utils import logger
 
@@ -874,7 +878,7 @@ def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> 
         print(
             "Enter the keywords to match for extraction from the firmware zip files, separated by spaces."
         )
-        print("Example: rak4631- tbeam t1000-e- tlora-v2-1-1_6- device-")
+        print(f"Example: {' '.join(DEFAULT_EXTRACTION_PATTERNS)}")
 
         current_patterns = config.get("EXTRACT_PATTERNS", [])
         if isinstance(current_patterns, str):
@@ -1222,17 +1226,13 @@ def _setup_automation(
 
 def _setup_notifications(config: dict) -> dict:
     """
-    Configure NTFY-based notifications interactively and return the updated config.
-
-    Prompts the user to enable or disable NTFY notifications, collect the NTFY server URL
-    and topic name when enabling, and set whether notifications should be sent only for
-    new downloads. Updates these keys in the provided config: `NTFY_TOPIC`, `NTFY_SERVER`,
-    and `NOTIFY_ON_DOWNLOAD_ONLY`. If notifications are disabled (or the user confirms
-    disabling), the corresponding keys are cleared/false.
-
+    Configure NTFY notifications interactively.
+    
+    Prompts the user to enable or disable NTFY-based notifications, collect the NTFY server URL and topic when enabling, and set whether notifications should be sent only for new downloads. Updates the configuration dictionary in place — setting or clearing the keys `NTFY_TOPIC`, `NTFY_SERVER`, `NTFY_REQUEST_TIMEOUT`, and `NOTIFY_ON_DOWNLOAD_ONLY` as appropriate.
+    
     Parameters:
-        config (dict): Current configuration dictionary to be modified in-place and returned.
-
+        config (dict): Current configuration dictionary to modify.
+    
     Returns:
         dict: The updated configuration dictionary.
     """
@@ -1278,6 +1278,7 @@ def _setup_notifications(config: dict) -> dict:
         # Update config
         config["NTFY_TOPIC"] = topic_name
         config["NTFY_SERVER"] = ntfy_server
+        config["NTFY_REQUEST_TIMEOUT"] = NTFY_REQUEST_TIMEOUT
 
         # Display information
         full_topic_url = f"{ntfy_server.rstrip('/')}/{topic_name}"
@@ -1342,6 +1343,7 @@ def _setup_notifications(config: dict) -> dict:
                 config["NTFY_TOPIC"] = ""
                 config["NTFY_SERVER"] = ""
                 config["NOTIFY_ON_DOWNLOAD_ONLY"] = False
+                config.pop("NTFY_REQUEST_TIMEOUT", None)
                 print("Notifications have been disabled.")
             else:
                 print("Keeping existing notification settings.")
@@ -1350,6 +1352,7 @@ def _setup_notifications(config: dict) -> dict:
             config["NTFY_TOPIC"] = ""
             config["NTFY_SERVER"] = ""
             config["NOTIFY_ON_DOWNLOAD_ONLY"] = False
+            config.pop("NTFY_REQUEST_TIMEOUT", None)
             print("Notifications will remain disabled.")
 
     return config
@@ -2285,21 +2288,20 @@ def create_windows_menu_shortcuts(config_file_path, base_dir):
 
 def create_config_shortcut(config_file_path, target_dir):
     """
-    Creates a shortcut to the configuration file in the target directory.
-    Only works on Windows.
-
-    Args:
-        config_file_path: Path to the configuration file
-        target_dir: Directory where to create the shortcut
-
+    Create a Windows shortcut to the Fetchtastic configuration file in the specified directory.
+    
+    Parameters:
+        config_file_path (str): Path to the configuration file to link.
+        target_dir (str): Directory where the shortcut file will be created.
+    
     Returns:
-        bool: True if shortcut was created successfully, False otherwise
+        bool: `True` if the shortcut was created successfully, `False` otherwise.
     """
     if platform.system() != "Windows" or not WINDOWS_MODULES_AVAILABLE:
         return False
 
     try:
-        shortcut_path = os.path.join(target_dir, "fetchtastic_yaml.lnk")
+        shortcut_path = os.path.join(target_dir, WINDOWS_SHORTCUT_FILE)
 
         # Create the shortcut using winshell
         winshell.CreateShortcut(
@@ -2519,9 +2521,8 @@ def install_crond():
 def setup_cron_job(frequency="hourly", *, crontab_path: str):
     """
     Configure the user's crontab to run Fetchtastic on a regular schedule.
-
-    Removes existing Fetchtastic scheduled entries (excluding any `@reboot` lines) and writes a single scheduled entry that invokes the Fetchtastic downloader using the specified schedule. If the provided frequency is unknown, it falls back to the hourly schedule. Requires a usable system crontab (on Windows or when crontab is unavailable the function will not modify cron). The decorator-injected `crontab_path` argument provides the crontab executable to use and does not need separate documentation here.
-
+    
+    Removes existing Fetchtastic scheduled entries (excluding any `@reboot` lines) and writes a single scheduled entry for the chosen frequency. Unknown frequency values default to "hourly". This function is a no-op on Windows.
     Parameters:
         frequency (str): Schedule key from CRON_SCHEDULES (for example "hourly" or "daily"); unknown values default to "hourly".
     """
@@ -2546,7 +2547,7 @@ def setup_cron_job(frequency="hourly", *, crontab_path: str):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            timeout=30,  # Add timeout to prevent hanging
+            timeout=CRON_COMMAND_TIMEOUT_SECONDS,  # Add timeout to prevent hanging
         )
         if result.returncode != 0:
             existing_cron = ""
@@ -2590,7 +2591,7 @@ def setup_cron_job(frequency="hourly", *, crontab_path: str):
                 [crontab_path, "-"], stdin=subprocess.PIPE, text=True
             )
             process.communicate(
-                input=new_cron, timeout=30
+                input=new_cron, timeout=CRON_COMMAND_TIMEOUT_SECONDS
             )  # Add timeout to prevent hanging
             print(f"Cron job added to run Fetchtastic {frequency_desc}.")
         except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError) as e:
@@ -2604,13 +2605,10 @@ def setup_cron_job(frequency="hourly", *, crontab_path: str):
 @cron_command_required
 def remove_cron_job(*, crontab_path: str):
     """
-    Remove Fetchtastic's daily cron entries from the current user's crontab.
-
-    This function edits the current user's crontab to remove entries that contain
-    "# fetchtastic" or "fetchtastic download" while preserving any lines that
-    start with "@reboot". It is a no-op on Windows or if the system crontab is
-    unavailable. Errors encountered during crontab access or update are logged
-    and not raised.
+    Remove Fetchtastic's non-@reboot cron entries from the current user's crontab.
+    
+    Removes crontab lines that contain "# fetchtastic" or "fetchtastic download" while preserving any lines that start with "@reboot". Does nothing on Windows or if the crontab command is unavailable. Errors encountered while reading or updating the crontab are logged and not raised.
+    
     Parameters:
         crontab_path (str): Path to the system crontab executable (for example "crontab").
     """
@@ -2625,7 +2623,7 @@ def remove_cron_job(*, crontab_path: str):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            timeout=30,
+            timeout=CRON_COMMAND_TIMEOUT_SECONDS,
         )
         if result.returncode == 0:
             existing_cron = result.stdout.strip()
@@ -2648,7 +2646,9 @@ def remove_cron_job(*, crontab_path: str):
                 process = subprocess.Popen(
                     [crontab_path, "-"], stdin=subprocess.PIPE, text=True
                 )
-                process.communicate(input=new_cron, timeout=30)
+                process.communicate(
+                    input=new_cron, timeout=CRON_COMMAND_TIMEOUT_SECONDS
+                )
                 print("Daily cron job removed.")
             except (
                 subprocess.SubprocessError,
@@ -2701,11 +2701,11 @@ def remove_boot_script():
 @cron_command_required
 def setup_reboot_cron_job(*, crontab_path: str):
     """
-    Add an @reboot crontab entry that runs "fetchtastic download" after system reboots.
-
-    This is a no-op on Windows. It reads the current crontab, removes any existing Fetchtastic @reboot entries, locates the `fetchtastic` executable from PATH, appends a new `@reboot <fetchtastic> download  # fetchtastic` line, and writes the updated crontab back. If the `fetchtastic` executable is not found the function exits without modifying the crontab; subprocess and IO errors are logged.
+    Ensure an @reboot crontab entry exists to run the `fetchtastic download` command after system reboot.
+    
+    If running on Windows this is a no-op. Removes any existing `@reboot` entries associated with Fetchtastic and adds a single `@reboot <path-to-fetchtastic> download  # fetchtastic` entry. If the `fetchtastic` executable cannot be found, the crontab is left unchanged. Subprocess and I/O errors are logged.
     Parameters:
-        crontab_path (str): Filesystem path to the `crontab` command to use when reading/updating the crontab.
+        crontab_path (str): Filesystem path to the `crontab` command used to read and update the user's crontab.
     """
     # Skip cron job setup on Windows
     if platform.system() == "Windows":
@@ -2719,7 +2719,7 @@ def setup_reboot_cron_job(*, crontab_path: str):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            timeout=30,
+            timeout=CRON_COMMAND_TIMEOUT_SECONDS,
         )
         if result.returncode != 0:
             existing_cron = ""
@@ -2756,7 +2756,7 @@ def setup_reboot_cron_job(*, crontab_path: str):
             process = subprocess.Popen(
                 [crontab_path, "-"], stdin=subprocess.PIPE, text=True
             )
-            process.communicate(input=new_cron, timeout=30)
+            process.communicate(input=new_cron, timeout=CRON_COMMAND_TIMEOUT_SECONDS)
             print("Reboot cron job added to run Fetchtastic on system startup.")
         except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError) as exc:
             logger.error(
@@ -2769,12 +2769,11 @@ def setup_reboot_cron_job(*, crontab_path: str):
 @cron_command_required
 def remove_reboot_cron_job(*, crontab_path: str):
     """
-    Remove the user's @reboot cron entry that launches Fetchtastic.
-
-    If running on Windows or if the system crontab is unavailable, the function performs no action. Otherwise it uses the provided crontab executable to read the current crontab, remove any @reboot entries that launch or are labeled for Fetchtastic, and write the updated crontab back.
-
+    Remove any @reboot cron entries that run or are labeled for Fetchtastic.
+    
+    If running on Windows the function performs no action. Otherwise it reads the current user crontab using the provided `crontab_path`, removes any `@reboot` lines that invoke or are commented for Fetchtastic, and writes the updated crontab back. Errors encountered while reading or writing are logged.
     Parameters:
-        crontab_path (str): Path to the crontab executable used to read and write the user's crontab.
+        crontab_path (str): Path to the `crontab` executable used to read and write the user's crontab.
     """
     # Skip cron job removal on Windows
     if platform.system() == "Windows":
@@ -2788,7 +2787,7 @@ def remove_reboot_cron_job(*, crontab_path: str):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            timeout=30,
+            timeout=CRON_COMMAND_TIMEOUT_SECONDS,
         )
         if result.returncode == 0:
             existing_cron = result.stdout.strip()
@@ -2811,7 +2810,9 @@ def remove_reboot_cron_job(*, crontab_path: str):
                 process = subprocess.Popen(
                     [crontab_path, "-"], stdin=subprocess.PIPE, text=True
                 )
-                process.communicate(input=new_cron, timeout=30)
+                process.communicate(
+                    input=new_cron, timeout=CRON_COMMAND_TIMEOUT_SECONDS
+                )
                 print("Reboot cron job removed.")
             except (
                 subprocess.SubprocessError,
@@ -2842,7 +2843,7 @@ def check_any_cron_jobs_exist(*, crontab_path: str):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            timeout=30,
+            timeout=CRON_COMMAND_TIMEOUT_SECONDS,
         )
         if result.returncode != 0:
             return False
@@ -2869,23 +2870,21 @@ def check_boot_script_exists():
 @cron_check_command_required
 def check_cron_job_exists(*, crontab_path: str):
     """
-    Check whether any Fetchtastic entries are present in the current user's crontab.
-
-    This inspects the user's crontab output for lines that include the Fetchtastic marker (e.g., "# fetchtastic" or "fetchtastic download") and ignores lines that start with "@reboot" when determining presence. If the system crontab is unavailable or an error occurs, the function reports absence.
-
+    Determine whether any Fetchtastic cron entries (excluding `@reboot` lines) exist in the current user's crontab.
+    
     Parameters:
-        crontab_path (str): Path or command name for the crontab executable injected by the caller/decorator.
-
+        crontab_path (str): Path or command name for the `crontab` executable injected by the caller.
+    
     Returns:
         `true` if any matching Fetchtastic cron entries are found (excluding `@reboot` lines), `false` otherwise.
     """
     try:
         result = subprocess.run(
-            ["crontab", "-l"],
+            [crontab_path, "-l"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            timeout=30,
+            timeout=CRON_COMMAND_TIMEOUT_SECONDS,
         )
         if result.returncode != 0:
             return False

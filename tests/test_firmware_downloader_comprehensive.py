@@ -240,8 +240,8 @@ class TestFirmwareReleaseDownloader:
         """Test getting prerelease tracking file path."""
         tracking_file = firmware_downloader.get_prerelease_tracking_file()
 
-        expected_path = os.path.join(
-            firmware_downloader.download_dir, firmware_downloader.latest_prerelease_file
+        expected_path = firmware_downloader.cache_manager.get_cache_file_path(
+            firmware_downloader.latest_prerelease_file
         )
         assert tracking_file == expected_path
 

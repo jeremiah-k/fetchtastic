@@ -13,6 +13,7 @@ import yaml
 
 from fetchtastic import log_utils, setup_config
 from fetchtastic.constants import (
+    FIRMWARE_DIR_NAME,
     FIRMWARE_DIR_PREFIX,
     MANAGED_DIRECTORIES,
     MANAGED_FILES,
@@ -22,6 +23,8 @@ from fetchtastic.constants import (
     MSG_PRESERVE_OTHER_FILES,
     MSG_REMOVED_MANAGED_DIR,
     MSG_REMOVED_MANAGED_FILE,
+    REPO_DOWNLOADS_DIR,
+    WINDOWS_SHORTCUT_FILE,
 )
 from fetchtastic.download import cli_integration as download_cli_integration
 from fetchtastic.download.repository import RepositoryDownloader
@@ -343,14 +346,20 @@ def main():
     repo_subparsers.add_parser(
         "browse",
         help="Browse and download files from the meshtastic.github.io repository",
-        description="Browse directories in the meshtastic.github.io repository, select files, and download them to the repo-dls directory.",
+        description=(
+            "Browse directories in the meshtastic.github.io repository, select files, "
+            f"and download them to the {REPO_DOWNLOADS_DIR} directory."
+        ),
     )
 
     # Repo clean command
     repo_subparsers.add_parser(
         "clean",
         help="Clean the repository download directory",
-        description="Remove all files and directories from the repository download directory (firmware/repo-dls).",
+        description=(
+            "Remove all files and directories from the repository download directory "
+            f"({FIRMWARE_DIR_NAME}/{REPO_DOWNLOADS_DIR})."
+        ),
     )
 
     args = parser.parse_args()
@@ -585,9 +594,9 @@ def show_help(
 
 def run_clean():
     """
-    Permanently remove Fetchtastic configuration, Fetchtastic-managed downloads, and platform integrations after explicit user confirmation.
-
-    Removes current and legacy configuration files, Fetchtastic-managed files and directories inside the configured download directory, platform-specific integrations (Windows Start Menu and startup shortcuts; non-Windows crontab entries; Termux boot script), and the Fetchtastic log file. Files and directories not identified as managed are preserved. This operation is irreversible and requires interactive confirmation from the user.
+    Permanently remove Fetchtastic configuration, Fetchtastic-managed downloads, platform integrations, and logs after explicit interactive confirmation.
+    
+    This operation deletes current and legacy configuration files, only Fetchtastic-managed files and directories inside the configured download directory, platform-specific integrations (for example, Windows Start Menu and startup shortcuts, non-Windows cron entries, and a Termux boot script), and the Fetchtastic log file. The removal is irreversible and requires the user to confirm interactively; non-managed files are preserved.
     """
     print(
         "This will remove Fetchtastic configuration files, downloaded files, and cron job entries."
@@ -707,7 +716,7 @@ def run_clean():
 
             # Remove config shortcut in base directory
             download_dir = setup_config.BASE_DIR
-            config_shortcut_path = os.path.join(download_dir, "fetchtastic_yaml.lnk")
+            config_shortcut_path = os.path.join(download_dir, WINDOWS_SHORTCUT_FILE)
             if os.path.exists(config_shortcut_path):
                 try:
                     os.remove(config_shortcut_path)

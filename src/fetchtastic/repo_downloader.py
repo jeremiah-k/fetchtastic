@@ -7,6 +7,7 @@ import shutil
 from fetchtastic import menu_repo
 from fetchtastic.constants import (
     EXECUTABLE_PERMISSIONS,
+    FIRMWARE_DIR_NAME,
     REPO_DOWNLOADS_DIR,
     SHELL_SCRIPT_EXTENSION,
 )
@@ -16,19 +17,18 @@ from fetchtastic.utils import download_file_with_retry
 
 def download_repo_files(selected_files, download_dir):  # log_message_func removed
     """
-    Download the specified repository files into a repository-specific downloads directory.
-
-    Sanitizes file names to prevent path traversal and saves files under
-    download_dir/firmware/REPO_DOWNLOADS_DIR/<selected_files["directory"]> (or the repo directory if empty).
-    Sets executable permissions for files whose original name ends with SHELL_SCRIPT_EXTENSION.
-    Skips items missing required fields or that fail to download; returns only the successfully downloaded file paths.
-
+    Download selected repository files into the repository downloads folder under the given base download directory.
+    
+    Files are saved under <download_dir>/<FIRMWARE_DIR_NAME>/<REPO_DOWNLOADS_DIR>/<directory> (or the repository base directory if the provided directory is unsafe). File names are sanitized to prevent path traversal and files whose original names end with the shell script extension are made executable when download succeeds.
+    
     Parameters:
         selected_files (dict): Mapping with keys:
-            - "directory" (str): Subdirectory name inside the repo downloads directory.
-            - "files" (iterable[dict]): Each dict must include "name" (str) and "download_url" (str).
+            - "directory" (str): Subdirectory name inside the repo downloads directory (may be empty).
+            - "files" (iterable[dict]): Iterable of file descriptors where each dict must include:
+                - "name" (str): Original file name.
+                - "download_url" (str): URL to download the file.
         download_dir (str): Base path under which the repository downloads directory will be created.
-
+    
     Returns:
         list[str]: Absolute paths to files that were successfully downloaded.
     """
@@ -46,7 +46,8 @@ def download_repo_files(selected_files, download_dir):  # log_message_func remov
     files = selected_files["files"]
 
     # Create repo downloads directory if it doesn't exist
-    repo_dir = os.path.join(download_dir, "firmware", REPO_DOWNLOADS_DIR)
+    repo_dir = os.path.join(download_dir, FIRMWARE_DIR_NAME, REPO_DOWNLOADS_DIR)
+    dir_path = repo_dir
     try:
         os.makedirs(repo_dir, exist_ok=True)
 
@@ -151,19 +152,19 @@ def download_repo_files(selected_files, download_dir):  # log_message_func remov
 
 def clean_repo_directory(download_dir):  # log_message_func removed
     """
-    Remove all contents of the repository downloads directory under the given download directory.
-
-    This function targets the directory "<download_dir>/firmware/{REPO_DOWNLOADS_DIR}". If that directory does not exist it returns True (nothing to clean). It attempts to remove every file, symlink, and subdirectory inside that repo directory.
-
+    Clean the repository downloads directory under the given base download directory.
+    
+    Removes every file, symbolic link, and subdirectory inside: <download_dir>/<FIRMWARE_DIR_NAME>/<REPO_DOWNLOADS_DIR>. If the target directory does not exist, the function does nothing and returns True.
+    
     Parameters:
-        download_dir (str): Base download directory that contains the 'firmware' folder.
-
+        download_dir (str): Base download directory that contains the firmware directory (value of FIRMWARE_DIR_NAME).
+    
     Returns:
-        bool: True if the repository downloads directory was cleaned (or did not exist); False if an I/O error occurred while removing contents.
+        bool: `True` if the repository downloads directory was cleaned or did not exist; `False` if an I/O error occurred while removing contents.
     """
     # Removed local log_message_func definition
 
-    repo_dir = os.path.join(download_dir, "firmware", REPO_DOWNLOADS_DIR)
+    repo_dir = os.path.join(download_dir, FIRMWARE_DIR_NAME, REPO_DOWNLOADS_DIR)
 
     if not os.path.exists(repo_dir):
         logger.info(

@@ -14,6 +14,7 @@ from urllib.parse import urljoin, urlparse
 import requests
 
 from fetchtastic.constants import (
+    FIRMWARE_DIR_NAME,
     MESHTASTIC_REPO_URL,
     REPO_DOWNLOADS_DIR,
     SHELL_SCRIPT_EXTENSION,
@@ -252,20 +253,18 @@ class RepositoryDownloader(BaseDownloader):
 
     def _get_safe_target_directory(self, subdirectory: str) -> Optional[str]:
         """
-        Return the absolute path to a safe target directory inside the repository downloads area, creating it if necessary.
-
-        If `subdirectory` is empty the base repository downloads directory is returned. If `subdirectory` is determined to be unsafe, the base repository downloads directory is used instead.
-
+        Resolve a safe absolute target directory under the repository downloads area, creating it if necessary.
+        
         Parameters:
-            subdirectory (str): Relative path under the repository downloads directory to target; treated as a repository-local subpath.
-
+            subdirectory (str): Relative subpath inside the repository downloads area. If empty the base repository downloads directory is used; subpaths that are unsafe or appear to perform path traversal are treated as if empty and the base directory will be returned.
+        
         Returns:
-            str | None: Absolute path to the resolved target directory, or `None` if the directory could not be created.
+            str | None: Absolute filesystem path to the resolved target directory, or `None` if the directory could not be created.
         """
         try:
             # Create base repo downloads directory
             base_repo_dir = os.path.join(
-                self.download_dir, "firmware", self.repo_downloads_dir
+                self.download_dir, FIRMWARE_DIR_NAME, self.repo_downloads_dir
             )
             os.makedirs(base_repo_dir, exist_ok=True)
 
@@ -312,7 +311,7 @@ class RepositoryDownloader(BaseDownloader):
         # Check that the normalized path doesn't escape the base directory
         try:
             base_repo_dir = os.path.join(
-                self.download_dir, "firmware", self.repo_downloads_dir
+                self.download_dir, FIRMWARE_DIR_NAME, self.repo_downloads_dir
             )
 
             # Resolve real paths to handle symlinks and '..' components securely.
@@ -364,12 +363,12 @@ class RepositoryDownloader(BaseDownloader):
 
     def clean_repository_directory(self) -> bool:
         """
-        Remove all contents of the repository downloads directory (<download_dir>/firmware/<repo_downloads_dir>).
-
-        Removes files, symlinks, and subdirectories found in the repository downloads directory. If the directory does not exist the function does nothing and reports success.
-
+        Remove all contents of the repository downloads directory under the configured downloads area.
+        
+        Removes files, symbolic links, and subdirectories found in <download_dir>/<firmware-dir>/<repo_downloads_dir>. If the directory does not exist the function does nothing and reports success. Updates the instance's cleanup summary with counts of removed files and directories, any errors encountered, and an overall success flag.
+        
         Returns:
-            bool: `True` if cleanup succeeded, `False` otherwise.
+            bool: `True` if cleanup completed without errors, `False` otherwise.
         """
         self._cleanup_summary = {
             "removed_files": 0,
@@ -379,7 +378,7 @@ class RepositoryDownloader(BaseDownloader):
         }
         try:
             repo_dir = os.path.join(
-                self.download_dir, "firmware", self.repo_downloads_dir
+                self.download_dir, FIRMWARE_DIR_NAME, self.repo_downloads_dir
             )
 
             if not os.path.exists(repo_dir):

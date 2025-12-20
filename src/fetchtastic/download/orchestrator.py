@@ -13,11 +13,15 @@ from typing import Any, Dict, List, Optional, Tuple
 import requests
 
 from fetchtastic.constants import (
+    APKS_DIR_NAME,
     DEFAULT_ANDROID_VERSIONS_TO_KEEP,
     DEFAULT_FIRMWARE_VERSIONS_TO_KEEP,
     DEFAULT_PRERELEASE_COMMITS_TO_FETCH,
+    FIRMWARE_DIR_NAME,
     FIRMWARE_DIR_PREFIX,
+    FIRMWARE_PRERELEASES_DIR_NAME,
     MAX_RETRY_DELAY,
+    REPO_DOWNLOADS_DIR,
 )
 from fetchtastic.log_utils import logger
 
@@ -172,9 +176,9 @@ class DownloadOrchestrator:
 
     def _process_firmware_downloads(self) -> None:
         """
-        Scan available firmware releases and ensure required firmware artifacts are downloaded and cleaned up.
+        Ensure configured recent firmware releases and repository prereleases are downloaded and remove unexpected prerelease directories.
 
-        Checks up to the configured number of latest firmware releases and downloads any releases that are not already complete. Attempts to fetch repository prerelease firmware for the selected latest release and records each download outcome in the orchestrator's result lists. Removes any non-prerelease directories found in the firmware prerelease folder. Errors encountered during the process are caught and logged.
+        Scans up to the configured number of latest firmware releases, downloads any releases that are not already complete, attempts to fetch repository prerelease firmware for the selected latest release, and records each download outcome in the orchestrator's result lists. Afterwards, inspects the firmware prerelease directory and safely removes entries that are not valid managed prerelease directories (skipping symlinks and entries that fail safety or version checks). Errors encountered during the process are caught and logged.
         """
         try:
             logger.info("Scanning Firmware releases")
@@ -226,7 +230,9 @@ class DownloadOrchestrator:
 
             # Clean up prerelease directory
             prerelease_dir = (
-                Path(self.firmware_downloader.download_dir) / "firmware" / "prerelease"
+                Path(self.firmware_downloader.download_dir)
+                / FIRMWARE_DIR_NAME
+                / FIRMWARE_PRERELEASES_DIR_NAME
             )
             if prerelease_dir.exists():
                 for item in prerelease_dir.iterdir():
@@ -742,15 +748,24 @@ class DownloadOrchestrator:
         for result in self.download_results + self.failed_downloads:
             # Set file type based on file path if not already set
             if not result.file_type and result.file_path:
+                # Convert to Path for reliable path component checking
+                file_path = (
+                    Path(result.file_path)
+                    if not isinstance(result.file_path, Path)
+                    else result.file_path
+                )
                 file_path_str = str(result.file_path)
-                if "android" in file_path_str or file_path_str.endswith(".apk"):
+                path_parts = file_path.parts
+
+                # Check repository first since repo paths contain both firmware and repo directories
+                if REPO_DOWNLOADS_DIR in path_parts:
+                    result.file_type = "repository"
+                elif APKS_DIR_NAME in path_parts or file_path_str.endswith(".apk"):
                     result.file_type = "android"
-                elif "firmware" in file_path_str or file_path_str.endswith(
+                elif FIRMWARE_DIR_NAME in path_parts or file_path_str.endswith(
                     (".zip", ".bin", ".elf")
                 ):
                     result.file_type = "firmware"
-                elif "repository" in file_path_str or "repo-dls" in file_path_str:
-                    result.file_type = "repository"
                 else:
                     result.file_type = "unknown"
 
@@ -943,9 +958,9 @@ class DownloadOrchestrator:
 
     def _cleanup_deleted_prereleases(self) -> None:
         """
-        Remove local prerelease directories that are marked as deleted in the repository commit history.
+        Remove local firmware prerelease directories that are recorded as deleted in the prerelease commit history.
 
-        Queries the prerelease commit history for the expected firmware prerelease version and, for any entries with status "deleted", removes the corresponding directory under `<firmware_download_dir>/firmware/prerelease` when the directory name is validated as safe. Uses the configured cache and optional GitHub token when fetching commit history. Logs warnings for unsafe names or failed removals; does not raise for network or filesystem errors.
+        Queries the prerelease commit history for the expected firmware prerelease version and, for each entry with status "deleted", validates the directory name and removes the corresponding directory under the firmware prereleases folder if it exists. Uses the configured cache and optional GitHub token when fetching history. Logs warnings for unsafe directory names or failed removals; network and filesystem errors are logged and not raised.
         """
         try:
             # This logic is specific to firmware prereleases from meshtastic.github.io
@@ -974,7 +989,9 @@ class DownloadOrchestrator:
                 return
 
             prerelease_base_dir = (
-                Path(self.firmware_downloader.download_dir) / "firmware" / "prerelease"
+                Path(self.firmware_downloader.download_dir)
+                / FIRMWARE_DIR_NAME
+                / FIRMWARE_PRERELEASES_DIR_NAME
             )
             if not prerelease_base_dir.exists():
                 return
@@ -1040,8 +1057,8 @@ class DownloadOrchestrator:
                         force_refresh=False,
                     )
                 )
-                if active_dir and active_dir.startswith("firmware-"):
-                    firmware_prerelease = active_dir[len("firmware-") :]
+                if active_dir and active_dir.startswith(FIRMWARE_DIR_PREFIX):
+                    firmware_prerelease = active_dir[len(FIRMWARE_DIR_PREFIX) :]
                 else:
                     firmware_prerelease = active_dir
 

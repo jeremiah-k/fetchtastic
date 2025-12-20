@@ -10,6 +10,7 @@ from unittest.mock import ANY, Mock, patch
 import pytest
 import requests
 
+from fetchtastic.constants import APKS_DIR_NAME
 from fetchtastic.download.android import MeshtasticAndroidAppDownloader
 from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.interfaces import Asset, Release
@@ -91,7 +92,7 @@ class TestMeshtasticAndroidAppDownloader:
         path = downloader.get_target_path_for_release("v1.0.0", "meshtastic.apk")
 
         expected = os.path.join(
-            str(tmp_path / "downloads"), "android", "v1.0.0", "meshtastic.apk"
+            str(tmp_path / "downloads"), APKS_DIR_NAME, "v1.0.0", "meshtastic.apk"
         )
         assert path == expected
 
@@ -401,7 +402,11 @@ class TestMeshtasticAndroidAppDownloader:
     def test_get_prerelease_tracking_file(self, downloader):
         """Test prerelease tracking file path generation."""
         path = downloader.get_prerelease_tracking_file()
-        assert "latest_android_prerelease.json" in path
+
+        expected_path = downloader.cache_manager.get_cache_file_path(
+            downloader.latest_prerelease_file
+        )
+        assert path == expected_path
 
     def test_update_prerelease_tracking(self, downloader):
         downloader.cache_manager.atomic_write_json = Mock(return_value=True)
