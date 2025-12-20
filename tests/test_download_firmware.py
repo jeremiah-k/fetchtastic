@@ -381,8 +381,10 @@ class TestFirmwareReleaseDownloader:
     def test_get_prerelease_tracking_file(self, downloader):
         """Test prerelease tracking file path generation."""
         path = downloader.get_prerelease_tracking_file()
-
-        assert "latest_firmware_prerelease.json" in path
+        expected_path = downloader.cache_manager.get_cache_file_path(
+            downloader.latest_prerelease_file
+        )
+        assert path == expected_path
 
     def test_should_download_prerelease_enabled(self, downloader):
         """Test prerelease download decision with prereleases enabled."""

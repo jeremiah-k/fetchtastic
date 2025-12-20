@@ -325,7 +325,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
         except (requests.RequestException, OSError, ValueError, TypeError) as exc:
             logger.exception("Error downloading APK %s: %s", asset.name, exc)
-            safe_path = target_path or os.path.join(self.download_dir, "android")
+            safe_path = target_path or os.path.join(self.download_dir, APKS_DIR_NAME)
             if isinstance(exc, requests.RequestException):
                 error_type = "network_error"
                 is_retryable = True
@@ -358,7 +358,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             bool: True if all selected assets are present with matching sizes, False otherwise.
         """
         safe_tag = self._sanitize_required(release.tag_name, "release tag")
-        version_dir = os.path.join(self.download_dir, "android", safe_tag)
+        version_dir = os.path.join(self.download_dir, APKS_DIR_NAME, safe_tag)
         if not os.path.isdir(version_dir):
             return False
 
@@ -607,9 +607,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         Returns:
             str: Path to the prerelease tracking JSON file located in the downloader's download directory.
         """
-        return os.path.join(
-            self.download_dir, APKS_DIR_NAME, self.latest_prerelease_file
-        )
+        return self.cache_manager.get_cache_file_path(self.latest_prerelease_file)
 
     def update_prerelease_tracking(self, prerelease_tag: str) -> bool:
         """

@@ -224,10 +224,8 @@ class TestMeshtasticAndroidAppDownloader:
         """Test getting Android prerelease tracking file path."""
         tracking_file = android_downloader.get_prerelease_tracking_file()
 
-        expected_path = os.path.join(
-            android_downloader.download_dir,
-            APKS_DIR_NAME,
-            android_downloader.latest_prerelease_file,
+        expected_path = android_downloader.cache_manager.get_cache_file_path(
+            android_downloader.latest_prerelease_file
         )
         assert tracking_file == expected_path
 

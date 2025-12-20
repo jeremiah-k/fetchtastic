@@ -1211,7 +1211,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
         Returns:
             str: Path to the prerelease tracking file
         """
-        return os.path.join(self.download_dir, self.latest_prerelease_file)
+        return self.cache_manager.get_cache_file_path(self.latest_prerelease_file)
 
     def update_prerelease_tracking(self, prerelease_tag: str) -> bool:
         """
@@ -1372,7 +1372,11 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 return False
 
             # Path to prerelease directory
-            prerelease_dir = self._get_prerelease_base_dir()
+            prerelease_dir = os.path.join(
+                self.download_dir, FIRMWARE_DIR_NAME, FIRMWARE_PRERELEASES_DIR_NAME
+            )
+            if not os.path.exists(prerelease_dir):
+                return False
 
             cleaned_up = False
 
