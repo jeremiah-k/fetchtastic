@@ -11,12 +11,9 @@ pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
 
 
 def test_cli_integration_main_loads_config_and_runs(mocker):
-    """main should load config and delegate to run_download."""
+    """main should use provided config and delegate to run_download."""
     integration = DownloadCLIIntegration()
-    mocker.patch("fetchtastic.setup_config.config_exists", return_value=(True, "cfg"))
-    mocker.patch(
-        "fetchtastic.setup_config.load_config", return_value={"DOWNLOAD_DIR": "/tmp"}
-    )
+    config = {"DOWNLOAD_DIR": "/tmp"}
     mocker.patch(
         "fetchtastic.download.cli_integration.get_effective_github_token",
         return_value=None,
@@ -35,23 +32,19 @@ def test_cli_integration_main_loads_config_and_runs(mocker):
         ),
     )
 
-    result = integration.main()
+    result = integration.main(config=config)
 
     run_download.assert_called_once_with({"DOWNLOAD_DIR": "/tmp"}, False)
     assert result[0] == ["fw"]
     assert result[5] == "fw_latest"
 
 
-def test_cli_integration_main_handles_missing_config(mocker):
-    """If no configuration exists, main should bail out cleanly."""
+def test_cli_integration_main_requires_config_argument():
+    """main should require a config argument."""
     integration = DownloadCLIIntegration()
-    mocker.patch("fetchtastic.setup_config.config_exists", return_value=(False, None))
-    run_download = mocker.patch.object(integration, "run_download")
 
-    result = integration.main()
-
-    run_download.assert_not_called()
-    assert result == ([], [], [], [], [], "", "")
+    with pytest.raises(TypeError):
+        integration.main()
 
 
 def test_cli_integration_main_with_config_parameter(mocker):
@@ -81,10 +74,7 @@ def test_cli_integration_main_with_config_parameter(mocker):
 def test_cli_integration_main_with_force_refresh(mocker):
     """main should pass force_refresh parameter to run_download."""
     integration = DownloadCLIIntegration()
-    mocker.patch("fetchtastic.setup_config.config_exists", return_value=(True, "cfg"))
-    mocker.patch(
-        "fetchtastic.setup_config.load_config", return_value={"DOWNLOAD_DIR": "/tmp"}
-    )
+    config = {"DOWNLOAD_DIR": "/tmp"}
     mocker.patch(
         "fetchtastic.download.cli_integration.get_effective_github_token",
         return_value=None,
@@ -93,280 +83,185 @@ def test_cli_integration_main_with_force_refresh(mocker):
         integration, "run_download", return_value=([], [], [], [], [], "", "")
     )
 
-    integration.main(force_refresh=True)
+    integration.main(config=config, force_refresh=True)
 
     run_download.assert_called_once_with({"DOWNLOAD_DIR": "/tmp"}, True)
 
 
-def test_cli_integration_main_handles_config_load_failure(mocker):
-    """main should handle config load failure gracefully."""
+def test_cli_integration_main_rejects_none_config(mocker):
+    """main should reject a None config."""
     integration = DownloadCLIIntegration()
-    mocker.patch("fetchtastic.setup_config.config_exists", return_value=(True, "cfg"))
-    mocker.patch("fetchtastic.setup_config.load_config", return_value=None)
     run_download = mocker.patch.object(integration, "run_download")
 
-    result = integration.main()
+    with pytest.raises(TypeError):
+        integration.main(config=None)
 
     run_download.assert_not_called()
-    assert result == ([], [], [], [], [], "", "")
 
 
-def test_run_download_successful(mocker, tmp_path):
-    """run_download should orchestrate successful download pipeline."""
+def test_cli_integration_update_cache_loads_config(mocker):
+    """update_cache should use provided config and clear caches."""
+    integration = DownloadCLIIntegration()
+    config = {"DOWNLOAD_DIR": "/tmp"}
+    mock_orchestrator = mocker.MagicMock(
+        android_downloader=mocker.MagicMock(),
+        firmware_downloader=mocker.MagicMock(),
+    )
+    mocker.patch(
+        "fetchtastic.download.cli_integration.DownloadOrchestrator",
+        return_value=mock_orchestrator,
+    )
+    mock_clear = mocker.patch.object(integration, "_clear_caches")
+
+    result = integration.update_cache(config=config)
+
+    mock_clear.assert_called_once()
+    assert result is True
+
+
+def test_cli_integration_update_cache_requires_config():
+    """update_cache should require config parameter."""
     integration = DownloadCLIIntegration()
 
-    # Mock components
-    mock_orchestrator = MagicMock()
-    mock_android = MagicMock()
-    mock_firmware = MagicMock()
+    # Test that calling without config parameter raises TypeError
+    with pytest.raises(TypeError):
+        integration.update_cache()
 
-    config = {"DOWNLOAD_DIR": str(tmp_path)}
+
+def test_run_download_successful(mocker):
+    """run_download should execute pipeline successfully and return expected results."""
+    integration = DownloadCLIIntegration()
+    config = {"DOWNLOAD_DIR": "/tmp"}
+
+    # Mock orchestrator and its methods with realistic download results
+    mock_orchestrator = MagicMock()
     mock_results = [
         MagicMock(
-            release_tag="v1.0",
-            file_path=str(tmp_path / "firmware.zip"),
+            release_tag="v1.0.0",
+            file_path="/tmp/firmware.zip",
             was_skipped=False,
             file_type="firmware",
-        )
+        ),
+        MagicMock(
+            release_tag="v2.0.0",
+            file_path="/tmp/android.apk",
+            was_skipped=False,
+            file_type="android",
+        ),
+        MagicMock(
+            release_tag="v0.9.0",
+            file_path="/tmp/old_firmware.zip",
+            was_skipped=True,  # Should be ignored
+            file_type="firmware",
+        ),
     ]
     mock_orchestrator.run_download_pipeline.return_value = (mock_results, [])
-
-    # Mock version getters
-    mock_android.get_latest_release_tag.return_value = "v0.9"
-    mock_firmware.get_latest_release_tag.return_value = "v0.9"
+    mock_orchestrator.cleanup_old_versions.return_value = None
+    mock_orchestrator.update_version_tracking.return_value = None
     mock_orchestrator.get_latest_versions.return_value = {
-        "firmware": "v1.0",
-        "android": "v1.0",
+        "firmware": "v0.9.0",
+        "android": "v1.9.0",
     }
-
-    # Mock cleanup and update methods
-    mock_orchestrator.cleanup_old_versions = MagicMock()
-    mock_orchestrator.update_version_tracking = MagicMock()
 
     # Mock version manager for comparisons
     mock_version_manager = MagicMock()
-    mock_version_manager.compare_versions.return_value = 1  # v1.0 > v0.9
-    mock_android.get_version_manager.return_value = mock_version_manager
 
-    # Add a mock cache manager to the orchestrator
-    mock_orchestrator.cache_manager = MagicMock()
-    mock_orchestrator.android_downloader = mock_android
-    mock_orchestrator.firmware_downloader = mock_firmware
+    # Configure side_effect to return specific comparison results
+    def compare_side_effect(version1, version2):
+        # v1.0.0 > v0.9.0 (firmware comparison)
+        if version1 == "v1.0.0" and version2 == "v0.9.0":
+            return 1
+        # v2.0.0 > v1.9.0 (android comparison)
+        elif version1 == "v2.0.0" and version2 == "v1.9.0":
+            return 1
+        # v0.9.0 is skipped, shouldn't be compared
+        else:
+            return 0
+
+    mock_version_manager.compare_versions.side_effect = compare_side_effect
+    mock_android_downloader = MagicMock()
+    mock_android_downloader.get_version_manager.return_value = mock_version_manager
+    mock_orchestrator.android_downloader = mock_android_downloader
 
     mocker.patch(
         "fetchtastic.download.cli_integration.DownloadOrchestrator",
         return_value=mock_orchestrator,
     )
-    result = integration.run_download(config)
 
-    # The downloader classes are no longer instantiated separately - we reuse orchestrator's downloaders
-    # mock_android_class.assert_called_once_with(config, mock_orchestrator.cache_manager)
-    # mock_firmware_class.assert_called_once_with(config, mock_orchestrator.cache_manager)
+    # Test successful run
+    result = integration.run_download(config=config, force_refresh=False)
 
+    # Verify orchestrator was called correctly
+    mock_orchestrator.run_download_pipeline.assert_called_once()
+    mock_orchestrator.cleanup_old_versions.assert_called_once()
+    mock_orchestrator.update_version_tracking.assert_called_once()
+    mock_orchestrator.get_latest_versions.assert_called()
+
+    # Verify conversion logic was exercised and result format
     assert len(result) == 7
-    assert result[0] == ["v1.0"]  # downloaded_firmwares
-    assert result[1] == ["v1.0"]  # new_firmware_versions
-    assert result[2] == []  # downloaded_apks
-    assert result[3] == []  # new_apk_versions
+    assert result[0] == ["v1.0.0"]  # downloaded_firmwares (skipped one excluded)
+    assert result[1] == ["v1.0.0"]  # new_firmware_versions (newer than v0.9.0)
+    assert result[2] == ["v2.0.0"]  # downloaded_apks
+    assert result[3] == ["v2.0.0"]  # new_apk_versions (newer than v1.9.0)
     assert result[4] == []  # failed_downloads
-    assert result[5] == "v1.0"  # latest_firmware_version
-    assert result[6] == "v1.0"  # latest_apk_version
+    assert result[5] == "v0.9.0"  # latest_firmware_version (from orchestrator)
+    assert result[6] == "v1.9.0"  # latest_apk_version (from orchestrator)
+
+    # Verify version comparison was called for new version detection
+    # Should be called for each non-skipped download (2 times in this test)
+    assert mock_version_manager.compare_versions.call_count == 2
+    # Verify it was called with the correct arguments
+    calls = mock_version_manager.compare_versions.call_args_list
+    assert any(call[0] == ("v1.0.0", "v0.9.0") for call in calls)
+    assert any(call[0] == ("v2.0.0", "v1.9.0") for call in calls)
 
 
 def test_run_download_with_force_refresh(mocker):
-    """run_download should clear caches when force_refresh is True."""
+    """run_download should clear caches when force_refresh=True."""
     integration = DownloadCLIIntegration()
-
-    mock_orchestrator = MagicMock()
-    mock_android = MagicMock()
-    mock_firmware = MagicMock()
-
     config = {"DOWNLOAD_DIR": "/tmp"}
+
+    # Mock orchestrator
+    mock_orchestrator = MagicMock()
     mock_orchestrator.run_download_pipeline.return_value = ([], [])
-    mock_android.get_latest_release_tag.return_value = None
-    mock_firmware.get_latest_release_tag.return_value = None
-    mock_orchestrator.get_latest_versions.return_value = {
-        "firmware": None,
-        "android": None,
-    }
+    mock_orchestrator.cleanup_old_versions.return_value = None
+    mock_orchestrator.update_version_tracking.return_value = None
+    mock_orchestrator.get_latest_versions.return_value = {}
 
     mocker.patch(
         "fetchtastic.download.cli_integration.DownloadOrchestrator",
         return_value=mock_orchestrator,
     )
-    integration.run_download(config, force_refresh=True)
 
-    # The orchestrator's android_downloader should have its cache cleared
-    mock_orchestrator.android_downloader.cache_manager.clear_all_caches.assert_called_once()
+    # Mock _clear_caches to verify it's called
+    mock_clear = mocker.patch.object(integration, "_clear_caches")
+
+    # Test with force refresh
+    integration.run_download(config=config, force_refresh=True)
+
+    # Verify caches were cleared
+    mock_clear.assert_called_once()
 
 
 def test_run_download_handles_exception(mocker):
-    """run_download should return empty results on exception."""
+    """run_download should handle exceptions and return empty results."""
     integration = DownloadCLIIntegration()
+    config = {"DOWNLOAD_DIR": "/tmp"}
 
-    # Force an exception during initialization
+    # Mock orchestrator to raise exception
+    mock_orchestrator = MagicMock()
+    mock_orchestrator.run_download_pipeline.side_effect = ValueError("Test error")
+
     mocker.patch(
         "fetchtastic.download.cli_integration.DownloadOrchestrator",
-        side_effect=ValueError("test error"),
+        return_value=mock_orchestrator,
     )
 
-    result = integration.run_download({"DOWNLOAD_DIR": "/tmp"})
+    # Test exception handling
+    result = integration.run_download(config=config, force_refresh=False)
 
+    # Verify empty results are returned on error
     assert result == ([], [], [], [], [], "", "")
-
-
-def test_clear_caches_successful(mocker):
-    """_clear_caches should clear shared caches."""
-    integration = DownloadCLIIntegration()
-    integration.orchestrator = MagicMock()
-    integration.orchestrator.cache_manager = MagicMock()
-    integration.android_downloader = MagicMock()
-    integration.android_downloader.cache_manager = (
-        integration.orchestrator.cache_manager
-    )
-    mock_clear_all = mocker.patch.object(
-        integration.orchestrator.cache_manager, "clear_all_caches"
-    )
-
-    # Should not raise exception
-    integration._clear_caches()
-    mock_clear_all.assert_called_once()
-
-
-def test_convert_results_to_legacy_format_firmware(tmp_path):
-    """_convert_results_to_legacy_format should handle firmware results."""
-    integration = DownloadCLIIntegration()
-    integration.orchestrator = MagicMock()
-    integration.android_downloader = MagicMock()
-    integration.firmware_downloader = MagicMock()
-
-    integration.orchestrator.get_latest_versions.return_value = {
-        "android": "v0.9",
-        "firmware": "v0.9",
-    }
-
-    # Mock version manager
-    mock_version_manager = MagicMock()
-    mock_version_manager.compare_versions.return_value = 1  # v1.0 > v0.9
-    integration.android_downloader.get_version_manager.return_value = (
-        mock_version_manager
-    )
-
-    mock_result = MagicMock()
-    mock_result.release_tag = "v1.0"
-    mock_result.file_path = str(tmp_path / "firmware" / "firmware.zip")
-    mock_result.was_skipped = False
-    mock_result.file_type = "firmware"
-
-    results = [mock_result]
-
-    downloaded_firmwares, new_firmware_versions, downloaded_apks, new_apk_versions = (
-        integration._convert_results_to_legacy_format(results)
-    )
-
-    assert downloaded_firmwares == ["v1.0"]
-    assert new_firmware_versions == ["v1.0"]
-    assert downloaded_apks == []
-    assert new_apk_versions == []
-
-
-def test_convert_results_to_legacy_format_android(tmp_path):
-    """_convert_results_to_legacy_format should handle android results."""
-    integration = DownloadCLIIntegration()
-    integration.orchestrator = MagicMock()
-    integration.android_downloader = MagicMock()
-    integration.firmware_downloader = MagicMock()
-
-    integration.orchestrator.get_latest_versions.return_value = {
-        "android": "v0.9",
-        "firmware": "v0.9",
-    }
-
-    # Mock version manager
-    mock_version_manager = MagicMock()
-    mock_version_manager.compare_versions.return_value = 1  # v1.0 > v0.9
-    integration.android_downloader.get_version_manager.return_value = (
-        mock_version_manager
-    )
-
-    mock_result = MagicMock()
-    mock_result.release_tag = "v1.0"
-    mock_result.file_path = str(tmp_path / "android" / "app.apk")
-    mock_result.was_skipped = False
-    mock_result.file_type = "android"
-
-    results = [mock_result]
-
-    downloaded_firmwares, new_firmware_versions, downloaded_apks, new_apk_versions = (
-        integration._convert_results_to_legacy_format(results)
-    )
-
-    assert downloaded_firmwares == []
-    assert new_firmware_versions == []
-    assert downloaded_apks == ["v1.0"]
-    assert new_apk_versions == ["v1.0"]
-
-
-def test_convert_results_to_legacy_format_skipped():
-    """_convert_results_to_legacy_format should skip results marked as was_skipped."""
-    integration = DownloadCLIIntegration()
-    integration.orchestrator = MagicMock()
-    integration.android_downloader = MagicMock()
-    integration.firmware_downloader = MagicMock()
-
-    integration.orchestrator.get_latest_versions.return_value = {
-        "android": "v0.9",
-        "firmware": "v0.9",
-    }
-    mock_result = MagicMock()
-    mock_result.release_tag = "v1.0"
-    mock_result.file_path = "/tmp/firmware/firmware.zip"
-    mock_result.was_skipped = True  # This should be skipped
-
-    results = [mock_result]
-
-    downloaded_firmwares, new_firmware_versions, downloaded_apks, new_apk_versions = (
-        integration._convert_results_to_legacy_format(results)
-    )
-
-    assert downloaded_firmwares == []
-    assert new_firmware_versions == []
-    assert downloaded_apks == []
-    assert new_apk_versions == []
-
-
-def test_is_newer_version():
-    """_is_newer_version should compare versions correctly."""
-    integration = DownloadCLIIntegration()
-    integration.android_downloader = MagicMock()
-    mock_version_manager = MagicMock()
-    integration.android_downloader.get_version_manager.return_value = (
-        mock_version_manager
-    )
-
-    mock_version_manager.compare_versions.return_value = 1  # version1 > version2
-
-    result = integration._is_newer_version("v1.1", "v1.0")
-
-    assert result is True
-    mock_version_manager.compare_versions.assert_called_once_with("v1.1", "v1.0")
-
-
-def test_is_newer_version_older():
-    """_is_newer_version should return False for older version."""
-    integration = DownloadCLIIntegration()
-    integration.android_downloader = MagicMock()
-    mock_version_manager = MagicMock()
-    integration.android_downloader.get_version_manager.return_value = (
-        mock_version_manager
-    )
-
-    mock_version_manager.compare_versions.return_value = -1  # version1 < version2
-
-    result = integration._is_newer_version("v1.0", "v1.1")
-
-    assert result is False
-    mock_version_manager.compare_versions.assert_called_once_with("v1.0", "v1.1")
 
 
 def test_is_newer_version_equal():

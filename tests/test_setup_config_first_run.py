@@ -48,6 +48,7 @@ def test_run_setup_triggers_first_run_download_on_non_windows(tmp_path, mocker):
 
     mock_integration.assert_called_once()
     integration_instance.main.assert_called_once()
+    assert isinstance(integration_instance.main.call_args.kwargs.get("config"), dict)
 
 
 @pytest.mark.unit

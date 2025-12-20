@@ -11,15 +11,12 @@ import fetchtastic.cli as cli
 @pytest.fixture
 def mock_cli_dependencies(mocker, tmp_path):
     """
-    Fixture that patches common Fetchtastic CLI external dependencies and returns a mocked DownloadCLIIntegration for tests.
-    
-    The fixture stubs network/HTTP calls, config loading, logging utilities, API-tracking helpers, and time to avoid real I/O and side effects during tests.
-    
-    Parameters:
-        mocker: The pytest-mock fixture used to apply patches.
-    
+    Pytest fixture that patches Fetchtastic CLI external dependencies (network, config, logging, time, and API-tracking) and supplies a mocked DownloadCLIIntegration for tests.
+
+    The mock's `main()` returns empty result tuples, `update_cache()` returns `True`, and `get_latest_versions()` returns empty version strings.
+
     Returns:
-        A MagicMock acting as the DownloadCLIIntegration instance whose `main()` method returns empty/default results and whose `get_latest_versions()` returns empty version strings.
+        MagicMock: Mocked DownloadCLIIntegration instance configured for tests.
     """
     # Mock SSL/urllib3 to prevent SystemTimeWarning
     mocker.patch("urllib3.connectionpool.HTTPSConnectionPool")
@@ -47,6 +44,7 @@ def mock_cli_dependencies(mocker, tmp_path):
     # Create a mock integration instance that prevents real downloads
     mock_integration_instance = mocker.MagicMock()
     mock_integration_instance.main.return_value = ([], [], [], [], [], "", "")
+    mock_integration_instance.update_cache.return_value = True
     mock_integration_instance.get_latest_versions.return_value = {
         "firmware": "",
         "android": "",
@@ -87,7 +85,11 @@ def test_cli_download_command(mocker, mock_cli_dependencies):
     # 2. Test when config does not exist
     mock_cli_dependencies.reset_mock()
     mocker.patch("fetchtastic.setup_config.config_exists", return_value=(False, None))
-    cli.main()
+    mocker.patch("sys.stdin.isatty", return_value=True)  # Mock interactive session
+    with pytest.raises(SystemExit):
+        cli.main()
+
+    mock_cli_dependencies.main.assert_not_called()
     mock_setup_run.assert_called_once()
     mock_cli_dependencies.main.assert_not_called()
 
@@ -1413,9 +1415,9 @@ def test_cli_download_without_log_level_config(mocker):
 
 def test_cli_download_with_empty_config(mocker):
     """
-    Ensure the CLI 'download' command proceeds to the downloader when a config path exists but load_config returns None.
+    Ensure the CLI 'download' command exits when a config path exists but load_config returns None.
 
-    Verifies that `set_log_level` is not called, the download integration's `main()` is invoked exactly once, and `run_setup` is not invoked.
+    Verifies that `set_log_level` is not called, the download integration's `main()` is not invoked, and `run_setup` is not invoked.
     """
     mocker.patch("sys.argv", ["fetchtastic", "download"])
     mock_set_log_level = mocker.patch("fetchtastic.log_utils.set_log_level")
@@ -1452,11 +1454,12 @@ def test_cli_download_with_empty_config(mocker):
     # Mock load_config to return None
     mocker.patch("fetchtastic.setup_config.load_config", return_value=None)
 
-    cli.main()
+    with pytest.raises(SystemExit):
+        cli.main()
 
     # Verify that set_log_level was NOT called
     mock_set_log_level.assert_not_called()
-    mock_integration.main.assert_called_once()
+    mock_integration.main.assert_not_called()
     mock_setup_run.assert_not_called()
 
 
@@ -1464,12 +1467,12 @@ def test_cli_download_with_empty_config(mocker):
 @pytest.mark.usefixtures("mock_cli_dependencies")
 def test_cli_download_parametrized_log_levels(mocker, log_level):
     """
-    Verify that the 'download' command applies the configured LOG_LEVEL to the logging subsystem.
-    
-    Patches the environment so the CLI loads a config containing LOG_LEVEL and asserts that fetchtastic.log_utils.set_log_level is invoked with the provided value.
-    
+    Ensure the download command uses the LOG_LEVEL from configuration to set the logging level.
+
+    Ensures that when a loaded configuration contains `LOG_LEVEL`, the CLI passes that value to `fetchtastic.log_utils.set_log_level`.
+
     Parameters:
-        log_level: The LOG_LEVEL value from the loaded configuration to validate is passed to set_log_level.
+        log_level: The configured log level value that should be forwarded to `set_log_level`.
     """
     mocker.patch("sys.argv", ["fetchtastic", "download"])
 
@@ -1515,7 +1518,7 @@ def test_cli_download_with_invalid_log_levels(mocker, invalid_log_level):
     # Override the config from mock_cli_dependencies to set specific invalid log level
     mock_config = {
         "LOG_LEVEL": invalid_log_level,
-        "DOWNLOAD_DIR": "/tmp/test",
+        "DOWNLOAD_DIR": "/tmp/test",  # nosec B108
     }  # nosec B108
     mocker.patch("fetchtastic.setup_config.load_config", return_value=mock_config)
 
@@ -1530,7 +1533,7 @@ def test_cli_download_with_invalid_log_levels(mocker, invalid_log_level):
 def test_cli_download_with_empty_log_level(mocker):
     """
     Verify that an empty LOG_LEVEL in the configuration does not trigger a log level change while the downloader still runs and setup is not invoked.
-    
+
     Patches the CLI environment so load_config returns a config with "LOG_LEVEL" set to an empty string and asserts that:
     - fetchtastic.log_utils.set_log_level is not called,
     - the downloader is invoked once,
@@ -1587,8 +1590,8 @@ def test_cli_download_with_case_insensitive_log_levels(mocker, mock_cli_dependen
 @pytest.mark.user_interface
 @pytest.mark.unit
 def test_cli_download_force_flag(mocker, mock_cli_dependencies):
-    """Test 'download' command with --force flag."""
-    mocker.patch("sys.argv", ["fetchtastic", "download", "--force"])
+    """Test 'download' command with --force-download flag."""
+    mocker.patch("sys.argv", ["fetchtastic", "download", "--force-download"])
     mocker.patch(
         "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
     )
@@ -1600,6 +1603,40 @@ def test_cli_download_force_flag(mocker, mock_cli_dependencies):
     # Verify main was called with force_refresh=True
     _args, kwargs = mock_cli_dependencies.main.call_args
     assert kwargs.get("force_refresh") is True
+
+
+@pytest.mark.user_interface
+@pytest.mark.unit
+def test_cli_download_update_cache_flag(mocker, mock_cli_dependencies):
+    """Test 'download' command with --update-cache flag."""
+    mocker.patch("sys.argv", ["fetchtastic", "download", "--update-cache"])
+    mocker.patch(
+        "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
+    )
+    mocker.patch("fetchtastic.setup_config.prompt_for_migration")
+    mocker.patch("fetchtastic.setup_config.migrate_config")
+
+    cli.main()
+
+    mock_cli_dependencies.update_cache.assert_called_once()
+    mock_cli_dependencies.main.assert_not_called()
+
+
+@pytest.mark.user_interface
+@pytest.mark.unit
+def test_cli_cache_update_command(mocker, mock_cli_dependencies):
+    """Test 'cache update' command dispatch."""
+    mocker.patch("sys.argv", ["fetchtastic", "cache", "update"])
+    mocker.patch(
+        "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
+    )
+    mocker.patch("fetchtastic.setup_config.prompt_for_migration")
+    mocker.patch("fetchtastic.setup_config.migrate_config")
+
+    cli.main()
+
+    mock_cli_dependencies.update_cache.assert_called_once()
+    mock_cli_dependencies.main.assert_not_called()
 
 
 @pytest.mark.user_interface

@@ -265,7 +265,7 @@ class TestFirmwareReleaseDownloader:
     def test_orchestrator_firmware_download_config(self, tmp_path):
         """
         Verify DownloadOrchestrator initializes with expected components and configuration.
-        
+
         Asserts that the orchestrator stores the provided config, has non-null firmware_downloader and cache_manager, and starts with empty download_results and failed_downloads lists.
         """
         from fetchtastic.download.orchestrator import DownloadOrchestrator

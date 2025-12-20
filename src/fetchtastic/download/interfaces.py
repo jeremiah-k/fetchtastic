@@ -120,7 +120,7 @@ class DownloadTask(ABC):
     def validate(self) -> bool:
         """
         Determine whether the download task is ready to be executed.
-        
+
         Returns:
             true if the task is ready to execute, false otherwise.
         """
@@ -129,7 +129,7 @@ class DownloadTask(ABC):
     def execute(self) -> DownloadResult:
         """
         Perform the download operation and report its outcome.
-        
+
         Returns:
             DownloadResult: Object containing the success flag, optional release tag and target file path, extracted file paths when applicable, error message and details, HTTP status code if available, retry count and timestamp, retryability flag, skip indicator, and other related metadata.
         """
@@ -138,7 +138,7 @@ class DownloadTask(ABC):
     def get_target_path(self) -> Pathish:
         """
         Return the filesystem path where the download should be saved.
-        
+
         Returns:
             The intended filesystem path for the downloaded artifact.
         """
@@ -147,7 +147,7 @@ class DownloadTask(ABC):
     def cleanup(self) -> None:
         """
         Release temporary files and other resources used by the task.
-        
+
         Intended to be invoked after a download operation to ensure resources are released even if the download failed.
         """
 
@@ -176,10 +176,10 @@ class DownloadSource(ABC):
     def get_assets(self, release: Release) -> List[Asset]:
         """
         Retrieve downloadable assets for the given release.
-        
+
         Parameters:
             release (Release): Release whose assets should be returned.
-        
+
         Returns:
             List[Asset]: Assets belonging to the provided release.
         """
@@ -188,10 +188,10 @@ class DownloadSource(ABC):
     def get_download_url(self, asset: Asset) -> str:
         """
         Return the direct download URL for the given asset.
-        
+
         Parameters:
             asset (Asset): The asset whose direct download URL is requested.
-        
+
         Returns:
             str: Direct download URL for the asset.
         """
@@ -209,7 +209,7 @@ class Downloader(ABC):
     def download(self, url: str, target_path: Pathish) -> bool:
         """
         Download the resource at url and save it to target_path.
-        
+
         Returns:
             True if the resource was successfully downloaded and written to target_path, False otherwise.
         """
@@ -218,13 +218,13 @@ class Downloader(ABC):
     def verify(self, file_path: Pathish, expected_hash: Optional[str] = None) -> bool:
         """
         Validate that the file at file_path matches an expected integrity check.
-        
+
         If an expected_hash is provided, the file's digest is compared against that hex-encoded value; otherwise the downloader's default verification is applied.
-        
+
         Parameters:
             file_path (Pathish): Path to the file to verify.
             expected_hash (Optional[str]): Optional hex-encoded digest to check against.
-        
+
         Returns:
             `true` if the file's contents match the expected hash or pass verification, `false` otherwise.
         """
@@ -254,11 +254,11 @@ class Downloader(ABC):
     ) -> bool:
         """
         Determine whether include and exclude extraction patterns are well-formed and safe for archive extraction.
-        
+
         Parameters:
             patterns (List[str]): File-glob patterns to include when extracting archive contents.
             exclude_patterns (List[str]): File-glob patterns to exclude from extraction.
-        
+
         Returns:
             `true` if all patterns are well-formed and considered safe for extraction, `false` otherwise.
         """
@@ -273,13 +273,13 @@ class Downloader(ABC):
     ) -> bool:
         """
         Decides whether archive extraction is necessary by checking for files matching the provided include and exclude patterns in the extraction directory.
-        
+
         Parameters:
             file_path (str): Path to the archive file intended for extraction.
             extract_dir (str): Directory where extracted files are expected to be located.
             patterns (List[str]): Glob or filename patterns that identify files required from the archive.
             exclude_patterns (List[str]): Glob or filename patterns to ignore when checking for required files.
-        
+
         Returns:
             `true` if extraction should be performed because required files are missing or incomplete, `false` otherwise.
         """
@@ -297,7 +297,7 @@ class Downloader(ABC):
     def get_version_manager(self) -> "VersionManager":
         """
         Get the VersionManager associated with this downloader.
-        
+
         Returns:
             VersionManager: The associated VersionManager instance.
         """
@@ -306,7 +306,7 @@ class Downloader(ABC):
     def get_cache_manager(self) -> "CacheManager":
         """
         Get the cache manager associated with this downloader.
-        
+
         Returns:
             CacheManager: The cache manager used by this downloader.
         """

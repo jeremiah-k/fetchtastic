@@ -46,7 +46,7 @@ class PrereleaseHistoryManager:
     def __init__(self):
         """
         Initialize the PrereleaseHistoryManager and its version utilities.
-        
+
         Creates and stores a VersionManager instance on self.version_manager for version-related operations.
         """
         self.version_manager = VersionManager()
@@ -271,13 +271,13 @@ class PrereleaseHistoryManager:
     ) -> Tuple[List[Dict[str, Any]], set[str]]:
         """
         Construct a simplified prerelease history for a given base version by parsing commit messages.
-        
+
         Scans commits from oldest to newest and records prerelease addition and deletion events that match expected_version; entries are merged per directory and sorted by added timestamp then directory.
-        
+
         Parameters:
             expected_version (str): Base firmware version to filter prerelease events (e.g., "1.2.3").
             commits (List[Dict[str, Any]]): List of commit objects to scan for prerelease add/remove messages.
-        
+
         Returns:
             entries (List[Dict[str, Any]]): Sorted list of simplified prerelease entry dictionaries aggregated by directory.
             seen_shas (set[str]): Set of commit SHAs observed while scanning the commits.
@@ -438,10 +438,10 @@ class PrereleaseHistoryManager:
     ) -> Tuple[Optional[str], List[Dict[str, Any]]]:
         """
         Get the most recent active prerelease directory for a given base version and return the full prerelease history.
-        
+
         Parameters:
             expected_version (str): Base release version to match when selecting prerelease entries.
-        
+
         Returns:
             (latest_dir, entries): `latest_dir` is the directory string of the newest active prerelease for `expected_version`, or `None` if no active prerelease exists; `entries` is the list of prerelease history entry dictionaries.
         """
@@ -493,15 +493,15 @@ class PrereleaseHistoryManager:
     ) -> int:
         """
         Update the legacy prerelease_tracking.json with a newest prerelease identifier.
-        
+
         If newest_prerelease_dir does not start with the firmware prefix this is a no-op.
         Reads existing tracking data, resets tracked commits when the provided latest release differs from the tracked release, appends the new prerelease id if not already present, and writes the updated payload atomically.
-        
+
         Parameters:
             latest_release_tag (str): Release tag to record as the tracked release.
             newest_prerelease_dir (str): Directory name of the newest prerelease (must start with the firmware directory prefix).
             cache_manager (Any): Object providing `cache_dir`, `read_json(path)` and `atomic_write_json(path, obj)`.
-        
+
         Returns:
             int: Number of prerelease ids recorded after the update, or `0` if no update was performed or the write failed.
         """
@@ -815,13 +815,13 @@ class PrereleaseHistoryManager:
     ) -> Optional[str]:
         """
         Determine the newest prerelease directory that exists remotely in the repository.
-        
+
         Prefers directories whose hash suffixes match identifiers seen in recent prerelease commit history, and falls back to repository directory listings when scoring candidates.
-        
+
         Parameters:
             expected_version (str): Base version to match against prerelease directory names.
             cache_manager: Cache manager used to retrieve repository directories and history.
-        
+
         Returns:
             The newest prerelease directory name prefixed with `FIRMWARE_DIR_PREFIX` (e.g., `"firmware-..."`), or `None` if no matching remote prerelease is found.
         """
@@ -878,10 +878,10 @@ class PrereleaseHistoryManager:
         def _score_suffix(suffix: str) -> Tuple[int, Tuple[int, ...], str]:
             """
             Compute a sort key for a prerelease directory suffix used to rank candidate suffixes.
-            
+
             Parameters:
                 suffix (str): A prerelease directory suffix, typically containing a version and an optional hash (e.g., "1.2.3.abcd").
-            
+
             Returns:
                 tuple: A three-element tuple used for sorting:
                     - int: `1` if the suffix's trailing fragment after the last dot is present in the closure's preferred_hashes set, `0` otherwise.
@@ -903,7 +903,7 @@ class PrereleaseHistoryManager:
 def _extract_identifier_from_entry(entry: Dict[str, Any]) -> str:
     """
     Retrieve the identifier for a prerelease history entry, preferring the "identifier" key, then "directory", then "dir".
-    
+
     Returns:
         The identifier string if present, otherwise an empty string.
     """

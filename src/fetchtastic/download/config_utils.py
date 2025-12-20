@@ -13,11 +13,11 @@ from fetchtastic.log_utils import logger
 def _get_string_list_from_config(config: Dict[str, Any], key: str) -> List[str]:
     """
     Extract a list of strings from the given configuration key.
-    
+
     Parameters:
         config (Dict[str, Any]): Configuration mapping to read the value from.
         key (str): The configuration key whose value should be extracted.
-    
+
     Returns:
         List[str]: A list of strings derived from the configuration value:
             - empty list if the key is missing or the value is falsy,

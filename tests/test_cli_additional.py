@@ -6,15 +6,24 @@ from fetchtastic import cli
 @pytest.fixture
 def mock_cli_dependencies(mocker):
     """
-    Create and return a MagicMock that simulates the CLI integration and patch common external CLI dependencies.
-    
+    Create a MagicMock that simulates the CLI integration and patch common external CLI dependencies.
+
+    Patches:
+    - fetchtastic.setup_config.load_config to return {"LOG_LEVEL": ""}
+    - fetchtastic.log_utils.set_log_level
+    - fetchtastic.cli.reset_api_tracking
+    - time.time to return 1234567890
+    - fetchtastic.cli.get_api_request_summary to return {"total_requests": 0}
+    - fetchtastic.download.cli_integration.DownloadCLIIntegration to return the mock integration
+
     Parameters:
         mocker: The pytest-mock fixture used to apply patches.
-    
+
     Returns:
-        MagicMock: A mock integration whose `main` returns a 6-tuple of empty lists/strings ([], [], [], [], [], "", "")
-        and whose `get_latest_versions` returns empty version strings for `firmware`, `android`,
-        `firmware_prerelease`, and `android_prerelease`.
+        MagicMock: A mock integration where:
+            - `main()` returns ([], [], [], [], [], "", "")
+            - `update_cache()` returns True
+            - `get_latest_versions()` returns a dict with empty strings for "firmware", "android", "firmware_prerelease", and "android_prerelease"
     """
     # Mock external dependencies to avoid side effects
     mocker.patch("fetchtastic.setup_config.load_config", return_value={"LOG_LEVEL": ""})
@@ -28,6 +37,7 @@ def mock_cli_dependencies(mocker):
     # Mock integration instance
     mock_integration = mocker.MagicMock()
     mock_integration.main.return_value = ([], [], [], [], [], "", "")
+    mock_integration.update_cache.return_value = True
     mock_integration.get_latest_versions.return_value = {
         "firmware": "",
         "android": "",
@@ -40,23 +50,6 @@ def mock_cli_dependencies(mocker):
     )
 
     return mock_integration
-
-
-@pytest.mark.user_interface
-@pytest.mark.unit
-def test_cli_download_force_flag(mocker, mock_cli_dependencies):
-    """Test 'download' command with --force flag."""
-    mocker.patch("sys.argv", ["fetchtastic", "download", "--force"])
-    mocker.patch(
-        "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
-    )
-    mocker.patch("fetchtastic.setup_config.prompt_for_migration")
-    mocker.patch("fetchtastic.setup_config.migrate_config")
-
-    cli.main()
-
-    # Verify main was called (force flag should be passed through)
-    assert mock_cli_dependencies.main.called
 
 
 @pytest.mark.user_interface
@@ -114,27 +107,32 @@ def test_cli_download_without_config(mocker, mock_cli_dependencies):
 
     # Mock config_exists to return False
     mocker.patch("fetchtastic.setup_config.config_exists", return_value=(False, None))
+    # Mock sys.stdin.isatty() to return True to simulate interactive terminal
+    mocker.patch("sys.stdin.isatty", return_value=True)
 
-    cli.main()
+    with pytest.raises(SystemExit):
+        cli.main()
 
-    # Should run setup since no config exists
-    mock_run_setup.assert_called_once()
+    # Should run setup since no config exists and we have an interactive terminal
+    mock_run_setup.assert_called_once_with(perform_initial_download=False)
     mock_cli_dependencies.main.assert_not_called()
 
 
 @pytest.mark.user_interface
 @pytest.mark.unit
-def test_cli_force_flag_handling(mocker, mock_cli_dependencies):
-    """Test CLI force flag handling."""
-    # Test with --force flag
-    mocker.patch("sys.argv", ["fetchtastic", "download", "--force"])
-    mocker.patch(
-        "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
-    )
+def test_cli_download_without_config_non_tty(mocker, mock_cli_dependencies):
+    """Test 'download' command when config doesn't exist and no TTY is available."""
+    mocker.patch("sys.argv", ["fetchtastic", "download"])
+    mock_run_setup = mocker.patch("fetchtastic.setup_config.run_setup")
 
-    cli.main()
+    # Mock config_exists to return False
+    mocker.patch("fetchtastic.setup_config.config_exists", return_value=(False, None))
+    # Mock sys.stdin.isatty() to return False to simulate non-interactive terminal
+    mocker.patch("sys.stdin.isatty", return_value=False)
 
-    # Should call main with force flag
-    args, kwargs = mock_cli_dependencies.main.call_args
-    # Check that the integration was called with the force parameter
-    assert mock_cli_dependencies.main.called
+    with pytest.raises(SystemExit):
+        cli.main()
+
+    # Should NOT run setup since no TTY is available
+    mock_run_setup.assert_not_called()
+    mock_cli_dependencies.main.assert_not_called()

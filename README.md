@@ -64,13 +64,14 @@ fetchtastic repo browse
 ## 🔧 Commands
 
 ```bash
-fetchtastic setup      # Run the setup process
-fetchtastic download   # Download firmware and APKs
-fetchtastic repo browse # Browse repository files
-fetchtastic repo clean  # Clean repository downloads
-fetchtastic topic      # Show NTFY topic
-fetchtastic version    # Show version
-fetchtastic clean      # Remove all configuration
+fetchtastic setup         # Run the setup process
+fetchtastic download      # Download firmware and APKs
+fetchtastic cache update  # Clear cached API data
+fetchtastic repo browse   # Browse repository files
+fetchtastic repo clean    # Clean repository downloads
+fetchtastic topic         # Show NTFY topic
+fetchtastic version       # Show version
+fetchtastic clean         # Remove all configuration
 ```
 
 ## 📁 File Organization
