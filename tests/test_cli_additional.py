@@ -107,10 +107,32 @@ def test_cli_download_without_config(mocker, mock_cli_dependencies):
 
     # Mock config_exists to return False
     mocker.patch("fetchtastic.setup_config.config_exists", return_value=(False, None))
+    # Mock sys.stdin.isatty() to return True to simulate interactive terminal
+    mocker.patch("sys.stdin.isatty", return_value=True)
 
     with pytest.raises(SystemExit):
         cli.main()
 
-    # Should run setup since no config exists
-    mock_run_setup.assert_called_once()
+    # Should run setup since no config exists and we have an interactive terminal
+    mock_run_setup.assert_called_once_with(perform_initial_download=False)
+    mock_cli_dependencies.main.assert_not_called()
+
+
+@pytest.mark.user_interface
+@pytest.mark.unit
+def test_cli_download_without_config_non_tty(mocker, mock_cli_dependencies):
+    """Test 'download' command when config doesn't exist and no TTY is available."""
+    mocker.patch("sys.argv", ["fetchtastic", "download"])
+    mock_run_setup = mocker.patch("fetchtastic.setup_config.run_setup")
+
+    # Mock config_exists to return False
+    mocker.patch("fetchtastic.setup_config.config_exists", return_value=(False, None))
+    # Mock sys.stdin.isatty() to return False to simulate non-interactive terminal
+    mocker.patch("sys.stdin.isatty", return_value=False)
+
+    with pytest.raises(SystemExit):
+        cli.main()
+
+    # Should NOT run setup since no TTY is available
+    mock_run_setup.assert_not_called()
     mock_cli_dependencies.main.assert_not_called()
