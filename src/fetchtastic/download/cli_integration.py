@@ -317,23 +317,25 @@ class DownloadCLIIntegration:
             file_type = (result.file_type or "").lower()
             is_firmware = "firmware" in file_type
             is_android = "android" in file_type
+            was_skipped = getattr(result, "was_skipped", False)
 
-            if is_firmware:
-                if release_tag not in new_firmware_set and (
-                    not current_firmware
-                    or self._is_newer_version(release_tag, current_firmware)
-                ):
-                    new_firmware_versions.append(release_tag)
-                    new_firmware_set.add(release_tag)
-            if is_android:
-                if release_tag not in new_apk_set and (
-                    not current_android
-                    or self._is_newer_version(release_tag, current_android)
-                ):
-                    new_apk_versions.append(release_tag)
-                    new_apk_set.add(release_tag)
+            if not was_skipped:
+                if is_firmware:
+                    if release_tag not in new_firmware_set and (
+                        not current_firmware
+                        or self._is_newer_version(release_tag, current_firmware)
+                    ):
+                        new_firmware_versions.append(release_tag)
+                        new_firmware_set.add(release_tag)
+                if is_android:
+                    if release_tag not in new_apk_set and (
+                        not current_android
+                        or self._is_newer_version(release_tag, current_android)
+                    ):
+                        new_apk_versions.append(release_tag)
+                        new_apk_set.add(release_tag)
 
-            if getattr(result, "was_skipped", False):
+            if was_skipped:
                 continue
 
             if is_firmware:
@@ -363,17 +365,24 @@ class DownloadCLIIntegration:
         Returns:
             bool: `True` if `version1` represents a newer version than `version2`, `False` otherwise.
         """
-        version_manager = (
-            self.android_downloader.get_version_manager()
-            if self.android_downloader
-            else None
-        )
+        version_manager = self._get_version_manager()
         comparison = (
             version_manager.compare_versions(version1, version2)
             if version_manager
             else 0
         )
         return comparison > 0
+
+    def _get_version_manager(self) -> Optional[Any]:
+        """
+        Acquire the version manager exposed by the Android downloader.
+        """
+        if not self.android_downloader:
+            return None
+        getter = getattr(self.android_downloader, "get_version_manager", None)
+        if callable(getter):
+            return getter()
+        return getattr(self.android_downloader, "version_manager", None)
 
     def get_failed_downloads(self) -> List[Dict[str, Any]]:
         """
