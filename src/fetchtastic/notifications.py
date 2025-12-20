@@ -45,7 +45,7 @@ def send_ntfy_notification(
                 "Content-Type": "text/plain; charset=utf-8",
             }
             if title:
-                headers["Title"] = title
+                headers["Title"] = title.encode("ascii", "replace").decode("ascii")
             response: requests.Response = requests.post(
                 ntfy_url,
                 data=message.encode("utf-8"),

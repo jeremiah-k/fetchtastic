@@ -387,7 +387,7 @@ class DownloadCLIIntegration:
         )
         return comparison > 0
 
-    def _get_version_manager(self) -> Optional[Any]:
+    def _get_version_manager(self) -> Optional["VersionManager"]:
         """
         Acquire the version manager exposed by the Android downloader.
         """
