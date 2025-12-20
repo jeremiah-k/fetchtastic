@@ -407,21 +407,10 @@ def main():
 
         # Run the downloader
         reset_api_tracking()
-        if config is None:
-            log_utils.logger.critical(
-                "Internal error: Configuration not found after preparation. Please report this bug."
-            )
-            sys.exit(1)
         _handle_download_subcommand(args, integration, config)
     elif args.command == "cache":
         config, integration = _prepare_command_run()
         if integration is None:
-            sys.exit(1)
-
-        if config is None:
-            log_utils.logger.critical(
-                "Internal error: Configuration not found after preparation. Please report this bug."
-            )
             sys.exit(1)
         _perform_cache_update(integration, config)
     elif args.command == "topic":
