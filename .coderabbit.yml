@@ -5,6 +5,7 @@ reviews:
   profile: chill
   request_changes_workflow: false
   high_level_summary: true
+  high_level_summary_instructions: "Generate a detailed summary of the changes in the pull request."
   poem: true
   review_status: false
   collapse_walkthrough: false
