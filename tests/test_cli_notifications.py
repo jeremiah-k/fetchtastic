@@ -27,8 +27,17 @@ def integration(mocker):
     return integration
 
 
-def _call_summary(integration, downloaded_fw, downloaded_apks, failed=None):
+def _call_summary(
+    integration,
+    downloaded_fw,
+    downloaded_apks,
+    failed=None,
+    new_fw=None,
+    new_apks=None,
+):
     failed = failed or []
+    new_fw = new_fw or []
+    new_apks = new_apks or []
     integration.log_download_results_summary(
         elapsed_seconds=1.2,
         downloaded_firmwares=downloaded_fw,
@@ -36,6 +45,8 @@ def _call_summary(integration, downloaded_fw, downloaded_apks, failed=None):
         failed_downloads=failed,
         latest_firmware_version="v2.8.0",
         latest_apk_version="v1.8.0",
+        new_firmware_versions=new_fw,
+        new_apk_versions=new_apks,
     )
 
 
@@ -79,3 +90,19 @@ def test_summary_calls_up_to_date_even_when_download_only_setting_true(
         mock_completion.assert_not_called()
         mock_up_to_date.assert_called_once()
         assert mock_up_to_date.call_args[0][0]["NOTIFY_ON_DOWNLOAD_ONLY"] is True
+
+
+def test_summary_sends_new_releases_notification(mocker, integration):
+    with patch(
+        "fetchtastic.download.cli_integration.send_new_releases_available_notification"
+    ) as mock_new_releases, patch(
+        "fetchtastic.download.cli_integration.send_up_to_date_notification"
+    ) as mock_up_to_date:
+        _call_summary(integration, [], [], new_fw=["v3.0.0"], new_apks=[])
+        mock_new_releases.assert_called_once_with(
+            integration.config,
+            ["v3.0.0"],
+            [],
+            downloads_skipped_reason="Downloads skipped because downloaded assets already match the latest releases.",
+        )
+        mock_up_to_date.assert_not_called()

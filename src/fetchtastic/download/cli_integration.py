@@ -14,6 +14,7 @@ import requests
 from fetchtastic.log_utils import logger
 from fetchtastic.notifications import (
     send_download_completion_notification,
+    send_new_releases_available_notification,
     send_up_to_date_notification,
 )
 from fetchtastic.utils import (
@@ -175,6 +176,8 @@ class DownloadCLIIntegration:
         failed_downloads: List[Dict[str, str]],
         latest_firmware_version: str,
         latest_apk_version: str,
+        new_firmware_versions: List[str],
+        new_apk_versions: List[str],
     ) -> None:
         """
         Emit a legacy-style summary of download results to the provided logger.
@@ -229,17 +232,37 @@ class DownloadCLIIntegration:
                     f"URL={url} retryable={retryable} http_status={http_status} error={error}"
                 )
 
+        downloads_skipped_reason = "Downloads skipped because downloaded assets already match the latest releases."
+        new_versions_available = bool(new_firmware_versions or new_apk_versions)
         if downloaded_count == 0 and not failed_downloads:
-            log.info(
-                "All assets are up to date.\n%s",
-                time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-            )
+            if new_versions_available:
+                log.info(
+                    "New releases were skipped because the local copies already exist."
+                )
+            else:
+                log.info(
+                    "All assets are up to date.\n%s",
+                    time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                )
+        elif downloaded_count == 0 and failed_downloads:
+            log.info("All attempted downloads failed; check logs for details.")
 
         # Send notifications based on download results
         if self.config:
             if downloaded_count > 0:
                 send_download_completion_notification(
                     self.config, downloaded_firmwares, downloaded_apks
+                )
+            elif (
+                downloaded_count == 0
+                and not failed_downloads
+                and new_versions_available
+            ):
+                send_new_releases_available_notification(
+                    self.config,
+                    new_firmware_versions,
+                    new_apk_versions,
+                    downloads_skipped_reason=downloads_skipped_reason,
                 )
             elif downloaded_count == 0 and not failed_downloads:
                 send_up_to_date_notification(self.config)
