@@ -48,6 +48,7 @@ def download_repo_files(selected_files, download_dir):  # log_message_func remov
 
     # Create repo downloads directory if it doesn't exist
     repo_dir = os.path.join(download_dir, FIRMWARE_DIR_NAME, REPO_DOWNLOADS_DIR)
+    dir_path = repo_dir
     try:
         os.makedirs(repo_dir, exist_ok=True)
 

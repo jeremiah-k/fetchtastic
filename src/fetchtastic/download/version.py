@@ -723,7 +723,7 @@ class VersionManager:
             ):
                 current_version = tracking_data["version"]
                 cleaned_version = str(current_version).lstrip("vV")
-                if not self.VERSION_VALIDATION_RX.match(cleaned_version):
+                if not self.VERSION_VALIDATION_RX.fullmatch(cleaned_version):
                     logger.debug(
                         "Version string %s does not match expected pattern; comparing anyway.",
                         current_version,

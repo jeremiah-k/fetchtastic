@@ -1372,11 +1372,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 return False
 
             # Path to prerelease directory
-            prerelease_dir = os.path.join(
-                self.download_dir, FIRMWARE_DIR_NAME, FIRMWARE_PRERELEASES_DIR_NAME
-            )
-            if not os.path.exists(prerelease_dir):
-                return False
+            prerelease_dir = self._get_prerelease_base_dir()
 
             cleaned_up = False
 

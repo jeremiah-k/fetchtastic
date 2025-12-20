@@ -2892,7 +2892,7 @@ def check_cron_job_exists(*, crontab_path: str):
     """
     try:
         result = subprocess.run(
-            ["crontab", "-l"],
+            [crontab_path, "-l"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
