@@ -3,12 +3,16 @@
 # Comprehensive unit tests for the FirmwareReleaseDownloader class.
 
 import json
+import logging
 import os
 from pathlib import Path
 from unittest.mock import ANY, Mock, patch
 
 import pytest
+import requests
 
+from fetchtastic import log_utils
+from fetchtastic.constants import FIRMWARE_DIR_NAME
 from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.firmware import FirmwareReleaseDownloader
 from fetchtastic.download.interfaces import Asset, Release
@@ -451,3 +455,39 @@ class TestFirmwareReleaseDownloader:
         # Should return prereleases
         assert len(result) > 0
         assert isinstance(result, list)
+
+    def test_download_firmware_exception_uses_firmware_dir(self, downloader, tmp_path):
+        """Ensure validation errors fall back to the firmware directory."""
+        release = Release(tag_name="v2.0.0", prerelease=False)
+        asset = Asset(
+            name="firmware-test.bin",
+            download_url="https://example.com/fw.bin",
+            size=4096,
+        )
+        downloader.download_dir = str(tmp_path)
+
+        with patch.object(
+            downloader,
+            "get_target_path_for_release",
+            side_effect=ValueError("bad path"),
+        ):
+            result = downloader.download_firmware(release, asset)
+
+        assert result.success is False
+        assert result.error_type == "validation_error"
+        expected_path = Path(tmp_path) / FIRMWARE_DIR_NAME
+        assert Path(result.file_path) == expected_path
+
+
+def test_get_latest_version_logs_invalid_tracking_version():
+    """Ensure invalid tracking versions produce a debug log and are returned."""
+    vm = VersionManager()
+    vm.read_version_tracking_file = Mock(return_value={"version": "bad-version!"})
+    vm.compare_versions = Mock(return_value=1)
+
+    with patch.object(log_utils.logger, "debug") as mock_debug:
+        version = vm.get_latest_version_from_tracking_files(["dummy.json"], Mock())
+
+    assert version == "bad-version!"
+    assert mock_debug.called
+    assert "does not match expected pattern" in mock_debug.call_args[0][0]
