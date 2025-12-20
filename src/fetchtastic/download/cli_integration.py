@@ -272,6 +272,10 @@ class DownloadCLIIntegration:
         new_firmware_versions = []
         downloaded_apks = []
         new_apk_versions = []
+        downloaded_firmware_set: set[str] = set()
+        downloaded_apk_set: set[str] = set()
+        new_firmware_set: set[str] = set()
+        new_apk_set: set[str] = set()
 
         # Get current versions before processing results
         if self.orchestrator:
@@ -283,28 +287,40 @@ class DownloadCLIIntegration:
             current_firmware = None
 
         for result in success_results:
-            # Legacy parity: "already complete" skips should not be reported as
-            # downloaded versions in the CLI summary.
+            release_tag = result.release_tag
+            if not release_tag:
+                continue
+
+            file_type = (result.file_type or "").lower()
+            is_firmware = "firmware" in file_type
+            is_android = "android" in file_type
+
+            if is_firmware:
+                if release_tag not in new_firmware_set and (
+                    not current_firmware
+                    or self._is_newer_version(release_tag, current_firmware)
+                ):
+                    new_firmware_versions.append(release_tag)
+                    new_firmware_set.add(release_tag)
+            if is_android:
+                if release_tag not in new_apk_set and (
+                    not current_android
+                    or self._is_newer_version(release_tag, current_android)
+                ):
+                    new_apk_versions.append(release_tag)
+                    new_apk_set.add(release_tag)
+
             if getattr(result, "was_skipped", False):
                 continue
-            if result.release_tag:
-                # Determine if this is firmware or Android based on file type
-                if result.file_type and "firmware" in result.file_type:
-                    if result.release_tag not in downloaded_firmwares:
-                        downloaded_firmwares.append(result.release_tag)
-                        # Check if this is a new version
-                        if not current_firmware or self._is_newer_version(
-                            result.release_tag, current_firmware
-                        ):
-                            new_firmware_versions.append(result.release_tag)
-                elif result.file_type and "android" in result.file_type:
-                    if result.release_tag not in downloaded_apks:
-                        downloaded_apks.append(result.release_tag)
-                        # Check if this is a new version
-                        if not current_android or self._is_newer_version(
-                            result.release_tag, current_android
-                        ):
-                            new_apk_versions.append(result.release_tag)
+
+            if is_firmware:
+                if release_tag not in downloaded_firmware_set:
+                    downloaded_firmwares.append(release_tag)
+                    downloaded_firmware_set.add(release_tag)
+            elif is_android:
+                if release_tag not in downloaded_apk_set:
+                    downloaded_apks.append(release_tag)
+                    downloaded_apk_set.add(release_tag)
 
         return (
             downloaded_firmwares,
