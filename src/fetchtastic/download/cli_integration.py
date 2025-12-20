@@ -11,6 +11,14 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
+from fetchtastic.constants import (
+    FILE_TYPE_ANDROID,
+    FILE_TYPE_ANDROID_PRERELEASE,
+    FILE_TYPE_FIRMWARE,
+    FILE_TYPE_FIRMWARE_PRERELEASE,
+    FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
+    FILE_TYPE_REPOSITORY,
+)
 from fetchtastic.log_utils import logger
 from fetchtastic.notifications import (
     send_download_completion_notification,
@@ -407,12 +415,12 @@ class DownloadCLIIntegration:
         failed_downloads = []
 
         file_type_map = {
-            "firmware": "Firmware",
-            "android": "Android APK",
-            "firmware_prerelease": "Firmware Prerelease",
-            "firmware_prerelease_repo": "Firmware Prerelease",
-            "repository": "Repository",
-            "android_prerelease": "Android APK Prerelease",
+            FILE_TYPE_FIRMWARE: "Firmware",
+            FILE_TYPE_ANDROID: "Android APK",
+            FILE_TYPE_FIRMWARE_PRERELEASE: "Firmware Prerelease",
+            FILE_TYPE_FIRMWARE_PRERELEASE_REPO: "Firmware Prerelease",
+            FILE_TYPE_REPOSITORY: "Repository",
+            FILE_TYPE_ANDROID_PRERELEASE: "Android APK Prerelease",
         }
 
         for result in self.orchestrator.failed_downloads:

@@ -15,7 +15,13 @@ from typing import Any, Dict, List, Optional
 import requests
 
 from fetchtastic.constants import (
+    ERROR_TYPE_FILESYSTEM,
+    ERROR_TYPE_NETWORK,
+    ERROR_TYPE_VALIDATION,
     EXECUTABLE_PERMISSIONS,
+    FILE_TYPE_FIRMWARE,
+    FILE_TYPE_FIRMWARE_PRERELEASE,
+    FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
     FIRMWARE_DIR_NAME,
     FIRMWARE_DIR_PREFIX,
     FIRMWARE_PRERELEASES_DIR_NAME,
@@ -194,11 +200,11 @@ class FirmwareReleaseDownloader(BaseDownloader):
     def download_firmware(self, release: Release, asset: Asset) -> DownloadResult:
         """
         Download and verify a single firmware asset for a release and produce a structured DownloadResult.
-        
+
         Parameters:
             release (Release): Release that contains the asset being downloaded.
             asset (Asset): Metadata for the firmware asset to download.
-        
+
         Returns:
             DownloadResult: Result describing the outcome. On success includes `file_path`, `download_url`, `file_size`, and `file_type`; when the download was skipped includes `was_skipped`; on failure includes `error_message`, `error_type` (e.g., `"network_error"`, `"validation_error"`, `"filesystem_error"`) and `is_retryable`.
         """
@@ -219,7 +225,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     file_path=target_path,
                     download_url=asset.download_url,
                     file_size=asset.size,
-                    file_type="firmware",
+                    file_type=FILE_TYPE_FIRMWARE,
                     was_skipped=True,
                 )
 
@@ -236,7 +242,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         file_path=target_path,
                         download_url=asset.download_url,
                         file_size=asset.size,
-                        file_type="firmware",
+                        file_type=FILE_TYPE_FIRMWARE,
                     )
                 else:
                     logger.error(f"Verification failed for {asset.name}")
@@ -248,9 +254,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         error_message="Verification failed",
                         download_url=asset.download_url,
                         file_size=asset.size,
-                        file_type="firmware",
+                        file_type=FILE_TYPE_FIRMWARE,
                         is_retryable=True,
-                        error_type="validation_error",
+                        error_type=ERROR_TYPE_VALIDATION,
                     )
             else:
                 logger.error(f"Download failed for {asset.name}")
@@ -261,9 +267,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     error_message="download(...) returned False",
                     download_url=asset.download_url,
                     file_size=asset.size,
-                    file_type="firmware",
+                    file_type=FILE_TYPE_FIRMWARE,
                     is_retryable=True,
-                    error_type="network_error",
+                    error_type=ERROR_TYPE_NETWORK,
                 )
 
         except (requests.RequestException, OSError, ValueError) as exc:
@@ -272,13 +278,13 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 self.download_dir, FIRMWARE_DIR_NAME
             )
             if isinstance(exc, requests.RequestException):
-                error_type = "network_error"
+                error_type = ERROR_TYPE_NETWORK
                 is_retryable = True
             elif isinstance(exc, OSError):
-                error_type = "filesystem_error"
+                error_type = ERROR_TYPE_FILESYSTEM
                 is_retryable = False
             else:
-                error_type = "validation_error"
+                error_type = ERROR_TYPE_VALIDATION
                 is_retryable = False
             return self.create_download_result(
                 success=False,
@@ -287,7 +293,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 error_message=str(exc),
                 download_url=getattr(asset, "download_url", None),
                 file_size=getattr(asset, "size", None),
-                file_type="firmware",
+                file_type=FILE_TYPE_FIRMWARE,
                 is_retryable=is_retryable,
                 error_type=error_type,
             )
@@ -430,15 +436,15 @@ class FirmwareReleaseDownloader(BaseDownloader):
     ) -> DownloadResult:
         """
         Extract specified files from a firmware ZIP release into the release's version directory.
-        
+
         Validates extraction patterns, skips extraction when files already match the patterns, performs extraction when needed, and returns a DownloadResult describing the outcome.
-        
+
         Parameters:
             release (Release): Release that owns the firmware asset.
             asset (Asset): The firmware ZIP asset to extract.
             patterns (List[str]): Glob patterns of files to include from the archive.
             exclude_patterns (Optional[List[str]]): Glob patterns of files to exclude from extraction.
-        
+
         Returns:
             DownloadResult: On success, contains extracted_files and file_path; on failure, contains error_message and error_type describing why extraction did not occur or failed.
         """
@@ -454,8 +460,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     release_tag=release.tag_name,
                     file_path=zip_path,
                     error_message="ZIP file not found",
-                    file_type="firmware",
-                    error_type="validation_error",
+                    file_type=FILE_TYPE_FIRMWARE,
+                    error_type=ERROR_TYPE_VALIDATION,
                 )
 
             # Get the directory where files will be extracted
@@ -471,8 +477,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     release_tag=release.tag_name,
                     file_path=zip_path,
                     error_message="Invalid extraction patterns",
-                    file_type="firmware",
-                    error_type="validation_error",
+                    file_type=FILE_TYPE_FIRMWARE,
+                    error_type=ERROR_TYPE_VALIDATION,
                 )
 
             if not self.file_operations.check_extraction_needed(
@@ -483,7 +489,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     release_tag=release.tag_name,
                     file_path=zip_path,
                     extracted_files=[],
-                    file_type="firmware",
+                    file_type=FILE_TYPE_FIRMWARE,
                     was_skipped=True,
                 )
 
@@ -501,7 +507,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     release_tag=release.tag_name,
                     file_path=zip_path,
                     extracted_files=extracted_files,  # type: ignore[arg-type]
-                    file_type="firmware",
+                    file_type=FILE_TYPE_FIRMWARE,
                 )
             else:
                 logger.warning(
@@ -512,8 +518,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     release_tag=release.tag_name,
                     file_path=zip_path,
                     error_message="No files matched extraction patterns",
-                    file_type="firmware",
-                    error_type="validation_error",
+                    file_type=FILE_TYPE_FIRMWARE,
+                    error_type=ERROR_TYPE_VALIDATION,
                     is_retryable=False,
                 )
 
@@ -525,8 +531,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 file_path=zip_path
                 or os.path.join(self.download_dir, FIRMWARE_DIR_NAME),
                 error_message=str(e),
-                file_type="firmware",
-                error_type="extraction_error",
+                file_type=FILE_TYPE_FIRMWARE,
+                error_type=ERROR_TYPE_EXTRACTION,
             )
 
     def cleanup_old_versions(self, keep_limit: int) -> None:
@@ -798,7 +804,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                                 file_path=target_path,
                                 download_url=str(url),
                                 file_size=item.get("size"),
-                                file_type="firmware_prerelease",
+                                file_type=FILE_TYPE_FIRMWARE_PRERELEASE,
                                 was_skipped=True,
                             )
                         )
@@ -819,7 +825,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                             file_path=target_path,
                             download_url=str(url),
                             file_size=item.get("size"),
-                            file_type="firmware_prerelease",
+                            file_type=FILE_TYPE_FIRMWARE_PRERELEASE,
                         )
                     )
                 else:
@@ -831,20 +837,20 @@ class FirmwareReleaseDownloader(BaseDownloader):
                             error_message="download(...) returned False",
                             download_url=str(url),
                             file_size=item.get("size"),
-                            file_type="firmware_prerelease",
+                            file_type=FILE_TYPE_FIRMWARE_PRERELEASE,
                             is_retryable=True,
-                            error_type="network_error",
+                            error_type=ERROR_TYPE_NETWORK,
                         )
                     )
             except (requests.RequestException, OSError, ValueError) as exc:
                 if isinstance(exc, requests.RequestException):
-                    error_type = "network_error"
+                    error_type = ERROR_TYPE_NETWORK
                     is_retryable = True
                 elif isinstance(exc, OSError):
-                    error_type = "filesystem_error"
+                    error_type = ERROR_TYPE_FILESYSTEM
                     is_retryable = False
                 else:
-                    error_type = "validation_error"
+                    error_type = ERROR_TYPE_VALIDATION
                     is_retryable = False
                 failures.append(
                     self.create_download_result(
@@ -854,7 +860,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         error_message=str(exc),
                         download_url=str(url),
                         file_size=item.get("size"),
-                        file_type="firmware_prerelease",
+                        file_type=FILE_TYPE_FIRMWARE_PRERELEASE,
                         is_retryable=is_retryable,
                         error_type=error_type,
                     )
@@ -1208,7 +1214,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
     def get_prerelease_tracking_file(self) -> str:
         """
         Return the path to the firmware prerelease tracking JSON file.
-        
+
         Returns:
             str: Absolute path to the prerelease tracking file used for firmware prerelease state.
         """
@@ -1235,7 +1241,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
         # Create tracking data with enhanced metadata
         data = {
             "latest_version": prerelease_tag,
-            "file_type": "firmware_prerelease",
+            "file_type": FILE_TYPE_FIRMWARE_PRERELEASE,
             "last_updated": self._get_current_iso_timestamp(),
             "base_version": metadata.get("base_version", ""),
             "prerelease_type": metadata.get("prerelease_type", ""),

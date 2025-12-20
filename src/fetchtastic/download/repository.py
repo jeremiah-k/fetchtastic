@@ -14,6 +14,8 @@ from urllib.parse import urljoin, urlparse
 import requests
 
 from fetchtastic.constants import (
+    ERROR_TYPE_NETWORK,
+    FILE_TYPE_REPOSITORY,
     FIRMWARE_DIR_NAME,
     MESHTASTIC_REPO_URL,
     REPO_DOWNLOADS_DIR,
@@ -201,7 +203,7 @@ class RepositoryDownloader(BaseDownloader):
                         file_path=target_path,
                         download_url=download_url,
                         file_size=size,
-                        file_type="repository",
+                        file_type=FILE_TYPE_REPOSITORY,
                     )
 
             # Download the file
@@ -219,7 +221,7 @@ class RepositoryDownloader(BaseDownloader):
                     file_path=target_path,
                     download_url=download_url,
                     file_size=file_info.get("size"),
-                    file_type="repository",
+                    file_type=FILE_TYPE_REPOSITORY,
                 )
             else:
                 error_msg = f"Failed to download repository file: {file_name}"
@@ -231,9 +233,9 @@ class RepositoryDownloader(BaseDownloader):
                     error_message=error_msg,
                     download_url=download_url,
                     file_size=file_info.get("size"),
-                    file_type="repository",
+                    file_type=FILE_TYPE_REPOSITORY,
                     is_retryable=True,
-                    error_type="network_error",
+                    error_type=ERROR_TYPE_NETWORK,
                 )
 
         except (requests.RequestException, OSError, ValueError) as e:
@@ -246,18 +248,18 @@ class RepositoryDownloader(BaseDownloader):
                 error_message=error_msg,
                 download_url=file_info.get("download_url"),
                 file_size=file_info.get("size"),
-                file_type="repository",
+                file_type=FILE_TYPE_REPOSITORY,
                 is_retryable=True,
-                error_type="network_error",
+                error_type=ERROR_TYPE_NETWORK,
             )
 
     def _get_safe_target_directory(self, subdirectory: str) -> Optional[str]:
         """
         Resolve a safe absolute target directory under the repository downloads area, creating it if necessary.
-        
+
         Parameters:
             subdirectory (str): Relative subpath inside the repository downloads area. If empty the base repository downloads directory is used; subpaths that are unsafe or appear to perform path traversal are treated as if empty and the base directory will be returned.
-        
+
         Returns:
             str | None: Absolute filesystem path to the resolved target directory, or `None` if the directory could not be created.
         """
@@ -364,9 +366,9 @@ class RepositoryDownloader(BaseDownloader):
     def clean_repository_directory(self) -> bool:
         """
         Remove all contents of the repository downloads directory under the configured downloads area.
-        
+
         Removes files, symbolic links, and subdirectories found in <download_dir>/<firmware-dir>/<repo_downloads_dir>. If the directory does not exist the function does nothing and reports success. Updates the instance's cleanup summary with counts of removed files and directories, any errors encountered, and an overall success flag.
-        
+
         Returns:
             bool: `True` if cleanup completed without errors, `False` otherwise.
         """

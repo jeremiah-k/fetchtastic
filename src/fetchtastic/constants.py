@@ -159,3 +159,20 @@ FILE_TYPE_PREFIXES = {
     "device-",  # device-install.sh, device-update.sh
     "bleota",  # bleota.bin, bleota-c3.bin, bleota-s3.bin
 }
+
+# Standard file type identifiers used across download results
+FILE_TYPE_ANDROID = "android"
+FILE_TYPE_ANDROID_PRERELEASE = "android_prerelease"
+FILE_TYPE_FIRMWARE = "firmware"
+FILE_TYPE_FIRMWARE_PRERELEASE = "firmware_prerelease"
+FILE_TYPE_FIRMWARE_PRERELEASE_REPO = "firmware_prerelease_repo"
+FILE_TYPE_REPOSITORY = "repository"
+FILE_TYPE_UNKNOWN = "unknown"
+
+# Standard error type identifiers used across download results
+ERROR_TYPE_NETWORK = "network_error"
+ERROR_TYPE_VALIDATION = "validation_error"
+ERROR_TYPE_FILESYSTEM = "filesystem_error"
+ERROR_TYPE_EXTRACTION = "extraction_error"
+ERROR_TYPE_RETRY_FAILURE = "retry_failure"
+ERROR_TYPE_UNKNOWN = "unknown_error"
