@@ -65,10 +65,10 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
     def get_target_path_for_release(self, release_tag: str, file_name: str) -> str:
         """
-        Return the filesystem path for an APK asset inside the Android downloads directory, creating the release directory if it does not exist.
-        
-        Input values are sanitized before use; the function ensures the directory android/<release_tag> exists under the configured download directory.
-        
+        Return filesystem path for an APK asset inside Android downloads directory, creating the release directory if it does not exist.
+
+        Input values are sanitized before use; function ensures directory {APKS_DIR_NAME}/<release_tag> exists under the configured download directory.
+
         Returns:
             str: Filesystem path to the asset file.
         """
@@ -350,10 +350,10 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     def is_release_complete(self, release: Release) -> bool:
         """
         Check whether all APK assets selected for the given release exist on disk and match their expected sizes.
-        
+
         Parameters:
             release (Release): Release whose APK assets are checked. Only assets that pass the downloader's selection rules are considered.
-        
+
         Returns:
             `true` if all selected assets are present and their file sizes equal the assets' expected sizes, `false` otherwise.
         """
@@ -382,10 +382,11 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
     def cleanup_old_versions(self, keep_limit: int) -> None:
         """
-        Delete Android version directories older than the most recent specified number to keep.
-        
+        Delete Android version directories older than most recent specified number to keep.
+
         Ignores directories that do not match version-style names. Deletion failures are logged and exceptions are suppressed.
-        
+        Operates on the {APKS_DIR_NAME} subdirectory within the configured download directory.
+
         Parameters:
             keep_limit (int): Number of most-recent version directories to retain; directories older than this are removed.
         """
@@ -605,7 +606,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         Get the filesystem path to the Android prerelease tracking JSON file.
 
         Returns:
-            str: Path to the prerelease tracking JSON file located in the downloader's download directory.
+            str: Path to prerelease tracking JSON file within the cache manager's directory.
         """
         return self.cache_manager.get_cache_file_path(self.latest_prerelease_file)
 

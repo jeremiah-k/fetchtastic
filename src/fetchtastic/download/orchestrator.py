@@ -177,7 +177,7 @@ class DownloadOrchestrator:
     def _process_firmware_downloads(self) -> None:
         """
         Ensure configured recent firmware releases and repository prereleases are downloaded and remove unexpected prerelease directories.
-        
+
         Scans up to the configured number of latest firmware releases, downloads any releases that are not already complete, attempts to fetch repository prerelease firmware for the selected latest release, and records each download outcome in the orchestrator's result lists. Afterwards, inspects the firmware prerelease directory and safely removes entries that are not valid managed prerelease directories (skipping symlinks and entries that fail safety or version checks). Errors encountered during the process are caught and logged.
         """
         try:
@@ -748,15 +748,24 @@ class DownloadOrchestrator:
         for result in self.download_results + self.failed_downloads:
             # Set file type based on file path if not already set
             if not result.file_type and result.file_path:
+                # Convert to Path for reliable path component checking
+                file_path = (
+                    Path(result.file_path)
+                    if not isinstance(result.file_path, Path)
+                    else result.file_path
+                )
                 file_path_str = str(result.file_path)
-                if APKS_DIR_NAME in file_path_str or file_path_str.endswith(".apk"):
+                path_parts = file_path.parts
+
+                # Check repository first since repo paths contain both firmware and repo directories
+                if REPO_DOWNLOADS_DIR in path_parts:
+                    result.file_type = "repository"
+                elif APKS_DIR_NAME in path_parts or file_path_str.endswith(".apk"):
                     result.file_type = "android"
-                elif FIRMWARE_DIR_NAME in file_path_str or file_path_str.endswith(
+                elif FIRMWARE_DIR_NAME in path_parts or file_path_str.endswith(
                     (".zip", ".bin", ".elf")
                 ):
                     result.file_type = "firmware"
-                elif REPO_DOWNLOADS_DIR in file_path_str:
-                    result.file_type = "repository"
                 else:
                     result.file_type = "unknown"
 
@@ -950,7 +959,7 @@ class DownloadOrchestrator:
     def _cleanup_deleted_prereleases(self) -> None:
         """
         Remove local firmware prerelease directories that are recorded as deleted in the prerelease commit history.
-        
+
         Queries the prerelease commit history for the expected firmware prerelease version and, for each entry with status "deleted", validates the directory name and removes the corresponding directory under the firmware prereleases folder if it exists. Uses the configured cache and optional GitHub token when fetching history. Logs warnings for unsafe directory names or failed removals; network and filesystem errors are logged and not raised.
         """
         try:
