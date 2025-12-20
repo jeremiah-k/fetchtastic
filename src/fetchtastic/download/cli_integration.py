@@ -7,7 +7,10 @@ This module provides integration between the new download subsystem and the exis
 import os
 import sys
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, cast
+
+if TYPE_CHECKING:
+    from .version import VersionManager
 
 import requests
 
@@ -389,14 +392,16 @@ class DownloadCLIIntegration:
 
     def _get_version_manager(self) -> Optional["VersionManager"]:
         """
-        Acquire the version manager exposed by the Android downloader.
+        Acquire version manager exposed by Android downloader.
         """
         if not self.android_downloader:
             return None
         getter = getattr(self.android_downloader, "get_version_manager", None)
         if callable(getter):
-            return getter()
-        return getattr(self.android_downloader, "version_manager", None)
+            result = getter()
+            return cast(Optional["VersionManager"], result)
+        result = getattr(self.android_downloader, "version_manager", None)
+        return cast(Optional[VersionManager], result)
 
     def get_failed_downloads(self) -> List[Dict[str, Any]]:
         """
