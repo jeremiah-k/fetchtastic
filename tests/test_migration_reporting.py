@@ -61,6 +61,7 @@ def test_migration_does_not_report_skipped_assets_as_downloads(tmp_path, monkeyp
     )
 
     assert downloaded == []
-    assert new_fw == []
+    # New releases should still be detected even when downloads are skipped
+    assert new_fw == ["v2.0.0"]
     assert apks == []
-    assert new_apks == []
+    assert new_apks == ["v2.0.0"]

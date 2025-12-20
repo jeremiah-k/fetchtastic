@@ -327,21 +327,27 @@ class DownloadCLIIntegration:
             is_android = "android" in file_type
             was_skipped = getattr(result, "was_skipped", False)
 
-            if not was_skipped:
-                if is_firmware:
-                    if release_tag not in new_firmware_set and (
-                        not current_firmware
-                        or self._is_newer_version(release_tag, current_firmware)
-                    ):
-                        new_firmware_versions.append(release_tag)
-                        new_firmware_set.add(release_tag)
-                if is_android:
-                    if release_tag not in new_apk_set and (
-                        not current_android
-                        or self._is_newer_version(release_tag, current_android)
-                    ):
-                        new_apk_versions.append(release_tag)
-                        new_apk_set.add(release_tag)
+            # Always detect newer versions (for notifications), even when downloads were skipped.
+            if (
+                is_firmware
+                and release_tag not in new_firmware_set
+                and (
+                    not current_firmware
+                    or self._is_newer_version(release_tag, current_firmware)
+                )
+            ):
+                new_firmware_versions.append(release_tag)
+                new_firmware_set.add(release_tag)
+            if (
+                is_android
+                and release_tag not in new_apk_set
+                and (
+                    not current_android
+                    or self._is_newer_version(release_tag, current_android)
+                )
+            ):
+                new_apk_versions.append(release_tag)
+                new_apk_set.add(release_tag)
 
             if was_skipped:
                 continue
