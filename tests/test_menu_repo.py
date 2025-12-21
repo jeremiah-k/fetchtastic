@@ -3,6 +3,8 @@ import requests
 
 from fetchtastic import menu_repo
 
+pytestmark = [pytest.mark.user_interface]
+
 
 @pytest.fixture
 def mock_repo_contents():

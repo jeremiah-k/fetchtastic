@@ -4,6 +4,8 @@ import pytest
 
 from fetchtastic import menu_apk
 
+pytestmark = [pytest.mark.user_interface]
+
 
 @pytest.fixture
 def mock_apk_assets():

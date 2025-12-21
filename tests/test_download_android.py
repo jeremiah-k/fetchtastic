@@ -16,7 +16,7 @@ from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.interfaces import Asset, Release
 from fetchtastic.download.version import VersionManager
 
-pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
+pytestmark = [pytest.mark.unit, pytest.mark.core_downloads, pytest.mark.user_interface]
 
 
 class TestMeshtasticAndroidAppDownloader:

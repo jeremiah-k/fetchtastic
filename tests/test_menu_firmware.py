@@ -4,6 +4,8 @@ import pytest
 
 from fetchtastic import menu_firmware
 
+pytestmark = [pytest.mark.user_interface]
+
 
 @pytest.fixture
 def mock_firmware_assets():
