@@ -106,7 +106,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
             List[Release]: Parsed Release objects (each includes its Asset entries); returns an empty list if no valid releases are found or an error occurs.
         """
         try:
-            params = {"per_page": 8}
+            params = {"per_page": limit if limit and limit > 0 else 8}
             url_key = self.cache_manager.build_url_cache_key(
                 self.firmware_releases_url, params
             )
@@ -562,7 +562,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 )
                 return
 
-            release_tags_to_keep = []
+            release_tags_to_keep = set()
             for release in latest_releases[:keep_limit]:
                 safe_tag = _sanitize_path_component(release.tag_name)
                 if safe_tag is None:
@@ -571,7 +571,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         release.tag_name,
                     )
                     continue
-                release_tags_to_keep.append(safe_tag)
+                release_tags_to_keep.add(safe_tag)
 
             if not release_tags_to_keep:
                 logger.warning(
