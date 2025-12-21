@@ -83,7 +83,7 @@ def cron_command_required(func):
                 "Cron configuration skipped: 'crontab' command not found on this system."
             )
             return None
-        crontab_path = shutil.which("crontab")
+        crontab_path = shutil.which("crontab")  # type: ignore[possibly-unbound]
         return func(*args, crontab_path=crontab_path, **kwargs)
 
     return wrapper
@@ -125,7 +125,7 @@ def cron_check_command_required(func):
                 "Cron configuration skipped: 'crontab' command not found on this system."
             )
             return False
-        crontab_path = shutil.which("crontab")
+        crontab_path = shutil.which("crontab")  # type: ignore[possibly-unbound]
         if crontab_path is None:
             logger.warning(
                 "Cron configuration skipped: 'crontab' command not found on this system."
@@ -1033,7 +1033,7 @@ def _setup_automation(
             # Windows doesn't support cron jobs, but we can offer to create a startup shortcut
             if WINDOWS_MODULES_AVAILABLE:
                 # Check if startup shortcut already exists
-                startup_folder = winshell.startup()
+                startup_folder = winshell.startup()  # type: ignore[possibly-unbound]  # type: ignore[possibly-unbound]
                 startup_shortcut_path = os.path.join(startup_folder, "Fetchtastic.lnk")
 
                 if os.path.exists(startup_shortcut_path):
@@ -1549,14 +1549,20 @@ def _setup_base(
 
     # Ask for base directory as the first question
     exists, config_path = config_exists()
+    current_base_dir = DEFAULT_BASE_DIR
 
     if exists:
         # Load existing configuration
-        config = load_config()
-        print(
-            "Existing configuration found. You can keep current settings or change them."
-        )
-        current_base_dir = config.get("BASE_DIR", DEFAULT_BASE_DIR)
+        config = load_config()  # type: ignore[assignment]
+        if config is None:
+            print("Failed to load existing configuration. Starting with defaults.")
+            config = {}
+            current_base_dir = DEFAULT_BASE_DIR
+        else:
+            print(
+                "Existing configuration found. You can keep current settings or change them."
+            )
+            current_base_dir = config.get("BASE_DIR", DEFAULT_BASE_DIR)
         base_dir_prompt = (
             f"Enter the base directory for Fetchtastic (current: {current_base_dir}): "
         )
@@ -1580,7 +1586,9 @@ def _setup_base(
             if exists_in_dir and base_dir != BASE_DIR:
                 print(f"Found existing configuration in {base_dir}")
                 # Load the configuration from the specified directory
-                config = load_config(base_dir)
+                loaded_config = load_config(base_dir)  # type: ignore[assignment]
+                if loaded_config is not None:
+                    config = loaded_config
             else:
                 # No config in the specified directory or it's the same as current
                 BASE_DIR = base_dir
@@ -1752,12 +1760,12 @@ def run_setup(
 
     # Record the version at which setup was last run
     try:
-        from importlib.metadata import PackageNotFoundError, version
+        from importlib.metadata import version
 
         current_version = version("fetchtastic")
         config["LAST_SETUP_VERSION"] = current_version
         config["LAST_SETUP_DATE"] = datetime.now().isoformat()
-    except PackageNotFoundError:
+    except Exception:
         # If we can't get the version, just record the date
         config["LAST_SETUP_DATE"] = datetime.now().isoformat()
 
@@ -2186,7 +2194,7 @@ def create_windows_menu_shortcuts(config_file_path, base_dir):
         download_shortcut_path = os.path.join(
             WINDOWS_START_MENU_FOLDER, "Fetchtastic Download.lnk"
         )
-        winshell.CreateShortcut(
+        winshell.CreateShortcut(  # type: ignore[possibly-unbound]
             Path=download_shortcut_path,
             Target=download_batch_path,
             Description="Download Meshtastic firmware and APKs",
@@ -2197,7 +2205,7 @@ def create_windows_menu_shortcuts(config_file_path, base_dir):
         setup_shortcut_path = os.path.join(
             WINDOWS_START_MENU_FOLDER, "Fetchtastic Setup.lnk"
         )
-        winshell.CreateShortcut(
+        winshell.CreateShortcut(  # type: ignore[possibly-unbound]
             Path=setup_shortcut_path,
             Target=setup_batch_path,
             Description="Configure Fetchtastic settings",
@@ -2208,7 +2216,7 @@ def create_windows_menu_shortcuts(config_file_path, base_dir):
         repo_shortcut_path = os.path.join(
             WINDOWS_START_MENU_FOLDER, "Fetchtastic Repository Browser.lnk"
         )
-        winshell.CreateShortcut(
+        winshell.CreateShortcut(  # type: ignore[possibly-unbound]
             Path=repo_shortcut_path,
             Target=repo_batch_path,
             Description="Browse and download files from the Meshtastic repository",
@@ -2219,7 +2227,7 @@ def create_windows_menu_shortcuts(config_file_path, base_dir):
         config_shortcut_path = os.path.join(
             WINDOWS_START_MENU_FOLDER, "Fetchtastic Configuration.lnk"
         )
-        winshell.CreateShortcut(
+        winshell.CreateShortcut(  # type: ignore[possibly-unbound]
             Path=config_shortcut_path,
             Target=config_file_path,
             Description=f"Edit Fetchtastic Configuration File ({CONFIG_FILE_NAME})",
@@ -2230,7 +2238,7 @@ def create_windows_menu_shortcuts(config_file_path, base_dir):
         base_dir_shortcut_path = os.path.join(
             WINDOWS_START_MENU_FOLDER, "Meshtastic Downloads.lnk"
         )
-        winshell.CreateShortcut(
+        winshell.CreateShortcut(  # type: ignore[possibly-unbound]
             Path=base_dir_shortcut_path,
             Target=base_dir,
             Description="Open Meshtastic Downloads Folder",
@@ -2261,7 +2269,7 @@ def create_windows_menu_shortcuts(config_file_path, base_dir):
         log_shortcut_path = os.path.join(
             WINDOWS_START_MENU_FOLDER, "Fetchtastic Log.lnk"
         )
-        winshell.CreateShortcut(
+        winshell.CreateShortcut(  # type: ignore[possibly-unbound]
             Path=log_shortcut_path,
             Target=log_file,
             Description="View Fetchtastic Log File",
@@ -2272,7 +2280,7 @@ def create_windows_menu_shortcuts(config_file_path, base_dir):
         update_shortcut_path = os.path.join(
             WINDOWS_START_MENU_FOLDER, "Fetchtastic - Check for Updates.lnk"
         )
-        winshell.CreateShortcut(
+        winshell.CreateShortcut(  # type: ignore[possibly-unbound]
             Path=update_shortcut_path,
             Target=update_batch_path,
             Description="Check for and install Fetchtastic updates",
@@ -2304,7 +2312,7 @@ def create_config_shortcut(config_file_path, target_dir):
         shortcut_path = os.path.join(target_dir, WINDOWS_SHORTCUT_FILE)
 
         # Create the shortcut using winshell
-        winshell.CreateShortcut(
+        winshell.CreateShortcut(  # type: ignore[possibly-unbound]
             Path=shortcut_path,
             Target=config_file_path,
             Description=f"Fetchtastic Configuration File ({CONFIG_FILE_NAME})",
@@ -2337,7 +2345,7 @@ def create_startup_shortcut():
             return False
 
         # Get the startup folder path
-        startup_folder = winshell.startup()
+        startup_folder = winshell.startup()  # type: ignore[possibly-unbound]
 
         # Create batch files in the config directory instead of the startup folder
         batch_dir = os.path.join(CONFIG_DIR, "batch")
@@ -2358,7 +2366,7 @@ def create_startup_shortcut():
         # Use direct shortcut creation without WindowStyle parameter
         try:
             # First try with WindowStyle parameter (newer versions of winshell)
-            winshell.CreateShortcut(
+            winshell.CreateShortcut(  # type: ignore[possibly-unbound]
                 Path=shortcut_path,
                 Target=batch_path,
                 Description="Run Fetchtastic on startup",
@@ -2367,7 +2375,7 @@ def create_startup_shortcut():
             )
         except TypeError:
             # If WindowStyle is not supported, use basic parameters
-            winshell.CreateShortcut(
+            winshell.CreateShortcut(  # type: ignore[possibly-unbound]
                 Path=shortcut_path,
                 Target=batch_path,
                 Description="Run Fetchtastic on startup",
@@ -2407,10 +2415,11 @@ def copy_to_clipboard_func(text):
         # Windows environment with win32com available
         try:
             import win32clipboard  # type: ignore[import]
+            import win32con  # type: ignore[import]
 
             win32clipboard.OpenClipboard()
             win32clipboard.EmptyClipboard()
-            win32clipboard.SetClipboardText(text)
+            win32clipboard.SetClipboardData(win32con.CF_TEXT, text.encode("utf-8"))
             win32clipboard.CloseClipboard()
             return True
         except Exception as e:
@@ -2518,7 +2527,7 @@ def install_crond():
 
 
 @cron_command_required
-def setup_cron_job(frequency="hourly", *, crontab_path: str):
+def setup_cron_job(frequency="hourly", *, crontab_path: str = "crontab"):
     """
     Configure the user's crontab to run Fetchtastic on a regular schedule.
 
@@ -2543,7 +2552,7 @@ def setup_cron_job(frequency="hourly", *, crontab_path: str):
     try:
         # Use the pre-validated crontab path
         result = subprocess.run(
-            [crontab_path, "-l"],
+            [crontab_path, "-l"],  # type: ignore[possibly-unbound]
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -2588,7 +2597,9 @@ def setup_cron_job(frequency="hourly", *, crontab_path: str):
         # Update crontab
         try:
             process = subprocess.Popen(
-                [crontab_path, "-"], stdin=subprocess.PIPE, text=True
+                [crontab_path, "-"],  # type: ignore[possibly-unbound]
+                stdin=subprocess.PIPE,
+                text=True,  # type: ignore[possibly-unbound]
             )
             process.communicate(
                 input=new_cron, timeout=CRON_COMMAND_TIMEOUT_SECONDS
@@ -2603,14 +2614,14 @@ def setup_cron_job(frequency="hourly", *, crontab_path: str):
 
 
 @cron_command_required
-def remove_cron_job(*, crontab_path: str):
+def remove_cron_job(*, crontab_path: str = "crontab"):
     """
     Remove Fetchtastic's non-@reboot cron entries from the current user's crontab.
 
     Removes crontab lines that contain "# fetchtastic" or "fetchtastic download" while preserving any lines that start with "@reboot". Does nothing on Windows or if the crontab command is unavailable. Errors encountered while reading or updating the crontab are logged and not raised.
 
     Parameters:
-        crontab_path (str): Path to the system crontab executable (for example "crontab").
+        crontab_path (str): Path to the system crontab executable (for example "crontab").  # type: ignore[possibly-unbound]
     """
     # Skip cron job removal on Windows
     if platform.system() == "Windows":
@@ -2619,7 +2630,7 @@ def remove_cron_job(*, crontab_path: str):
 
     try:
         result = subprocess.run(
-            [crontab_path, "-l"],
+            [crontab_path, "-l"],  # type: ignore[possibly-unbound]
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -2644,7 +2655,9 @@ def remove_cron_job(*, crontab_path: str):
                 new_cron += "\n"
             try:
                 process = subprocess.Popen(
-                    [crontab_path, "-"], stdin=subprocess.PIPE, text=True
+                    [crontab_path, "-"],  # type: ignore[possibly-unbound]
+                    stdin=subprocess.PIPE,
+                    text=True,  # type: ignore[possibly-unbound]
                 )
                 process.communicate(
                     input=new_cron, timeout=CRON_COMMAND_TIMEOUT_SECONDS
@@ -2699,7 +2712,7 @@ def remove_boot_script():
 
 
 @cron_command_required
-def setup_reboot_cron_job(*, crontab_path: str):
+def setup_reboot_cron_job(*, crontab_path: str = "crontab"):
     """
     Ensure an @reboot crontab entry exists to run the `fetchtastic download` command after system reboot.
 
@@ -2715,7 +2728,7 @@ def setup_reboot_cron_job(*, crontab_path: str):
     try:
         # Get current crontab entries
         result = subprocess.run(
-            [crontab_path, "-l"],
+            [crontab_path, "-l"],  # type: ignore[possibly-unbound]
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -2754,7 +2767,9 @@ def setup_reboot_cron_job(*, crontab_path: str):
         # Update crontab
         try:
             process = subprocess.Popen(
-                [crontab_path, "-"], stdin=subprocess.PIPE, text=True
+                [crontab_path, "-"],  # type: ignore[possibly-unbound]
+                stdin=subprocess.PIPE,
+                text=True,  # type: ignore[possibly-unbound]
             )
             process.communicate(input=new_cron, timeout=CRON_COMMAND_TIMEOUT_SECONDS)
             print("Reboot cron job added to run Fetchtastic on system startup.")
@@ -2767,7 +2782,7 @@ def setup_reboot_cron_job(*, crontab_path: str):
 
 
 @cron_command_required
-def remove_reboot_cron_job(*, crontab_path: str):
+def remove_reboot_cron_job(*, crontab_path: str = "crontab"):
     """
     Remove any @reboot cron entries that run or are labeled for Fetchtastic.
 
@@ -2783,7 +2798,7 @@ def remove_reboot_cron_job(*, crontab_path: str):
     try:
         # Get current crontab entries
         result = subprocess.run(
-            [crontab_path, "-l"],
+            [crontab_path, "-l"],  # type: ignore[possibly-unbound]
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -2808,7 +2823,9 @@ def remove_reboot_cron_job(*, crontab_path: str):
                 new_cron += "\n"
             try:
                 process = subprocess.Popen(
-                    [crontab_path, "-"], stdin=subprocess.PIPE, text=True
+                    [crontab_path, "-"],  # type: ignore[possibly-unbound]
+                    stdin=subprocess.PIPE,
+                    text=True,  # type: ignore[possibly-unbound]
                 )
                 process.communicate(
                     input=new_cron, timeout=CRON_COMMAND_TIMEOUT_SECONDS
@@ -2827,7 +2844,7 @@ def remove_reboot_cron_job(*, crontab_path: str):
 
 
 @cron_check_command_required
-def check_any_cron_jobs_exist(*, crontab_path: str):
+def check_any_cron_jobs_exist(*, crontab_path: str = "crontab"):
     """
     Determine whether the current user's crontab contains any entries.
 
@@ -2839,7 +2856,7 @@ def check_any_cron_jobs_exist(*, crontab_path: str):
     """
     try:
         result = subprocess.run(
-            [crontab_path, "-l"],
+            [crontab_path, "-l"],  # type: ignore[possibly-unbound]
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -2868,7 +2885,7 @@ def check_boot_script_exists():
 
 
 @cron_check_command_required
-def check_cron_job_exists(*, crontab_path: str):
+def check_cron_job_exists(*, crontab_path: str = "crontab"):
     """
     Determine whether any Fetchtastic cron entries (excluding `@reboot` lines) exist in the current user's crontab.
 
@@ -2880,7 +2897,7 @@ def check_cron_job_exists(*, crontab_path: str):
     """
     try:
         result = subprocess.run(
-            [crontab_path, "-l"],
+            [crontab_path, "-l"],  # type: ignore[possibly-unbound]
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
