@@ -108,9 +108,15 @@ class FirmwareReleaseDownloader(BaseDownloader):
         try:
             if limit == 0:
                 return []
-            if limit is not None and limit < 0:
-                logger.warning("Invalid limit value %d; using default", limit)
-                limit = None
+            if limit is not None:
+                if limit < 0:
+                    logger.warning("Invalid limit value %d; using default", limit)
+                    limit = None
+                elif limit > 100:
+                    logger.warning(
+                        "Limit %d exceeds GitHub API max of 100; capping at 100.", limit
+                    )
+                    limit = 100
             params = {"per_page": limit if limit else 8}
             url_key = self.cache_manager.build_url_cache_key(
                 self.firmware_releases_url, params
