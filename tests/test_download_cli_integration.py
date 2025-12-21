@@ -7,7 +7,7 @@ import pytest
 from fetchtastic.download.cli_integration import DownloadCLIIntegration
 from fetchtastic.download.files import _get_existing_prerelease_dirs
 
-pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
+pytestmark = [pytest.mark.unit, pytest.mark.core_downloads, pytest.mark.user_interface]
 
 
 def test_cli_integration_main_loads_config_and_runs(mocker):
@@ -653,3 +653,36 @@ def test_get_existing_prerelease_dirs_no_directory():
     """_get_existing_prerelease_dirs should return empty list when directory doesn't exist."""
     result = _get_existing_prerelease_dirs("/nonexistent/directory")
     assert result == []
+
+
+def test_convert_results_to_legacy_format_with_file_type_categorization():
+    """Test _convert_results_to_legacy_format properly categorizes file types."""
+    integration = DownloadCLIIntegration()
+
+    # Mock result objects
+    class MockResult:
+        def __init__(self, release_tag, file_type, was_skipped=False):
+            self.release_tag = release_tag
+            self.file_type = file_type
+            self.was_skipped = was_skipped
+
+    # Create test results with different file types
+    results = [
+        MockResult("v1.0", "firmware"),
+        MockResult("v2.0", "android"),
+        MockResult("v1.1", "firmware_prerelease"),
+        MockResult("v2.1", "android_prerelease"),
+        MockResult("v1.2", "firmware_prerelease_repo"),
+    ]
+
+    # Test the function
+    downloaded_firmwares, new_firmware_versions, downloaded_apks, new_apk_versions = (
+        integration._convert_results_to_legacy_format(results)
+    )
+
+    # Verify file type categorization worked correctly
+    assert "v1.0" in downloaded_firmwares  # firmware
+    assert "v1.1" in downloaded_firmwares  # firmware_prerelease
+    assert "v1.2" in downloaded_firmwares  # firmware_prerelease_repo
+    assert "v2.0" in downloaded_apks  # android
+    assert "v2.1" in downloaded_apks  # android_prerelease
