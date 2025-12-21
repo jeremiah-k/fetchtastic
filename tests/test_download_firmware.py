@@ -287,14 +287,17 @@ class TestFirmwareReleaseDownloader:
             "repo-dls",
         ]
         mock_isdir.return_value = True
+        downloader.get_releases = Mock(
+            return_value=[Release(tag_name="v3.0.0"), Release(tag_name="v2.0.0")]
+        )
 
         downloader.cleanup_old_versions(keep_limit=2)
 
-        # Should remove oldest version (v1.0.0)
+        # Should remove version not in the keep set (v1.0.0)
         mock_rmtree.assert_called_once()
         args = mock_rmtree.call_args[0][0]
         assert "v1.0.0" in args
-        assert downloader.version_manager.get_release_tuple.call_count == 3
+        downloader.get_releases.assert_called_once_with(limit=2)
 
     def test_get_latest_release_tag(self, mock_config, tmp_path):
         """Test getting latest release tag from cache file."""

@@ -43,6 +43,7 @@ from fetchtastic.utils import (
 
 from .base import BaseDownloader
 from .cache import CacheManager
+from .files import _sanitize_path_component
 from .interfaces import Asset, DownloadResult, Release
 from .prerelease_history import PrereleaseHistoryManager
 from .version import VersionManager
@@ -537,12 +538,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
     def cleanup_old_versions(self, keep_limit: int) -> None:
         """
-        Remove firmware version directories older than the most recent `keep_limit` versions.
+        Remove firmware version directories not present in the latest `keep_limit` releases.
 
-        Only directories under <download_dir>/firmware that match a semantic-version-like pattern
-        (optional leading "v", e.g. "v1.2.3" or "2.3") are considered. Special directories
-        "prerelease" and "repo-dls" are ignored. Matching directories are sorted by version
-        and any beyond the newest `keep_limit` entries are removed.
+        This mirrors legacy behavior by keeping only the newest release tags returned
+        by the GitHub API (bounded by `keep_limit`). Any local version directories that
+        are not in that set are removed. Special directories "prerelease" and "repo-dls"
+        are ignored.
 
         Parameters:
             keep_limit (int): Maximum number of most-recent version directories to retain;
@@ -554,34 +555,49 @@ class FirmwareReleaseDownloader(BaseDownloader):
             if not os.path.exists(firmware_dir):
                 return
 
-            # Get all version directories (excluding special directories)
-            version_dirs = []
+            latest_releases = self.get_releases(limit=keep_limit)
+            if not latest_releases:
+                logger.warning(
+                    "Skipping firmware cleanup: no releases available to determine keep set."
+                )
+                return
+
+            release_tags_to_keep = []
+            for release in latest_releases[:keep_limit]:
+                safe_tag = _sanitize_path_component(release.tag_name)
+                if safe_tag is None:
+                    logger.warning(
+                        "Skipping unsafe firmware release tag during cleanup: %s",
+                        release.tag_name,
+                    )
+                    continue
+                release_tags_to_keep.append(safe_tag)
+
+            if not release_tags_to_keep:
+                logger.warning(
+                    "Skipping firmware cleanup: no safe release tags found to keep."
+                )
+                return
+
+            # Remove local versions not in the keep set
             for item in os.listdir(firmware_dir):
                 item_path = os.path.join(firmware_dir, item)
-                if (
-                    os.path.isdir(item_path)
-                    and re.match(r"^(v)?\d+\.\d+(?:\.\d+)?", item)
-                    and item not in [FIRMWARE_PRERELEASES_DIR_NAME, REPO_DOWNLOADS_DIR]
-                ):
-                    version_dirs.append(item)
-
-            # Sort versions and keep only the newest ones
-            version_dirs.sort(
-                reverse=True,
-                key=lambda version: self.version_manager.get_release_tuple(version)
-                or (),
-            )
-
-            # Remove old versions
-            for old_version in version_dirs[keep_limit:]:
-                old_dir = os.path.join(firmware_dir, old_version)
-                try:
-                    shutil.rmtree(old_dir)
-                    logger.info(f"Removed old firmware version: {old_version}")
-                except OSError as e:
-                    logger.error(
-                        f"Error removing old firmware version {old_version}: {e}"
+                if item in [FIRMWARE_PRERELEASES_DIR_NAME, REPO_DOWNLOADS_DIR]:
+                    continue
+                if os.path.islink(item_path):
+                    logger.warning(
+                        "Skipping symlink in firmware directory during cleanup: %s",
+                        item,
                     )
+                    continue
+                if not os.path.isdir(item_path):
+                    continue
+                if item not in release_tags_to_keep:
+                    try:
+                        shutil.rmtree(item_path)
+                        logger.info(f"Removed old firmware version: {item}")
+                    except OSError as e:
+                        logger.error(f"Error removing old firmware version {item}: {e}")
 
         except OSError as e:
             logger.error(f"Error cleaning up old firmware versions: {e}")

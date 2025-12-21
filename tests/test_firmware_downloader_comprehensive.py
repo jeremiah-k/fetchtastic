@@ -9,7 +9,7 @@ correctly with the new modular architecture.
 import json
 import os
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 import requests
@@ -170,6 +170,9 @@ class TestFirmwareReleaseDownloader:
             version_dir = tmp_path / "firmware" / version
             version_dir.mkdir(parents=True)
 
+        firmware_downloader.get_releases = Mock(
+            return_value=[Release(tag_name="v2.7.14"), Release(tag_name="v2.7.13")]
+        )
         firmware_downloader.cleanup_old_versions(keep_limit=2)
 
         # Should keep 2 newest versions
