@@ -547,17 +547,17 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
     def cleanup_old_versions(self, keep_limit: int) -> None:
         """
-        Remove firmware version directories not present in the latest `keep_limit` releases.
+        Remove firmware version directories not present in the latest `keep_limit` releases
+        (including prereleases).
 
-        This mirrors legacy behavior by keeping only the newest release tags returned
-        by the GitHub API (bounded by `keep_limit`). Any local version directories not
-        in that set are removed. Special directories "prerelease" and "repo-dls" are
-        always preserved.
+        This mirrors legacy behavior by keeping only the newest release tags (stable and
+        prerelease) returned by the GitHub API (bounded by `keep_limit`). Any local version
+        directories not in that set are removed. Special directories "prerelease" and
+        "repo-dls" are always preserved.
 
         Parameters:
             keep_limit (int): Maximum number of most-recent version directories to retain;
-                older directories and prerelease directories will be deleted. Pass 0 to
-                delete all version directories.
+                older directories will be deleted. Pass 0 to delete all version directories.
         """
         try:
             if keep_limit < 0:

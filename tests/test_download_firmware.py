@@ -405,8 +405,6 @@ class TestFirmwareReleaseDownloader:
         mock_exists.return_value = True
 
         # Create mock DirEntry objects for os.scandir
-        from unittest.mock import Mock
-
         mock_entry1 = Mock()
         mock_entry1.name = "v1.0.0"
         mock_entry1.is_dir.return_value = True

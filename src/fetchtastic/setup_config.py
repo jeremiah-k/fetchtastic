@@ -83,7 +83,12 @@ def cron_command_required(func):
                 "Cron configuration skipped: 'crontab' command not found on this system."
             )
             return None
-        crontab_path = shutil.which("crontab")  # type: ignore[possibly-unbound]
+        crontab_path = shutil.which("crontab")
+        if crontab_path is None:
+            logger.warning(
+                "Cron configuration skipped: 'crontab' command not found on this system."
+            )
+            return None
         return func(*args, crontab_path=crontab_path, **kwargs)
 
     return wrapper
@@ -1760,13 +1765,13 @@ def run_setup(
 
     # Record the version at which setup was last run
     try:
-        from importlib.metadata import version
+        from importlib.metadata import PackageNotFoundError, version
 
         current_version = version("fetchtastic")
         config["LAST_SETUP_VERSION"] = current_version
         config["LAST_SETUP_DATE"] = datetime.now().isoformat()
-    except Exception:
-        # If we can't get the version (PackageNotFoundError or import error), just record the date
+    except (ImportError, PackageNotFoundError):
+        # If we can't get the version, just record the date
         config["LAST_SETUP_DATE"] = datetime.now().isoformat()
 
     # Make sure the config directory exists
@@ -2422,9 +2427,9 @@ def copy_to_clipboard_func(text):
                 # Try the newer API with explicit format
                 import win32con  # type: ignore[import]
 
-                win32clipboard.SetClipboardData(win32con.CF_TEXT, text.encode("utf-8"))
-            except ImportError:
-                # Fall back to SetClipboardText for older versions
+                win32clipboard.SetClipboardData(win32con.CF_UNICODETEXT, text)
+            except (ImportError, TypeError):
+                # Fall back to SetClipboardText for older versions or if win32con is missing attributes
                 win32clipboard.SetClipboardText(text)
             win32clipboard.CloseClipboard()
             return True
