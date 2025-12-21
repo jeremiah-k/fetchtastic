@@ -299,6 +299,57 @@ class TestFirmwareReleaseDownloader:
         assert "v1.0.0" in args
         downloader.get_releases.assert_called_once_with(limit=2)
 
+    @patch("os.path.exists")
+    @patch("os.listdir")
+    @patch("os.path.isdir")
+    @patch("shutil.rmtree")
+    def test_cleanup_old_versions_empty_releases(
+        self, mock_rmtree, mock_isdir, mock_listdir, mock_exists, downloader
+    ):
+        """Test cleanup when no releases are available."""
+        # Setup filesystem mocks
+        mock_exists.return_value = True
+        mock_listdir.return_value = ["v1.0.0", "v2.0.0"]
+        mock_isdir.return_value = True
+        downloader.get_releases = Mock(return_value=[])
+
+        downloader.cleanup_old_versions(keep_limit=2)
+
+        # Should not remove any versions since no releases available
+        mock_rmtree.assert_not_called()
+        downloader.get_releases.assert_called_once_with(limit=2)
+
+    @patch("os.path.exists")
+    @patch("os.listdir")
+    @patch("os.path.isdir")
+    @patch("shutil.rmtree")
+    def test_cleanup_old_versions_unsafe_tags(
+        self, mock_rmtree, mock_isdir, mock_listdir, mock_exists, downloader, caplog
+    ):
+        """Test cleanup when release tags contain unsafe characters."""
+        # Mock _sanitize_path_component to return None for unsafe tags
+        with patch(
+            "fetchtastic.download.firmware._sanitize_path_component"
+        ) as mock_sanitize:
+            mock_exists.return_value = True
+            mock_listdir.return_value = ["v1.0.0", "v2.0.0"]
+            mock_isdir.return_value = True
+            mock_sanitize.side_effect = ["v1.0.0", None]  # Second tag is unsafe
+            downloader.get_releases = Mock(
+                return_value=[
+                    Release(tag_name="v1.0.0"),
+                    Release(tag_name="../../../unsafe"),
+                ]
+            )
+
+            downloader.cleanup_old_versions(keep_limit=2)
+
+            # Should remove v2.0.0 since only v1.0.0 is safe
+            mock_rmtree.assert_called_once()
+            args = mock_rmtree.call_args[0][0]
+            assert "v2.0.0" in args
+            # Warning is logged but caplog testing is optional
+
     def test_get_latest_release_tag(self, mock_config, tmp_path):
         """Test getting latest release tag from cache file."""
         cache_manager = CacheManager(str(tmp_path))
