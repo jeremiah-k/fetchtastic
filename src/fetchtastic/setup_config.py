@@ -2415,11 +2415,17 @@ def copy_to_clipboard_func(text):
         # Windows environment with win32com available
         try:
             import win32clipboard  # type: ignore[import]
-            import win32con  # type: ignore[import]
 
             win32clipboard.OpenClipboard()
             win32clipboard.EmptyClipboard()
-            win32clipboard.SetClipboardData(win32con.CF_TEXT, text.encode("utf-8"))
+            try:
+                # Try the newer API with explicit format
+                import win32con  # type: ignore[import]
+
+                win32clipboard.SetClipboardData(win32con.CF_TEXT, text.encode("utf-8"))
+            except ImportError:
+                # Fall back to SetClipboardText for older versions
+                win32clipboard.SetClipboardText(text)
             win32clipboard.CloseClipboard()
             return True
         except Exception as e:
