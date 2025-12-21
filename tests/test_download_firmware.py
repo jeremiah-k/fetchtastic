@@ -539,15 +539,12 @@ class TestFirmwareReleaseDownloader:
         assert len(listing) == 2
         downloader.cache_manager.get_repo_contents.assert_called_once()
 
-    @patch("os.path.exists")
     @patch("os.scandir")
     @patch("shutil.rmtree")
     def test_cleanup_superseded_prereleases(
-        self, mock_rmtree, mock_scandir, mock_exists, downloader
+        self, mock_rmtree, mock_scandir, downloader
     ):
         """Test cleanup of superseded prereleases."""
-        # Setup filesystem mocks
-        mock_exists.return_value = True
 
         # Create mock directory entries for os.scandir
         mock_firmware1 = Mock()
@@ -619,7 +616,12 @@ class TestFirmwareReleaseDownloader:
         with (
             patch.object(downloader, "get_releases", return_value=[]),
             patch("os.path.exists", return_value=True),
-            patch("os.scandir", return_value=Mock(__enter__=Mock(return_value=[]))),
+            patch(
+                "os.scandir",
+                return_value=Mock(
+                    __enter__=Mock(return_value=[]), __exit__=Mock(return_value=None)
+                ),
+            ),
             patch(
                 "fetchtastic.download.files._atomic_write",
                 return_value=None,

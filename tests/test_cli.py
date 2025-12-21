@@ -639,24 +639,24 @@ def test_cli_clean_command(mocker):
 def test_run_clean(
     mock_isdir,
     mock_isfile,
-    mock_CONFIG_DIR,
-    mock_BASE_DIR,
-    mock_OLD_CONFIG_FILE,
-    mock_CONFIG_FILE,
-    mock_shutil_which,
-    mock__crontab_available,
-    mock_system,
-    mock_run,
+    _mock_config_dir,
+    _mock_base_dir,
+    _mock_old_config_file,
+    _mock_config_file,
+    _mock_shutil_which,
+    _mock_crontab_available,
+    _mock_platform_system,
+    mock_subprocess_run,
     mock_rmdir,
     mock_scandir,
     mock_rmtree,
-    mock_remove,
-    mock_exists,
+    mock_os_remove,
+    mock_os_path_exists,
     mock_input,
 ):
     """Test the run_clean function."""
     # Simulate existing files and directories
-    mock_exists.return_value = True
+    mock_os_path_exists.return_value = True
 
     # Create mock directory entries for os.scandir
     mock_some_dir = Mock()
@@ -728,8 +728,8 @@ def test_run_clean(
 
     mock_isdir.side_effect = isdir_side_effect
     mock_isfile.side_effect = isfile_side_effect
-    mock_run.return_value.stdout = "# fetchtastic cron job"
-    mock_run.return_value.returncode = 0
+    mock_subprocess_run.return_value.stdout = "# fetchtastic cron job"
+    mock_subprocess_run.return_value.returncode = 0
     with patch("subprocess.Popen") as mock_popen:
         mock_proc = mock_popen.return_value
         mock_proc.communicate.return_value = (None, None)
@@ -737,8 +737,8 @@ def test_run_clean(
         assert mock_popen.call_count == 2
 
     # Check that config files are removed
-    mock_remove.assert_any_call("/tmp/config/fetchtastic.yaml")  # nosec B108
-    mock_remove.assert_any_call("/tmp/old_config/fetchtastic.yaml")  # nosec B108
+    mock_os_remove.assert_any_call("/tmp/config/fetchtastic.yaml")  # nosec B108
+    mock_os_remove.assert_any_call("/tmp/old_config/fetchtastic.yaml")  # nosec B108
 
     # Check that only managed directories are cleaned
     # "repo-dls" is in MANAGED_DIRECTORIES, "firmware-2.7.4" starts with FIRMWARE_DIR_PREFIX
@@ -752,13 +752,15 @@ def test_run_clean(
 
     # Check that managed files are removed but unmanaged files are not
     # "fetchtastic_yaml.lnk" is in MANAGED_FILES, so should be removed
-    mock_remove.assert_any_call("/tmp/test_base_dir/fetchtastic_yaml.lnk")  # nosec B108
+    mock_os_remove.assert_any_call(
+        "/tmp/test_base_dir/fetchtastic_yaml.lnk"
+    )  # nosec B108
     # "unmanaged.txt" is not managed, so should not be removed
     # Total removes: 2 config files + 1 managed file + boot script + log file = 5
-    assert mock_remove.call_count == 5
+    assert mock_os_remove.call_count == 5
 
     # Check that cron jobs are removed
-    mock_run.assert_any_call(
+    mock_subprocess_run.assert_any_call(
         ["/usr/bin/crontab", "-l"],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

@@ -1,7 +1,7 @@
 import argparse
 import os
 import subprocess
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -180,7 +180,23 @@ def test_run_clean_managed_file_filtering(mocker):
     mocker.patch("fetchtastic.setup_config.OLD_CONFIG_FILE", "/path/to/old_config")
     mocker.patch("fetchtastic.setup_config.BASE_DIR", "/test/base")
     mocker.patch("os.path.exists", return_value=True)
-    mocker.patch("os.listdir", return_value=mock_files)
+    mocker.patch(
+        "os.scandir",
+        return_value=Mock(
+            __enter__=Mock(
+                return_value=[
+                    Mock(
+                        name=f,
+                        is_file=Mock(return_value=f.endswith(".yaml") or ".zip" in f),
+                        is_dir=Mock(return_value=f in {"firmware", "documents"}),
+                        path=f"/test/base/{f}",
+                    )
+                    for f in mock_files
+                ]
+            ),
+            __exit__=Mock(return_value=None),
+        ),
+    )
     mocker.patch(
         "os.path.isdir",
         side_effect=lambda path: os.path.basename(path) in {"firmware", "documents"},

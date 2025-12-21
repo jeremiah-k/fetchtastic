@@ -1338,17 +1338,18 @@ class FirmwareReleaseDownloader(BaseDownloader):
         This updates the prerelease tracking directory by comparing stored tracking data with the current prereleases discovered from the remote repository and delegating cleanup of outdated or expired tracking files to the prerelease history manager.
         """
         tracking_dir = os.path.dirname(self.get_prerelease_tracking_file())
-        if not os.path.exists(tracking_dir):
-            return
 
         # Get all prerelease tracking files
         tracking_files = []
-        with os.scandir(tracking_dir) as it:
-            for entry in it:
-                if entry.name.startswith("prerelease_") and entry.name.endswith(
-                    ".json"
-                ):
-                    tracking_files.append(entry.path)
+        try:
+            with os.scandir(tracking_dir) as it:
+                for entry in it:
+                    if entry.name.startswith("prerelease_") and entry.name.endswith(
+                        ".json"
+                    ):
+                        tracking_files.append(entry.path)
+        except FileNotFoundError:
+            return
 
         # Read all existing prerelease tracking data
         existing_prereleases = []
@@ -1425,43 +1426,44 @@ class FirmwareReleaseDownloader(BaseDownloader):
             prerelease_dir = os.path.join(
                 self.download_dir, FIRMWARE_DIR_NAME, FIRMWARE_PRERELEASES_DIR_NAME
             )
-            if not os.path.exists(prerelease_dir):
-                return False
 
             cleaned_up = False
 
-            # Check for matching pre-release directories
-            with os.scandir(prerelease_dir) as it:
-                for entry in it:
-                    if entry.name.startswith(FIRMWARE_DIR_PREFIX):
-                        dir_name = entry.name[len(FIRMWARE_DIR_PREFIX) :]
+            try:
+                # Check for matching pre-release directories
+                with os.scandir(prerelease_dir) as it:
+                    for entry in it:
+                        if entry.name.startswith(FIRMWARE_DIR_PREFIX):
+                            dir_name = entry.name[len(FIRMWARE_DIR_PREFIX) :]
 
-                        # Extract version from directory name
-                        if "." in dir_name:
-                            parts = dir_name.split(".")
-                            if len(parts) >= 3:
-                                try:
-                                    dir_major, dir_minor, dir_patch = map(
-                                        int, parts[:3]
-                                    )
-                                    dir_tuple = (dir_major, dir_minor, dir_patch)
+                            # Extract version from directory name
+                            if "." in dir_name:
+                                parts = dir_name.split(".")
+                                if len(parts) >= 3:
+                                    try:
+                                        dir_major, dir_minor, dir_patch = map(
+                                            int, parts[:3]
+                                        )
+                                        dir_tuple = (dir_major, dir_minor, dir_patch)
 
-                                    # Check if this prerelease is superseded
-                                    if dir_tuple <= release_tuple:
-                                        prerelease_path = entry.path
-                                        try:
-                                            shutil.rmtree(prerelease_path)
-                                            logger.info(
-                                                f"Removed superseded prerelease: {entry.name}"
-                                            )
-                                            cleaned_up = True
-                                        except OSError as e:
-                                            logger.error(
-                                                f"Error removing superseded prerelease {entry.name}: {e}"
-                                            )
+                                        # Check if this prerelease is superseded
+                                        if dir_tuple <= release_tuple:
+                                            prerelease_path = entry.path
+                                            try:
+                                                shutil.rmtree(prerelease_path)
+                                                logger.info(
+                                                    f"Removed superseded prerelease: {entry.name}"
+                                                )
+                                                cleaned_up = True
+                                            except OSError as e:
+                                                logger.error(
+                                                    f"Error removing superseded prerelease {entry.name}: {e}"
+                                                )
 
-                                except ValueError:
-                                    continue
+                                    except ValueError:
+                                        continue
+            except FileNotFoundError:
+                return False
 
             return cleaned_up
 

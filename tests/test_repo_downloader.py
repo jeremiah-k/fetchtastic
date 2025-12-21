@@ -252,8 +252,8 @@ def test_clean_repository_directory_error(repository_downloader, tmp_path):
 
     repository_downloader.download_dir = str(tmp_path)
 
-    # Mock os.listdir to raise an error
-    with patch("os.listdir", side_effect=OSError("Permission denied")):
+    # Mock os.scandir to raise an error
+    with patch("os.scandir", side_effect=OSError("Permission denied")):
         result = repository_downloader.clean_repository_directory()
 
     assert result is False

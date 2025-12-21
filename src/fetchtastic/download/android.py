@@ -742,12 +742,15 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
         # Get all prerelease tracking files
         tracking_files = []
-        with os.scandir(tracking_dir) as it:
-            for entry in it:
-                if entry.name.startswith("prerelease_") and entry.name.endswith(
-                    ".json"
-                ):
-                    tracking_files.append(entry.path)
+        try:
+            with os.scandir(tracking_dir) as it:
+                for entry in it:
+                    if entry.name.startswith("prerelease_") and entry.name.endswith(
+                        ".json"
+                    ):
+                        tracking_files.append(entry.path)
+        except FileNotFoundError:
+            pass
 
         # Also include the main prerelease tracking file if it exists
         main_tracking_file = self.get_prerelease_tracking_file()

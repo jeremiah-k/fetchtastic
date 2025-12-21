@@ -653,12 +653,15 @@ def run_clean():
 
         # Check if config directory is now empty
         if os.path.exists(config_dir):
-            with os.scandir(config_dir) as it:
-                is_empty = not any(it)
-            if is_empty:
-                _try_remove(
-                    config_dir, is_dir=True, description="empty config directory"
-                )
+            try:
+                with os.scandir(config_dir) as it:
+                    is_empty = not any(it)
+                if is_empty:
+                    _try_remove(
+                        config_dir, is_dir=True, description="empty config directory"
+                    )
+            except FileNotFoundError:
+                pass
 
     # Windows-specific cleanup
     if platform.system() == "Windows":
@@ -759,37 +762,40 @@ def run_clean():
             )
 
     if os.path.exists(download_dir):
-        with os.scandir(download_dir) as it:
-            for entry in it:
-                # Check if this is a managed directory or file
-                is_managed_dir = (
-                    entry.name in MANAGED_DIRECTORIES
-                    or entry.name.startswith(FIRMWARE_DIR_PREFIX)
-                )
-                is_managed_file = entry.name in MANAGED_FILES
+        try:
+            with os.scandir(download_dir) as it:
+                for entry in it:
+                    # Check if this is a managed directory or file
+                    is_managed_dir = (
+                        entry.name in MANAGED_DIRECTORIES
+                        or entry.name.startswith(FIRMWARE_DIR_PREFIX)
+                    )
+                    is_managed_file = entry.name in MANAGED_FILES
 
-                # First, handle symlinks to avoid traversal and ensure they are removed if managed.
-                if entry.is_symlink():
-                    if is_managed_dir or is_managed_file:
-                        _remove_managed_file(entry.path)
-                    continue
+                    # First, handle symlinks to avoid traversal and ensure they are removed if managed.
+                    if entry.is_symlink():
+                        if is_managed_dir or is_managed_file:
+                            _remove_managed_file(entry.path)
+                        continue
 
-                # Handle actual directories
-                if is_managed_dir and entry.is_dir():
-                    try:
-                        shutil.rmtree(entry.path)
-                        log_utils.logger.info(
-                            MSG_REMOVED_MANAGED_DIR.format(path=entry.path)
-                        )
-                    except OSError as e:
-                        log_utils.logger.error(
-                            MSG_FAILED_DELETE_MANAGED_DIR.format(
-                                path=entry.path, error=e
+                    # Handle actual directories
+                    if is_managed_dir and entry.is_dir():
+                        try:
+                            shutil.rmtree(entry.path)
+                            log_utils.logger.info(
+                                MSG_REMOVED_MANAGED_DIR.format(path=entry.path)
                             )
-                        )
-                # Handle actual files
-                elif is_managed_file and entry.is_file():
-                    _remove_managed_file(entry.path)
+                        except OSError as e:
+                            log_utils.logger.error(
+                                MSG_FAILED_DELETE_MANAGED_DIR.format(
+                                    path=entry.path, error=e
+                                )
+                            )
+                    # Handle actual files
+                    elif is_managed_file and entry.is_file():
+                        _remove_managed_file(entry.path)
+        except FileNotFoundError:
+            pass
 
         log_utils.logger.info(MSG_CLEANED_MANAGED_DIRS.format(path=download_dir))
         log_utils.logger.info(MSG_PRESERVE_OTHER_FILES)
