@@ -934,9 +934,13 @@ def test_windows_shortcut_creation_scandir_fallback(mocker):
     file_entry = MagicMock()
     file_entry.name = "shortcut.lnk"
     file_entry.path = os.path.join(windows_folder, "shortcut.lnk")
+    file_entry.is_file = MagicMock(return_value=True)
+    file_entry.is_dir = MagicMock(return_value=False)
     dir_entry = MagicMock()
     dir_entry.name = "Nested"
     dir_entry.path = os.path.join(windows_folder, "Nested")
+    dir_entry.is_file = MagicMock(return_value=False)
+    dir_entry.is_dir = MagicMock(return_value=True)
 
     mocker.patch(
         "os.scandir",

@@ -2065,13 +2065,12 @@ def create_windows_menu_shortcuts(config_file_path, base_dir):
 
                     # Try to remove each file
                     for entry in files:
-                        file_path = entry.path
                         try:
-                            if os.path.isfile(file_path):
-                                os.remove(file_path)
+                            if entry.is_file():
+                                os.remove(entry.path)
                                 print(f"Removed: {entry.name}")
-                            elif os.path.isdir(file_path):
-                                shutil.rmtree(file_path)
+                            elif entry.is_dir():
+                                shutil.rmtree(entry.path)
                                 print(f"Removed directory: {entry.name}")
                         except Exception as e3:
                             print(f"Could not remove {entry.name}: {e3}")
