@@ -176,3 +176,14 @@ ERROR_TYPE_FILESYSTEM = "filesystem_error"
 ERROR_TYPE_EXTRACTION = "extraction_error"
 ERROR_TYPE_RETRY_FAILURE = "retry_failure"
 ERROR_TYPE_UNKNOWN = "unknown_error"
+
+# File type sets for efficient categorization (defined once for performance)
+FIRMWARE_FILE_TYPES = {
+    FILE_TYPE_FIRMWARE,
+    FILE_TYPE_FIRMWARE_PRERELEASE,
+    FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
+}
+ANDROID_FILE_TYPES = {
+    FILE_TYPE_ANDROID,
+    FILE_TYPE_ANDROID_PRERELEASE,
+}

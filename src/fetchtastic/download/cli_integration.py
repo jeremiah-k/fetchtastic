@@ -15,12 +15,14 @@ if TYPE_CHECKING:
 import requests
 
 from fetchtastic.constants import (
+    ANDROID_FILE_TYPES,
     FILE_TYPE_ANDROID,
     FILE_TYPE_ANDROID_PRERELEASE,
     FILE_TYPE_FIRMWARE,
     FILE_TYPE_FIRMWARE_PRERELEASE,
     FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
     FILE_TYPE_REPOSITORY,
+    FIRMWARE_FILE_TYPES,
 )
 from fetchtastic.log_utils import logger
 from fetchtastic.notifications import (
@@ -325,15 +327,8 @@ class DownloadCLIIntegration:
                 continue
 
             file_type = result.file_type
-            is_firmware = file_type in {
-                FILE_TYPE_FIRMWARE,
-                FILE_TYPE_FIRMWARE_PRERELEASE,
-                FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
-            }
-            is_android = file_type in {
-                FILE_TYPE_ANDROID,
-                FILE_TYPE_ANDROID_PRERELEASE,
-            }
+            is_firmware = file_type in FIRMWARE_FILE_TYPES
+            is_android = file_type in ANDROID_FILE_TYPES
             was_skipped = getattr(result, "was_skipped", False)
 
             # Always detect newer versions (for notifications), even when downloads were skipped.
