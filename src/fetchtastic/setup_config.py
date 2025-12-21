@@ -1765,13 +1765,16 @@ def run_setup(
 
     # Record the version at which setup was last run
     try:
-        from importlib.metadata import PackageNotFoundError, version
+        from importlib.metadata import version
 
         current_version = version("fetchtastic")
         config["LAST_SETUP_VERSION"] = current_version
         config["LAST_SETUP_DATE"] = datetime.now().isoformat()
-    except (ImportError, PackageNotFoundError):
-        # If we can't get the version, just record the date
+    except ImportError:
+        # If importlib.metadata is not available, just record the date
+        config["LAST_SETUP_DATE"] = datetime.now().isoformat()
+    except Exception:
+        # If fetchtastic package is not found or other error, just record the date
         config["LAST_SETUP_DATE"] = datetime.now().isoformat()
 
     # Make sure the config directory exists
