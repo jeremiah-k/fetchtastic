@@ -130,7 +130,7 @@ def cron_check_command_required(func):
                 "Cron configuration skipped: 'crontab' command not found on this system."
             )
             return False
-        crontab_path = shutil.which("crontab")  # type: ignore[possibly-unbound]
+        crontab_path = shutil.which("crontab")
         if crontab_path is None:
             logger.warning(
                 "Cron configuration skipped: 'crontab' command not found on this system."
@@ -1558,11 +1558,12 @@ def _setup_base(
 
     if exists:
         # Load existing configuration
-        config = load_config()  # type: ignore[assignment]
-        if config is None:
+        loaded_config = load_config()
+        if loaded_config is None:
             print("Failed to load existing configuration. Starting with defaults.")
             config = {}
         else:
+            config = loaded_config
             print(
                 "Existing configuration found. You can keep current settings or change them."
             )
@@ -1590,7 +1591,7 @@ def _setup_base(
             if exists_in_dir and base_dir != BASE_DIR:
                 print(f"Found existing configuration in {base_dir}")
                 # Load the configuration from the specified directory
-                loaded_config = load_config(base_dir)  # type: ignore[assignment]
+                loaded_config = load_config(base_dir)
                 if loaded_config is not None:
                     config = loaded_config
             else:
