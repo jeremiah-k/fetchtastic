@@ -403,10 +403,10 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
             # Get all version directories
             version_dirs = []
-            for item in os.listdir(android_dir):
-                item_path = os.path.join(android_dir, item)
-                if os.path.isdir(item_path) and self._is_version_directory(item):
-                    version_dirs.append(item)
+            with os.scandir(android_dir) as it:
+                for entry in it:
+                    if entry.is_dir() and self._is_version_directory(entry.name):
+                        version_dirs.append(entry.name)
 
             # Sort versions (newest first) using VersionManager tuples
             version_dirs.sort(
