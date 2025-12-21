@@ -111,7 +111,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
             if limit is not None and limit < 0:
                 logger.warning("Invalid limit value %d; using default", limit)
                 limit = None
-            params = {"per_page": limit if limit and limit > 0 else 8}
+            params = {"per_page": limit if limit else 8}
             url_key = self.cache_manager.build_url_cache_key(
                 self.firmware_releases_url, params
             )
@@ -575,6 +575,11 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
             release_tags_to_keep = set()
             for release in latest_releases:
+                if release.prerelease:
+                    logger.debug(
+                        "Skipping prerelease tag during cleanup: %s", release.tag_name
+                    )
+                    continue
                 safe_tag = _sanitize_path_component(release.tag_name)
                 if safe_tag is None:
                     logger.warning(
