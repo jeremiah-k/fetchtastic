@@ -100,7 +100,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
         Fetch firmware releases from GitHub and produce Release objects with their associated assets.
 
         Parameters:
-            limit (Optional[int]): Maximum number of releases to return; when omitted returns all parsed releases.
+            limit (Optional[int]): Maximum number of releases to return; when omitted defaults to 8. Pass 0 to return an empty list. Values above 100 are capped at 100 (GitHub API limit).
 
         Returns:
             List[Release]: Parsed Release objects (each includes its Asset entries); returns an empty list if no valid releases are found or an error occurs.
@@ -549,16 +549,18 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
     def cleanup_old_versions(self, keep_limit: int) -> None:
         """
-        Remove firmware version directories not present in the latest `keep_limit` releases.
+        Remove firmware version directories not present in the latest `keep_limit` stable releases.
 
-        This mirrors legacy behavior by keeping only the newest release tags returned
-        by the GitHub API (bounded by `keep_limit`). Any local version directories that
-        are not in that set are removed. Special directories "prerelease" and "repo-dls"
-        are ignored.
+        This mirrors legacy behavior by keeping only the newest stable (non-prerelease)
+        release tags returned by the GitHub API (bounded by `keep_limit`). Any local
+        version directories not in that set are removed. Prerelease tags are filtered
+        out and their directories may be removed. Special directories "prerelease" and
+        "repo-dls" are always preserved.
 
         Parameters:
             keep_limit (int): Maximum number of most-recent version directories to retain;
-                older matching directories will be deleted.
+                older directories and prerelease directories will be deleted. Pass 0 to
+                delete all version directories.
         """
         try:
             if keep_limit < 0:
