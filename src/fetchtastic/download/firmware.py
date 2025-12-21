@@ -611,12 +611,14 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 if item not in release_tags_to_keep:
                     try:
                         shutil.rmtree(item_path)
-                        logger.info(f"Removed old firmware version: {item}")
+                        logger.info("Removed old firmware version: %s", item)
                     except OSError as e:
-                        logger.error(f"Error removing old firmware version {item}: {e}")
+                        logger.error(
+                            "Error removing old firmware version %s: %s", item, e
+                        )
 
         except OSError as e:
-            logger.error(f"Error cleaning up old firmware versions: {e}")
+            logger.error("Error cleaning up old firmware versions: %s", e)
 
     def get_latest_release_tag(self) -> Optional[str]:
         """

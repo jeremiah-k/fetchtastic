@@ -387,10 +387,14 @@ class TestFirmwareReleaseDownloader:
         mock_listdir.return_value = ["v1.0.0", "v2.0.0"]
         mock_isdir.return_value = True
 
+        # Mock get_releases to track calls
+        downloader.get_releases = Mock()
+
         # Should skip cleanup entirely for negative keep_limit
         downloader.cleanup_old_versions(keep_limit=-1)
 
         # Should not call get_releases or rmtree for negative keep_limit
+        downloader.get_releases.assert_not_called()
         assert mock_rmtree.call_count == 0
 
     @patch("fetchtastic.download.firmware.make_github_api_request")
