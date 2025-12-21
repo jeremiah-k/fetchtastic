@@ -108,6 +108,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
         try:
             if limit == 0:
                 return []
+            if limit is not None and limit < 0:
+                logger.warning("Invalid limit value %d; using default", limit)
+                limit = None
             params = {"per_page": limit if limit and limit > 0 else 8}
             url_key = self.cache_manager.build_url_cache_key(
                 self.firmware_releases_url, params
@@ -552,13 +555,19 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 older matching directories will be deleted.
         """
         try:
+            if keep_limit < 0:
+                logger.warning(
+                    "Invalid keep_limit value %d; skipping cleanup", keep_limit
+                )
+                return
+
             # Get all firmware version directories
             firmware_dir = os.path.join(self.download_dir, FIRMWARE_DIR_NAME)
             if not os.path.exists(firmware_dir):
                 return
 
             latest_releases = self.get_releases(limit=keep_limit)
-            if not latest_releases:
+            if not latest_releases and keep_limit > 0:
                 logger.warning(
                     "Skipping firmware cleanup: no releases available to determine keep set."
                 )
@@ -575,7 +584,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     continue
                 release_tags_to_keep.add(safe_tag)
 
-            if not release_tags_to_keep:
+            if not release_tags_to_keep and keep_limit > 0:
                 logger.warning(
                     "Skipping firmware cleanup: no safe release tags found to keep."
                 )

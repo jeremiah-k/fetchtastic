@@ -324,7 +324,7 @@ class TestFirmwareReleaseDownloader:
     @patch("os.path.isdir")
     @patch("shutil.rmtree")
     def test_cleanup_old_versions_unsafe_tags(
-        self, mock_rmtree, mock_isdir, mock_listdir, mock_exists, downloader, caplog
+        self, mock_rmtree, mock_isdir, mock_listdir, mock_exists, downloader
     ):
         """Test cleanup when release tags contain unsafe characters."""
         # Mock _sanitize_path_component to return None for unsafe tags
@@ -349,6 +349,30 @@ class TestFirmwareReleaseDownloader:
             args = mock_rmtree.call_args[0][0]
             assert "v2.0.0" in args
             # Warning is logged but caplog testing is optional
+
+    @patch("os.path.exists")
+    @patch("os.listdir")
+    @patch("os.path.isdir")
+    @patch("shutil.rmtree")
+    def test_cleanup_old_versions_keep_zero(
+        self, mock_rmtree, mock_isdir, mock_listdir, mock_exists, downloader
+    ):
+        """Test cleanup with keep_limit=0 removes all versions."""
+        # Setup filesystem mocks
+        mock_exists.return_value = True
+        mock_listdir.return_value = ["v1.0.0", "v2.0.0"]
+        mock_isdir.return_value = True
+        downloader.get_releases = Mock(return_value=[])
+
+        downloader.cleanup_old_versions(keep_limit=0)
+
+        # Should remove all versions
+        downloader.get_releases.assert_called_once_with(limit=0)
+        assert mock_rmtree.call_count == 2
+        calls = mock_rmtree.call_args_list
+        removed_paths = {call[0][0] for call in calls}
+        assert any("v1.0.0" in path for path in removed_paths)
+        assert any("v2.0.0" in path for path in removed_paths)
 
     def test_get_latest_release_tag(self, mock_config, tmp_path):
         """Test getting latest release tag from cache file."""
