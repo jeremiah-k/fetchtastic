@@ -242,6 +242,27 @@ class TestFirmwareReleaseDownloader:
         assert result.extracted_files == ["firmware.bin"]
         downloader.file_operations.extract_archive.assert_called_once()
 
+    @patch("os.path.exists")
+    def test_extract_firmware_no_matches_is_warning(self, mock_exists, downloader):
+        """Test extraction when no files match patterns."""
+        mock_exists.return_value = True
+
+        release = Mock(spec=Release)
+        release.tag_name = "v1.0.0"
+
+        asset = Mock(spec=Asset)
+        asset.name = "firmware-rp2040.zip"
+
+        downloader.file_operations.validate_extraction_patterns.return_value = True
+        downloader.file_operations.check_extraction_needed.return_value = True
+        downloader.file_operations.extract_archive.return_value = []
+
+        result = downloader.extract_firmware(release, asset, ["*.bin"], ["readme*"])
+
+        assert result.success is True
+        assert result.was_skipped is True
+        assert result.extracted_files == []
+
     def test_validate_extraction_patterns(self, downloader):
         """Test extraction pattern validation."""
         # Mock file operations

@@ -525,13 +525,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     f"No files extracted from {asset.name} - no matches for patterns"
                 )
                 return self.create_download_result(
-                    success=False,
+                    success=True,
                     release_tag=release.tag_name,
                     file_path=zip_path,
-                    error_message="No files matched extraction patterns",
                     file_type=FILE_TYPE_FIRMWARE,
-                    error_type=ERROR_TYPE_VALIDATION,
-                    is_retryable=False,
+                    extracted_files=[],
+                    was_skipped=True,
                 )
 
         except (zipfile.BadZipFile, OSError, ValueError) as e:
