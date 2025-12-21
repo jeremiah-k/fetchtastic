@@ -5,6 +5,8 @@ import pytest
 
 from fetchtastic.download.cli_integration import DownloadCLIIntegration
 
+pytestmark = [pytest.mark.user_interface, pytest.mark.unit]
+
 
 @pytest.fixture
 def integration(mocker):
