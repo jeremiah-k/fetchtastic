@@ -646,8 +646,8 @@ def test_run_clean(
     mock_rmdir,
     mock_scandir,
     mock_rmtree,
-    mock_os_remove,
     mock_os_path_exists,
+    mock_os_remove,
     mock_input,
 ):
     """Test the run_clean function."""
