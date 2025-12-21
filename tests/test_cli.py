@@ -639,10 +639,6 @@ def test_cli_clean_command(mocker):
 def test_run_clean(
     mock_isdir,
     mock_isfile,
-    _mock_config_dir,
-    _mock_base_dir,
-    _mock_old_config_file,
-    _mock_config_file,
     _mock_shutil_which,
     _mock_crontab_available,
     _mock_platform_system,

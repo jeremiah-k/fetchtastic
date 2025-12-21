@@ -180,20 +180,22 @@ def test_run_clean_managed_file_filtering(mocker):
     mocker.patch("fetchtastic.setup_config.OLD_CONFIG_FILE", "/path/to/old_config")
     mocker.patch("fetchtastic.setup_config.BASE_DIR", "/test/base")
     mocker.patch("os.path.exists", return_value=True)
+    scandir_entries = []
+    for entry_name in mock_files:
+        entry = Mock()
+        entry.name = entry_name
+        entry.path = f"/test/base/{entry_name}"
+        entry.is_symlink.return_value = False
+        entry.is_file.return_value = (
+            entry_name.endswith(".yaml") or ".zip" in entry_name
+        )
+        entry.is_dir.return_value = entry_name in {"firmware", "documents"}
+        scandir_entries.append(entry)
+
     mocker.patch(
         "os.scandir",
         return_value=Mock(
-            __enter__=Mock(
-                return_value=[
-                    Mock(
-                        name=f,
-                        is_file=Mock(return_value=f.endswith(".yaml") or ".zip" in f),
-                        is_dir=Mock(return_value=f in {"firmware", "documents"}),
-                        path=f"/test/base/{f}",
-                    )
-                    for f in mock_files
-                ]
-            ),
+            __enter__=Mock(return_value=scandir_entries),
             __exit__=Mock(return_value=None),
         ),
     )
