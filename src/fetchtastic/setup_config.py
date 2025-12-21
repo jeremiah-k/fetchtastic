@@ -126,6 +126,11 @@ def cron_check_command_required(func):
             )
             return False
         crontab_path = shutil.which("crontab")
+        if crontab_path is None:
+            logger.warning(
+                "Cron configuration skipped: 'crontab' command not found on this system."
+            )
+            return False
         if not isinstance(crontab_path, str):
             logger.debug(
                 "shutil.which returned non-str (%s); falling back to literal 'crontab'.",
