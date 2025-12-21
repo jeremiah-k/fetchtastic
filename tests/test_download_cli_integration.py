@@ -676,7 +676,7 @@ def test_convert_results_to_legacy_format_with_file_type_categorization():
     ]
 
     # Test the function
-    downloaded_firmwares, new_firmware_versions, downloaded_apks, new_apk_versions = (
+    downloaded_firmwares, _new_firmware_versions, downloaded_apks, _new_apk_versions = (
         integration._convert_results_to_legacy_format(results)
     )
 

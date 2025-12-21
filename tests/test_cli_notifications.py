@@ -52,12 +52,15 @@ def _call_summary(
     )
 
 
-def test_summary_sends_completion_notification(mocker, integration):
-    with patch(
-        "fetchtastic.download.cli_integration.send_download_completion_notification"
-    ) as mock_completion, patch(
-        "fetchtastic.download.cli_integration.send_up_to_date_notification"
-    ) as mock_up_to_date:
+def test_summary_sends_completion_notification(integration):
+    with (
+        patch(
+            "fetchtastic.download.cli_integration.send_download_completion_notification"
+        ) as mock_completion,
+        patch(
+            "fetchtastic.download.cli_integration.send_up_to_date_notification"
+        ) as mock_up_to_date,
+    ):
         _call_summary(integration, ["v2.8.0"], ["v1.8.1"], [])
         mock_completion.assert_called_once_with(
             integration.config, ["v2.8.0"], ["v1.8.1"]
@@ -65,15 +68,16 @@ def test_summary_sends_completion_notification(mocker, integration):
         mock_up_to_date.assert_not_called()
 
 
-def test_summary_sends_up_to_date_notification_when_no_download(
-    monkeypatch, mocker, integration
-):
+def test_summary_sends_up_to_date_notification_when_no_download(integration):
     integration.config["NOTIFY_ON_DOWNLOAD_ONLY"] = False
-    with patch(
-        "fetchtastic.download.cli_integration.send_download_completion_notification"
-    ) as mock_completion, patch(
-        "fetchtastic.download.cli_integration.send_up_to_date_notification"
-    ) as mock_up_to_date:
+    with (
+        patch(
+            "fetchtastic.download.cli_integration.send_download_completion_notification"
+        ) as mock_completion,
+        patch(
+            "fetchtastic.download.cli_integration.send_up_to_date_notification"
+        ) as mock_up_to_date,
+    ):
         _call_summary(integration, [], [], [])
         mock_completion.assert_not_called()
         mock_up_to_date.assert_called_once_with(integration.config)
@@ -83,11 +87,14 @@ def test_summary_calls_up_to_date_even_when_download_only_setting_true(
     mocker, integration
 ):
     integration.config["NOTIFY_ON_DOWNLOAD_ONLY"] = True
-    with patch(
-        "fetchtastic.download.cli_integration.send_download_completion_notification"
-    ) as mock_completion, patch(
-        "fetchtastic.download.cli_integration.send_up_to_date_notification"
-    ) as mock_up_to_date:
+    with (
+        patch(
+            "fetchtastic.download.cli_integration.send_download_completion_notification"
+        ) as mock_completion,
+        patch(
+            "fetchtastic.download.cli_integration.send_up_to_date_notification"
+        ) as mock_up_to_date,
+    ):
         _call_summary(integration, [], [], [])
         mock_completion.assert_not_called()
         mock_up_to_date.assert_called_once()
@@ -95,11 +102,14 @@ def test_summary_calls_up_to_date_even_when_download_only_setting_true(
 
 
 def test_summary_sends_new_releases_notification(mocker, integration):
-    with patch(
-        "fetchtastic.download.cli_integration.send_new_releases_available_notification"
-    ) as mock_new_releases, patch(
-        "fetchtastic.download.cli_integration.send_up_to_date_notification"
-    ) as mock_up_to_date:
+    with (
+        patch(
+            "fetchtastic.download.cli_integration.send_new_releases_available_notification"
+        ) as mock_new_releases,
+        patch(
+            "fetchtastic.download.cli_integration.send_up_to_date_notification"
+        ) as mock_up_to_date,
+    ):
         _call_summary(integration, [], [], new_fw=["v3.0.0"], new_apks=[])
         mock_new_releases.assert_called_once_with(
             integration.config,

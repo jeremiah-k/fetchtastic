@@ -276,7 +276,7 @@ class DownloadCLIIntegration:
                     new_apk_versions,
                     downloads_skipped_reason="Downloads skipped because downloaded assets already match the latest releases.",
                 )
-            elif downloaded_count == 0 and not failed_downloads:
+            else:  # downloaded_count == 0 and not failed_downloads and not new_versions_available
                 send_up_to_date_notification(self.config)
 
         summary = get_api_request_summary()
