@@ -1159,6 +1159,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
         This function:
         - Returns an empty list when prerelease checking is disabled via configuration.
+        - Returns an empty list for firmware GitHub releases because their prerelease
+          flag represents alpha/beta tracks that are treated as stable in Fetchtastic.
+          Firmware prereleases are instead handled via the meshtastic.github.io workflow.
         - Excludes prereleases whose tag appears to be a hash-suffixed version.
         - Sorts remaining prereleases by published date (newest first).
         - Applies include/exclude pattern filtering using configuration keys "FIRMWARE_PRERELEASE_INCLUDE_PATTERNS" and "FIRMWARE_PRERELEASE_EXCLUDE_PATTERNS" when provided.
@@ -1180,83 +1183,11 @@ class FirmwareReleaseDownloader(BaseDownloader):
         if not check_prereleases:
             return []
 
-        version_manager = VersionManager()
-
-        # Filter prereleases (GitHub's prerelease flag can be noisy for hash-suffixed tags)
-        prereleases = [
-            r
-            for r in releases
-            if r.prerelease
-            and not version_manager.HASH_SUFFIX_VERSION_RX.match(
-                r.tag_name.lstrip("vV")
-            )
-        ]
-
-        # Sort by published date (newest first)
-        prereleases.sort(key=lambda r: r.published_at or "", reverse=True)
-
-        # Apply pattern filtering if configured
-        include_patterns = self.config.get("FIRMWARE_PRERELEASE_INCLUDE_PATTERNS", [])
-        exclude_patterns = self.config.get("FIRMWARE_PRERELEASE_EXCLUDE_PATTERNS", [])
-
-        if include_patterns or exclude_patterns:
-            prerelease_tags = [r.tag_name for r in prereleases]
-            filtered_tags = version_manager.filter_prereleases_by_pattern(
-                prerelease_tags, include_patterns, exclude_patterns
-            )
-            prereleases = [r for r in prereleases if r.tag_name in filtered_tags]
-
-        # Further restrict to prereleases that match expected base version
-        expected_base = None
-        latest_tuple = None
-        latest_tag = None
-        for candidate in releases:
-            candidate_is_hash_suffix = bool(
-                version_manager.HASH_SUFFIX_VERSION_RX.match(
-                    candidate.tag_name.lstrip("vV")
-                )
-            )
-            candidate_is_stable = (not candidate.prerelease) or candidate_is_hash_suffix
-            if not candidate_is_stable:
-                continue
-            candidate_tuple = version_manager.get_release_tuple(candidate.tag_name)
-            if candidate_tuple is None:
-                continue
-            if latest_tuple is None or candidate_tuple > latest_tuple:
-                latest_tuple = candidate_tuple
-                latest_tag = candidate.tag_name
-
-        if latest_tag:
-            expected_base = version_manager.calculate_expected_prerelease_version(
-                latest_tag
-            )
-
-        if expected_base:
-            filtered_prereleases = []
-            for pr in prereleases:
-                clean_version = version_manager.extract_clean_version(pr.tag_name)
-                if clean_version and clean_version.lstrip("vV").startswith(
-                    expected_base
-                ):
-                    filtered_prereleases.append(pr)
-            prereleases = filtered_prereleases
-
-        # Further restrict using commit history cache if available
-        if recent_commits and expected_base:
-            commit_hashes = []
-            for commit in recent_commits:
-                sha = commit.get("sha")
-                if sha:
-                    commit_hashes.append(sha[:7])
-            filtered_by_commits = [
-                pr
-                for pr in prereleases
-                if any(hash_part in pr.tag_name for hash_part in commit_hashes)
-            ]
-            if filtered_by_commits:
-                prereleases = filtered_by_commits
-
-        return prereleases
+        logger.debug(
+            "Firmware GitHub prerelease flags are treated as stable; "
+            "firmware prereleases are handled via the repo-based workflow."
+        )
+        return []
 
     def get_prerelease_tracking_file(self) -> str:
         """

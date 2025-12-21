@@ -722,9 +722,8 @@ class TestFirmwareReleaseDownloader:
         ]
         result = downloader.handle_prereleases(releases)
 
-        # Should return prereleases
-        assert len(result) > 0
-        assert isinstance(result, list)
+        # Firmware GitHub prerelease flags are treated as stable.
+        assert result == []
 
     def test_download_firmware_exception_uses_firmware_dir(self, downloader, tmp_path):
         """Ensure validation errors fall back to the firmware directory."""

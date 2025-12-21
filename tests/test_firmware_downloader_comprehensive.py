@@ -261,9 +261,8 @@ class TestFirmwareReleaseDownloader:
 
         filtered_prereleases = firmware_downloader.handle_prereleases(releases)
 
-        # Should return prereleases
-        assert len(filtered_prereleases) == 2
-        assert all(r.prerelease for r in filtered_prereleases)
+        # Firmware GitHub prerelease flags are treated as stable.
+        assert filtered_prereleases == []
 
     def test_orchestrator_firmware_download_config(self, tmp_path):
         """

@@ -2605,7 +2605,7 @@ def setup_cron_job(frequency="hourly", *, crontab_path: str = "crontab"):
             process = subprocess.Popen(
                 [crontab_path, "-"],  # type: ignore[possibly-unbound]
                 stdin=subprocess.PIPE,
-                text=True,  # type: ignore[possibly-unbound]
+                text=True,
             )
             process.communicate(
                 input=new_cron, timeout=CRON_COMMAND_TIMEOUT_SECONDS
@@ -2627,7 +2627,7 @@ def remove_cron_job(*, crontab_path: str = "crontab"):
     Removes crontab lines that contain "# fetchtastic" or "fetchtastic download" while preserving any lines that start with "@reboot". Does nothing on Windows or if the crontab command is unavailable. Errors encountered while reading or updating the crontab are logged and not raised.
 
     Parameters:
-        crontab_path (str): Path to the system crontab executable (for example "crontab").  # type: ignore[possibly-unbound]
+        crontab_path (str): Path to the system crontab executable (for example "crontab").
     """
     # Skip cron job removal on Windows
     if platform.system() == "Windows":
@@ -2663,7 +2663,7 @@ def remove_cron_job(*, crontab_path: str = "crontab"):
                 process = subprocess.Popen(
                     [crontab_path, "-"],  # type: ignore[possibly-unbound]
                     stdin=subprocess.PIPE,
-                    text=True,  # type: ignore[possibly-unbound]
+                    text=True,
                 )
                 process.communicate(
                     input=new_cron, timeout=CRON_COMMAND_TIMEOUT_SECONDS
@@ -2775,7 +2775,7 @@ def setup_reboot_cron_job(*, crontab_path: str = "crontab"):
             process = subprocess.Popen(
                 [crontab_path, "-"],  # type: ignore[possibly-unbound]
                 stdin=subprocess.PIPE,
-                text=True,  # type: ignore[possibly-unbound]
+                text=True,
             )
             process.communicate(input=new_cron, timeout=CRON_COMMAND_TIMEOUT_SECONDS)
             print("Reboot cron job added to run Fetchtastic on system startup.")
@@ -2831,7 +2831,7 @@ def remove_reboot_cron_job(*, crontab_path: str = "crontab"):
                 process = subprocess.Popen(
                     [crontab_path, "-"],  # type: ignore[possibly-unbound]
                     stdin=subprocess.PIPE,
-                    text=True,  # type: ignore[possibly-unbound]
+                    text=True,
                 )
                 process.communicate(
                     input=new_cron, timeout=CRON_COMMAND_TIMEOUT_SECONDS
