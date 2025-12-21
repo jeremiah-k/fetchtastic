@@ -949,8 +949,6 @@ def test_windows_shortcut_creation_scandir_fallback(mocker):
             __exit__=MagicMock(return_value=None),
         ),
     )
-    mocker.patch("os.path.isfile", side_effect=lambda path: path.endswith(".lnk"))
-    mocker.patch("os.path.isdir", side_effect=lambda path: path.endswith("Nested"))
     mock_remove = mocker.patch("os.remove")
 
     def rmtree_side_effect(path):
