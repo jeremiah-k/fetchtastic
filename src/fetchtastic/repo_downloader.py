@@ -18,9 +18,9 @@ from fetchtastic.utils import download_file_with_retry
 def download_repo_files(selected_files, download_dir):  # log_message_func removed
     """
     Download selected repository files into the repository downloads folder under the given base download directory.
-    
+
     Files are saved under <download_dir>/<FIRMWARE_DIR_NAME>/<REPO_DOWNLOADS_DIR>/<directory> (or the repository base directory if the provided directory is unsafe). File names are sanitized to prevent path traversal and files whose original names end with the shell script extension are made executable when download succeeds.
-    
+
     Parameters:
         selected_files (dict): Mapping with keys:
             - "directory" (str): Subdirectory name inside the repo downloads directory (may be empty).
@@ -28,7 +28,7 @@ def download_repo_files(selected_files, download_dir):  # log_message_func remov
                 - "name" (str): Original file name.
                 - "download_url" (str): URL to download the file.
         download_dir (str): Base path under which the repository downloads directory will be created.
-    
+
     Returns:
         list[str]: Absolute paths to files that were successfully downloaded.
     """
@@ -153,12 +153,12 @@ def download_repo_files(selected_files, download_dir):  # log_message_func remov
 def clean_repo_directory(download_dir):  # log_message_func removed
     """
     Clean the repository downloads directory under the given base download directory.
-    
+
     Removes every file, symbolic link, and subdirectory inside: <download_dir>/<FIRMWARE_DIR_NAME>/<REPO_DOWNLOADS_DIR>. If the target directory does not exist, the function does nothing and returns True.
-    
+
     Parameters:
         download_dir (str): Base download directory that contains the firmware directory (value of FIRMWARE_DIR_NAME).
-    
+
     Returns:
         bool: `True` if the repository downloads directory was cleaned or did not exist; `False` if an I/O error occurred while removing contents.
     """

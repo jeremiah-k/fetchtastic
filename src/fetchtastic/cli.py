@@ -218,9 +218,9 @@ def _handle_download_subcommand(
     start_time = time.time()
     (
         downloaded_firmwares,
-        _new_firmware_versions,
+        new_firmware_versions,
         downloaded_apks,
-        _new_apk_versions,
+        new_apk_versions,
         failed_downloads,
         latest_firmware_version,
         latest_apk_version,
@@ -235,6 +235,8 @@ def _handle_download_subcommand(
         failed_downloads=failed_downloads,
         latest_firmware_version=latest_firmware_version,
         latest_apk_version=latest_apk_version,
+        new_firmware_versions=new_firmware_versions,
+        new_apk_versions=new_apk_versions,
     )
 
 
@@ -595,7 +597,7 @@ def show_help(
 def run_clean():
     """
     Permanently remove Fetchtastic configuration, Fetchtastic-managed downloads, platform integrations, and logs after explicit interactive confirmation.
-    
+
     This operation deletes current and legacy configuration files, only Fetchtastic-managed files and directories inside the configured download directory, platform-specific integrations (for example, Windows Start Menu and startup shortcuts, non-Windows cron entries, and a Termux boot script), and the Fetchtastic log file. The removal is irreversible and requires the user to confirm interactively; non-managed files are preserved.
     """
     print(

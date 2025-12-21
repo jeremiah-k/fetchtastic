@@ -17,6 +17,14 @@ from fetchtastic.constants import (
     DEFAULT_ANDROID_VERSIONS_TO_KEEP,
     DEFAULT_FIRMWARE_VERSIONS_TO_KEEP,
     DEFAULT_PRERELEASE_COMMITS_TO_FETCH,
+    ERROR_TYPE_RETRY_FAILURE,
+    ERROR_TYPE_UNKNOWN,
+    FILE_TYPE_ANDROID,
+    FILE_TYPE_ANDROID_PRERELEASE,
+    FILE_TYPE_FIRMWARE,
+    FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
+    FILE_TYPE_REPOSITORY,
+    FILE_TYPE_UNKNOWN,
     FIRMWARE_DIR_NAME,
     FIRMWARE_DIR_PREFIX,
     FIRMWARE_PRERELEASES_DIR_NAME,
@@ -155,7 +163,7 @@ class DownloadOrchestrator:
                     result = self.android_downloader.download_apk(prerelease, asset)
                     if result.success and not result.was_skipped:
                         any_android_downloaded = True
-                    self._handle_download_result(result, "android_prerelease")
+                    self._handle_download_result(result, FILE_TYPE_ANDROID_PRERELEASE)
 
             if (
                 self.config.get(
@@ -221,9 +229,13 @@ class DownloadOrchestrator:
                 for result in successes:
                     if not result.was_skipped:
                         any_firmware_downloaded = True
-                    self._handle_download_result(result, "firmware_prerelease_repo")
+                    self._handle_download_result(
+                        result, FILE_TYPE_FIRMWARE_PRERELEASE_REPO
+                    )
                 for result in failures:
-                    self._handle_download_result(result, "firmware_prerelease_repo")
+                    self._handle_download_result(
+                        result, FILE_TYPE_FIRMWARE_PRERELEASE_REPO
+                    )
 
             if not any_firmware_downloaded and not releases_to_download:
                 logger.info("All Firmware assets are up to date.")
@@ -316,7 +328,7 @@ class DownloadOrchestrator:
                 result = self.android_downloader.download_apk(release, asset)
                 if result.success and not result.was_skipped:
                     any_downloaded = True
-                self._handle_download_result(result, "android")
+                self._handle_download_result(result, FILE_TYPE_ANDROID)
         except (requests.RequestException, OSError, ValueError, TypeError) as e:
             logger.error(f"Error downloading Android release {release.tag_name}: {e}")
             return False
@@ -363,7 +375,7 @@ class DownloadOrchestrator:
                 )
                 if download_result.success and not download_result.was_skipped:
                     any_downloaded = True
-                self._handle_download_result(download_result, "firmware")
+                self._handle_download_result(download_result, FILE_TYPE_FIRMWARE)
 
                 # If download succeeded, extract files
                 if download_result.success:
@@ -586,7 +598,7 @@ class DownloadOrchestrator:
             retry_count=failed_result.retry_count,
             retry_timestamp=failed_result.retry_timestamp,
             error_message=final_message,
-            error_type="retry_failure",
+            error_type=ERROR_TYPE_RETRY_FAILURE,
             is_retryable=is_retryable,
         )
 
@@ -602,7 +614,7 @@ class DownloadOrchestrator:
         """
         url = failed_result.download_url
         target_path = str(failed_result.file_path) if failed_result.file_path else None
-        file_type = failed_result.file_type or "unknown"
+        file_type = failed_result.file_type or FILE_TYPE_UNKNOWN
 
         if not url or not target_path:
             return DownloadResult(
@@ -615,7 +627,7 @@ class DownloadOrchestrator:
                 retry_count=failed_result.retry_count,
                 retry_timestamp=failed_result.retry_timestamp,
                 error_message="Retry skipped: missing URL or target path",
-                error_type="retry_failure",
+                error_type=ERROR_TYPE_RETRY_FAILURE,
                 is_retryable=False,
             )
 
@@ -702,7 +714,7 @@ class DownloadOrchestrator:
             logger.info("\n🔄 Retryable Failures Summary:")
             by_type: Dict[str, int] = {}
             for failure in retryable_failures:
-                failure_type = failure.file_type or "unknown"
+                failure_type = failure.file_type or FILE_TYPE_UNKNOWN
                 by_type[failure_type] = by_type.get(failure_type, 0) + 1
 
             for file_type, count in by_type.items():
@@ -722,7 +734,7 @@ class DownloadOrchestrator:
             logger.info("\n❌ Non-Retryable Failures Summary:")
             by_reason: Dict[str, int] = {}
             for failure in non_retryable_failures:
-                reason = failure.error_type or "unknown_error"
+                reason = failure.error_type or ERROR_TYPE_UNKNOWN
                 by_reason[reason] = by_reason.get(reason, 0) + 1
 
             for reason, count in by_reason.items():
@@ -759,15 +771,15 @@ class DownloadOrchestrator:
 
                 # Check repository first since repo paths contain both firmware and repo directories
                 if REPO_DOWNLOADS_DIR in path_parts:
-                    result.file_type = "repository"
+                    result.file_type = FILE_TYPE_REPOSITORY
                 elif APKS_DIR_NAME in path_parts or file_path_str.endswith(".apk"):
-                    result.file_type = "android"
+                    result.file_type = FILE_TYPE_ANDROID
                 elif FIRMWARE_DIR_NAME in path_parts or file_path_str.endswith(
                     (".zip", ".bin", ".elf")
                 ):
-                    result.file_type = "firmware"
+                    result.file_type = FILE_TYPE_FIRMWARE
                 else:
-                    result.file_type = "unknown"
+                    result.file_type = FILE_TYPE_UNKNOWN
 
             # Set retry metadata for failed downloads
             if not result.success and result.retry_count is None:
@@ -890,8 +902,8 @@ class DownloadOrchestrator:
             "skipped_downloads": len(skipped),
             "failed_downloads": len(self.failed_downloads),
             "success_rate": self._calculate_success_rate(),
-            "android_downloads": self._count_artifact_downloads("android"),
-            "firmware_downloads": self._count_artifact_downloads("firmware"),
+            "android_downloads": self._count_artifact_downloads(FILE_TYPE_ANDROID),
+            "firmware_downloads": self._count_artifact_downloads(FILE_TYPE_FIRMWARE),
             # Repository downloads are not part of the automatic download pipeline.
             "repository_downloads": 0,
         }

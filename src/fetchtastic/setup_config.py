@@ -126,7 +126,7 @@ def cron_check_command_required(func):
             )
             return False
         crontab_path = shutil.which("crontab")
-        if not crontab_path:
+        if crontab_path is None:
             logger.warning(
                 "Cron configuration skipped: 'crontab' command not found on this system."
             )
@@ -1227,12 +1227,12 @@ def _setup_automation(
 def _setup_notifications(config: dict) -> dict:
     """
     Configure NTFY notifications interactively.
-    
+
     Prompts the user to enable or disable NTFY-based notifications, collect the NTFY server URL and topic when enabling, and set whether notifications should be sent only for new downloads. Updates the configuration dictionary in place — setting or clearing the keys `NTFY_TOPIC`, `NTFY_SERVER`, `NTFY_REQUEST_TIMEOUT`, and `NOTIFY_ON_DOWNLOAD_ONLY` as appropriate.
-    
+
     Parameters:
         config (dict): Current configuration dictionary to modify.
-    
+
     Returns:
         dict: The updated configuration dictionary.
     """
@@ -2289,11 +2289,11 @@ def create_windows_menu_shortcuts(config_file_path, base_dir):
 def create_config_shortcut(config_file_path, target_dir):
     """
     Create a Windows shortcut to the Fetchtastic configuration file in the specified directory.
-    
+
     Parameters:
         config_file_path (str): Path to the configuration file to link.
         target_dir (str): Directory where the shortcut file will be created.
-    
+
     Returns:
         bool: `True` if the shortcut was created successfully, `False` otherwise.
     """
@@ -2521,7 +2521,7 @@ def install_crond():
 def setup_cron_job(frequency="hourly", *, crontab_path: str):
     """
     Configure the user's crontab to run Fetchtastic on a regular schedule.
-    
+
     Removes existing Fetchtastic scheduled entries (excluding any `@reboot` lines) and writes a single scheduled entry for the chosen frequency. Unknown frequency values default to "hourly". This function is a no-op on Windows.
     Parameters:
         frequency (str): Schedule key from CRON_SCHEDULES (for example "hourly" or "daily"); unknown values default to "hourly".
@@ -2606,9 +2606,9 @@ def setup_cron_job(frequency="hourly", *, crontab_path: str):
 def remove_cron_job(*, crontab_path: str):
     """
     Remove Fetchtastic's non-@reboot cron entries from the current user's crontab.
-    
+
     Removes crontab lines that contain "# fetchtastic" or "fetchtastic download" while preserving any lines that start with "@reboot". Does nothing on Windows or if the crontab command is unavailable. Errors encountered while reading or updating the crontab are logged and not raised.
-    
+
     Parameters:
         crontab_path (str): Path to the system crontab executable (for example "crontab").
     """
@@ -2702,7 +2702,7 @@ def remove_boot_script():
 def setup_reboot_cron_job(*, crontab_path: str):
     """
     Ensure an @reboot crontab entry exists to run the `fetchtastic download` command after system reboot.
-    
+
     If running on Windows this is a no-op. Removes any existing `@reboot` entries associated with Fetchtastic and adds a single `@reboot <path-to-fetchtastic> download  # fetchtastic` entry. If the `fetchtastic` executable cannot be found, the crontab is left unchanged. Subprocess and I/O errors are logged.
     Parameters:
         crontab_path (str): Filesystem path to the `crontab` command used to read and update the user's crontab.
@@ -2770,7 +2770,7 @@ def setup_reboot_cron_job(*, crontab_path: str):
 def remove_reboot_cron_job(*, crontab_path: str):
     """
     Remove any @reboot cron entries that run or are labeled for Fetchtastic.
-    
+
     If running on Windows the function performs no action. Otherwise it reads the current user crontab using the provided `crontab_path`, removes any `@reboot` lines that invoke or are commented for Fetchtastic, and writes the updated crontab back. Errors encountered while reading or writing are logged.
     Parameters:
         crontab_path (str): Path to the `crontab` executable used to read and write the user's crontab.
@@ -2871,10 +2871,10 @@ def check_boot_script_exists():
 def check_cron_job_exists(*, crontab_path: str):
     """
     Determine whether any Fetchtastic cron entries (excluding `@reboot` lines) exist in the current user's crontab.
-    
+
     Parameters:
         crontab_path (str): Path or command name for the `crontab` executable injected by the caller.
-    
+
     Returns:
         `true` if any matching Fetchtastic cron entries are found (excluding `@reboot` lines), `false` otherwise.
     """

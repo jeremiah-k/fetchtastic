@@ -7,11 +7,29 @@ This module provides integration between the new download subsystem and the exis
 import os
 import sys
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, cast
+
+if TYPE_CHECKING:
+    from .version import VersionManager
 
 import requests
 
+from fetchtastic.constants import (
+    ANDROID_FILE_TYPES,
+    FILE_TYPE_ANDROID,
+    FILE_TYPE_ANDROID_PRERELEASE,
+    FILE_TYPE_FIRMWARE,
+    FILE_TYPE_FIRMWARE_PRERELEASE,
+    FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
+    FILE_TYPE_REPOSITORY,
+    FIRMWARE_FILE_TYPES,
+)
 from fetchtastic.log_utils import logger
+from fetchtastic.notifications import (
+    send_download_completion_notification,
+    send_new_releases_available_notification,
+    send_up_to_date_notification,
+)
 from fetchtastic.utils import (
     format_api_summary,
     get_api_request_summary,
@@ -171,11 +189,15 @@ class DownloadCLIIntegration:
         failed_downloads: List[Dict[str, str]],
         latest_firmware_version: str,
         latest_apk_version: str,
+        new_firmware_versions: List[str],
+        new_apk_versions: List[str],
     ) -> None:
         """
         Emit a legacy-style summary of download results to the provided logger.
 
         Logs elapsed time, counts of downloaded firmware and APKs, reported latest release versions (including prereleases), details of any failed downloads, and a GitHub API usage summary. If no downloads or failures occurred, logs an "up to date" timestamp. Uses the instance's get_latest_versions() for prerelease info.
+
+        Note: self.config must be available for notification functionality to work.
 
         Parameters:
             logger_override (logging-like, optional): Logger to use instead of the module logger; if omitted, the module-level `logger` is used.
@@ -223,11 +245,39 @@ class DownloadCLIIntegration:
                     f"URL={url} retryable={retryable} http_status={http_status} error={error}"
                 )
 
+        new_versions_available = bool(new_firmware_versions or new_apk_versions)
         if downloaded_count == 0 and not failed_downloads:
-            log.info(
-                "All assets are up to date.\n%s",
-                time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-            )
+            if new_versions_available:
+                log.info(
+                    "New releases were skipped because the local copies already exist."
+                )
+            else:
+                log.info(
+                    "All assets are up to date.\n%s",
+                    time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                )
+        elif downloaded_count == 0 and failed_downloads:
+            log.info("All attempted downloads failed; check logs for details.")
+
+        # Send notifications based on download results
+        if self.config:
+            if downloaded_count > 0:
+                send_download_completion_notification(
+                    self.config, downloaded_firmwares, downloaded_apks
+                )
+            elif (
+                downloaded_count == 0
+                and not failed_downloads
+                and new_versions_available
+            ):
+                send_new_releases_available_notification(
+                    self.config,
+                    new_firmware_versions,
+                    new_apk_versions,
+                    downloads_skipped_reason="Downloads skipped because downloaded assets already match the latest releases.",
+                )
+            else:  # downloaded_count == 0 and not failed_downloads and not new_versions_available
+                send_up_to_date_notification(self.config)
 
         summary = get_api_request_summary()
         if summary.get("total_requests", 0) > 0:
@@ -253,10 +303,14 @@ class DownloadCLIIntegration:
                 downloaded_apks: Unique Android (APK) release tags that were downloaded (excludes skipped results).
                 new_apk_versions: Android release tags from `downloaded_apks` that are newer than the currently known Android version.
         """
-        downloaded_firmwares = []
-        new_firmware_versions = []
-        downloaded_apks = []
-        new_apk_versions = []
+        downloaded_firmwares: list[str] = []
+        new_firmware_versions: list[str] = []
+        downloaded_apks: list[str] = []
+        new_apk_versions: list[str] = []
+        downloaded_firmware_set: set[str] = set()
+        downloaded_apk_set: set[str] = set()
+        new_firmware_set: set[str] = set()
+        new_apk_set: set[str] = set()
 
         # Get current versions before processing results
         if self.orchestrator:
@@ -268,28 +322,39 @@ class DownloadCLIIntegration:
             current_firmware = None
 
         for result in success_results:
-            # Legacy parity: "already complete" skips should not be reported as
-            # downloaded versions in the CLI summary.
-            if getattr(result, "was_skipped", False):
+            release_tag = result.release_tag
+            if not release_tag:
                 continue
-            if result.release_tag:
-                # Determine if this is firmware or Android based on file type
-                if result.file_type and "firmware" in result.file_type:
-                    if result.release_tag not in downloaded_firmwares:
-                        downloaded_firmwares.append(result.release_tag)
-                        # Check if this is a new version
-                        if not current_firmware or self._is_newer_version(
-                            result.release_tag, current_firmware
-                        ):
-                            new_firmware_versions.append(result.release_tag)
-                elif result.file_type and "android" in result.file_type:
-                    if result.release_tag not in downloaded_apks:
-                        downloaded_apks.append(result.release_tag)
-                        # Check if this is a new version
-                        if not current_android or self._is_newer_version(
-                            result.release_tag, current_android
-                        ):
-                            new_apk_versions.append(result.release_tag)
+
+            file_type = result.file_type
+            is_firmware = file_type in FIRMWARE_FILE_TYPES
+            is_android = file_type in ANDROID_FILE_TYPES
+            was_skipped = getattr(result, "was_skipped", False)
+
+            # Always detect newer versions (for notifications), even when downloads were skipped.
+            if is_firmware:
+                self._update_new_versions(
+                    release_tag,
+                    current_firmware,
+                    new_firmware_versions,
+                    new_firmware_set,
+                )
+            if is_android:
+                self._update_new_versions(
+                    release_tag, current_android, new_apk_versions, new_apk_set
+                )
+
+            if was_skipped:
+                continue
+
+            if is_firmware:
+                self._add_downloaded_asset(
+                    release_tag, downloaded_firmwares, downloaded_firmware_set
+                )
+            if is_android:
+                self._add_downloaded_asset(
+                    release_tag, downloaded_apks, downloaded_apk_set
+                )
 
         return (
             downloaded_firmwares,
@@ -297,6 +362,46 @@ class DownloadCLIIntegration:
             downloaded_apks,
             new_apk_versions,
         )
+
+    def _update_new_versions(
+        self,
+        release_tag: str,
+        current_version: Optional[str],
+        new_versions_list: List[str],
+        new_versions_set: set[str],
+    ) -> None:
+        """
+        Helper method to update new versions list and set if the release tag is newer.
+
+        Parameters:
+            release_tag (str): Release tag to check.
+            current_version (Optional[str]): Current version to compare against.
+            new_versions_list (List[str]): List to append new versions to.
+            new_versions_set (set[str]): Set to track unique new versions.
+        """
+        if release_tag not in new_versions_set and (
+            not current_version or self._is_newer_version(release_tag, current_version)
+        ):
+            new_versions_list.append(release_tag)
+            new_versions_set.add(release_tag)
+
+    def _add_downloaded_asset(
+        self,
+        release_tag: str,
+        downloaded_list: List[str],
+        downloaded_set: set[str],
+    ) -> None:
+        """
+        Helper method to add downloaded asset to list and set if not already present.
+
+        Parameters:
+            release_tag (str): Release tag of downloaded asset.
+            downloaded_list (List[str]): List to append to.
+            downloaded_set (set[str]): Set to track unique downloaded assets.
+        """
+        if release_tag not in downloaded_set:
+            downloaded_list.append(release_tag)
+            downloaded_set.add(release_tag)
 
     def _is_newer_version(self, version1: str, version2: str) -> bool:
         """
@@ -309,17 +414,28 @@ class DownloadCLIIntegration:
         Returns:
             bool: `True` if `version1` represents a newer version than `version2`, `False` otherwise.
         """
-        version_manager = (
-            self.android_downloader.get_version_manager()
-            if self.android_downloader
-            else None
-        )
+        version_manager = self._get_version_manager()
         comparison = (
             version_manager.compare_versions(version1, version2)
             if version_manager
             else 0
         )
         return comparison > 0
+
+    def _get_version_manager(self) -> Optional["VersionManager"]:
+        """
+        Acquire version manager exposed by Android downloader.
+        """
+        if not self.android_downloader:
+            return None
+        # Check for method first (for backward compatibility and mocks),
+        # then fall back to direct attribute access
+        getter = getattr(self.android_downloader, "get_version_manager", None)
+        if callable(getter):
+            result = getter()
+            return cast(Optional["VersionManager"], result)
+        result = getattr(self.android_downloader, "version_manager", None)
+        return cast(Optional["VersionManager"], result)
 
     def get_failed_downloads(self) -> List[Dict[str, Any]]:
         """
@@ -344,12 +460,12 @@ class DownloadCLIIntegration:
         failed_downloads = []
 
         file_type_map = {
-            "firmware": "Firmware",
-            "android": "Android APK",
-            "firmware_prerelease": "Firmware Prerelease",
-            "firmware_prerelease_repo": "Firmware Prerelease",
-            "repository": "Repository",
-            "android_prerelease": "Android APK Prerelease",
+            FILE_TYPE_FIRMWARE: "Firmware",
+            FILE_TYPE_ANDROID: "Android APK",
+            FILE_TYPE_FIRMWARE_PRERELEASE: "Firmware Prerelease",
+            FILE_TYPE_FIRMWARE_PRERELEASE_REPO: "Firmware Prerelease",
+            FILE_TYPE_REPOSITORY: "Repository",
+            FILE_TYPE_ANDROID_PRERELEASE: "Android APK Prerelease",
         }
 
         for result in self.orchestrator.failed_downloads:

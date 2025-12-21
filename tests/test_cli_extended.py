@@ -315,9 +315,9 @@ def test_cli_download_failed_downloads_reporting(mocker):
 
     mock_integration.main.return_value = (
         [],  # downloaded_firmwares
-        [],  # new_firmware_versions
+        ["v2.0.1"],  # new_firmware_versions
         [],  # downloaded_apks
-        [],  # new_apk_versions
+        ["v1.1.0"],  # new_apk_versions
         failed_downloads,
         "",  # latest_firmware_version
         "",  # latest_apk_version
@@ -347,6 +347,8 @@ def test_cli_download_failed_downloads_reporting(mocker):
     call_args = mock_integration.log_download_results_summary.call_args
     assert call_args.kwargs["failed_downloads"] == failed_downloads
     assert len(call_args.kwargs["failed_downloads"]) == 2
+    assert call_args.kwargs["new_firmware_versions"] == ["v2.0.1"]
+    assert call_args.kwargs["new_apk_versions"] == ["v1.1.0"]
 
 
 @pytest.mark.user_interface

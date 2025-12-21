@@ -14,6 +14,8 @@ import requests
 from fetchtastic.download.repository import RepositoryDownloader
 from fetchtastic.repo_downloader import download_repo_files
 
+pytestmark = [pytest.mark.user_interface]
+
 
 @pytest.fixture
 def mock_config(tmp_path):

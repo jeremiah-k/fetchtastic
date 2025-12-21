@@ -17,6 +17,11 @@ import requests
 
 from fetchtastic.constants import (
     APKS_DIR_NAME,
+    ERROR_TYPE_FILESYSTEM,
+    ERROR_TYPE_NETWORK,
+    ERROR_TYPE_VALIDATION,
+    FILE_TYPE_ANDROID,
+    FILE_TYPE_ANDROID_PRERELEASE,
     GITHUB_MAX_PER_PAGE,
     LATEST_ANDROID_PRERELEASE_JSON_FILE,
     LATEST_ANDROID_RELEASE_JSON_FILE,
@@ -276,7 +281,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                     file_path=target_path,
                     download_url=asset.download_url,
                     file_size=asset.size,
-                    file_type="android",
+                    file_type=FILE_TYPE_ANDROID,
                     was_skipped=True,
                 )
 
@@ -293,7 +298,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                         file_path=target_path,
                         download_url=asset.download_url,
                         file_size=asset.size,
-                        file_type="android",
+                        file_type=FILE_TYPE_ANDROID,
                     )
                 else:
                     logger.error(f"Verification failed for {asset.name}")
@@ -305,9 +310,9 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                         error_message="Verification failed",
                         download_url=asset.download_url,
                         file_size=asset.size,
-                        file_type="android",
+                        file_type=FILE_TYPE_ANDROID,
                         is_retryable=True,
-                        error_type="validation_error",
+                        error_type=ERROR_TYPE_VALIDATION,
                     )
             else:
                 logger.error(f"Download failed for {asset.name}")
@@ -318,22 +323,22 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                     error_message="download_file_with_retry returned False",
                     download_url=asset.download_url,
                     file_size=asset.size,
-                    file_type="android",
+                    file_type=FILE_TYPE_ANDROID,
                     is_retryable=True,
-                    error_type="network_error",
+                    error_type=ERROR_TYPE_NETWORK,
                 )
 
         except (requests.RequestException, OSError, ValueError, TypeError) as exc:
             logger.exception("Error downloading APK %s: %s", asset.name, exc)
             safe_path = target_path or os.path.join(self.download_dir, APKS_DIR_NAME)
             if isinstance(exc, requests.RequestException):
-                error_type = "network_error"
+                error_type = ERROR_TYPE_NETWORK
                 is_retryable = True
             elif isinstance(exc, OSError):
-                error_type = "filesystem_error"
+                error_type = ERROR_TYPE_FILESYSTEM
                 is_retryable = False
             else:
-                error_type = "validation_error"
+                error_type = ERROR_TYPE_VALIDATION
                 is_retryable = False
             return self.create_download_result(
                 success=False,
@@ -342,7 +347,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                 error_message=str(exc),
                 download_url=getattr(asset, "download_url", None),
                 file_size=getattr(asset, "size", None),
-                file_type="android",
+                file_type=FILE_TYPE_ANDROID,
                 is_retryable=is_retryable,
                 error_type=error_type,
             )
@@ -630,7 +635,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         # Create tracking data with enhanced metadata
         data = {
             "latest_version": prerelease_tag,
-            "file_type": "android_prerelease",
+            "file_type": FILE_TYPE_ANDROID_PRERELEASE,
             "last_updated": self._get_current_iso_timestamp(),
             "base_version": metadata.get("base_version", ""),
             "prerelease_type": metadata.get("prerelease_type", ""),

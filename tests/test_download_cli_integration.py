@@ -7,7 +7,7 @@ import pytest
 from fetchtastic.download.cli_integration import DownloadCLIIntegration
 from fetchtastic.download.files import _get_existing_prerelease_dirs
 
-pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
+pytestmark = [pytest.mark.unit, pytest.mark.core_downloads, pytest.mark.user_interface]
 
 
 def test_cli_integration_main_loads_config_and_runs(mocker):
@@ -208,8 +208,8 @@ def test_run_download_successful(mocker):
     assert result[6] == "v1.9.0"  # latest_apk_version (from orchestrator)
 
     # Verify version comparison was called for new version detection
-    # Should be called for each non-skipped download (2 times in this test)
-    assert mock_version_manager.compare_versions.call_count == 2
+    # Should be called for each item in results, including skipped ones (3 times in this test)
+    assert mock_version_manager.compare_versions.call_count == 3
     # Verify it was called with the correct arguments
     calls = mock_version_manager.compare_versions.call_args_list
     assert any(call[0] == ("v1.0.0", "v0.9.0") for call in calls)
@@ -653,3 +653,36 @@ def test_get_existing_prerelease_dirs_no_directory():
     """_get_existing_prerelease_dirs should return empty list when directory doesn't exist."""
     result = _get_existing_prerelease_dirs("/nonexistent/directory")
     assert result == []
+
+
+def test_convert_results_to_legacy_format_with_file_type_categorization():
+    """Test _convert_results_to_legacy_format properly categorizes file types."""
+    integration = DownloadCLIIntegration()
+
+    # Mock result objects
+    class MockResult:
+        def __init__(self, release_tag, file_type, was_skipped=False):
+            self.release_tag = release_tag
+            self.file_type = file_type
+            self.was_skipped = was_skipped
+
+    # Create test results with different file types
+    results = [
+        MockResult("v1.0", "firmware"),
+        MockResult("v2.0", "android"),
+        MockResult("v1.1", "firmware_prerelease"),
+        MockResult("v2.1", "android_prerelease"),
+        MockResult("v1.2", "firmware_prerelease_repo"),
+    ]
+
+    # Test the function
+    downloaded_firmwares, _new_firmware_versions, downloaded_apks, _new_apk_versions = (
+        integration._convert_results_to_legacy_format(results)
+    )
+
+    # Verify file type categorization worked correctly
+    assert "v1.0" in downloaded_firmwares  # firmware
+    assert "v1.1" in downloaded_firmwares  # firmware_prerelease
+    assert "v1.2" in downloaded_firmwares  # firmware_prerelease_repo
+    assert "v2.0" in downloaded_apks  # android
+    assert "v2.1" in downloaded_apks  # android_prerelease
