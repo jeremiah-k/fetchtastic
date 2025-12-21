@@ -85,9 +85,7 @@ def cron_command_required(func):
             return None
         crontab_path = shutil.which("crontab")
         if crontab_path is None:
-            logger.warning(
-                "Cron configuration skipped: 'crontab' command not found on this system."
-            )
+            # Rare edge case: PATH changed between checks
             return None
         return func(*args, crontab_path=crontab_path, **kwargs)
 
@@ -1554,7 +1552,6 @@ def _setup_base(
 
     # Ask for base directory as the first question
     exists, config_path = config_exists()
-    current_base_dir = DEFAULT_BASE_DIR
 
     if exists:
         # Load existing configuration
@@ -1562,6 +1559,7 @@ def _setup_base(
         if loaded_config is None:
             print("Failed to load existing configuration. Starting with defaults.")
             config = {}
+            current_base_dir = DEFAULT_BASE_DIR
         else:
             config = loaded_config
             print(
@@ -1769,13 +1767,14 @@ def run_setup(
 
         current_version = version("fetchtastic")
         config["LAST_SETUP_VERSION"] = current_version
-        config["LAST_SETUP_DATE"] = datetime.now().isoformat()
     except ImportError:
-        # If importlib.metadata is not available, just record the date
-        config["LAST_SETUP_DATE"] = datetime.now().isoformat()
-    except Exception:
-        # If fetchtastic package is not found or other error, just record the date
-        config["LAST_SETUP_DATE"] = datetime.now().isoformat()
+        # If importlib.metadata is not available, we can't get the version.
+        pass
+    except Exception as e:
+        # If fetchtastic package is not found or other error, we can't get the version.
+        # Log the specific error for debugging but don't fail setup
+        pass
+    config["LAST_SETUP_DATE"] = datetime.now().isoformat()
 
     # Make sure the config directory exists
     if not os.path.exists(CONFIG_DIR):
@@ -2566,7 +2565,7 @@ def setup_cron_job(frequency="hourly", *, crontab_path: str = "crontab"):
     try:
         # Use the pre-validated crontab path
         result = subprocess.run(
-            [crontab_path, "-l"],  # type: ignore[possibly-unbound]
+            [crontab_path, "-l"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -2611,7 +2610,7 @@ def setup_cron_job(frequency="hourly", *, crontab_path: str = "crontab"):
         # Update crontab
         try:
             process = subprocess.Popen(
-                [crontab_path, "-"],  # type: ignore[possibly-unbound]
+                [crontab_path, "-"],
                 stdin=subprocess.PIPE,
                 text=True,
             )
@@ -2644,7 +2643,7 @@ def remove_cron_job(*, crontab_path: str = "crontab"):
 
     try:
         result = subprocess.run(
-            [crontab_path, "-l"],  # type: ignore[possibly-unbound]
+            [crontab_path, "-l"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -2669,7 +2668,7 @@ def remove_cron_job(*, crontab_path: str = "crontab"):
                 new_cron += "\n"
             try:
                 process = subprocess.Popen(
-                    [crontab_path, "-"],  # type: ignore[possibly-unbound]
+                    [crontab_path, "-"],
                     stdin=subprocess.PIPE,
                     text=True,
                 )
@@ -2742,7 +2741,7 @@ def setup_reboot_cron_job(*, crontab_path: str = "crontab"):
     try:
         # Get current crontab entries
         result = subprocess.run(
-            [crontab_path, "-l"],  # type: ignore[possibly-unbound]
+            [crontab_path, "-l"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -2781,7 +2780,7 @@ def setup_reboot_cron_job(*, crontab_path: str = "crontab"):
         # Update crontab
         try:
             process = subprocess.Popen(
-                [crontab_path, "-"],  # type: ignore[possibly-unbound]
+                [crontab_path, "-"],
                 stdin=subprocess.PIPE,
                 text=True,
             )
@@ -2812,7 +2811,7 @@ def remove_reboot_cron_job(*, crontab_path: str = "crontab"):
     try:
         # Get current crontab entries
         result = subprocess.run(
-            [crontab_path, "-l"],  # type: ignore[possibly-unbound]
+            [crontab_path, "-l"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -2837,7 +2836,7 @@ def remove_reboot_cron_job(*, crontab_path: str = "crontab"):
                 new_cron += "\n"
             try:
                 process = subprocess.Popen(
-                    [crontab_path, "-"],  # type: ignore[possibly-unbound]
+                    [crontab_path, "-"],
                     stdin=subprocess.PIPE,
                     text=True,
                 )
@@ -2870,7 +2869,7 @@ def check_any_cron_jobs_exist(*, crontab_path: str = "crontab"):
     """
     try:
         result = subprocess.run(
-            [crontab_path, "-l"],  # type: ignore[possibly-unbound]
+            [crontab_path, "-l"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -2911,7 +2910,7 @@ def check_cron_job_exists(*, crontab_path: str = "crontab"):
     """
     try:
         result = subprocess.run(
-            [crontab_path, "-l"],  # type: ignore[possibly-unbound]
+            [crontab_path, "-l"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
