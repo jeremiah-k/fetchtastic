@@ -690,13 +690,27 @@ def test_run_clean(
     mock_unmanaged.is_dir.return_value = False
     mock_unmanaged.path = "/tmp/test_base_dir/unmanaged.txt"
 
-    mock_scandir.return_value.__enter__.return_value = [
-        mock_some_dir,
-        mock_repo_dls,
-        mock_firmware,
-        mock_yaml_lnk,
-        mock_unmanaged,
-    ]
+    def scandir_side_effect(path):
+        if path == "/tmp/config/fetchtastic":
+            return Mock(
+                __enter__=Mock(return_value=[]), __exit__=Mock(return_value=None)
+            )
+        if path == "/tmp/test_base_dir":
+            return Mock(
+                __enter__=Mock(
+                    return_value=[
+                        mock_some_dir,
+                        mock_repo_dls,
+                        mock_firmware,
+                        mock_yaml_lnk,
+                        mock_unmanaged,
+                    ]
+                ),
+                __exit__=Mock(return_value=None),
+            )
+        return Mock(__enter__=Mock(return_value=[]), __exit__=Mock(return_value=None))
+
+    mock_scandir.side_effect = scandir_side_effect
 
     def isdir_side_effect(path):
         """
@@ -741,10 +755,11 @@ def test_run_clean(
     # "some_dir" is not managed, so should not be removed
     # Also removes batch directory from config dir
     mock_rmtree.assert_any_call("/tmp/config/fetchtastic/batch")  # nosec B108
+    mock_rmtree.assert_any_call("/tmp/config/fetchtastic")  # nosec B108
     mock_rmtree.assert_any_call("/tmp/test_base_dir/repo-dls")  # nosec B108
     mock_rmtree.assert_any_call("/tmp/test_base_dir/firmware-2.7.4")  # nosec B108
     # Should not remove "some_dir"
-    assert mock_rmtree.call_count == 3
+    assert mock_rmtree.call_count == 4
 
     # Check that managed files are removed but unmanaged files are not
     # "fetchtastic_yaml.lnk" is in MANAGED_FILES, so should be removed

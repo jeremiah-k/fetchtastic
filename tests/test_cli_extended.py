@@ -441,10 +441,45 @@ def test_windows_specific_cleanup_logic(mocker):
     mocker.patch(
         "fetchtastic.setup_config.WINDOWS_START_MENU_FOLDER", "/start/menu/folder"
     )
-    mocker.patch("os.path.exists", return_value=True)
-    mocker.patch("os.listdir", return_value=["shortcut.lnk", "other.lnk"])
-    mocker.patch("os.remove")
-    mock_shutil_rmtree = mocker.patch("shutil.rmtree")
+
+    def exists_side_effect(path):
+        if path == "/start/menu/folder":
+            return True
+        return False
+
+    mocker.patch("os.path.exists", side_effect=exists_side_effect)
+
+    mock_file_entry = Mock()
+    mock_file_entry.name = "shortcut.lnk"
+    mock_file_entry.path = "/start/menu/folder/shortcut.lnk"
+    mock_file_entry.is_file.return_value = True
+    mock_file_entry.is_dir.return_value = False
+    mock_file_entry.is_symlink.return_value = False
+
+    mock_dir_entry = Mock()
+    mock_dir_entry.name = "folder"
+    mock_dir_entry.path = "/start/menu/folder/folder"
+    mock_dir_entry.is_file.return_value = False
+    mock_dir_entry.is_dir.return_value = True
+    mock_dir_entry.is_symlink.return_value = False
+
+    def scandir_side_effect(path):
+        if path == "/start/menu/folder":
+            return Mock(
+                __enter__=Mock(return_value=[mock_file_entry, mock_dir_entry]),
+                __exit__=Mock(return_value=None),
+            )
+        return Mock(__enter__=Mock(return_value=[]), __exit__=Mock(return_value=None))
+
+    mocker.patch("os.scandir", side_effect=scandir_side_effect)
+    mock_remove = mocker.patch("os.remove")
+
+    def rmtree_side_effect(path):
+        if path == "/start/menu/folder":
+            raise OSError("fail")
+        return None
+
+    mock_shutil_rmtree = mocker.patch("shutil.rmtree", side_effect=rmtree_side_effect)
     mocker.patch("builtins.input", return_value="y")
     mocker.patch("fetchtastic.log_utils.logger")
 
@@ -453,6 +488,8 @@ def test_windows_specific_cleanup_logic(mocker):
     # Should have attempted Windows-specific cleanup
     mock_winshell.startup.assert_called_once()
     mock_shutil_rmtree.assert_any_call("/start/menu/folder")
+    mock_remove.assert_any_call("/start/menu/folder/shortcut.lnk")
+    mock_shutil_rmtree.assert_any_call("/start/menu/folder/folder")
 
 
 @pytest.mark.user_interface

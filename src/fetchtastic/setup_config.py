@@ -2069,12 +2069,12 @@ def create_windows_menu_shortcuts(config_file_path, base_dir):
                         try:
                             if os.path.isfile(file_path):
                                 os.remove(file_path)
-                                print(f"Removed: {file}")
+                                print(f"Removed: {entry.name}")
                             elif os.path.isdir(file_path):
                                 shutil.rmtree(file_path)
-                                print(f"Removed directory: {file}")
+                                print(f"Removed directory: {entry.name}")
                         except Exception as e3:
-                            print(f"Could not remove {file}: {e3}")
+                            print(f"Could not remove {entry.name}: {e3}")
 
                     print("Attempted to remove individual files")
                 except Exception as e2:
