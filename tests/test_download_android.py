@@ -303,17 +303,46 @@ class TestMeshtasticAndroidAppDownloader:
         assert result.is_retryable is True
 
     @patch("os.path.exists")
-    @patch("os.listdir")
-    @patch("os.path.isdir")
+    @patch("os.scandir")
     @patch("shutil.rmtree")
     def test_cleanup_old_versions(
-        self, mock_rmtree, mock_isdir, mock_listdir, mock_exists, downloader
+        self, mock_rmtree, mock_scandir, mock_exists, downloader
     ):
         """Test cleanup of old Android versions."""
         # Setup filesystem mocks
         mock_exists.return_value = True
-        mock_listdir.return_value = ["v1.0.0", "v2.0.0", "v3.0.0", "not_version"]
-        mock_isdir.return_value = True
+
+        # Create mock directory entries for os.scandir
+        mock_v1 = Mock()
+        mock_v1.name = "v1.0.0"
+        mock_v1.is_symlink.return_value = False
+        mock_v1.is_dir.return_value = True
+        mock_v1.path = "/mock/android/v1.0.0"
+
+        mock_v2 = Mock()
+        mock_v2.name = "v2.0.0"
+        mock_v2.is_symlink.return_value = False
+        mock_v2.is_dir.return_value = True
+        mock_v2.path = "/mock/android/v2.0.0"
+
+        mock_v3 = Mock()
+        mock_v3.name = "v3.0.0"
+        mock_v3.is_symlink.return_value = False
+        mock_v3.is_dir.return_value = True
+        mock_v3.path = "/mock/android/v3.0.0"
+
+        mock_not_version = Mock()
+        mock_not_version.name = "not_version"
+        mock_not_version.is_symlink.return_value = False
+        mock_not_version.is_dir.return_value = True
+        mock_not_version.path = "/mock/android/not_version"
+
+        mock_scandir.return_value.__enter__.return_value = [
+            mock_v1,
+            mock_v2,
+            mock_v3,
+            mock_not_version,
+        ]
 
         downloader.cleanup_old_versions(keep_limit=2)
 

@@ -7,7 +7,6 @@ This module implements the specific downloader for Meshtastic firmware releases.
 import fnmatch
 import json
 import os
-import re
 import shutil
 import zipfile
 from typing import Any, Dict, List, Optional
@@ -43,6 +42,7 @@ from fetchtastic.utils import (
 
 from .base import BaseDownloader
 from .cache import CacheManager
+from .files import _sanitize_path_component
 from .interfaces import Asset, DownloadResult, Release
 from .prerelease_history import PrereleaseHistoryManager
 from .version import VersionManager
@@ -99,13 +99,24 @@ class FirmwareReleaseDownloader(BaseDownloader):
         Fetch firmware releases from GitHub and produce Release objects with their associated assets.
 
         Parameters:
-            limit (Optional[int]): Maximum number of releases to return; when omitted returns all parsed releases.
+            limit (Optional[int]): Maximum number of releases to return; when omitted defaults to 8. Pass 0 to return an empty list. Values above 100 are capped at 100 (GitHub API limit).
 
         Returns:
             List[Release]: Parsed Release objects (each includes its Asset entries); returns an empty list if no valid releases are found or an error occurs.
         """
         try:
-            params = {"per_page": 8}
+            if limit == 0:
+                return []
+            if limit is not None:
+                if limit < 0:
+                    logger.warning("Invalid limit value %d; using default", limit)
+                    limit = None
+                elif limit > 100:
+                    logger.warning(
+                        "Limit %d exceeds GitHub API max of 100; capping at 100.", limit
+                    )
+                    limit = 100
+            params = {"per_page": limit if limit else 8}
             url_key = self.cache_manager.build_url_cache_key(
                 self.firmware_releases_url, params
             )
@@ -514,13 +525,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     f"No files extracted from {asset.name} - no matches for patterns"
                 )
                 return self.create_download_result(
-                    success=False,
+                    success=True,
                     release_tag=release.tag_name,
                     file_path=zip_path,
-                    error_message="No files matched extraction patterns",
                     file_type=FILE_TYPE_FIRMWARE,
-                    error_type=ERROR_TYPE_VALIDATION,
-                    is_retryable=False,
+                    extracted_files=[],
+                    was_skipped=True,
                 )
 
         except (zipfile.BadZipFile, OSError, ValueError) as e:
@@ -537,54 +547,88 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
     def cleanup_old_versions(self, keep_limit: int) -> None:
         """
-        Remove firmware version directories older than the most recent `keep_limit` versions.
+        Remove firmware version directories not present in the latest `keep_limit` releases
+        (including prereleases).
 
-        Only directories under <download_dir>/firmware that match a semantic-version-like pattern
-        (optional leading "v", e.g. "v1.2.3" or "2.3") are considered. Special directories
-        "prerelease" and "repo-dls" are ignored. Matching directories are sorted by version
-        and any beyond the newest `keep_limit` entries are removed.
+        This mirrors legacy behavior by keeping only the newest release tags (stable and
+        prerelease) returned by the GitHub API (bounded by `keep_limit`). Any local version
+        directories not in that set are removed. Special directories "prerelease" and
+        "repo-dls" are always preserved.
 
         Parameters:
             keep_limit (int): Maximum number of most-recent version directories to retain;
-                older matching directories will be deleted.
+                older directories will be deleted. Pass 0 to delete all version directories.
         """
         try:
+            if keep_limit < 0:
+                logger.warning(
+                    "Invalid keep_limit value %d; skipping cleanup", keep_limit
+                )
+                return
+
             # Get all firmware version directories
             firmware_dir = os.path.join(self.download_dir, FIRMWARE_DIR_NAME)
             if not os.path.exists(firmware_dir):
                 return
 
-            # Get all version directories (excluding special directories)
-            version_dirs = []
-            for item in os.listdir(firmware_dir):
-                item_path = os.path.join(firmware_dir, item)
-                if (
-                    os.path.isdir(item_path)
-                    and re.match(r"^(v)?\d+\.\d+(?:\.\d+)?", item)
-                    and item not in [FIRMWARE_PRERELEASES_DIR_NAME, REPO_DOWNLOADS_DIR]
-                ):
-                    version_dirs.append(item)
+            latest_releases = self.get_releases(limit=keep_limit)
+            if not latest_releases and keep_limit > 0:
+                logger.warning(
+                    "Skipping firmware cleanup: no releases available to determine keep set."
+                )
+                return
 
-            # Sort versions and keep only the newest ones
-            version_dirs.sort(
-                reverse=True,
-                key=lambda version: self.version_manager.get_release_tuple(version)
-                or (),
-            )
-
-            # Remove old versions
-            for old_version in version_dirs[keep_limit:]:
-                old_dir = os.path.join(firmware_dir, old_version)
-                try:
-                    shutil.rmtree(old_dir)
-                    logger.info(f"Removed old firmware version: {old_version}")
-                except OSError as e:
-                    logger.error(
-                        f"Error removing old firmware version {old_version}: {e}"
+            release_tags_to_keep = set()
+            for release in latest_releases:
+                safe_tag = _sanitize_path_component(release.tag_name)
+                if safe_tag is None:
+                    logger.warning(
+                        "Skipping unsafe firmware release tag during cleanup: %s",
+                        release.tag_name,
                     )
+                    continue
+                release_tags_to_keep.add(safe_tag)
 
+            if not release_tags_to_keep and keep_limit > 0:
+                logger.warning(
+                    "Skipping firmware cleanup: no safe release tags found to keep."
+                )
+                return
+
+            # Remove local versions not in the keep set
+            try:
+                with os.scandir(firmware_dir) as it:
+                    for entry in it:
+                        if entry.name in {
+                            FIRMWARE_PRERELEASES_DIR_NAME,
+                            REPO_DOWNLOADS_DIR,
+                        }:
+                            continue
+                        if entry.is_symlink():
+                            logger.warning(
+                                "Skipping symlink in firmware directory during cleanup: %s",
+                                entry.name,
+                            )
+                            continue
+                        if entry.is_dir():
+                            if entry.name not in release_tags_to_keep:
+                                try:
+                                    shutil.rmtree(entry.path)
+                                    logger.info(
+                                        "Removed old firmware version: %s", entry.name
+                                    )
+                                except OSError as e:
+                                    logger.error(
+                                        "Error removing old firmware version %s: %s",
+                                        entry.name,
+                                        e,
+                                    )
+            except FileNotFoundError:
+                pass
+            except OSError as e:
+                logger.error("Error cleaning up old firmware versions: %s", e)
         except OSError as e:
-            logger.error(f"Error cleaning up old firmware versions: {e}")
+            logger.error("Error during firmware cleanup: %s", e)
 
     def get_latest_release_tag(self) -> Optional[str]:
         """
@@ -997,11 +1041,14 @@ class FirmwareReleaseDownloader(BaseDownloader):
             )
 
         prerelease_base_dir = self._get_prerelease_base_dir()
-        existing_dirs = [
-            d
-            for d in os.listdir(prerelease_base_dir)
-            if os.path.isdir(os.path.join(prerelease_base_dir, d))
-        ]
+        existing_dirs = []
+        try:
+            with os.scandir(prerelease_base_dir) as it:
+                for entry in it:
+                    if entry.is_dir():
+                        existing_dirs.append(entry.name)
+        except FileNotFoundError:
+            pass
 
         successes, failures, any_downloaded = self._download_prerelease_assets(
             active_dir,
@@ -1112,6 +1159,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
         This function:
         - Returns an empty list when prerelease checking is disabled via configuration.
+        - Returns an empty list for firmware GitHub releases because their prerelease
+          flag represents alpha/beta tracks that are treated as stable in Fetchtastic.
+          Firmware prereleases are instead handled via the meshtastic.github.io workflow.
         - Excludes prereleases whose tag appears to be a hash-suffixed version.
         - Sorts remaining prereleases by published date (newest first).
         - Applies include/exclude pattern filtering using configuration keys "FIRMWARE_PRERELEASE_INCLUDE_PATTERNS" and "FIRMWARE_PRERELEASE_EXCLUDE_PATTERNS" when provided.
@@ -1133,83 +1183,11 @@ class FirmwareReleaseDownloader(BaseDownloader):
         if not check_prereleases:
             return []
 
-        version_manager = VersionManager()
-
-        # Filter prereleases (GitHub's prerelease flag can be noisy for hash-suffixed tags)
-        prereleases = [
-            r
-            for r in releases
-            if r.prerelease
-            and not version_manager.HASH_SUFFIX_VERSION_RX.match(
-                r.tag_name.lstrip("vV")
-            )
-        ]
-
-        # Sort by published date (newest first)
-        prereleases.sort(key=lambda r: r.published_at or "", reverse=True)
-
-        # Apply pattern filtering if configured
-        include_patterns = self.config.get("FIRMWARE_PRERELEASE_INCLUDE_PATTERNS", [])
-        exclude_patterns = self.config.get("FIRMWARE_PRERELEASE_EXCLUDE_PATTERNS", [])
-
-        if include_patterns or exclude_patterns:
-            prerelease_tags = [r.tag_name for r in prereleases]
-            filtered_tags = version_manager.filter_prereleases_by_pattern(
-                prerelease_tags, include_patterns, exclude_patterns
-            )
-            prereleases = [r for r in prereleases if r.tag_name in filtered_tags]
-
-        # Further restrict to prereleases that match expected base version
-        expected_base = None
-        latest_tuple = None
-        latest_tag = None
-        for candidate in releases:
-            candidate_is_hash_suffix = bool(
-                version_manager.HASH_SUFFIX_VERSION_RX.match(
-                    candidate.tag_name.lstrip("vV")
-                )
-            )
-            candidate_is_stable = (not candidate.prerelease) or candidate_is_hash_suffix
-            if not candidate_is_stable:
-                continue
-            candidate_tuple = version_manager.get_release_tuple(candidate.tag_name)
-            if candidate_tuple is None:
-                continue
-            if latest_tuple is None or candidate_tuple > latest_tuple:
-                latest_tuple = candidate_tuple
-                latest_tag = candidate.tag_name
-
-        if latest_tag:
-            expected_base = version_manager.calculate_expected_prerelease_version(
-                latest_tag
-            )
-
-        if expected_base:
-            filtered_prereleases = []
-            for pr in prereleases:
-                clean_version = version_manager.extract_clean_version(pr.tag_name)
-                if clean_version and clean_version.lstrip("vV").startswith(
-                    expected_base
-                ):
-                    filtered_prereleases.append(pr)
-            prereleases = filtered_prereleases
-
-        # Further restrict using commit history cache if available
-        if recent_commits and expected_base:
-            commit_hashes = []
-            for commit in recent_commits:
-                sha = commit.get("sha")
-                if sha:
-                    commit_hashes.append(sha[:7])
-            filtered_by_commits = [
-                pr
-                for pr in prereleases
-                if any(hash_part in pr.tag_name for hash_part in commit_hashes)
-            ]
-            if filtered_by_commits:
-                prereleases = filtered_by_commits
-
-        return prereleases
+        logger.debug(
+            "Firmware GitHub prerelease flags are treated as stable; "
+            "firmware prereleases are handled via the repo-based workflow."
+        )
+        return []
 
     def get_prerelease_tracking_file(self) -> str:
         """
@@ -1298,14 +1276,18 @@ class FirmwareReleaseDownloader(BaseDownloader):
         This updates the prerelease tracking directory by comparing stored tracking data with the current prereleases discovered from the remote repository and delegating cleanup of outdated or expired tracking files to the prerelease history manager.
         """
         tracking_dir = os.path.dirname(self.get_prerelease_tracking_file())
-        if not os.path.exists(tracking_dir):
-            return
 
         # Get all prerelease tracking files
         tracking_files = []
-        for filename in os.listdir(tracking_dir):
-            if filename.startswith("prerelease_") and filename.endswith(".json"):
-                tracking_files.append(os.path.join(tracking_dir, filename))
+        try:
+            with os.scandir(tracking_dir) as it:
+                for entry in it:
+                    if entry.name.startswith("prerelease_") and entry.name.endswith(
+                        ".json"
+                    ):
+                        tracking_files.append(entry.path)
+        except FileNotFoundError:
+            return
 
         # Read all existing prerelease tracking data
         existing_prereleases = []
@@ -1382,42 +1364,52 @@ class FirmwareReleaseDownloader(BaseDownloader):
             prerelease_dir = os.path.join(
                 self.download_dir, FIRMWARE_DIR_NAME, FIRMWARE_PRERELEASES_DIR_NAME
             )
-            if not os.path.exists(prerelease_dir):
-                return False
 
             cleaned_up = False
 
-            # Check for matching pre-release directories
-            for raw_dir_name in os.listdir(prerelease_dir):
-                if raw_dir_name.startswith(FIRMWARE_DIR_PREFIX):
-                    dir_name = raw_dir_name[len(FIRMWARE_DIR_PREFIX) :]
+            try:
+                # Check for matching pre-release directories
+                with os.scandir(prerelease_dir) as it:
+                    for entry in it:
+                        if entry.is_symlink():
+                            logger.warning(
+                                "Skipping symlink in prerelease folder: %s",
+                                entry.name,
+                            )
+                            continue
+                        if not entry.is_dir():
+                            continue
+                        if entry.name.startswith(FIRMWARE_DIR_PREFIX):
+                            dir_name = entry.name[len(FIRMWARE_DIR_PREFIX) :]
 
-                    # Extract version from directory name
-                    if "." in dir_name:
-                        parts = dir_name.split(".")
-                        if len(parts) >= 3:
-                            try:
-                                dir_major, dir_minor, dir_patch = map(int, parts[:3])
-                                dir_tuple = (dir_major, dir_minor, dir_patch)
-
-                                # Check if this prerelease is superseded
-                                if dir_tuple <= release_tuple:
-                                    prerelease_path = os.path.join(
-                                        prerelease_dir, raw_dir_name
-                                    )
+                            # Extract version from directory name
+                            if "." in dir_name:
+                                parts = dir_name.split(".")
+                                if len(parts) >= 3:
                                     try:
-                                        shutil.rmtree(prerelease_path)
-                                        logger.info(
-                                            f"Removed superseded prerelease: {raw_dir_name}"
+                                        dir_major, dir_minor, dir_patch = map(
+                                            int, parts[:3]
                                         )
-                                        cleaned_up = True
-                                    except OSError as e:
-                                        logger.error(
-                                            f"Error removing superseded prerelease {raw_dir_name}: {e}"
-                                        )
+                                        dir_tuple = (dir_major, dir_minor, dir_patch)
 
-                            except ValueError:
-                                continue
+                                        # Check if this prerelease is superseded
+                                        if dir_tuple <= release_tuple:
+                                            prerelease_path = entry.path
+                                            try:
+                                                shutil.rmtree(prerelease_path)
+                                                logger.info(
+                                                    f"Removed superseded prerelease: {entry.name}"
+                                                )
+                                                cleaned_up = True
+                                            except OSError as e:
+                                                logger.error(
+                                                    f"Error removing superseded prerelease {entry.name}: {e}"
+                                                )
+
+                                    except ValueError:
+                                        continue
+            except FileNotFoundError:
+                return False
 
             return cleaned_up
 

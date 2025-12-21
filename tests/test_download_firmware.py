@@ -242,6 +242,27 @@ class TestFirmwareReleaseDownloader:
         assert result.extracted_files == ["firmware.bin"]
         downloader.file_operations.extract_archive.assert_called_once()
 
+    @patch("os.path.exists")
+    def test_extract_firmware_no_matches_is_warning(self, mock_exists, downloader):
+        """Test extraction when no files match patterns."""
+        mock_exists.return_value = True
+
+        release = Mock(spec=Release)
+        release.tag_name = "v1.0.0"
+
+        asset = Mock(spec=Asset)
+        asset.name = "firmware-rp2040.zip"
+
+        downloader.file_operations.validate_extraction_patterns.return_value = True
+        downloader.file_operations.check_extraction_needed.return_value = True
+        downloader.file_operations.extract_archive.return_value = []
+
+        result = downloader.extract_firmware(release, asset, ["*.bin"], ["readme*"])
+
+        assert result.success is True
+        assert result.was_skipped is True
+        assert result.extracted_files == []
+
     def test_validate_extraction_patterns(self, downloader):
         """Test extraction pattern validation."""
         # Mock file operations
@@ -270,31 +291,211 @@ class TestFirmwareReleaseDownloader:
         downloader.file_operations.check_extraction_needed.assert_called_once()
 
     @patch("os.path.exists")
-    @patch("os.listdir")
-    @patch("os.path.isdir")
+    @patch("os.scandir")
     @patch("shutil.rmtree")
     def test_cleanup_old_versions(
-        self, mock_rmtree, mock_isdir, mock_listdir, mock_exists, downloader
+        self, mock_rmtree, mock_scandir, mock_exists, downloader
     ):
         """Test cleanup of old firmware versions."""
         # Setup filesystem mocks
         mock_exists.return_value = True
-        mock_listdir.return_value = [
-            "v1.0.0",
-            "v2.0.0",
-            "v3.0.0",
-            "prerelease",
-            "repo-dls",
+
+        # Create mock directory entries for os.scandir
+        mock_v1 = Mock()
+        mock_v1.name = "v1.0.0"
+        mock_v1.is_symlink.return_value = False
+        mock_v1.is_dir.return_value = True
+        mock_v1.path = "/mock/firmware/v1.0.0"
+
+        mock_v2 = Mock()
+        mock_v2.name = "v2.0.0"
+        mock_v2.is_symlink.return_value = False
+        mock_v2.is_dir.return_value = True
+        mock_v2.path = "/mock/firmware/v2.0.0"
+
+        mock_v3 = Mock()
+        mock_v3.name = "v3.0.0"
+        mock_v3.is_symlink.return_value = False
+        mock_v3.is_dir.return_value = True
+        mock_v3.path = "/mock/firmware/v3.0.0"
+
+        mock_prerelease = Mock()
+        mock_prerelease.name = "prerelease"
+        mock_prerelease.is_symlink.return_value = False
+        mock_prerelease.is_dir.return_value = True
+        mock_prerelease.path = "/mock/firmware/prerelease"
+
+        mock_repo_dls = Mock()
+        mock_repo_dls.name = "repo-dls"
+        mock_repo_dls.is_symlink.return_value = False
+        mock_repo_dls.is_dir.return_value = True
+        mock_repo_dls.path = "/mock/firmware/repo-dls"
+
+        mock_scandir.return_value.__enter__.return_value = [
+            mock_v1,
+            mock_v2,
+            mock_v3,
+            mock_prerelease,
+            mock_repo_dls,
         ]
-        mock_isdir.return_value = True
+
+        downloader.get_releases = Mock(
+            return_value=[Release(tag_name="v3.0.0"), Release(tag_name="v2.0.0")]
+        )
 
         downloader.cleanup_old_versions(keep_limit=2)
 
-        # Should remove oldest version (v1.0.0)
+        # Should remove version not in the keep set (v1.0.0)
         mock_rmtree.assert_called_once()
         args = mock_rmtree.call_args[0][0]
         assert "v1.0.0" in args
-        assert downloader.version_manager.get_release_tuple.call_count == 3
+        downloader.get_releases.assert_called_once_with(limit=2)
+
+    @patch("os.path.exists")
+    @patch("os.scandir")
+    @patch("shutil.rmtree")
+    def test_cleanup_old_versions_unsafe_tags(
+        self, mock_rmtree, mock_scandir, mock_exists, downloader
+    ):
+        """Test cleanup when release tags contain unsafe characters."""
+        # Mock _sanitize_path_component to return None for unsafe tags
+        with patch(
+            "fetchtastic.download.firmware._sanitize_path_component"
+        ) as mock_sanitize:
+            mock_exists.return_value = True
+
+            # Create mock directory entries for os.scandir
+            mock_v1 = Mock()
+            mock_v1.name = "v1.0.0"
+            mock_v1.is_symlink.return_value = False
+            mock_v1.is_dir.return_value = True
+            mock_v1.path = "/mock/firmware/v1.0.0"
+
+            mock_v2 = Mock()
+            mock_v2.name = "v2.0.0"
+            mock_v2.is_symlink.return_value = False
+            mock_v2.is_dir.return_value = True
+            mock_v2.path = "/mock/firmware/v2.0.0"
+
+            mock_scandir.return_value.__enter__.return_value = [mock_v1, mock_v2]
+            mock_sanitize.side_effect = ["v1.0.0", None]  # Second tag is unsafe
+            downloader.get_releases = Mock(
+                return_value=[
+                    Release(tag_name="v1.0.0"),
+                    Release(tag_name="../../../unsafe"),
+                ]
+            )
+
+            downloader.cleanup_old_versions(keep_limit=2)
+
+            # Should remove v2.0.0 since only v1.0.0 is safe
+            mock_rmtree.assert_called_once()
+            args = mock_rmtree.call_args[0][0]
+            assert "v2.0.0" in args
+            # Warning is logged but caplog testing is optional
+
+    @patch("os.path.exists")
+    @patch("os.scandir")
+    @patch("shutil.rmtree")
+    def test_cleanup_old_versions_keep_zero(
+        self, mock_rmtree, mock_scandir, mock_exists, downloader
+    ):
+        """Test cleanup with keep_limit=0 removes all versions."""
+        # Setup filesystem mocks
+        mock_exists.return_value = True
+
+        # Create mock DirEntry objects for os.scandir
+        mock_entry1 = Mock()
+        mock_entry1.name = "v1.0.0"
+        mock_entry1.is_dir.return_value = True
+        mock_entry1.is_symlink.return_value = False
+        mock_entry1.path = "/path/to/firmware/v1.0.0"
+
+        mock_entry2 = Mock()
+        mock_entry2.name = "v2.0.0"
+        mock_entry2.is_dir.return_value = True
+        mock_entry2.is_symlink.return_value = False
+        mock_entry2.path = "/path/to/firmware/v2.0.0"
+
+        mock_scandir.return_value.__enter__ = Mock(
+            return_value=[mock_entry1, mock_entry2]
+        )
+        mock_scandir.return_value.__exit__ = Mock(return_value=None)
+
+        downloader.get_releases = Mock(return_value=[])
+
+        downloader.cleanup_old_versions(keep_limit=0)
+
+        # Should remove all versions
+        downloader.get_releases.assert_called_once_with(limit=0)
+        assert mock_rmtree.call_count == 2
+        calls = mock_rmtree.call_args_list
+        removed_paths = {call[0][0] for call in calls}
+        assert any("v1.0.0" in path for path in removed_paths)
+        assert any("v2.0.0" in path for path in removed_paths)
+
+    @patch("os.path.exists")
+    @patch("os.scandir")
+    @patch("shutil.rmtree")
+    def test_cleanup_old_versions_negative_keep_limit(
+        self, mock_rmtree, mock_scandir, mock_exists, downloader
+    ):
+        """Test cleanup with negative keep_limit skips cleanup."""
+        # Setup filesystem mocks
+        mock_exists.return_value = True
+
+        # Create mock directory entries for os.scandir
+        mock_v1 = Mock()
+        mock_v1.name = "v1.0.0"
+        mock_v1.is_symlink.return_value = False
+        mock_v1.is_dir.return_value = True
+        mock_v1.path = "/mock/firmware/v1.0.0"
+
+        mock_v2 = Mock()
+        mock_v2.name = "v2.0.0"
+        mock_v2.is_symlink.return_value = False
+        mock_v2.is_dir.return_value = True
+        mock_v2.path = "/mock/firmware/v2.0.0"
+
+        mock_scandir.return_value.__enter__.return_value = [mock_v1, mock_v2]
+
+        # Mock get_releases to track calls
+        downloader.get_releases = Mock()
+
+        # Should skip cleanup entirely for negative keep_limit
+        downloader.cleanup_old_versions(keep_limit=-1)
+
+        # Should not call get_releases or rmtree for negative keep_limit
+        downloader.get_releases.assert_not_called()
+        assert mock_rmtree.call_count == 0
+
+    @patch("fetchtastic.download.firmware.make_github_api_request")
+    def test_get_releases_negative_limit(self, mock_api_request, downloader):
+        """Test get_releases with negative limit uses default behavior."""
+        # Mock API response
+        mock_response = Mock()
+        mock_response.json.return_value = []
+        mock_api_request.return_value = mock_response
+
+        # Test with negative limit - should use default behavior
+        with (
+            patch.object(downloader.cache_manager, "build_url_cache_key") as mock_key,
+            patch.object(
+                downloader.cache_manager, "read_releases_cache_entry"
+            ) as mock_read,
+            patch.object(
+                downloader.cache_manager, "write_releases_cache_entry"
+            ) as _mock_write,
+        ):
+            mock_read.return_value = None
+            mock_key.return_value = "test_key"
+
+            result = downloader.get_releases(limit=-1)
+
+            # Should call get_releases with default behavior (no limit validation in params)
+            assert result == []
+            # Should have made API call with default params (per_page=8)
+            mock_api_request.assert_called_once()
 
     def test_get_latest_release_tag(self, mock_config, tmp_path):
         """Test getting latest release tag from cache file."""
@@ -357,28 +558,92 @@ class TestFirmwareReleaseDownloader:
         assert len(listing) == 2
         downloader.cache_manager.get_repo_contents.assert_called_once()
 
-    @patch("os.path.exists")
-    @patch("os.listdir")
-    @patch("os.path.isdir")
+    @patch("os.scandir")
     @patch("shutil.rmtree")
     def test_cleanup_superseded_prereleases(
-        self, mock_rmtree, mock_isdir, mock_listdir, mock_exists, downloader
+        self, mock_rmtree, mock_scandir, downloader
     ):
         """Test cleanup of superseded prereleases."""
-        # Setup filesystem mocks
-        mock_exists.return_value = True
-        mock_listdir.return_value = ["firmware-1.0.0.abc123", "firmware-2.0.0.def456"]
-        mock_isdir.return_value = True
 
-        # Mock version comparison
-        downloader.version_manager.compare_versions = Mock(
-            side_effect=[-1, 1]
-        )  # v1.0.0 < v2.0.0
+        # Create mock directory entries for os.scandir
+        mock_firmware1 = Mock()
+        mock_firmware1.name = "firmware-1.0.0.abc123"
+        mock_firmware1.is_symlink.return_value = False
+        mock_firmware1.is_dir.return_value = True
+        mock_firmware1.path = "/mock/prerelease/firmware-1.0.0.abc123"
+
+        mock_firmware2 = Mock()
+        mock_firmware2.name = "firmware-2.0.0.def456"
+        mock_firmware2.is_symlink.return_value = False
+        mock_firmware2.is_dir.return_value = True
+        mock_firmware2.path = "/mock/prerelease/firmware-2.0.0.def456"
+
+        mock_symlink = Mock()
+        mock_symlink.name = "firmware-0.9.0.symlink"
+        mock_symlink.is_symlink.return_value = True
+        mock_symlink.is_dir.return_value = True
+        mock_symlink.path = "/mock/prerelease/firmware-0.9.0.symlink"
+
+        mock_file = Mock()
+        mock_file.name = "firmware-0.8.0.txt"
+        mock_file.is_symlink.return_value = False
+        mock_file.is_dir.return_value = False
+        mock_file.path = "/mock/prerelease/firmware-0.8.0.txt"
+
+        mock_scandir.return_value.__enter__.return_value = [
+            mock_firmware1,
+            mock_firmware2,
+            mock_symlink,
+            mock_file,
+        ]
 
         result = downloader.cleanup_superseded_prereleases("v2.0.0")
 
         assert result is True
         assert mock_rmtree.call_count == 2
+
+    @patch("os.path.exists")
+    @patch("os.scandir")
+    @patch("shutil.rmtree")
+    def test_cleanup_old_versions_keeps_prerelease_tags(
+        self, mock_rmtree, mock_scandir, mock_exists, downloader
+    ):
+        """Test cleanup retains prerelease-tagged releases in the keep set."""
+        mock_exists.return_value = True
+        downloader.get_releases = Mock(
+            return_value=[
+                Release(tag_name="v2.7.17.83c6161", prerelease=True),
+                Release(tag_name="v2.7.16.a597230", prerelease=True),
+            ]
+        )
+
+        entry_keep1 = Mock()
+        entry_keep1.name = "v2.7.17.83c6161"
+        entry_keep1.is_symlink.return_value = False
+        entry_keep1.is_dir.return_value = True
+        entry_keep1.path = "/mock/firmware/v2.7.17.83c6161"
+
+        entry_keep2 = Mock()
+        entry_keep2.name = "v2.7.16.a597230"
+        entry_keep2.is_symlink.return_value = False
+        entry_keep2.is_dir.return_value = True
+        entry_keep2.path = "/mock/firmware/v2.7.16.a597230"
+
+        entry_remove = Mock()
+        entry_remove.name = "v2.7.15.567b8ea"
+        entry_remove.is_symlink.return_value = False
+        entry_remove.is_dir.return_value = True
+        entry_remove.path = "/mock/firmware/v2.7.15.567b8ea"
+
+        mock_scandir.return_value.__enter__.return_value = [
+            entry_keep1,
+            entry_keep2,
+            entry_remove,
+        ]
+
+        downloader.cleanup_old_versions(keep_limit=2)
+
+        mock_rmtree.assert_called_once_with("/mock/firmware/v2.7.15.567b8ea")
 
     def test_get_prerelease_tracking_file(self, downloader):
         """Test prerelease tracking file path generation."""
@@ -422,7 +687,12 @@ class TestFirmwareReleaseDownloader:
         with (
             patch.object(downloader, "get_releases", return_value=[]),
             patch("os.path.exists", return_value=True),
-            patch("os.listdir", return_value=[]),
+            patch(
+                "os.scandir",
+                return_value=Mock(
+                    __enter__=Mock(return_value=[]), __exit__=Mock(return_value=None)
+                ),
+            ),
             patch(
                 "fetchtastic.download.files._atomic_write",
                 return_value=None,
@@ -450,9 +720,8 @@ class TestFirmwareReleaseDownloader:
         ]
         result = downloader.handle_prereleases(releases)
 
-        # Should return prereleases
-        assert len(result) > 0
-        assert isinstance(result, list)
+        # Firmware GitHub prerelease flags are treated as stable.
+        assert result == []
 
     def test_download_firmware_exception_uses_firmware_dir(self, downloader, tmp_path):
         """Ensure validation errors fall back to the firmware directory."""

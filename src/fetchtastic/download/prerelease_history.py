@@ -587,11 +587,16 @@ class PrereleaseHistoryManager:
             return
 
         # Get existing tracking files
-        tracking_files = [
-            os.path.join(tracking_dir, f)
-            for f in os.listdir(tracking_dir)
-            if f.startswith("prerelease_") and f.endswith(".json")
-        ]
+        tracking_files = []
+        try:
+            with os.scandir(tracking_dir) as it:
+                for entry in it:
+                    if entry.name.startswith("prerelease_") and entry.name.endswith(
+                        ".json"
+                    ):
+                        tracking_files.append(entry.path)
+        except FileNotFoundError:
+            pass
 
         # Read existing prerelease tracking data
         existing_prereleases = []
@@ -617,17 +622,21 @@ class PrereleaseHistoryManager:
                 safe_version = re.sub(r"[^a-zA-Z0-9.-]", "_", prerelease_version)
                 filename_pattern = f"prerelease_{safe_version}_*.json"
 
-                for filename in os.listdir(tracking_dir):
-                    if fnmatch.fnmatch(filename, filename_pattern):
-                        try:
-                            os.remove(os.path.join(tracking_dir, filename))
-                            logger.info(
-                                f"Cleaned up superseded prerelease tracking: {filename}"
-                            )
-                        except OSError as e:
-                            logger.error(
-                                f"Error cleaning up prerelease tracking {filename}: {e}"
-                            )
+                try:
+                    with os.scandir(tracking_dir) as it:
+                        for entry in it:
+                            if fnmatch.fnmatch(entry.name, filename_pattern):
+                                try:
+                                    os.remove(entry.path)
+                                    logger.info(
+                                        f"Cleaned up superseded prerelease tracking: {entry.name}"
+                                    )
+                                except OSError as e:
+                                    logger.error(
+                                        f"Error cleaning up prerelease tracking {entry.name}: {e}"
+                                    )
+                except FileNotFoundError:
+                    pass
 
         # Write/update tracking files for current prereleases
         for current in current_prereleases:

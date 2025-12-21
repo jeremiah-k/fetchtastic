@@ -652,8 +652,15 @@ def run_clean():
         _try_remove(batch_dir, is_dir=True, description="batch files directory")
 
         # Check if config directory is now empty
-        if os.path.exists(config_dir) and not os.listdir(config_dir):
-            _try_remove(config_dir, is_dir=True, description="empty config directory")
+        try:
+            with os.scandir(config_dir) as it:
+                is_empty = not any(it)
+            if is_empty:
+                _try_remove(
+                    config_dir, is_dir=True, description="empty config directory"
+                )
+        except FileNotFoundError:
+            pass
 
     # Windows-specific cleanup
     if platform.system() == "Windows":
@@ -684,20 +691,24 @@ def run_clean():
                     )
                     # Try to remove individual files
                     try:
-                        for item in os.listdir(windows_start_menu_folder):
-                            item_path = os.path.join(windows_start_menu_folder, item)
-                            try:
-                                if os.path.isfile(item_path):
-                                    os.remove(item_path)
-                                    print(f"Removed Start Menu shortcut: {item}")
-                                elif os.path.isdir(item_path):
-                                    shutil.rmtree(item_path)
-                                    print(f"Removed Start Menu directory: {item}")
-                            except OSError as e2:
-                                print(
-                                    f"Failed to remove {item}. Reason: {e2}",
-                                    file=sys.stderr,
-                                )
+                        with os.scandir(windows_start_menu_folder) as it:
+                            for entry in it:
+                                try:
+                                    if entry.is_file():
+                                        os.remove(entry.path)
+                                        print(
+                                            f"Removed Start Menu shortcut: {entry.name}"
+                                        )
+                                    elif entry.is_dir():
+                                        shutil.rmtree(entry.path)
+                                        print(
+                                            f"Removed Start Menu directory: {entry.name}"
+                                        )
+                                except OSError as e2:
+                                    print(
+                                        f"Failed to remove {entry.name}. Reason: {e2}",
+                                        file=sys.stderr,
+                                    )
                     except OSError as e3:
                         print(
                             f"Failed to list Start Menu shortcuts. Reason: {e3}",
@@ -749,39 +760,43 @@ def run_clean():
                 MSG_FAILED_DELETE_MANAGED_FILE.format(path=item_path, error=e)
             )
 
-    if os.path.exists(download_dir):
-        for item in os.listdir(download_dir):
-            item_path = os.path.join(download_dir, item)
+    try:
+        with os.scandir(download_dir) as it:
+            for entry in it:
+                # Check if this is a managed directory or file
+                is_managed_dir = (
+                    entry.name in MANAGED_DIRECTORIES
+                    or entry.name.startswith(FIRMWARE_DIR_PREFIX)
+                )
+                is_managed_file = entry.name in MANAGED_FILES
 
-            # Check if this is a managed directory or file
-            is_managed_dir = item in MANAGED_DIRECTORIES or item.startswith(
-                FIRMWARE_DIR_PREFIX
-            )
-            is_managed_file = item in MANAGED_FILES
+                # First, handle symlinks to avoid traversal and ensure they are removed if managed.
+                if entry.is_symlink():
+                    if is_managed_dir or is_managed_file:
+                        _remove_managed_file(entry.path)
+                    continue
 
-            # First, handle symlinks to avoid traversal and ensure they are removed if managed.
-            if os.path.islink(item_path):
-                if is_managed_dir or is_managed_file:
-                    _remove_managed_file(item_path)
-                continue
+                # Handle actual directories
+                if is_managed_dir and entry.is_dir():
+                    try:
+                        shutil.rmtree(entry.path)
+                        log_utils.logger.info(
+                            MSG_REMOVED_MANAGED_DIR.format(path=entry.path)
+                        )
+                    except OSError as e:
+                        log_utils.logger.error(
+                            MSG_FAILED_DELETE_MANAGED_DIR.format(
+                                path=entry.path, error=e
+                            )
+                        )
+                # Handle actual files
+                elif is_managed_file and entry.is_file():
+                    _remove_managed_file(entry.path)
+    except FileNotFoundError:
+        pass
 
-            # Handle actual directories
-            if is_managed_dir and os.path.isdir(item_path):
-                try:
-                    shutil.rmtree(item_path)
-                    log_utils.logger.info(
-                        MSG_REMOVED_MANAGED_DIR.format(path=item_path)
-                    )
-                except OSError as e:
-                    log_utils.logger.error(
-                        MSG_FAILED_DELETE_MANAGED_DIR.format(path=item_path, error=e)
-                    )
-            # Handle actual files
-            elif is_managed_file and os.path.isfile(item_path):
-                _remove_managed_file(item_path)
-
-        log_utils.logger.info(MSG_CLEANED_MANAGED_DIRS.format(path=download_dir))
-        log_utils.logger.info(MSG_PRESERVE_OTHER_FILES)
+    log_utils.logger.info(MSG_CLEANED_MANAGED_DIRS.format(path=download_dir))
+    log_utils.logger.info(MSG_PRESERVE_OTHER_FILES)
 
     # Remove cron job entries (non-Windows platforms)
     if platform.system() != "Windows":

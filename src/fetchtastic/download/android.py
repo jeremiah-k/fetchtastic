@@ -403,10 +403,13 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
             # Get all version directories
             version_dirs = []
-            for item in os.listdir(android_dir):
-                item_path = os.path.join(android_dir, item)
-                if os.path.isdir(item_path) and self._is_version_directory(item):
-                    version_dirs.append(item)
+            try:
+                with os.scandir(android_dir) as it:
+                    for entry in it:
+                        if entry.is_dir() and self._is_version_directory(entry.name):
+                            version_dirs.append(entry.name)
+            except FileNotFoundError:
+                pass
 
             # Sort versions (newest first) using VersionManager tuples
             version_dirs.sort(
@@ -742,9 +745,15 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
         # Get all prerelease tracking files
         tracking_files = []
-        for filename in os.listdir(tracking_dir):
-            if filename.startswith("prerelease_") and filename.endswith(".json"):
-                tracking_files.append(os.path.join(tracking_dir, filename))
+        try:
+            with os.scandir(tracking_dir) as it:
+                for entry in it:
+                    if entry.name.startswith("prerelease_") and entry.name.endswith(
+                        ".json"
+                    ):
+                        tracking_files.append(entry.path)
+        except FileNotFoundError:
+            pass
 
         # Also include the main prerelease tracking file if it exists
         main_tracking_file = self.get_prerelease_tracking_file()

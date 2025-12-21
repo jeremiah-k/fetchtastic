@@ -905,6 +905,68 @@ def test_windows_shortcut_creation(mocker):
     # Reload the setup_config module to make it see the mocked environment
     importlib.reload(setup_config)
 
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_windows_shortcut_creation_scandir_fallback(mocker):
+    """Test fallback cleanup path when Start Menu folder removal fails."""
+    mocker.patch("platform.system", return_value="Windows")
+    mocker.patch("fetchtastic.setup_config.WINDOWS_MODULES_AVAILABLE", True)
+    mock_winshell = mocker.MagicMock()
+    mocker.patch.object(setup_config, "winshell", mock_winshell, create=True)
+
+    windows_folder = "C:\\StartMenu\\Fetchtastic"
+    parent_dir = os.path.dirname(windows_folder)
+    mocker.patch("fetchtastic.setup_config.WINDOWS_START_MENU_FOLDER", windows_folder)
+    mocker.patch("fetchtastic.setup_config.BASE_DIR", "C:\\downloads")
+
+    mocker.patch("shutil.which", return_value="C:\\path\\to\\fetchtastic.exe")
+    mocker.patch("os.makedirs")
+    mocker.patch("builtins.open", mock_open())
+
+    def exists_side_effect(path):
+        if path in {parent_dir, windows_folder}:
+            return True
+        return False
+
+    mocker.patch("os.path.exists", side_effect=exists_side_effect)
+
+    file_entry = MagicMock()
+    file_entry.name = "shortcut.lnk"
+    file_entry.path = os.path.join(windows_folder, "shortcut.lnk")
+    file_entry.is_file = MagicMock(return_value=True)
+    file_entry.is_dir = MagicMock(return_value=False)
+    dir_entry = MagicMock()
+    dir_entry.name = "Nested"
+    dir_entry.path = os.path.join(windows_folder, "Nested")
+    dir_entry.is_file = MagicMock(return_value=False)
+    dir_entry.is_dir = MagicMock(return_value=True)
+
+    mocker.patch(
+        "os.scandir",
+        return_value=MagicMock(
+            __enter__=MagicMock(return_value=[file_entry, dir_entry]),
+            __exit__=MagicMock(return_value=None),
+        ),
+    )
+    mock_remove = mocker.patch("os.remove")
+
+    def rmtree_side_effect(path):
+        if path == windows_folder:
+            raise OSError("remove failed")
+        return None
+
+    mock_rmtree = mocker.patch("shutil.rmtree", side_effect=rmtree_side_effect)
+
+    result = setup_config.create_windows_menu_shortcuts(
+        "C:\\config.yaml", "C:\\downloads"
+    )
+
+    assert result is True
+    mock_rmtree.assert_any_call(windows_folder)
+    mock_remove.assert_any_call(os.path.join(windows_folder, "shortcut.lnk"))
+    mock_rmtree.assert_any_call(os.path.join(windows_folder, "Nested"))
+
     # Now that the module is reloaded, we can patch its internal dependencies
     mocker.patch("shutil.which", return_value="C:\\path\\to\\fetchtastic.exe")
     mocker.patch("os.path.exists", return_value=True)
