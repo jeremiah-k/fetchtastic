@@ -596,26 +596,32 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 return
 
             # Remove local versions not in the keep set
-            for item in os.listdir(firmware_dir):
-                item_path = os.path.join(firmware_dir, item)
-                if item in [FIRMWARE_PRERELEASES_DIR_NAME, REPO_DOWNLOADS_DIR]:
-                    continue
-                if os.path.islink(item_path):
-                    logger.warning(
-                        "Skipping symlink in firmware directory during cleanup: %s",
-                        item,
-                    )
-                    continue
-                if not os.path.isdir(item_path):
-                    continue
-                if item not in release_tags_to_keep:
-                    try:
-                        shutil.rmtree(item_path)
-                        logger.info("Removed old firmware version: %s", item)
-                    except OSError as e:
-                        logger.error(
-                            "Error removing old firmware version %s: %s", item, e
+            with os.scandir(firmware_dir) as it:
+                for entry in it:
+                    if entry.name in {
+                        FIRMWARE_PRERELEASES_DIR_NAME,
+                        REPO_DOWNLOADS_DIR,
+                    }:
+                        continue
+                    if entry.is_symlink():
+                        logger.warning(
+                            "Skipping symlink in firmware directory during cleanup: %s",
+                            entry.name,
                         )
+                        continue
+                    if entry.is_dir():
+                        if entry.name not in release_tags_to_keep:
+                            try:
+                                shutil.rmtree(entry.path)
+                                logger.info(
+                                    "Removed old firmware version: %s", entry.name
+                                )
+                            except OSError as e:
+                                logger.error(
+                                    "Error removing old firmware version %s: %s",
+                                    entry.name,
+                                    e,
+                                )
 
         except OSError as e:
             logger.error("Error cleaning up old firmware versions: %s", e)

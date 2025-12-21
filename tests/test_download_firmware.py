@@ -351,17 +351,35 @@ class TestFirmwareReleaseDownloader:
             # Warning is logged but caplog testing is optional
 
     @patch("os.path.exists")
-    @patch("os.listdir")
-    @patch("os.path.isdir")
+    @patch("os.scandir")
     @patch("shutil.rmtree")
     def test_cleanup_old_versions_keep_zero(
-        self, mock_rmtree, mock_isdir, mock_listdir, mock_exists, downloader
+        self, mock_rmtree, mock_scandir, mock_exists, downloader
     ):
         """Test cleanup with keep_limit=0 removes all versions."""
         # Setup filesystem mocks
         mock_exists.return_value = True
-        mock_listdir.return_value = ["v1.0.0", "v2.0.0"]
-        mock_isdir.return_value = True
+
+        # Create mock DirEntry objects for os.scandir
+        from unittest.mock import Mock
+
+        mock_entry1 = Mock()
+        mock_entry1.name = "v1.0.0"
+        mock_entry1.is_dir.return_value = True
+        mock_entry1.is_symlink.return_value = False
+        mock_entry1.path = "/path/to/firmware/v1.0.0"
+
+        mock_entry2 = Mock()
+        mock_entry2.name = "v2.0.0"
+        mock_entry2.is_dir.return_value = True
+        mock_entry2.is_symlink.return_value = False
+        mock_entry2.path = "/path/to/firmware/v2.0.0"
+
+        mock_scandir.return_value.__enter__ = Mock(
+            return_value=[mock_entry1, mock_entry2]
+        )
+        mock_scandir.return_value.__exit__ = Mock(return_value=None)
+
         downloader.get_releases = Mock(return_value=[])
 
         downloader.cleanup_old_versions(keep_limit=0)
