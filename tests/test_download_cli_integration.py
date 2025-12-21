@@ -208,8 +208,8 @@ def test_run_download_successful(mocker):
     assert result[6] == "v1.9.0"  # latest_apk_version (from orchestrator)
 
     # Verify version comparison was called for new version detection
-    # Should be called for each non-skipped download (2 times in this test)
-    assert mock_version_manager.compare_versions.call_count >= 2
+    # Should be called for each item in results, including skipped ones (3 times in this test)
+    assert mock_version_manager.compare_versions.call_count == 3
     # Verify it was called with the correct arguments
     calls = mock_version_manager.compare_versions.call_args_list
     assert any(call[0] == ("v1.0.0", "v0.9.0") for call in calls)
