@@ -652,16 +652,15 @@ def run_clean():
         _try_remove(batch_dir, is_dir=True, description="batch files directory")
 
         # Check if config directory is now empty
-        if os.path.exists(config_dir):
-            try:
-                with os.scandir(config_dir) as it:
-                    is_empty = not any(it)
-                if is_empty:
-                    _try_remove(
-                        config_dir, is_dir=True, description="empty config directory"
-                    )
-            except FileNotFoundError:
-                pass
+        try:
+            with os.scandir(config_dir) as it:
+                is_empty = not any(it)
+            if is_empty:
+                _try_remove(
+                    config_dir, is_dir=True, description="empty config directory"
+                )
+        except FileNotFoundError:
+            pass
 
     # Windows-specific cleanup
     if platform.system() == "Windows":
