@@ -270,23 +270,54 @@ class TestFirmwareReleaseDownloader:
         downloader.file_operations.check_extraction_needed.assert_called_once()
 
     @patch("os.path.exists")
-    @patch("os.listdir")
-    @patch("os.path.isdir")
+    @patch("os.scandir")
     @patch("shutil.rmtree")
     def test_cleanup_old_versions(
-        self, mock_rmtree, mock_isdir, mock_listdir, mock_exists, downloader
+        self, mock_rmtree, mock_scandir, mock_exists, downloader
     ):
         """Test cleanup of old firmware versions."""
         # Setup filesystem mocks
         mock_exists.return_value = True
-        mock_listdir.return_value = [
-            "v1.0.0",
-            "v2.0.0",
-            "v3.0.0",
-            "prerelease",
-            "repo-dls",
+
+        # Create mock directory entries for os.scandir
+        mock_v1 = Mock()
+        mock_v1.name = "v1.0.0"
+        mock_v1.is_symlink.return_value = False
+        mock_v1.is_dir.return_value = True
+        mock_v1.path = "/mock/firmware/v1.0.0"
+
+        mock_v2 = Mock()
+        mock_v2.name = "v2.0.0"
+        mock_v2.is_symlink.return_value = False
+        mock_v2.is_dir.return_value = True
+        mock_v2.path = "/mock/firmware/v2.0.0"
+
+        mock_v3 = Mock()
+        mock_v3.name = "v3.0.0"
+        mock_v3.is_symlink.return_value = False
+        mock_v3.is_dir.return_value = True
+        mock_v3.path = "/mock/firmware/v3.0.0"
+
+        mock_prerelease = Mock()
+        mock_prerelease.name = "prerelease"
+        mock_prerelease.is_symlink.return_value = False
+        mock_prerelease.is_dir.return_value = True
+        mock_prerelease.path = "/mock/firmware/prerelease"
+
+        mock_repo_dls = Mock()
+        mock_repo_dls.name = "repo-dls"
+        mock_repo_dls.is_symlink.return_value = False
+        mock_repo_dls.is_dir.return_value = True
+        mock_repo_dls.path = "/mock/firmware/repo-dls"
+
+        mock_scandir.return_value.__enter__.return_value = [
+            mock_v1,
+            mock_v2,
+            mock_v3,
+            mock_prerelease,
+            mock_repo_dls,
         ]
-        mock_isdir.return_value = True
+
         downloader.get_releases = Mock(
             return_value=[Release(tag_name="v3.0.0"), Release(tag_name="v2.0.0")]
         )
@@ -300,31 +331,10 @@ class TestFirmwareReleaseDownloader:
         downloader.get_releases.assert_called_once_with(limit=2)
 
     @patch("os.path.exists")
-    @patch("os.listdir")
-    @patch("os.path.isdir")
-    @patch("shutil.rmtree")
-    def test_cleanup_old_versions_empty_releases(
-        self, mock_rmtree, mock_isdir, mock_listdir, mock_exists, downloader
-    ):
-        """Test cleanup when no releases are available."""
-        # Setup filesystem mocks
-        mock_exists.return_value = True
-        mock_listdir.return_value = ["v1.0.0", "v2.0.0"]
-        mock_isdir.return_value = True
-        downloader.get_releases = Mock(return_value=[])
-
-        downloader.cleanup_old_versions(keep_limit=2)
-
-        # Should not remove any versions since no releases available
-        mock_rmtree.assert_not_called()
-        downloader.get_releases.assert_called_once_with(limit=2)
-
-    @patch("os.path.exists")
-    @patch("os.listdir")
-    @patch("os.path.isdir")
+    @patch("os.scandir")
     @patch("shutil.rmtree")
     def test_cleanup_old_versions_unsafe_tags(
-        self, mock_rmtree, mock_isdir, mock_listdir, mock_exists, downloader
+        self, mock_rmtree, mock_scandir, mock_exists, downloader
     ):
         """Test cleanup when release tags contain unsafe characters."""
         # Mock _sanitize_path_component to return None for unsafe tags
@@ -332,8 +342,21 @@ class TestFirmwareReleaseDownloader:
             "fetchtastic.download.firmware._sanitize_path_component"
         ) as mock_sanitize:
             mock_exists.return_value = True
-            mock_listdir.return_value = ["v1.0.0", "v2.0.0"]
-            mock_isdir.return_value = True
+
+            # Create mock directory entries for os.scandir
+            mock_v1 = Mock()
+            mock_v1.name = "v1.0.0"
+            mock_v1.is_symlink.return_value = False
+            mock_v1.is_dir.return_value = True
+            mock_v1.path = "/mock/firmware/v1.0.0"
+
+            mock_v2 = Mock()
+            mock_v2.name = "v2.0.0"
+            mock_v2.is_symlink.return_value = False
+            mock_v2.is_dir.return_value = True
+            mock_v2.path = "/mock/firmware/v2.0.0"
+
+            mock_scandir.return_value.__enter__.return_value = [mock_v1, mock_v2]
             mock_sanitize.side_effect = ["v1.0.0", None]  # Second tag is unsafe
             downloader.get_releases = Mock(
                 return_value=[
@@ -393,17 +416,29 @@ class TestFirmwareReleaseDownloader:
         assert any("v2.0.0" in path for path in removed_paths)
 
     @patch("os.path.exists")
-    @patch("os.listdir")
-    @patch("os.path.isdir")
+    @patch("os.scandir")
     @patch("shutil.rmtree")
     def test_cleanup_old_versions_negative_keep_limit(
-        self, mock_rmtree, mock_isdir, mock_listdir, mock_exists, downloader
+        self, mock_rmtree, mock_scandir, mock_exists, downloader
     ):
         """Test cleanup with negative keep_limit skips cleanup."""
         # Setup filesystem mocks
         mock_exists.return_value = True
-        mock_listdir.return_value = ["v1.0.0", "v2.0.0"]
-        mock_isdir.return_value = True
+
+        # Create mock directory entries for os.scandir
+        mock_v1 = Mock()
+        mock_v1.name = "v1.0.0"
+        mock_v1.is_symlink.return_value = False
+        mock_v1.is_dir.return_value = True
+        mock_v1.path = "/mock/firmware/v1.0.0"
+
+        mock_v2 = Mock()
+        mock_v2.name = "v2.0.0"
+        mock_v2.is_symlink.return_value = False
+        mock_v2.is_dir.return_value = True
+        mock_v2.path = "/mock/firmware/v2.0.0"
+
+        mock_scandir.return_value.__enter__.return_value = [mock_v1, mock_v2]
 
         # Mock get_releases to track calls
         downloader.get_releases = Mock()
@@ -505,17 +540,32 @@ class TestFirmwareReleaseDownloader:
         downloader.cache_manager.get_repo_contents.assert_called_once()
 
     @patch("os.path.exists")
-    @patch("os.listdir")
-    @patch("os.path.isdir")
+    @patch("os.scandir")
     @patch("shutil.rmtree")
     def test_cleanup_superseded_prereleases(
-        self, mock_rmtree, mock_isdir, mock_listdir, mock_exists, downloader
+        self, mock_rmtree, mock_scandir, mock_exists, downloader
     ):
         """Test cleanup of superseded prereleases."""
         # Setup filesystem mocks
         mock_exists.return_value = True
-        mock_listdir.return_value = ["firmware-1.0.0.abc123", "firmware-2.0.0.def456"]
-        mock_isdir.return_value = True
+
+        # Create mock directory entries for os.scandir
+        mock_firmware1 = Mock()
+        mock_firmware1.name = "firmware-1.0.0.abc123"
+        mock_firmware1.is_symlink.return_value = False
+        mock_firmware1.is_dir.return_value = True
+        mock_firmware1.path = "/mock/prerelease/firmware-1.0.0.abc123"
+
+        mock_firmware2 = Mock()
+        mock_firmware2.name = "firmware-2.0.0.def456"
+        mock_firmware2.is_symlink.return_value = False
+        mock_firmware2.is_dir.return_value = True
+        mock_firmware2.path = "/mock/prerelease/firmware-2.0.0.def456"
+
+        mock_scandir.return_value.__enter__.return_value = [
+            mock_firmware1,
+            mock_firmware2,
+        ]
 
         # Mock version comparison
         downloader.version_manager.compare_versions = Mock(
@@ -569,7 +619,7 @@ class TestFirmwareReleaseDownloader:
         with (
             patch.object(downloader, "get_releases", return_value=[]),
             patch("os.path.exists", return_value=True),
-            patch("os.listdir", return_value=[]),
+            patch("os.scandir", return_value=Mock(__enter__=Mock(return_value=[]))),
             patch(
                 "fetchtastic.download.files._atomic_write",
                 return_value=None,

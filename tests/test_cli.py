@@ -1,6 +1,6 @@
 import os
 import subprocess
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -616,8 +616,9 @@ def test_cli_clean_command(mocker):
 @patch("builtins.input", return_value="y")
 @patch("os.path.exists")
 @patch("os.remove")
+@patch("os.path.exists")
 @patch("shutil.rmtree")
-@patch("os.listdir")
+@patch("os.scandir")
 @patch("os.rmdir")
 @patch("subprocess.run")
 @patch("platform.system", return_value="Linux")
@@ -644,7 +645,7 @@ def test_run_clean(
     _mock_shutil_which,
     mock_subprocess_run,
     mock_rmdir,
-    mock_listdir,
+    mock_scandir,
     mock_rmtree,
     mock_os_remove,
     mock_os_path_exists,
@@ -653,12 +654,49 @@ def test_run_clean(
     """Test the run_clean function."""
     # Simulate existing files and directories
     mock_os_path_exists.return_value = True
-    mock_listdir.return_value = [
-        "some_dir",  # unmanaged dir
-        "repo-dls",  # managed dir
-        "firmware-2.7.4",  # managed dir (starts with FIRMWARE_DIR_PREFIX)
-        "fetchtastic_yaml.lnk",  # managed file
-        "unmanaged.txt",  # unmanaged file
+
+    # Create mock directory entries for os.scandir
+    mock_some_dir = Mock()
+    mock_some_dir.name = "some_dir"
+    mock_some_dir.is_symlink.return_value = False
+    mock_some_dir.is_file.return_value = False
+    mock_some_dir.is_dir.return_value = True
+    mock_some_dir.path = "/tmp/test_base_dir/some_dir"
+
+    mock_repo_dls = Mock()
+    mock_repo_dls.name = "repo-dls"
+    mock_repo_dls.is_symlink.return_value = False
+    mock_repo_dls.is_file.return_value = False
+    mock_repo_dls.is_dir.return_value = True
+    mock_repo_dls.path = "/tmp/test_base_dir/repo-dls"
+
+    mock_firmware = Mock()
+    mock_firmware.name = "firmware-2.7.4"
+    mock_firmware.is_symlink.return_value = False
+    mock_firmware.is_file.return_value = False
+    mock_firmware.is_dir.return_value = True
+    mock_firmware.path = "/tmp/test_base_dir/firmware-2.7.4"
+
+    mock_yaml_lnk = Mock()
+    mock_yaml_lnk.name = "fetchtastic_yaml.lnk"
+    mock_yaml_lnk.is_symlink.return_value = True
+    mock_yaml_lnk.is_file.return_value = False
+    mock_yaml_lnk.is_dir.return_value = False
+    mock_yaml_lnk.path = "/tmp/test_base_dir/fetchtastic_yaml.lnk"
+
+    mock_unmanaged = Mock()
+    mock_unmanaged.name = "unmanaged.txt"
+    mock_unmanaged.is_symlink.return_value = False
+    mock_unmanaged.is_file.return_value = True
+    mock_unmanaged.is_dir.return_value = False
+    mock_unmanaged.path = "/tmp/test_base_dir/unmanaged.txt"
+
+    mock_scandir.return_value.__enter__.return_value = [
+        mock_some_dir,
+        mock_repo_dls,
+        mock_firmware,
+        mock_yaml_lnk,
+        mock_unmanaged,
     ]
 
     def isdir_side_effect(path):
