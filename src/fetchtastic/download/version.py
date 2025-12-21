@@ -708,13 +708,13 @@ class VersionManager:
     ) -> Optional[str]:
         """
         Selects the most recent version recorded in the provided tracking files.
-        
+
         Reads each tracking file via the provided cache manager, considers only entries that contain a "version" key, and compares version strings using the manager's comparison rules to determine the latest version. If a file's version string does not match the manager's version-validation pattern it is still compared but a debug message is emitted.
-        
+
         Parameters:
             tracking_files (List[str]): Paths to tracking JSON files to examine.
             cache_manager (Any): Cache/IO helper used to read tracking files.
-        
+
         Returns:
             The latest version string found across the provided tracking files, or None if no valid version was found.
         """

@@ -301,10 +301,10 @@ class DownloadCLIIntegration:
                 downloaded_apks: Unique Android (APK) release tags that were downloaded (excludes skipped results).
                 new_apk_versions: Android release tags from `downloaded_apks` that are newer than the currently known Android version.
         """
-        downloaded_firmwares = []
-        new_firmware_versions = []
-        downloaded_apks = []
-        new_apk_versions = []
+        downloaded_firmwares: list[str] = []
+        new_firmware_versions: list[str] = []
+        downloaded_apks: list[str] = []
+        new_apk_versions: list[str] = []
         downloaded_firmware_set: set[str] = set()
         downloaded_apk_set: set[str] = set()
         new_firmware_set: set[str] = set()
@@ -324,9 +324,16 @@ class DownloadCLIIntegration:
             if not release_tag:
                 continue
 
-            file_type = (result.file_type or "").lower()
-            is_firmware = "firmware" in file_type
-            is_android = "android" in file_type
+            file_type = result.file_type
+            is_firmware = file_type in {
+                FILE_TYPE_FIRMWARE,
+                FILE_TYPE_FIRMWARE_PRERELEASE,
+                FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
+            }
+            is_android = file_type in {
+                FILE_TYPE_ANDROID,
+                FILE_TYPE_ANDROID_PRERELEASE,
+            }
             was_skipped = getattr(result, "was_skipped", False)
 
             # Always detect newer versions (for notifications), even when downloads were skipped.
