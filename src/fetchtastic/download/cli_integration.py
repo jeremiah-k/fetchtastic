@@ -243,7 +243,6 @@ class DownloadCLIIntegration:
                     f"URL={url} retryable={retryable} http_status={http_status} error={error}"
                 )
 
-        downloads_skipped_reason = "Downloads skipped because downloaded assets already match the latest releases."
         new_versions_available = bool(new_firmware_versions or new_apk_versions)
         if downloaded_count == 0 and not failed_downloads:
             if new_versions_available:
@@ -273,7 +272,7 @@ class DownloadCLIIntegration:
                     self.config,
                     new_firmware_versions,
                     new_apk_versions,
-                    downloads_skipped_reason=downloads_skipped_reason,
+                    downloads_skipped_reason="Downloads skipped because downloaded assets already match the latest releases.",
                 )
             elif downloaded_count == 0 and not failed_downloads:
                 send_up_to_date_notification(self.config)
@@ -331,38 +330,29 @@ class DownloadCLIIntegration:
             was_skipped = getattr(result, "was_skipped", False)
 
             # Always detect newer versions (for notifications), even when downloads were skipped.
-            if (
-                is_firmware
-                and release_tag not in new_firmware_set
-                and (
-                    not current_firmware
-                    or self._is_newer_version(release_tag, current_firmware)
+            if is_firmware:
+                self._update_new_versions(
+                    release_tag,
+                    current_firmware,
+                    new_firmware_versions,
+                    new_firmware_set,
                 )
-            ):
-                new_firmware_versions.append(release_tag)
-                new_firmware_set.add(release_tag)
-            if (
-                is_android
-                and release_tag not in new_apk_set
-                and (
-                    not current_android
-                    or self._is_newer_version(release_tag, current_android)
+            if is_android:
+                self._update_new_versions(
+                    release_tag, current_android, new_apk_versions, new_apk_set
                 )
-            ):
-                new_apk_versions.append(release_tag)
-                new_apk_set.add(release_tag)
 
             if was_skipped:
                 continue
 
             if is_firmware:
-                if release_tag not in downloaded_firmware_set:
-                    downloaded_firmwares.append(release_tag)
-                    downloaded_firmware_set.add(release_tag)
-            elif is_android:
-                if release_tag not in downloaded_apk_set:
-                    downloaded_apks.append(release_tag)
-                    downloaded_apk_set.add(release_tag)
+                self._add_downloaded_asset(
+                    release_tag, downloaded_firmwares, downloaded_firmware_set
+                )
+            if is_android:
+                self._add_downloaded_asset(
+                    release_tag, downloaded_apks, downloaded_apk_set
+                )
 
         return (
             downloaded_firmwares,
@@ -370,6 +360,46 @@ class DownloadCLIIntegration:
             downloaded_apks,
             new_apk_versions,
         )
+
+    def _update_new_versions(
+        self,
+        release_tag: str,
+        current_version: Optional[str],
+        new_versions_list: List[str],
+        new_versions_set: set[str],
+    ) -> None:
+        """
+        Helper method to update new versions list and set if the release tag is newer.
+
+        Parameters:
+            release_tag (str): Release tag to check.
+            current_version (Optional[str]): Current version to compare against.
+            new_versions_list (List[str]): List to append new versions to.
+            new_versions_set (set[str]): Set to track unique new versions.
+        """
+        if release_tag not in new_versions_set and (
+            not current_version or self._is_newer_version(release_tag, current_version)
+        ):
+            new_versions_list.append(release_tag)
+            new_versions_set.add(release_tag)
+
+    def _add_downloaded_asset(
+        self,
+        release_tag: str,
+        downloaded_list: List[str],
+        downloaded_set: set[str],
+    ) -> None:
+        """
+        Helper method to add downloaded asset to list and set if not already present.
+
+        Parameters:
+            release_tag (str): Release tag of downloaded asset.
+            downloaded_list (List[str]): List to append to.
+            downloaded_set (set[str]): Set to track unique downloaded assets.
+        """
+        if release_tag not in downloaded_set:
+            downloaded_list.append(release_tag)
+            downloaded_set.add(release_tag)
 
     def _is_newer_version(self, version1: str, version2: str) -> bool:
         """
@@ -396,12 +426,14 @@ class DownloadCLIIntegration:
         """
         if not self.android_downloader:
             return None
+        # Check for method first (for backward compatibility and mocks),
+        # then fall back to direct attribute access
         getter = getattr(self.android_downloader, "get_version_manager", None)
         if callable(getter):
             result = getter()
             return cast(Optional["VersionManager"], result)
         result = getattr(self.android_downloader, "version_manager", None)
-        return cast(Optional[VersionManager], result)
+        return cast(Optional["VersionManager"], result)
 
     def get_failed_downloads(self) -> List[Dict[str, Any]]:
         """

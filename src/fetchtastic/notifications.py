@@ -45,6 +45,8 @@ def send_ntfy_notification(
                 "Content-Type": "text/plain; charset=utf-8",
             }
             if title:
+                # Encode UTF-8 bytes as latin-1 to pass through requests headers
+                # This pattern works because NTFY server interprets the bytes as UTF-8
                 headers["Title"] = title.encode("utf-8").decode("latin-1")
             response: requests.Response = requests.post(
                 ntfy_url,
