@@ -1562,7 +1562,6 @@ def _setup_base(
         if config is None:
             print("Failed to load existing configuration. Starting with defaults.")
             config = {}
-            current_base_dir = DEFAULT_BASE_DIR
         else:
             print(
                 "Existing configuration found. You can keep current settings or change them."
