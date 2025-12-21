@@ -548,13 +548,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
     def cleanup_old_versions(self, keep_limit: int) -> None:
         """
-        Remove firmware version directories not present in the latest `keep_limit` stable releases.
+        Remove firmware version directories not present in the latest `keep_limit` releases.
 
-        This mirrors legacy behavior by keeping only the newest stable (non-prerelease)
-        release tags returned by the GitHub API (bounded by `keep_limit`). Any local
-        version directories not in that set are removed. Prerelease tags are filtered
-        out and their directories may be removed. Special directories "prerelease" and
-        "repo-dls" are always preserved.
+        This mirrors legacy behavior by keeping only the newest release tags returned
+        by the GitHub API (bounded by `keep_limit`). Any local version directories not
+        in that set are removed. Special directories "prerelease" and "repo-dls" are
+        always preserved.
 
         Parameters:
             keep_limit (int): Maximum number of most-recent version directories to retain;
@@ -582,11 +581,6 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
             release_tags_to_keep = set()
             for release in latest_releases:
-                if release.prerelease:
-                    logger.debug(
-                        "Skipping prerelease tag during cleanup: %s", release.tag_name
-                    )
-                    continue
                 safe_tag = _sanitize_path_component(release.tag_name)
                 if safe_tag is None:
                     logger.warning(

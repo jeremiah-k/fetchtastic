@@ -583,6 +583,49 @@ class TestFirmwareReleaseDownloader:
         assert result is True
         assert mock_rmtree.call_count == 2
 
+    @patch("os.path.exists")
+    @patch("os.scandir")
+    @patch("shutil.rmtree")
+    def test_cleanup_old_versions_keeps_prerelease_tags(
+        self, mock_rmtree, mock_scandir, mock_exists, downloader
+    ):
+        """Test cleanup retains prerelease-tagged releases in the keep set."""
+        mock_exists.return_value = True
+        downloader.get_releases = Mock(
+            return_value=[
+                Release(tag_name="v2.7.17.83c6161", prerelease=True),
+                Release(tag_name="v2.7.16.a597230", prerelease=True),
+            ]
+        )
+
+        entry_keep1 = Mock()
+        entry_keep1.name = "v2.7.17.83c6161"
+        entry_keep1.is_symlink.return_value = False
+        entry_keep1.is_dir.return_value = True
+        entry_keep1.path = "/mock/firmware/v2.7.17.83c6161"
+
+        entry_keep2 = Mock()
+        entry_keep2.name = "v2.7.16.a597230"
+        entry_keep2.is_symlink.return_value = False
+        entry_keep2.is_dir.return_value = True
+        entry_keep2.path = "/mock/firmware/v2.7.16.a597230"
+
+        entry_remove = Mock()
+        entry_remove.name = "v2.7.15.567b8ea"
+        entry_remove.is_symlink.return_value = False
+        entry_remove.is_dir.return_value = True
+        entry_remove.path = "/mock/firmware/v2.7.15.567b8ea"
+
+        mock_scandir.return_value.__enter__.return_value = [
+            entry_keep1,
+            entry_keep2,
+            entry_remove,
+        ]
+
+        downloader.cleanup_old_versions(keep_limit=2)
+
+        mock_rmtree.assert_called_once_with("/mock/firmware/v2.7.15.567b8ea")
+
     def test_get_prerelease_tracking_file(self, downloader):
         """Test prerelease tracking file path generation."""
         path = downloader.get_prerelease_tracking_file()
