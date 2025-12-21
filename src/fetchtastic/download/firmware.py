@@ -1433,6 +1433,14 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 # Check for matching pre-release directories
                 with os.scandir(prerelease_dir) as it:
                     for entry in it:
+                        if entry.is_symlink():
+                            logger.warning(
+                                "Skipping symlink in prerelease folder: %s",
+                                entry.name,
+                            )
+                            continue
+                        if not entry.is_dir():
+                            continue
                         if entry.name.startswith(FIRMWARE_DIR_PREFIX):
                             dir_name = entry.name[len(FIRMWARE_DIR_PREFIX) :]
 

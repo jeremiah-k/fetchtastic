@@ -466,7 +466,7 @@ class TestFirmwareReleaseDownloader:
             ) as mock_read,
             patch.object(
                 downloader.cache_manager, "write_releases_cache_entry"
-            ) as mock_write,
+            ) as _mock_write,
         ):
             mock_read.return_value = None
             mock_key.return_value = "test_key"
@@ -559,15 +559,24 @@ class TestFirmwareReleaseDownloader:
         mock_firmware2.is_dir.return_value = True
         mock_firmware2.path = "/mock/prerelease/firmware-2.0.0.def456"
 
+        mock_symlink = Mock()
+        mock_symlink.name = "firmware-0.9.0.symlink"
+        mock_symlink.is_symlink.return_value = True
+        mock_symlink.is_dir.return_value = True
+        mock_symlink.path = "/mock/prerelease/firmware-0.9.0.symlink"
+
+        mock_file = Mock()
+        mock_file.name = "firmware-0.8.0.txt"
+        mock_file.is_symlink.return_value = False
+        mock_file.is_dir.return_value = False
+        mock_file.path = "/mock/prerelease/firmware-0.8.0.txt"
+
         mock_scandir.return_value.__enter__.return_value = [
             mock_firmware1,
             mock_firmware2,
+            mock_symlink,
+            mock_file,
         ]
-
-        # Mock version comparison
-        downloader.version_manager.compare_versions = Mock(
-            side_effect=[-1, 1]
-        )  # v1.0.0 < v2.0.0
 
         result = downloader.cleanup_superseded_prereleases("v2.0.0")
 

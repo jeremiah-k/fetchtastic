@@ -643,12 +643,12 @@ def test_run_clean(
     _mock_crontab_available,
     _mock_platform_system,
     mock_subprocess_run,
-    mock_rmdir,
+    _mock_rmdir,
     mock_scandir,
     mock_rmtree,
     mock_os_path_exists,
     mock_os_remove,
-    mock_input,
+    _mock_input,
 ):
     """Test the run_clean function."""
     # Simulate existing files and directories
