@@ -239,6 +239,17 @@ def test_fetch_repo_directories(mocker):
     assert directories == ["dir1", "dir2"]
 
 
+def test_run_repository_downloader_menu_handles_exception(mocker):
+    """Test that run_repository_downloader_menu logs and returns None on errors."""
+    mocker.patch("fetchtastic.menu_repo.run_menu", side_effect=RuntimeError("boom"))
+    mock_logger = mocker.patch("fetchtastic.menu_repo.logger")
+
+    result = menu_repo.run_repository_downloader_menu({"BASE_DIR": "/tmp"})
+
+    assert result is None
+    mock_logger.error.assert_called_once()
+
+
 def test_fetch_directory_contents(mocker):
     """Test the backward compatibility function for fetching directory contents."""
     mock_contents = [

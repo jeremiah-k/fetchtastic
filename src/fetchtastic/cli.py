@@ -216,28 +216,29 @@ def _handle_download_subcommand(
         return
 
     start_time = time.time()
-    (
-        downloaded_firmwares,
-        new_firmware_versions,
-        downloaded_apks,
-        new_apk_versions,
-        failed_downloads,
-        latest_firmware_version,
-        latest_apk_version,
-    ) = integration.main(config=config, force_refresh=args.force_download)
+    download_results = integration.main(
+        config=config, force_refresh=args.force_download
+    )
+    downloaded_firmwares = download_results[0]
+    new_firmware_versions = download_results[1]
+    downloaded_apks = download_results[2]
+    new_apk_versions = download_results[3]
+    failed_downloads = download_results[4]
+    latest_firmware_version = download_results[5]
+    latest_apk_version = download_results[6]
 
     elapsed = time.time() - start_time
-    integration.log_download_results_summary(
-        logger_override=log_utils.logger,
-        elapsed_seconds=elapsed,
-        downloaded_firmwares=downloaded_firmwares,
-        downloaded_apks=downloaded_apks,
-        failed_downloads=failed_downloads,
-        latest_firmware_version=latest_firmware_version,
-        latest_apk_version=latest_apk_version,
-        new_firmware_versions=new_firmware_versions,
-        new_apk_versions=new_apk_versions,
-    )
+    summary_kwargs = {}
+    summary_kwargs["logger_override"] = log_utils.logger
+    summary_kwargs["elapsed_seconds"] = elapsed
+    summary_kwargs["downloaded_firmwares"] = downloaded_firmwares
+    summary_kwargs["downloaded_apks"] = downloaded_apks
+    summary_kwargs["failed_downloads"] = failed_downloads
+    summary_kwargs["latest_firmware_version"] = latest_firmware_version
+    summary_kwargs["latest_apk_version"] = latest_apk_version
+    summary_kwargs["new_firmware_versions"] = new_firmware_versions
+    summary_kwargs["new_apk_versions"] = new_apk_versions
+    integration.log_download_results_summary(**summary_kwargs)
 
 
 def main():
