@@ -58,9 +58,6 @@ def send_ntfy_notification(
             logger.debug(f"Notification sent to {ntfy_url}")
         except requests.exceptions.RequestException as e:
             logger.warning(f"Error sending notification to {ntfy_url}: {e}")
-    else:
-        # Don't log when notifications are not configured
-        pass
 
 
 def send_download_completion_notification(
@@ -95,10 +92,9 @@ def send_download_completion_notification(
         message = f"Downloaded Android APK versions: {', '.join(downloaded_apks)}"
         notification_messages.append(message)
 
-    notification_message = (
-        "\n".join(notification_messages)
-        + f"\n{datetime.now().astimezone().isoformat(timespec='seconds')}"
-    )
+    timestamp = datetime.now().astimezone().isoformat(timespec="seconds")
+    notification_messages.append(timestamp)
+    notification_message = "\n".join(notification_messages)
 
     send_ntfy_notification(
         ntfy_server,
@@ -147,10 +143,9 @@ def send_new_releases_available_notification(
             f"Android APK versions available: {', '.join(new_apk_versions)}"
         )
 
-    notification_message = (
-        "\n".join(message_lines)
-        + f"\n{datetime.now().astimezone().isoformat(timespec='seconds')}"
-    )
+    timestamp = datetime.now().astimezone().isoformat(timespec="seconds")
+    message_lines.append(timestamp)
+    notification_message = "\n".join(message_lines)
 
     send_ntfy_notification(
         ntfy_server,
