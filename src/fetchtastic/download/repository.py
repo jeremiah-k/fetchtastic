@@ -8,6 +8,7 @@ from the meshtastic.github.io repository.
 import json
 import os
 import re
+import shutil
 from typing import Any, Dict, List, Optional
 from urllib.parse import urljoin, urlparse
 
@@ -392,23 +393,21 @@ class RepositoryDownloader(BaseDownloader):
 
             # Remove all contents of the repository directory
             had_errors = False
-            for item in os.listdir(repo_dir):
-                item_path = os.path.join(repo_dir, item)
-                try:
-                    if os.path.isfile(item_path) or os.path.islink(item_path):
-                        os.remove(item_path)
-                        logger.info(f"Removed file: {item_path}")
-                        self._cleanup_summary["removed_files"] += 1
-                    elif os.path.isdir(item_path):
-                        import shutil
-
-                        shutil.rmtree(item_path)
-                        logger.info(f"Removed directory: {item_path}")
-                        self._cleanup_summary["removed_dirs"] += 1
-                except OSError as e:
-                    logger.error(f"Error removing {item_path}: {e}")
-                    self._cleanup_summary["errors"].append(f"{item_path}: {e}")
-                    had_errors = True
+            with os.scandir(repo_dir) as it:
+                for entry in it:
+                    try:
+                        if entry.is_file() or entry.is_symlink():
+                            os.remove(entry.path)
+                            logger.info(f"Removed file: {entry.path}")
+                            self._cleanup_summary["removed_files"] += 1
+                        elif entry.is_dir():
+                            shutil.rmtree(entry.path)
+                            logger.info(f"Removed directory: {entry.path}")
+                            self._cleanup_summary["removed_dirs"] += 1
+                    except OSError as e:
+                        logger.error(f"Error removing {entry.path}: {e}")
+                        self._cleanup_summary["errors"].append(f"{entry.path}: {e}")
+                        had_errors = True
 
             if not had_errors:
                 logger.info(f"Successfully cleaned repository directory: {repo_dir}")

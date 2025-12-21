@@ -2059,12 +2059,13 @@ def create_windows_menu_shortcuts(config_file_path, base_dir):
                 # Try to remove individual files as a fallback
                 try:
                     # First list all files
-                    files = os.listdir(WINDOWS_START_MENU_FOLDER)
+                    with os.scandir(WINDOWS_START_MENU_FOLDER) as it:
+                        files = list(it)
                     print(f"Found {len(files)} files in shortcuts folder")
 
                     # Try to remove each file
-                    for file in files:
-                        file_path = os.path.join(WINDOWS_START_MENU_FOLDER, file)
+                    for entry in files:
+                        file_path = entry.path
                         try:
                             if os.path.isfile(file_path):
                                 os.remove(file_path)

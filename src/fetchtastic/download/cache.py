@@ -605,13 +605,16 @@ class CacheManager:
             bool: `True` if all targeted files were removed successfully or none were present, `False` if any removal or directory access failed.
         """
         try:
-            for cache_file in os.listdir(self.cache_dir):
-                if cache_file.endswith((".json", ".tmp")):
-                    try:
-                        os.remove(os.path.join(self.cache_dir, cache_file))
-                    except OSError as e:
-                        logger.error(f"Could not remove cache file {cache_file}: {e}")
-                        return False
+            with os.scandir(self.cache_dir) as it:
+                for entry in it:
+                    if entry.name.endswith((".json", ".tmp")):
+                        try:
+                            os.remove(entry.path)
+                        except OSError as e:
+                            logger.error(
+                                f"Could not remove cache file {entry.name}: {e}"
+                            )
+                            return False
             return True
         except OSError as e:
             logger.error(f"Could not clear cache directory {self.cache_dir}: {e}")

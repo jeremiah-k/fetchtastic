@@ -174,14 +174,16 @@ def clean_repo_directory(download_dir):  # log_message_func removed
 
     try:
         # Remove all contents of the repo directory
-        for item in os.listdir(repo_dir):
-            item_path = os.path.join(repo_dir, item)
-            if os.path.isfile(item_path) or os.path.islink(item_path):
-                os.remove(item_path)
-                logger.info(f"Removed file: {item_path}")  # Was log_message_func
-            elif os.path.isdir(item_path):
-                shutil.rmtree(item_path)
-                logger.info(f"Removed directory: {item_path}")  # Was log_message_func
+        with os.scandir(repo_dir) as it:
+            for entry in it:
+                if entry.is_file() or entry.is_symlink():
+                    os.remove(entry.path)
+                    logger.info(f"Removed file: {entry.path}")  # Was log_message_func
+                elif entry.is_dir():
+                    shutil.rmtree(entry.path)
+                    logger.info(
+                        f"Removed directory: {entry.path}"
+                    )  # Was log_message_func
 
         logger.info(
             f"Successfully cleaned the repo directory: {repo_dir}"
