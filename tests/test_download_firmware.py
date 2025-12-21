@@ -374,6 +374,53 @@ class TestFirmwareReleaseDownloader:
         assert any("v1.0.0" in path for path in removed_paths)
         assert any("v2.0.0" in path for path in removed_paths)
 
+    @patch("os.path.exists")
+    @patch("os.listdir")
+    @patch("os.path.isdir")
+    @patch("shutil.rmtree")
+    def test_cleanup_old_versions_negative_keep_limit(
+        self, mock_rmtree, mock_isdir, mock_listdir, mock_exists, downloader
+    ):
+        """Test cleanup with negative keep_limit skips cleanup."""
+        # Setup filesystem mocks
+        mock_exists.return_value = True
+        mock_listdir.return_value = ["v1.0.0", "v2.0.0"]
+        mock_isdir.return_value = True
+
+        # Should skip cleanup entirely for negative keep_limit
+        downloader.cleanup_old_versions(keep_limit=-1)
+
+        # Should not call get_releases or rmtree for negative keep_limit
+        assert mock_rmtree.call_count == 0
+
+    @patch("fetchtastic.download.firmware.make_github_api_request")
+    def test_get_releases_negative_limit(self, mock_api_request, downloader):
+        """Test get_releases with negative limit uses default behavior."""
+        # Mock API response
+        mock_response = Mock()
+        mock_response.json.return_value = []
+        mock_api_request.return_value = mock_response
+
+        # Test with negative limit - should use default behavior
+        with (
+            patch.object(downloader.cache_manager, "build_url_cache_key") as mock_key,
+            patch.object(
+                downloader.cache_manager, "read_releases_cache_entry"
+            ) as mock_read,
+            patch.object(
+                downloader.cache_manager, "write_releases_cache_entry"
+            ) as mock_write,
+        ):
+            mock_read.return_value = None
+            mock_key.return_value = "test_key"
+
+            result = downloader.get_releases(limit=-1)
+
+            # Should call get_releases with default behavior (no limit validation in params)
+            assert result == []
+            # Should have made API call with default params (per_page=8)
+            mock_api_request.assert_called_once()
+
     def test_get_latest_release_tag(self, mock_config, tmp_path):
         """Test getting latest release tag from cache file."""
         cache_manager = CacheManager(str(tmp_path))
