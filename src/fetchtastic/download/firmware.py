@@ -602,35 +602,39 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 return
 
             # Remove local versions not in the keep set
-            with os.scandir(firmware_dir) as it:
-                for entry in it:
-                    if entry.name in {
-                        FIRMWARE_PRERELEASES_DIR_NAME,
-                        REPO_DOWNLOADS_DIR,
-                    }:
-                        continue
-                    if entry.is_symlink():
-                        logger.warning(
-                            "Skipping symlink in firmware directory during cleanup: %s",
-                            entry.name,
-                        )
-                        continue
-                    if entry.is_dir():
-                        if entry.name not in release_tags_to_keep:
-                            try:
-                                shutil.rmtree(entry.path)
-                                logger.info(
-                                    "Removed old firmware version: %s", entry.name
-                                )
-                            except OSError as e:
-                                logger.error(
-                                    "Error removing old firmware version %s: %s",
-                                    entry.name,
-                                    e,
-                                )
-
+            try:
+                with os.scandir(firmware_dir) as it:
+                    for entry in it:
+                        if entry.name in {
+                            FIRMWARE_PRERELEASES_DIR_NAME,
+                            REPO_DOWNLOADS_DIR,
+                        }:
+                            continue
+                        if entry.is_symlink():
+                            logger.warning(
+                                "Skipping symlink in firmware directory during cleanup: %s",
+                                entry.name,
+                            )
+                            continue
+                        if entry.is_dir():
+                            if entry.name not in release_tags_to_keep:
+                                try:
+                                    shutil.rmtree(entry.path)
+                                    logger.info(
+                                        "Removed old firmware version: %s", entry.name
+                                    )
+                                except OSError as e:
+                                    logger.error(
+                                        "Error removing old firmware version %s: %s",
+                                        entry.name,
+                                        e,
+                                    )
+            except FileNotFoundError:
+                pass
+            except OSError as e:
+                logger.error("Error cleaning up old firmware versions: %s", e)
         except OSError as e:
-            logger.error("Error cleaning up old firmware versions: %s", e)
+            logger.error("Error during firmware cleanup: %s", e)
 
     def get_latest_release_tag(self) -> Optional[str]:
         """
@@ -1044,10 +1048,13 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
         prerelease_base_dir = self._get_prerelease_base_dir()
         existing_dirs = []
-        with os.scandir(prerelease_base_dir) as it:
-            for entry in it:
-                if entry.is_dir():
-                    existing_dirs.append(entry.name)
+        try:
+            with os.scandir(prerelease_base_dir) as it:
+                for entry in it:
+                    if entry.is_dir():
+                        existing_dirs.append(entry.name)
+        except FileNotFoundError:
+            pass
 
         successes, failures, any_downloaded = self._download_prerelease_assets(
             active_dir,
