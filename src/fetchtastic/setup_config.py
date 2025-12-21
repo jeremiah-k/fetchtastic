@@ -1033,7 +1033,7 @@ def _setup_automation(
             # Windows doesn't support cron jobs, but we can offer to create a startup shortcut
             if WINDOWS_MODULES_AVAILABLE:
                 # Check if startup shortcut already exists
-                startup_folder = winshell.startup()  # type: ignore[possibly-unbound]  # type: ignore[possibly-unbound]
+                startup_folder = winshell.startup()  # type: ignore[possibly-unbound]
                 startup_shortcut_path = os.path.join(startup_folder, "Fetchtastic.lnk")
 
                 if os.path.exists(startup_shortcut_path):
@@ -1766,7 +1766,7 @@ def run_setup(
         config["LAST_SETUP_VERSION"] = current_version
         config["LAST_SETUP_DATE"] = datetime.now().isoformat()
     except Exception:
-        # If we can't get the version, just record the date
+        # If we can't get the version (PackageNotFoundError or import error), just record the date
         config["LAST_SETUP_DATE"] = datetime.now().isoformat()
 
     # Make sure the config directory exists
