@@ -145,6 +145,7 @@ def test_download_file_with_retry_existing_valid(mock_session, tmp_path):
 
 @pytest.mark.core_downloads
 @pytest.mark.integration
+@pytest.mark.unit
 @patch("fetchtastic.utils.requests.Session")
 def test_download_file_with_retry_existing_corrupted_zip(mock_session, tmp_path):
     """Test download when a zip file exists but is corrupted."""
@@ -186,6 +187,82 @@ def test_download_file_with_retry_existing_corrupted_zip(mock_session, tmp_path)
 
     assert result is True
     assert download_path.read_bytes() == valid_zip_content
+    mock_session.return_value.get.assert_called_once()
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
+@patch("fetchtastic.utils.requests.Session")
+def test_download_file_with_retry_existing_zip_bad_hash(mock_session, tmp_path):
+    """Test download when a zip file exists but has bad hash."""
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    valid_zip_content = b"PK\x05\x06\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+    mock_response.iter_content.return_value = [valid_zip_content]
+    mock_session.return_value.get.return_value = mock_response
+
+    download_path = tmp_path / "bad_hash.zip"
+    # Create a valid zip file but with bad hash
+    download_path.write_bytes(valid_zip_content)
+
+    # Mock verify_file_integrity to return False
+    with patch("fetchtastic.utils.verify_file_integrity", return_value=False):
+        result = utils.download_file_with_retry(
+            "http://example.com/file.zip", str(download_path)
+        )
+
+    assert result is True
+    assert download_path.read_bytes() == valid_zip_content
+    mock_session.return_value.get.assert_called_once()
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
+@patch("fetchtastic.utils.requests.Session")
+def test_download_file_with_retry_existing_nonzip_bad_hash(mock_session, tmp_path):
+    """Test download when a non-zip file exists but has bad hash."""
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    new_content = b"new content"
+    mock_response.iter_content.return_value = [new_content]
+    mock_session.return_value.get.return_value = mock_response
+
+    download_path = tmp_path / "bad_hash.txt"
+    # Create a file with bad hash
+    download_path.write_text("old content")
+
+    # Mock verify_file_integrity to return False
+    with patch("fetchtastic.utils.verify_file_integrity", return_value=False):
+        result = utils.download_file_with_retry(
+            "http://example.com/file.txt", str(download_path)
+        )
+
+    assert result is True
+    assert download_path.read_bytes() == new_content
+    mock_session.return_value.get.assert_called_once()
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
+@patch("fetchtastic.utils.requests.Session")
+def test_download_file_with_retry_existing_empty_file(mock_session, tmp_path):
+    """Test download when an empty file exists."""
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    new_content = b"new content"
+    mock_response.iter_content.return_value = [new_content]
+    mock_session.return_value.get.return_value = mock_response
+
+    download_path = tmp_path / "empty.txt"
+    # Create an empty file
+    download_path.write_text("")
+
+    result = utils.download_file_with_retry(
+        "http://example.com/file.txt", str(download_path)
+    )
+
+    assert result is True
+    assert download_path.read_bytes() == new_content
     mock_session.return_value.get.assert_called_once()
 
 
@@ -1221,6 +1298,90 @@ def test_download_file_with_retry_additional_error_cases(tmp_path):
     # Test with empty URL
     result = utils.download_file_with_retry("", str(download_path))
     assert result is False
+
+
+class TestCleanupLegacyHashSidecars:
+    """Test cleanup_legacy_hash_sidecars function."""
+
+    def test_cleanup_legacy_hash_sidecars_empty_dir(self, tmp_path):
+        """Test cleanup on empty directory."""
+        result = utils.cleanup_legacy_hash_sidecars(str(tmp_path))
+        assert result == 0
+
+    def test_cleanup_legacy_hash_sidecars_no_sha256_files(self, tmp_path):
+        """Test cleanup when no .sha256 files exist."""
+        # Create some other files
+        (tmp_path / "file1.txt").write_text("content")
+        (tmp_path / "file2.bin").write_text("binary")
+
+        result = utils.cleanup_legacy_hash_sidecars(str(tmp_path))
+        assert result == 0
+
+    def test_cleanup_legacy_hash_sidecars_with_sha256_files(self, tmp_path):
+        """Test cleanup with .sha256 files present."""
+        # Create some .sha256 files
+        (tmp_path / "file1.txt.sha256").write_text("hash1")
+        (tmp_path / "file2.bin.sha256").write_text("hash2")
+
+        # Create some other files that should not be touched
+        (tmp_path / "file1.txt").write_text("content")
+        (tmp_path / "file3.txt").write_text("content")
+
+        result = utils.cleanup_legacy_hash_sidecars(str(tmp_path))
+        assert result == 2
+
+        # Verify .sha256 files are removed
+        assert not (tmp_path / "file1.txt.sha256").exists()
+        assert not (tmp_path / "file2.bin.sha256").exists()
+
+        # Verify other files still exist
+        assert (tmp_path / "file1.txt").exists()
+        assert (tmp_path / "file3.txt").exists()
+
+    def test_cleanup_legacy_hash_sidecars_recursive(self, tmp_path):
+        """Test cleanup works recursively in subdirectories."""
+        # Create subdirectory structure
+        subdir = tmp_path / "subdir"
+        subdir.mkdir()
+
+        # Create .sha256 files in different levels
+        (tmp_path / "root.sha256").write_text("hash_root")
+        (subdir / "sub.sha256").write_text("hash_sub")
+
+        result = utils.cleanup_legacy_hash_sidecars(str(tmp_path))
+        assert result == 2
+
+        # Verify all .sha256 files are removed
+        assert not (tmp_path / "root.sha256").exists()
+        assert not (subdir / "sub.sha256").exists()
+
+    def test_cleanup_legacy_hash_sidecars_with_removal_error(self, tmp_path, mocker):
+        """Test cleanup handles removal errors gracefully."""
+        # Create a .sha256 file
+        sha256_file = tmp_path / "file.sha256"
+        sha256_file.write_text("hash")
+
+        # Mock os.remove to raise OSError for the .sha256 file
+        original_remove = os.remove
+
+        def mock_remove(path):
+            if str(path).endswith(".sha256"):
+                raise OSError("Permission denied")
+            return original_remove(path)
+
+        mocker.patch("os.remove", side_effect=mock_remove)
+
+        # Should still attempt removal and log error, but continue
+        result = utils.cleanup_legacy_hash_sidecars(str(tmp_path))
+        assert result == 0  # No files actually removed due to error
+
+    def test_cleanup_legacy_hash_sidecars_invalid_directory(self):
+        """Test cleanup with invalid directory."""
+        result = utils.cleanup_legacy_hash_sidecars("")
+        assert result == 0
+
+        result = utils.cleanup_legacy_hash_sidecars("/non/existent/path")
+        assert result == 0
 
 
 @pytest.mark.core_downloads
