@@ -32,6 +32,9 @@ def temp_file(tmp_path):
 
 @pytest.fixture(autouse=True)
 def _isolate_cache_dir(tmp_path, monkeypatch):
+    """
+    Redirect platformdirs.user_cache_dir to the pytest temporary path to isolate cache usage during tests.
+    """
     monkeypatch.setattr(
         platformdirs, "user_cache_dir", lambda *args, **kwargs: str(tmp_path)
     )
@@ -1438,6 +1441,15 @@ class TestCleanupLegacyHashSidecars:
         original_remove = os.remove
 
         def mock_remove(path):
+            """
+            Simulate removal where files ending with `.sha256` fail with a permission error.
+            
+            Parameters:
+            	path: Path-like or str representing the file to remove. If the path string ends with `.sha256`, the function raises an `OSError("Permission denied")`; otherwise it delegates to `original_remove` and returns its result.
+            
+            Returns:
+            	The result of `original_remove(path)` when no error is raised.
+            """
             if str(path).endswith(".sha256"):
                 raise OSError("Permission denied")
             return original_remove(path)

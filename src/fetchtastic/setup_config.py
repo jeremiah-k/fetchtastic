@@ -390,7 +390,12 @@ def get_platform():
 
 def get_downloads_dir():
     """
-    Get the default downloads directory based on the platform.
+    Determine the default Downloads directory for the current platform.
+    
+    For Termux this resolves to the expanded path "~/storage/downloads". On other platforms the function prefers "~/Downloads", then "~/Download", and falls back to the user's home directory if neither exists.
+    
+    Returns:
+        str: Path to the selected downloads directory.
     """
     # For Termux, use ~/storage/downloads
     if is_termux():
