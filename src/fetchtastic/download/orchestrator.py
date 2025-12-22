@@ -32,6 +32,7 @@ from fetchtastic.constants import (
     REPO_DOWNLOADS_DIR,
 )
 from fetchtastic.log_utils import logger
+from fetchtastic.utils import cleanup_legacy_hash_sidecars
 
 from .android import MeshtasticAndroidAppDownloader
 from .base import BaseDownloader
@@ -90,12 +91,14 @@ class DownloadOrchestrator:
     ) -> Tuple[List[DownloadResult], List[DownloadResult]]:
         """
         Orchestrates discovery, downloading, retrying, and summary reporting for all configured artifact types.
-
+        
         Returns:
-            Tuple[List[DownloadResult], List[DownloadResult]]: A tuple (successful_results, failed_results) where the first element is the list of successful DownloadResult entries and the second element is the list of failed DownloadResult entries.
+            Tuple[List[DownloadResult], List[DownloadResult]]: A tuple (successful_results, failed_results) where `successful_results` is the list of completed DownloadResult entries and `failed_results` is the list of DownloadResult entries that remain failed after retry attempts.
         """
         start_time = time.time()
         logger.info("Starting download pipeline...")
+
+        cleanup_legacy_hash_sidecars(self.config.get("DOWNLOAD_DIR", ""))
 
         # Process firmware downloads
         self._process_firmware_downloads()

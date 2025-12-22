@@ -25,7 +25,9 @@ from fetchtastic.constants import (
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import (
     get_hash_file_path,
+    get_legacy_hash_file_path,
     matches_selected_patterns,
+    save_file_hash,
     verify_file_integrity,
 )
 
@@ -231,11 +233,11 @@ def _is_release_complete(
 
 def _prepare_for_redownload(file_path: str) -> bool:
     """
-    Prepare a file path for re-download by removing the target file, its hash sidecar, and any orphaned temporary files.
-
+    Prepare a target file for re-download by removing the file itself, its persisted hash files (current and legacy), and any orphaned temporary files matching "<file>.tmp.*".
+    
     Parameters:
-        file_path (str): Path to the file to remove and clean up related sidecar and temporary files.
-
+        file_path (str): Path to the file to clean up.
+    
     Returns:
         bool: `True` if cleanup completed successfully, `False` if an error occurred.
     """
@@ -248,6 +250,11 @@ def _prepare_for_redownload(file_path: str) -> bool:
         if os.path.exists(hash_path):
             os.remove(hash_path)
             logger.debug("Removed stale hash file: %s", hash_path)
+
+        legacy_hash_path = get_legacy_hash_file_path(file_path)
+        if os.path.exists(legacy_hash_path):
+            os.remove(legacy_hash_path)
+            logger.debug("Removed legacy hash file: %s", legacy_hash_path)
 
         for tmp_path in glob.glob(f"{glob.escape(file_path)}.tmp.*"):
             os.remove(tmp_path)
@@ -749,16 +756,16 @@ class FileOperations:
         self, extracted_files: List[Path], algorithm: str = "sha256"
     ) -> Dict[str, str]:
         """
-        Generate a hash sidecar file for each existing path in extracted_files using the specified algorithm.
-
-        Creates a file named "<original_path>.<algorithm>" containing the file's hexadecimal digest. If the provided algorithm is unsupported, defaults to "sha256".
-
+        Compute cryptographic digests for the provided extracted files and persist SHA-256 hashes to the cache.
+        
+        Processes only paths that exist and are readable. The `algorithm` parameter selects the hashing algorithm (case-insensitive); if the algorithm is unsupported it falls back to SHA-256. When `algorithm` is "sha256" the resulting hex digests are saved to the centralized cache via save_file_hash; digests produced with other algorithms are returned but not persisted.
+        
         Parameters:
-            extracted_files (List[Path]): Files to hash; only existing files are processed.
-            algorithm (str): Hash algorithm to use (e.g., "sha256", "md5"); case-insensitive. Defaults to "sha256".
-
+            extracted_files (List[Path]): Iterable of file paths to hash; non-existent or unreadable files are skipped.
+            algorithm (str): Hash algorithm name (e.g., "sha256", "md5"); defaults to "sha256" and is interpreted case-insensitively.
+        
         Returns:
-            Dict[str, str]: Mapping from each processed file's path string to its hex digest.
+            Dict[str, str]: Mapping from each processed file's path string to its hexadecimal digest. Only successfully hashed files appear in the mapping.
         """
         hash_dict = {}
 
@@ -795,17 +802,13 @@ class FileOperations:
                         hash_value = file_hash.hexdigest()
                         hash_dict[str(file_path)] = hash_value
 
-                        # Create sidecar file
-                        hash_file_path = f"{file_path}.{algorithm}"
-                        if _atomic_write(
-                            hash_file_path,
-                            lambda f, hv=hash_value: f.write(str(hv)),  # type: ignore[misc]
-                            suffix=f".{algorithm}",
-                        ):
-                            logger.debug("Created hash file: %s", hash_file_path)
+                        if algorithm == "sha256":
+                            save_file_hash(str(file_path), hash_value)
                         else:
-                            logger.warning(
-                                "Failed to write hash sidecar for %s", file_path
+                            logger.debug(
+                                "Skipping persisted hash sidecar for %s (algorithm=%s)",
+                                file_path,
+                                algorithm,
                             )
 
                     except IOError as e:

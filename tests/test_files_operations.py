@@ -15,13 +15,16 @@ import os
 import zipfile
 from pathlib import Path
 
+import platformdirs
 import pytest
 
+from fetchtastic import utils
 from fetchtastic.download.files import (
     FileOperations,
     _get_existing_prerelease_dirs,
     _is_release_complete,
     _matches_exclude,
+    _prepare_for_redownload,
     _sanitize_path_component,
     safe_extract_path,
     strip_unwanted_chars,
@@ -419,8 +422,11 @@ class TestFileOperations:
 
         assert result == []
 
-    def test_generate_hash_for_extracted_files(self, tmp_path):
+    def test_generate_hash_for_extracted_files(self, tmp_path, monkeypatch):
         """Test hash generation for extracted files."""
+        monkeypatch.setattr(
+            platformdirs, "user_cache_dir", lambda *args, **kwargs: str(tmp_path)
+        )
         file_ops = FileOperations()
 
         # Create test files
@@ -436,11 +442,11 @@ class TestFileOperations:
         assert str(file1) in result
         assert str(file2) in result
 
-        # Check that hash files were created
-        hash_file1 = tmp_path / "file1.txt.sha256"
-        hash_file2 = tmp_path / "file2.txt.sha256"
-        assert hash_file1.exists()
-        assert hash_file2.exists()
+        # Check that hash files were created in cache
+        hash_file1 = utils.get_hash_file_path(str(file1))
+        hash_file2 = utils.get_hash_file_path(str(file2))
+        assert os.path.exists(hash_file1)
+        assert os.path.exists(hash_file2)
 
     def test_cleanup_file_success(self, tmp_path):
         """Test successful file cleanup."""
@@ -521,6 +527,128 @@ class TestFileOperations:
 
         result = file_ops.compare_file_hashes(str(file1), "/non/existent/file.txt")
         assert result is False
+
+
+class TestPrepareForRedownload:
+    """Test _prepare_for_redownload function."""
+
+    def test_prepare_for_redownload_all_files_exist(self, tmp_path, monkeypatch):
+        """Test cleanup when all related files exist."""
+        # Set up cache directory for hash files
+        monkeypatch.setattr(
+            platformdirs,
+            "user_cache_dir",
+            lambda *args, **kwargs: str(tmp_path / "cache"),
+        )
+
+        # Create main file
+        main_file = tmp_path / "test_file.txt"
+        main_file.write_text("content")
+
+        # Create hash file
+        hash_path = utils.get_hash_file_path(str(main_file))
+        os.makedirs(os.path.dirname(hash_path), exist_ok=True)
+        with open(hash_path, "w") as f:
+            f.write("dummy_hash  test_file.txt\n")
+
+        # Create legacy hash file
+        legacy_hash_path = utils.get_legacy_hash_file_path(str(main_file))
+        with open(legacy_hash_path, "w") as f:
+            f.write("legacy_hash  test_file.txt\n")
+
+        # Create temp files
+        temp_file1 = tmp_path / "test_file.txt.tmp.abc123"
+        temp_file2 = tmp_path / "test_file.txt.tmp.def456"
+        temp_file1.write_text("temp1")
+        temp_file2.write_text("temp2")
+
+        # Run cleanup
+        result = _prepare_for_redownload(str(main_file))
+
+        # Verify success
+        assert result is True
+
+        # Verify all files are removed
+        assert not main_file.exists()
+        assert not os.path.exists(hash_path)
+        assert not os.path.exists(legacy_hash_path)
+        assert not temp_file1.exists()
+        assert not temp_file2.exists()
+
+    def test_prepare_for_redownload_partial_files_exist(self, tmp_path, monkeypatch):
+        """Test cleanup when only some related files exist."""
+        # Set up cache directory
+        monkeypatch.setattr(
+            platformdirs,
+            "user_cache_dir",
+            lambda *args, **kwargs: str(tmp_path / "cache"),
+        )
+
+        # Create only main file and hash file
+        main_file = tmp_path / "test_file.txt"
+        main_file.write_text("content")
+
+        hash_path = utils.get_hash_file_path(str(main_file))
+        os.makedirs(os.path.dirname(hash_path), exist_ok=True)
+        with open(hash_path, "w") as f:
+            f.write("dummy_hash  test_file.txt\n")
+
+        # Legacy hash and temp files don't exist
+
+        # Run cleanup
+        result = _prepare_for_redownload(str(main_file))
+
+        # Verify success
+        assert result is True
+
+        # Verify files are removed
+        assert not main_file.exists()
+        assert not os.path.exists(hash_path)
+
+    def test_prepare_for_redownload_no_files_exist(self, tmp_path, monkeypatch):
+        """Test cleanup when no related files exist."""
+        # Set up cache directory
+        monkeypatch.setattr(
+            platformdirs,
+            "user_cache_dir",
+            lambda *args, **kwargs: str(tmp_path / "cache"),
+        )
+
+        # No files exist
+        main_file = tmp_path / "nonexistent.txt"
+
+        # Run cleanup
+        result = _prepare_for_redownload(str(main_file))
+
+        # Verify success (no error when files don't exist)
+        assert result is True
+
+    def test_prepare_for_redownload_os_error(self, tmp_path, monkeypatch):
+        """Test cleanup when OSError occurs."""
+        # Set up cache directory
+        monkeypatch.setattr(
+            platformdirs,
+            "user_cache_dir",
+            lambda *args, **kwargs: str(tmp_path / "cache"),
+        )
+
+        # Create main file
+        main_file = tmp_path / "test_file.txt"
+        main_file.write_text("content")
+
+        # Mock os.remove to raise OSError
+        with monkeypatch.context() as m:
+            m.setattr(
+                "os.remove",
+                lambda path: (_ for _ in ()).throw(OSError("Permission denied")),
+            )
+            result = _prepare_for_redownload(str(main_file))
+
+        # Verify failure
+        assert result is False
+
+        # File should still exist since cleanup failed
+        assert main_file.exists()
 
 
 class TestSafeExtractPath:
