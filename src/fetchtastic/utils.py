@@ -732,12 +732,12 @@ def calculate_sha256(file_path: str) -> Optional[str]:
 def get_hash_file_path(file_path: str) -> str:
     """
     Compute the cache-backed sidecar path where a file's SHA-256 hash is stored.
-    
+
     The returned path points into the fetchtastic user cache's "hashes" directory. The sidecar filename combines a 16-character hex digest of the file's absolute path with the file's basename to avoid collisions across identical basenames in different locations.
-    
+
     Parameters:
         file_path (str): Path to the original file whose hash will be stored.
-    
+
     Returns:
         str: Absolute path to the hash sidecar file in the user cache directory (ending with `.sha256`).
     """
@@ -747,14 +747,14 @@ def get_hash_file_path(file_path: str) -> str:
 
     normalized_path = os.path.abspath(file_path)
     file_path_hash = hashlib.sha256(normalized_path.encode("utf-8")).hexdigest()[:16]
-    filename = os.path.basename(file_path)
+    filename = os.path.basename(normalized_path)
     return os.path.join(hashes_dir, f"{file_path_hash}_{filename}.sha256")
 
 
 def get_legacy_hash_file_path(file_path: str) -> str:
     """
     Get the legacy sidecar file path for a given file.
-    
+
     Returns:
         path (str): The legacy sidecar path (the original file path with ".sha256" appended).
     """
@@ -764,10 +764,10 @@ def get_legacy_hash_file_path(file_path: str) -> str:
 def _remove_legacy_hash_file(file_path: str) -> None:
     """
     Remove the legacy `.sha256` sidecar file located next to the given file, if it exists.
-    
+
     Parameters:
         file_path (str): Path to the original file whose legacy sidecar (filename.sha256) should be removed.
-    
+
     Notes:
         - If the legacy sidecar is not present this is a no-op.
         - I/O errors are suppressed; failures are logged at debug level.
@@ -783,15 +783,15 @@ def _remove_legacy_hash_file(file_path: str) -> None:
 def save_file_hash(file_path: str, hash_value: str) -> None:
     """
     Persist the SHA-256 hex digest for a file into a cache-backed sidecar file.
-    
+
     The sidecar is created at the path returned by get_hash_file_path(file_path) and contains a single line in the format:
         "<hash_value>  <basename>\n"
     Only the basename of the original file is written into the sidecar.
-    
+
     Parameters:
         file_path (str): Path to the original file whose hash is being recorded.
         hash_value (str): Hexadecimal SHA-256 digest to persist.
-    
+
     Side effects:
         Creates or overwrites the cache-sidecar `.sha256` file and removes any legacy adjacent sidecar.
         IO errors are caught and do not propagate to the caller.
@@ -816,9 +816,9 @@ def save_file_hash(file_path: str, hash_value: str) -> None:
 def _remove_file_and_hash(path: str) -> bool:
     """
     Remove a file and its associated hash sidecar files if they exist.
-    
+
     The function attempts to delete the given file, the cache-backed hash sidecar, and the legacy adjacent .sha256 sidecar. Errors are logged and suppressed.
-    
+
     Returns:
         bool: `True` on success, `False` on error.
     """
@@ -838,9 +838,9 @@ def _remove_file_and_hash(path: str) -> bool:
 def load_file_hash(file_path: str) -> Optional[str]:
     """
     Get the stored SHA-256 hex digest for the given file path.
-    
+
     If a cache-backed hash sidecar exists, its first whitespace-separated token is returned. If the cache sidecar is missing but a legacy adjacent .sha256 sidecar is present, the legacy value is migrated into the cache sidecar and returned. Returns None when no readable hash is available.
-    
+
     Returns:
         The SHA-256 hex string if found, `None` otherwise.
     """
@@ -869,9 +869,9 @@ def load_file_hash(file_path: str) -> Optional[str]:
 def verify_file_integrity(file_path: str) -> bool:
     """
     Check whether a file's contents match the stored SHA-256 hash, creating and storing an initial hash if none exists.
-    
+
     If a stored hash for the file is present, the function compares the file's current SHA-256 against it. If no stored hash is found, the function computes and persists a new SHA-256 hash and treats that as verification success when the hash could be created. Directories, missing files, or files that cannot be read result in failure.
-    
+
     Returns:
         `True` if the file exists and its contents match the stored hash, or if no stored hash existed but a new hash was successfully generated and saved; `False` otherwise.
     """
@@ -910,12 +910,12 @@ def verify_file_integrity(file_path: str) -> bool:
 def cleanup_legacy_hash_sidecars(base_dir: str) -> int:
     """
     Remove legacy `.sha256` sidecar files under base_dir when their corresponding original file exists.
-    
+
     Searches base_dir recursively for files ending with `.sha256`. For each such sidecar, if the file without the `.sha256` suffix exists, the sidecar is removed; sidecars without a matching original file are skipped. I/O errors during removal are ignored so scanning continues. Logs a summary info message when one or more sidecars are removed.
-    
+
     Parameters:
         base_dir (str): Root directory to scan. Nonexistent or non-directory values cause no action.
-    
+
     Returns:
         int: Number of legacy `.sha256` sidecar files removed.
     """
@@ -954,14 +954,14 @@ def download_file_with_retry(
     # log_message_func: Callable[[str], None] # Removed
 ) -> bool:
     """
-    Download a remote URL to a local file, verify its integrity (ZIP checks and SHA‑256), and atomically install it.
-    
+    Download a remote URL to a local file, verify its integrity (ZIP checks and SHA-256), and atomically install it.
+
     If the destination file already exists and is verified it is left in place. Temporary or partially downloaded files are removed on failure; corrupted files and their associated hash records are removed before re-downloading.
-    
+
     Parameters:
         url (str): HTTP(S) URL of the file to download.
         download_path (str): Final filesystem path where the downloaded file will be installed.
-    
+
     Returns:
         bool: `True` if the destination file is present and verified or was downloaded and installed successfully, `False` otherwise.
     """

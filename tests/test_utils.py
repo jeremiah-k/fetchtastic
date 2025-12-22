@@ -59,6 +59,22 @@ def test_get_hash_file_path(temp_file):
 
 @pytest.mark.core_downloads
 @pytest.mark.unit
+def test_get_hash_file_path_trailing_slash_edge_case(tmp_path):
+    """Test get_hash_file_path handles trailing slash edge case correctly."""
+    # Test path with trailing slash - should not result in empty filename
+    file_path_with_slash = os.path.join(tmp_path, "test_file.txt") + "/"
+    hash_path = utils.get_hash_file_path(file_path_with_slash)
+
+    # Should use cache directory and format
+    assert hash_path.endswith(".sha256")
+    # Should contain test_file.txt, not empty string
+    assert "test_file.txt" in hash_path
+    # Should not contain underscore followed by .sha256 (indicating empty filename)
+    assert "_.sha256" not in hash_path
+
+
+@pytest.mark.core_downloads
+@pytest.mark.unit
 def test_hash_functions(temp_file):
     """Test calculate_sha256, save_file_hash, and load_file_hash."""
     file_path, content = temp_file
@@ -1443,12 +1459,12 @@ class TestCleanupLegacyHashSidecars:
         def mock_remove(path):
             """
             Simulate removal where files ending with `.sha256` fail with a permission error.
-            
+
             Parameters:
-            	path: Path-like or str representing the file to remove. If the path string ends with `.sha256`, the function raises an `OSError("Permission denied")`; otherwise it delegates to `original_remove` and returns its result.
-            
+                path: Path-like or str representing the file to remove. If the path string ends with `.sha256`, the function raises an `OSError("Permission denied")`; otherwise it delegates to `original_remove` and returns its result.
+
             Returns:
-            	The result of `original_remove(path)` when no error is raised.
+                The result of `original_remove(path)` when no error is raised.
             """
             if str(path).endswith(".sha256"):
                 raise OSError("Permission denied")
