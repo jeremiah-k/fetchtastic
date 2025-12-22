@@ -619,6 +619,36 @@ def test_load_file_hash_file_not_found(tmp_path):
     assert result is None
 
 
+def test_load_file_hash_legacy_migration(tmp_path):
+    """Test load_file_hash migrates legacy hash file to new format."""
+    file_path = tmp_path / "test_file.txt"
+    file_path.write_text("test content")
+
+    # Create legacy hash file
+    legacy_hash_path = utils.get_legacy_hash_file_path(str(file_path))
+    with open(legacy_hash_path, "w") as f:
+        f.write("abc123def456  test_file.txt\n")
+
+    # Load hash - should migrate from legacy to new format
+    result = utils.load_file_hash(str(file_path))
+
+    # Should return the hash from legacy file
+    assert result == "abc123def456"
+
+    # Check that new hash file was created
+    new_hash_path = utils.get_hash_file_path(str(file_path))
+    assert os.path.exists(new_hash_path)
+
+    # Check that new hash file contains the migrated hash
+    with open(new_hash_path, "r") as f:
+        new_hash_content = f.read().strip()
+    assert "abc123def456" in new_hash_content
+
+    # Verify that loading from new format works
+    result2 = utils.load_file_hash(str(file_path))
+    assert result2 == "abc123def456"
+
+
 def test_load_file_hash_error_handling(tmp_path, mocker):
     """Test load_file_hash error handling."""
     file_path = tmp_path / "test_file.txt"
@@ -645,6 +675,39 @@ def test_calculate_sha256_error_handling(tmp_path, mocker):
     mocker.patch("builtins.open", side_effect=OSError("Permission denied"))
     result = utils.calculate_sha256(str(file_path))
     assert result is None
+
+
+def test_download_file_with_retry_remove_file_and_hash_failure_nonzip(tmp_path, mocker):
+    """Test download_file_with_retry when _remove_file_and_hash fails for non-zip files."""
+    download_path = tmp_path / "test_file.txt"
+    download_path.write_text("test content")
+
+    # Mock _remove_file_and_hash to return False
+    mocker.patch("fetchtastic.utils._remove_file_and_hash", return_value=False)
+
+    # Mock verify_file_integrity to return False (triggering removal)
+    mocker.patch("fetchtastic.utils.verify_file_integrity", return_value=False)
+
+    result = utils.download_file_with_retry(
+        "http://example.com/test.txt", str(download_path)
+    )
+    assert result is False  # Should return False when _remove_file_and_hash fails
+
+
+def test_download_file_with_retry_remove_file_and_hash_failure_empty_file(
+    tmp_path, mocker
+):
+    """Test download_file_with_retry when _remove_file_and_hash fails for empty files."""
+    download_path = tmp_path / "test_file.txt"
+    download_path.write_text("")  # Empty file
+
+    # Mock _remove_file_and_hash to return False
+    mocker.patch("fetchtastic.utils._remove_file_and_hash", return_value=False)
+
+    result = utils.download_file_with_retry(
+        "http://example.com/test.txt", str(download_path)
+    )
+    assert result is False  # Should return False when _remove_file_and_hash fails
 
 
 def test_download_file_with_retry_network_error_handling(tmp_path, mocker):
