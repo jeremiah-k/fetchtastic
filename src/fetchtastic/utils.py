@@ -888,6 +888,15 @@ def cleanup_legacy_hash_sidecars(base_dir: str) -> int:
         for name in files:
             if not name.endswith(".sha256"):
                 continue
+
+            original_file_path = os.path.join(root, name[: -len(".sha256")])
+            if not os.path.isfile(original_file_path):
+                logger.debug(
+                    "Skipping removal of potential legacy hash sidecar %s as its corresponding file was not found.",
+                    name,
+                )
+                continue
+
             path = os.path.join(root, name)
             try:
                 os.remove(path)

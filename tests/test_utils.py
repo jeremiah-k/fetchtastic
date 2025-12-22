@@ -1319,12 +1319,13 @@ class TestCleanupLegacyHashSidecars:
 
     def test_cleanup_legacy_hash_sidecars_with_sha256_files(self, tmp_path):
         """Test cleanup with .sha256 files present."""
-        # Create some .sha256 files
+        # Create some .sha256 files and their corresponding original files
         (tmp_path / "file1.txt.sha256").write_text("hash1")
         (tmp_path / "file2.bin.sha256").write_text("hash2")
+        (tmp_path / "file1.txt").write_text("content")
+        (tmp_path / "file2.bin").write_text("binary")
 
         # Create some other files that should not be touched
-        (tmp_path / "file1.txt").write_text("content")
         (tmp_path / "file3.txt").write_text("content")
 
         result = utils.cleanup_legacy_hash_sidecars(str(tmp_path))
@@ -1336,6 +1337,7 @@ class TestCleanupLegacyHashSidecars:
 
         # Verify other files still exist
         assert (tmp_path / "file1.txt").exists()
+        assert (tmp_path / "file2.bin").exists()
         assert (tmp_path / "file3.txt").exists()
 
     def test_cleanup_legacy_hash_sidecars_recursive(self, tmp_path):
@@ -1344,8 +1346,10 @@ class TestCleanupLegacyHashSidecars:
         subdir = tmp_path / "subdir"
         subdir.mkdir()
 
-        # Create .sha256 files in different levels
+        # Create .sha256 files and their corresponding original files in different levels
+        (tmp_path / "root").write_text("content_root")
         (tmp_path / "root.sha256").write_text("hash_root")
+        (subdir / "sub").write_text("content_sub")
         (subdir / "sub.sha256").write_text("hash_sub")
 
         result = utils.cleanup_legacy_hash_sidecars(str(tmp_path))
@@ -1355,10 +1359,16 @@ class TestCleanupLegacyHashSidecars:
         assert not (tmp_path / "root.sha256").exists()
         assert not (subdir / "sub.sha256").exists()
 
+        # Verify original files still exist
+        assert (tmp_path / "root").exists()
+        assert (subdir / "sub").exists()
+
     def test_cleanup_legacy_hash_sidecars_with_removal_error(self, tmp_path, mocker):
         """Test cleanup handles removal errors gracefully."""
-        # Create a .sha256 file
-        sha256_file = tmp_path / "file.sha256"
+        # Create a .sha256 file and its corresponding original file
+        original_file = tmp_path / "file.txt"
+        sha256_file = tmp_path / "file.txt.sha256"
+        original_file.write_text("content")
         sha256_file.write_text("hash")
 
         # Mock os.remove to raise OSError for the .sha256 file
@@ -1374,6 +1384,29 @@ class TestCleanupLegacyHashSidecars:
         # Should still attempt removal and log error, but continue
         result = utils.cleanup_legacy_hash_sidecars(str(tmp_path))
         assert result == 0  # No files actually removed due to error
+
+    def test_cleanup_legacy_hash_sidecars_without_original_files(self, tmp_path):
+        """Test cleanup does NOT remove .sha256 files without corresponding original files."""
+        # Create .sha256 files WITHOUT corresponding original files (should not be removed)
+        (tmp_path / "orphan1.txt.sha256").write_text("hash1")
+        (tmp_path / "orphan2.bin.sha256").write_text("hash2")
+
+        # Create .sha256 files WITH corresponding original files (should be removed)
+        (tmp_path / "valid.txt").write_text("content")
+        (tmp_path / "valid.txt.sha256").write_text("hash_valid")
+
+        result = utils.cleanup_legacy_hash_sidecars(str(tmp_path))
+        # Only the valid .sha256 file should be removed
+        assert result == 1
+
+        # Verify orphan .sha256 files are NOT removed
+        assert (tmp_path / "orphan1.txt.sha256").exists()
+        assert (tmp_path / "orphan2.bin.sha256").exists()
+
+        # Verify valid .sha256 file is removed
+        assert not (tmp_path / "valid.txt.sha256").exists()
+        # Verify original file still exists
+        assert (tmp_path / "valid.txt").exists()
 
     def test_cleanup_legacy_hash_sidecars_invalid_directory(self):
         """Test cleanup with invalid directory."""
