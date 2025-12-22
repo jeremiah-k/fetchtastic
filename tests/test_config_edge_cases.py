@@ -170,7 +170,6 @@ class TestConfigEdgeCases:
         storage_downloads = Path("/data/data/com.termux/files/home/storage/downloads")
 
         mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
-        mocker.patch("os.path.exists", return_value=True)
         mocker.patch(
             "fetchtastic.setup_config.os.path.expanduser",
             return_value=str(storage_downloads),

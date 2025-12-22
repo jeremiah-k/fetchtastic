@@ -394,9 +394,7 @@ def get_downloads_dir():
     """
     # For Termux, use ~/storage/downloads
     if is_termux():
-        storage_downloads = os.path.expanduser("~/storage/downloads")
-        if os.path.exists(storage_downloads):
-            return storage_downloads
+        return os.path.expanduser("~/storage/downloads")
     # For other environments, use standard Downloads directories
     home_dir = os.path.expanduser("~")
     downloads_dir = os.path.join(home_dir, "Downloads")

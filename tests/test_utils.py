@@ -6,6 +6,7 @@ import zipfile
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
+import platformdirs
 import pytest
 import requests
 
@@ -29,13 +30,28 @@ def temp_file(tmp_path):
     return file_path, content
 
 
+@pytest.fixture(autouse=True)
+def _isolate_cache_dir(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        platformdirs, "user_cache_dir", lambda *args, **kwargs: str(tmp_path)
+    )
+
+
 @pytest.mark.core_downloads
 @pytest.mark.unit
 def test_get_hash_file_path(temp_file):
     """Test that get_hash_file_path returns the correct path."""
     file_path, _ = temp_file
     hash_path = utils.get_hash_file_path(str(file_path))
-    assert hash_path == str(file_path) + ".sha256"
+    expected_hash = hashlib.sha256(
+        os.path.abspath(str(file_path)).encode("utf-8")
+    ).hexdigest()[:16]
+    expected_path = os.path.join(
+        platformdirs.user_cache_dir("fetchtastic"),
+        "hashes",
+        f"{expected_hash}_{file_path.name}.sha256",
+    )
+    assert hash_path == expected_path
 
 
 @pytest.mark.core_downloads
@@ -479,16 +495,20 @@ def test_save_file_hash_cleanup_error(tmp_path, mocker):
 def test_remove_file_and_hash_success(tmp_path):
     """Test successful file and hash removal."""
     file_path = tmp_path / "test_file.txt"
-    hash_path = tmp_path / "test_file.txt.sha256"
+    hash_path = utils.get_hash_file_path(str(file_path))
+    legacy_hash_path = tmp_path / "test_file.txt.sha256"
 
     file_path.write_text("test content")
-    hash_path.write_text("dummy_hash")
+    legacy_hash_path.write_text("dummy_hash")
+    with open(hash_path, "w") as f:
+        f.write("dummy_hash  test_file.txt\n")
 
     result = utils._remove_file_and_hash(str(file_path))
 
     assert result is True
     assert not file_path.exists()
-    assert not hash_path.exists()
+    assert not os.path.exists(hash_path)
+    assert not legacy_hash_path.exists()
 
 
 def test_remove_file_and_hash_no_hash_file(tmp_path):

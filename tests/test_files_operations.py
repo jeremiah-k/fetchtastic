@@ -15,8 +15,10 @@ import os
 import zipfile
 from pathlib import Path
 
+import platformdirs
 import pytest
 
+from fetchtastic import utils
 from fetchtastic.download.files import (
     FileOperations,
     _get_existing_prerelease_dirs,
@@ -419,8 +421,11 @@ class TestFileOperations:
 
         assert result == []
 
-    def test_generate_hash_for_extracted_files(self, tmp_path):
+    def test_generate_hash_for_extracted_files(self, tmp_path, monkeypatch):
         """Test hash generation for extracted files."""
+        monkeypatch.setattr(
+            platformdirs, "user_cache_dir", lambda *args, **kwargs: str(tmp_path)
+        )
         file_ops = FileOperations()
 
         # Create test files
@@ -436,11 +441,11 @@ class TestFileOperations:
         assert str(file1) in result
         assert str(file2) in result
 
-        # Check that hash files were created
-        hash_file1 = tmp_path / "file1.txt.sha256"
-        hash_file2 = tmp_path / "file2.txt.sha256"
-        assert hash_file1.exists()
-        assert hash_file2.exists()
+        # Check that hash files were created in cache
+        hash_file1 = utils.get_hash_file_path(str(file1))
+        hash_file2 = utils.get_hash_file_path(str(file2))
+        assert os.path.exists(hash_file1)
+        assert os.path.exists(hash_file2)
 
     def test_cleanup_file_success(self, tmp_path):
         """Test successful file cleanup."""

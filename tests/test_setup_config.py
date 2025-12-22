@@ -384,14 +384,12 @@ def test_check_for_updates_network_error(mock_get):
 def test_get_downloads_dir_termux():
     """Test downloads directory for Termux when storage exists."""
     with patch("fetchtastic.setup_config.is_termux", return_value=True):
-        with patch("os.path.exists") as mock_exists:
-            with patch("os.path.expanduser") as mock_expanduser:
-                mock_expanduser.return_value = (
-                    "/data/data/com.termux/files/home/storage/downloads"
-                )
-                mock_exists.return_value = True
-                downloads_dir = setup_config.get_downloads_dir()
-                assert "storage/downloads" in downloads_dir
+        with patch("os.path.expanduser") as mock_expanduser:
+            mock_expanduser.return_value = (
+                "/data/data/com.termux/files/home/storage/downloads"
+            )
+            downloads_dir = setup_config.get_downloads_dir()
+            assert "storage/downloads" in downloads_dir
 
 
 @pytest.mark.configuration
@@ -695,7 +693,6 @@ def test_get_downloads_dir_comprehensive(mocker):
     """Test get_downloads_dir function."""
     # Test with Termux environment
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
-    mocker.patch("os.path.exists", return_value=True)
 
     result = setup_config.get_downloads_dir()
     # With the mock above, should return the Termux downloads path

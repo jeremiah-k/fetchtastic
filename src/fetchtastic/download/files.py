@@ -25,7 +25,9 @@ from fetchtastic.constants import (
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import (
     get_hash_file_path,
+    get_legacy_hash_file_path,
     matches_selected_patterns,
+    save_file_hash,
     verify_file_integrity,
 )
 
@@ -248,6 +250,11 @@ def _prepare_for_redownload(file_path: str) -> bool:
         if os.path.exists(hash_path):
             os.remove(hash_path)
             logger.debug("Removed stale hash file: %s", hash_path)
+
+        legacy_hash_path = get_legacy_hash_file_path(file_path)
+        if os.path.exists(legacy_hash_path):
+            os.remove(legacy_hash_path)
+            logger.debug("Removed legacy hash file: %s", legacy_hash_path)
 
         for tmp_path in glob.glob(f"{glob.escape(file_path)}.tmp.*"):
             os.remove(tmp_path)
@@ -749,9 +756,10 @@ class FileOperations:
         self, extracted_files: List[Path], algorithm: str = "sha256"
     ) -> Dict[str, str]:
         """
-        Generate a hash sidecar file for each existing path in extracted_files using the specified algorithm.
+        Generate a hash record for each existing path in extracted_files using the specified algorithm.
 
-        Creates a file named "<original_path>.<algorithm>" containing the file's hexadecimal digest. If the provided algorithm is unsupported, defaults to "sha256".
+        For SHA-256, a hash record is stored in the cache directory to avoid cluttering download paths.
+        Unsupported algorithms are logged and skipped for persistence.
 
         Parameters:
             extracted_files (List[Path]): Files to hash; only existing files are processed.
@@ -795,17 +803,13 @@ class FileOperations:
                         hash_value = file_hash.hexdigest()
                         hash_dict[str(file_path)] = hash_value
 
-                        # Create sidecar file
-                        hash_file_path = f"{file_path}.{algorithm}"
-                        if _atomic_write(
-                            hash_file_path,
-                            lambda f, hv=hash_value: f.write(str(hv)),  # type: ignore[misc]
-                            suffix=f".{algorithm}",
-                        ):
-                            logger.debug("Created hash file: %s", hash_file_path)
+                        if algorithm == "sha256":
+                            save_file_hash(str(file_path), hash_value)
                         else:
-                            logger.warning(
-                                "Failed to write hash sidecar for %s", file_path
+                            logger.debug(
+                                "Skipping persisted hash sidecar for %s (algorithm=%s)",
+                                file_path,
+                                algorithm,
                             )
 
                     except IOError as e:

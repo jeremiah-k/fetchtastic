@@ -430,7 +430,7 @@ class BaseDownloader(Downloader, ABC):
         if asset.size and self.file_operations.get_file_size(target_path) != asset.size:
             return False
 
-        # Hash/verify (legacy: verify/write sidecar and validate)
+        # Hash/verify (uses cached hash records)
         if not self.verify(target_path):
             return False
 

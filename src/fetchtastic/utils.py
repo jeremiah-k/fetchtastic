@@ -730,13 +730,39 @@ def calculate_sha256(file_path: str) -> Optional[str]:
 
 
 def get_hash_file_path(file_path: str) -> str:
-    """Get the path for storing the hash file."""
-    return file_path + ".sha256"
+    """
+    Get the path for storing the hash file.
+
+    Hash files are stored in the user cache directory to avoid cluttering download directories.
+    The hash filename includes a short digest of the original file path to prevent collisions.
+    """
+    cache_dir = platformdirs.user_cache_dir("fetchtastic")
+    hashes_dir = os.path.join(cache_dir, "hashes")
+    os.makedirs(hashes_dir, exist_ok=True)
+
+    normalized_path = os.path.abspath(file_path)
+    file_path_hash = hashlib.sha256(normalized_path.encode("utf-8")).hexdigest()[:16]
+    filename = os.path.basename(file_path)
+    return os.path.join(hashes_dir, f"{file_path_hash}_{filename}.sha256")
+
+
+def get_legacy_hash_file_path(file_path: str) -> str:
+    """Get the legacy sidecar hash path stored next to the file."""
+    return f"{file_path}.sha256"
+
+
+def _remove_legacy_hash_file(file_path: str) -> None:
+    legacy_hash = get_legacy_hash_file_path(file_path)
+    try:
+        if os.path.exists(legacy_hash):
+            os.remove(legacy_hash)
+    except (IOError, OSError) as e:
+        logger.debug("Error removing legacy hash file %s: %s", legacy_hash, e)
 
 
 def save_file_hash(file_path: str, hash_value: str) -> None:
     r"""
-    Write the given SHA-256 hex digest to a companion `.sha256` sidecar file next to `file_path`.
+    Write the given SHA-256 hex digest to a companion `.sha256` file in the cache directory.
 
     The sidecar file is created at the path returned by `get_hash_file_path(file_path)` and contains a single line in the format:
         "<hash_value>  <basename>\n"
@@ -754,6 +780,7 @@ def save_file_hash(file_path: str, hash_value: str) -> None:
         with open(tmp_file, "w", encoding="ascii", newline="\n") as f:
             f.write(f"{hash_value}  {os.path.basename(file_path)}\n")
         os.replace(tmp_file, hash_file)
+        _remove_legacy_hash_file(file_path)
         logger.debug("Saved hash for %s", os.path.basename(file_path))
     except (IOError, OSError) as e:
         logger.debug("Error saving hash file %s: %s", hash_file, e)
@@ -766,7 +793,7 @@ def save_file_hash(file_path: str, hash_value: str) -> None:
 
 def _remove_file_and_hash(path: str) -> bool:
     """
-    Remove a file and its .sha256 sidecar if present. Returns True on success, False on error.
+    Remove a file and its hash records if present. Returns True on success, False on error.
 
     Errors are logged and False is returned; exceptions are not raised.
     """
@@ -776,6 +803,7 @@ def _remove_file_and_hash(path: str) -> bool:
         hash_file = get_hash_file_path(path)
         if os.path.exists(hash_file):
             os.remove(hash_file)
+        _remove_legacy_hash_file(path)
         return True
     except (IOError, OSError) as e:
         logger.error(f"Error removing {path} or its hash sidecar: {e}")
@@ -784,9 +812,11 @@ def _remove_file_and_hash(path: str) -> bool:
 
 def load_file_hash(file_path: str) -> Optional[str]:
     """
-    Return the SHA-256 hex string stored in the file_path's `.sha256` sidecar, if available.
+    Return the SHA-256 hex string stored in the cache hash file, if available.
 
-    Reads the companion `<file_path>.sha256` file and returns the first whitespace-separated token from its first line (the stored hash). If the sidecar is missing, unreadable, or empty, returns None. Does not raise on I/O errors.
+    Reads the cache hash file and returns the first whitespace-separated token from its first line (the stored hash).
+    If the cache file is missing, attempts to read and migrate the legacy sidecar located next to the file.
+    Returns None when no readable hash file exists or when the hash file is empty.
     """
     hash_file = get_hash_file_path(file_path)
     try:
@@ -796,6 +826,17 @@ def load_file_hash(file_path: str) -> Optional[str]:
                 return line.split()[0]  # First part is the hash
     except (IOError, OSError):
         pass  # File doesn't exist or can't be read
+
+    legacy_hash_file = get_legacy_hash_file_path(file_path)
+    try:
+        with open(legacy_hash_file, "r") as f:
+            line = f.readline().strip()
+            if line:
+                stored_hash = line.split()[0]
+                save_file_hash(file_path, stored_hash)
+                return stored_hash
+    except (IOError, OSError):
+        pass
     return None
 
 
@@ -833,6 +874,32 @@ def verify_file_integrity(file_path: str) -> bool:
         return False
 
 
+def cleanup_legacy_hash_sidecars(base_dir: str) -> int:
+    """
+    Remove legacy `.sha256` sidecar files from the given base directory.
+
+    Returns the count of removed files. Logs errors but continues scanning.
+    """
+    if not base_dir or not os.path.isdir(base_dir):
+        return 0
+
+    removed = 0
+    for root, _dirs, files in os.walk(base_dir):
+        for name in files:
+            if not name.endswith(".sha256"):
+                continue
+            path = os.path.join(root, name)
+            try:
+                os.remove(path)
+                removed += 1
+            except (IOError, OSError) as e:
+                logger.debug("Error removing legacy hash sidecar %s: %s", path, e)
+
+    if removed:
+        logger.info("Removed %d legacy hash sidecar(s) from %s", removed, base_dir)
+    return removed
+
+
 def download_file_with_retry(
     url: str,
     download_path: str,
@@ -841,7 +908,10 @@ def download_file_with_retry(
     """
     Download a remote file to disk, verify integrity, and atomically install it.
 
-    Streams the URL to a temporary file with retry-capable HTTP requests, validates ZIP archives when applicable, verifies or writes a SHA-256 `.sha256` sidecar, and atomically replaces the destination. If an existing file is already verified it is left in place. Temporary and partially downloaded files are removed on failure; corrupted or mismatched files and their sidecars are removed before re-downloading.
+    Streams the URL to a temporary file with retry-capable HTTP requests, validates ZIP archives when applicable,
+    verifies or writes a SHA-256 hash record stored in the cache directory, and atomically replaces the destination.
+    If an existing file is already verified it is left in place. Temporary and partially downloaded files are removed
+    on failure; corrupted or mismatched files and their hash records are removed before re-downloading.
 
     Parameters:
         url (str): The HTTP(S) URL of the remote file to download.
@@ -905,29 +975,12 @@ def download_file_with_retry(
                         logger.info(
                             f"Hash verification failed for {os.path.basename(download_path)}, re-downloading"
                         )
-                        try:
-                            os.remove(download_path)
-                            # Also remove hash file
-                            hash_file = get_hash_file_path(download_path)
-                            if os.path.exists(hash_file):
-                                os.remove(hash_file)
-                        except (IOError, OSError) as e_rm:
-                            logger.error(
-                                f"Error removing file with hash mismatch {download_path}: {e_rm}"
-                            )
+                        if not _remove_file_and_hash(download_path):
                             return False
                 else:
                     logger.debug(f"Removing empty file: {download_path}")
-                    os.remove(download_path)  # Try removing first
-                    # Remove any stale hash sidecar
-                    hash_file = get_hash_file_path(download_path)
-                    if os.path.exists(hash_file):
-                        try:
-                            os.remove(hash_file)
-                        except (IOError, OSError) as e_rm_hash:
-                            logger.debug(
-                                f"Error removing hash file {hash_file}: {e_rm_hash}"
-                            )
+                    if not _remove_file_and_hash(download_path):
+                        return False
             except (
                 IOError,
                 OSError,

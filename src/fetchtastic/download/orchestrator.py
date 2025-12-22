@@ -32,6 +32,7 @@ from fetchtastic.constants import (
     REPO_DOWNLOADS_DIR,
 )
 from fetchtastic.log_utils import logger
+from fetchtastic.utils import cleanup_legacy_hash_sidecars
 
 from .android import MeshtasticAndroidAppDownloader
 from .base import BaseDownloader
@@ -96,6 +97,8 @@ class DownloadOrchestrator:
         """
         start_time = time.time()
         logger.info("Starting download pipeline...")
+
+        cleanup_legacy_hash_sidecars(self.config.get("DOWNLOAD_DIR", ""))
 
         # Process firmware downloads
         self._process_firmware_downloads()
