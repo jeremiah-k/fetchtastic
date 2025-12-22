@@ -578,9 +578,8 @@ class CacheManager:
     ) -> None:
         """
         Store a list of release entries under a URL-derived cache key in the releases cache file.
-
         Writes the provided releases list into the releases cache, keyed by `url_cache_key`, and records the current UTC timestamp as `cached_at` to indicate when the entry was saved.
-
+        This operation is skipped if the cached data is identical to the provided releases.
         Parameters:
             url_cache_key (str): Stable cache key derived from a request URL and parameters.
             releases (List[Dict[str, Any]]): List of release objects to persist in the cache.
@@ -589,6 +588,11 @@ class CacheManager:
         cache = self.read_json(cache_file)
         if not isinstance(cache, dict):
             cache = {}
+
+        # Check if the new data is the same as the cached data
+        if cache.get(url_cache_key, {}).get("releases") == releases:
+            logger.debug("Release data for %s is already up to date in cache.", url_cache_key)
+            return
 
         cache[url_cache_key] = {
             "releases": releases,
