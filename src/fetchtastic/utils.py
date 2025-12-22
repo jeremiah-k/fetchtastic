@@ -820,7 +820,7 @@ def load_file_hash(file_path: str) -> Optional[str]:
     """
     hash_file = get_hash_file_path(file_path)
     try:
-        with open(hash_file, "r") as f:
+        with open(hash_file, "r", encoding="utf-8") as f:
             line = f.readline().strip()
             if line:
                 return line.split()[0]  # First part is the hash
@@ -829,7 +829,7 @@ def load_file_hash(file_path: str) -> Optional[str]:
 
     legacy_hash_file = get_legacy_hash_file_path(file_path)
     try:
-        with open(legacy_hash_file, "r") as f:
+        with open(legacy_hash_file, "r", encoding="ascii") as f:
             line = f.readline().strip()
             if line:
                 stored_hash = line.split()[0]
