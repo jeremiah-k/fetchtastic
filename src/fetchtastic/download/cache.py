@@ -19,6 +19,7 @@ from fetchtastic.constants import (
     GITHUB_API_BASE,
     GITHUB_API_TIMEOUT,
     MESHTASTIC_GITHUB_IO_CONTENTS_URL,
+    RELEASES_CACHE_EXPIRY_HOURS,
 )
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import (
@@ -577,29 +578,66 @@ class CacheManager:
         self, url_cache_key: str, releases: List[Dict[str, Any]]
     ) -> None:
         """
-        Store a list of release entries under a URL-derived cache key in the releases cache file.
-        Writes the provided releases list into the releases cache, keyed by `url_cache_key`, and records the current UTC timestamp as `cached_at` to indicate when the entry was saved.
-        This operation is skipped if the cached data is identical to the provided releases.
+        Store a list of release entries and prune expired entries in the releases cache file.
+        Writes or updates the entry for `url_cache_key` and removes any entries older than
+        `RELEASES_CACHE_EXPIRY_HOURS`. The write operation is skipped if the new release data
+        is identical to existing data and no expired entries were found to prune.
         Parameters:
-            url_cache_key (str): Stable cache key derived from a request URL and parameters.
-            releases (List[Dict[str, Any]]): List of release objects to persist in the cache.
+            url_cache_key (str): Stable cache key for the request.
+            releases (List[Dict[str, Any]]): List of release objects to persist.
         """
         cache_file = self._get_releases_cache_file()
-        cache = self.read_json(cache_file)
-        if not isinstance(cache, dict):
-            cache = {}
+        original_cache = self.read_json(cache_file)
+        if not isinstance(original_cache, dict):
+            original_cache = {}
 
-        # Check if the new data is the same as the cached data
-        if cache.get(url_cache_key, {}).get("releases") == releases:
-            logger.debug("Release data for %s is already up to date in cache.", url_cache_key)
+        now = datetime.now(timezone.utc)
+        expiry_seconds = RELEASES_CACHE_EXPIRY_HOURS * 3600
+        pruned_cache = {}
+
+        # Prune expired entries from the cache
+        for key, entry in original_cache.items():
+            if isinstance(entry, dict):
+                cached_at_raw = entry.get("cached_at")
+                if not cached_at_raw:
+                    pruned_cache[key] = entry  # Keep entries without a timestamp
+                    continue
+
+                cached_at = _parse_iso_datetime_utc(cached_at_raw)
+                if cached_at and (now - cached_at).total_seconds() < expiry_seconds:
+                    pruned_cache[key] = entry
+
+        cache_was_pruned = len(pruned_cache) < len(original_cache)
+        data_is_same = pruned_cache.get(url_cache_key, {}).get("releases") == releases
+
+        if data_is_same and not cache_was_pruned:
+            logger.debug(
+                "Release data for %s is up to date and no entries were pruned; skipping write.",
+                url_cache_key,
+            )
             return
 
-        cache[url_cache_key] = {
+        # Update the entry for the current request
+        pruned_cache[url_cache_key] = {
             "releases": releases,
-            "cached_at": datetime.now(timezone.utc).isoformat(),
+            "cached_at": now.isoformat(),
         }
-        if self.atomic_write_json(cache_file, cache):
-            logger.debug("Saved %d releases entries to cache", len(cache))
+
+        # Atomically write the updated cache
+        if self.atomic_write_json(cache_file, pruned_cache):
+            pruned_count = len(original_cache) - len(pruned_cache)
+            if not data_is_same and cache_was_pruned:
+                logger.debug(
+                    "Updated cache for %s and pruned %d expired entries.",
+                    url_cache_key,
+                    pruned_count,
+                )
+            elif not data_is_same:
+                logger.debug("Updated releases cache for %s.", url_cache_key)
+            elif cache_was_pruned:
+                logger.debug(
+                    "Pruned %d expired entries from releases cache.", pruned_count
+                )
 
     def clear_all_caches(self) -> bool:
         """
