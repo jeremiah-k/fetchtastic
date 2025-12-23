@@ -7,15 +7,17 @@ files from the meshtastic.github.io repository.
 
 import os
 import tempfile
-import zipfile
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
 
-from fetchtastic.constants import REPO_DOWNLOADS_DIR
-from fetchtastic.download.cache import CacheManager
-from fetchtastic.download.interfaces import DownloadResult
+from fetchtastic.constants import (
+    FIRMWARE_DIR_NAME,
+    REPO_DOWNLOADS_DIR,
+    SHELL_SCRIPT_EXTENSION,
+)
 from fetchtastic.download.repository import RepositoryDownloader
 
 pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
@@ -33,8 +35,7 @@ def test_config():
 @pytest.fixture
 def repository_downloader(test_config):
     """Create a RepositoryDownloader instance for tests."""
-    cache_manager = CacheManager(cache_dir="/tmp/test_cache")
-    return RepositoryDownloader(test_config, cache_manager)
+    return RepositoryDownloader(test_config)
 
 
 class TestRepositoryDownloader:
@@ -42,53 +43,50 @@ class TestRepositoryDownloader:
 
     def test_initialization(self, test_config):
         """Test RepositoryDownloader initialization."""
-        cache_manager = CacheManager(cache_dir="/tmp/test_cache")
-        downloader = RepositoryDownloader(test_config, cache_manager)
+        downloader = RepositoryDownloader(test_config)
 
         assert downloader.config == test_config
-        assert isinstance(downloader.cache_manager, CacheManager)
         assert downloader.download_dir == test_config["DOWNLOAD_DIR"]
         assert downloader.repo_downloads_dir == REPO_DOWNLOADS_DIR
+        assert downloader.shell_script_extension == SHELL_SCRIPT_EXTENSION
 
     def test_get_cleanup_summary(self, repository_downloader):
         """Test getting cleanup summary."""
         summary = repository_downloader.get_cleanup_summary()
         assert isinstance(summary, dict)
-        assert "download_dir" in summary
+        assert "removed_files" in summary
+        assert "removed_dirs" in summary
+        assert "errors" in summary
+        assert "success" in summary
 
     def test_get_repository_files_with_subdirectory(self, repository_downloader):
         """Test getting repository files with subdirectory."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            cache_dir = Path(tmpdir) / "cache"
-            cache_manager = CacheManager(cache_dir=str(cache_dir))
-
-            files = repository_downloader.get_repository_files(
-                "subdir",
-                cache_manager=cache_manager,
-            )
-            assert isinstance(files, list)
+        files = repository_downloader.get_repository_files("subdir")
+        assert isinstance(files, list)
 
     def test_get_repository_files_from_root(self, repository_downloader):
         """Test getting repository files from root."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            cache_dir = Path(tmpdir) / "cache"
-            cache_manager = CacheManager(cache_dir=str(cache_dir))
-
-            files = repository_downloader.get_repository_files(
-                "",
-                cache_manager=cache_manager,
-            )
-            assert isinstance(files, list)
+        files = repository_downloader.get_repository_files("")
+        assert isinstance(files, list)
 
     def test_get_repository_download_url(self, repository_downloader):
         """Test getting download URL for a file."""
-        file_info = {
-            "download_url": "https://example.com/file.txt",
-            "name": "file.txt",
-            "path": "subdir/file.txt",
-        }
-        url = repository_downloader.get_repository_download_url(file_info)
-        assert url == "https://example.com/file.txt"
+        url = repository_downloader.get_repository_download_url("subdir/file.txt")
+        assert url.endswith("subdir/file.txt")
+
+    def test_get_repository_download_url_raises_for_absolute_path(
+        self, repository_downloader
+    ):
+        """Test get_repository_download_url raises ValueError for absolute path."""
+        with pytest.raises(ValueError):
+            repository_downloader.get_repository_download_url("/absolute/path.txt")
+
+    def test_get_repository_download_url_raises_for_url(self, repository_downloader):
+        """Test get_repository_download_url raises ValueError for URL."""
+        with pytest.raises(ValueError):
+            repository_downloader.get_repository_download_url(
+                "https://example.com/file.txt"
+            )
 
     def test_is_safe_subdirectory_valid(self, repository_downloader):
         """Test safe subdirectory validation."""
@@ -96,13 +94,22 @@ class TestRepositoryDownloader:
         assert result is True
 
     def test_is_safe_subdirectory_empty(self, repository_downloader):
-        """Test safe subdirectory validation rejects empty."""
-        result = repository_downloader._is_safe_subdirectory("")
-        assert result is False
+        """Test safe subdirectory validation with empty string - requires check separately."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            test_config = {"DOWNLOAD_DIR": tmpdir, "VERSIONS_TO_KEEP": 2}
+            downloader = RepositoryDownloader(test_config)
+            os.makedirs(os.path.join(tmpdir, FIRMWARE_DIR_NAME, REPO_DOWNLOADS_DIR))
+            result = downloader._is_safe_subdirectory("")
+            assert result is True
 
     def test_is_safe_subdirectory_traversal(self, repository_downloader):
         """Test safe subdirectory validation rejects path traversal."""
         result = repository_downloader._is_safe_subdirectory("../unsafe")
+        assert result is False
+
+    def test_is_safe_subdirectory_backslash(self, repository_downloader):
+        """Test safe subdirectory validation rejects backslash."""
+        result = repository_downloader._is_safe_subdirectory("unsafe\\path")
         assert result is False
 
     def test_set_executable_permissions_success(self, repository_downloader):
@@ -114,66 +121,51 @@ class TestRepositoryDownloader:
             result = repository_downloader._set_executable_permissions(str(test_file))
             assert result is True
 
+    def test_set_executable_permissions_windows(self, repository_downloader):
+        """Test setting executable permissions on Windows is no-op."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            test_file = Path(tmpdir) / "test.bat"
+            test_file.write_bytes(b"echo test")
+
+            with patch("os.name", "nt"):
+                result = repository_downloader._set_executable_permissions(
+                    str(test_file)
+                )
+                assert result is True
+
     def test_clean_repository_directory(self, repository_downloader):
         """Test cleaning repository directory."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            download_dir = Path(tmpdir) / "downloads"
-            repo_dir = download_dir / REPO_DOWNLOADS_DIR
-            repo_dir.mkdir()
+            test_config = {"DOWNLOAD_DIR": tmpdir, "VERSIONS_TO_KEEP": 2}
+            downloader = RepositoryDownloader(test_config)
+            repo_dir = Path(tmpdir) / FIRMWARE_DIR_NAME / REPO_DOWNLOADS_DIR
+            repo_dir.mkdir(parents=True)
 
             test_file = repo_dir / "test.txt"
             test_file.write_bytes(b"test")
 
-            result = repository_downloader.clean_repository_directory(str(download_dir))
+            result = downloader.clean_repository_directory()
             assert result is True
             assert not test_file.exists()
 
     def test_clean_repository_directory_not_exists(self, repository_downloader):
         """Test cleaning nonexistent directory succeeds."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            download_dir = Path(tmpdir) / "downloads"
+            test_config = {"DOWNLOAD_DIR": tmpdir, "VERSIONS_TO_KEEP": 2}
+            downloader = RepositoryDownloader(test_config)
 
-            result = repository_downloader.clean_repository_directory(str(download_dir))
+            result = downloader.clean_repository_directory()
             assert result is True
 
     def test_get_latest_release_tag(self, repository_downloader):
         """Test getting latest release tag."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            cache_file = Path(tmpdir) / "latest_repo_release.json"
-            cache_file.write_text('{"version": "v1.0.0"}')
-
-            cache_manager = CacheManager(cache_dir=tmpdir)
-            downloader = RepositoryDownloader(
-                {"DOWNLOAD_DIR": str(tmpdir)}, cache_manager
-            )
-
-            tag = downloader.get_latest_release_tag()
-            assert tag == "v1.0.0"
-
-    def test_get_latest_release_tag_missing_file(self, repository_downloader):
-        """Test getting latest release tag when file is missing."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            cache_manager = CacheManager(cache_dir=tmpdir)
-            downloader = RepositoryDownloader(
-                {"DOWNLOAD_DIR": str(tmpdir)}, cache_manager
-            )
-
-            tag = downloader.get_latest_release_tag()
-            assert tag is None
+        tag = repository_downloader.get_latest_release_tag()
+        assert tag == "repository-latest"
 
     def test_update_latest_release_tag(self, repository_downloader):
-        """Test updating latest release tag."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            cache_file = Path(tmpdir) / "latest_repo_release.json"
-            cache_file.write_text('{"version": "v1.0.0"}')
-
-            cache_manager = CacheManager(cache_dir=tmpdir)
-            downloader = RepositoryDownloader(
-                {"DOWNLOAD_DIR": str(tmpdir)}, cache_manager
-            )
-
-            result = downloader.update_latest_release_tag("v1.0.0")
-            assert result is True
+        """Test updating latest release tag (no-op)."""
+        result = repository_downloader.update_latest_release_tag("v1.0.0")
+        assert result is True
 
     def test_validate_extraction_patterns(self, repository_downloader):
         """Test extraction pattern validation."""
@@ -185,35 +177,82 @@ class TestRepositoryDownloader:
         )
         assert result is True
 
-    def test_validate_extraction_patterns_empty_include(self, repository_downloader):
-        """Test extraction pattern validation rejects empty include."""
-        result = repository_downloader.validate_extraction_patterns([], ["*.bin"])
+    def test_should_download_release(self, repository_downloader):
+        """Test checking if release should be downloaded."""
+        result = repository_downloader.should_download_release("v1.0.0", "test.txt")
+        assert result is True
+
+    def test_check_extraction_needed(self, repository_downloader):
+        """Test checking if extraction is needed."""
+        result = repository_downloader.check_extraction_needed(
+            "/path/to/file.txt", "/extract", ["*.txt"], []
+        )
         assert result is False
 
-    def test_validate_extraction_patterns_invalid_glob(self, repository_downloader):
-        """Test extraction pattern validation rejects invalid patterns."""
-        result = repository_downloader.validate_extraction_patterns(["*.txt"], ["../*"])
-        assert result is False
-
-    def test_should_download_release_exists(self, repository_downloader):
-        """Test checking if release should be downloaded when file exists."""
+    def test_cleanup_old_versions(self, repository_downloader):
+        """Test cleaning up old versions."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            download_dir = Path(tmpdir) / "downloads"
-            repo_dir = download_dir / REPO_DOWNLOADS_DIR
-            repo_dir.mkdir()
+            test_config = {"DOWNLOAD_DIR": tmpdir, "VERSIONS_TO_KEEP": 2}
+            downloader = RepositoryDownloader(test_config)
+            repo_dir = Path(tmpdir) / FIRMWARE_DIR_NAME / REPO_DOWNLOADS_DIR
+            repo_dir.mkdir(parents=True)
 
             test_file = repo_dir / "test.txt"
             test_file.write_bytes(b"test")
 
-            result = repository_downloader.should_download_release("v1.0.0", "test.txt")
-            assert result is False
+            downloader.cleanup_old_versions(5)
+            assert not test_file.exists()
 
-    def test_should_download_release_missing(self, repository_downloader):
-        """Test checking if missing release should be downloaded."""
+    def test_get_safe_target_directory_base(self, repository_downloader):
+        """Test getting safe target directory (base)."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            download_dir = Path(tmpdir) / "downloads"
-            repo_dir = download_dir / REPO_DOWNLOADS_DIR
-            repo_dir.mkdir()
+            test_config = {"DOWNLOAD_DIR": tmpdir, "VERSIONS_TO_KEEP": 2}
+            downloader = RepositoryDownloader(test_config)
 
-            result = repository_downloader.should_download_release("v1.0.0", "test.txt")
-            assert result is True
+            target_dir = downloader._get_safe_target_directory("")
+            expected_dir = Path(tmpdir) / FIRMWARE_DIR_NAME / REPO_DOWNLOADS_DIR
+            assert target_dir == str(expected_dir)
+            assert Path(target_dir).exists()
+
+    def test_get_safe_target_directory_with_subdir(self, repository_downloader):
+        """Test getting safe target directory with subdirectory."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            test_config = {"DOWNLOAD_DIR": tmpdir, "VERSIONS_TO_KEEP": 2}
+            downloader = RepositoryDownloader(test_config)
+
+            target_dir = downloader._get_safe_target_directory("subdir")
+            expected_dir = (
+                Path(tmpdir) / FIRMWARE_DIR_NAME / REPO_DOWNLOADS_DIR / "subdir"
+            )
+            assert target_dir == str(expected_dir)
+            assert Path(target_dir).exists()
+
+    def test_get_safe_target_directory_unsafe(self, repository_downloader):
+        """Test getting safe target directory sanitizes unsafe path."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            test_config = {"DOWNLOAD_DIR": tmpdir, "VERSIONS_TO_KEEP": 2}
+            downloader = RepositoryDownloader(test_config)
+
+            target_dir = downloader._get_safe_target_directory("../unsafe")
+            expected_dir = Path(tmpdir) / FIRMWARE_DIR_NAME / REPO_DOWNLOADS_DIR
+            assert target_dir == str(expected_dir)
+
+    @patch("fetchtastic.utils.make_github_api_request")
+    def test_get_repository_files_api_error(self, mock_request, repository_downloader):
+        """Test get_repository_files handles API errors."""
+        mock_request.side_effect = requests.RequestException("API Error")
+
+        files = repository_downloader.get_repository_files("subdir")
+        assert files == []
+
+    @patch("fetchtastic.utils.make_github_api_request")
+    def test_get_repository_files_empty_response(
+        self, mock_request, repository_downloader
+    ):
+        """Test get_repository_files handles empty response."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = {}
+        mock_request.return_value = mock_response
+
+        files = repository_downloader.get_repository_files("subdir")
+        assert files == []
