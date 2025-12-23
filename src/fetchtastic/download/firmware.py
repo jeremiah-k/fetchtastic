@@ -787,14 +787,17 @@ class FirmwareReleaseDownloader(BaseDownloader):
         target_dir = os.path.join(prerelease_base_dir, safe_dir)
         os.makedirs(target_dir, exist_ok=True)
 
+        device_api_config = self.config.get("DEVICE_HARDWARE_API", {})
         device_manager = DeviceHardwareManager(
-            enabled=self.config.get("DEVICE_HARDWARE_API", {}).get("enabled", True),
-            cache_hours=self.config.get("DEVICE_HARDWARE_API", {}).get(
+            enabled=device_api_config.get("enabled", True),
+            cache_hours=device_api_config.get(
                 "cache_hours", DEVICE_HARDWARE_CACHE_HOURS
             ),
-            api_url=self.config.get("DEVICE_HARDWARE_API", {}).get(
-                "api_url", DEVICE_HARDWARE_API_URL
-            ),
+            api_url=device_api_config.get("api_url", DEVICE_HARDWARE_API_URL),
+        )
+
+        contents = self._fetch_prerelease_directory_listing(
+            remote_dir, force_refresh=force_refresh
         )
 
         contents = self._fetch_prerelease_directory_listing(
