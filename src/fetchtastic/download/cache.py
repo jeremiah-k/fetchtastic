@@ -590,12 +590,22 @@ class CacheManager:
         if not isinstance(cache, dict):
             cache = {}
 
+        old_entry = cache.get(url_cache_key)
+        old_releases = (
+            old_entry.get("releases") if isinstance(old_entry, dict) else None
+        )
+
         cache[url_cache_key] = {
             "releases": releases,
             "cached_at": datetime.now(timezone.utc).isoformat(),
         }
         if self.atomic_write_json(cache_file, cache):
-            logger.debug("Saved %d releases entries to cache", len(cache))
+            if old_releases != releases:
+                logger.debug("Saved %d releases entries to cache", len(cache))
+            else:
+                logger.debug(
+                    "Refreshed releases cache timestamp (total %d entries)", len(cache)
+                )
 
     def clear_all_caches(self) -> bool:
         """

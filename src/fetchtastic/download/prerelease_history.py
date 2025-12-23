@@ -417,14 +417,29 @@ class PrereleaseHistoryManager:
             expected_version, commits
         )
 
+        old_version_data = cache.get(expected_version)
+        old_entries = (
+            old_version_data.get("entries")
+            if isinstance(old_version_data, dict)
+            else None
+        )
+
         cache[expected_version] = {
             "entries": entries,
             "cached_at": now.isoformat(),
             "last_checked": now.isoformat(),
             "shas": sorted(shas),
         }
-        cache_manager.atomic_write_json(history_file, cache)
-        logger.debug("Saved %d prerelease commit history entries to cache", len(cache))
+        if cache_manager.atomic_write_json(history_file, cache):
+            if old_entries != entries:
+                logger.debug(
+                    "Saved %d prerelease commit history entries to cache", len(cache)
+                )
+            else:
+                logger.debug(
+                    "Refreshed prerelease commit history timestamp (total %d entries)",
+                    len(cache),
+                )
         return entries
 
     def get_latest_active_prerelease_from_history(
