@@ -234,10 +234,10 @@ def _is_release_complete(
 def _prepare_for_redownload(file_path: str) -> bool:
     """
     Prepare a target file for re-download by removing the file itself, its persisted hash files (current and legacy), and any orphaned temporary files matching "<file>.tmp.*".
-    
+
     Parameters:
         file_path (str): Path to the file to clean up.
-    
+
     Returns:
         bool: `True` if cleanup completed successfully, `False` if an error occurred.
     """
@@ -757,13 +757,13 @@ class FileOperations:
     ) -> Dict[str, str]:
         """
         Compute cryptographic digests for the provided extracted files and persist SHA-256 hashes to the cache.
-        
+
         Processes only paths that exist and are readable. The `algorithm` parameter selects the hashing algorithm (case-insensitive); if the algorithm is unsupported it falls back to SHA-256. When `algorithm` is "sha256" the resulting hex digests are saved to the centralized cache via save_file_hash; digests produced with other algorithms are returned but not persisted.
-        
+
         Parameters:
             extracted_files (List[Path]): Iterable of file paths to hash; non-existent or unreadable files are skipped.
             algorithm (str): Hash algorithm name (e.g., "sha256", "md5"); defaults to "sha256" and is interpreted case-insensitively.
-        
+
         Returns:
             Dict[str, str]: Mapping from each processed file's path string to its hexadecimal digest. Only successfully hashed files appear in the mapping.
         """

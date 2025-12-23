@@ -416,9 +416,9 @@ class BaseDownloader(Downloader, ABC):
     def is_asset_complete(self, release_tag: str, asset: Asset) -> bool:
         """
         Check whether the downloaded asset for a release exists and is valid.
-        
+
         Performs an existence check, verifies the file size when provided by the asset, verifies integrity using stored hash records, and performs a ZIP integrity check for .zip files.
-        
+
         Returns:
             True if the file exists and passes all applicable checks, False otherwise.
         """

@@ -5,10 +5,9 @@ This module tests new configurable DeviceHardwareManager feature
 added in cache branch.
 """
 
-import os
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
