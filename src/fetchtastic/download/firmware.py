@@ -14,6 +14,8 @@ from typing import Any, Dict, List, Optional
 import requests
 
 from fetchtastic.constants import (
+    DEVICE_HARDWARE_API_URL,
+    DEVICE_HARDWARE_CACHE_HOURS,
     ERROR_TYPE_EXTRACTION,
     ERROR_TYPE_FILESYSTEM,
     ERROR_TYPE_NETWORK,
@@ -785,7 +787,15 @@ class FirmwareReleaseDownloader(BaseDownloader):
         target_dir = os.path.join(prerelease_base_dir, safe_dir)
         os.makedirs(target_dir, exist_ok=True)
 
-        device_manager = DeviceHardwareManager()
+        device_manager = DeviceHardwareManager(
+            enabled=self.config.get("DEVICE_HARDWARE_API", {}).get("enabled", True),
+            cache_hours=self.config.get("DEVICE_HARDWARE_API", {}).get(
+                "cache_hours", DEVICE_HARDWARE_CACHE_HOURS
+            ),
+            api_url=self.config.get("DEVICE_HARDWARE_API", {}).get(
+                "api_url", DEVICE_HARDWARE_API_URL
+            ),
+        )
 
         contents = self._fetch_prerelease_directory_listing(
             remote_dir, force_refresh=force_refresh
