@@ -151,8 +151,8 @@ COMMIT_TIMESTAMP_CACHE_EXPIRY_HOURS = 24
 RELEASES_CACHE_EXPIRY_HOURS = 1 / 60  # 1 minute (in hours)
 # Prerelease contents rarely change once a commit is published, so cache for a longer duration.
 FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS = 24 * 60 * 60  # 24 hours
-# Keep prerelease commit history fresh so we see new prereleases within a minute.
-PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS = 60
+# Keep prerelease commit history fresh for a typical download run (5 minutes)
+PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS = 5 * 60  # 5 minutes
 
 # File Type Patterns (non-device-specific patterns)
 FILE_TYPE_PREFIXES = {

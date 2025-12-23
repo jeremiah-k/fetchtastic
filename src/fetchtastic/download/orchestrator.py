@@ -1162,11 +1162,15 @@ class DownloadOrchestrator:
             # Share recent commits with downloaders for prerelease filtering
             self._refresh_commit_history_cache()
 
-            # Manage Android prerelease tracking
-            self.android_downloader.manage_prerelease_tracking_files()
+            # Manage Android prerelease tracking - pass cached releases to avoid redundant API calls
+            self.android_downloader.manage_prerelease_tracking_files(
+                cached_releases=self.android_releases
+            )
 
-            # Manage firmware prerelease tracking
-            self.firmware_downloader.manage_prerelease_tracking_files()
+            # Manage firmware prerelease tracking - pass cached releases to avoid redundant API calls
+            self.firmware_downloader.manage_prerelease_tracking_files(
+                cached_releases=self.firmware_releases
+            )
 
             logger.info("Prerelease tracking management completed")
 

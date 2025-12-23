@@ -1279,11 +1279,16 @@ class FirmwareReleaseDownloader(BaseDownloader):
         # No tracking file or unreadable; default to download
         return True
 
-    def manage_prerelease_tracking_files(self) -> None:
+    def manage_prerelease_tracking_files(
+        self, cached_releases: Optional[List[Release]] = None
+    ) -> None:
         """
         Scan stored prerelease tracking files and remove entries that are superseded or expired.
 
-        This updates the prerelease tracking directory by comparing stored tracking data with the current prereleases discovered from the remote repository and delegating cleanup of outdated or expired tracking files to the prerelease history manager.
+        This updates of prerelease tracking directory by comparing stored tracking data with current prereleases discovered from remote repository and delegating cleanup of outdated or expired tracking files to the prerelease history manager.
+
+        Parameters:
+            cached_releases (Optional[List[Release]]): Optional cached releases to avoid redundant API calls.
         """
         tracking_dir = os.path.dirname(self.get_prerelease_tracking_file())
 
@@ -1326,7 +1331,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 existing_prereleases.append(tracking_data)
 
         # Get current prereleases from GitHub (if available)
-        current_releases = self.get_releases(limit=10)
+        # Use cached releases if provided to avoid redundant API calls
+        current_releases = cached_releases or self.get_releases(limit=10)
         current_prereleases = self.handle_prereleases(current_releases)
 
         # Create tracking data for current prereleases

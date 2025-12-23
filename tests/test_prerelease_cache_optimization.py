@@ -1,6 +1,5 @@
 """
 Tests for cache optimization in prerelease_history.py and cache.py.
-
 This module tests new cache unchanged optimization that skips
 disk writes when data hasn't changed.
 """
@@ -181,12 +180,67 @@ class TestPrereleaseCacheOptimization:
                 assert len(cached_data["commits"]) == 2
                 assert cached_data["commits"][0]["sha"] == "abc123"
 
+    def test_fetch_recent_repo_commits_in_memory_cache(self):
+        """Test that in-memory cache prevents redundant disk reads."""
+        cache_manager = CacheManager()
+        manager = PrereleaseHistoryManager()
+
+        commits_data = [
+            {
+                "sha": "abc123",
+                "commit": {
+                    "message": "Commit 1",
+                    "author": {"date": "2025-01-20T12:00:00Z"},
+                },
+            },
+            {
+                "sha": "def456",
+                "commit": {
+                    "message": "Commit 2",
+                    "author": {"date": "2025-01-21T12:00:00Z"},
+                },
+            },
+        ]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache_file = Path(tmpdir) / "prerelease_commits_cache.json"
+            old_timestamp = datetime.now(timezone.utc) - timedelta(seconds=30)
+            cache_file.write_text(
+                json.dumps(
+                    {
+                        "commits": commits_data,
+                        "cached_at": old_timestamp.isoformat(),
+                    }
+                )
+            )
+
+            cache_manager.cache_dir = tmpdir
+
+            with patch(
+                "fetchtastic.download.prerelease_history.make_github_api_request"
+            ) as mock_get:
+                # First call should use cache
+                result1 = manager.fetch_recent_repo_commits(
+                    limit=2, cache_manager=cache_manager, github_token=None
+                )
+                assert len(result1) == 2
+
+                # Second call should use in-memory cache without reading disk
+                result2 = manager.fetch_recent_repo_commits(
+                    limit=2, cache_manager=cache_manager, github_token=None
+                )
+                assert len(result2) == 2
+                assert result2[0]["sha"] == "abc123"
+
+                # API should not have been called due to in-memory cache
+                assert not mock_get.called
+
     def test_get_prerelease_commit_history_cache_unchanged(self):
         """Test that get_prerelease_commit_history skips write when cache is unchanged."""
         cache_manager = CacheManager()
         manager = PrereleaseHistoryManager()
 
-        entries_data = [
+        new_entries = [
             {
                 "sha": "abc123",
                 "version": "2.7.14.1",
@@ -206,7 +260,7 @@ class TestPrereleaseCacheOptimization:
                 json.dumps(
                     {
                         "v2.7.14": {
-                            "entries": entries_data,
+                            "entries": new_entries,
                             "cached_at": old_timestamp.isoformat(),
                             "last_checked": old_timestamp.isoformat(),
                             "shas": ["abc123", "def456"],
@@ -217,11 +271,15 @@ class TestPrereleaseCacheOptimization:
 
             cache_manager.cache_dir = tmpdir
 
+            def atomic_write_mock(path, data):
+                Path(path).write_text(json.dumps(data))
+                return True
+
             with (
                 patch.object(
                     manager,
                     "build_simplified_prerelease_history",
-                    return_value=(entries_data, ["abc123", "def456"]),
+                    return_value=(new_entries, ["abc123", "def456"]),
                 ),
                 patch.object(
                     manager,
@@ -237,6 +295,12 @@ class TestPrereleaseCacheOptimization:
                         },
                     ],
                 ),
+                patch.object(
+                    cache_manager,
+                    "atomic_write_json",
+                    side_effect=atomic_write_mock,
+                ),
+                patch("fetchtastic.download.prerelease_history.logger") as mock_logger,
             ):
                 result = manager.get_prerelease_commit_history(
                     cache_manager=cache_manager,
@@ -249,6 +313,14 @@ class TestPrereleaseCacheOptimization:
                 assert len(result) == 2
                 assert result[0]["sha"] == "abc123"
                 assert result[1]["sha"] == "def456"
+
+                cached_data = json.loads(history_file.read_text())
+                assert len(cached_data["v2.7.14"]["entries"]) == 2
+                assert cached_data["v2.7.14"]["entries"][0]["sha"] == "abc123"
+
+                # Should not log "Saved" since data is unchanged
+                call_args = [str(call) for call in mock_logger.debug.call_args_list]
+                assert not any("Saved" in args for args in call_args)
 
     def test_get_prerelease_commit_history_cache_changed(self):
         """Test that get_prerelease_commit_history writes when cache changes."""
@@ -278,7 +350,8 @@ class TestPrereleaseCacheOptimization:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             history_file = Path(tmpdir) / "prerelease_commit_history.json"
-            old_timestamp = datetime.now(timezone.utc) - timedelta(seconds=120)
+            # Use timestamp older than 5 minutes (300 seconds) to ensure cache expiry
+            old_timestamp = datetime.now(timezone.utc) - timedelta(seconds=400)
             history_file.write_text(
                 json.dumps(
                     {
@@ -485,6 +558,7 @@ class TestCacheManagerReleasesOptimization:
 
             cache_file = Path(tmpdir) / "releases.json"
             assert cache_file.exists()
+
             cached_data = json.loads(cache_file.read_text())
             assert url_cache_key in cached_data
             assert len(cached_data[url_cache_key]["releases"]) == 1

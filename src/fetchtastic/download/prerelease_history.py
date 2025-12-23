@@ -45,11 +45,13 @@ class PrereleaseHistoryManager:
 
     def __init__(self):
         """
-        Initialize the PrereleaseHistoryManager and its version utilities.
+        Initialize PrereleaseHistoryManager and its version utilities.
 
         Creates and stores a VersionManager instance on self.version_manager for version-related operations.
         """
         self.version_manager = VersionManager()
+        self._in_memory_commits_cache: Optional[Dict[str, Any]] = None
+        self._in_memory_commits_timestamp: Optional[datetime] = None
 
     def fetch_recent_repo_commits(
         self,
@@ -61,7 +63,7 @@ class PrereleaseHistoryManager:
         force_refresh: bool = False,
     ) -> List[Dict[str, Any]]:
         """
-        Fetch recent commits for the meshtastic.github.io repository, using a local cache with expiry to avoid unnecessary API requests.
+        Fetch recent commits for meshtastic.github.io repository, using a local cache with expiry to avoid unnecessary API requests.
 
         Parameters:
             limit (int): Maximum number of commits to return; values less than 1 are treated as 1.
@@ -71,14 +73,28 @@ class PrereleaseHistoryManager:
             force_refresh (bool): If True, ignore any cached data and fetch fresh commits from the API.
 
         Returns:
-            List[Dict[str, Any]]: A list of commit objects (as returned by the GitHub API), up to `limit`. Returns an empty list on failure.
+            List[Dict[str, Any]]: A list of commit objects (as returned by GitHub API), up to `limit`. Returns an empty list on failure.
         """
         limit = max(1, int(limit))
         cache_file = os.path.join(
             cache_manager.cache_dir, PRERELEASE_COMMITS_CACHE_FILE
         )
 
+        now = datetime.now(timezone.utc)
+
         if not force_refresh:
+            if (
+                self._in_memory_commits_cache is not None
+                and self._in_memory_commits_timestamp is not None
+            ):
+                age_seconds = (now - self._in_memory_commits_timestamp).total_seconds()
+                if age_seconds < PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS:
+                    logger.debug(
+                        "Using in-memory prerelease commit cache (cached %.0fs ago)",
+                        age_seconds,
+                    )
+                    return self._in_memory_commits_cache.get("commits", [])[:limit]
+
             cached = cache_manager.read_json(cache_file)
             if isinstance(cached, dict):
                 cached_at = cached.get("cached_at")
@@ -90,11 +106,11 @@ class PrereleaseHistoryManager:
                         )
                         if cached_at_dt.tzinfo is None:
                             cached_at_dt = cached_at_dt.replace(tzinfo=timezone.utc)
-                        age_seconds = (
-                            datetime.now(timezone.utc) - cached_at_dt
-                        ).total_seconds()
+                        age_seconds = (now - cached_at_dt).total_seconds()
                         if age_seconds < PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS:
                             logger.debug("Using cached prerelease commit history")
+                            self._in_memory_commits_cache = cached
+                            self._in_memory_commits_timestamp = cached_at_dt
                             return commits[:limit]
                         logger.debug("Commits cache expired (age: %.1fs)", age_seconds)
                     except (ValueError, TypeError):
@@ -145,14 +161,17 @@ class PrereleaseHistoryManager:
                 )
                 return all_commits[:limit]
 
-            if cache_manager.atomic_write_json(
-                cache_file,
-                {
-                    "commits": all_commits,
-                    "cached_at": datetime.now(timezone.utc).isoformat(),
-                },
-            ):
+            cache_data = {
+                "commits": all_commits,
+                "cached_at": now.isoformat(),
+            }
+            if cache_manager.atomic_write_json(cache_file, cache_data):
                 logger.debug("Saved %d prerelease commits to cache", len(all_commits))
+
+            # Update in-memory cache for this run
+            self._in_memory_commits_cache = cache_data
+            self._in_memory_commits_timestamp = now
+
             return all_commits[:limit]
         except (
             requests.RequestException,
