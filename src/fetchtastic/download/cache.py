@@ -595,17 +595,25 @@ class CacheManager:
             old_entry.get("releases") if isinstance(old_entry, dict) else None
         )
 
+        # Only write if data has changed
+        if old_releases == releases:
+            logger.debug(
+                "Releases cache unchanged for %s (total %d entries)",
+                url_cache_key,
+                len(cache),
+            )
+            return
+
         cache[url_cache_key] = {
             "releases": releases,
             "cached_at": datetime.now(timezone.utc).isoformat(),
         }
         if self.atomic_write_json(cache_file, cache):
-            if old_releases != releases:
-                logger.debug("Saved %d releases entries to cache", len(cache))
-            else:
-                logger.debug(
-                    "Refreshed releases cache timestamp (total %d entries)", len(cache)
-                )
+            logger.debug(
+                "Saved %d releases entries to cache for %s",
+                len(releases),
+                url_cache_key,
+            )
 
     def clear_all_caches(self) -> bool:
         """

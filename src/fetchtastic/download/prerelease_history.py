@@ -133,13 +133,26 @@ class PrereleaseHistoryManager:
                     break
                 page += 1
 
-            cache_manager.atomic_write_json(
+            # Only write to cache if data has changed
+            old_cache = cache_manager.read_json(cache_file)
+            old_commits = (
+                old_cache.get("commits") if isinstance(old_cache, dict) else None
+            )
+            if old_commits == all_commits:
+                logger.debug(
+                    "Prerelease commits cache unchanged (total %d commits)",
+                    len(all_commits),
+                )
+                return all_commits[:limit]
+
+            if cache_manager.atomic_write_json(
                 cache_file,
                 {
                     "commits": all_commits,
                     "cached_at": datetime.now(timezone.utc).isoformat(),
                 },
-            )
+            ):
+                logger.debug("Saved %d prerelease commits to cache", len(all_commits))
             return all_commits[:limit]
         except (
             requests.RequestException,
@@ -424,6 +437,15 @@ class PrereleaseHistoryManager:
             else None
         )
 
+        # Only write if data has changed
+        if old_entries == entries:
+            logger.debug(
+                "Prerelease history cache unchanged for %s (total %d entries)",
+                expected_version,
+                len(cache),
+            )
+            return entries
+
         cache[expected_version] = {
             "entries": entries,
             "cached_at": now.isoformat(),
@@ -431,15 +453,11 @@ class PrereleaseHistoryManager:
             "shas": sorted(shas),
         }
         if cache_manager.atomic_write_json(history_file, cache):
-            if old_entries != entries:
-                logger.debug(
-                    "Saved %d prerelease commit history entries to cache", len(cache)
-                )
-            else:
-                logger.debug(
-                    "Refreshed prerelease commit history timestamp (total %d entries)",
-                    len(cache),
-                )
+            logger.debug(
+                "Saved %d prerelease history entries to cache for %s",
+                len(entries),
+                expected_version,
+            )
         return entries
 
     def get_latest_active_prerelease_from_history(
