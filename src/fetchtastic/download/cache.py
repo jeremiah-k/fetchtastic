@@ -607,13 +607,19 @@ class CacheManager:
 
         now = datetime.now(timezone.utc)
 
-        # Debug: log comparison details
-        if old_releases is not None:
+        # Debug: log comparison details with specific field comparison
+        if old_releases is not None and isinstance(old_releases, list):
+            # Compare tag names to see if releases actually changed
+            old_tags = {r.get("tag_name") for r in old_releases if isinstance(r, dict)}
+            new_tags = {r.get("tag_name") for r in releases if isinstance(r, dict)}
+            tags_equal = old_tags == new_tags
+
             logger.debug(
-                "Cache comparison for %s: old=%d entries, new=%d entries, equal=%s",
+                "Cache comparison for %s: old=%d entries, new=%d entries, tags_equal=%s, full_equal=%s",
                 url_cache_key,
-                len(old_releases) if old_releases else 0,
-                len(releases) if releases else 0,
+                len(old_releases),
+                len(releases),
+                tags_equal,
                 old_releases == releases,
             )
 
