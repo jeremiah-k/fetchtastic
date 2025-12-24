@@ -583,6 +583,32 @@ class CacheManager:
         track_api_cache_hit()
         return releases
 
+    @staticmethod
+    def _normalize_release_for_comparison(release: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Normalize a release object for cache comparison by excluding dynamic fields.
+
+        Only includes fields that matter for detecting actual release changes:
+        - tag_name (release identifier)
+        - prerelease (release type)
+        - published_at (release date)
+        - name, body (release metadata)
+        Excludes assets which may contain dynamic URLs/timestamps.
+
+        Parameters:
+            release (Dict[str, Any]): Raw release object from GitHub API.
+
+        Returns:
+            Dict[str, Any]: Normalized release with only stable fields.
+        """
+        return {
+            "tag_name": release.get("tag_name"),
+            "prerelease": release.get("prerelease"),
+            "published_at": release.get("published_at"),
+            "name": release.get("name"),
+            "body": release.get("body"),
+        }
+
     def write_releases_cache_entry(
         self, url_cache_key: str, releases: List[Dict[str, Any]]
     ) -> None:
@@ -607,53 +633,44 @@ class CacheManager:
 
         now = datetime.now(timezone.utc)
 
-        # Debug: log comparison details with specific field comparison
-        if old_releases is not None and isinstance(old_releases, list):
-            # Compare tag names to see if releases actually changed
-            old_tags = {r.get("tag_name") for r in old_releases if isinstance(r, dict)}
-            new_tags = {r.get("tag_name") for r in releases if isinstance(r, dict)}
+        # Normalize releases for comparison (exclude dynamic fields like asset URLs)
+        old_normalized = (
+            [
+                self._normalize_release_for_comparison(r)
+                for r in old_releases
+                if isinstance(r, dict)
+            ]
+            if isinstance(old_releases, list)
+            else None
+        )
+        new_normalized = [
+            self._normalize_release_for_comparison(r)
+            for r in releases
+            if isinstance(r, dict)
+        ]
+
+        # Log comparison details
+        if old_normalized is not None:
+            old_tags = {
+                r.get("tag_name") for r in old_normalized if isinstance(r, dict)
+            }
+            new_tags = {
+                r.get("tag_name") for r in new_normalized if isinstance(r, dict)
+            }
             tags_equal = old_tags == new_tags
-            full_equal = old_releases == releases
+            normalized_equal = old_normalized == new_normalized
 
             logger.debug(
-                "Cache comparison for %s: old=%d entries, new=%d entries, tags_equal=%s, full_equal=%s",
+                "Cache comparison for %s: old=%d, new=%d, tags_equal=%s, normalized_equal=%s",
                 url_cache_key,
-                len(old_releases),
-                len(releases),
+                len(old_normalized),
+                len(new_normalized),
                 tags_equal,
-                full_equal,
+                normalized_equal,
             )
 
-            # If tags match but full data doesn't, find which field differs
-            if tags_equal and not full_equal and len(old_releases) == len(releases):
-                for i, (old, new) in enumerate(zip(old_releases, releases)):
-                    if old != new:
-                        # Compare common fields to find difference
-                        diff_fields = []
-                        for key in old.keys():
-                            if key not in new:
-                                diff_fields.append(f"{key}=missing in new")
-                            elif old[key] != new[key]:
-                                old_val = (
-                                    str(old[key])[:50]
-                                    if old[key] is not None
-                                    else "None"
-                                )
-                                new_val = (
-                                    str(new[key])[:50]
-                                    if new[key] is not None
-                                    else "None"
-                                )
-                                diff_fields.append(f"{key}='{old_val}'!='{new_val}'")
-                        logger.debug(
-                            "Release %d differs: %s",
-                            i,
-                            ", ".join(diff_fields[:3]) if diff_fields else "unknown",
-                        )
-                        break
-
-        # Only write file if data has changed (skip write to reduce I/O when data unchanged)
-        if old_releases == releases:
+        # Only write file if normalized releases data has changed (skip write to reduce I/O when data unchanged)
+        if old_normalized == new_normalized:
             logger.debug(
                 "Releases data unchanged for %s - skipping cache write (total %d entries)",
                 url_cache_key,
