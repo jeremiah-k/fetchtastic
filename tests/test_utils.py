@@ -1650,7 +1650,7 @@ def test_display_banner_with_version(mock_logger):
     version_printed = any("Fetchtastic v" in str(call) for call in calls)
     assert version_printed, "Version information should be logged"
 
-    separator_printed = any("=" * 60 in str(call) for call in calls)
+    separator_printed = any("=" * 40 in str(call) for call in calls)
     assert separator_printed, "Separator should be logged"
 
 
@@ -1673,5 +1673,5 @@ def test_display_banner_unknown_version(mock_version, mock_logger):
     version_printed = any("Fetchtastic vunknown" in str(call) for call in calls)
     assert version_printed, "Version 'unknown' should be logged when package not found"
 
-    separator_printed = any("=" * 60 in str(call) for call in calls)
+    separator_printed = any("=" * 40 in str(call) for call in calls)
     assert separator_printed, "Separator should still be logged"

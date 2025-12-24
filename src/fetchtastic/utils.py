@@ -1522,9 +1522,9 @@ def _matches_substring_pattern(filename_lower: str, pattern_lower: str) -> bool:
 
 def display_banner() -> None:
     """
-    Display the Fetchtastic banner with version information.
+    Display Fetchtastic banner with version information.
 
-    This function logs a banner showing the program name and current version.
+    This function logs a banner showing program name and current version.
     The banner is displayed when running main commands like download, setup, and repo.
 
     Side effects:
@@ -1535,8 +1535,10 @@ def display_banner() -> None:
     except importlib.metadata.PackageNotFoundError:
         version = "unknown"
 
-    separator = "=" * 60
+    separator = "=" * 40
 
+    logger.info(separator)
+    logger.info(f"Fetchtastic v{version}")
     logger.info(separator)
     logger.info(f"Fetchtastic v{version}")
     logger.info(separator)
