@@ -493,13 +493,13 @@ class CacheManager:
     @staticmethod
     def build_url_cache_key(url: str, params: Optional[Dict[str, Any]] = None) -> str:
         """
-        Create a stable cache key by appending URL-encoded query parameters to the base URL.
+        Create a stable cache key by appending URL-encoded query parameters to base URL.
 
         Parameters:
-            params (Optional[Dict[str, Any]]): Mapping of query parameter names to values; entries with value `None` are omitted. Pagination parameters (page, per_page) are excluded as they don't affect the data identity.
+            params (Optional[Dict[str, Any]]): Mapping of query parameter names to values; entries with value None are omitted. The 'page' pagination parameter is excluded as it doesn't affect the data identity, but 'per_page' is retained since it affects response content.
 
         Returns:
-            The original `url` if `params` is None or contains no non-None values, otherwise the `url` followed by `?` and URL-encoded parameters (excluding pagination parameters).
+            The original `url` if `params` is None or contains no non-None values, otherwise, `url` followed by `?` and URL-encoded parameters (excluding 'page' pagination parameter).
         """
         if not params:
             return url
