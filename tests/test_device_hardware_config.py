@@ -20,7 +20,18 @@ DEVICE_HARDWARE_CACHE_HOURS = 24
 
 @pytest.fixture
 def test_config():
-    """Provide a test configuration dictionary."""
+    """
+    Provide a baseline test configuration dictionary used by tests.
+    
+    Returns:
+        dict: Configuration with the following keys:
+            DOWNLOAD_DIR (str): Default download directory path.
+            FIRMWARE_VERSIONS_TO_KEEP (int): Number of firmware versions to retain.
+            SELECTED_PATTERNS (list[str]): Filename patterns to include.
+            EXCLUDE_PATTERNS (list[str]): Filename patterns to exclude.
+            GITHUB_TOKEN (str): Token used for GitHub API calls in tests.
+            CHECK_FIRMWARE_PRERELEASES (bool): Whether prerelease firmware should be checked.
+    """
     return {
         "DOWNLOAD_DIR": "/tmp/test_firmware",
         "FIRMWARE_VERSIONS_TO_KEEP": 2,
@@ -33,7 +44,15 @@ def test_config():
 
 @pytest.fixture
 def firmware_downloader(test_config):
-    """Create a FirmwareReleaseDownloader configured for tests."""
+    """
+    Create a FirmwareReleaseDownloader configured for tests.
+    
+    Parameters:
+        test_config (dict): Configuration dictionary to initialize the downloader.
+    
+    Returns:
+        FirmwareReleaseDownloader: Instance initialized with the provided configuration and a new CacheManager.
+    """
     cache_manager = CacheManager()
     return FirmwareReleaseDownloader(test_config, cache_manager)
 
