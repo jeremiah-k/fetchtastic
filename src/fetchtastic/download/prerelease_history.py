@@ -26,7 +26,6 @@ from fetchtastic.constants import (
     PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS,
     PRERELEASE_COMMITS_CACHE_FILE,
     PRERELEASE_DELETE_COMMIT_PATTERN,
-    PRERELEASE_REQUEST_TIMEOUT,
     PRERELEASE_TRACKING_JSON_FILE,
 )
 from fetchtastic.log_utils import logger
@@ -87,34 +86,32 @@ class PrereleaseHistoryManager:
                 self._in_memory_commits_cache is not None
                 and self._in_memory_commits_timestamp is not None
             ):
-                age_seconds = (now - self._in_memory_commits_timestamp).total_seconds()
-                if age_seconds < PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS:
-                    logger.debug(
-                        "Using in-memory prerelease commit cache (cached %.0fs ago)",
-                        age_seconds,
-                    )
-                    return self._in_memory_commits_cache.get("commits", [])[:limit]
+                logger.debug(
+                    "Using in-memory prerelease commit cache (cached %.0fs ago)",
+                    (now - self._in_memory_commits_timestamp).total_seconds(),
+                )
+                return self._in_memory_commits_cache.get("commits", [])[:limit]
 
-            cached = cache_manager.read_json(cache_file)
-            if isinstance(cached, dict):
-                cached_at = cached.get("cached_at")
-                commits = cached.get("commits")
-                if cached_at and isinstance(commits, list):
-                    try:
-                        cached_at_dt = datetime.fromisoformat(
-                            str(cached_at).replace("Z", "+00:00")
-                        )
-                        if cached_at_dt.tzinfo is None:
-                            cached_at_dt = cached_at_dt.replace(tzinfo=timezone.utc)
-                        age_seconds = (now - cached_at_dt).total_seconds()
-                        if age_seconds < PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS:
-                            logger.debug("Using cached prerelease commit history")
-                            self._in_memory_commits_cache = cached
-                            self._in_memory_commits_timestamp = cached_at_dt
-                            return commits[:limit]
-                        logger.debug("Commits cache expired (age: %.1fs)", age_seconds)
-                    except (ValueError, TypeError):
-                        pass
+        cached = cache_manager.read_json(cache_file)
+        if isinstance(cached, dict):
+            cached_at = cached.get("cached_at")
+            commits = cached.get("commits")
+            if cached_at and isinstance(commits, list):
+                try:
+                    cached_at_dt = datetime.fromisoformat(
+                        str(cached_at).replace("Z", "+00:00")
+                    )
+                    if cached_at_dt.tzinfo is None:
+                        cached_at_dt = cached_at_dt.replace(tzinfo=timezone.utc)
+                    age_seconds = (now - cached_at_dt).total_seconds()
+                    if age_seconds < PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS:
+                        logger.debug("Using cached prerelease commit history")
+                        self._in_memory_commits_cache = cached
+                        self._in_memory_commits_timestamp = cached_at_dt
+                        return commits[:limit]
+                    logger.debug("Commits cache expired (age: %.1fs)", age_seconds)
+                except (ValueError, TypeError):
+                    pass
 
         logger.debug("Fetching commits from API (cache miss/expired)")
 
@@ -131,7 +128,6 @@ class PrereleaseHistoryManager:
                     github_token=github_token,
                     allow_env_token=allow_env_token,
                     params={"per_page": per_page, "page": page},
-                    timeout=PRERELEASE_REQUEST_TIMEOUT,
                 )
                 commits_page = response.json()
                 if not isinstance(commits_page, list) or not commits_page:
@@ -149,30 +145,6 @@ class PrereleaseHistoryManager:
                     break
                 page += 1
 
-            # Only write to cache if data has changed
-            old_cache = cache_manager.read_json(cache_file)
-            old_commits = (
-                old_cache.get("commits") if isinstance(old_cache, dict) else None
-            )
-            if old_commits == all_commits:
-                logger.debug(
-                    "Prerelease commits cache unchanged (total %d commits)",
-                    len(all_commits),
-                )
-                return all_commits[:limit]
-
-            cache_data = {
-                "commits": all_commits,
-                "cached_at": now.isoformat(),
-            }
-            if cache_manager.atomic_write_json(cache_file, cache_data):
-                logger.debug("Saved %d prerelease commits to cache", len(all_commits))
-
-            # Update in-memory cache for this run
-            self._in_memory_commits_cache = cache_data
-            self._in_memory_commits_timestamp = now
-
-            return all_commits[:limit]
         except (
             requests.RequestException,
             ValueError,
@@ -182,6 +154,18 @@ class PrereleaseHistoryManager:
         ) as e:
             logger.warning("Could not fetch repo commits (%s): %s", type(e).__name__, e)
             return []
+
+        cache_data = {
+            "commits": all_commits,
+            "cached_at": now.isoformat(),
+        }
+        if cache_manager.atomic_write_json(cache_file, cache_data):
+            logger.debug("Saved %d prerelease commits to cache", len(all_commits))
+
+        self._in_memory_commits_cache = cache_data
+        self._in_memory_commits_timestamp = now
+
+        return all_commits[:limit]
 
     @staticmethod
     def _create_default_prerelease_entry(

@@ -6,14 +6,12 @@ disk writes when data hasn't changed.
 
 import json
 import tempfile
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from fetchtastic.download.cache import CacheManager
-from fetchtastic.download.prerelease_history import PrereleaseHistoryManager
 
 
 @pytest.mark.unit
