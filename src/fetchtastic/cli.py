@@ -28,6 +28,9 @@ from fetchtastic.constants import (
 )
 from fetchtastic.download import cli_integration as download_cli_integration
 from fetchtastic.download.repository import RepositoryDownloader
+from fetchtastic.utils import (
+    display_banner,
+)
 from fetchtastic.utils import get_api_request_summary as _get_api_request_summary
 from fetchtastic.utils import (
     reset_api_tracking,
@@ -367,6 +370,7 @@ def main():
     args = parser.parse_args()
 
     if args.command == "setup":
+        display_banner()
         # Display version information
         current_version, latest_version, update_available = display_version_info()
 
@@ -417,6 +421,7 @@ def main():
             if update_available and latest_version:
                 _display_update_reminder(latest_version)
     elif args.command == "download":
+        display_banner()
         config, integration = _prepare_command_run()
         if integration is None or config is None:
             sys.exit(1)
@@ -470,6 +475,7 @@ def main():
         # Run the clean process
         run_clean()
     elif args.command == "version":
+        display_banner()
         # Get version information
         current_version, latest_version, update_available = display_version_info()
 
@@ -492,6 +498,7 @@ def main():
             subparsers,
         )
     elif args.command == "repo":
+        display_banner()
         # Display version information
         current_version, latest_version, update_available = display_version_info()
 
