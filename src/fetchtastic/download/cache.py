@@ -503,11 +503,7 @@ class CacheManager:
         """
         if not params:
             return url
-        filtered = {
-            k: v
-            for k, v in params.items()
-            if v is not None and k not in ("page", "per_page")
-        }
+        filtered = {k: v for k, v in params.items() if v is not None and k != "page"}
         if not filtered:
             return url
         return f"{url}?{urlencode(filtered)}"

@@ -295,20 +295,29 @@ class TestURLCacheKey:
         assert result == "https://api.github.com/repos/owner/repo/releases"
 
     def test_build_url_cache_key_with_params(self):
-        """Test building cache key with parameters (excludes pagination params)."""
+        """Test building cache key with parameters (excludes page param only)."""
         params = {"per_page": 100, "page": 1}
         result = CacheManager.build_url_cache_key(
             "https://api.github.com/repos/owner/repo/releases", params
         )
-        assert result == "https://api.github.com/repos/owner/repo/releases"
+        assert result == "https://api.github.com/repos/owner/repo/releases?per_page=100"
+
+    def test_build_url_cache_key_different_per_page(self):
+        """Test that different per_page values generate different cache keys."""
+        url = "https://api.github.com/repos/owner/repo/releases"
+        key1 = CacheManager.build_url_cache_key(url, {"per_page": 10})
+        key2 = CacheManager.build_url_cache_key(url, {"per_page": 20})
+        assert key1 == f"{url}?per_page=10"
+        assert key2 == f"{url}?per_page=20"
+        assert key1 != key2, "Different per_page should generate different keys"
 
     def test_build_url_cache_key_none_params(self):
-        """Test building cache key with None parameters (excludes pagination params)."""
+        """Test building cache key with None values filtered and per_page retained."""
         params = {"per_page": 100, "token": None}
         result = CacheManager.build_url_cache_key(
             "https://api.github.com/repos/owner/repo/releases", params
         )
-        assert result == "https://api.github.com/repos/owner/repo/releases"
+        assert result == "https://api.github.com/repos/owner/repo/releases?per_page=100"
 
 
 class TestReleasesCache:
