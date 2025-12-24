@@ -670,12 +670,6 @@ class CacheManager:
 
         is_unchanged = old_normalized == new_normalized
 
-        if is_unchanged:
-            logger.debug(
-                "Normalized releases data unchanged for %s - updating cache to extend freshness",
-                url_cache_key,
-            )
-
         cache[url_cache_key] = {
             "releases": releases,
             "cached_at": now.isoformat(),
