@@ -613,6 +613,7 @@ class CacheManager:
             old_tags = {r.get("tag_name") for r in old_releases if isinstance(r, dict)}
             new_tags = {r.get("tag_name") for r in releases if isinstance(r, dict)}
             tags_equal = old_tags == new_tags
+            full_equal = old_releases == releases
 
             logger.debug(
                 "Cache comparison for %s: old=%d entries, new=%d entries, tags_equal=%s, full_equal=%s",
@@ -620,8 +621,36 @@ class CacheManager:
                 len(old_releases),
                 len(releases),
                 tags_equal,
-                old_releases == releases,
+                full_equal,
             )
+
+            # If tags match but full data doesn't, find which field differs
+            if tags_equal and not full_equal and len(old_releases) == len(releases):
+                for i, (old, new) in enumerate(zip(old_releases, releases)):
+                    if old != new:
+                        # Compare common fields to find difference
+                        diff_fields = []
+                        for key in old.keys():
+                            if key not in new:
+                                diff_fields.append(f"{key}=missing in new")
+                            elif old[key] != new[key]:
+                                old_val = (
+                                    str(old[key])[:50]
+                                    if old[key] is not None
+                                    else "None"
+                                )
+                                new_val = (
+                                    str(new[key])[:50]
+                                    if new[key] is not None
+                                    else "None"
+                                )
+                                diff_fields.append(f"{key}='{old_val}'!='{new_val}'")
+                        logger.debug(
+                            "Release %d differs: %s",
+                            i,
+                            ", ".join(diff_fields[:3]) if diff_fields else "unknown",
+                        )
+                        break
 
         # Only write file if data has changed (skip write to reduce I/O when data unchanged)
         if old_releases == releases:
