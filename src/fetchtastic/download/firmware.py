@@ -14,6 +14,8 @@ from typing import Any, Dict, List, Optional
 import requests
 
 from fetchtastic.constants import (
+    DEVICE_HARDWARE_API_URL,
+    DEVICE_HARDWARE_CACHE_HOURS,
     ERROR_TYPE_EXTRACTION,
     ERROR_TYPE_FILESYSTEM,
     ERROR_TYPE_NETWORK,
@@ -78,6 +80,15 @@ class FirmwareReleaseDownloader(BaseDownloader):
             self.latest_release_file
         )
 
+        device_api_config = self.config.get("DEVICE_HARDWARE_API", {})
+        self.device_manager = DeviceHardwareManager(
+            enabled=device_api_config.get("enabled", True),
+            cache_hours=device_api_config.get(
+                "cache_hours", DEVICE_HARDWARE_CACHE_HOURS
+            ),
+            api_url=device_api_config.get("api_url", DEVICE_HARDWARE_API_URL),
+        )
+
     def get_target_path_for_release(self, release_tag: str, file_name: str) -> str:
         """
         Compute the sanitized filesystem path for a firmware asset inside the downloader's firmware directory and ensure the version directory exists.
@@ -123,6 +134,13 @@ class FirmwareReleaseDownloader(BaseDownloader):
             releases_data = self.cache_manager.read_releases_cache_entry(
                 url_key, expiry_seconds=int(RELEASES_CACHE_EXPIRY_HOURS * 3600)
             )
+
+            if releases_data is not None:
+                logger.debug(
+                    "Using cached releases for %s (%d releases)",
+                    self.firmware_releases_url,
+                    len(releases_data),
+                )
 
             if releases_data is None:
                 response = make_github_api_request(
@@ -785,8 +803,6 @@ class FirmwareReleaseDownloader(BaseDownloader):
         target_dir = os.path.join(prerelease_base_dir, safe_dir)
         os.makedirs(target_dir, exist_ok=True)
 
-        device_manager = DeviceHardwareManager()
-
         contents = self._fetch_prerelease_directory_listing(
             remote_dir, force_refresh=force_refresh
         )
@@ -809,7 +825,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 )
                 continue
             if selected_patterns and not matches_extract_patterns(
-                name, selected_patterns, device_manager=device_manager
+                name, selected_patterns, device_manager=self.device_manager
             ):
                 continue
             matching.append(item)
@@ -1269,11 +1285,16 @@ class FirmwareReleaseDownloader(BaseDownloader):
         # No tracking file or unreadable; default to download
         return True
 
-    def manage_prerelease_tracking_files(self) -> None:
+    def manage_prerelease_tracking_files(
+        self, cached_releases: Optional[List[Release]] = None
+    ) -> None:
         """
-        Scan stored prerelease tracking files and remove entries that are superseded or expired.
+        Remove or expire local prerelease tracking files that are superseded by current repository prereleases.
 
-        This updates the prerelease tracking directory by comparing stored tracking data with the current prereleases discovered from the remote repository and delegating cleanup of outdated or expired tracking files to the prerelease history manager.
+        Compare stored prerelease tracking data with the set of current prereleases and delegate removal of outdated or expired tracking files to the PrereleaseHistoryManager.
+
+        Parameters:
+            cached_releases (Optional[List[Release]]): Optional list of Release objects to use instead of fetching releases from the remote API.
         """
         tracking_dir = os.path.dirname(self.get_prerelease_tracking_file())
 
@@ -1316,7 +1337,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 existing_prereleases.append(tracking_data)
 
         # Get current prereleases from GitHub (if available)
-        current_releases = self.get_releases(limit=10)
+        # Use cached releases if provided to avoid redundant API calls
+        current_releases = cached_releases or self.get_releases(limit=10)
         current_prereleases = self.handle_prereleases(current_releases)
 
         # Create tracking data for current prereleases

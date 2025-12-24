@@ -416,9 +416,9 @@ class BaseDownloader(Downloader, ABC):
     def is_asset_complete(self, release_tag: str, asset: Asset) -> bool:
         """
         Check whether the downloaded asset for a release exists and is valid.
-        
+
         Performs an existence check, verifies the file size when provided by the asset, verifies integrity using stored hash records, and performs a ZIP integrity check for .zip files.
-        
+
         Returns:
             True if the file exists and passes all applicable checks, False otherwise.
         """
@@ -446,7 +446,7 @@ class BaseDownloader(Downloader, ABC):
         self, release_tag: str, file_name: str, expected_size: int
     ) -> bool:
         """
-        Decide whether a release asset file must be downloaded.
+        Determine whether the specified release asset must be downloaded.
 
         Parameters:
             release_tag (str): Release tag used to locate the existing file.
@@ -454,7 +454,7 @@ class BaseDownloader(Downloader, ABC):
             expected_size (int): Expected file size in bytes; used to detect incomplete or mismatched files.
 
         Returns:
-            true if the file should be downloaded, false otherwise.
+            True if the file should be downloaded, False otherwise.
         """
         existing_path = self.get_existing_file_path(release_tag, file_name)
         if not existing_path:

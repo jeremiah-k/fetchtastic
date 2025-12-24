@@ -689,13 +689,15 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
     def should_download_prerelease(self, prerelease_tag: str) -> bool:
         """
-        Decides whether the given prerelease tag should be downloaded based on configuration and existing prerelease tracking.
+        Determine whether the provided prerelease tag should be downloaded based on configuration and existing prerelease tracking.
+
+        Checks the CHECK_APK_PRERELEASES / CHECK_PRERELEASES configuration and, if a valid prerelease tracking file exists, compares the given prerelease tag to the tracked prerelease to decide if it is newer.
 
         Parameters:
-            prerelease_tag (str): The prerelease tag to evaluate.
+            prerelease_tag (str): The prerelease tag or identifier to evaluate.
 
         Returns:
-            bool: `True` if prereleases are enabled and either no valid tracking entry exists or `prerelease_tag` is newer than the tracked prerelease; `False` if prereleases are disabled or `prerelease_tag` is not newer than the tracked prerelease.
+            `True` if prereleases are enabled and either no valid tracking entry exists or `prerelease_tag` is newer than the tracked prerelease, `False` otherwise.
         """
         # Check if prereleases are enabled in config
         check_prereleases = self.config.get(
@@ -727,11 +729,16 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         # No tracking file or unreadable; default to download
         return True
 
-    def manage_prerelease_tracking_files(self) -> None:
+    def manage_prerelease_tracking_files(
+        self, cached_releases: Optional[List[Release]] = None
+    ) -> None:
         """
         Remove Android prerelease tracking files that are superseded or expired when prerelease handling is enabled.
 
-        Scans the prerelease tracking directory for existing tracking JSON files, determines the currently relevant prereleases from remote releases, builds corresponding tracking entries, and delegates deletion of superseded or expired tracking files to the PrereleaseHistoryManager. No value is returned.
+        Scans for prerelease tracking directory for existing tracking JSON files, determines the currently relevant prereleases from remote releases, builds corresponding tracking entries, and delegates deletion of superseded or expired tracking files to the PrereleaseHistoryManager. No value is returned.
+
+        Parameters:
+            cached_releases (Optional[List[Release]]): Optional cached releases to avoid redundant API calls.
         """
         check_prereleases = self.config.get(
             "CHECK_APK_PRERELEASES", self.config.get("CHECK_PRERELEASES", False)
@@ -787,7 +794,8 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                 existing_prereleases.append(tracking_data)
 
         # Get current prereleases from GitHub (if available)
-        current_releases = self.get_releases(limit=10)
+        # Use cached releases if provided to avoid redundant API calls
+        current_releases = cached_releases or self.get_releases(limit=10)
         current_prereleases = self.handle_prereleases(current_releases)
 
         # Create tracking data for current prereleases using shared helper

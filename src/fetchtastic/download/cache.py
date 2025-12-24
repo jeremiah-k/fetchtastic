@@ -30,7 +30,7 @@ from fetchtastic.utils import (
 from .files import _atomic_write, _atomic_write_json
 
 
-def _parse_iso_datetime_utc(value: Any) -> Optional[datetime]:
+def parse_iso_datetime_utc(value: Any) -> Optional[datetime]:
     """
     Parse an ISO 8601 timestamp and normalize it to UTC.
 
@@ -254,7 +254,7 @@ class CacheManager:
         try:
             expires_at_str = cache_data.get("expires_at")
             if expires_at_str:
-                expires_at = _parse_iso_datetime_utc(expires_at_str)
+                expires_at = parse_iso_datetime_utc(expires_at_str)
                 if expires_at and datetime.now(timezone.utc) > expires_at:
                     logger.debug(f"Cache expired for {cache_file}")
                     return None
@@ -304,7 +304,7 @@ class CacheManager:
             data = cached.get(data_field_name)
             cached_at_raw = cached.get("cached_at")
             if data is not None and cached_at_raw:
-                cached_at = _parse_iso_datetime_utc(cached_at_raw)
+                cached_at = parse_iso_datetime_utc(cached_at_raw)
                 if cached_at:
                     age_s = (now - cached_at).total_seconds()
                     if age_s < cache_expiry_seconds:
@@ -493,17 +493,17 @@ class CacheManager:
     @staticmethod
     def build_url_cache_key(url: str, params: Optional[Dict[str, Any]] = None) -> str:
         """
-        Create a stable cache key by appending URL-encoded query parameters to the base URL.
+        Create a stable cache key by appending URL-encoded query parameters to base URL.
 
         Parameters:
-            params (Optional[Dict[str, Any]]): Mapping of query parameter names to values; entries with value `None` are omitted.
+            params (Optional[Dict[str, Any]]): Mapping of query parameter names to values; entries with value None are omitted. The 'page' pagination parameter is excluded as it doesn't affect the data identity, but 'per_page' is retained since it affects response content.
 
         Returns:
-            The original `url` if `params` is None or contains no non-None values, otherwise the `url` followed by `?` and the URL-encoded parameters.
+            The original `url` if `params` is None or contains no non-None values, otherwise, `url` followed by `?` and URL-encoded parameters (excluding 'page' pagination parameter).
         """
         if not params:
             return url
-        filtered = {k: v for k, v in params.items() if v is not None}
+        filtered = {k: v for k, v in params.items() if v is not None and k != "page"}
         if not filtered:
             return url
         return f"{url}?{urlencode(filtered)}"
@@ -560,26 +560,58 @@ class CacheManager:
             track_api_cache_miss()
             return None
 
-        cached_at = _parse_iso_datetime_utc(cached_at_raw)
+        cached_at = parse_iso_datetime_utc(cached_at_raw)
         if not cached_at:
             track_api_cache_miss()
             return None
 
         age_s = (now - cached_at).total_seconds()
         if age_s >= expiry_seconds:
+            logger.debug(
+                "Releases cache expired for %s (age %.0fs >= %ss)",
+                url_cache_key,
+                age_s,
+                expiry_seconds,
+            )
             track_api_cache_miss()
             return None
 
         track_api_cache_hit()
         return releases
 
+    @staticmethod
+    def _normalize_release_for_comparison(release: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Normalize a release object for cache comparison by excluding dynamic fields.
+
+        Only includes fields that matter for detecting actual release changes:
+        - tag_name (release identifier)
+        - prerelease (release type)
+        - published_at (release date)
+        - name, body (release metadata)
+        Excludes assets which may contain dynamic URLs/timestamps.
+
+        Parameters:
+            release (Dict[str, Any]): Raw release object from GitHub API.
+
+        Returns:
+            Dict[str, Any]: Normalized release with only stable fields.
+        """
+        return {
+            "tag_name": release.get("tag_name"),
+            "prerelease": release.get("prerelease"),
+            "published_at": release.get("published_at"),
+            "name": release.get("name"),
+            "body": release.get("body"),
+        }
+
     def write_releases_cache_entry(
         self, url_cache_key: str, releases: List[Dict[str, Any]]
     ) -> None:
         """
-        Store a list of release entries under a URL-derived cache key in the releases cache file.
+        Store a list of release entries under a URL-derived cache key in the releases cache.
 
-        Writes the provided releases list into the releases cache, keyed by `url_cache_key`, and records the current UTC timestamp as `cached_at` to indicate when the entry was saved.
+        Writes the provided releases list into the releases cache, keyed by `url_cache_key`, and records the current UTC timestamp as `cached_at` to indicate when the entry was saved. Even if the normalized releases data is unchanged, the cache entry is rewritten to update its `cached_at` timestamp and extend its freshness.
 
         Parameters:
             url_cache_key (str): Stable cache key derived from a request URL and parameters.
@@ -590,12 +622,68 @@ class CacheManager:
         if not isinstance(cache, dict):
             cache = {}
 
+        old_releases = cache.get(url_cache_key, {}).get("releases")
+
+        now = datetime.now(timezone.utc)
+
+        # Normalize releases for comparison (exclude dynamic fields like asset URLs)
+        old_normalized = (
+            [
+                self._normalize_release_for_comparison(r)
+                for r in old_releases
+                if isinstance(r, dict)
+            ]
+            if isinstance(old_releases, list)
+            else None
+        )
+        new_normalized = [
+            self._normalize_release_for_comparison(r)
+            for r in releases
+            if isinstance(r, dict)
+        ]
+
+        # Log comparison details
+        if old_normalized is not None:
+            old_tags = {r.get("tag_name") for r in old_normalized}
+            new_tags = {r.get("tag_name") for r in new_normalized}
+            tags_equal = old_tags == new_tags
+            normalized_equal = old_normalized == new_normalized
+
+            logger.debug(
+                "Cache comparison for %s: old=%d, new=%d, tags_equal=%s, normalized_equal=%s",
+                url_cache_key,
+                len(old_normalized),
+                len(new_normalized),
+                tags_equal,
+                normalized_equal,
+            )
+        else:
+            logger.debug(
+                "First cache write for %s: %d releases",
+                url_cache_key,
+                len(new_normalized),
+            )
+
+        is_unchanged = old_normalized == new_normalized
+
         cache[url_cache_key] = {
             "releases": releases,
-            "cached_at": datetime.now(timezone.utc).isoformat(),
+            "cached_at": now.isoformat(),
         }
         if self.atomic_write_json(cache_file, cache):
-            logger.debug("Saved %d releases entries to cache", len(cache))
+            if is_unchanged:
+                logger.debug(
+                    "Extended releases cache freshness for %s (total %d cache entries)",
+                    url_cache_key,
+                    len(cache),
+                )
+            else:
+                logger.debug(
+                    "Saved %d releases to cache entry for %s (total %d cache entries)",
+                    len(releases),
+                    url_cache_key,
+                    len(cache),
+                )
 
     def clear_all_caches(self) -> bool:
         """
@@ -665,7 +753,7 @@ class CacheManager:
 
         if ts_key:
             try:
-                ts_val = _parse_iso_datetime_utc(cache_data[ts_key])
+                ts_val = parse_iso_datetime_utc(cache_data[ts_key])
                 if ts_val is None:
                     return None
                 if datetime.now(timezone.utc) - ts_val > timedelta(hours=expiry_hours):
@@ -787,7 +875,7 @@ class CacheManager:
                 # New format: [timestamp_iso, cached_at_iso]
                 try:
                     timestamp_str, cached_at_str = cache_value
-                    cached_at = _parse_iso_datetime_utc(cached_at_str)
+                    cached_at = parse_iso_datetime_utc(cached_at_str)
                     if cached_at is None:
                         continue
                     age = now - cached_at
@@ -804,7 +892,7 @@ class CacheManager:
                     timestamp_str = cache_value.get("timestamp")
                     cached_at_str = cache_value.get("cached_at")
                     if timestamp_str and cached_at_str:
-                        cached_at = _parse_iso_datetime_utc(cached_at_str)
+                        cached_at = parse_iso_datetime_utc(cached_at_str)
                         if cached_at is None:
                             continue
                         age = now - cached_at
@@ -863,8 +951,8 @@ class CacheManager:
             )
             if entry_valid:
                 timestamp_str, cached_at_str = entry
-                cached_at = _parse_iso_datetime_utc(cached_at_str)
-                timestamp = _parse_iso_datetime_utc(timestamp_str)
+                cached_at = parse_iso_datetime_utc(cached_at_str)
+                timestamp = parse_iso_datetime_utc(timestamp_str)
                 if cached_at is not None and timestamp is not None:
                     age = now - cached_at
                     if (
@@ -900,7 +988,7 @@ class CacheManager:
             )
             if not timestamp_str:
                 return None
-            timestamp = _parse_iso_datetime_utc(timestamp_str)
+            timestamp = parse_iso_datetime_utc(timestamp_str)
             if timestamp is None:
                 return None
             cache[cache_key] = [timestamp.isoformat(), now.isoformat()]
@@ -967,7 +1055,7 @@ def _load_json_cache_with_expiry(
                     )
                     continue
 
-                cached_at = _parse_iso_datetime_utc(cache_entry.get("cached_at"))
+                cached_at = parse_iso_datetime_utc(cache_entry.get("cached_at"))
                 if cached_at is None:
                     continue
                 age = current_time - cached_at

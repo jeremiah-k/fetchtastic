@@ -781,7 +781,7 @@ def _remove_legacy_hash_file(file_path: str) -> None:
 
 
 def save_file_hash(file_path: str, hash_value: str) -> None:
-    """
+    r"""
     Persist the SHA-256 hex digest for a file into a cache-backed sidecar file.
 
     The sidecar is created at the path returned by get_hash_file_path(file_path) and contains a single line in the format:

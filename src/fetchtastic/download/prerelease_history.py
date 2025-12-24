@@ -32,6 +32,7 @@ from fetchtastic.constants import (
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import make_github_api_request
 
+from .cache import parse_iso_datetime_utc
 from .version import VersionManager
 
 
@@ -47,9 +48,11 @@ class PrereleaseHistoryManager:
         """
         Initialize the PrereleaseHistoryManager and its version utilities.
 
-        Creates and stores a VersionManager instance on self.version_manager for version-related operations.
+        Also creates a VersionManager instance and initializes the in-memory commit cache and its timestamp to None.
         """
         self.version_manager = VersionManager()
+        self._in_memory_commits_cache: Optional[Dict[str, Any]] = None
+        self._in_memory_commits_timestamp: Optional[datetime] = None
 
     def fetch_recent_repo_commits(
         self,
@@ -61,7 +64,7 @@ class PrereleaseHistoryManager:
         force_refresh: bool = False,
     ) -> List[Dict[str, Any]]:
         """
-        Fetch recent commits for the meshtastic.github.io repository, using a local cache with expiry to avoid unnecessary API requests.
+        Fetch recent commits for meshtastic.github.io repository, using a local cache with expiry to avoid unnecessary API requests.
 
         Parameters:
             limit (int): Maximum number of commits to return; values less than 1 are treated as 1.
@@ -71,34 +74,42 @@ class PrereleaseHistoryManager:
             force_refresh (bool): If True, ignore any cached data and fetch fresh commits from the API.
 
         Returns:
-            List[Dict[str, Any]]: A list of commit objects (as returned by the GitHub API), up to `limit`. Returns an empty list on failure.
+            List[Dict[str, Any]]: A list of commit objects (as returned by GitHub API), up to `limit`. Returns an empty list on failure.
         """
         limit = max(1, int(limit))
         cache_file = os.path.join(
             cache_manager.cache_dir, PRERELEASE_COMMITS_CACHE_FILE
         )
 
+        now = datetime.now(timezone.utc)
+
         if not force_refresh:
-            cached = cache_manager.read_json(cache_file)
-            if isinstance(cached, dict):
-                cached_at = cached.get("cached_at")
-                commits = cached.get("commits")
-                if cached_at and isinstance(commits, list):
-                    try:
-                        cached_at_dt = datetime.fromisoformat(
-                            str(cached_at).replace("Z", "+00:00")
-                        )
-                        if cached_at_dt.tzinfo is None:
-                            cached_at_dt = cached_at_dt.replace(tzinfo=timezone.utc)
-                        age_seconds = (
-                            datetime.now(timezone.utc) - cached_at_dt
-                        ).total_seconds()
-                        if age_seconds < PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS:
-                            logger.debug("Using cached prerelease commit history")
-                            return commits[:limit]
-                        logger.debug("Commits cache expired (age: %.1fs)", age_seconds)
-                    except (ValueError, TypeError):
-                        pass
+            if (
+                self._in_memory_commits_cache is not None
+                and self._in_memory_commits_timestamp is not None
+                and (now - self._in_memory_commits_timestamp).total_seconds()
+                < PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS
+            ):
+                logger.debug(
+                    "Using in-memory prerelease commit cache (cached %.0fs ago)",
+                    (now - self._in_memory_commits_timestamp).total_seconds(),
+                )
+                return self._in_memory_commits_cache.get("commits", [])[:limit]
+
+        cached = cache_manager.read_json(cache_file)
+        if isinstance(cached, dict):
+            cached_at = cached.get("cached_at")
+            commits = cached.get("commits")
+            if cached_at and isinstance(commits, list):
+                cached_at_dt = parse_iso_datetime_utc(cached_at)
+                if cached_at_dt:
+                    age_seconds = (now - cached_at_dt).total_seconds()
+                    if age_seconds < PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS:
+                        logger.debug("Using cached prerelease commit history")
+                        self._in_memory_commits_cache = cached
+                        self._in_memory_commits_timestamp = cached_at_dt
+                        return commits[:limit]
+                    logger.debug("Commits cache expired (age: %.1fs)", age_seconds)
 
         logger.debug("Fetching commits from API (cache miss/expired)")
 
@@ -133,14 +144,6 @@ class PrereleaseHistoryManager:
                     break
                 page += 1
 
-            cache_manager.atomic_write_json(
-                cache_file,
-                {
-                    "commits": all_commits,
-                    "cached_at": datetime.now(timezone.utc).isoformat(),
-                },
-            )
-            return all_commits[:limit]
         except (
             requests.RequestException,
             ValueError,
@@ -151,15 +154,27 @@ class PrereleaseHistoryManager:
             logger.warning("Could not fetch repo commits (%s): %s", type(e).__name__, e)
             return []
 
+        now_after_fetch = datetime.now(timezone.utc)
+        cache_data = {
+            "commits": all_commits,
+            "cached_at": now_after_fetch.isoformat(),
+        }
+        if cache_manager.atomic_write_json(cache_file, cache_data):
+            logger.debug("Saved %d prerelease commits to cache", len(all_commits))
+        self._in_memory_commits_cache = cache_data
+        self._in_memory_commits_timestamp = now_after_fetch
+
+        return all_commits[:limit]
+
     @staticmethod
     def _create_default_prerelease_entry(
         *, directory: str, identifier: str, base_version: str, commit_hash: str
     ) -> Dict[str, Any]:
         """
-        Create a default prerelease entry dictionary populated with the provided identifiers and default metadata fields.
+        Create a default prerelease history entry populated with the provided identifiers and unset metadata fields.
 
         Returns:
-            dict: A prerelease entry with keys:
+            dict: Prerelease entry with keys:
                 - directory (str): directory name or path
                 - identifier (str): prerelease identifier
                 - base_version (str): base version string
@@ -379,16 +394,15 @@ class PrereleaseHistoryManager:
             cache = {}
 
         cached_entry = cache.get(expected_version) if not force_refresh else None
+        cache_was_stale = False
         if isinstance(cached_entry, dict) and not force_refresh:
             entries = cached_entry.get("entries")
             last_checked_raw = cached_entry.get("last_checked") or cached_entry.get(
                 "cached_at"
             )
             if isinstance(entries, list) and last_checked_raw:
-                try:
-                    last_checked = datetime.fromisoformat(
-                        str(last_checked_raw).replace("Z", "+00:00")
-                    )
+                last_checked = parse_iso_datetime_utc(last_checked_raw)
+                if last_checked:
                     age_s = (now - last_checked).total_seconds()
                     if age_s < PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS:
                         logger.debug(
@@ -397,14 +411,13 @@ class PrereleaseHistoryManager:
                             age_s,
                         )
                         return entries
+                    cache_was_stale = True
                     logger.debug(
                         "Prerelease history cache stale for %s (age %.0fs >= %ss); extending cache",
                         expected_version,
                         age_s,
                         PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS,
                     )
-                except ValueError:
-                    pass
 
         commits = self.fetch_recent_repo_commits(
             max_commits,
@@ -417,14 +430,49 @@ class PrereleaseHistoryManager:
             expected_version, commits
         )
 
+        old_version_data = cache.get(expected_version)
+        old_entries = cache.get(expected_version, {}).get("entries")
+
+        # Only write if data has changed
+        if old_entries == entries:
+            if cache_was_stale and isinstance(old_version_data, dict):
+                logger.debug(
+                    "Prerelease history data unchanged for %s; updating last_checked",
+                    expected_version,
+                )
+                now_after_build = datetime.now(timezone.utc)
+                cache[expected_version] = {
+                    "entries": entries,
+                    "cached_at": old_version_data.get("cached_at"),
+                    "last_checked": now_after_build.isoformat(),
+                    "shas": sorted(shas),
+                }
+                if cache_manager.atomic_write_json(history_file, cache):
+                    logger.debug(
+                        "Extended prerelease history cache freshness for %s",
+                        expected_version,
+                    )
+                return entries
+            logger.debug(
+                "Prerelease history cache unchanged for %s (total %d entries)",
+                expected_version,
+                len(cache),
+            )
+            return entries
+
+        now_after_build = datetime.now(timezone.utc)
         cache[expected_version] = {
             "entries": entries,
-            "cached_at": now.isoformat(),
-            "last_checked": now.isoformat(),
+            "cached_at": now_after_build.isoformat(),
+            "last_checked": now_after_build.isoformat(),
             "shas": sorted(shas),
         }
-        cache_manager.atomic_write_json(history_file, cache)
-        logger.debug("Saved %d prerelease commit history entries to cache", len(cache))
+        if cache_manager.atomic_write_json(history_file, cache):
+            logger.debug(
+                "Saved %d prerelease history entries to cache for %s",
+                len(entries),
+                expected_version,
+            )
         return entries
 
     def get_latest_active_prerelease_from_history(
@@ -437,13 +485,13 @@ class PrereleaseHistoryManager:
         force_refresh: bool = False,
     ) -> Tuple[Optional[str], List[Dict[str, Any]]]:
         """
-        Get the most recent active prerelease directory for a given base version and return the full prerelease history.
+        Return the most recent active prerelease directory for a base version and the full prerelease history.
 
         Parameters:
             expected_version (str): Base release version to match when selecting prerelease entries.
 
         Returns:
-            (latest_dir, entries): `latest_dir` is the directory string of the newest active prerelease for `expected_version`, or `None` if no active prerelease exists; `entries` is the list of prerelease history entry dictionaries.
+            tuple: `latest_dir` is the directory string of the newest active prerelease for `expected_version`, or `None` if no active prerelease exists; `entries` is the list of prerelease history entry dictionaries.
         """
         entries = self.get_prerelease_commit_history(
             expected_version,
