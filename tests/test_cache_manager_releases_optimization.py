@@ -48,12 +48,12 @@ class TestCacheManagerReleasesOptimization:
                 found_log = False
                 for call in mock_logger.debug.call_args_list:
                     msg = call.args[0] if call.args else ""
-                    if "unchanged" in msg and "Releases data" in msg:
+                    if "unchanged" in msg and "releases data" in msg.lower():
                         found_log = True
                         break
                 assert (
                     found_log
-                ), "Expected 'Releases data unchanged' debug log not found"
+                ), "Expected 'releases data unchanged' debug log not found"
 
             cached_data = json.loads(cache_file.read_text())
             assert cached_data[url_cache_key]["cached_at"] != original_cached_at
@@ -137,7 +137,6 @@ class TestCacheManagerReleasesOptimization:
 
     def test_build_url_cache_key_excludes_pagination_params(self):
         """Test that build_url_cache_key excludes pagination parameters."""
-        CacheManager()
         base_url = "https://api.github.com/repos/meshtastic/firmware/releases"
 
         key1 = CacheManager.build_url_cache_key(base_url, {"per_page": 8})

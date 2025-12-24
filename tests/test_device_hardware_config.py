@@ -39,21 +39,6 @@ def test_config():
     }
 
 
-@pytest.fixture
-def firmware_downloader(test_config):
-    """
-    Create a FirmwareReleaseDownloader configured for tests.
-
-    Parameters:
-        test_config (dict): Configuration dictionary to initialize the downloader.
-
-    Returns:
-        FirmwareReleaseDownloader: Instance initialized with the provided configuration and a new CacheManager.
-    """
-    cache_manager = CacheManager()
-    return FirmwareReleaseDownloader(test_config, cache_manager)
-
-
 class TestDeviceHardwareManagerConfig:
     """Test suite for DeviceHardwareManager configuration in FirmwareDownloader."""
 
@@ -66,7 +51,7 @@ class TestDeviceHardwareManagerConfig:
         mock_dhm_class.return_value = mock_dhm_instance
 
         cache_manager = CacheManager()
-        downloader = FirmwareReleaseDownloader(test_config, cache_manager)
+        _downloader = FirmwareReleaseDownloader(test_config, cache_manager)
 
         mock_dhm_class.assert_called_once()
         call_kwargs = mock_dhm_class.call_args[1]
@@ -88,7 +73,7 @@ class TestDeviceHardwareManagerConfig:
             "api_url": "https://custom.example.com/api",
         }
         cache_manager = CacheManager()
-        downloader = FirmwareReleaseDownloader(test_config, cache_manager)
+        _downloader = FirmwareReleaseDownloader(test_config, cache_manager)
 
         mock_dhm_class.assert_called_once()
         call_kwargs = mock_dhm_class.call_args[1]

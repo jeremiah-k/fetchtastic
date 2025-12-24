@@ -668,35 +668,32 @@ class CacheManager:
                 len(new_normalized),
             )
 
-        # Only write file if normalized releases data has changed (skip write to reduce I/O when data unchanged)
-        if old_normalized == new_normalized:
+        is_unchanged = old_normalized == new_normalized
+
+        if is_unchanged:
             logger.debug(
-                "Releases data unchanged for %s - updating cached_at to extend freshness",
+                "Normalized releases data unchanged for %s - updating cache to extend freshness",
                 url_cache_key,
             )
-            cache[url_cache_key] = {
-                "releases": releases,
-                "cached_at": now.isoformat(),
-            }
-            if self.atomic_write_json(cache_file, cache):
-                logger.debug(
-                    "Extended releases cache freshness for %s (total %d cache entries)",
-                    url_cache_key,
-                    len(cache),
-                )
-            return
 
         cache[url_cache_key] = {
             "releases": releases,
             "cached_at": now.isoformat(),
         }
         if self.atomic_write_json(cache_file, cache):
-            logger.debug(
-                "Saved %d releases to cache entry for %s (total %d cache entries)",
-                len(releases),
-                url_cache_key,
-                len(cache),
-            )
+            if is_unchanged:
+                logger.debug(
+                    "Extended releases cache freshness for %s (total %d cache entries)",
+                    url_cache_key,
+                    len(cache),
+                )
+            else:
+                logger.debug(
+                    "Saved %d releases to cache entry for %s (total %d cache entries)",
+                    len(releases),
+                    url_cache_key,
+                    len(cache),
+                )
 
     def clear_all_caches(self) -> bool:
         """
