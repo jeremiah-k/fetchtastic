@@ -45,9 +45,9 @@ class PrereleaseHistoryManager:
 
     def __init__(self):
         """
-        Initialize PrereleaseHistoryManager and its version utilities.
-
-        Creates and stores a VersionManager instance on self.version_manager for version-related operations.
+        Initialize the PrereleaseHistoryManager and its version utilities.
+        
+        Also creates a VersionManager instance and initializes the in-memory commit cache and its timestamp to None.
         """
         self.version_manager = VersionManager()
         self._in_memory_commits_cache: Optional[Dict[str, Any]] = None
@@ -174,10 +174,10 @@ class PrereleaseHistoryManager:
         *, directory: str, identifier: str, base_version: str, commit_hash: str
     ) -> Dict[str, Any]:
         """
-        Create a default prerelease entry dictionary populated with the provided identifiers and default metadata fields.
-
+        Create a default prerelease history entry populated with the provided identifiers and unset metadata fields.
+        
         Returns:
-            dict: A prerelease entry with keys:
+            dict: Prerelease entry with keys:
                 - directory (str): directory name or path
                 - identifier (str): prerelease identifier
                 - base_version (str): base version string
@@ -475,13 +475,13 @@ class PrereleaseHistoryManager:
         force_refresh: bool = False,
     ) -> Tuple[Optional[str], List[Dict[str, Any]]]:
         """
-        Get the most recent active prerelease directory for a given base version and return the full prerelease history.
-
+        Return the most recent active prerelease directory for a base version and the full prerelease history.
+        
         Parameters:
             expected_version (str): Base release version to match when selecting prerelease entries.
-
+        
         Returns:
-            (latest_dir, entries): `latest_dir` is the directory string of the newest active prerelease for `expected_version`, or `None` if no active prerelease exists; `entries` is the list of prerelease history entry dictionaries.
+            tuple: `latest_dir` is the directory string of the newest active prerelease for `expected_version`, or `None` if no active prerelease exists; `entries` is the list of prerelease history entry dictionaries.
         """
         entries = self.get_prerelease_commit_history(
             expected_version,

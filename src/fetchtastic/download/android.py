@@ -689,13 +689,15 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
     def should_download_prerelease(self, prerelease_tag: str) -> bool:
         """
-        Decides whether the given prerelease tag should be downloaded based on configuration and existing prerelease tracking.
-
+        Determine whether the provided prerelease tag should be downloaded based on configuration and existing prerelease tracking.
+        
+        Checks the CHECK_APK_PRERELEASES / CHECK_PRERELEASES configuration and, if a valid prerelease tracking file exists, compares the given prerelease tag to the tracked prerelease to decide if it is newer.
+        
         Parameters:
-            prerelease_tag (str): The prerelease tag to evaluate.
-
+            prerelease_tag (str): The prerelease tag or identifier to evaluate.
+        
         Returns:
-            bool: `True` if prereleases are enabled and either no valid tracking entry exists or `prerelease_tag` is newer than the tracked prerelease; `False` if prereleases are disabled or `prerelease_tag` is not newer than the tracked prerelease.
+            `True` if prereleases are enabled and either no valid tracking entry exists or `prerelease_tag` is newer than the tracked prerelease, `False` otherwise.
         """
         # Check if prereleases are enabled in config
         check_prereleases = self.config.get(

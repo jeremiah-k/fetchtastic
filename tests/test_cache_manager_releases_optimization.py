@@ -106,7 +106,11 @@ class TestCacheManagerReleasesOptimization:
             assert len(cached_data[url_cache_key]["releases"]) == 1
 
     def test_write_releases_cache_entry_atomic_write_success(self):
-        """Test that write_releases_cache_entry logs on successful atomic write."""
+        """
+        Verify that write_releases_cache_entry records a debug log when an atomic write succeeds.
+        
+        Asserts that a debug message containing both "Saved" and "releases entries" is emitted.
+        """
         cache_manager = CacheManager()
 
         releases_data = [

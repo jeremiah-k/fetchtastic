@@ -1286,12 +1286,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
         self, cached_releases: Optional[List[Release]] = None
     ) -> None:
         """
-        Scan stored prerelease tracking files and remove entries that are superseded or expired.
-
-        This updates of prerelease tracking directory by comparing stored tracking data with current prereleases discovered from remote repository and delegating cleanup of outdated or expired tracking files to the prerelease history manager.
-
+        Remove or expire local prerelease tracking files that are superseded by current repository prereleases.
+        
+        Compare stored prerelease tracking data with the set of current prereleases and delegate removal of outdated or expired tracking files to the PrereleaseHistoryManager.
+        
         Parameters:
-            cached_releases (Optional[List[Release]]): Optional cached releases to avoid redundant API calls.
+            cached_releases (Optional[List[Release]]): Optional list of Release objects to use instead of fetching releases from the remote API.
         """
         tracking_dir = os.path.dirname(self.get_prerelease_tracking_file())
 

@@ -25,7 +25,14 @@ pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
 
 @pytest.fixture
 def test_config():
-    """Provide a test configuration dictionary."""
+    """
+    Provide a test configuration used by RepositoryDownloader tests.
+    
+    Returns:
+        dict: Test configuration with keys:
+            DOWNLOAD_DIR (str): base download directory path.
+            VERSIONS_TO_KEEP (int): number of versions to retain.
+    """
     return {
         "DOWNLOAD_DIR": "/tmp/test_repository",
         "VERSIONS_TO_KEEP": 2,
@@ -34,7 +41,15 @@ def test_config():
 
 @pytest.fixture
 def repository_downloader(test_config):
-    """Create a RepositoryDownloader instance for tests."""
+    """
+    Create a RepositoryDownloader configured for use in tests.
+    
+    Parameters:
+        test_config (dict): Test configuration containing DOWNLOAD_DIR and VERSIONS_TO_KEEP.
+    
+    Returns:
+        RepositoryDownloader: An instance of RepositoryDownloader configured with `test_config`.
+    """
     return RepositoryDownloader(test_config)
 
 

@@ -577,10 +577,10 @@ class CacheManager:
         self, url_cache_key: str, releases: List[Dict[str, Any]]
     ) -> None:
         """
-        Store a list of release entries under a URL-derived cache key in the releases cache file.
-
-        Writes the provided releases list into the releases cache, keyed by `url_cache_key`, and records the current UTC timestamp as `cached_at` to indicate when the entry was saved.
-
+        Store a list of release entries under a URL-derived cache key in the releases cache.
+        
+        If the releases data for the given key is unchanged, no file write is performed. When writing, the entry is saved with a `cached_at` UTC timestamp.
+        
         Parameters:
             url_cache_key (str): Stable cache key derived from a request URL and parameters.
             releases (List[Dict[str, Any]]): List of release objects to persist in the cache.
