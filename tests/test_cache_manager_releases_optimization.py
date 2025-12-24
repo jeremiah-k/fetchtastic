@@ -48,12 +48,12 @@ class TestCacheManagerReleasesOptimization:
                 found_log = False
                 for call in mock_logger.debug.call_args_list:
                     msg = call.args[0] if call.args else ""
-                    if "Releases cache unchanged" in msg:
+                    if "unchanged" in msg and "Releases data" in msg:
                         found_log = True
                         break
                 assert (
                     found_log
-                ), "Expected 'Releases cache unchanged' debug log not found"
+                ), "Expected 'Releases data unchanged' debug log not found"
 
             cached_data = json.loads(cache_file.read_text())
             assert cached_data[url_cache_key]["cached_at"] == original_cached_at

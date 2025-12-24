@@ -571,6 +571,12 @@ class CacheManager:
 
         age_s = (now - cached_at).total_seconds()
         if age_s >= expiry_seconds:
+            logger.debug(
+                "Releases cache expired for %s (age %.0fs >= %ss)",
+                url_cache_key,
+                age_s,
+                expiry_seconds,
+            )
             track_api_cache_miss()
             return None
 
@@ -599,10 +605,12 @@ class CacheManager:
             old_entry.get("releases") if isinstance(old_entry, dict) else None
         )
 
-        # Only write if data has changed
+        now = datetime.now(timezone.utc)
+
+        # Only write file if data has changed (skip write to reduce I/O when data unchanged)
         if old_releases == releases:
             logger.debug(
-                "Releases cache unchanged for %s (total %d entries)",
+                "Releases data unchanged for %s - skipping cache write (total %d entries)",
                 url_cache_key,
                 len(cache),
             )
@@ -610,7 +618,7 @@ class CacheManager:
 
         cache[url_cache_key] = {
             "releases": releases,
-            "cached_at": datetime.now(timezone.utc).isoformat(),
+            "cached_at": now.isoformat(),
         }
         if self.atomic_write_json(cache_file, cache):
             logger.debug(

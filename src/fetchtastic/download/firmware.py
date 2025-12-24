@@ -126,6 +126,13 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 url_key, expiry_seconds=int(RELEASES_CACHE_EXPIRY_HOURS * 3600)
             )
 
+            if releases_data is not None:
+                logger.debug(
+                    "Using cached releases for %s (%d releases)",
+                    self.firmware_releases_url,
+                    len(releases_data),
+                )
+
             if releases_data is None:
                 response = make_github_api_request(
                     self.firmware_releases_url,
