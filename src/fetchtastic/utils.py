@@ -1540,5 +1540,3 @@ def display_banner() -> None:
     logger.info(separator)
     logger.info(f"Fetchtastic v{version}")
     logger.info(separator)
-    logger.info(f"Fetchtastic v{version}")
-    logger.info(separator)
