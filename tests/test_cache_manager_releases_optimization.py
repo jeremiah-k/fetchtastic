@@ -108,7 +108,7 @@ class TestCacheManagerReleasesOptimization:
     def test_write_releases_cache_entry_atomic_write_success(self):
         """
         Verify that write_releases_cache_entry records a debug log when an atomic write succeeds.
-        
+
         Asserts that a debug message containing both "Saved" and "releases entries" is emitted.
         """
         cache_manager = CacheManager()
@@ -134,3 +134,19 @@ class TestCacheManagerReleasesOptimization:
                 assert (
                     found_log
                 ), "Expected 'Saved X releases entries' debug log not found"
+
+    def test_build_url_cache_key_excludes_pagination_params(self):
+        """Test that build_url_cache_key excludes pagination parameters."""
+        CacheManager()
+        base_url = "https://api.github.com/repos/meshtastic/firmware/releases"
+
+        key1 = CacheManager.build_url_cache_key(base_url, {"per_page": 8})
+        key2 = CacheManager.build_url_cache_key(base_url, {"per_page": 10})
+        key3 = CacheManager.build_url_cache_key(base_url, {"page": 2, "per_page": 10})
+        key4 = CacheManager.build_url_cache_key(base_url)
+
+        assert key1 == base_url, "per_page parameter should be excluded"
+        assert key2 == base_url, "per_page parameter should be excluded"
+        assert key3 == base_url, "page and per_page parameters should be excluded"
+        assert key4 == base_url, "no params should return base URL"
+        assert key1 == key2 == key3 == key4

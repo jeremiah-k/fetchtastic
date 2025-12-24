@@ -496,14 +496,18 @@ class CacheManager:
         Create a stable cache key by appending URL-encoded query parameters to the base URL.
 
         Parameters:
-            params (Optional[Dict[str, Any]]): Mapping of query parameter names to values; entries with value `None` are omitted.
+            params (Optional[Dict[str, Any]]): Mapping of query parameter names to values; entries with value `None` are omitted. Pagination parameters (page, per_page) are excluded as they don't affect the data identity.
 
         Returns:
-            The original `url` if `params` is None or contains no non-None values, otherwise the `url` followed by `?` and the URL-encoded parameters.
+            The original `url` if `params` is None or contains no non-None values, otherwise the `url` followed by `?` and URL-encoded parameters (excluding pagination parameters).
         """
         if not params:
             return url
-        filtered = {k: v for k, v in params.items() if v is not None}
+        filtered = {
+            k: v
+            for k, v in params.items()
+            if v is not None and k not in ("page", "per_page")
+        }
         if not filtered:
             return url
         return f"{url}?{urlencode(filtered)}"
@@ -578,9 +582,9 @@ class CacheManager:
     ) -> None:
         """
         Store a list of release entries under a URL-derived cache key in the releases cache.
-        
+
         If the releases data for the given key is unchanged, no file write is performed. When writing, the entry is saved with a `cached_at` UTC timestamp.
-        
+
         Parameters:
             url_cache_key (str): Stable cache key derived from a request URL and parameters.
             releases (List[Dict[str, Any]]): List of release objects to persist in the cache.

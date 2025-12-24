@@ -1287,9 +1287,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
     ) -> None:
         """
         Remove or expire local prerelease tracking files that are superseded by current repository prereleases.
-        
+
         Compare stored prerelease tracking data with the set of current prereleases and delegate removal of outdated or expired tracking files to the PrereleaseHistoryManager.
-        
+
         Parameters:
             cached_releases (Optional[List[Release]]): Optional list of Release objects to use instead of fetching releases from the remote API.
         """

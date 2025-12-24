@@ -27,7 +27,7 @@ pytestmark = [pytest.mark.unit, pytest.mark.core_downloads]
 def test_config():
     """
     Provide a test configuration used by RepositoryDownloader tests.
-    
+
     Returns:
         dict: Test configuration with keys:
             DOWNLOAD_DIR (str): base download directory path.
@@ -43,10 +43,10 @@ def test_config():
 def repository_downloader(test_config):
     """
     Create a RepositoryDownloader configured for use in tests.
-    
+
     Parameters:
         test_config (dict): Test configuration containing DOWNLOAD_DIR and VERSIONS_TO_KEEP.
-    
+
     Returns:
         RepositoryDownloader: An instance of RepositoryDownloader configured with `test_config`.
     """

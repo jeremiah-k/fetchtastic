@@ -46,7 +46,7 @@ class PrereleaseHistoryManager:
     def __init__(self):
         """
         Initialize the PrereleaseHistoryManager and its version utilities.
-        
+
         Also creates a VersionManager instance and initializes the in-memory commit cache and its timestamp to None.
         """
         self.version_manager = VersionManager()
@@ -175,7 +175,7 @@ class PrereleaseHistoryManager:
     ) -> Dict[str, Any]:
         """
         Create a default prerelease history entry populated with the provided identifiers and unset metadata fields.
-        
+
         Returns:
             dict: Prerelease entry with keys:
                 - directory (str): directory name or path
@@ -476,10 +476,10 @@ class PrereleaseHistoryManager:
     ) -> Tuple[Optional[str], List[Dict[str, Any]]]:
         """
         Return the most recent active prerelease directory for a base version and the full prerelease history.
-        
+
         Parameters:
             expected_version (str): Base release version to match when selecting prerelease entries.
-        
+
         Returns:
             tuple: `latest_dir` is the directory string of the newest active prerelease for `expected_version`, or `None` if no active prerelease exists; `entries` is the list of prerelease history entry dictionaries.
         """

@@ -447,12 +447,12 @@ class BaseDownloader(Downloader, ABC):
     ) -> bool:
         """
         Determine whether the specified release asset must be downloaded.
-        
+
         Parameters:
             release_tag (str): Release tag used to locate the existing file.
             file_name (str): Name of the asset file.
             expected_size (int): Expected file size in bytes; used to detect incomplete or mismatched files.
-        
+
         Returns:
             True if the file should be downloaded, False otherwise.
         """
