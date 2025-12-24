@@ -5,17 +5,16 @@ This module tests new configurable DeviceHardwareManager feature
 added in cache branch.
 """
 
-import tempfile
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from fetchtastic.constants import (
+    DEVICE_HARDWARE_API_URL,
+    DEVICE_HARDWARE_CACHE_HOURS,
+)
 from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.firmware import FirmwareReleaseDownloader
-
-DEVICE_HARDWARE_API_URL = "https://api.meshtastic.org/resource/deviceHardware"
-DEVICE_HARDWARE_CACHE_HOURS = 24
 
 
 @pytest.fixture
@@ -25,7 +24,6 @@ def test_config():
 
     Returns:
         dict: Configuration with the following keys:
-            DOWNLOAD_DIR (str): Default download directory path.
             FIRMWARE_VERSIONS_TO_KEEP (int): Number of firmware versions to retain.
             SELECTED_PATTERNS (list[str]): Filename patterns to include.
             EXCLUDE_PATTERNS (list[str]): Filename patterns to exclude.
@@ -33,7 +31,6 @@ def test_config():
             CHECK_FIRMWARE_PRERELEASES (bool): Whether prerelease firmware should be checked.
     """
     return {
-        "DOWNLOAD_DIR": "/tmp/test_firmware",
         "FIRMWARE_VERSIONS_TO_KEEP": 2,
         "SELECTED_PATTERNS": ["rak4631"],
         "EXCLUDE_PATTERNS": ["*debug*"],
@@ -71,32 +68,11 @@ class TestDeviceHardwareManagerConfig:
         cache_manager = CacheManager()
         downloader = FirmwareReleaseDownloader(test_config, cache_manager)
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            test_config["DOWNLOAD_DIR"] = tmpdir
-            prerelease_dir = Path(tmpdir) / "firmware" / "prereleases" / "test_dir"
-            prerelease_dir.mkdir(parents=True)
-
-            downloader.download_dir = tmpdir
-
-            with patch.object(
-                downloader,
-                "_fetch_prerelease_directory_listing",
-                return_value=[],
-            ):
-                successes, failures, downloaded = (
-                    downloader._download_prerelease_assets(
-                        remote_dir="test_dir",
-                        selected_patterns=[],
-                        exclude_patterns=[],
-                        force_refresh=False,
-                    )
-                )
-
-                mock_dhm_class.assert_called_once()
-                call_kwargs = mock_dhm_class.call_args[1]
-                assert call_kwargs["enabled"] is True
-                assert call_kwargs["cache_hours"] == DEVICE_HARDWARE_CACHE_HOURS
-                assert call_kwargs["api_url"] == DEVICE_HARDWARE_API_URL
+        mock_dhm_class.assert_called_once()
+        call_kwargs = mock_dhm_class.call_args[1]
+        assert call_kwargs["enabled"] is True
+        assert call_kwargs["cache_hours"] == DEVICE_HARDWARE_CACHE_HOURS
+        assert call_kwargs["api_url"] == DEVICE_HARDWARE_API_URL
 
     @patch("fetchtastic.download.firmware.DeviceHardwareManager")
     def test_device_hardware_manager_initialized_with_custom_config(
@@ -114,29 +90,8 @@ class TestDeviceHardwareManagerConfig:
         cache_manager = CacheManager()
         downloader = FirmwareReleaseDownloader(test_config, cache_manager)
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            test_config["DOWNLOAD_DIR"] = tmpdir
-            prerelease_dir = Path(tmpdir) / "firmware" / "prereleases" / "test_dir"
-            prerelease_dir.mkdir(parents=True)
-
-            downloader.download_dir = tmpdir
-
-            with patch.object(
-                downloader,
-                "_fetch_prerelease_directory_listing",
-                return_value=[],
-            ):
-                successes, failures, downloaded = (
-                    downloader._download_prerelease_assets(
-                        remote_dir="test_dir",
-                        selected_patterns=[],
-                        exclude_patterns=[],
-                        force_refresh=False,
-                    )
-                )
-
-                mock_dhm_class.assert_called_once()
-                call_kwargs = mock_dhm_class.call_args[1]
-                assert call_kwargs["enabled"] is False
-                assert call_kwargs["cache_hours"] == 48
-                assert call_kwargs["api_url"] == "https://custom.example.com/api"
+        mock_dhm_class.assert_called_once()
+        call_kwargs = mock_dhm_class.call_args[1]
+        assert call_kwargs["enabled"] is False
+        assert call_kwargs["cache_hours"] == 48
+        assert call_kwargs["api_url"] == "https://custom.example.com/api"

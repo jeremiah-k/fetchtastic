@@ -626,10 +626,7 @@ class CacheManager:
         if not isinstance(cache, dict):
             cache = {}
 
-        old_entry = cache.get(url_cache_key)
-        old_releases = (
-            old_entry.get("releases") if isinstance(old_entry, dict) else None
-        )
+        old_releases = cache.get(url_cache_key, {}).get("releases")
 
         now = datetime.now(timezone.utc)
 
@@ -674,10 +671,19 @@ class CacheManager:
         # Only write file if normalized releases data has changed (skip write to reduce I/O when data unchanged)
         if old_normalized == new_normalized:
             logger.debug(
-                "Releases data unchanged for %s - skipping cache write (total %d entries)",
+                "Releases data unchanged for %s - updating cached_at to extend freshness",
                 url_cache_key,
-                len(cache),
             )
+            cache[url_cache_key] = {
+                "releases": releases,
+                "cached_at": now.isoformat(),
+            }
+            if self.atomic_write_json(cache_file, cache):
+                logger.debug(
+                    "Extended releases cache freshness for %s (total %d cache entries)",
+                    url_cache_key,
+                    len(cache),
+                )
             return
 
         cache[url_cache_key] = {
@@ -686,7 +692,7 @@ class CacheManager:
         }
         if self.atomic_write_json(cache_file, cache):
             logger.debug(
-                "Saved %d releases entries to cache for %s (total %d entries)",
+                "Saved %d releases to cache entry for %s (total %d cache entries)",
                 len(releases),
                 url_cache_key,
                 len(cache),

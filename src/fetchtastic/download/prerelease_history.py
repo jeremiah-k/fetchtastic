@@ -431,11 +431,7 @@ class PrereleaseHistoryManager:
         )
 
         old_version_data = cache.get(expected_version)
-        old_entries = (
-            old_version_data.get("entries")
-            if isinstance(old_version_data, dict)
-            else None
-        )
+        old_entries = cache.get(expected_version, {}).get("entries")
 
         # Only write if data has changed
         if old_entries == entries:

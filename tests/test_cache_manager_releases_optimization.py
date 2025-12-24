@@ -56,7 +56,7 @@ class TestCacheManagerReleasesOptimization:
                 ), "Expected 'Releases data unchanged' debug log not found"
 
             cached_data = json.loads(cache_file.read_text())
-            assert cached_data[url_cache_key]["cached_at"] == original_cached_at
+            assert cached_data[url_cache_key]["cached_at"] != original_cached_at
 
     def test_write_releases_cache_entry_changed(self):
         """Test that write_releases_cache_entry writes when data changes."""
@@ -128,12 +128,12 @@ class TestCacheManagerReleasesOptimization:
                 found_log = False
                 for call in mock_logger.debug.call_args_list:
                     msg = call.args[0] if call.args else ""
-                    if "Saved" in msg and "releases entries" in msg:
+                    if "Saved" in msg and "releases" in msg and "cache entry" in msg:
                         found_log = True
                         break
                 assert (
                     found_log
-                ), "Expected 'Saved X releases entries' debug log not found"
+                ), "Expected 'Saved X releases to cache entry' debug log not found"
 
     def test_build_url_cache_key_excludes_pagination_params(self):
         """Test that build_url_cache_key excludes pagination parameters."""
