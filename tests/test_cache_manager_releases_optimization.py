@@ -1,5 +1,5 @@
 """
-Tests for cache optimization in prerelease_history.py and cache.py.
+Tests for cache optimization in cache.py.
 This module tests new cache unchanged optimization that skips
 disk writes when data hasn't changed.
 """
@@ -41,7 +41,19 @@ class TestCacheManagerReleasesOptimization:
 
             original_cached_at = cached_data[url_cache_key]["cached_at"]
 
-            cache_manager.write_releases_cache_entry(url_cache_key, releases_data)
+            with patch("fetchtastic.download.cache.logger") as mock_logger:
+                cache_manager.write_releases_cache_entry(url_cache_key, releases_data)
+
+                assert mock_logger.debug.called
+                found_log = False
+                for call in mock_logger.debug.call_args_list:
+                    msg = call.args[0] if call.args else ""
+                    if "Releases cache unchanged" in msg:
+                        found_log = True
+                        break
+                assert (
+                    found_log
+                ), "Expected 'Releases cache unchanged' debug log not found"
 
             cached_data = json.loads(cache_file.read_text())
             assert cached_data[url_cache_key]["cached_at"] == original_cached_at
@@ -109,7 +121,12 @@ class TestCacheManagerReleasesOptimization:
                 cache_manager.write_releases_cache_entry(url_cache_key, releases_data)
 
                 assert mock_logger.debug.called
-                call_args = [str(call) for call in mock_logger.debug.call_args_list]
-                assert any(
-                    "Saved" in args and "releases entries" in args for args in call_args
-                )
+                found_log = False
+                for call in mock_logger.debug.call_args_list:
+                    msg = call.args[0] if call.args else ""
+                    if "Saved" in msg and "releases entries" in msg:
+                        found_log = True
+                        break
+                assert (
+                    found_log
+                ), "Expected 'Saved X releases entries' debug log not found"
