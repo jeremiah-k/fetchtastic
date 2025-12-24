@@ -668,6 +668,12 @@ class CacheManager:
                 tags_equal,
                 normalized_equal,
             )
+        else:
+            logger.debug(
+                "First cache write for %s: %d releases",
+                url_cache_key,
+                len(new_normalized),
+            )
 
         # Only write file if normalized releases data has changed (skip write to reduce I/O when data unchanged)
         if old_normalized == new_normalized:
