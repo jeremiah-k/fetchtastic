@@ -799,10 +799,6 @@ class FirmwareReleaseDownloader(BaseDownloader):
         contents = self._fetch_prerelease_directory_listing(
             remote_dir, force_refresh=force_refresh
         )
-
-        contents = self._fetch_prerelease_directory_listing(
-            remote_dir, force_refresh=force_refresh
-        )
         file_items = [
             item
             for item in contents

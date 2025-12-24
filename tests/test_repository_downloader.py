@@ -74,15 +74,47 @@ class TestRepositoryDownloader:
         assert "errors" in summary
         assert "success" in summary
 
-    def test_get_repository_files_with_subdirectory(self, repository_downloader):
+    @patch("fetchtastic.utils.make_github_api_request")
+    def test_get_repository_files_with_subdirectory(
+        self, mock_request, repository_downloader
+    ):
         """Test getting repository files with subdirectory."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = [
+            {
+                "name": "file.txt",
+                "path": "subdir/file.txt",
+                "download_url": "https://example.com/file.txt",
+                "size": 100,
+                "type": "file",
+            },
+        ]
+        mock_request.return_value = mock_response
+
         files = repository_downloader.get_repository_files("subdir")
         assert isinstance(files, list)
+        assert len(files) == 1
+        assert files[0]["name"] == "file.txt"
 
-    def test_get_repository_files_from_root(self, repository_downloader):
+    @patch("fetchtastic.utils.make_github_api_request")
+    def test_get_repository_files_from_root(self, mock_request, repository_downloader):
         """Test getting repository files from root."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = [
+            {
+                "name": "readme.md",
+                "path": "readme.md",
+                "download_url": "https://example.com/readme.md",
+                "size": 50,
+                "type": "file",
+            },
+        ]
+        mock_request.return_value = mock_response
+
         files = repository_downloader.get_repository_files("")
         assert isinstance(files, list)
+        assert len(files) == 1
+        assert files[0]["name"] == "readme.md"
 
     def test_get_repository_download_url(self, repository_downloader):
         """Test getting download URL for a file."""
