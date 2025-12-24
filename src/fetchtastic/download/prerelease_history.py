@@ -86,6 +86,8 @@ class PrereleaseHistoryManager:
             if (
                 self._in_memory_commits_cache is not None
                 and self._in_memory_commits_timestamp is not None
+                and (now - self._in_memory_commits_timestamp).total_seconds()
+                < PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS
             ):
                 logger.debug(
                     "Using in-memory prerelease commit cache (cached %.0fs ago)",
