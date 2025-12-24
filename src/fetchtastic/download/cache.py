@@ -684,9 +684,10 @@ class CacheManager:
         }
         if self.atomic_write_json(cache_file, cache):
             logger.debug(
-                "Saved %d releases entries to cache for %s",
+                "Saved %d releases entries to cache for %s (total %d entries)",
                 len(releases),
                 url_cache_key,
+                len(cache),
             )
 
     def clear_all_caches(self) -> bool:

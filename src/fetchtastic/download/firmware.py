@@ -80,6 +80,15 @@ class FirmwareReleaseDownloader(BaseDownloader):
             self.latest_release_file
         )
 
+        device_api_config = self.config.get("DEVICE_HARDWARE_API", {})
+        self.device_manager = DeviceHardwareManager(
+            enabled=device_api_config.get("enabled", True),
+            cache_hours=device_api_config.get(
+                "cache_hours", DEVICE_HARDWARE_CACHE_HOURS
+            ),
+            api_url=device_api_config.get("api_url", DEVICE_HARDWARE_API_URL),
+        )
+
     def get_target_path_for_release(self, release_tag: str, file_name: str) -> str:
         """
         Compute the sanitized filesystem path for a firmware asset inside the downloader's firmware directory and ensure the version directory exists.
@@ -794,15 +803,6 @@ class FirmwareReleaseDownloader(BaseDownloader):
         target_dir = os.path.join(prerelease_base_dir, safe_dir)
         os.makedirs(target_dir, exist_ok=True)
 
-        device_api_config = self.config.get("DEVICE_HARDWARE_API", {})
-        device_manager = DeviceHardwareManager(
-            enabled=device_api_config.get("enabled", True),
-            cache_hours=device_api_config.get(
-                "cache_hours", DEVICE_HARDWARE_CACHE_HOURS
-            ),
-            api_url=device_api_config.get("api_url", DEVICE_HARDWARE_API_URL),
-        )
-
         contents = self._fetch_prerelease_directory_listing(
             remote_dir, force_refresh=force_refresh
         )
@@ -825,7 +825,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 )
                 continue
             if selected_patterns and not matches_extract_patterns(
-                name, selected_patterns, device_manager=device_manager
+                name, selected_patterns, device_manager=self.device_manager
             ):
                 continue
             matching.append(item)
