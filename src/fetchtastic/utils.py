@@ -1524,12 +1524,11 @@ def display_banner() -> None:
     """
     Display the Fetchtastic banner with version information.
 
-    This function prints a banner to stdout showing the program name
-    and current version. The banner is displayed when running main commands
-    like download, setup, and repo.
+    This function logs a banner showing the program name and current version.
+    The banner is displayed when running main commands like download, setup, and repo.
 
     Side effects:
-        Prints banner and version information to stdout.
+        Logs banner and version information via logger.
     """
     try:
         version = importlib.metadata.version("fetchtastic")
@@ -1538,6 +1537,6 @@ def display_banner() -> None:
 
     separator = "=" * 60
 
-    print(separator)
-    print(f"Fetchtastic v{version}")
-    print(separator)
+    logger.info(separator)
+    logger.info(f"Fetchtastic v{version}")
+    logger.info(separator)

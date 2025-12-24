@@ -1635,29 +1635,29 @@ def test_matches_selected_patterns_nrf52_zip_extraction():
 
 
 @pytest.mark.unit
-@patch("fetchtastic.utils.print")
-def test_display_banner_with_version(mock_print):
+@patch("fetchtastic.utils.logger")
+def test_display_banner_with_version(mock_logger):
     """
-    Test that display_banner prints the banner and version.
+    Test that display_banner logs banner and version.
     """
     from fetchtastic.utils import display_banner
 
     display_banner()
 
-    assert mock_print.called
-    calls = [str(call) for call in mock_print.call_args_list]
+    assert mock_logger.info.called
+    calls = [str(call) for call in mock_logger.info.call_args_list]
 
     version_printed = any("Fetchtastic v" in str(call) for call in calls)
-    assert version_printed, "Version information should be printed"
+    assert version_printed, "Version information should be logged"
 
     separator_printed = any("=" * 60 in str(call) for call in calls)
-    assert separator_printed, "Separator should be printed"
+    assert separator_printed, "Separator should be logged"
 
 
 @pytest.mark.unit
-@patch("fetchtastic.utils.print")
+@patch("fetchtastic.utils.logger")
 @patch("fetchtastic.utils.importlib.metadata.version")
-def test_display_banner_unknown_version(mock_version, mock_print):
+def test_display_banner_unknown_version(mock_version, mock_logger):
     """
     Test that display_banner handles missing version gracefully.
     """
@@ -1667,11 +1667,11 @@ def test_display_banner_unknown_version(mock_version, mock_print):
 
     display_banner()
 
-    assert mock_print.called
-    calls = [str(call) for call in mock_print.call_args_list]
+    assert mock_logger.info.called
+    calls = [str(call) for call in mock_logger.info.call_args_list]
 
     version_printed = any("Fetchtastic vunknown" in str(call) for call in calls)
-    assert version_printed, "Version 'unknown' should be printed when package not found"
+    assert version_printed, "Version 'unknown' should be logged when package not found"
 
     separator_printed = any("=" * 60 in str(call) for call in calls)
-    assert separator_printed, "Separator should still be printed"
+    assert separator_printed, "Separator should still be logged"
