@@ -607,6 +607,16 @@ class CacheManager:
 
         now = datetime.now(timezone.utc)
 
+        # Debug: log comparison details
+        if old_releases is not None:
+            logger.debug(
+                "Cache comparison for %s: old=%d entries, new=%d entries, equal=%s",
+                url_cache_key,
+                len(old_releases) if old_releases else 0,
+                len(releases) if releases else 0,
+                old_releases == releases,
+            )
+
         # Only write file if data has changed (skip write to reduce I/O when data unchanged)
         if old_releases == releases:
             logger.debug(
