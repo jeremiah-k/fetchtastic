@@ -30,7 +30,7 @@ from fetchtastic.utils import (
 from .files import _atomic_write, _atomic_write_json
 
 
-def _parse_iso_datetime_utc(value: Any) -> Optional[datetime]:
+def parse_iso_datetime_utc(value: Any) -> Optional[datetime]:
     """
     Parse an ISO 8601 timestamp and normalize it to UTC.
 
@@ -254,7 +254,7 @@ class CacheManager:
         try:
             expires_at_str = cache_data.get("expires_at")
             if expires_at_str:
-                expires_at = _parse_iso_datetime_utc(expires_at_str)
+                expires_at = parse_iso_datetime_utc(expires_at_str)
                 if expires_at and datetime.now(timezone.utc) > expires_at:
                     logger.debug(f"Cache expired for {cache_file}")
                     return None
@@ -304,7 +304,7 @@ class CacheManager:
             data = cached.get(data_field_name)
             cached_at_raw = cached.get("cached_at")
             if data is not None and cached_at_raw:
-                cached_at = _parse_iso_datetime_utc(cached_at_raw)
+                cached_at = parse_iso_datetime_utc(cached_at_raw)
                 if cached_at:
                     age_s = (now - cached_at).total_seconds()
                     if age_s < cache_expiry_seconds:
@@ -564,7 +564,7 @@ class CacheManager:
             track_api_cache_miss()
             return None
 
-        cached_at = _parse_iso_datetime_utc(cached_at_raw)
+        cached_at = parse_iso_datetime_utc(cached_at_raw)
         if not cached_at:
             track_api_cache_miss()
             return None
@@ -651,12 +651,8 @@ class CacheManager:
 
         # Log comparison details
         if old_normalized is not None:
-            old_tags = {
-                r.get("tag_name") for r in old_normalized if isinstance(r, dict)
-            }
-            new_tags = {
-                r.get("tag_name") for r in new_normalized if isinstance(r, dict)
-            }
+            old_tags = {r.get("tag_name") for r in old_normalized}
+            new_tags = {r.get("tag_name") for r in new_normalized}
             tags_equal = old_tags == new_tags
             normalized_equal = old_normalized == new_normalized
 
@@ -764,7 +760,7 @@ class CacheManager:
 
         if ts_key:
             try:
-                ts_val = _parse_iso_datetime_utc(cache_data[ts_key])
+                ts_val = parse_iso_datetime_utc(cache_data[ts_key])
                 if ts_val is None:
                     return None
                 if datetime.now(timezone.utc) - ts_val > timedelta(hours=expiry_hours):
@@ -886,7 +882,7 @@ class CacheManager:
                 # New format: [timestamp_iso, cached_at_iso]
                 try:
                     timestamp_str, cached_at_str = cache_value
-                    cached_at = _parse_iso_datetime_utc(cached_at_str)
+                    cached_at = parse_iso_datetime_utc(cached_at_str)
                     if cached_at is None:
                         continue
                     age = now - cached_at
@@ -903,7 +899,7 @@ class CacheManager:
                     timestamp_str = cache_value.get("timestamp")
                     cached_at_str = cache_value.get("cached_at")
                     if timestamp_str and cached_at_str:
-                        cached_at = _parse_iso_datetime_utc(cached_at_str)
+                        cached_at = parse_iso_datetime_utc(cached_at_str)
                         if cached_at is None:
                             continue
                         age = now - cached_at
@@ -962,8 +958,8 @@ class CacheManager:
             )
             if entry_valid:
                 timestamp_str, cached_at_str = entry
-                cached_at = _parse_iso_datetime_utc(cached_at_str)
-                timestamp = _parse_iso_datetime_utc(timestamp_str)
+                cached_at = parse_iso_datetime_utc(cached_at_str)
+                timestamp = parse_iso_datetime_utc(timestamp_str)
                 if cached_at is not None and timestamp is not None:
                     age = now - cached_at
                     if (
@@ -999,7 +995,7 @@ class CacheManager:
             )
             if not timestamp_str:
                 return None
-            timestamp = _parse_iso_datetime_utc(timestamp_str)
+            timestamp = parse_iso_datetime_utc(timestamp_str)
             if timestamp is None:
                 return None
             cache[cache_key] = [timestamp.isoformat(), now.isoformat()]
@@ -1066,7 +1062,7 @@ def _load_json_cache_with_expiry(
                     )
                     continue
 
-                cached_at = _parse_iso_datetime_utc(cache_entry.get("cached_at"))
+                cached_at = parse_iso_datetime_utc(cache_entry.get("cached_at"))
                 if cached_at is None:
                     continue
                 age = current_time - cached_at

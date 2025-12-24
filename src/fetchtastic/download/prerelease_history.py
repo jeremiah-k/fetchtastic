@@ -32,6 +32,7 @@ from fetchtastic.constants import (
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import make_github_api_request
 
+from .cache import parse_iso_datetime_utc
 from .version import VersionManager
 
 
@@ -100,12 +101,8 @@ class PrereleaseHistoryManager:
             cached_at = cached.get("cached_at")
             commits = cached.get("commits")
             if cached_at and isinstance(commits, list):
-                try:
-                    cached_at_dt = datetime.fromisoformat(
-                        str(cached_at).replace("Z", "+00:00")
-                    )
-                    if cached_at_dt.tzinfo is None:
-                        cached_at_dt = cached_at_dt.replace(tzinfo=timezone.utc)
+                cached_at_dt = parse_iso_datetime_utc(cached_at)
+                if cached_at_dt:
                     age_seconds = (now - cached_at_dt).total_seconds()
                     if age_seconds < PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS:
                         logger.debug("Using cached prerelease commit history")
@@ -113,8 +110,6 @@ class PrereleaseHistoryManager:
                         self._in_memory_commits_timestamp = cached_at_dt
                         return commits[:limit]
                     logger.debug("Commits cache expired (age: %.1fs)", age_seconds)
-                except (ValueError, TypeError):
-                    pass
 
         logger.debug("Fetching commits from API (cache miss/expired)")
 
@@ -399,16 +394,15 @@ class PrereleaseHistoryManager:
             cache = {}
 
         cached_entry = cache.get(expected_version) if not force_refresh else None
+        cache_was_stale = False
         if isinstance(cached_entry, dict) and not force_refresh:
             entries = cached_entry.get("entries")
             last_checked_raw = cached_entry.get("last_checked") or cached_entry.get(
                 "cached_at"
             )
             if isinstance(entries, list) and last_checked_raw:
-                try:
-                    last_checked = datetime.fromisoformat(
-                        str(last_checked_raw).replace("Z", "+00:00")
-                    )
+                last_checked = parse_iso_datetime_utc(last_checked_raw)
+                if last_checked:
                     age_s = (now - last_checked).total_seconds()
                     if age_s < PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS:
                         logger.debug(
@@ -417,14 +411,13 @@ class PrereleaseHistoryManager:
                             age_s,
                         )
                         return entries
+                    cache_was_stale = True
                     logger.debug(
                         "Prerelease history cache stale for %s (age %.0fs >= %ss); extending cache",
                         expected_version,
                         age_s,
                         PRERELEASE_COMMITS_CACHE_EXPIRY_SECONDS,
                     )
-                except ValueError:
-                    pass
 
         commits = self.fetch_recent_repo_commits(
             max_commits,
@@ -446,6 +439,24 @@ class PrereleaseHistoryManager:
 
         # Only write if data has changed
         if old_entries == entries:
+            if cache_was_stale and isinstance(old_version_data, dict):
+                logger.debug(
+                    "Prerelease history data unchanged for %s; updating last_checked",
+                    expected_version,
+                )
+                now_after_build = datetime.now(timezone.utc)
+                cache[expected_version] = {
+                    "entries": entries,
+                    "cached_at": old_version_data.get("cached_at"),
+                    "last_checked": now_after_build.isoformat(),
+                    "shas": sorted(shas),
+                }
+                if cache_manager.atomic_write_json(history_file, cache):
+                    logger.debug(
+                        "Extended prerelease history cache freshness for %s",
+                        expected_version,
+                    )
+                return entries
             logger.debug(
                 "Prerelease history cache unchanged for %s (total %d entries)",
                 expected_version,
@@ -453,11 +464,11 @@ class PrereleaseHistoryManager:
             )
             return entries
 
-        now = datetime.now(timezone.utc)
+        now_after_build = datetime.now(timezone.utc)
         cache[expected_version] = {
             "entries": entries,
-            "cached_at": now.isoformat(),
-            "last_checked": now.isoformat(),
+            "cached_at": now_after_build.isoformat(),
+            "last_checked": now_after_build.isoformat(),
             "shas": sorted(shas),
         }
         if cache_manager.atomic_write_json(history_file, cache):
