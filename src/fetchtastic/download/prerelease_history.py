@@ -159,15 +159,15 @@ class PrereleaseHistoryManager:
             logger.warning("Could not fetch repo commits (%s): %s", type(e).__name__, e)
             return []
 
+        now_after_fetch = datetime.now(timezone.utc)
         cache_data = {
             "commits": all_commits,
-            "cached_at": datetime.now(timezone.utc).isoformat(),
+            "cached_at": now_after_fetch.isoformat(),
         }
         if cache_manager.atomic_write_json(cache_file, cache_data):
             logger.debug("Saved %d prerelease commits to cache", len(all_commits))
-
         self._in_memory_commits_cache = cache_data
-        self._in_memory_commits_timestamp = datetime.now(timezone.utc)
+        self._in_memory_commits_timestamp = now_after_fetch
 
         return all_commits[:limit]
 
@@ -453,10 +453,11 @@ class PrereleaseHistoryManager:
             )
             return entries
 
+        now = datetime.now(timezone.utc)
         cache[expected_version] = {
             "entries": entries,
-            "cached_at": datetime.now(timezone.utc).isoformat(),
-            "last_checked": datetime.now(timezone.utc).isoformat(),
+            "cached_at": now.isoformat(),
+            "last_checked": now.isoformat(),
             "shas": sorted(shas),
         }
         if cache_manager.atomic_write_json(history_file, cache):
