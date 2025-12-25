@@ -869,26 +869,5 @@ def run_repo_clean(config):
             log_utils.logger.warning(f"Repository cleanup error: {err}")
 
 
-def get_fetchtastic_version():
-    """
-    Retrieve the installed Fetchtastic package version.
-
-    Returns:
-        version (str): The installed Fetchtastic version string, or "unknown" if the version cannot be determined.
-    """
-    try:
-        from importlib.metadata import PackageNotFoundError, version
-    except ImportError:
-        # For Python < 3.8
-        from importlib_metadata import (  # type: ignore[import,no-redef]
-            PackageNotFoundError,
-            version,
-        )
-    try:
-        return version("fetchtastic")
-    except PackageNotFoundError:
-        return "unknown"
-
-
 if __name__ == "__main__":
     main()

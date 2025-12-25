@@ -11,6 +11,7 @@ import string
 import subprocess
 import sys
 from datetime import datetime
+from importlib.metadata import PackageNotFoundError, version
 from typing import Callable, Optional, Sequence, Set
 
 import platformdirs
@@ -1766,13 +1767,8 @@ def run_setup(
 
     # Record the version at which setup was last run
     try:
-        from importlib.metadata import PackageNotFoundError, version
-
         current_version = version("fetchtastic")
         config["LAST_SETUP_VERSION"] = current_version
-    except ImportError:
-        # If importlib.metadata is not available, we can't get the version.
-        pass
     except PackageNotFoundError:
         # If fetchtastic package is not found, we can't get the version.
         pass
