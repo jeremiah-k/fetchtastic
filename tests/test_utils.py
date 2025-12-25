@@ -1635,17 +1635,17 @@ def test_matches_selected_patterns_nrf52_zip_extraction():
 
 
 @pytest.mark.unit
-@patch("fetchtastic.utils.logger")
 @patch("fetchtastic.utils._get_package_version", return_value="1.2.3")
-def test_display_banner_with_version(mock_version, mock_logger):
+@patch("fetchtastic.utils.logger")
+def test_display_banner_with_version(mock_logger, mock_get_package_version):
     """
     Test that display_banner logs banner and version.
     """
-    from fetchtastic.utils import display_banner
+    from fetchtastic.utils import _BANNER_WIDTH, display_banner
 
     display_banner()
 
-    separator = "=" * 40
+    separator = "=" * _BANNER_WIDTH
     expected_calls = [
         call(separator),
         call("Fetchtastic v1.2.3"),
@@ -1655,17 +1655,17 @@ def test_display_banner_with_version(mock_version, mock_logger):
 
 
 @pytest.mark.unit
-@patch("fetchtastic.utils.logger")
 @patch("fetchtastic.utils._get_package_version", return_value="unknown")
-def test_display_banner_unknown_version(mock_version, mock_logger):
+@patch("fetchtastic.utils.logger")
+def test_display_banner_unknown_version(mock_logger, mock_get_package_version):
     """
     Test that display_banner handles missing version gracefully.
     """
-    from fetchtastic.utils import display_banner
+    from fetchtastic.utils import _BANNER_WIDTH, display_banner
 
     display_banner()
 
-    separator = "=" * 40
+    separator = "=" * _BANNER_WIDTH
     expected_calls = [
         call(separator),
         call("Fetchtastic vunknown"),
