@@ -74,7 +74,7 @@ _api_auth_used = False
 _api_tracking_lock = threading.Lock()
 
 # Banner display settings
-_BANNER_WIDTH = 40
+_BANNER_WIDTH = 20
 
 
 def _get_package_version() -> str:
@@ -1546,6 +1546,5 @@ def display_banner() -> None:
     version = _get_package_version()
     separator = "=" * _BANNER_WIDTH
 
-    logger.info(separator)
     logger.info(f"Fetchtastic v{version}")
     logger.info(separator)

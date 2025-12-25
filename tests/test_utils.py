@@ -1653,7 +1653,6 @@ def test_display_banner(mock_logger, version, log_message):
 
     separator = "=" * _BANNER_WIDTH
     expected_calls = [
-        call(separator),
         call(log_message),
         call(separator),
     ]
