@@ -1855,8 +1855,6 @@ def check_for_updates():
     """
     try:
         # Get current version
-        from importlib.metadata import version
-
         current_version = version("fetchtastic")
 
         # Get latest version from PyPI
@@ -1876,8 +1874,6 @@ def check_for_updates():
     except Exception:
         # If anything fails, just return that no update is available
         try:
-            from importlib.metadata import version
-
             return version("fetchtastic"), None, False
         except Exception:
             return "unknown", None, False
@@ -1923,8 +1919,6 @@ def should_recommend_setup():
             return True, "Setup version not tracked", None, None
 
         # Get current version
-        from importlib.metadata import version
-
         current_version = version("fetchtastic")
 
         if last_setup_version != current_version:
