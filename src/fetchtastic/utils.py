@@ -73,6 +73,29 @@ _api_cache_misses = 0
 _api_auth_used = False
 _api_tracking_lock = threading.Lock()
 
+# Banner display settings
+_BANNER_WIDTH = 20
+
+
+def _get_package_version() -> str:
+    """
+    Get the installed package version.
+
+    Returns:
+        The installed fetchtastic version string, or 'unknown' if the
+        package cannot be found.
+    """
+    try:
+        return importlib.metadata.version("fetchtastic")
+    except importlib.metadata.PackageNotFoundError:
+        return "unknown"
+    except Exception:
+        logger.warning(
+            "Could not determine package version due to an unexpected error.",
+            exc_info=True,
+        )
+        return "unknown"
+
 
 def get_user_agent() -> str:
     """
@@ -84,11 +107,7 @@ def get_user_agent() -> str:
     global _USER_AGENT_CACHE
 
     if _USER_AGENT_CACHE is None:
-        try:
-            app_version = importlib.metadata.version("fetchtastic")
-        except importlib.metadata.PackageNotFoundError:
-            app_version = "unknown"
-
+        app_version = _get_package_version()
         _USER_AGENT_CACHE = f"fetchtastic/{app_version}"
 
     return _USER_AGENT_CACHE
@@ -159,9 +178,32 @@ def format_api_summary(summary: Dict[str, Any]) -> str:
     """
     auth_status = "🔐 authenticated" if summary["auth_used"] else "🌐 unauthenticated"
     requests_str = "request" if summary["total_requests"] == 1 else "requests"
-    log_parts = [
-        f"📊 GitHub API Summary: {summary['total_requests']} API {requests_str} ({auth_status})"
-    ]
+
+    log_parts = []
+    request_breakdown = []
+
+    if summary["cache_misses"] > 0:
+        cache_str = (
+            "cache request" if summary["cache_misses"] == 1 else "cache requests"
+        )
+        request_breakdown.append(f"{summary['cache_misses']} {cache_str}")
+
+    uncached_requests = max(0, summary["total_requests"] - summary["cache_misses"])
+    if uncached_requests > 0:
+        direct_str = "direct request" if uncached_requests == 1 else "direct requests"
+        request_breakdown.append(
+            f"{uncached_requests} {direct_str} (pagination/non-cacheable)"
+        )
+
+    if request_breakdown:
+        breakdown_str = " + ".join(request_breakdown)
+        log_parts.append(
+            f"📊 GitHub API Summary: {summary['total_requests']} API {requests_str} ({auth_status}): {breakdown_str}"
+        )
+    else:
+        log_parts.append(
+            f"📊 GitHub API Summary: {summary['total_requests']} API {requests_str} ({auth_status})"
+        )
 
     total_cache_lookups = summary["cache_hits"] + summary["cache_misses"]
     if total_cache_lookups > 0:
@@ -169,19 +211,10 @@ def format_api_summary(summary: Dict[str, Any]) -> str:
         hits_str = "hit" if summary["cache_hits"] == 1 else "hits"
         misses_str = "miss" if summary["cache_misses"] == 1 else "misses"
         log_parts.append(
-            f"{total_cache_lookups} cache lookups → "
+            f"Cache: {total_cache_lookups} lookups → "
             f"{summary['cache_hits']} {hits_str} (skipped), "
             f"{summary['cache_misses']} {misses_str} (fetched) "
             f"[{cache_hit_rate:.1f}% hit rate]"
-        )
-
-    uncached_requests = max(0, summary["total_requests"] - summary["cache_misses"])
-    if uncached_requests > 0 and total_cache_lookups > 0:
-        direct_label = (
-            "direct API request" if uncached_requests == 1 else "direct API requests"
-        )
-        log_parts.append(
-            f"{uncached_requests} {direct_label} (pagination/non-cacheable)"
         )
 
     remaining = summary.get("rate_limit_remaining")
@@ -1518,3 +1551,20 @@ def _matches_substring_pattern(filename_lower: str, pattern_lower: str) -> bool:
         true if pattern_lower is a substring of filename_lower, false otherwise.
     """
     return pattern_lower in filename_lower
+
+
+def display_banner() -> None:
+    """
+    Display Fetchtastic banner with version information.
+
+    This function logs a banner showing program name and current version.
+    The banner is displayed when running main commands like download, setup, and repo.
+
+    Side effects:
+        Logs banner and version information via logger.
+    """
+    version = _get_package_version()
+    separator = "=" * _BANNER_WIDTH
+
+    logger.info(f"Fetchtastic v{version}")
+    logger.info(separator)

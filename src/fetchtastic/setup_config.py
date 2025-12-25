@@ -11,6 +11,7 @@ import string
 import subprocess
 import sys
 from datetime import datetime
+from importlib.metadata import PackageNotFoundError, version
 from typing import Callable, Optional, Sequence, Set
 
 import platformdirs
@@ -1766,13 +1767,8 @@ def run_setup(
 
     # Record the version at which setup was last run
     try:
-        from importlib.metadata import PackageNotFoundError, version
-
         current_version = version("fetchtastic")
         config["LAST_SETUP_VERSION"] = current_version
-    except ImportError:
-        # If importlib.metadata is not available, we can't get the version.
-        pass
     except PackageNotFoundError:
         # If fetchtastic package is not found, we can't get the version.
         pass
@@ -1859,8 +1855,6 @@ def check_for_updates():
     """
     try:
         # Get current version
-        from importlib.metadata import version
-
         current_version = version("fetchtastic")
 
         # Get latest version from PyPI
@@ -1880,8 +1874,6 @@ def check_for_updates():
     except Exception:
         # If anything fails, just return that no update is available
         try:
-            from importlib.metadata import version
-
             return version("fetchtastic"), None, False
         except Exception:
             return "unknown", None, False
@@ -1927,8 +1919,6 @@ def should_recommend_setup():
             return True, "Setup version not tracked", None, None
 
         # Get current version
-        from importlib.metadata import version
-
         current_version = version("fetchtastic")
 
         if last_setup_version != current_version:

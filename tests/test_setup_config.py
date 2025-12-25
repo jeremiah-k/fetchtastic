@@ -331,7 +331,7 @@ def test_get_upgrade_command_non_termux():
 @pytest.mark.configuration
 @pytest.mark.integration
 @patch("requests.get")
-@patch("importlib.metadata.version")
+@patch("fetchtastic.setup_config.version")
 def test_check_for_updates_available(mock_version, mock_get):
     """Test update check when newer version is available."""
     mock_version.return_value = "1.0.0"
@@ -349,7 +349,7 @@ def test_check_for_updates_available(mock_version, mock_get):
 @pytest.mark.configuration
 @pytest.mark.integration
 @patch("requests.get")
-@patch("importlib.metadata.version")
+@patch("fetchtastic.setup_config.version")
 def test_check_for_updates_current(mock_version, mock_get):
     """Test update check when current version is latest."""
     mock_version.return_value = "1.0.0"

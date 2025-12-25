@@ -158,6 +158,7 @@ class DownloadOrchestrator:
                     if self._download_android_release(release):
                         any_android_downloaded = True
 
+            logger.info("Checking for pre-release APK...")
             prereleases = self.android_downloader.handle_prereleases(android_releases)
             for prerelease in prereleases:
                 for asset in prerelease.assets:
@@ -175,9 +176,7 @@ class DownloadOrchestrator:
                 and android_releases
                 and not prereleases
             ):
-                logger.info(
-                    "APK prerelease downloads are enabled, but none are available yet."
-                )
+                logger.info("No pre-release APKs available")
 
             if not any_android_downloaded and not releases_to_download:
                 logger.info("All Android APK assets are up to date.")

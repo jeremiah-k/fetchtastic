@@ -4,7 +4,7 @@ import json
 import os
 import zipfile
 from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import platformdirs
 import pytest
@@ -1253,7 +1253,7 @@ def test_format_api_summary():
     assert "📊 GitHub API Summary:" in result
     assert "3 API requests" in result
     assert "🌐 unauthenticated" in result
-    assert "3 cache lookups" in result
+    assert "Cache: 3 lookups" in result
     assert "2 hits (skipped), 1 miss (fetched)" in result
     assert "66.7% hit rate" in result
 
@@ -1269,7 +1269,7 @@ def test_format_api_summary():
     assert "📊 GitHub API Summary:" in result
     assert "4 API requests" in result
     assert "🌐 unauthenticated" in result
-    assert "4 cache lookups" in result
+    assert "Cache: 4 lookups" in result
     assert "0 hits (skipped), 4 misses (fetched)" in result
     assert "0.0% hit rate" in result
 
@@ -1291,7 +1291,8 @@ def test_format_api_summary():
     assert "min)" in result
     assert "📊 GitHub API Summary: 2 API requests (🔐 authenticated)" in result
     assert (
-        "2 cache lookups → 1 hit (skipped), 1 miss (fetched) [50.0% hit rate]" in result
+        "Cache: 2 lookups → 1 hit (skipped), 1 miss (fetched) [50.0% hit rate]"
+        in result
     )
 
     # Test with rate limit info (past reset time)
@@ -1595,9 +1596,9 @@ def testformat_api_summary_debug_coverage():
 
     result = format_api_summary(summary)
 
-    # Verify the function returns expected format
+    # Verify function returns expected format
     assert "📊 GitHub API Summary: 5 API requests (🌐 unauthenticated)" in result
-    assert "5 cache lookups" in result
+    assert "Cache: 5 lookups" in result
     assert "2 hits" in result
     assert "3 misses" in result
     assert "55 requests remaining" in result
@@ -1632,3 +1633,28 @@ def test_matches_selected_patterns_nrf52_zip_extraction():
 
     # The pattern 'rak4631_' should NOT match the filename
     assert matches_selected_patterns(filename, ["rak4631_"]) is False
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "version, log_message",
+    [
+        ("1.2.3", "Fetchtastic v1.2.3"),
+        ("unknown", "Fetchtastic vunknown"),
+    ],
+    ids=["with_version", "unknown_version"],
+)
+@patch("fetchtastic.utils.logger")
+def test_display_banner(mock_logger, version, log_message):
+    """Test that display_banner logs the correct banner for both known and unknown versions."""
+    from fetchtastic.utils import _BANNER_WIDTH, display_banner
+
+    with patch("fetchtastic.utils._get_package_version", return_value=version):
+        display_banner()
+
+    separator = "=" * _BANNER_WIDTH
+    expected_calls = [
+        call(log_message),
+        call(separator),
+    ]
+    mock_logger.info.assert_has_calls(expected_calls)

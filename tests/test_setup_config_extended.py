@@ -804,7 +804,7 @@ def test_should_recommend_setup_version_mismatch(mocker):
         "fetchtastic.setup_config.load_config",
         return_value={"LAST_SETUP_VERSION": "0.8.0"},
     )
-    mocker.patch("importlib.metadata.version", return_value="0.8.1")
+    mocker.patch("fetchtastic.setup_config.version", return_value="0.8.1")
 
     should_recommend, reason, last_version, current_version = (
         setup_config.should_recommend_setup()
@@ -824,7 +824,7 @@ def test_should_recommend_setup_current(mocker):
         "fetchtastic.setup_config.load_config",
         return_value={"LAST_SETUP_VERSION": "0.8.1"},
     )
-    mocker.patch("importlib.metadata.version", return_value="0.8.1")
+    mocker.patch("fetchtastic.setup_config.version", return_value="0.8.1")
 
     should_recommend, reason, last_version, current_version = (
         setup_config.should_recommend_setup()
@@ -844,7 +844,7 @@ def test_display_version_info_success(mocker):
     mock_version.parse.side_effect = (
         lambda v: mocker.MagicMock()
     )  # Mock version comparison
-    mocker.patch("importlib.metadata.version", return_value="0.8.1")
+    mocker.patch("fetchtastic.setup_config.version", return_value="0.8.1")
 
     # Mock requests response
     mock_response = mocker.MagicMock()
@@ -864,7 +864,7 @@ def test_display_version_info_success(mocker):
 @pytest.mark.unit
 def test_display_version_info_request_failure(mocker):
     """Test display_version_info when request fails."""
-    mocker.patch("importlib.metadata.version", return_value="0.8.1")
+    mocker.patch("fetchtastic.setup_config.version", return_value="0.8.1")
     mocker.patch("requests.get", side_effect=Exception("Network error"))
 
     current, latest, available = setup_config.display_version_info()
