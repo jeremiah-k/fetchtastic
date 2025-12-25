@@ -73,6 +73,23 @@ _api_cache_misses = 0
 _api_auth_used = False
 _api_tracking_lock = threading.Lock()
 
+# Banner display settings
+_BANNER_WIDTH = 40
+
+
+def _get_package_version() -> str:
+    """
+    Get the installed package version.
+
+    Returns:
+        The installed fetchtastic version string, or 'unknown' if the
+        package cannot be found.
+    """
+    try:
+        return importlib.metadata.version("fetchtastic")
+    except importlib.metadata.PackageNotFoundError:
+        return "unknown"
+
 
 def get_user_agent() -> str:
     """
@@ -84,11 +101,7 @@ def get_user_agent() -> str:
     global _USER_AGENT_CACHE
 
     if _USER_AGENT_CACHE is None:
-        try:
-            app_version = importlib.metadata.version("fetchtastic")
-        except importlib.metadata.PackageNotFoundError:
-            app_version = "unknown"
-
+        app_version = _get_package_version()
         _USER_AGENT_CACHE = f"fetchtastic/{app_version}"
 
     return _USER_AGENT_CACHE
@@ -1530,12 +1543,8 @@ def display_banner() -> None:
     Side effects:
         Logs banner and version information via logger.
     """
-    try:
-        version = importlib.metadata.version("fetchtastic")
-    except importlib.metadata.PackageNotFoundError:
-        version = "unknown"
-
-    separator = "=" * 40
+    version = _get_package_version()
+    separator = "=" * _BANNER_WIDTH
 
     logger.info(separator)
     logger.info(f"Fetchtastic v{version}")

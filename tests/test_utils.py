@@ -4,7 +4,7 @@ import json
 import os
 import zipfile
 from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import platformdirs
 import pytest
@@ -1636,7 +1636,8 @@ def test_matches_selected_patterns_nrf52_zip_extraction():
 
 @pytest.mark.unit
 @patch("fetchtastic.utils.logger")
-def test_display_banner_with_version(mock_logger):
+@patch("fetchtastic.utils._get_package_version", return_value="1.2.3")
+def test_display_banner_with_version(mock_version, mock_logger):
     """
     Test that display_banner logs banner and version.
     """
@@ -1644,34 +1645,30 @@ def test_display_banner_with_version(mock_logger):
 
     display_banner()
 
-    assert mock_logger.info.called
-    calls = [str(call) for call in mock_logger.info.call_args_list]
-
-    version_printed = any("Fetchtastic v" in str(call) for call in calls)
-    assert version_printed, "Version information should be logged"
-
-    separator_printed = any("=" * 40 in str(call) for call in calls)
-    assert separator_printed, "Separator should be logged"
+    separator = "=" * 40
+    expected_calls = [
+        call(separator),
+        call("Fetchtastic v1.2.3"),
+        call(separator),
+    ]
+    mock_logger.info.assert_has_calls(expected_calls)
 
 
 @pytest.mark.unit
 @patch("fetchtastic.utils.logger")
-@patch("fetchtastic.utils.importlib.metadata.version")
+@patch("fetchtastic.utils._get_package_version", return_value="unknown")
 def test_display_banner_unknown_version(mock_version, mock_logger):
     """
     Test that display_banner handles missing version gracefully.
     """
     from fetchtastic.utils import display_banner
 
-    mock_version.side_effect = importlib.metadata.PackageNotFoundError()
-
     display_banner()
 
-    assert mock_logger.info.called
-    calls = [str(call) for call in mock_logger.info.call_args_list]
-
-    version_printed = any("Fetchtastic vunknown" in str(call) for call in calls)
-    assert version_printed, "Version 'unknown' should be logged when package not found"
-
-    separator_printed = any("=" * 40 in str(call) for call in calls)
-    assert separator_printed, "Separator should still be logged"
+    separator = "=" * 40
+    expected_calls = [
+        call(separator),
+        call("Fetchtastic vunknown"),
+        call(separator),
+    ]
+    mock_logger.info.assert_has_calls(expected_calls)
