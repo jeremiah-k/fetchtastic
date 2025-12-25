@@ -89,6 +89,12 @@ def _get_package_version() -> str:
         return importlib.metadata.version("fetchtastic")
     except importlib.metadata.PackageNotFoundError:
         return "unknown"
+    except Exception:
+        logger.warning(
+            "Could not determine package version due to an unexpected error.",
+            exc_info=True,
+        )
+        return "unknown"
 
 
 def get_user_agent() -> str:

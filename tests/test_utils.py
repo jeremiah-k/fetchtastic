@@ -1596,9 +1596,9 @@ def testformat_api_summary_debug_coverage():
 
     result = format_api_summary(summary)
 
-    # Verify the function returns expected format
+    # Verify function returns expected format
     assert "📊 GitHub API Summary: 5 API requests (🌐 unauthenticated)" in result
-    assert "5 cache lookups" in result
+    assert "Cache: 5 lookups" in result
     assert "2 hits" in result
     assert "3 misses" in result
     assert "55 requests remaining" in result
