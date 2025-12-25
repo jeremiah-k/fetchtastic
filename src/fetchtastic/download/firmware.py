@@ -1046,6 +1046,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 active_dir = None
 
         if not active_dir:
+            logger.info("No pre-release firmware available")
             return [], [], None
 
         selected_patterns = self._get_prerelease_patterns()
