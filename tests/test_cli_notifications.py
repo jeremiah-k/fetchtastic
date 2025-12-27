@@ -118,8 +118,6 @@ def test_summary_sends_new_releases_notification(integration):
 
 def test_summary_skips_new_releases_when_download_only(integration):
     integration.config["NOTIFY_ON_DOWNLOAD_ONLY"] = True
-    with patch(
-        "fetchtastic.download.cli_integration.send_new_releases_available_notification"
-    ) as mock_new_releases:
+    with patch("fetchtastic.notifications.send_ntfy_notification") as mock_send_ntfy:
         _call_summary(integration, [], [], new_fw=["v3.0.0"], new_apks=[])
-        mock_new_releases.assert_not_called()
+        mock_send_ntfy.assert_not_called()

@@ -272,13 +272,12 @@ class DownloadCLIIntegration:
                 and not failed_downloads
                 and new_versions_available
             ):
-                if not notify_on_download_only:
-                    send_new_releases_available_notification(
-                        self.config,
-                        new_firmware_versions,
-                        new_apk_versions,
-                        downloads_skipped_reason="Downloads skipped because downloaded assets already match the latest releases.",
-                    )
+                send_new_releases_available_notification(
+                    self.config,
+                    new_firmware_versions,
+                    new_apk_versions,
+                    downloads_skipped_reason="Downloads skipped because downloaded assets already match the latest releases.",
+                )
             else:  # downloaded_count == 0 and not failed_downloads and not new_versions_available
                 send_up_to_date_notification(self.config)
 
@@ -401,7 +400,7 @@ class DownloadCLIIntegration:
     ) -> None:
         """
         Add release_tag to new_versions_list and new_versions_set if it is not already present and is newer than current_version.
-        
+
         Parameters:
             release_tag (str): The release tag to consider for recording.
             current_version (Optional[str]): The existing version to compare against; if None, release_tag is treated as newer.
@@ -419,12 +418,12 @@ class DownloadCLIIntegration:
     def _normalize_firmware_prerelease_tag(self, tag: Optional[str]) -> Optional[str]:
         """
         Normalize a firmware prerelease tag by removing the configured firmware directory prefix if present.
-        
+
         Parameters:
-        	tag (Optional[str]): A prerelease tag that may be prefixed with FIRMWARE_DIR_PREFIX.
-        
+                tag (Optional[str]): A prerelease tag that may be prefixed with FIRMWARE_DIR_PREFIX.
+
         Returns:
-        	normalized_tag (Optional[str]): The tag with FIRMWARE_DIR_PREFIX stripped if it was present; otherwise the original tag (or None/empty unchanged).
+                normalized_tag (Optional[str]): The tag with FIRMWARE_DIR_PREFIX stripped if it was present; otherwise the original tag (or None/empty unchanged).
         """
         if not tag:
             return tag
@@ -440,7 +439,7 @@ class DownloadCLIIntegration:
     ) -> None:
         """
         Add a release tag to the downloaded list while ensuring uniqueness via the downloaded set.
-        
+
         Parameters:
             release_tag: The release tag to record.
             downloaded_list: Ordered list of recorded release tags; the tag is appended if not already recorded.
