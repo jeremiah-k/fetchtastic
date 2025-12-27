@@ -28,7 +28,6 @@ from fetchtastic.constants import (
 from fetchtastic.log_utils import logger
 from fetchtastic.notifications import (
     send_download_completion_notification,
-    send_new_releases_available_notification,
     send_up_to_date_notification,
 )
 from fetchtastic.utils import (
@@ -246,17 +245,11 @@ class DownloadCLIIntegration:
                     f"URL={url} retryable={retryable} http_status={http_status} error={error}"
                 )
 
-        new_versions_available = bool(new_firmware_versions or new_apk_versions)
         if downloaded_count == 0 and not failed_downloads:
-            if new_versions_available:
-                log.info(
-                    "New releases were skipped because the local copies already exist."
-                )
-            else:
-                log.info(
-                    "All assets are up to date.\n%s",
-                    time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-                )
+            log.info(
+                "All assets are up to date.\n%s",
+                time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            )
         elif downloaded_count == 0 and failed_downloads:
             log.info("All attempted downloads failed; check logs for details.")
 
@@ -265,17 +258,6 @@ class DownloadCLIIntegration:
             if downloaded_count > 0:
                 send_download_completion_notification(
                     self.config, downloaded_firmwares, downloaded_apks
-                )
-            elif (
-                downloaded_count == 0
-                and not failed_downloads
-                and new_versions_available
-            ):
-                send_new_releases_available_notification(
-                    self.config,
-                    new_firmware_versions,
-                    new_apk_versions,
-                    downloads_skipped_reason="Downloads skipped because downloaded assets already match the latest releases.",
                 )
             else:  # downloaded_count == 0 and not failed_downloads and not new_versions_available
                 send_up_to_date_notification(self.config)
@@ -336,7 +318,9 @@ class DownloadCLIIntegration:
             is_android = file_type in ANDROID_FILE_TYPES
             was_skipped = getattr(result, "was_skipped", False)
 
-            # Always detect newer versions (for notifications), even when downloads were skipped.
+            if was_skipped:
+                continue
+
             if is_firmware:
                 compare_current = current_firmware
                 compare_release_tag = None
@@ -367,9 +351,6 @@ class DownloadCLIIntegration:
                     new_apk_versions,
                     new_apk_set,
                 )
-
-            if was_skipped:
-                continue
 
             if is_firmware:
                 self._add_downloaded_asset(

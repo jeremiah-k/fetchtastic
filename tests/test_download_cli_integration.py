@@ -208,8 +208,8 @@ def test_run_download_successful(mocker):
     assert result[6] == "v1.9.0"  # latest_apk_version (from orchestrator)
 
     # Verify version comparison was called for new version detection
-    # Should be called for each item in results, including skipped ones (3 times in this test)
-    assert mock_version_manager.compare_versions.call_count == 3
+    # Should be called for each downloaded item (2 times in this test)
+    assert mock_version_manager.compare_versions.call_count == 2
     # Verify it was called with the correct arguments
     calls = mock_version_manager.compare_versions.call_args_list
     assert any(call[0] == ("v1.0.0", "v0.9.0") for call in calls)
@@ -704,14 +704,14 @@ def test_convert_results_uses_android_prerelease_for_comparison(mocker):
     def compare_side_effect(version1, version2):
         """
         Test comparator that simulates specific version comparison outcomes.
-        
+
         Returns 0 when the versions are considered equal, 1 when the first version
         is considered newer than the second, and defaults to 0 for all other inputs.
-        
+
         Parameters:
             version1 (str): First version string to compare.
             version2 (str): Second version string to compare.
-        
+
         Returns:
             int: `0` if versions are equal, `1` if `version1` is newer than `version2`, otherwise `0`.
         """
@@ -731,7 +731,7 @@ def test_convert_results_uses_android_prerelease_for_comparison(mocker):
         def __init__(self, release_tag, file_type, was_skipped=False):
             """
             Initialize a download result record with its release tag, file type, and skipped status.
-            
+
             Parameters:
                 release_tag (str): The release identifier associated with the file (e.g., version or tag).
                 file_type (str): The category of the file (e.g., "firmware", "android", "firmware_prerelease", "android_prerelease").
@@ -741,12 +741,13 @@ def test_convert_results_uses_android_prerelease_for_comparison(mocker):
             self.file_type = file_type
             self.was_skipped = was_skipped
 
-    results = [MockResult("v2.7.10-open.1", "android_prerelease", True)]
-    _downloaded_fw, _new_fw, _downloaded_apks, new_apks = (
+    results = [MockResult("v2.7.10-open.1", "android_prerelease", False)]
+    _downloaded_fw, _new_fw, downloaded_apks, new_apks = (
         integration._convert_results_to_legacy_format(results)
     )
 
     assert new_apks == []
+    assert downloaded_apks == ["v2.7.10-open.1"]
     calls = [call[0] for call in mock_version_manager.compare_versions.call_args_list]
     assert ("v2.7.10-open.1", "v2.7.10-open.1") in calls
     assert ("v2.7.10-open.1", "v2.7.9") not in calls
@@ -768,11 +769,11 @@ def test_convert_results_normalizes_firmware_prerelease_tags(mocker):
     def compare_side_effect(version1, version2):
         """
         Simulates comparison outcomes for a small set of version string pairs used in tests.
-        
+
         Parameters:
             version1 (str): The first version string to compare.
             version2 (str): The second version string to compare.
-        
+
         Returns:
             int: `1` if `version1` is treated as newer than `version2` for a handled pair, `0` if they are considered equal or the pair is not explicitly handled.
         """
@@ -792,7 +793,7 @@ def test_convert_results_normalizes_firmware_prerelease_tags(mocker):
         def __init__(self, release_tag, file_type, was_skipped=False):
             """
             Initialize a download result record with its release tag, file type, and skipped status.
-            
+
             Parameters:
                 release_tag (str): The release identifier associated with the file (e.g., version or tag).
                 file_type (str): The category of the file (e.g., "firmware", "android", "firmware_prerelease", "android_prerelease").
@@ -802,12 +803,13 @@ def test_convert_results_normalizes_firmware_prerelease_tags(mocker):
             self.file_type = file_type
             self.was_skipped = was_skipped
 
-    results = [MockResult("firmware-2.7.10-abcdef", "firmware_prerelease", True)]
-    _downloaded_fw, new_fw, _downloaded_apks, _new_apks = (
+    results = [MockResult("firmware-2.7.10-abcdef", "firmware_prerelease", False)]
+    downloaded_fw, new_fw, _downloaded_apks, _new_apks = (
         integration._convert_results_to_legacy_format(results)
     )
 
     assert new_fw == []
+    assert downloaded_fw == ["firmware-2.7.10-abcdef"]
     calls = [call[0] for call in mock_version_manager.compare_versions.call_args_list]
     assert ("2.7.10-abcdef", "2.7.10-abcdef") in calls
     assert ("firmware-2.7.10-abcdef", "2.7.10-abcdef") not in calls
