@@ -18,18 +18,18 @@ class TestDownloadOrchestrator:
     @pytest.fixture
     def mock_config(self):
         """
-        Provide a mock configuration dictionary for tests.
-
+        Provide a mock configuration dictionary used by the tests.
+        
         Returns:
-            dict: Configuration used by tests with keys:
-                DOWNLOAD_DIR: path to download directory.
+            dict: Configuration mapping used in test fixtures with keys:
+                DOWNLOAD_DIR: download directory path.
                 SAVE_APKS: whether to save Android APKs.
-                SAVE_FIRMWARE: whether to save firmware.
-                CHECK_APK_PRERELEASES: whether to include Android prerelease APKs.
-                CHECK_FIRMWARE_PRERELEASES: whether to include firmware prereleases.
+                SAVE_FIRMWARE: whether to save firmware files.
+                CHECK_APK_PRERELEASES: whether to consider Android prerelease APKs.
+                CHECK_FIRMWARE_PRERELEASES: whether to consider firmware prereleases.
                 SELECTED_FIRMWARE_ASSETS: list of firmware asset names to select.
-                EXCLUDE_PATTERNS: glob patterns of assets/releases to exclude.
-                GITHUB_TOKEN: token used for authenticated GitHub requests.
+                EXCLUDE_PATTERNS: list of glob patterns to exclude assets/releases.
+                GITHUB_TOKEN: token for authenticated GitHub requests.
         """
         return {
             "DOWNLOAD_DIR": "/tmp/test",

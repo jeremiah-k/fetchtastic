@@ -400,14 +400,14 @@ class DownloadCLIIntegration:
         comparison_release_tag: Optional[str] = None,
     ) -> None:
         """
-        Helper method to update new versions list and set if the release tag is newer.
-
+        Add release_tag to new_versions_list and new_versions_set if it is not already present and is newer than current_version.
+        
         Parameters:
-            release_tag (str): Release tag to check.
-            current_version (Optional[str]): Current version to compare against.
-            new_versions_list (List[str]): List to append new versions to.
-            new_versions_set (set[str]): Set to track unique new versions.
-            comparison_release_tag (Optional[str]): Optional normalized tag to use for comparison.
+            release_tag (str): The release tag to consider for recording.
+            current_version (Optional[str]): The existing version to compare against; if None, release_tag is treated as newer.
+            new_versions_list (List[str]): Mutable list to append the release_tag to when it is new.
+            new_versions_set (set[str]): Mutable set used to ensure uniqueness of recorded versions.
+            comparison_release_tag (Optional[str]): If provided, this tag is used for version comparison instead of release_tag.
         """
         compare_tag = comparison_release_tag or release_tag
         if release_tag not in new_versions_set and (
@@ -417,6 +417,15 @@ class DownloadCLIIntegration:
             new_versions_set.add(release_tag)
 
     def _normalize_firmware_prerelease_tag(self, tag: Optional[str]) -> Optional[str]:
+        """
+        Normalize a firmware prerelease tag by removing the configured firmware directory prefix if present.
+        
+        Parameters:
+        	tag (Optional[str]): A prerelease tag that may be prefixed with FIRMWARE_DIR_PREFIX.
+        
+        Returns:
+        	normalized_tag (Optional[str]): The tag with FIRMWARE_DIR_PREFIX stripped if it was present; otherwise the original tag (or None/empty unchanged).
+        """
         if not tag:
             return tag
         if tag.startswith(FIRMWARE_DIR_PREFIX):
@@ -430,12 +439,12 @@ class DownloadCLIIntegration:
         downloaded_set: set[str],
     ) -> None:
         """
-        Helper method to add downloaded asset to list and set if not already present.
-
+        Add a release tag to the downloaded list while ensuring uniqueness via the downloaded set.
+        
         Parameters:
-            release_tag (str): Release tag of downloaded asset.
-            downloaded_list (List[str]): List to append to.
-            downloaded_set (set[str]): Set to track unique downloaded assets.
+            release_tag: The release tag to record.
+            downloaded_list: Ordered list of recorded release tags; the tag is appended if not already recorded.
+            downloaded_set: Set used to track recorded tags for fast membership checks and to prevent duplicates.
         """
         if release_tag not in downloaded_set:
             downloaded_list.append(release_tag)

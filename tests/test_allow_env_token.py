@@ -20,7 +20,12 @@ def integration():
 
 @pytest.fixture
 def mock_config():
-    """Create a basic mock configuration."""
+    """
+    Return a minimal mock configuration for tests.
+    
+    Returns:
+        dict: Configuration containing "DOWNLOAD_DIR" set to "/tmp/test".
+    """
     return {
         "DOWNLOAD_DIR": "/tmp/test",
     }
@@ -45,7 +50,11 @@ def test_allow_env_token_true_uses_environment_token(integration, mock_config):
 
 
 def test_allow_env_token_false_ignores_environment_token(integration, mock_config):
-    """Test that ALLOW_ENV_TOKEN=False ignores environment GITHUB_TOKEN."""
+    """
+    Verify that the environment GITHUB_TOKEN is ignored when the configuration disallows using environment tokens.
+    
+    The test sets both an environment token and a config-level token, runs the integration entry point, and asserts the config token remains in mock_config.
+    """
     test_env_token = "test_env_token_value"
     test_config_token = "test_config_token_value"
 

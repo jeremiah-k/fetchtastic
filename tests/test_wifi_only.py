@@ -14,7 +14,15 @@ pytestmark = [pytest.mark.unit]
 
 @pytest.fixture
 def mock_config():
-    """Create a basic mock configuration."""
+    """
+    Provide a minimal test configuration used by the download orchestrator unit tests.
+    
+    Returns:
+        dict: A configuration dictionary containing keys:
+            - "DOWNLOAD_DIR": path to the temporary download directory (str)
+            - "SAVE_FIRMWARE": whether to save firmware files (bool)
+            - "SAVE_APKS": whether to save APK files (bool)
+    """
     return {
         "DOWNLOAD_DIR": "/tmp/test",
         "SAVE_FIRMWARE": True,
