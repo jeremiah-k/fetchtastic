@@ -22,7 +22,7 @@ def integration():
 def mock_config():
     """
     Return a minimal mock configuration for tests.
-    
+
     Returns:
         dict: Configuration containing "DOWNLOAD_DIR" set to "/tmp/test".
     """
@@ -52,7 +52,7 @@ def test_allow_env_token_true_uses_environment_token(integration, mock_config):
 def test_allow_env_token_false_ignores_environment_token(integration, mock_config):
     """
     Verify that the environment GITHUB_TOKEN is ignored when the configuration disallows using environment tokens.
-    
+
     The test sets both an environment token and a config-level token, runs the integration entry point, and asserts the config token remains in mock_config.
     """
     test_env_token = "test_env_token_value"

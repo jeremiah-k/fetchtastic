@@ -410,9 +410,7 @@ class DownloadCLIIntegration:
         """
         if not tag:
             return tag
-        if tag.startswith(FIRMWARE_DIR_PREFIX):
-            return tag[len(FIRMWARE_DIR_PREFIX) :]
-        return tag
+        return tag.removeprefix(FIRMWARE_DIR_PREFIX)
 
     def _add_downloaded_asset(
         self,

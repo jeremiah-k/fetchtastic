@@ -199,7 +199,7 @@ def clean_repo_directory(download_dir):  # log_message_func removed
 def main(config):  # log_message_func removed
     """
     Run the repository downloader flow: launch the interactive file browser, download selected files into the configured download directory, and on Windows optionally prompt to open the download folder.
-    
+
     Parameters:
         config (dict): Configuration mapping that must include the key "DOWNLOAD_DIR" with the base download directory path.
     """
