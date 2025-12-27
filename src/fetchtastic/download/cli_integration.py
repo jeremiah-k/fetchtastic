@@ -533,7 +533,7 @@ class DownloadCLIIntegration:
             # same effective value (config token preferred, env token fallback).
             config_token = get_effective_github_token(
                 config.get("GITHUB_TOKEN"),
-                allow_env_token=True,
+                allow_env_token=config.get("ALLOW_ENV_TOKEN", True),
             )
             if config_token:
                 config["GITHUB_TOKEN"] = config_token
