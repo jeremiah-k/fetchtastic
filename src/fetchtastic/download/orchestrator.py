@@ -90,8 +90,10 @@ def is_connected_to_wifi() -> bool:
             "termux-wifi-connectioninfo command not found. Is Termux:API installed and configured?"
         )
         return False
-    except Exception as e:
-        logger.warning(f"Unexpected error checking Wi-Fi connection: {e}")
+    except (OSError, subprocess.SubprocessError) as e:
+        logger.warning(
+            f"Unexpected error checking Wi-Fi connection: {e}", exc_info=True
+        )
         return False
 
 

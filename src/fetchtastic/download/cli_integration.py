@@ -195,7 +195,7 @@ class DownloadCLIIntegration:
         """
         Emit a legacy-style summary of download results to the provided logger.
 
-        Logs elapsed time, counts of downloaded firmware and APKs, reported latest release versions (including prereleases), details of any failed downloads, and a GitHub API usage summary. If no downloads or failures occurred, logs an "up to date" timestamp. Uses the instance's get_latest_versions() for prerelease info.
+        Logs elapsed time, counts of downloaded firmware and APKs, reported latest release versions (including prereleases), details of any failed downloads, and a GitHub API usage summary. If no downloads or failures occurred, logs an "up to date" timestamp. Uses the instance's get_latest_versions() for prerelease info. The new_firmware_versions/new_apk_versions parameters are accepted for backward compatibility but are not currently used.
 
         Note: self.config must be available for notification functionality to work.
 
@@ -207,6 +207,8 @@ class DownloadCLIIntegration:
             failed_downloads (List[Dict[str, str]]): List of failure records; each may include keys like `type`, `release_tag`, `file_name`, `url`, `retryable`, `http_status`, and `error`.
             latest_firmware_version (str): Reported latest firmware release tag (empty if none).
             latest_apk_version (str): Reported latest APK release tag (empty if none).
+            new_firmware_versions (List[str]): Unused; retained for backward compatibility.
+            new_apk_versions (List[str]): Unused; retained for backward compatibility.
         """
         log = logger_override or logger
         log.info(f"\nCompleted in {elapsed_seconds:.1f}s")
@@ -318,6 +320,7 @@ class DownloadCLIIntegration:
             is_android = file_type in ANDROID_FILE_TYPES
             was_skipped = getattr(result, "was_skipped", False)
 
+            # Legacy parity: only mark new versions when a download actually occurred.
             if was_skipped:
                 continue
 

@@ -1,11 +1,15 @@
 from pathlib import Path
 
+import pytest
+
 from fetchtastic.constants import APKS_DIR_NAME, FIRMWARE_DIR_NAME
 from fetchtastic.download.cli_integration import DownloadCLIIntegration
 from fetchtastic.download.interfaces import DownloadResult
 
 
-def test_migration_does_not_report_skipped_assets_as_downloads(tmp_path, monkeypatch):
+@pytest.mark.unit
+@pytest.mark.core_downloads
+def test_skipped_downloads_not_reported_as_new_versions(tmp_path):
     integration = DownloadCLIIntegration()
     # Initialize the components
     integration.config = {"DOWNLOAD_DIR": str(tmp_path)}
