@@ -87,12 +87,12 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     def get_releases(self, limit: Optional[int] = None) -> List[Release]:
         """
         Fetches Android APK releases from GitHub and constructs Release objects populated with their APK assets.
-        
+
         Uses a cached GitHub response when available, filters out releases that have no APK assets or that are considered legacy/unsupported, and respects the configured scan window for finding a minimum number of stable releases. If `limit` is provided, the function returns at most that many releases.
-        
+
         Parameters:
             limit (Optional[int]): Maximum number of releases to return. If `None`, the scan size is determined from configuration and the function will expand its scan up to a configured maximum to find a minimum number of stable releases.
-        
+
         Returns:
             List[Release]: A list of Release objects with their Asset entries; returns an empty list on error or if no valid releases are found.
         """
@@ -274,7 +274,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
             # Check if we need to download
             if self.is_asset_complete(release.tag_name, asset):
-                logger.info(f"APK {asset.name} already exists and is complete")
+                logger.debug(f"APK {asset.name} already exists and is complete")
                 return self.create_download_result(
                     success=True,
                     release_tag=release.tag_name,

@@ -206,7 +206,7 @@ class DownloadOrchestrator:
                 logger.info(f"Checking {release.tag_name}…")
                 if self.android_downloader.is_release_complete(release):
                     logger.debug(
-                        f"Release {release.tag_name} already exists and is complete, skipping download"
+                        f"Release {release.tag_name} already exists and is complete"
                     )
                 else:
                     releases_to_download.append(release)
@@ -274,7 +274,7 @@ class DownloadOrchestrator:
                 logger.info(f"Checking {release.tag_name}…")
                 if self.firmware_downloader.is_release_complete(release):
                     logger.debug(
-                        f"Release {release.tag_name} already exists and is complete, skipping download"
+                        f"Release {release.tag_name} already exists and is complete"
                     )
                 else:
                     releases_to_download.append(release)
@@ -926,12 +926,16 @@ class DownloadOrchestrator:
 
         logger.info("Download pipeline completed")
         logger.info(f"Time taken: {elapsed_time:.2f} seconds")
-        logger.info(
-            "Downloads: %d downloaded, %d skipped, %d failed",
-            len(downloaded),
-            len(skipped),
-            total_failures,
-        )
+        if not downloaded and total_failures == 0:
+            logger.info("All assets are up to date.")
+        else:
+            logger.info(
+                "Downloads: %d downloaded, %d failed",
+                len(downloaded),
+                total_failures,
+            )
+        if skipped:
+            logger.debug("Skipped %d existing assets", len(skipped))
 
         if total_failures > 0:
             logger.warning(
