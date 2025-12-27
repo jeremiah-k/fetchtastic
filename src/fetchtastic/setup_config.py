@@ -1935,25 +1935,17 @@ def should_recommend_setup():
         return True, "Could not determine setup status", None, None
 
 
-def display_version_info(show_update_message=False):
+def display_version_info():
     """
     Retrieves the current and latest Fetchtastic version information and update status.
-
-    Parameters:
-        show_update_message (bool): If True and an update is available, logs a notification message.
 
     Returns:
         A tuple of (current_version, latest_version, update_available), where update_available is True if a newer version is available.
     """
     current_version, latest_version, update_available = check_for_updates()
 
-    # Log update notification if requested and update is available
-    if show_update_message and update_available and latest_version:
-        upgrade_cmd = get_upgrade_command()
-        logger.info("\nUpdate Available")
-        logger.info(f"A newer version (v{latest_version}) of Fetchtastic is available!")
-        logger.info(f"Run '{upgrade_cmd}' to upgrade.")
-
+    # Return version information without printing
+    # The caller will handle logging/printing as appropriate
     return current_version, latest_version, update_available
 
 
