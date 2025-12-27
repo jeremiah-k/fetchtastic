@@ -34,7 +34,7 @@ def test_wifi_only_skips_downloads_when_not_connected_to_wifi(
     """Test that WIFI_ONLY=True skips downloads when not connected to Wi-Fi."""
     mock_config["WIFI_ONLY"] = True
 
-    with patch("fetchtastic.download.orchestrator.is_termux") as mock_is_termux:
+    with patch("fetchtastic.setup_config.is_termux") as mock_is_termux:
         mock_is_termux.return_value = True
 
         with patch(
@@ -42,18 +42,22 @@ def test_wifi_only_skips_downloads_when_not_connected_to_wifi(
         ) as mock_wifi:
             mock_wifi.return_value = False
 
-    with patch("fetchtastic.download.orchestrator.cleanup_legacy_hash_sidecars"):
-        successful_results, failed_results = orchestrator.run_download_pipeline()
+            with patch(
+                "fetchtastic.download.orchestrator.cleanup_legacy_hash_sidecars"
+            ):
+                successful_results, failed_results = (
+                    orchestrator.run_download_pipeline()
+                )
 
-        assert successful_results == []
-        assert failed_results == []
+                assert successful_results == []
+                assert failed_results == []
 
 
 def test_wifi_only_allows_downloads_when_connected_to_wifi(orchestrator, mock_config):
     """Test that WIFI_ONLY=True allows downloads when connected to Wi-Fi."""
     mock_config["WIFI_ONLY"] = True
 
-    with patch("fetchtastic.download.orchestrator.is_termux") as mock_is_termux:
+    with patch("fetchtastic.setup_config.is_termux") as mock_is_termux:
         mock_is_termux.return_value = True
 
         with patch(
@@ -75,7 +79,7 @@ def test_wifi_only_false_does_not_check_wifi(orchestrator, mock_config):
     """Test that WIFI_ONLY=False does not check Wi-Fi connection."""
     mock_config["WIFI_ONLY"] = False
 
-    with patch("fetchtastic.download.orchestrator.is_termux") as mock_is_termux:
+    with patch("fetchtastic.setup_config.is_termux") as mock_is_termux:
         mock_is_termux.return_value = True
 
         with patch(
@@ -95,7 +99,7 @@ def test_wifi_only_false_does_not_check_wifi(orchestrator, mock_config):
 
 def test_wifi_only_default_false(orchestrator, mock_config):
     """Test that WIFI_ONLY defaults to False when not specified."""
-    with patch("fetchtastic.download.orchestrator.is_termux") as mock_is_termux:
+    with patch("fetchtastic.setup_config.is_termux") as mock_is_termux:
         mock_is_termux.return_value = True
 
         with patch(
@@ -117,7 +121,7 @@ def test_wifi_only_non_termux_always_allows_downloads(orchestrator, mock_config)
     """Test that non-Termux platforms never check Wi-Fi connection."""
     mock_config["WIFI_ONLY"] = True
 
-    with patch("fetchtastic.download.orchestrator.is_termux") as mock_is_termux:
+    with patch("fetchtastic.setup_config.is_termux") as mock_is_termux:
         mock_is_termux.return_value = False
 
         with patch(
@@ -139,7 +143,7 @@ def test_is_connected_to_wifi_termux_connected():
     """Test is_connected_to_wifi returns True when Termux has Wi-Fi."""
     wifi_data = {"supplicant_state": "COMPLETED", "ip": "192.168.1.100"}
 
-    with patch("fetchtastic.download.orchestrator.is_termux") as mock_is_termux:
+    with patch("fetchtastic.setup_config.is_termux") as mock_is_termux:
         mock_is_termux.return_value = True
 
         with patch("subprocess.run") as mock_run:
@@ -155,49 +159,45 @@ def test_is_connected_to_wifi_termux_connected():
             assert result is True
 
 
-def test_is_connected_to_wifi_termux_not_connected():
+def test_is_connected_to_wifi_termux_not_connected(mocker):
     """Test is_connected_to_wifi returns False when Termux has no Wi-Fi."""
     wifi_data = {"supplicant_state": "DISCONNECTED", "ip": ""}
 
-    with patch("fetchtastic.download.orchestrator.is_termux") as mock_is_termux:
-        mock_is_termux.return_value = True
+    mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
+    mock_run = mocker.patch("subprocess.run")
+    mock_process = MagicMock()
+    mock_process.returncode = 0
+    mock_process.stdout = json.dumps(wifi_data)
+    mock_process.stderr = ""
+    mock_run.return_value = mock_process
 
-        with patch("subprocess.run") as mock_run:
-            mock_process = MagicMock()
-            mock_process.returncode = 0
-            mock_process.stdout = json.dumps(wifi_data)
-            mock_process.stderr = ""
-            mock_run.return_value = mock_process
+    from fetchtastic.download.orchestrator import is_connected_to_wifi
 
-            from fetchtastic.download.orchestrator import is_connected_to_wifi
-
-            result = is_connected_to_wifi()
-            assert result is False
+    result = is_connected_to_wifi()
+    assert result is False
 
 
-def test_is_connected_to_wifi_termux_incomplete():
+def test_is_connected_to_wifi_termux_incomplete(mocker):
     """Test is_connected_to_wifi returns False when Termux Wi-Fi is incomplete."""
     wifi_data = {"supplicant_state": "SCANNING", "ip": ""}
 
-    with patch("fetchtastic.download.orchestrator.is_termux") as mock_is_termux:
-        mock_is_termux.return_value = True
+    mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
+    mock_run = mocker.patch("subprocess.run")
+    mock_process = MagicMock()
+    mock_process.returncode = 0
+    mock_process.stdout = json.dumps(wifi_data)
+    mock_process.stderr = ""
+    mock_run.return_value = mock_process
 
-        with patch("subprocess.run") as mock_run:
-            mock_process = MagicMock()
-            mock_process.returncode = 0
-            mock_process.stdout = json.dumps(wifi_data)
-            mock_process.stderr = ""
-            mock_run.return_value = mock_process
+    from fetchtastic.download.orchestrator import is_connected_to_wifi
 
-            from fetchtastic.download.orchestrator import is_connected_to_wifi
-
-            result = is_connected_to_wifi()
-            assert result is False
+    result = is_connected_to_wifi()
+    assert result is False
 
 
 def test_is_connected_to_wifi_non_termux():
     """Test is_connected_to_wifi returns True for non-Termux platforms."""
-    with patch("fetchtastic.download.orchestrator.is_termux") as mock_is_termux:
+    with patch("fetchtastic.setup_config.is_termux") as mock_is_termux:
         mock_is_termux.return_value = False
 
         from fetchtastic.download.orchestrator import is_connected_to_wifi
@@ -206,33 +206,29 @@ def test_is_connected_to_wifi_non_termux():
         assert result is True
 
 
-def test_is_connected_to_wifi_json_decode_error():
+def test_is_connected_to_wifi_json_decode_error(mocker):
     """Test is_connected_to_wifi handles JSON decode errors gracefully."""
-    with patch("fetchtastic.download.orchestrator.is_termux") as mock_is_termux:
-        mock_is_termux.return_value = True
+    mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
+    mock_run = mocker.patch("subprocess.run")
+    mock_process = MagicMock()
+    mock_process.returncode = 0
+    mock_process.stdout = "invalid json"
+    mock_process.stderr = ""
+    mock_run.return_value = mock_process
 
-        with patch("subprocess.run") as mock_run:
-            mock_process = MagicMock()
-            mock_process.returncode = 0
-            mock_process.stdout = "invalid json"
-            mock_process.stderr = ""
-            mock_run.return_value = mock_process
+    from fetchtastic.download.orchestrator import is_connected_to_wifi
 
-            from fetchtastic.download.orchestrator import is_connected_to_wifi
-
-            result = is_connected_to_wifi()
-            assert result is False
+    result = is_connected_to_wifi()
+    assert result is False
 
 
-def test_is_connected_to_wifi_os_error():
+def test_is_connected_to_wifi_os_error(mocker):
     """Test is_connected_to_wifi handles OSError gracefully."""
-    with patch("fetchtastic.download.orchestrator.is_termux") as mock_is_termux:
-        mock_is_termux.return_value = True
+    mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
+    mock_run = mocker.patch("subprocess.run")
+    mock_run.side_effect = FileNotFoundError("Command not found")
 
-        with patch("subprocess.run") as mock_run:
-            mock_run.side_effect = FileNotFoundError("Command not found")
+    from fetchtastic.download.orchestrator import is_connected_to_wifi
 
-            from fetchtastic.download.orchestrator import is_connected_to_wifi
-
-            result = is_connected_to_wifi()
-            assert result is False
+    result = is_connected_to_wifi()
+    assert result is False
