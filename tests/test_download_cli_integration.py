@@ -702,6 +702,19 @@ def test_convert_results_uses_android_prerelease_for_comparison(mocker):
     mock_version_manager = mocker.MagicMock()
 
     def compare_side_effect(version1, version2):
+        """
+        Test comparator that simulates specific version comparison outcomes.
+        
+        Returns 0 when the versions are considered equal, 1 when the first version
+        is considered newer than the second, and defaults to 0 for all other inputs.
+        
+        Parameters:
+            version1 (str): First version string to compare.
+            version2 (str): Second version string to compare.
+        
+        Returns:
+            int: `0` if versions are equal, `1` if `version1` is newer than `version2`, otherwise `0`.
+        """
         if (version1, version2) == ("v2.7.10-open.1", "v2.7.10-open.1"):
             return 0
         if (version1, version2) == ("v2.7.10-open.1", "v2.7.9"):
@@ -716,6 +729,14 @@ def test_convert_results_uses_android_prerelease_for_comparison(mocker):
 
     class MockResult:
         def __init__(self, release_tag, file_type, was_skipped=False):
+            """
+            Initialize a download result record with its release tag, file type, and skipped status.
+            
+            Parameters:
+                release_tag (str): The release identifier associated with the file (e.g., version or tag).
+                file_type (str): The category of the file (e.g., "firmware", "android", "firmware_prerelease", "android_prerelease").
+                was_skipped (bool): Whether the file was skipped during processing; defaults to False.
+            """
             self.release_tag = release_tag
             self.file_type = file_type
             self.was_skipped = was_skipped
@@ -745,6 +766,16 @@ def test_convert_results_normalizes_firmware_prerelease_tags(mocker):
     mock_version_manager = mocker.MagicMock()
 
     def compare_side_effect(version1, version2):
+        """
+        Simulates comparison outcomes for a small set of version string pairs used in tests.
+        
+        Parameters:
+            version1 (str): The first version string to compare.
+            version2 (str): The second version string to compare.
+        
+        Returns:
+            int: `1` if `version1` is treated as newer than `version2` for a handled pair, `0` if they are considered equal or the pair is not explicitly handled.
+        """
         if (version1, version2) == ("2.7.10-abcdef", "2.7.10-abcdef"):
             return 0
         if (version1, version2) == ("2.7.10-abcdef", "v2.7.9"):
@@ -759,6 +790,14 @@ def test_convert_results_normalizes_firmware_prerelease_tags(mocker):
 
     class MockResult:
         def __init__(self, release_tag, file_type, was_skipped=False):
+            """
+            Initialize a download result record with its release tag, file type, and skipped status.
+            
+            Parameters:
+                release_tag (str): The release identifier associated with the file (e.g., version or tag).
+                file_type (str): The category of the file (e.g., "firmware", "android", "firmware_prerelease", "android_prerelease").
+                was_skipped (bool): Whether the file was skipped during processing; defaults to False.
+            """
             self.release_tag = release_tag
             self.file_type = file_type
             self.was_skipped = was_skipped

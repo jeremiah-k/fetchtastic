@@ -111,16 +111,20 @@ def send_new_releases_available_notification(
     downloads_skipped_reason: Optional[str] = None,
 ) -> None:
     """
-    Send notification when new releases are available but downloads were skipped.
-
+    Notify the configured NTFY topic about new firmware or APK releases when downloads were skipped.
+    
     Parameters:
-        config (Dict[str, Any]): Configuration containing NTFY settings.
-        new_firmware_versions (List[str]): List of available firmware versions.
-        new_apk_versions (List[str]): List of available APK versions.
-        downloads_skipped_reason (Optional[str]): Reason why downloads were skipped.
-
-    Side effects:
-        - Sends notification to configured NTFY server/topic about available releases.
+        config (Dict[str, Any]): Configuration dictionary. Recognized keys:
+            - "NTFY_SERVER": NTFY server base URL.
+            - "NTFY_TOPIC": NTFY topic to post the notification to.
+            - "NOTIFY_ON_DOWNLOAD_ONLY": if True, suppresses this notification.
+        new_firmware_versions (List[str]): Available firmware version identifiers to report.
+        new_apk_versions (List[str]): Available Android APK version identifiers to report.
+        downloads_skipped_reason (Optional[str]): Human-readable reason why downloads were skipped;
+            if provided it is included as the first line of the notification.
+    
+    Behavior:
+        If "NOTIFY_ON_DOWNLOAD_ONLY" is True or there are no new firmware/APK versions, no notification is sent.
     """
     ntfy_server = config.get("NTFY_SERVER", "")
     ntfy_topic = config.get("NTFY_TOPIC", "")

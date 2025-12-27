@@ -86,15 +86,15 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
     def get_releases(self, limit: Optional[int] = None) -> List[Release]:
         """
-        Fetches Android APK releases from GitHub, using a cached response when available.
-
-        Builds and returns Release objects populated with their Asset entries, filters out releases that have no assets, and respects the optional limit on the number of releases returned.
-
+        Fetches Android APK releases from GitHub and constructs Release objects populated with their APK assets.
+        
+        Uses a cached GitHub response when available, filters out releases that have no APK assets or that are considered legacy/unsupported, and respects the configured scan window for finding a minimum number of stable releases. If `limit` is provided, the function returns at most that many releases.
+        
         Parameters:
-            limit (Optional[int]): Maximum number of releases to return.
-
+            limit (Optional[int]): Maximum number of releases to return. If `None`, the scan size is determined from configuration and the function will expand its scan up to a configured maximum to find a minimum number of stable releases.
+        
         Returns:
-            List[Release]: List of Release objects; empty list on error or if no valid releases are found.
+            List[Release]: A list of Release objects with their Asset entries; returns an empty list on error or if no valid releases are found.
         """
         try:
             max_scan = GITHUB_MAX_PER_PAGE
