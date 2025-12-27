@@ -146,7 +146,7 @@ def test_is_connected_to_wifi_termux_connected():
     with patch("fetchtastic.setup_config.is_termux") as mock_is_termux:
         mock_is_termux.return_value = True
 
-        with patch("subprocess.run") as mock_run:
+        with patch("fetchtastic.download.orchestrator.subprocess.run") as mock_run:
             mock_process = MagicMock()
             mock_process.returncode = 0
             mock_process.stdout = json.dumps(wifi_data)
@@ -163,8 +163,8 @@ def test_is_connected_to_wifi_termux_not_connected(mocker):
     """Test is_connected_to_wifi returns False when Termux has no Wi-Fi."""
     wifi_data = {"supplicant_state": "DISCONNECTED", "ip": ""}
 
-    mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
-    mock_run = mocker.patch("subprocess.run")
+    mocker.patch("fetchtastic.download.orchestrator.is_termux", return_value=True)
+    mock_run = mocker.patch("fetchtastic.download.orchestrator.subprocess.run")
     mock_process = MagicMock()
     mock_process.returncode = 0
     mock_process.stdout = json.dumps(wifi_data)
@@ -181,8 +181,8 @@ def test_is_connected_to_wifi_termux_incomplete(mocker):
     """Test is_connected_to_wifi returns False when Termux Wi-Fi is incomplete."""
     wifi_data = {"supplicant_state": "SCANNING", "ip": ""}
 
-    mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
-    mock_run = mocker.patch("subprocess.run")
+    mocker.patch("fetchtastic.download.orchestrator.is_termux", return_value=True)
+    mock_run = mocker.patch("fetchtastic.download.orchestrator.subprocess.run")
     mock_process = MagicMock()
     mock_process.returncode = 0
     mock_process.stdout = json.dumps(wifi_data)
@@ -208,8 +208,8 @@ def test_is_connected_to_wifi_non_termux():
 
 def test_is_connected_to_wifi_json_decode_error(mocker):
     """Test is_connected_to_wifi handles JSON decode errors gracefully."""
-    mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
-    mock_run = mocker.patch("subprocess.run")
+    mocker.patch("fetchtastic.download.orchestrator.is_termux", return_value=True)
+    mock_run = mocker.patch("fetchtastic.download.orchestrator.subprocess.run")
     mock_process = MagicMock()
     mock_process.returncode = 0
     mock_process.stdout = "invalid json"
@@ -224,8 +224,8 @@ def test_is_connected_to_wifi_json_decode_error(mocker):
 
 def test_is_connected_to_wifi_os_error(mocker):
     """Test is_connected_to_wifi handles OSError gracefully."""
-    mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
-    mock_run = mocker.patch("subprocess.run")
+    mocker.patch("fetchtastic.download.orchestrator.is_termux", return_value=True)
+    mock_run = mocker.patch("fetchtastic.download.orchestrator.subprocess.run")
     mock_run.side_effect = FileNotFoundError("Command not found")
 
     from fetchtastic.download.orchestrator import is_connected_to_wifi
