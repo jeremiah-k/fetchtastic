@@ -5,10 +5,11 @@
 # Skip security warnings that are expected in this application:
 # B101 - assert_used: Expected in test files and development code.
 # B103 - hardcoded_file_permissions: File permissions are intentionally set for security.
+# B105 - hardcoded_password_string: Test fixture values are not real passwords.
 # B108 - hardcoded_tmp_directory: Uses OS temp paths/pytest tmp dirs; not user-controlled.
 # B311 - random: Standard random is fine for non-cryptographic purposes (temp filenames).
 # B404 - subprocess_import: subprocess module is needed for system integration.
 # B603 - subprocess_without_shell_equals_true: Controlled subprocess calls are safe.
 # B605 - start_process_with_a_shell: Shell usage is limited to controlled, internal commands.
 # B607 - start_process_with_partial_path: Using system PATH is expected behavior for system tools.
-skips = B101,B103,B108,B311,B404,B603,B605,B607
+skips = B101,B103,B105,B108,B311,B404,B603,B605,B607

@@ -91,7 +91,7 @@ def test_wifi_only_false_does_not_check_wifi(orchestrator, mock_config):
                     with patch.object(orchestrator, "_process_android_downloads"):
                         with patch.object(orchestrator, "_retry_failed_downloads"):
                             with patch.object(orchestrator, "_log_download_summary"):
-                                results = orchestrator.run_download_pipeline()
+                                orchestrator.run_download_pipeline()
 
                                 mock_wifi.assert_not_called()
 
@@ -111,7 +111,7 @@ def test_wifi_only_default_false(orchestrator, mock_config):
                     with patch.object(orchestrator, "_process_android_downloads"):
                         with patch.object(orchestrator, "_retry_failed_downloads"):
                             with patch.object(orchestrator, "_log_download_summary"):
-                                results = orchestrator.run_download_pipeline()
+                                orchestrator.run_download_pipeline()
 
                                 mock_wifi.assert_not_called()
 
@@ -133,7 +133,7 @@ def test_wifi_only_non_termux_always_allows_downloads(orchestrator, mock_config)
                     with patch.object(orchestrator, "_process_android_downloads"):
                         with patch.object(orchestrator, "_retry_failed_downloads"):
                             with patch.object(orchestrator, "_log_download_summary"):
-                                results = orchestrator.run_download_pipeline()
+                                orchestrator.run_download_pipeline()
 
                                 mock_wifi.assert_not_called()
 
