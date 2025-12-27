@@ -344,12 +344,11 @@ class DownloadCLIIntegration:
                     FILE_TYPE_FIRMWARE_PRERELEASE,
                     FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
                 }:
-                    compare_current = current_firmware_prerelease or current_firmware
                     compare_release_tag = self._normalize_firmware_prerelease_tag(
                         release_tag
                     )
                     compare_current = self._normalize_firmware_prerelease_tag(
-                        compare_current
+                        current_firmware_prerelease or current_firmware
                     )
                 self._update_new_versions(
                     release_tag,
@@ -419,10 +418,11 @@ class DownloadCLIIntegration:
         Normalize a firmware prerelease tag by removing the configured firmware directory prefix if present.
 
         Parameters:
-                tag (Optional[str]): A prerelease tag that may be prefixed with FIRMWARE_DIR_PREFIX.
+            tag (Optional[str]): A prerelease tag that may be prefixed with FIRMWARE_DIR_PREFIX.
 
         Returns:
-                normalized_tag (Optional[str]): The tag with FIRMWARE_DIR_PREFIX stripped if it was present; otherwise the original tag (or None/empty unchanged).
+            normalized_tag (Optional[str]): The tag with FIRMWARE_DIR_PREFIX stripped if it was present;
+                otherwise the original tag (or None/empty unchanged).
         """
         if not tag:
             return tag
