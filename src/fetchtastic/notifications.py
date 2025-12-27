@@ -124,6 +124,10 @@ def send_new_releases_available_notification(
     """
     ntfy_server = config.get("NTFY_SERVER", "")
     ntfy_topic = config.get("NTFY_TOPIC", "")
+    notify_on_download_only = config.get("NOTIFY_ON_DOWNLOAD_ONLY", False)
+
+    if notify_on_download_only:
+        return
 
     if not new_firmware_versions and not new_apk_versions:
         return  # No new releases, no notification needed

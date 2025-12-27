@@ -114,3 +114,12 @@ def test_summary_sends_new_releases_notification(integration):
             downloads_skipped_reason="Downloads skipped because downloaded assets already match the latest releases.",
         )
         mock_up_to_date.assert_not_called()
+
+
+def test_summary_skips_new_releases_when_download_only(integration):
+    integration.config["NOTIFY_ON_DOWNLOAD_ONLY"] = True
+    with patch(
+        "fetchtastic.download.cli_integration.send_new_releases_available_notification"
+    ) as mock_new_releases:
+        _call_summary(integration, [], [], new_fw=["v3.0.0"], new_apks=[])
+        mock_new_releases.assert_not_called()

@@ -22,6 +22,7 @@ from fetchtastic.constants import (
     FILE_TYPE_FIRMWARE_PRERELEASE,
     FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
     FILE_TYPE_REPOSITORY,
+    FIRMWARE_DIR_PREFIX,
     FIRMWARE_FILE_TYPES,
 )
 from fetchtastic.log_utils import logger
@@ -261,6 +262,7 @@ class DownloadCLIIntegration:
 
         # Send notifications based on download results
         if self.config:
+            notify_on_download_only = self.config.get("NOTIFY_ON_DOWNLOAD_ONLY", False)
             if downloaded_count > 0:
                 send_download_completion_notification(
                     self.config, downloaded_firmwares, downloaded_apks
@@ -270,12 +272,13 @@ class DownloadCLIIntegration:
                 and not failed_downloads
                 and new_versions_available
             ):
-                send_new_releases_available_notification(
-                    self.config,
-                    new_firmware_versions,
-                    new_apk_versions,
-                    downloads_skipped_reason="Downloads skipped because downloaded assets already match the latest releases.",
-                )
+                if not notify_on_download_only:
+                    send_new_releases_available_notification(
+                        self.config,
+                        new_firmware_versions,
+                        new_apk_versions,
+                        downloads_skipped_reason="Downloads skipped because downloaded assets already match the latest releases.",
+                    )
             else:  # downloaded_count == 0 and not failed_downloads and not new_versions_available
                 send_up_to_date_notification(self.config)
 
@@ -317,9 +320,13 @@ class DownloadCLIIntegration:
             latest_versions = self.orchestrator.get_latest_versions()
             current_android = latest_versions.get("android")
             current_firmware = latest_versions.get("firmware")
+            current_android_prerelease = latest_versions.get("android_prerelease")
+            current_firmware_prerelease = latest_versions.get("firmware_prerelease")
         else:
             current_android = None
             current_firmware = None
+            current_android_prerelease = None
+            current_firmware_prerelease = None
 
         for result in success_results:
             release_tag = result.release_tag
@@ -333,15 +340,35 @@ class DownloadCLIIntegration:
 
             # Always detect newer versions (for notifications), even when downloads were skipped.
             if is_firmware:
+                compare_current = current_firmware
+                compare_release_tag = None
+                if file_type in {
+                    FILE_TYPE_FIRMWARE_PRERELEASE,
+                    FILE_TYPE_FIRMWARE_PRERELEASE_REPO,
+                }:
+                    compare_current = current_firmware_prerelease or current_firmware
+                    compare_release_tag = self._normalize_firmware_prerelease_tag(
+                        release_tag
+                    )
+                    compare_current = self._normalize_firmware_prerelease_tag(
+                        compare_current
+                    )
                 self._update_new_versions(
                     release_tag,
-                    current_firmware,
+                    compare_current,
                     new_firmware_versions,
                     new_firmware_set,
+                    comparison_release_tag=compare_release_tag,
                 )
             if is_android:
+                compare_current = current_android
+                if file_type == FILE_TYPE_ANDROID_PRERELEASE:
+                    compare_current = current_android_prerelease or current_android
                 self._update_new_versions(
-                    release_tag, current_android, new_apk_versions, new_apk_set
+                    release_tag,
+                    compare_current,
+                    new_apk_versions,
+                    new_apk_set,
                 )
 
             if was_skipped:
@@ -369,6 +396,8 @@ class DownloadCLIIntegration:
         current_version: Optional[str],
         new_versions_list: List[str],
         new_versions_set: set[str],
+        *,
+        comparison_release_tag: Optional[str] = None,
     ) -> None:
         """
         Helper method to update new versions list and set if the release tag is newer.
@@ -378,12 +407,21 @@ class DownloadCLIIntegration:
             current_version (Optional[str]): Current version to compare against.
             new_versions_list (List[str]): List to append new versions to.
             new_versions_set (set[str]): Set to track unique new versions.
+            comparison_release_tag (Optional[str]): Optional normalized tag to use for comparison.
         """
+        compare_tag = comparison_release_tag or release_tag
         if release_tag not in new_versions_set and (
-            not current_version or self._is_newer_version(release_tag, current_version)
+            not current_version or self._is_newer_version(compare_tag, current_version)
         ):
             new_versions_list.append(release_tag)
             new_versions_set.add(release_tag)
+
+    def _normalize_firmware_prerelease_tag(self, tag: Optional[str]) -> Optional[str]:
+        if not tag:
+            return tag
+        if tag.startswith(FIRMWARE_DIR_PREFIX):
+            return tag[len(FIRMWARE_DIR_PREFIX) :]
+        return tag
 
     def _add_downloaded_asset(
         self,
