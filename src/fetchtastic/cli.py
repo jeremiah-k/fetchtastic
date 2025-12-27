@@ -42,14 +42,17 @@ get_api_request_summary = _get_api_request_summary
 copy_to_clipboard_func = setup_config.copy_to_clipboard_func
 
 
-def display_version_info():
+def display_version_info(show_update_message=False):
     """
     Return version information for the installed Fetchtastic package and the latest available release.
+
+    Parameters:
+        show_update_message (bool): If True and an update is available, logs a notification message.
 
     Returns:
         Tuple[str | None, str | None, bool]: (current_version, latest_version, update_available)
     """
-    return setup_config.display_version_info()
+    return setup_config.display_version_info(show_update_message=show_update_message)
 
 
 def get_upgrade_command():
@@ -429,6 +432,20 @@ def main():
         # Run the downloader
         reset_api_tracking()
         _handle_download_subcommand(args, integration, config)
+
+        # Check for update after download completes
+        current_version, latest_version, update_available = display_version_info(
+            show_update_message=True
+        )
+        if update_available and latest_version:
+            _display_update_reminder(latest_version)
+
+        # Check for update after download completes
+        current_version, latest_version, update_available = display_version_info(
+            show_update_message=True
+        )
+        if update_available and latest_version:
+            _display_update_reminder(latest_version)
     elif args.command == "cache":
         config, integration = _prepare_command_run()
         if integration is None or config is None:
