@@ -19,7 +19,7 @@ class TestDownloadOrchestrator:
     def mock_config(self):
         """
         Provide a mock configuration dictionary used by the tests.
-        
+
         Returns:
             dict: Configuration mapping used in test fixtures with keys:
                 DOWNLOAD_DIR: download directory path.
@@ -123,6 +123,7 @@ class TestDownloadOrchestrator:
         """
         config = {
             "DOWNLOAD_DIR": str(tmp_path),
+            "SAVE_APKS": False,
             "SAVE_FIRMWARE": True,
             "CHECK_APK_PRERELEASES": False,
             "CHECK_FIRMWARE_PRERELEASES": True,

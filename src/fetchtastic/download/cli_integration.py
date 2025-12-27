@@ -262,7 +262,6 @@ class DownloadCLIIntegration:
 
         # Send notifications based on download results
         if self.config:
-            notify_on_download_only = self.config.get("NOTIFY_ON_DOWNLOAD_ONLY", False)
             if downloaded_count > 0:
                 send_download_completion_notification(
                     self.config, downloaded_firmwares, downloaded_apks

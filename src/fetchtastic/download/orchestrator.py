@@ -179,7 +179,7 @@ class DownloadOrchestrator:
     def _process_android_downloads(self) -> None:
         """
         Orchestrates discovery and download of Android APK releases and prerelease APK assets and records each asset's outcome.
-        
+
         Fetches Android releases (cached per run), limits processing to the configured number of recent stable releases, skips releases already marked complete, downloads missing release assets, and processes eligible prerelease assets. Respects the `SAVE_APKS` configuration flag and records successes, skipped items, and failures via the orchestrator's result handling.
         """
         try:
@@ -404,13 +404,13 @@ class DownloadOrchestrator:
     def _download_firmware_release(self, release: Release) -> bool:
         """
         Download firmware assets from a release and optionally extract them based on configuration.
-        
+
         If matching assets are found they are downloaded; extraction is performed only when the `AUTO_EXTRACT`
         configuration flag is true.
-        
+
         Parameters:
             release (Release): Firmware release whose matching assets will be downloaded and (optionally) extracted.
-        
+
         Returns:
             bool: `True` if at least one asset was downloaded, `False` otherwise.
         """
@@ -1040,7 +1040,7 @@ class DownloadOrchestrator:
     def _cleanup_deleted_prereleases(self) -> None:
         """
         Remove local firmware prerelease directories that are recorded as deleted in prerelease history.
-        
+
         Queries the prerelease commit history for the expected firmware prerelease version derived from the latest firmware release. For each history entry with status "deleted", verifies the directory name is safe and removes the corresponding directory under the firmware prereleases folder if it exists. Uses the configured cache and the optional GitHub token when fetching history. Network and filesystem errors are caught and logged; the function does not raise on those errors.
         """
         try:
