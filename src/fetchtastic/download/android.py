@@ -86,15 +86,15 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
     def get_releases(self, limit: Optional[int] = None) -> List[Release]:
         """
-        Fetches Android APK releases from GitHub, using a cached response when available.
+        Fetches Android APK releases from GitHub and constructs Release objects populated with their APK assets.
 
-        Builds and returns Release objects populated with their Asset entries, filters out releases that have no assets, and respects the optional limit on the number of releases returned.
+        Uses a cached GitHub response when available, filters out releases that have no APK assets or that are considered legacy/unsupported, and respects the configured scan window for finding a minimum number of stable releases. If `limit` is provided, the function returns at most that many releases.
 
         Parameters:
-            limit (Optional[int]): Maximum number of releases to return.
+            limit (Optional[int]): Maximum number of releases to return. If `None`, the scan size is determined from configuration and the function will expand its scan up to a configured maximum to find a minimum number of stable releases.
 
         Returns:
-            List[Release]: List of Release objects; empty list on error or if no valid releases are found.
+            List[Release]: A list of Release objects with their Asset entries; returns an empty list on error or if no valid releases are found.
         """
         try:
             max_scan = GITHUB_MAX_PER_PAGE
@@ -120,7 +120,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                     response = make_github_api_request(
                         self.android_releases_url,
                         self.config.get("GITHUB_TOKEN"),
-                        allow_env_token=True,
+                        allow_env_token=self.config.get("ALLOW_ENV_TOKEN", True),
                         params=params,
                     )
                     releases_data = response.json() if hasattr(response, "json") else []
@@ -274,7 +274,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
             # Check if we need to download
             if self.is_asset_complete(release.tag_name, asset):
-                logger.info(f"APK {asset.name} already exists and is complete")
+                logger.debug(f"APK {asset.name} already exists and is complete")
                 return self.create_download_result(
                     success=True,
                     release_tag=release.tag_name,

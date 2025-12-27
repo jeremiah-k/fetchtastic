@@ -146,7 +146,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 response = make_github_api_request(
                     self.firmware_releases_url,
                     self.config.get("GITHUB_TOKEN"),
-                    allow_env_token=True,
+                    allow_env_token=self.config.get("ALLOW_ENV_TOKEN", True),
                     params=params,
                 )
                 releases_data = response.json() if hasattr(response, "json") else []
@@ -767,7 +767,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
             prerelease_dir,
             force_refresh=force_refresh,
             github_token=self.config.get("GITHUB_TOKEN"),
-            allow_env_token=True,
+            allow_env_token=self.config.get("ALLOW_ENV_TOKEN", True),
         )
         logger.debug("Fetched %d items from repository", len(contents))
         return contents
@@ -1004,7 +1004,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 expected_version,
                 cache_manager=self.cache_manager,
                 github_token=self.config.get("GITHUB_TOKEN"),
-                allow_env_token=True,
+                allow_env_token=self.config.get("ALLOW_ENV_TOKEN", True),
                 force_refresh=force_refresh,
             )
         )
@@ -1017,7 +1017,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     "",
                     force_refresh=force_refresh,
                     github_token=self.config.get("GITHUB_TOKEN"),
-                    allow_env_token=True,
+                    allow_env_token=self.config.get("ALLOW_ENV_TOKEN", True),
                 )
                 if not isinstance(dirs, list):
                     logger.debug(

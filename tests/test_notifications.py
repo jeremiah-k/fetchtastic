@@ -219,6 +219,20 @@ class TestSendNewReleasesAvailableNotification:
         )
 
     @patch("fetchtastic.notifications.send_ntfy_notification")
+    def test_send_new_releases_notification_disabled_download_only(self, mock_send):
+        """Test that download-only setting suppresses new releases notifications."""
+        config = {
+            "NTFY_SERVER": "https://ntfy.sh",
+            "NTFY_TOPIC": "test",
+            "NOTIFY_ON_DOWNLOAD_ONLY": True,
+        }
+        notifications.send_new_releases_available_notification(
+            config, ["2.7.4"], ["1.2.3"]
+        )
+
+        mock_send.assert_not_called()
+
+    @patch("fetchtastic.notifications.send_ntfy_notification")
     def test_send_new_releases_notification_no_releases(self, mock_send):
         """Test that no notification is sent when no new releases."""
         config = {"NTFY_SERVER": "https://ntfy.sh", "NTFY_TOPIC": "test"}

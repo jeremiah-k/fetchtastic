@@ -83,7 +83,7 @@ def test_summary_sends_up_to_date_notification_when_no_download(integration):
         mock_up_to_date.assert_called_once_with(integration.config)
 
 
-def test_summary_calls_up_to_date_even_when_download_only_setting_true(integration):
+def test_summary_calls_up_to_date_when_download_only_setting_true(integration):
     integration.config["NOTIFY_ON_DOWNLOAD_ONLY"] = True
     with (
         patch(
@@ -95,24 +95,28 @@ def test_summary_calls_up_to_date_even_when_download_only_setting_true(integrati
     ):
         _call_summary(integration, [], [], [])
         mock_completion.assert_not_called()
-        mock_up_to_date.assert_called_once()
-        assert mock_up_to_date.call_args[0][0]["NOTIFY_ON_DOWNLOAD_ONLY"] is True
+        mock_up_to_date.assert_called_once_with(integration.config)
+        assert integration.config["NOTIFY_ON_DOWNLOAD_ONLY"] is True
 
 
-def test_summary_sends_new_releases_notification(integration):
+def test_summary_treats_new_versions_as_up_to_date(integration):
     with (
         patch(
-            "fetchtastic.download.cli_integration.send_new_releases_available_notification"
-        ) as mock_new_releases,
+            "fetchtastic.download.cli_integration.send_download_completion_notification"
+        ) as mock_completion,
         patch(
             "fetchtastic.download.cli_integration.send_up_to_date_notification"
         ) as mock_up_to_date,
     ):
         _call_summary(integration, [], [], new_fw=["v3.0.0"], new_apks=[])
-        mock_new_releases.assert_called_once_with(
-            integration.config,
-            ["v3.0.0"],
-            [],
-            downloads_skipped_reason="Downloads skipped because downloaded assets already match the latest releases.",
-        )
-        mock_up_to_date.assert_not_called()
+        mock_completion.assert_not_called()
+        mock_up_to_date.assert_called_once_with(integration.config)
+
+
+def test_summary_calls_up_to_date_with_new_versions_when_download_only(integration):
+    integration.config["NOTIFY_ON_DOWNLOAD_ONLY"] = True
+    with patch(
+        "fetchtastic.download.cli_integration.send_up_to_date_notification"
+    ) as mock_up_to_date:
+        _call_summary(integration, [], [], new_fw=["v3.0.0"], new_apks=[])
+        mock_up_to_date.assert_called_once_with(integration.config)

@@ -198,12 +198,10 @@ def clean_repo_directory(download_dir):  # log_message_func removed
 
 def main(config):  # log_message_func removed
     """
-    Run the repository downloader flow using settings from config.
-
-    Starts an interactive repository file browser, downloads the selected files into the directory specified by config["DOWNLOAD_DIR"], and on Windows optionally prompts to open the download folder. Logs progress and errors via the module logger.
+    Run the repository downloader flow: launch the interactive file browser, download selected files into the configured download directory, and on Windows optionally prompt to open the download folder.
 
     Parameters:
-        config (dict): Configuration mapping; must contain the key "DOWNLOAD_DIR" with the path to the base download directory.
+        config (dict): Configuration mapping that must include the key "DOWNLOAD_DIR" with the base download directory path.
     """
     # Removed local log_message_func definition
 
@@ -258,9 +256,7 @@ def main(config):  # log_message_func removed
                         or "y"
                     )
                     if open_folder == "y":
-                        os.startfile(
-                            download_folder
-                        )  # nosec B606  # type: ignore[attr-defined]
+                        os.startfile(download_folder)  # type: ignore[attr-defined]  # nosec B606
                 except OSError as e:  # os.startfile can raise OSError
                     logger.error(
                         f"Error opening folder {download_folder} with os.startfile: {e}",

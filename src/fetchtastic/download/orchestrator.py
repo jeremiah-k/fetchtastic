@@ -5,7 +5,9 @@ This module implements the orchestration layer that coordinates multiple
 downloaders in a single fetchtastic download run.
 """
 
+import json
 import os
+import subprocess
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -32,6 +34,7 @@ from fetchtastic.constants import (
     REPO_DOWNLOADS_DIR,
 )
 from fetchtastic.log_utils import logger
+from fetchtastic.setup_config import is_termux
 from fetchtastic.utils import cleanup_legacy_hash_sidecars
 
 from .android import MeshtasticAndroidAppDownloader
@@ -42,6 +45,56 @@ from .firmware import FirmwareReleaseDownloader
 from .interfaces import DownloadResult, Release
 from .prerelease_history import PrereleaseHistoryManager
 from .version import VersionManager, is_prerelease_directory
+
+
+def is_connected_to_wifi() -> bool:
+    """
+    Check if device is connected to Wi-Fi.
+
+    For Termux, it uses 'termux-wifi-connectioninfo'.
+    For other platforms, it currently assumes connected.
+
+    Returns:
+        bool: True if connected to Wi-Fi (or assumed to be), False otherwise.
+    """
+    if not is_termux():
+        return True
+
+    try:
+        process = subprocess.run(
+            ["termux-wifi-connectioninfo"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if process.returncode != 0:
+            error_message = process.stderr.strip()
+            logger.warning(
+                f"termux-wifi-connectioninfo command failed with exit code {process.returncode}: {error_message}"
+            )
+            return False
+
+        output = process.stdout.strip()
+        if not output:
+            return False
+
+        data = json.loads(output)
+        supplicant_state = data.get("supplicant_state", "")
+        ip_address = data.get("ip", "")
+        return supplicant_state == "COMPLETED" and ip_address != ""
+    except json.JSONDecodeError as e:
+        logger.warning(f"Error decoding JSON from termux-wifi-connectioninfo: {e}")
+        return False
+    except FileNotFoundError:
+        logger.warning(
+            "termux-wifi-connectioninfo command not found. Is Termux:API installed and configured?"
+        )
+        return False
+    except (OSError, subprocess.SubprocessError) as e:
+        logger.warning(
+            f"Unexpected error checking Wi-Fi connection: {e}", exc_info=True
+        )
+        return False
 
 
 class DownloadOrchestrator:
@@ -98,6 +151,11 @@ class DownloadOrchestrator:
         start_time = time.time()
         logger.info("Starting download pipeline...")
 
+        if is_termux() and self.config.get("WIFI_ONLY", False):
+            if not is_connected_to_wifi():
+                logger.warning("Not connected to Wi-Fi. Skipping all downloads.")
+                return [], []
+
         cleanup_legacy_hash_sidecars(self.config.get("DOWNLOAD_DIR", ""))
 
         # Process firmware downloads
@@ -122,11 +180,15 @@ class DownloadOrchestrator:
 
     def _process_android_downloads(self) -> None:
         """
-        Orchestrate discovery and download of Android APK releases and prerelease APK assets, recording each asset's outcome.
+        Orchestrates discovery and download of Android APK releases and prerelease APK assets and records each asset's outcome.
 
-        Fetches Android releases (using a per-run cache), limits processing to the configured number of recent releases, skips releases already marked complete, downloads missing release assets, processes eligible prerelease assets, and records successes, skips, and failures via the orchestrator's result handling.
+        Fetches Android releases (cached per run), limits processing to the configured number of recent stable releases, skips releases already marked complete, downloads missing release assets, and processes eligible prerelease assets. Respects the `SAVE_APKS` configuration flag and records successes, skipped items, and failures via the orchestrator's result handling.
         """
         try:
+            if not self.config.get("SAVE_APKS", False):
+                logger.info("Android APK downloads are disabled in configuration")
+                return
+
             logger.info("Scanning Android APK releases")
             if self.android_releases is None:
                 self.android_releases = self.android_downloader.get_releases()
@@ -146,7 +208,7 @@ class DownloadOrchestrator:
                 logger.info(f"Checking {release.tag_name}…")
                 if self.android_downloader.is_release_complete(release):
                     logger.debug(
-                        f"Release {release.tag_name} already exists and is complete, skipping download"
+                        f"Release {release.tag_name} already exists and is complete"
                     )
                 else:
                     releases_to_download.append(release)
@@ -191,6 +253,10 @@ class DownloadOrchestrator:
         Scans up to the configured number of latest firmware releases, downloads any releases that are not already complete, attempts to fetch repository prerelease firmware for the selected latest release, and records each download outcome in the orchestrator's result lists. Afterwards, inspects the firmware prerelease directory and safely removes entries that are not valid managed prerelease directories (skipping symlinks and entries that fail safety or version checks). Errors encountered during the process are caught and logged.
         """
         try:
+            if not self.config.get("SAVE_FIRMWARE", False):
+                logger.info("Firmware downloads are disabled in configuration")
+                return
+
             logger.info("Scanning Firmware releases")
             if self.firmware_releases is None:
                 self.firmware_releases = self.firmware_downloader.get_releases()
@@ -210,7 +276,7 @@ class DownloadOrchestrator:
                 logger.info(f"Checking {release.tag_name}…")
                 if self.firmware_downloader.is_release_complete(release):
                     logger.debug(
-                        f"Release {release.tag_name} already exists and is complete, skipping download"
+                        f"Release {release.tag_name} already exists and is complete"
                     )
                 else:
                     releases_to_download.append(release)
@@ -339,10 +405,13 @@ class DownloadOrchestrator:
 
     def _download_firmware_release(self, release: Release) -> bool:
         """
-        Download and extract firmware assets for a given release according to configured filters.
+        Download firmware assets from a release and optionally extract them based on configuration.
+
+        If matching assets are found they are downloaded; extraction is performed only when the `AUTO_EXTRACT`
+        configuration flag is true.
 
         Parameters:
-            release (Release): Firmware release whose matching assets will be downloaded and extracted.
+            release (Release): Firmware release whose matching assets will be downloaded and (optionally) extracted.
 
         Returns:
             bool: `True` if at least one asset was downloaded, `False` otherwise.
@@ -379,8 +448,8 @@ class DownloadOrchestrator:
                     any_downloaded = True
                 self._handle_download_result(download_result, FILE_TYPE_FIRMWARE)
 
-                # If download succeeded, extract files
-                if download_result.success:
+                # If download succeeded, extract files if AUTO_EXTRACT is enabled
+                if download_result.success and self.config.get("AUTO_EXTRACT", False):
                     extract_result = self.firmware_downloader.extract_firmware(
                         release, asset, extract_patterns, exclude_patterns
                     )
@@ -859,12 +928,16 @@ class DownloadOrchestrator:
 
         logger.info("Download pipeline completed")
         logger.info(f"Time taken: {elapsed_time:.2f} seconds")
-        logger.info(
-            "Downloads: %d downloaded, %d skipped, %d failed",
-            len(downloaded),
-            len(skipped),
-            total_failures,
-        )
+        if not downloaded and total_failures == 0:
+            logger.info("All assets are up to date.")
+        else:
+            logger.info(
+                "Downloads: %d downloaded, %d failed",
+                len(downloaded),
+                total_failures,
+            )
+        if skipped:
+            logger.debug("Skipped %d existing assets", len(skipped))
 
         if total_failures > 0:
             logger.warning(
@@ -972,9 +1045,9 @@ class DownloadOrchestrator:
 
     def _cleanup_deleted_prereleases(self) -> None:
         """
-        Remove local firmware prerelease directories that are recorded as deleted in the prerelease commit history.
+        Remove local firmware prerelease directories that are recorded as deleted in prerelease history.
 
-        Queries the prerelease commit history for the expected firmware prerelease version and, for each entry with status "deleted", validates the directory name and removes the corresponding directory under the firmware prereleases folder if it exists. Uses the configured cache and optional GitHub token when fetching history. Logs warnings for unsafe directory names or failed removals; network and filesystem errors are logged and not raised.
+        Queries the prerelease commit history for the expected firmware prerelease version derived from the latest firmware release. For each history entry with status "deleted", verifies the directory name is safe and removes the corresponding directory under the firmware prereleases folder if it exists. Uses the configured cache and the optional GitHub token when fetching history. Network and filesystem errors are caught and logged; the function does not raise on those errors.
         """
         try:
             # This logic is specific to firmware prereleases from meshtastic.github.io
@@ -994,7 +1067,7 @@ class DownloadOrchestrator:
                 expected_version,
                 cache_manager=self.cache_manager,
                 github_token=self.config.get("GITHUB_TOKEN"),
-                allow_env_token=True,
+                allow_env_token=self.config.get("ALLOW_ENV_TOKEN", True),
                 force_refresh=False,
             )
 
@@ -1067,7 +1140,7 @@ class DownloadOrchestrator:
                         expected_version,
                         cache_manager=self.cache_manager,
                         github_token=self.config.get("GITHUB_TOKEN"),
-                        allow_env_token=True,
+                        allow_env_token=self.config.get("ALLOW_ENV_TOKEN", True),
                         force_refresh=False,
                     )
                 )
@@ -1143,7 +1216,7 @@ class DownloadOrchestrator:
                 DEFAULT_PRERELEASE_COMMITS_TO_FETCH,
                 cache_manager=self.cache_manager,
                 github_token=self.config.get("GITHUB_TOKEN"),
-                allow_env_token=True,
+                allow_env_token=self.config.get("ALLOW_ENV_TOKEN", True),
             )
             logger.debug("Commit history cache refreshed")
         except (requests.RequestException, OSError, ValueError, TypeError) as e:

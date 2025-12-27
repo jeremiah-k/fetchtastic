@@ -18,19 +18,23 @@ class TestDownloadOrchestrator:
     @pytest.fixture
     def mock_config(self):
         """
-        Provide a mock configuration dictionary for tests.
+        Provide a mock configuration dictionary used by the tests.
 
         Returns:
-            dict: Configuration used by tests with keys:
-                DOWNLOAD_DIR: path to the download directory.
-                CHECK_APK_PRERELEASES: whether to include Android prerelease APKs.
-                CHECK_FIRMWARE_PRERELEASES: whether to include firmware prereleases.
+            dict: Configuration mapping used in test fixtures with keys:
+                DOWNLOAD_DIR: download directory path.
+                SAVE_APKS: whether to save Android APKs.
+                SAVE_FIRMWARE: whether to save firmware files.
+                CHECK_APK_PRERELEASES: whether to consider Android prerelease APKs.
+                CHECK_FIRMWARE_PRERELEASES: whether to consider firmware prereleases.
                 SELECTED_FIRMWARE_ASSETS: list of firmware asset names to select.
-                EXCLUDE_PATTERNS: glob patterns of assets/releases to exclude.
-                GITHUB_TOKEN: token used for authenticated GitHub requests.
+                EXCLUDE_PATTERNS: list of glob patterns to exclude assets/releases.
+                GITHUB_TOKEN: token for authenticated GitHub requests.
         """
         return {
             "DOWNLOAD_DIR": "/tmp/test",
+            "SAVE_APKS": True,
+            "SAVE_FIRMWARE": True,
             "CHECK_APK_PRERELEASES": True,
             "CHECK_FIRMWARE_PRERELEASES": True,
             "SELECTED_FIRMWARE_ASSETS": ["rak4631"],
@@ -119,6 +123,8 @@ class TestDownloadOrchestrator:
         """
         config = {
             "DOWNLOAD_DIR": str(tmp_path),
+            "SAVE_APKS": False,
+            "SAVE_FIRMWARE": True,
             "CHECK_APK_PRERELEASES": False,
             "CHECK_FIRMWARE_PRERELEASES": True,
             "SELECTED_FIRMWARE_ASSETS": [],

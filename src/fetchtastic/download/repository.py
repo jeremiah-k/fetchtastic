@@ -103,7 +103,7 @@ class RepositoryDownloader(BaseDownloader):
             response = make_github_api_request(
                 api_url,
                 github_token=self.config.get("GITHUB_TOKEN"),
-                allow_env_token=True,
+                allow_env_token=self.config.get("ALLOW_ENV_TOKEN", True),
                 timeout=GITHUB_API_TIMEOUT,
             )
 
