@@ -256,9 +256,7 @@ def main(config):  # log_message_func removed
                         or "y"
                     )
                     if open_folder == "y":
-                        os.startfile(  # type: ignore[attr-defined]
-                            download_folder
-                        )  # nosec B606
+                        os.startfile(download_folder)  # type: ignore[attr-defined]  # nosec B606
                 except OSError as e:  # os.startfile can raise OSError
                     logger.error(
                         f"Error opening folder {download_folder} with os.startfile: {e}",

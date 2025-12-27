@@ -118,8 +118,6 @@ def test_no_token_when_env_disabled_and_no_config(integration, mock_config):
     with patch.dict(os.environ, {"GITHUB_TOKEN": test_env_token}):
         mock_config["ALLOW_ENV_TOKEN"] = False
         # Don't set GITHUB_TOKEN in config
-        mock_config.pop("GITHUB_TOKEN", None)
-
         with patch.object(
             integration,
             "run_download",
