@@ -154,6 +154,89 @@ def test_display_version_info_request_failure(mocker):
 
 @pytest.mark.configuration
 @pytest.mark.unit
+def test_display_version_info_logs_update_notification(mocker):
+    """Test display_version_info logs notification when update available and show_update_message=True."""
+    mock_logger = mocker.patch("fetchtastic.setup_config.logger")
+    mocker.patch("fetchtastic.setup_config.version", return_value="0.8.1")
+
+    mock_response = mocker.Mock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"info": {"version": "0.8.2"}}
+    mocker.patch("requests.get", return_value=mock_response)
+
+    current, latest, available = setup_config.display_version_info(
+        show_update_message=True
+    )
+
+    assert current == "0.8.1"
+    assert latest == "0.8.2"
+    assert available is True
+
+    mock_logger.info.assert_any_call("\nUpdate Available")
+    mock_logger.info.assert_any_call(
+        "A newer version (v0.8.2) of Fetchtastic is available!"
+    )
+    mock_logger.info.assert_any_call(mocker.ANY)
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_display_version_info_no_notification_when_show_message_false(mocker):
+    """Test display_version_info does not log notification when show_update_message=False."""
+    mock_logger = mocker.patch("fetchtastic.setup_config.logger")
+    mocker.patch("fetchtastic.setup_config.version", return_value="0.8.1")
+
+    mock_response = mocker.Mock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"info": {"version": "0.8.2"}}
+    mocker.patch("requests.get", return_value=mock_response)
+
+    current, latest, available = setup_config.display_version_info(
+        show_update_message=False
+    )
+
+    assert current == "0.8.1"
+    assert latest == "0.8.2"
+    assert available is True
+
+    update_notification_calls = [
+        call
+        for call in mock_logger.info.call_args_list
+        if call and isinstance(call[0][0], str) and "Update Available" in call[0][0]
+    ]
+    assert len(update_notification_calls) == 0
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_display_version_info_no_notification_when_no_update(mocker):
+    """Test display_version_info does not log notification when no update available."""
+    mock_logger = mocker.patch("fetchtastic.setup_config.logger")
+    mocker.patch("fetchtastic.setup_config.version", return_value="0.8.2")
+
+    mock_response = mocker.Mock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"info": {"version": "0.8.2"}}
+    mocker.patch("requests.get", return_value=mock_response)
+
+    current, latest, available = setup_config.display_version_info(
+        show_update_message=True
+    )
+
+    assert current == "0.8.2"
+    assert latest == "0.8.2"
+    assert available is False
+
+    update_notification_calls = [
+        call
+        for call in mock_logger.info.call_args_list
+        if call and isinstance(call[0][0], str) and "Update Available" in call[0][0]
+    ]
+    assert len(update_notification_calls) == 0
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
 def test_prompt_for_migration(mocker):
     """Test prompt_for_migration function logs appropriate messages."""
     mocker.patch("fetchtastic.setup_config.OLD_CONFIG_FILE", "/old/config.yaml")
