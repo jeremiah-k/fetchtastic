@@ -22,7 +22,9 @@ class TestDownloadOrchestrator:
 
         Returns:
             dict: Configuration used by tests with keys:
-                DOWNLOAD_DIR: path to the download directory.
+                DOWNLOAD_DIR: path to download directory.
+                SAVE_APKS: whether to save Android APKs.
+                SAVE_FIRMWARE: whether to save firmware.
                 CHECK_APK_PRERELEASES: whether to include Android prerelease APKs.
                 CHECK_FIRMWARE_PRERELEASES: whether to include firmware prereleases.
                 SELECTED_FIRMWARE_ASSETS: list of firmware asset names to select.
@@ -31,6 +33,8 @@ class TestDownloadOrchestrator:
         """
         return {
             "DOWNLOAD_DIR": "/tmp/test",
+            "SAVE_APKS": True,
+            "SAVE_FIRMWARE": True,
             "CHECK_APK_PRERELEASES": True,
             "CHECK_FIRMWARE_PRERELEASES": True,
             "SELECTED_FIRMWARE_ASSETS": ["rak4631"],
@@ -119,6 +123,7 @@ class TestDownloadOrchestrator:
         """
         config = {
             "DOWNLOAD_DIR": str(tmp_path),
+            "SAVE_FIRMWARE": True,
             "CHECK_APK_PRERELEASES": False,
             "CHECK_FIRMWARE_PRERELEASES": True,
             "SELECTED_FIRMWARE_ASSETS": [],

@@ -124,9 +124,13 @@ class DownloadOrchestrator:
         """
         Orchestrate discovery and download of Android APK releases and prerelease APK assets, recording each asset's outcome.
 
-        Fetches Android releases (using a per-run cache), limits processing to the configured number of recent releases, skips releases already marked complete, downloads missing release assets, processes eligible prerelease assets, and records successes, skips, and failures via the orchestrator's result handling.
+        Fetches Android releases (using a per-run cache), limits processing to the configured number of recent releases, skips releases already marked complete, downloads missing release assets, processes eligible prerelease assets, and records successes, skips, and failures via orchestrator's result handling.
         """
         try:
+            if not self.config.get("SAVE_APKS", False):
+                logger.info("Android APK downloads are disabled in configuration")
+                return
+
             logger.info("Scanning Android APK releases")
             if self.android_releases is None:
                 self.android_releases = self.android_downloader.get_releases()
@@ -191,6 +195,10 @@ class DownloadOrchestrator:
         Scans up to the configured number of latest firmware releases, downloads any releases that are not already complete, attempts to fetch repository prerelease firmware for the selected latest release, and records each download outcome in the orchestrator's result lists. Afterwards, inspects the firmware prerelease directory and safely removes entries that are not valid managed prerelease directories (skipping symlinks and entries that fail safety or version checks). Errors encountered during the process are caught and logged.
         """
         try:
+            if not self.config.get("SAVE_FIRMWARE", False):
+                logger.info("Firmware downloads are disabled in configuration")
+                return
+
             logger.info("Scanning Firmware releases")
             if self.firmware_releases is None:
                 self.firmware_releases = self.firmware_downloader.get_releases()
@@ -379,8 +387,8 @@ class DownloadOrchestrator:
                     any_downloaded = True
                 self._handle_download_result(download_result, FILE_TYPE_FIRMWARE)
 
-                # If download succeeded, extract files
-                if download_result.success:
+                # If download succeeded, extract files if AUTO_EXTRACT is enabled
+                if download_result.success and self.config.get("AUTO_EXTRACT", False):
                     extract_result = self.firmware_downloader.extract_firmware(
                         release, asset, extract_patterns, exclude_patterns
                     )

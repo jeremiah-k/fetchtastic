@@ -83,20 +83,18 @@ def test_summary_sends_up_to_date_notification_when_no_download(integration):
         mock_up_to_date.assert_called_once_with(integration.config)
 
 
-def test_summary_calls_up_to_date_even_when_download_only_setting_true(integration):
+def test_summary_does_not_call_up_to_date_when_download_only_setting_true(integration):
     integration.config["NOTIFY_ON_DOWNLOAD_ONLY"] = True
     with (
         patch(
             "fetchtastic.download.cli_integration.send_download_completion_notification"
         ) as mock_completion,
-        patch(
-            "fetchtastic.download.cli_integration.send_up_to_date_notification"
-        ) as mock_up_to_date,
+        patch("fetchtastic.notifications.send_ntfy_notification") as mock_send_ntfy,
     ):
         _call_summary(integration, [], [], [])
         mock_completion.assert_not_called()
-        mock_up_to_date.assert_called_once()
-        assert mock_up_to_date.call_args[0][0]["NOTIFY_ON_DOWNLOAD_ONLY"] is True
+        mock_send_ntfy.assert_not_called()
+        assert integration.config["NOTIFY_ON_DOWNLOAD_ONLY"] is True
 
 
 def test_summary_sends_new_releases_notification(integration):
