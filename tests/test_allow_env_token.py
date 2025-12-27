@@ -91,8 +91,6 @@ def test_allow_env_token_missing_defaults_to_true(integration, mock_config):
 
     with patch.dict(os.environ, {"GITHUB_TOKEN": test_env_token}):
         # Don't set ALLOW_ENV_TOKEN in config
-        mock_config.pop("ALLOW_ENV_TOKEN", None)
-
         with patch.object(
             integration,
             "run_download",

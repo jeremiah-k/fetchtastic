@@ -34,109 +34,89 @@ def test_wifi_only_skips_downloads_when_not_connected_to_wifi(
     """Test that WIFI_ONLY=True skips downloads when not connected to Wi-Fi."""
     mock_config["WIFI_ONLY"] = True
 
-    with patch("fetchtastic.download.orchestrator.is_termux") as mock_is_termux:
-        mock_is_termux.return_value = True
+    with (
+        patch("fetchtastic.download.orchestrator.is_termux", return_value=True),
+        patch(
+            "fetchtastic.download.orchestrator.is_connected_to_wifi",
+            return_value=False,
+        ),
+        patch("fetchtastic.download.orchestrator.cleanup_legacy_hash_sidecars"),
+    ):
+        successful_results, failed_results = orchestrator.run_download_pipeline()
 
-        with patch(
-            "fetchtastic.download.orchestrator.is_connected_to_wifi"
-        ) as mock_wifi:
-            mock_wifi.return_value = False
-
-            with patch(
-                "fetchtastic.download.orchestrator.cleanup_legacy_hash_sidecars"
-            ):
-                successful_results, failed_results = (
-                    orchestrator.run_download_pipeline()
-                )
-
-                assert successful_results == []
-                assert failed_results == []
+        assert successful_results == []
+        assert failed_results == []
 
 
 def test_wifi_only_allows_downloads_when_connected_to_wifi(orchestrator, mock_config):
     """Test that WIFI_ONLY=True allows downloads when connected to Wi-Fi."""
     mock_config["WIFI_ONLY"] = True
 
-    with patch("fetchtastic.download.orchestrator.is_termux") as mock_is_termux:
-        mock_is_termux.return_value = True
-
-        with patch(
-            "fetchtastic.download.orchestrator.is_connected_to_wifi"
-        ) as mock_wifi:
-            mock_wifi.return_value = True
-
-            with patch(
-                "fetchtastic.download.orchestrator.cleanup_legacy_hash_sidecars"
-            ):
-                with patch.object(orchestrator, "_process_firmware_downloads"):
-                    with patch.object(orchestrator, "_process_android_downloads"):
-                        with patch.object(orchestrator, "_retry_failed_downloads"):
-                            with patch.object(orchestrator, "_log_download_summary"):
-                                orchestrator.run_download_pipeline()
+    with (
+        patch("fetchtastic.download.orchestrator.is_termux", return_value=True),
+        patch(
+            "fetchtastic.download.orchestrator.is_connected_to_wifi",
+            return_value=True,
+        ),
+        patch("fetchtastic.download.orchestrator.cleanup_legacy_hash_sidecars"),
+        patch.object(orchestrator, "_process_firmware_downloads"),
+        patch.object(orchestrator, "_process_android_downloads"),
+        patch.object(orchestrator, "_retry_failed_downloads"),
+        patch.object(orchestrator, "_log_download_summary"),
+    ):
+        orchestrator.run_download_pipeline()
 
 
 def test_wifi_only_false_does_not_check_wifi(orchestrator, mock_config):
     """Test that WIFI_ONLY=False does not check Wi-Fi connection."""
     mock_config["WIFI_ONLY"] = False
 
-    with patch("fetchtastic.download.orchestrator.is_termux") as mock_is_termux:
-        mock_is_termux.return_value = True
+    with (
+        patch("fetchtastic.download.orchestrator.is_termux", return_value=True),
+        patch("fetchtastic.download.orchestrator.is_connected_to_wifi") as mock_wifi,
+        patch("fetchtastic.download.orchestrator.cleanup_legacy_hash_sidecars"),
+        patch.object(orchestrator, "_process_firmware_downloads"),
+        patch.object(orchestrator, "_process_android_downloads"),
+        patch.object(orchestrator, "_retry_failed_downloads"),
+        patch.object(orchestrator, "_log_download_summary"),
+    ):
+        orchestrator.run_download_pipeline()
 
-        with patch(
-            "fetchtastic.download.orchestrator.is_connected_to_wifi"
-        ) as mock_wifi:
-            with patch(
-                "fetchtastic.download.orchestrator.cleanup_legacy_hash_sidecars"
-            ):
-                with patch.object(orchestrator, "_process_firmware_downloads"):
-                    with patch.object(orchestrator, "_process_android_downloads"):
-                        with patch.object(orchestrator, "_retry_failed_downloads"):
-                            with patch.object(orchestrator, "_log_download_summary"):
-                                orchestrator.run_download_pipeline()
-
-                                mock_wifi.assert_not_called()
+        mock_wifi.assert_not_called()
 
 
-def test_wifi_only_default_false(orchestrator, mock_config):
+def test_wifi_only_default_false(orchestrator):
     """Test that WIFI_ONLY defaults to False when not specified."""
-    with patch("fetchtastic.download.orchestrator.is_termux") as mock_is_termux:
-        mock_is_termux.return_value = True
+    with (
+        patch("fetchtastic.download.orchestrator.is_termux", return_value=True),
+        patch("fetchtastic.download.orchestrator.is_connected_to_wifi") as mock_wifi,
+        patch("fetchtastic.download.orchestrator.cleanup_legacy_hash_sidecars"),
+        patch.object(orchestrator, "_process_firmware_downloads"),
+        patch.object(orchestrator, "_process_android_downloads"),
+        patch.object(orchestrator, "_retry_failed_downloads"),
+        patch.object(orchestrator, "_log_download_summary"),
+    ):
+        orchestrator.run_download_pipeline()
 
-        with patch(
-            "fetchtastic.download.orchestrator.is_connected_to_wifi"
-        ) as mock_wifi:
-            with patch(
-                "fetchtastic.download.orchestrator.cleanup_legacy_hash_sidecars"
-            ):
-                with patch.object(orchestrator, "_process_firmware_downloads"):
-                    with patch.object(orchestrator, "_process_android_downloads"):
-                        with patch.object(orchestrator, "_retry_failed_downloads"):
-                            with patch.object(orchestrator, "_log_download_summary"):
-                                orchestrator.run_download_pipeline()
-
-                                mock_wifi.assert_not_called()
+        mock_wifi.assert_not_called()
 
 
 def test_wifi_only_non_termux_always_allows_downloads(orchestrator, mock_config):
     """Test that non-Termux platforms never check Wi-Fi connection."""
     mock_config["WIFI_ONLY"] = True
 
-    with patch("fetchtastic.download.orchestrator.is_termux") as mock_is_termux:
-        mock_is_termux.return_value = False
+    with (
+        patch("fetchtastic.download.orchestrator.is_termux", return_value=False),
+        patch("fetchtastic.download.orchestrator.is_connected_to_wifi") as mock_wifi,
+        patch("fetchtastic.download.orchestrator.cleanup_legacy_hash_sidecars"),
+        patch.object(orchestrator, "_process_firmware_downloads"),
+        patch.object(orchestrator, "_process_android_downloads"),
+        patch.object(orchestrator, "_retry_failed_downloads"),
+        patch.object(orchestrator, "_log_download_summary"),
+    ):
+        orchestrator.run_download_pipeline()
 
-        with patch(
-            "fetchtastic.download.orchestrator.is_connected_to_wifi"
-        ) as mock_wifi:
-            with patch(
-                "fetchtastic.download.orchestrator.cleanup_legacy_hash_sidecars"
-            ):
-                with patch.object(orchestrator, "_process_firmware_downloads"):
-                    with patch.object(orchestrator, "_process_android_downloads"):
-                        with patch.object(orchestrator, "_retry_failed_downloads"):
-                            with patch.object(orchestrator, "_log_download_summary"):
-                                orchestrator.run_download_pipeline()
-
-                                mock_wifi.assert_not_called()
+        mock_wifi.assert_not_called()
 
 
 def test_is_connected_to_wifi_termux_connected():

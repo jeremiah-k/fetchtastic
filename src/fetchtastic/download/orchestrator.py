@@ -1058,7 +1058,7 @@ class DownloadOrchestrator:
                 expected_version,
                 cache_manager=self.cache_manager,
                 github_token=self.config.get("GITHUB_TOKEN"),
-                allow_env_token=True,
+                allow_env_token=self.config.get("ALLOW_ENV_TOKEN", True),
                 force_refresh=False,
             )
 
@@ -1131,7 +1131,7 @@ class DownloadOrchestrator:
                         expected_version,
                         cache_manager=self.cache_manager,
                         github_token=self.config.get("GITHUB_TOKEN"),
-                        allow_env_token=True,
+                        allow_env_token=self.config.get("ALLOW_ENV_TOKEN", True),
                         force_refresh=False,
                     )
                 )
@@ -1207,7 +1207,7 @@ class DownloadOrchestrator:
                 DEFAULT_PRERELEASE_COMMITS_TO_FETCH,
                 cache_manager=self.cache_manager,
                 github_token=self.config.get("GITHUB_TOKEN"),
-                allow_env_token=True,
+                allow_env_token=self.config.get("ALLOW_ENV_TOKEN", True),
             )
             logger.debug("Commit history cache refreshed")
         except (requests.RequestException, OSError, ValueError, TypeError) as e:

@@ -120,7 +120,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                     response = make_github_api_request(
                         self.android_releases_url,
                         self.config.get("GITHUB_TOKEN"),
-                        allow_env_token=True,
+                        allow_env_token=self.config.get("ALLOW_ENV_TOKEN", True),
                         params=params,
                     )
                     releases_data = response.json() if hasattr(response, "json") else []
