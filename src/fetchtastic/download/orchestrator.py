@@ -5,6 +5,7 @@ This module implements the orchestration layer that coordinates multiple
 downloaders in a single fetchtastic download run.
 """
 
+import json
 import os
 import time
 from pathlib import Path
@@ -32,6 +33,7 @@ from fetchtastic.constants import (
     REPO_DOWNLOADS_DIR,
 )
 from fetchtastic.log_utils import logger
+from fetchtastic.setup_config import is_termux
 from fetchtastic.utils import cleanup_legacy_hash_sidecars
 
 from .android import MeshtasticAndroidAppDownloader
@@ -42,6 +44,38 @@ from .firmware import FirmwareReleaseDownloader
 from .interfaces import DownloadResult, Release
 from .prerelease_history import PrereleaseHistoryManager
 from .version import VersionManager, is_prerelease_directory
+
+
+def is_connected_to_wifi() -> bool:
+    """
+    Check if device is connected to Wi-Fi.
+
+    For Termux, it uses 'termux-wifi-connectioninfo'.
+    For other platforms, it currently assumes connected.
+
+    Returns:
+        bool: True if connected to Wi-Fi (or assumed to be), False otherwise.
+    """
+    if not is_termux():
+        return True
+
+    try:
+        result = os.popen("termux-wifi-connectioninfo").read()
+        if not result:
+            return False
+        data = json.loads(result)
+        supplicant_state = data.get("supplicant_state", "")
+        ip_address = data.get("ip", "")
+        return supplicant_state == "COMPLETED" and ip_address != ""
+    except json.JSONDecodeError as e:
+        logger.warning(f"Error decoding JSON from termux-wifi-connectioninfo: {e}")
+        return False
+    except OSError as e:
+        logger.warning(f"OSError checking Wi-Fi connection: {e}")
+        return False
+    except Exception as e:
+        logger.warning(f"Unexpected error checking Wi-Fi connection: {e}")
+        return False
 
 
 class DownloadOrchestrator:
@@ -97,6 +131,11 @@ class DownloadOrchestrator:
         """
         start_time = time.time()
         logger.info("Starting download pipeline...")
+
+        if is_termux() and self.config.get("WIFI_ONLY", False):
+            if not is_connected_to_wifi():
+                logger.warning("Not connected to Wi-Fi. Skipping all downloads.")
+                return [], []
 
         cleanup_legacy_hash_sidecars(self.config.get("DOWNLOAD_DIR", ""))
 
