@@ -34,7 +34,7 @@ def test_wifi_only_skips_downloads_when_not_connected_to_wifi(
     """Test that WIFI_ONLY=True skips downloads when not connected to Wi-Fi."""
     mock_config["WIFI_ONLY"] = True
 
-    with patch("fetchtastic.setup_config.is_termux") as mock_is_termux:
+    with patch("fetchtastic.download.orchestrator.is_termux") as mock_is_termux:
         mock_is_termux.return_value = True
 
         with patch(
@@ -57,7 +57,7 @@ def test_wifi_only_allows_downloads_when_connected_to_wifi(orchestrator, mock_co
     """Test that WIFI_ONLY=True allows downloads when connected to Wi-Fi."""
     mock_config["WIFI_ONLY"] = True
 
-    with patch("fetchtastic.setup_config.is_termux") as mock_is_termux:
+    with patch("fetchtastic.download.orchestrator.is_termux") as mock_is_termux:
         mock_is_termux.return_value = True
 
         with patch(
@@ -79,7 +79,7 @@ def test_wifi_only_false_does_not_check_wifi(orchestrator, mock_config):
     """Test that WIFI_ONLY=False does not check Wi-Fi connection."""
     mock_config["WIFI_ONLY"] = False
 
-    with patch("fetchtastic.setup_config.is_termux") as mock_is_termux:
+    with patch("fetchtastic.download.orchestrator.is_termux") as mock_is_termux:
         mock_is_termux.return_value = True
 
         with patch(
@@ -99,7 +99,7 @@ def test_wifi_only_false_does_not_check_wifi(orchestrator, mock_config):
 
 def test_wifi_only_default_false(orchestrator, mock_config):
     """Test that WIFI_ONLY defaults to False when not specified."""
-    with patch("fetchtastic.setup_config.is_termux") as mock_is_termux:
+    with patch("fetchtastic.download.orchestrator.is_termux") as mock_is_termux:
         mock_is_termux.return_value = True
 
         with patch(
@@ -121,7 +121,7 @@ def test_wifi_only_non_termux_always_allows_downloads(orchestrator, mock_config)
     """Test that non-Termux platforms never check Wi-Fi connection."""
     mock_config["WIFI_ONLY"] = True
 
-    with patch("fetchtastic.setup_config.is_termux") as mock_is_termux:
+    with patch("fetchtastic.download.orchestrator.is_termux") as mock_is_termux:
         mock_is_termux.return_value = False
 
         with patch(
@@ -143,7 +143,7 @@ def test_is_connected_to_wifi_termux_connected():
     """Test is_connected_to_wifi returns True when Termux has Wi-Fi."""
     wifi_data = {"supplicant_state": "COMPLETED", "ip": "192.168.1.100"}
 
-    with patch("fetchtastic.setup_config.is_termux") as mock_is_termux:
+    with patch("fetchtastic.download.orchestrator.is_termux") as mock_is_termux:
         mock_is_termux.return_value = True
 
         with patch("fetchtastic.download.orchestrator.subprocess.run") as mock_run:
@@ -197,7 +197,7 @@ def test_is_connected_to_wifi_termux_incomplete(mocker):
 
 def test_is_connected_to_wifi_non_termux():
     """Test is_connected_to_wifi returns True for non-Termux platforms."""
-    with patch("fetchtastic.setup_config.is_termux") as mock_is_termux:
+    with patch("fetchtastic.download.orchestrator.is_termux") as mock_is_termux:
         mock_is_termux.return_value = False
 
         from fetchtastic.download.orchestrator import is_connected_to_wifi
