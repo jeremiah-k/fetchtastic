@@ -429,6 +429,11 @@ def main():
         # Run the downloader
         reset_api_tracking()
         _handle_download_subcommand(args, integration, config)
+
+        # Check for update after download completes
+        current_version, latest_version, update_available = display_version_info()
+        if update_available and latest_version:
+            _display_update_reminder(latest_version)
     elif args.command == "cache":
         config, integration = _prepare_command_run()
         if integration is None or config is None:
