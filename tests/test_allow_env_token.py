@@ -3,7 +3,7 @@ Tests for ALLOW_ENV_TOKEN configuration option.
 """
 
 import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -33,17 +33,11 @@ def test_allow_env_token_true_uses_environment_token(integration, mock_config):
     with patch.dict(os.environ, {"GITHUB_TOKEN": test_env_token}):
         mock_config["ALLOW_ENV_TOKEN"] = True
 
-        with patch(
-            "fetchtastic.download.orchestrator.DownloadOrchestrator"
-        ) as mock_orch:
-            mock_orch_inst = MagicMock()
-            mock_orch.return_value = mock_orch_inst
-            mock_orch_inst.android_downloader = MagicMock()
-            mock_orch_inst.firmware_downloader = MagicMock()
-            mock_orch_inst.run_download_pipeline.return_value = ([], [])
-            mock_orch_inst.get_latest_versions.return_value = {}
-            mock_orch_inst.failed_downloads = []
-
+        with patch.object(
+            integration,
+            "run_download",
+            return_value=(["fw"], ["new_fw"], ["apk"], ["new_apk"], [], "fw", "apk"),
+        ):
             integration.main(mock_config, force_refresh=False)
 
             # Environment token should be used
@@ -59,17 +53,11 @@ def test_allow_env_token_false_ignores_environment_token(integration, mock_confi
         mock_config["ALLOW_ENV_TOKEN"] = False
         mock_config["GITHUB_TOKEN"] = test_config_token
 
-        with patch(
-            "fetchtastic.download.orchestrator.DownloadOrchestrator"
-        ) as mock_orch:
-            mock_orch_inst = MagicMock()
-            mock_orch.return_value = mock_orch_inst
-            mock_orch_inst.android_downloader = MagicMock()
-            mock_orch_inst.firmware_downloader = MagicMock()
-            mock_orch_inst.run_download_pipeline.return_value = ([], [])
-            mock_orch_inst.get_latest_versions.return_value = {}
-            mock_orch_inst.failed_downloads = []
-
+        with patch.object(
+            integration,
+            "run_download",
+            return_value=(["fw"], ["new_fw"], ["apk"], ["new_apk"], [], "fw", "apk"),
+        ):
             integration.main(mock_config, force_refresh=False)
 
             # Config token should be used, environment token ignored
@@ -86,17 +74,11 @@ def test_config_token_overrides_environment_token(integration, mock_config):
         mock_config["ALLOW_ENV_TOKEN"] = True
         mock_config["GITHUB_TOKEN"] = test_config_token
 
-        with patch(
-            "fetchtastic.download.orchestrator.DownloadOrchestrator"
-        ) as mock_orch:
-            mock_orch_inst = MagicMock()
-            mock_orch.return_value = mock_orch_inst
-            mock_orch_inst.android_downloader = MagicMock()
-            mock_orch_inst.firmware_downloader = MagicMock()
-            mock_orch_inst.run_download_pipeline.return_value = ([], [])
-            mock_orch_inst.get_latest_versions.return_value = {}
-            mock_orch_inst.failed_downloads = []
-
+        with patch.object(
+            integration,
+            "run_download",
+            return_value=(["fw"], ["new_fw"], ["apk"], ["new_apk"], [], "fw", "apk"),
+        ):
             integration.main(mock_config, force_refresh=False)
 
             # Config token should override environment token
@@ -111,17 +93,11 @@ def test_allow_env_token_missing_defaults_to_true(integration, mock_config):
         # Don't set ALLOW_ENV_TOKEN in config
         mock_config.pop("ALLOW_ENV_TOKEN", None)
 
-        with patch(
-            "fetchtastic.download.orchestrator.DownloadOrchestrator"
-        ) as mock_orch:
-            mock_orch_inst = MagicMock()
-            mock_orch.return_value = mock_orch_inst
-            mock_orch_inst.android_downloader = MagicMock()
-            mock_orch_inst.firmware_downloader = MagicMock()
-            mock_orch_inst.run_download_pipeline.return_value = ([], [])
-            mock_orch_inst.get_latest_versions.return_value = {}
-            mock_orch_inst.failed_downloads = []
-
+        with patch.object(
+            integration,
+            "run_download",
+            return_value=(["fw"], ["new_fw"], ["apk"], ["new_apk"], [], "fw", "apk"),
+        ):
             integration.main(mock_config, force_refresh=False)
 
             # Environment token should be used by default
@@ -137,17 +113,11 @@ def test_no_token_when_env_disabled_and_no_config(integration, mock_config):
         # Don't set GITHUB_TOKEN in config
         mock_config.pop("GITHUB_TOKEN", None)
 
-        with patch(
-            "fetchtastic.download.orchestrator.DownloadOrchestrator"
-        ) as mock_orch:
-            mock_orch_inst = MagicMock()
-            mock_orch.return_value = mock_orch_inst
-            mock_orch_inst.android_downloader = MagicMock()
-            mock_orch_inst.firmware_downloader = MagicMock()
-            mock_orch_inst.run_download_pipeline.return_value = ([], [])
-            mock_orch_inst.get_latest_versions.return_value = {}
-            mock_orch_inst.failed_downloads = []
-
+        with patch.object(
+            integration,
+            "run_download",
+            return_value=(["fw"], ["new_fw"], ["apk"], ["new_apk"], [], "fw", "apk"),
+        ):
             integration.main(mock_config, force_refresh=False)
 
             # No token should be set

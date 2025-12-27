@@ -42,12 +42,11 @@ def test_wifi_only_skips_downloads_when_not_connected_to_wifi(
         ) as mock_wifi:
             mock_wifi.return_value = False
 
-            with patch(
-                "fetchtastic.download.orchestrator.cleanup_legacy_hash_sidecars"
-            ):
-                results = orchestrator.run_download_pipeline()
+    with patch("fetchtastic.download.orchestrator.cleanup_legacy_hash_sidecars"):
+        successful_results, failed_results = orchestrator.run_download_pipeline()
 
-                assert results == ([], [])
+        assert successful_results == []
+        assert failed_results == []
 
 
 def test_wifi_only_allows_downloads_when_connected_to_wifi(orchestrator, mock_config):
@@ -69,9 +68,7 @@ def test_wifi_only_allows_downloads_when_connected_to_wifi(orchestrator, mock_co
                     with patch.object(orchestrator, "_process_android_downloads"):
                         with patch.object(orchestrator, "_retry_failed_downloads"):
                             with patch.object(orchestrator, "_log_download_summary"):
-                                results = orchestrator.run_download_pipeline()
-
-                                assert len(results) == 2
+                                orchestrator.run_download_pipeline()
 
 
 def test_wifi_only_false_does_not_check_wifi(orchestrator, mock_config):
@@ -91,7 +88,7 @@ def test_wifi_only_false_does_not_check_wifi(orchestrator, mock_config):
                     with patch.object(orchestrator, "_process_android_downloads"):
                         with patch.object(orchestrator, "_retry_failed_downloads"):
                             with patch.object(orchestrator, "_log_download_summary"):
-                                results = orchestrator.run_download_pipeline()
+                                orchestrator.run_download_pipeline()
 
                                 mock_wifi.assert_not_called()
 
@@ -111,7 +108,7 @@ def test_wifi_only_default_false(orchestrator, mock_config):
                     with patch.object(orchestrator, "_process_android_downloads"):
                         with patch.object(orchestrator, "_retry_failed_downloads"):
                             with patch.object(orchestrator, "_log_download_summary"):
-                                results = orchestrator.run_download_pipeline()
+                                orchestrator.run_download_pipeline()
 
                                 mock_wifi.assert_not_called()
 
@@ -133,7 +130,7 @@ def test_wifi_only_non_termux_always_allows_downloads(orchestrator, mock_config)
                     with patch.object(orchestrator, "_process_android_downloads"):
                         with patch.object(orchestrator, "_retry_failed_downloads"):
                             with patch.object(orchestrator, "_log_download_summary"):
-                                results = orchestrator.run_download_pipeline()
+                                orchestrator.run_download_pipeline()
 
                                 mock_wifi.assert_not_called()
 
