@@ -91,7 +91,7 @@ def test_wifi_only_false_does_not_check_wifi(orchestrator, mock_config):
                     with patch.object(orchestrator, "_process_android_downloads"):
                         with patch.object(orchestrator, "_retry_failed_downloads"):
                             with patch.object(orchestrator, "_log_download_summary"):
-                                orchestrator.run_download_pipeline()
+                                results = orchestrator.run_download_pipeline()
 
                                 mock_wifi.assert_not_called()
 
@@ -111,7 +111,7 @@ def test_wifi_only_default_false(orchestrator, mock_config):
                     with patch.object(orchestrator, "_process_android_downloads"):
                         with patch.object(orchestrator, "_retry_failed_downloads"):
                             with patch.object(orchestrator, "_log_download_summary"):
-                                orchestrator.run_download_pipeline()
+                                results = orchestrator.run_download_pipeline()
 
                                 mock_wifi.assert_not_called()
 
@@ -133,7 +133,7 @@ def test_wifi_only_non_termux_always_allows_downloads(orchestrator, mock_config)
                     with patch.object(orchestrator, "_process_android_downloads"):
                         with patch.object(orchestrator, "_retry_failed_downloads"):
                             with patch.object(orchestrator, "_log_download_summary"):
-                                orchestrator.run_download_pipeline()
+                                results = orchestrator.run_download_pipeline()
 
                                 mock_wifi.assert_not_called()
 
@@ -145,10 +145,12 @@ def test_is_connected_to_wifi_termux_connected():
     with patch("fetchtastic.download.orchestrator.is_termux") as mock_is_termux:
         mock_is_termux.return_value = True
 
-        with patch("os.popen") as mock_popen:
-            mock_result = MagicMock()
-            mock_result.read.return_value = json.dumps(wifi_data)
-            mock_popen.return_value = mock_result
+        with patch("subprocess.run") as mock_run:
+            mock_process = MagicMock()
+            mock_process.returncode = 0
+            mock_process.stdout = json.dumps(wifi_data)
+            mock_process.stderr = ""
+            mock_run.return_value = mock_process
 
             from fetchtastic.download.orchestrator import is_connected_to_wifi
 
@@ -163,10 +165,12 @@ def test_is_connected_to_wifi_termux_not_connected():
     with patch("fetchtastic.download.orchestrator.is_termux") as mock_is_termux:
         mock_is_termux.return_value = True
 
-        with patch("os.popen") as mock_popen:
-            mock_result = MagicMock()
-            mock_result.read.return_value = json.dumps(wifi_data)
-            mock_popen.return_value = mock_result
+        with patch("subprocess.run") as mock_run:
+            mock_process = MagicMock()
+            mock_process.returncode = 0
+            mock_process.stdout = json.dumps(wifi_data)
+            mock_process.stderr = ""
+            mock_run.return_value = mock_process
 
             from fetchtastic.download.orchestrator import is_connected_to_wifi
 
@@ -181,10 +185,12 @@ def test_is_connected_to_wifi_termux_incomplete():
     with patch("fetchtastic.download.orchestrator.is_termux") as mock_is_termux:
         mock_is_termux.return_value = True
 
-        with patch("os.popen") as mock_popen:
-            mock_result = MagicMock()
-            mock_result.read.return_value = json.dumps(wifi_data)
-            mock_popen.return_value = mock_result
+        with patch("subprocess.run") as mock_run:
+            mock_process = MagicMock()
+            mock_process.returncode = 0
+            mock_process.stdout = json.dumps(wifi_data)
+            mock_process.stderr = ""
+            mock_run.return_value = mock_process
 
             from fetchtastic.download.orchestrator import is_connected_to_wifi
 
@@ -208,10 +214,12 @@ def test_is_connected_to_wifi_json_decode_error():
     with patch("fetchtastic.download.orchestrator.is_termux") as mock_is_termux:
         mock_is_termux.return_value = True
 
-        with patch("os.popen") as mock_popen:
-            mock_result = MagicMock()
-            mock_result.read.return_value = "invalid json"
-            mock_popen.return_value = mock_result
+        with patch("subprocess.run") as mock_run:
+            mock_process = MagicMock()
+            mock_process.returncode = 0
+            mock_process.stdout = "invalid json"
+            mock_process.stderr = ""
+            mock_run.return_value = mock_process
 
             from fetchtastic.download.orchestrator import is_connected_to_wifi
 
@@ -224,8 +232,8 @@ def test_is_connected_to_wifi_os_error():
     with patch("fetchtastic.download.orchestrator.is_termux") as mock_is_termux:
         mock_is_termux.return_value = True
 
-        with patch("os.popen") as mock_popen:
-            mock_popen.side_effect = OSError("Command not found")
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = FileNotFoundError("Command not found")
 
             from fetchtastic.download.orchestrator import is_connected_to_wifi
 

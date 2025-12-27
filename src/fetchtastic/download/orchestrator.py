@@ -7,6 +7,7 @@ downloaders in a single fetchtastic download run.
 
 import json
 import os
+import subprocess
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -60,18 +61,34 @@ def is_connected_to_wifi() -> bool:
         return True
 
     try:
-        result = os.popen("termux-wifi-connectioninfo").read()
-        if not result:
+        process = subprocess.run(
+            ["termux-wifi-connectioninfo"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if process.returncode != 0:
+            error_message = process.stderr.strip()
+            logger.warning(
+                f"termux-wifi-connectioninfo command failed with exit code {process.returncode}: {error_message}"
+            )
             return False
-        data = json.loads(result)
+
+        output = process.stdout.strip()
+        if not output:
+            return False
+
+        data = json.loads(output)
         supplicant_state = data.get("supplicant_state", "")
         ip_address = data.get("ip", "")
         return supplicant_state == "COMPLETED" and ip_address != ""
     except json.JSONDecodeError as e:
         logger.warning(f"Error decoding JSON from termux-wifi-connectioninfo: {e}")
         return False
-    except OSError as e:
-        logger.warning(f"OSError checking Wi-Fi connection: {e}")
+    except FileNotFoundError:
+        logger.warning(
+            "termux-wifi-connectioninfo command not found. Is Termux:API installed and configured?"
+        )
         return False
     except Exception as e:
         logger.warning(f"Unexpected error checking Wi-Fi connection: {e}")
