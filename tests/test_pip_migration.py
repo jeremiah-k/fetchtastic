@@ -219,7 +219,7 @@ class TestPipToPipxMigration:
         mock_check.return_value = ("1.0.0", "2.0.0", True)
         mocker.patch("fetchtastic.setup_config.check_for_updates", mock_check)
 
-        current, latest, available = setup_config.display_version_info()
+        current, latest, available = setup_config.get_version_info()
 
         assert current == "1.0.0"
         assert latest == "2.0.0"
