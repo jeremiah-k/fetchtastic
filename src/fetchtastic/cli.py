@@ -44,12 +44,12 @@ copy_to_clipboard_func = setup_config.copy_to_clipboard_func
 
 def display_version_info():
     """
-    Return version information for the installed Fetchtastic package and the latest available release.
+    Return version information for installed Fetchtastic package and latest available release.
 
     Returns:
         Tuple[str | None, str | None, bool]: (current_version, latest_version, update_available)
     """
-    return setup_config.display_version_info()
+    return setup_config.get_version_info()
 
 
 def get_upgrade_command():

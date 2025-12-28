@@ -1935,7 +1935,7 @@ def should_recommend_setup():
         return True, "Could not determine setup status", None, None
 
 
-def display_version_info():
+def get_version_info():
     """
     Retrieves the current and latest Fetchtastic version information and update status.
 
