@@ -132,7 +132,6 @@ def test_cli_download_with_update_available(mocker):
     mocker.patch(
         "fetchtastic.cli.get_upgrade_command", return_value="pipx upgrade fetchtastic"
     )
-    mock_logger = mocker.patch("fetchtastic.log_utils.logger")
 
     cli.main()
 
