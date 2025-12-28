@@ -213,8 +213,8 @@ class TestPipToPipxMigration:
 
         assert command == "pipx upgrade fetchtastic"
 
-    def test_display_version_info(self, mocker):
-        """Test display_version_info function."""
+    def test_get_version_info(self, mocker):
+        """Test get_version_info function."""
         mock_check = mocker.MagicMock()
         mock_check.return_value = ("1.0.0", "2.0.0", True)
         mocker.patch("fetchtastic.setup_config.check_for_updates", mock_check)

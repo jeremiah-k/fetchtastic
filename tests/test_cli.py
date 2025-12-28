@@ -126,8 +126,8 @@ def test_cli_download_with_update_available(mocker):
     mocker.patch("fetchtastic.setup_config.prompt_for_migration")
     mocker.patch("fetchtastic.setup_config.migrate_config")
 
-    mock_display = mocker.patch("fetchtastic.cli.display_version_info")
-    mock_display.return_value = ("1.0.0", "1.1.0", True)
+    mock_get_version = mocker.patch("fetchtastic.cli.get_version_info")
+    mock_get_version.return_value = ("1.0.0", "1.1.0", True)
     mock_reminder = mocker.patch("fetchtastic.cli._display_update_reminder")
     mocker.patch(
         "fetchtastic.cli.get_upgrade_command", return_value="pipx upgrade fetchtastic"
@@ -136,7 +136,7 @@ def test_cli_download_with_update_available(mocker):
     cli.main()
 
     # Verify version check was called
-    mock_display.assert_called_once()
+    mock_get_version.assert_called_once()
     # Verify update reminder was displayed
     mock_reminder.assert_called_once_with("1.1.0")
 
@@ -154,7 +154,7 @@ def test_cli_setup_command_windows_integration_update(mocker):
         "fetchtastic.setup_config.create_windows_menu_shortcuts", return_value=True
     )
     mocker.patch(
-        "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.0.0", False)
+        "fetchtastic.cli.get_version_info", return_value=("1.0.0", "1.0.0", False)
     )
     mocker.patch("fetchtastic.setup_config.CONFIG_FILE", "/fake/config.yaml")
 
@@ -172,7 +172,7 @@ def test_cli_setup_command_windows_integration_update_no_config(mocker):
     mocker.patch("platform.system", return_value="Windows")
     mocker.patch("fetchtastic.setup_config.load_config", return_value=None)
     mocker.patch(
-        "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.0.0", False)
+        "fetchtastic.cli.get_version_info", return_value=("1.0.0", "1.0.0", False)
     )
 
     mock_logger = mocker.patch("fetchtastic.log_utils.logger")
@@ -195,7 +195,7 @@ def test_cli_setup_command_windows_integration_update_failed(mocker):
         "fetchtastic.setup_config.create_windows_menu_shortcuts", return_value=False
     )
     mocker.patch(
-        "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.0.0", False)
+        "fetchtastic.cli.get_version_info", return_value=("1.0.0", "1.0.0", False)
     )
     mocker.patch("fetchtastic.setup_config.CONFIG_FILE", "/fake/config.yaml")
 
@@ -210,7 +210,7 @@ def test_cli_setup_command_windows_integration_update_non_windows(mocker):
     mocker.patch("platform.system", return_value="Linux")
     mocker.patch("sys.argv", ["fetchtastic", "setup", "--update-integrations"])
     mocker.patch(
-        "fetchtastic.cli.display_version_info",
+        "fetchtastic.cli.get_version_info",
         return_value=("1.0.0", "1.0.0", False),
     )
 
@@ -272,7 +272,7 @@ def test_cli_version_with_update_available(mocker):
     """Test 'version' command when update is available."""
     mocker.patch("sys.argv", ["fetchtastic", "version"])
     mock_display = mocker.patch(
-        "fetchtastic.cli.display_version_info", return_value=("1.0.0", "2.0.0", True)
+        "fetchtastic.cli.get_version_info", return_value=("1.0.0", "2.0.0", True)
     )
 
     cli.main()
@@ -400,7 +400,7 @@ def test_cli_repo_command_success(mocker, command):
         mocker.patch("builtins.input", return_value="y")
 
     mocker.patch(
-        "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.0.0", False)
+        "fetchtastic.cli.get_version_info", return_value=("1.0.0", "1.0.0", False)
     )
 
     cli.main()
@@ -420,7 +420,7 @@ def test_cli_repo_browse_command_no_config(mocker):
         "fetchtastic.menu_repo.run_repository_downloader_menu"
     )
     mocker.patch(
-        "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.0.0", False)
+        "fetchtastic.cli.get_version_info", return_value=("1.0.0", "1.0.0", False)
     )
 
     cli.main()
@@ -437,7 +437,7 @@ def test_cli_repo_browse_command_config_load_failed(mocker):
     )
     mocker.patch("fetchtastic.setup_config.load_config", return_value=None)
     mocker.patch(
-        "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.0.0", False)
+        "fetchtastic.cli.get_version_info", return_value=("1.0.0", "1.0.0", False)
     )
 
     mock_logger = mocker.patch("fetchtastic.log_utils.logger")
@@ -464,7 +464,7 @@ def test_cli_repo_command_with_update_available(mocker, command):
         mocker.patch("builtins.input", return_value="y")
 
     mocker.patch(
-        "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.1.0", True)
+        "fetchtastic.cli.get_version_info", return_value=("1.0.0", "1.1.0", True)
     )
     mocker.patch(
         "fetchtastic.cli.get_upgrade_command",
@@ -492,7 +492,7 @@ def test_cli_repo_command_no_subcommand(mocker, capfd):
     )
     mocker.patch("fetchtastic.setup_config.load_config", return_value={"key": "val"})
     mocker.patch(
-        "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.0.0", False)
+        "fetchtastic.cli.get_version_info", return_value=("1.0.0", "1.0.0", False)
     )
 
     cli.main()
@@ -521,10 +521,8 @@ def test_cli_setup_command(mocker):
     """Test the 'setup' command dispatch."""
     mocker.patch("sys.argv", ["fetchtastic", "setup"])
     mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
-    # Patch the display_version_info where it's looked up: in the cli module
-    mocker.patch(
-        "fetchtastic.cli.display_version_info", return_value=("1.0", "1.0", False)
-    )
+    # Patch the get_version_info where it's looked up: in the cli module
+    mocker.patch("fetchtastic.cli.get_version_info", return_value=("1.0", "1.0", False))
 
     cli.main()
     mock_setup_run.assert_called_once_with(sections=None)
@@ -537,9 +535,7 @@ def test_cli_setup_command_with_sections(mocker):
         ["fetchtastic", "setup", "--section", "firmware", "--section", "android"],
     )
     mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
-    mocker.patch(
-        "fetchtastic.cli.display_version_info", return_value=("1.0", "1.0", False)
-    )
+    mocker.patch("fetchtastic.cli.get_version_info", return_value=("1.0", "1.0", False))
 
     cli.main()
     mock_setup_run.assert_called_once_with(sections=["firmware", "android"])
@@ -549,9 +545,7 @@ def test_cli_setup_command_with_positional_sections(mocker):
     """Positional section arguments should be passed to setup."""
     mocker.patch("sys.argv", ["fetchtastic", "setup", "firmware", "android"])
     mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
-    mocker.patch(
-        "fetchtastic.cli.display_version_info", return_value=("1.0", "1.0", False)
-    )
+    mocker.patch("fetchtastic.cli.get_version_info", return_value=("1.0", "1.0", False))
 
     cli.main()
     mock_setup_run.assert_called_once_with(sections=["firmware", "android"])
@@ -560,9 +554,7 @@ def test_cli_setup_command_with_positional_sections(mocker):
 def test_cli_setup_command_with_invalid_positional_sections(mocker):
     """Invalid positional section arguments should cause an error."""
     mocker.patch("sys.argv", ["fetchtastic", "setup", "invalid_section", "firmware"])
-    mocker.patch(
-        "fetchtastic.cli.display_version_info", return_value=("1.0", "1.0", False)
-    )
+    mocker.patch("fetchtastic.cli.get_version_info", return_value=("1.0", "1.0", False))
 
     with pytest.raises(SystemExit) as exc_info:
         cli.main()
@@ -586,9 +578,7 @@ def test_cli_setup_command_with_duplicate_sections(mocker):
         ],
     )
     mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
-    mocker.patch(
-        "fetchtastic.cli.display_version_info", return_value=("1.0", "1.0", False)
-    )
+    mocker.patch("fetchtastic.cli.get_version_info", return_value=("1.0", "1.0", False))
 
     cli.main()
 
@@ -604,7 +594,7 @@ def test_cli_setup_command_with_update_available(mocker):
 
     # Mock version info to indicate update is available
     mocker.patch(
-        "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.1.0", True)
+        "fetchtastic.cli.get_version_info", return_value=("1.0.0", "1.1.0", True)
     )
     # Mock upgrade command to return expected value
     mocker.patch(
@@ -812,7 +802,7 @@ def test_cli_version_command(mocker):
     mocker.patch("sys.argv", ["fetchtastic", "version"])
     # Patch where the function is looked up (in the cli module)
     mock_version_info = mocker.patch(
-        "fetchtastic.cli.display_version_info", return_value=("1.2.3", "1.2.3", False)
+        "fetchtastic.cli.get_version_info", return_value=("1.2.3", "1.2.3", False)
     )
     cli.main()
     mock_version_info.assert_called_once()
@@ -907,9 +897,7 @@ def test_cli_setup_with_windows_integration_update(mocker):
     mocker.patch(
         "fetchtastic.setup_config.create_windows_menu_shortcuts", return_value=True
     )
-    mocker.patch(
-        "fetchtastic.cli.display_version_info", return_value=("1.0", "1.0", False)
-    )
+    mocker.patch("fetchtastic.cli.get_version_info", return_value=("1.0", "1.0", False))
     mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
 
     cli.main()
@@ -923,9 +911,7 @@ def test_cli_setup_windows_integration_no_config(mocker):
     mocker.patch("sys.argv", ["fetchtastic", "setup", "--update-integrations"])
     mocker.patch("platform.system", return_value="Windows")
     mocker.patch("fetchtastic.setup_config.load_config", return_value=None)
-    mocker.patch(
-        "fetchtastic.cli.display_version_info", return_value=("1.0", "1.0", False)
-    )
+    mocker.patch("fetchtastic.cli.get_version_info", return_value=("1.0", "1.0", False))
     mock_logger = mocker.patch("fetchtastic.log_utils.logger")
 
     cli.main()
@@ -952,7 +938,7 @@ def test_cli_version_with_update_available_legacy(mocker):
     """Test the 'version' command with update available."""
     mocker.patch("sys.argv", ["fetchtastic", "version"])
     mocker.patch(
-        "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.1.0", True)
+        "fetchtastic.cli.get_version_info", return_value=("1.0.0", "1.1.0", True)
     )
     mocker.patch(
         "fetchtastic.cli.get_upgrade_command", return_value="pipx upgrade fetchtastic"
@@ -1729,7 +1715,7 @@ def test_cli_setup_with_multiple_sections(mocker):
     )
     mock_run_setup = mocker.patch("fetchtastic.setup_config.run_setup")
     mocker.patch(
-        "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.0.0", False)
+        "fetchtastic.cli.get_version_info", return_value=("1.0.0", "1.0.0", False)
     )
 
     cli.main()

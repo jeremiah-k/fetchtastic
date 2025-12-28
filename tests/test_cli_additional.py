@@ -62,7 +62,7 @@ def test_cli_setup_with_multiple_sections(mocker, mock_cli_dependencies):
     )
     mock_run_setup = mocker.patch("fetchtastic.setup_config.run_setup")
     mocker.patch(
-        "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.0.0", False)
+        "fetchtastic.cli.get_version_info", return_value=("1.0.0", "1.0.0", False)
     )
 
     cli.main()
@@ -90,7 +90,7 @@ def test_cli_setup_positional_sections(mocker, mock_cli_dependencies):
     mocker.patch("sys.argv", ["fetchtastic", "setup", "firmware", "android"])
     mock_run_setup = mocker.patch("fetchtastic.setup_config.run_setup")
     mocker.patch(
-        "fetchtastic.cli.display_version_info", return_value=("1.0.0", "1.0.0", False)
+        "fetchtastic.cli.get_version_info", return_value=("1.0.0", "1.0.0", False)
     )
 
     cli.main()

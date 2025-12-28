@@ -42,7 +42,7 @@ get_api_request_summary = _get_api_request_summary
 copy_to_clipboard_func = setup_config.copy_to_clipboard_func
 
 
-def display_version_info():
+def get_version_info():
     """
     Return version information for installed Fetchtastic package and latest available release.
 
@@ -372,7 +372,7 @@ def main():
     if args.command == "setup":
         display_banner()
         # Display version information
-        current_version, latest_version, update_available = display_version_info()
+        current_version, latest_version, update_available = get_version_info()
 
         # Check if this is just an integrations update
         if hasattr(args, "update_integrations") and args.update_integrations:
@@ -431,7 +431,7 @@ def main():
         _handle_download_subcommand(args, integration, config)
 
         # Check for update after download completes
-        current_version, latest_version, update_available = display_version_info()
+        current_version, latest_version, update_available = get_version_info()
         if update_available and latest_version:
             _display_update_reminder(latest_version)
     elif args.command == "cache":
@@ -482,7 +482,7 @@ def main():
     elif args.command == "version":
         display_banner()
         # Get version information
-        current_version, latest_version, update_available = display_version_info()
+        current_version, latest_version, update_available = get_version_info()
 
         # Log version information
         log_utils.logger.info(f"Fetchtastic v{current_version}")
@@ -505,7 +505,7 @@ def main():
     elif args.command == "repo":
         display_banner()
         # Display version information
-        current_version, latest_version, update_available = display_version_info()
+        current_version, latest_version, update_available = get_version_info()
 
         # Handle repo subcommands
         exists, _ = setup_config.config_exists()
