@@ -731,12 +731,6 @@ class TestMeshtasticAndroidAppDownloader:
 
         mock_logger.error.assert_called_once()
 
-    def test_is_version_directory(self, downloader):
-        """Test version directory detection."""
-        assert downloader._is_version_directory("v1.0.0") is True
-        assert downloader._is_version_directory("v1.0") is True
-        assert downloader._is_version_directory("not_version") is False
-
     @patch("fetchtastic.download.android.datetime")
     def test_update_latest_release_tag(self, mock_datetime, downloader, tmp_path):
         """Test updating latest release tag."""

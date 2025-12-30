@@ -572,18 +572,6 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         except (OSError, ValueError) as exc:
             logger.error("Error cleaning up APK prerelease directories: %s", exc)
 
-    def _is_version_directory(self, dir_name: str) -> bool:
-        """
-        Check whether a directory name matches a semantic-version-like pattern.
-
-        Parameters:
-            dir_name (str): Directory name to test.
-
-        Returns:
-            True if the name matches a version pattern with an optional leading 'v' and one or two dot-separated numeric components (e.g., "1.2", "v1.2.3"), False otherwise.
-        """
-        return bool(re.match(r"^(v)?\d+(\.\d+){1,2}$", dir_name))
-
     def get_latest_release_tag(self) -> Optional[str]:
         """
         Get the latest Android release tag recorded in the downloader's tracking file.
