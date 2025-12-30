@@ -26,10 +26,10 @@ pytestmark = [pytest.mark.unit, pytest.mark.core_downloads, pytest.mark.user_int
 def _scandir_context(entries):
     """
     Create a context manager mock that yields the provided iterable of directory entries.
-    
+
     Parameters:
         entries (iterable): Sequence or iterator to be returned by the context manager's __enter__.
-    
+
     Returns:
         MagicMock: A mock context manager whose __enter__ returns `entries` and whose __exit__ returns False (does not suppress exceptions).
     """
@@ -84,17 +84,17 @@ class TestMeshtasticAndroidAppDownloader:
     def downloader(self, mock_config, mock_cache_manager):
         """
         Constructs a MeshtasticAndroidAppDownloader preconfigured for tests with mocked collaborators.
-        
+
         Creates a downloader using the provided mock configuration and cache manager, then replaces
         its runtime collaborators with test doubles: `cache_manager` is set to the provided mock,
         `version_manager` and `file_operations` are replaced with mocks, and the mock
         `version_manager` is delegated to a real VersionManager for `get_release_tuple` and
         `is_prerelease_version` behavior.
-        
+
         Parameters:
             mock_config (dict): Configuration dictionary used to initialize the downloader.
             mock_cache_manager (Mock): Mocked CacheManager providing cache_dir and get_cache_file_path.
-        
+
         Returns:
             MeshtasticAndroidAppDownloader: Downloader instance wired with the test doubles.
         """
@@ -552,6 +552,36 @@ class TestMeshtasticAndroidAppDownloader:
         assert not user_dir.exists()
         assert stable_dir.exists()
 
+    def test_cleanup_prerelease_directories_sorts_stable_releases(self, tmp_path):
+        """Test cleanup keeps the newest stable releases by version."""
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path),
+            "CHECK_APK_PRERELEASES": True,
+            "ANDROID_VERSIONS_TO_KEEP": 2,
+        }
+        downloader = MeshtasticAndroidAppDownloader(
+            config, CacheManager(cache_dir=str(tmp_path / "cache"))
+        )
+
+        v27_9 = tmp_path / APKS_DIR_NAME / "v2.7.9"
+        v27_9.mkdir(parents=True)
+        v27_10 = tmp_path / APKS_DIR_NAME / "v2.7.10"
+        v27_10.mkdir(parents=True)
+        v28_0 = tmp_path / APKS_DIR_NAME / "v2.8.0"
+        v28_0.mkdir(parents=True)
+
+        releases = [
+            Release(tag_name="v2.7.9", prerelease=False),
+            Release(tag_name="v2.8.0", prerelease=False),
+            Release(tag_name="v2.7.10", prerelease=False),
+        ]
+
+        downloader.cleanup_prerelease_directories(cached_releases=releases)
+
+        assert not v27_9.exists()
+        assert v27_10.exists()
+        assert v28_0.exists()
+
     def test_cleanup_prerelease_directories_returns_without_cached_releases(
         self, downloader
     ):
@@ -591,10 +621,10 @@ class TestMeshtasticAndroidAppDownloader:
         def _exists(path):
             """
             Determine whether the given path is the Android APK directory.
-            
+
             Parameters:
                 path (str): Filesystem path to test.
-            
+
             Returns:
                 True if `path` is equal to the configured Android APK directory path, False otherwise.
             """
@@ -686,10 +716,10 @@ class TestMeshtasticAndroidAppDownloader:
         def _exists(path):
             """
             Determine whether the given path is the Android APK directory.
-            
+
             Parameters:
                 path (str): Filesystem path to test.
-            
+
             Returns:
                 True if `path` is equal to the configured Android APK directory path, False otherwise.
             """

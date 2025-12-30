@@ -76,12 +76,12 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     ) -> str:
         """
         Compute the filesystem path for an APK asset and ensure the corresponding release directory exists.
-        
+
         Sanitizes inputs and places prerelease APKs under the prerelease APKs subdirectory when `is_prerelease` is True or inferred; creates the release version directory if it does not exist.
-        
+
         Parameters:
             is_prerelease (Optional[bool]): If provided, override inference and use the specified prerelease status to choose the base directory.
-        
+
         Returns:
             str: Filesystem path to the asset file within the (possibly created) release directory.
         """
@@ -118,9 +118,9 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     def _is_asset_complete_for_target(self, target_path: str, asset: Asset) -> bool:
         """
         Determine whether the asset at target_path is present and passes size and integrity checks.
-        
+
         Performs these checks when applicable: file existence, file size equals asset.size (if provided), verifier integrity check, and ZIP integrity validation for files ending with `.zip`.
-        
+
         Returns:
             True if all applicable checks pass, False otherwise.
         """
@@ -313,13 +313,13 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     def download_apk(self, release: Release, asset: Asset) -> DownloadResult:
         """
         Download and verify the APK asset for the given release.
-        
+
         Attempts to reuse an existing, validated file when present; otherwise downloads the asset, verifies the saved file, and removes it on verification failure.
-        
+
         Parameters:
             release (Release): Release metadata (used for tag, prerelease flag, and publish data).
             asset (Asset): Asset metadata including name, download_url, and expected size.
-        
+
         Returns:
             DownloadResult: Success entries include `file_path`, `download_url`, `file_size`, `file_type`, and `was_skipped` when applicable; failure entries include `error_message`, `error_type`, and `is_retryable`.
         """
@@ -498,12 +498,12 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     ) -> None:
         """
         Ensure APK prerelease directories reside under the dedicated prerelease subdirectory and remove directories that are not expected based on the provided releases.
-        
+
         Given an optional list of cached releases, this will:
         - Keep the most recent stable release directories up to the configured ANDROID_VERSIONS_TO_KEEP value in the APK root.
         - Ensure the APK prerelease subdirectory exists and contains only prerelease directories corresponding to the filtered prereleases.
         - Remove unexpected entries (except symlinks) from the APK root and the prerelease subdirectory.
-        
+
         Parameters:
             cached_releases (Optional[List[Release]]): Releases used to compute which stable and prerelease
                 directories should be retained; if None or empty, no action is taken.
@@ -522,9 +522,14 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                     "ANDROID_VERSIONS_TO_KEEP", DEFAULT_ANDROID_VERSIONS_TO_KEEP
                 )
             )
-            stable_releases = [
-                release for release in cached_releases if not release.prerelease
-            ]
+            stable_releases = sorted(
+                [release for release in cached_releases if not release.prerelease],
+                key=lambda release: self.version_manager.get_release_tuple(
+                    release.tag_name
+                )
+                or (),
+                reverse=True,
+            )
             prerelease_releases = self.handle_prereleases(cached_releases)
 
             expected_stable: set[str] = set()
@@ -552,11 +557,11 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             def _remove_unexpected_entries(base_dir: str, allowed: set[str]) -> None:
                 """
                 Scan base_dir and remove any filesystem entries whose names are not in `allowed`.
-                
+
                 Parameters:
                     base_dir (str): Directory path to scan for unexpected entries.
                     allowed (set[str]): Set of entry names that must be preserved (files or directories).
-                
+
                 Notes:
                     - Symlinks are skipped and left untouched.
                     - Removes unexpected entries recursively using a safe removal helper.
@@ -592,10 +597,10 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     def _is_version_directory(self, dir_name: str) -> bool:
         """
         Check whether a directory name matches a semantic-version-like pattern.
-        
+
         Parameters:
             dir_name (str): Directory name to test.
-        
+
         Returns:
             True if the name matches a version pattern with an optional leading 'v' and one or two dot-separated numeric components (e.g., "1.2", "v1.2.3"), False otherwise.
         """
