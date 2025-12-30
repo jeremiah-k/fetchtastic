@@ -76,6 +76,9 @@ class TestMeshtasticAndroidAppDownloader:
         dl.version_manager.get_release_tuple.side_effect = (
             real_version_manager.get_release_tuple
         )
+        dl.version_manager.is_prerelease_version.side_effect = (
+            real_version_manager.is_prerelease_version
+        )
         return dl
 
     def test_init(self, mock_config, mock_cache_manager):
@@ -397,8 +400,8 @@ class TestMeshtasticAndroidAppDownloader:
         # Verify version manager was called to sort versions (exact count may vary)
         assert downloader.version_manager.get_release_tuple.call_count >= 1
 
-    def test_cleanup_prerelease_directories_moves_expected_prerelease(self, tmp_path):
-        """Test misplaced prerelease directories are moved into the prerelease folder."""
+    def test_cleanup_prerelease_directories_removes_unexpected_entries(self, tmp_path):
+        """Test unexpected entries are removed from APK directories."""
         config = {
             "DOWNLOAD_DIR": str(tmp_path),
             "CHECK_APK_PRERELEASES": True,
@@ -410,7 +413,10 @@ class TestMeshtasticAndroidAppDownloader:
         prerelease_tag = "v2.7.10-open.1"
         misplaced = tmp_path / APKS_DIR_NAME / prerelease_tag
         misplaced.mkdir(parents=True)
-        (misplaced / "app.apk").write_text("data", encoding="utf-8")
+        expected_dir = (
+            tmp_path / APKS_DIR_NAME / APK_PRERELEASES_DIR_NAME / prerelease_tag
+        )
+        expected_dir.mkdir(parents=True)
 
         stable_dir = tmp_path / APKS_DIR_NAME / "v2.7.9"
         stable_dir.mkdir(parents=True)
@@ -423,9 +429,7 @@ class TestMeshtasticAndroidAppDownloader:
         downloader.cleanup_prerelease_directories(cached_releases=releases)
 
         assert not misplaced.exists()
-        assert (
-            tmp_path / APKS_DIR_NAME / APK_PRERELEASES_DIR_NAME / prerelease_tag
-        ).exists()
+        assert expected_dir.exists()
         assert stable_dir.exists()
 
     def test_cleanup_prerelease_directories_removes_superseded_prereleases(
@@ -446,6 +450,10 @@ class TestMeshtasticAndroidAppDownloader:
             tmp_path / APKS_DIR_NAME / APK_PRERELEASES_DIR_NAME / "v2.7.10-open.2"
         )
         prerelease_dir.mkdir(parents=True)
+        misplaced_stable = (
+            tmp_path / APKS_DIR_NAME / APK_PRERELEASES_DIR_NAME / "v2.7.9"
+        )
+        misplaced_stable.mkdir(parents=True)
         user_dir = tmp_path / APKS_DIR_NAME / APK_PRERELEASES_DIR_NAME / "notes"
         user_dir.mkdir(parents=True)
         stable_dir = tmp_path / APKS_DIR_NAME / "v2.7.10"
@@ -461,7 +469,8 @@ class TestMeshtasticAndroidAppDownloader:
 
         assert not root_prerelease.exists()
         assert not prerelease_dir.exists()
-        assert user_dir.exists()
+        assert not misplaced_stable.exists()
+        assert not user_dir.exists()
         assert stable_dir.exists()
 
     def test_is_version_directory(self, downloader):

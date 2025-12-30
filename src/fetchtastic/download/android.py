@@ -18,6 +18,7 @@ import requests
 from fetchtastic.constants import (
     APK_PRERELEASES_DIR_NAME,
     APKS_DIR_NAME,
+    DEFAULT_ANDROID_VERSIONS_TO_KEEP,
     ERROR_TYPE_FILESYSTEM,
     ERROR_TYPE_NETWORK,
     ERROR_TYPE_VALIDATION,
@@ -87,9 +88,9 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         safe_name = self._sanitize_required(file_name, "file name")
 
         if is_prerelease is None:
-            is_prerelease = _is_apk_prerelease_by_name(release_tag)
-            if not is_prerelease and isinstance(self.version_manager, VersionManager):
-                is_prerelease = self.version_manager.is_prerelease_version(release_tag)
+            is_prerelease = _is_apk_prerelease_by_name(
+                release_tag
+            ) or self.version_manager.is_prerelease_version(release_tag)
 
         base_dir = (
             self._get_prerelease_base_dir()
@@ -495,126 +496,77 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         """
         Ensure APK prerelease directories live under the prerelease subfolder and remove outdated prereleases.
 
-        Moves any prerelease directories found at the root APK directory into the prerelease folder.
-        When prerelease checking is enabled and cached release data is provided, any prerelease
-        directories that do not match the current expected prerelease set are removed.
+        Removes any APK directories that are not expected in the root or prerelease locations
+        based on the current release list. The prerelease folder should only contain expected
+        prerelease directories; the APK root should only contain expected stable releases and
+        the prerelease folder.
         """
         try:
+            if not cached_releases:
+                return
+
             android_dir = os.path.join(self.download_dir, APKS_DIR_NAME)
             if not os.path.exists(android_dir):
                 return
 
             prerelease_dir = os.path.join(android_dir, APK_PRERELEASES_DIR_NAME)
-            check_prereleases = self.config.get(
-                "CHECK_APK_PRERELEASES", self.config.get("CHECK_PRERELEASES", False)
+            keep_limit = int(
+                self.config.get(
+                    "ANDROID_VERSIONS_TO_KEEP", DEFAULT_ANDROID_VERSIONS_TO_KEEP
+                )
             )
+            stable_releases = [
+                release for release in cached_releases if not release.prerelease
+            ]
+            prerelease_releases = self.handle_prereleases(cached_releases)
 
-            expected_tags: set[str] = set()
-            prune_unexpected = False
-            if cached_releases and check_prereleases:
-                for release in self.handle_prereleases(cached_releases):
-                    safe_tag = _sanitize_path_component(release.tag_name)
-                    if safe_tag is None:
-                        logger.warning(
-                            "Skipping unsafe prerelease tag during cleanup: %s",
-                            release.tag_name,
-                        )
-                        continue
-                    expected_tags.add(safe_tag)
-                prune_unexpected = True
+            expected_stable: set[str] = set()
+            for release in stable_releases[:keep_limit]:
+                safe_tag = _sanitize_path_component(release.tag_name)
+                if safe_tag is None:
+                    logger.warning(
+                        "Skipping unsafe release tag during cleanup: %s",
+                        release.tag_name,
+                    )
+                    continue
+                expected_stable.add(safe_tag)
 
-            def _is_managed_prerelease_dir(name: str) -> bool:
-                if self.version_manager.get_release_tuple(name) is None:
-                    return False
-                if _is_apk_prerelease_by_name(name):
-                    return True
-                if isinstance(self.version_manager, VersionManager):
-                    return self.version_manager.is_prerelease_version(name)
-                return False
+            expected_prerelease: set[str] = set()
+            for release in prerelease_releases:
+                safe_tag = _sanitize_path_component(release.tag_name)
+                if safe_tag is None:
+                    logger.warning(
+                        "Skipping unsafe prerelease tag during cleanup: %s",
+                        release.tag_name,
+                    )
+                    continue
+                expected_prerelease.add(safe_tag)
 
-            def _should_keep(tag_name: str) -> bool:
-                if not prune_unexpected:
-                    return True
-                return tag_name in expected_tags
+            def _remove_unexpected_entries(base_dir: str, allowed: set[str]) -> None:
+                try:
+                    with os.scandir(base_dir) as it:
+                        for entry in it:
+                            if entry.is_symlink():
+                                logger.warning(
+                                    "Skipping symlink in APK cleanup: %s", entry.name
+                                )
+                                continue
+                            if entry.name in allowed:
+                                continue
+                            logger.info("Removing unexpected APK entry: %s", entry.name)
+                            _safe_rmtree(entry.path, base_dir, entry.name)
+                except FileNotFoundError:
+                    return
 
-            try:
-                with os.scandir(android_dir) as it:
-                    for entry in it:
-                        if entry.name == APK_PRERELEASES_DIR_NAME:
-                            continue
-                        if entry.is_symlink():
-                            logger.warning(
-                                "Skipping symlink in APK directory during prerelease cleanup: %s",
-                                entry.name,
-                            )
-                            continue
-                        if not entry.is_dir(follow_symlinks=False):
-                            continue
-                        safe_name = _sanitize_path_component(entry.name)
-                        if safe_name is None or not _is_managed_prerelease_dir(
-                            safe_name
-                        ):
-                            continue
-                        if not _should_keep(safe_name):
-                            logger.info(
-                                "Removing superseded APK prerelease directory: %s",
-                                entry.name,
-                            )
-                            _safe_rmtree(entry.path, android_dir, entry.name)
-                            continue
-
-                        os.makedirs(prerelease_dir, exist_ok=True)
-                        target_dir = os.path.join(prerelease_dir, safe_name)
-                        if os.path.exists(target_dir):
-                            logger.warning(
-                                "Removing duplicate misplaced prerelease directory: %s",
-                                entry.name,
-                            )
-                            _safe_rmtree(entry.path, android_dir, entry.name)
-                            continue
-                        try:
-                            shutil.move(entry.path, target_dir)
-                            logger.info(
-                                "Moved APK prerelease into prerelease folder: %s",
-                                entry.name,
-                            )
-                        except OSError as exc:
-                            logger.error(
-                                "Error moving APK prerelease directory %s: %s",
-                                entry.name,
-                                exc,
-                            )
-            except FileNotFoundError:
-                return
+            _remove_unexpected_entries(
+                android_dir,
+                expected_stable | {APK_PRERELEASES_DIR_NAME},
+            )
 
             if not os.path.exists(prerelease_dir):
                 return
 
-            try:
-                with os.scandir(prerelease_dir) as it:
-                    for entry in it:
-                        if entry.is_symlink():
-                            logger.warning(
-                                "Skipping symlink in APK prerelease folder: %s",
-                                entry.name,
-                            )
-                            continue
-                        if not entry.is_dir(follow_symlinks=False):
-                            continue
-                        safe_name = _sanitize_path_component(entry.name)
-                        if safe_name is None or not _is_managed_prerelease_dir(
-                            safe_name
-                        ):
-                            continue
-                        if _should_keep(safe_name):
-                            continue
-                        logger.info(
-                            "Removing superseded APK prerelease directory: %s",
-                            entry.name,
-                        )
-                        _safe_rmtree(entry.path, prerelease_dir, entry.name)
-            except FileNotFoundError:
-                return
+            _remove_unexpected_entries(prerelease_dir, expected_prerelease)
         except (OSError, ValueError) as exc:
             logger.error("Error cleaning up APK prerelease directories: %s", exc)
 
