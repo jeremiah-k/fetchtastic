@@ -129,9 +129,6 @@ def test_cli_download_with_update_available(mocker):
     mock_get_version = mocker.patch("fetchtastic.cli.get_version_info")
     mock_get_version.return_value = ("1.0.0", "1.1.0", True)
     mock_reminder = mocker.patch("fetchtastic.cli._display_update_reminder")
-    mocker.patch(
-        "fetchtastic.cli.get_upgrade_command", return_value="pipx upgrade fetchtastic"
-    )
 
     cli.main()
 
