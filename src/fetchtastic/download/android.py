@@ -446,55 +446,30 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                 return False
         return True
 
-    def cleanup_old_versions(self, keep_limit: int) -> None:
+    def cleanup_old_versions(
+        self, keep_limit: int, cached_releases: Optional[List[Release]] = None
+    ) -> None:
         """
-        Delete Android version directories older than most recent specified number to keep.
-
-        Ignores directories that do not match version-style names. Deletion failures are logged and exceptions are suppressed.
-        Operates on the {APKS_DIR_NAME} subdirectory within the configured download directory.
+        Remove older Android versions by delegating to prerelease-aware cleanup.
 
         Parameters:
-            keep_limit (int): Number of most-recent version directories to retain; directories older than this are removed.
+            keep_limit (int): Number of most-recent version directories to retain.
+            cached_releases (Optional[List[Release]]): Optional release list to avoid redundant API calls.
         """
         try:
-            # Get all Android version directories
-            android_dir = os.path.join(self.download_dir, APKS_DIR_NAME)
-            if not os.path.exists(android_dir):
+            releases = cached_releases or self.get_releases()
+            if not releases:
                 return
-
-            # Get all version directories
-            version_dirs = []
-            try:
-                with os.scandir(android_dir) as it:
-                    for entry in it:
-                        if entry.is_dir() and self._is_version_directory(entry.name):
-                            version_dirs.append(entry.name)
-            except FileNotFoundError:
-                pass
-
-            # Sort versions (newest first) using VersionManager tuples
-            version_dirs.sort(
-                reverse=True,
-                key=lambda version: self.version_manager.get_release_tuple(version)
-                or (),
+            self.cleanup_prerelease_directories(
+                cached_releases=releases, keep_limit_override=keep_limit
             )
-
-            # Remove old versions
-            for old_version in version_dirs[keep_limit:]:
-                old_dir = os.path.join(android_dir, old_version)
-                try:
-                    shutil.rmtree(old_dir)
-                    logger.info(f"Removed old Android version: {old_version}")
-                except OSError as e:
-                    logger.error(
-                        f"Error removing old Android version {old_version}: {e}"
-                    )
-
-        except OSError:
-            logger.exception("Error cleaning up old Android versions")
+        except (requests.RequestException, OSError, ValueError, TypeError) as exc:
+            logger.error("Error cleaning up old Android versions: %s", exc)
 
     def cleanup_prerelease_directories(
-        self, cached_releases: Optional[List[Release]] = None
+        self,
+        cached_releases: Optional[List[Release]] = None,
+        keep_limit_override: Optional[int] = None,
     ) -> None:
         """
         Ensure APK prerelease directories reside under the dedicated prerelease subdirectory and remove directories that are not expected based on the provided releases.
@@ -517,9 +492,13 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                 return
 
             prerelease_dir = os.path.join(android_dir, APK_PRERELEASES_DIR_NAME)
-            keep_limit = int(
-                self.config.get(
-                    "ANDROID_VERSIONS_TO_KEEP", DEFAULT_ANDROID_VERSIONS_TO_KEEP
+            keep_limit = (
+                int(keep_limit_override)
+                if keep_limit_override is not None
+                else int(
+                    self.config.get(
+                        "ANDROID_VERSIONS_TO_KEEP", DEFAULT_ANDROID_VERSIONS_TO_KEEP
+                    )
                 )
             )
             stable_releases = sorted(
@@ -532,27 +511,26 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             )
             prerelease_releases = self.handle_prereleases(cached_releases)
 
-            expected_stable: set[str] = set()
-            for release in stable_releases[:keep_limit]:
-                safe_tag = _sanitize_path_component(release.tag_name)
-                if safe_tag is None:
-                    logger.warning(
-                        "Skipping unsafe release tag during cleanup: %s",
-                        release.tag_name,
-                    )
-                    continue
-                expected_stable.add(safe_tag)
+            def _build_expected_set(
+                releases: List[Release], release_label: str
+            ) -> set[str]:
+                expected: set[str] = set()
+                for release in releases:
+                    safe_tag = _sanitize_path_component(release.tag_name)
+                    if safe_tag is None:
+                        logger.warning(
+                            "Skipping unsafe %s tag during cleanup: %s",
+                            release_label,
+                            release.tag_name,
+                        )
+                        continue
+                    expected.add(safe_tag)
+                return expected
 
-            expected_prerelease: set[str] = set()
-            for release in prerelease_releases:
-                safe_tag = _sanitize_path_component(release.tag_name)
-                if safe_tag is None:
-                    logger.warning(
-                        "Skipping unsafe prerelease tag during cleanup: %s",
-                        release.tag_name,
-                    )
-                    continue
-                expected_prerelease.add(safe_tag)
+            expected_stable = _build_expected_set(
+                stable_releases[:keep_limit], "release"
+            )
+            expected_prerelease = _build_expected_set(prerelease_releases, "prerelease")
 
             def _remove_unexpected_entries(base_dir: str, allowed: set[str]) -> None:
                 """

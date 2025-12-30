@@ -181,8 +181,8 @@ class DownloadOrchestrator:
     def _process_android_downloads(self) -> None:
         """
         Orchestrates discovery and download of Android APK releases and prerelease APK assets.
-        
-        If APK saving is disabled in configuration, this does nothing. It limits work to the configured number of recent stable releases, skips releases already marked complete, downloads missing release assets, processes eligible prerelease APKs, records each asset's outcome in the orchestrator's result lists, and performs cleanup of managed prerelease directories.
+
+        If APK saving is disabled in configuration, this does nothing. It limits work to the configured number of recent stable releases, skips releases already marked complete, downloads missing release assets, processes eligible prerelease APKs, and records each asset's outcome in the orchestrator's result lists.
         """
         try:
             if not self.config.get("SAVE_APKS", False):
@@ -239,10 +239,6 @@ class DownloadOrchestrator:
                 and not prereleases
             ):
                 logger.info("No pre-release APKs available")
-
-            self.android_downloader.cleanup_prerelease_directories(
-                cached_releases=android_releases
-            )
 
             if not any_android_downloaded and not releases_to_download:
                 logger.info("All Android APK assets are up to date.")
@@ -1035,7 +1031,9 @@ class DownloadOrchestrator:
 
             # Clean up Android versions
             android_keep = self.config.get("ANDROID_VERSIONS_TO_KEEP", 5)
-            self.android_downloader.cleanup_old_versions(android_keep)
+            self.android_downloader.cleanup_old_versions(
+                android_keep, cached_releases=self.android_releases
+            )
 
             # Clean up firmware versions
             firmware_keep = self.config.get("FIRMWARE_VERSIONS_TO_KEEP", 5)

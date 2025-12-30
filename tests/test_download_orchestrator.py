@@ -224,9 +224,6 @@ class TestDownloadOrchestrator:
             mock_release
         )
         orchestrator._download_android_release.assert_called_once_with(mock_release)
-        orchestrator.android_downloader.cleanup_prerelease_directories.assert_called_once_with(
-            cached_releases=orchestrator.android_releases
-        )
 
     def test_process_firmware_downloads(self, orchestrator):
         """Test firmware download processing."""
@@ -379,7 +376,9 @@ class TestDownloadOrchestrator:
 
         orchestrator.cleanup_old_versions()
 
-        mock_android.cleanup_old_versions.assert_called_once()
+        mock_android.cleanup_old_versions.assert_called_once_with(
+            5, cached_releases=orchestrator.android_releases
+        )
         mock_firmware.cleanup_old_versions.assert_called_once()
 
     def test_get_latest_versions(self, orchestrator):

@@ -428,56 +428,17 @@ class TestMeshtasticAndroidAppDownloader:
         assert result.error_type == "network_error"
         assert result.is_retryable is True
 
-    @patch("os.path.exists")
-    @patch("os.scandir")
-    @patch("shutil.rmtree")
-    def test_cleanup_old_versions(
-        self, mock_rmtree, mock_scandir, mock_exists, downloader
-    ):
-        """Test cleanup of old Android versions."""
-        # Setup filesystem mocks
-        mock_exists.return_value = True
-
-        # Create mock directory entries for os.scandir
-        mock_v1 = Mock()
-        mock_v1.name = "v1.0.0"
-        mock_v1.is_symlink.return_value = False
-        mock_v1.is_dir.return_value = True
-        mock_v1.path = "/mock/android/v1.0.0"
-
-        mock_v2 = Mock()
-        mock_v2.name = "v2.0.0"
-        mock_v2.is_symlink.return_value = False
-        mock_v2.is_dir.return_value = True
-        mock_v2.path = "/mock/android/v2.0.0"
-
-        mock_v3 = Mock()
-        mock_v3.name = "v3.0.0"
-        mock_v3.is_symlink.return_value = False
-        mock_v3.is_dir.return_value = True
-        mock_v3.path = "/mock/android/v3.0.0"
-
-        mock_not_version = Mock()
-        mock_not_version.name = "not_version"
-        mock_not_version.is_symlink.return_value = False
-        mock_not_version.is_dir.return_value = True
-        mock_not_version.path = "/mock/android/not_version"
-
-        mock_scandir.return_value.__enter__.return_value = [
-            mock_v1,
-            mock_v2,
-            mock_v3,
-            mock_not_version,
-        ]
+    def test_cleanup_old_versions_delegates_to_prerelease_cleanup(self, downloader):
+        """Test cleanup_old_versions delegates to prerelease-aware cleanup."""
+        releases = [Release(tag_name="v1.0.0", prerelease=False)]
+        downloader.cleanup_prerelease_directories = Mock()
+        downloader.get_releases = Mock(return_value=releases)
 
         downloader.cleanup_old_versions(keep_limit=2)
 
-        # Should remove oldest version (v1.0.0)
-        mock_rmtree.assert_called_once()
-        args = mock_rmtree.call_args[0][0]
-        assert "v1.0.0" in args
-        # Verify version manager was called to sort versions (exact count may vary)
-        assert downloader.version_manager.get_release_tuple.call_count >= 1
+        downloader.cleanup_prerelease_directories.assert_called_once_with(
+            cached_releases=releases, keep_limit_override=2
+        )
 
     def test_cleanup_prerelease_directories_removes_unexpected_entries(self, tmp_path):
         """Test unexpected entries are removed from APK directories."""
@@ -640,14 +601,18 @@ class TestMeshtasticAndroidAppDownloader:
         ):
             downloader.cleanup_prerelease_directories(cached_releases=releases)
 
-        warnings = [call.args[0] for call in mock_logger.warning.call_args_list]
+        warning_args = [call.args for call in mock_logger.warning.call_args_list]
         assert any(
-            "Skipping unsafe release tag during cleanup" in message
-            for message in warnings
+            len(args) > 1
+            and args[0].startswith("Skipping unsafe")
+            and args[1] == "release"
+            for args in warning_args
         )
         assert any(
-            "Skipping unsafe prerelease tag during cleanup" in message
-            for message in warnings
+            len(args) > 1
+            and args[0].startswith("Skipping unsafe")
+            and args[1] == "prerelease"
+            for args in warning_args
         )
 
     def test_cleanup_prerelease_directories_removes_unexpected_and_skips_symlink(

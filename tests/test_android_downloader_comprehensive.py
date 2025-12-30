@@ -180,11 +180,13 @@ class TestMeshtasticAndroidAppDownloader:
         android_downloader.download_dir = str(tmp_path)
 
         # Create multiple version directories
-        for version in ["v2.7.10", "v2.7.11", "v2.7.12", "v2.7.13", "v2.7.14"]:
+        versions = ["v2.7.10", "v2.7.11", "v2.7.12", "v2.7.13", "v2.7.14"]
+        for version in versions:
             version_dir = tmp_path / APKS_DIR_NAME / version
             version_dir.mkdir(parents=True)
 
-        android_downloader.cleanup_old_versions(keep_limit=2)
+        releases = [Release(tag_name=version, prerelease=False) for version in versions]
+        android_downloader.cleanup_old_versions(keep_limit=2, cached_releases=releases)
 
         # Should keep 2 newest versions
         remaining_dirs = list((tmp_path / APKS_DIR_NAME).iterdir())
