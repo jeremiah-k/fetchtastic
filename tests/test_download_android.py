@@ -5,7 +5,7 @@
 import json
 import os
 from pathlib import Path
-from unittest.mock import ANY, Mock, patch
+from unittest.mock import ANY, MagicMock, Mock, patch
 
 import pytest
 import requests
@@ -21,6 +21,13 @@ from fetchtastic.download.interfaces import Asset, Release
 from fetchtastic.download.version import VersionManager
 
 pytestmark = [pytest.mark.unit, pytest.mark.core_downloads, pytest.mark.user_interface]
+
+
+def _scandir_context(entries):
+    context = MagicMock()
+    context.__enter__.return_value = entries
+    context.__exit__.return_value = False
+    return context
 
 
 class TestMeshtasticAndroidAppDownloader:
@@ -298,6 +305,54 @@ class TestMeshtasticAndroidAppDownloader:
         assert str(result.file_path) == expected
         assert result.file_type == FILE_TYPE_ANDROID_PRERELEASE
 
+    def test_is_asset_complete_for_target_size_mismatch(self, downloader):
+        """Test asset completeness fails on size mismatch."""
+        asset = Asset(
+            name="app.apk",
+            download_url="https://example.com/app.apk",
+            size=100,
+        )
+
+        downloader.file_operations.get_file_size.return_value = 99
+        downloader.verify = Mock()
+        with patch("fetchtastic.download.android.os.path.exists", return_value=True):
+            result = downloader._is_asset_complete_for_target("/tmp/app.apk", asset)
+
+        assert result is False
+        downloader.verify.assert_not_called()
+
+    def test_is_asset_complete_for_target_verify_failure(self, downloader):
+        """Test asset completeness fails when verification fails."""
+        asset = Asset(
+            name="app.apk",
+            download_url="https://example.com/app.apk",
+            size=100,
+        )
+
+        downloader.file_operations.get_file_size.return_value = 100
+        downloader.verify = Mock(return_value=False)
+        with patch("fetchtastic.download.android.os.path.exists", return_value=True):
+            result = downloader._is_asset_complete_for_target("/tmp/app.apk", asset)
+
+        assert result is False
+
+    def test_is_asset_complete_for_target_zip_integrity_failure(self, downloader):
+        """Test asset completeness fails when ZIP integrity fails."""
+        asset = Asset(
+            name="app.zip",
+            download_url="https://example.com/app.zip",
+            size=100,
+        )
+
+        downloader.file_operations.get_file_size.return_value = 100
+        downloader.verify = Mock(return_value=True)
+        downloader._is_zip_intact = Mock(return_value=False)
+        with patch("fetchtastic.download.android.os.path.exists", return_value=True):
+            result = downloader._is_asset_complete_for_target("/tmp/app.zip", asset)
+
+        assert result is False
+        downloader._is_zip_intact.assert_called_once_with("/tmp/app.zip")
+
     @patch("fetchtastic.download.base.utils.download_file_with_retry")
     @patch("os.path.exists")
     @patch("os.path.getsize")
@@ -472,6 +527,172 @@ class TestMeshtasticAndroidAppDownloader:
         assert not misplaced_stable.exists()
         assert not user_dir.exists()
         assert stable_dir.exists()
+
+    def test_cleanup_prerelease_directories_returns_without_cached_releases(
+        self, downloader
+    ):
+        """Test cleanup skips work without cached releases."""
+        with patch("fetchtastic.download.android.os.path.exists") as mock_exists:
+            downloader.cleanup_prerelease_directories(cached_releases=None)
+
+        mock_exists.assert_not_called()
+
+    def test_cleanup_prerelease_directories_returns_when_android_dir_missing(
+        self, downloader
+    ):
+        """Test cleanup returns when APK directory is missing."""
+        releases = [Release(tag_name="v1.0.0", prerelease=False)]
+        android_dir = os.path.join(downloader.download_dir, APKS_DIR_NAME)
+
+        with patch(
+            "fetchtastic.download.android.os.path.exists", return_value=False
+        ) as mock_exists:
+            downloader.cleanup_prerelease_directories(cached_releases=releases)
+
+        mock_exists.assert_called_once_with(android_dir)
+
+    def test_cleanup_prerelease_directories_warns_on_unsafe_tags(self, tmp_path):
+        """Test cleanup warns on unsafe release and prerelease tags."""
+        config = {"DOWNLOAD_DIR": str(tmp_path), "CHECK_APK_PRERELEASES": True}
+        downloader = MeshtasticAndroidAppDownloader(
+            config, CacheManager(cache_dir=str(tmp_path / "cache"))
+        )
+        releases = [Release(tag_name="..", prerelease=False)]
+        downloader.handle_prereleases = Mock(
+            return_value=[Release(tag_name="..", prerelease=True)]
+        )
+
+        android_dir = os.path.join(downloader.download_dir, APKS_DIR_NAME)
+
+        def _exists(path):
+            return path == android_dir
+
+        with (
+            patch("fetchtastic.download.android.logger") as mock_logger,
+            patch("fetchtastic.download.android.os.path.exists", side_effect=_exists),
+            patch(
+                "fetchtastic.download.android.os.scandir",
+                return_value=_scandir_context([]),
+            ),
+        ):
+            downloader.cleanup_prerelease_directories(cached_releases=releases)
+
+        warnings = [call.args[0] for call in mock_logger.warning.call_args_list]
+        assert any(
+            "Skipping unsafe release tag during cleanup" in message
+            for message in warnings
+        )
+        assert any(
+            "Skipping unsafe prerelease tag during cleanup" in message
+            for message in warnings
+        )
+
+    def test_cleanup_prerelease_directories_removes_unexpected_and_skips_symlink(
+        self, downloader
+    ):
+        """Test cleanup removes unexpected entries and skips symlinks."""
+        releases = [Release(tag_name="v1.0.0", prerelease=False)]
+        downloader.handle_prereleases = Mock(
+            return_value=[Release(tag_name="v1.0.1-open.1", prerelease=True)]
+        )
+
+        android_dir = os.path.join(downloader.download_dir, APKS_DIR_NAME)
+        prerelease_dir = os.path.join(android_dir, APK_PRERELEASES_DIR_NAME)
+
+        entry_symlink = Mock()
+        entry_symlink.name = "link"
+        entry_symlink.path = "/tmp/link"
+        entry_symlink.is_symlink.return_value = True
+
+        entry_allowed = Mock()
+        entry_allowed.name = "v1.0.0"
+        entry_allowed.path = "/tmp/v1.0.0"
+        entry_allowed.is_symlink.return_value = False
+
+        entry_unexpected = Mock()
+        entry_unexpected.name = "junk"
+        entry_unexpected.path = "/tmp/junk"
+        entry_unexpected.is_symlink.return_value = False
+
+        pre_allowed = Mock()
+        pre_allowed.name = "v1.0.1-open.1"
+        pre_allowed.path = "/tmp/pre"
+        pre_allowed.is_symlink.return_value = False
+
+        pre_unexpected = Mock()
+        pre_unexpected.name = "extra"
+        pre_unexpected.path = "/tmp/extra"
+        pre_unexpected.is_symlink.return_value = False
+
+        with (
+            patch("fetchtastic.download.android.os.path.exists", return_value=True),
+            patch(
+                "fetchtastic.download.android.os.scandir",
+                side_effect=[
+                    _scandir_context([entry_symlink, entry_allowed, entry_unexpected]),
+                    _scandir_context([pre_allowed, pre_unexpected]),
+                ],
+            ),
+            patch("fetchtastic.download.android._safe_rmtree") as mock_rmtree,
+        ):
+            downloader.cleanup_prerelease_directories(cached_releases=releases)
+
+        mock_rmtree.assert_any_call(entry_unexpected.path, android_dir, "junk")
+        mock_rmtree.assert_any_call(pre_unexpected.path, prerelease_dir, "extra")
+        assert all(
+            call.args[0] != entry_symlink.path for call in mock_rmtree.call_args_list
+        )
+
+    def test_cleanup_prerelease_directories_handles_missing_prerelease_dir(
+        self, downloader
+    ):
+        """Test cleanup returns when prerelease directory is missing."""
+        releases = [Release(tag_name="v1.0.0", prerelease=False)]
+        android_dir = os.path.join(downloader.download_dir, APKS_DIR_NAME)
+
+        def _exists(path):
+            return path == android_dir
+
+        with (
+            patch("fetchtastic.download.android.os.path.exists", side_effect=_exists),
+            patch(
+                "fetchtastic.download.android.os.scandir",
+                return_value=_scandir_context([]),
+            ) as mock_scandir,
+        ):
+            downloader.cleanup_prerelease_directories(cached_releases=releases)
+
+        mock_scandir.assert_called_once_with(android_dir)
+
+    def test_cleanup_prerelease_directories_handles_scandir_filenotfound(
+        self, downloader
+    ):
+        """Test cleanup ignores FileNotFoundError during scans."""
+        releases = [Release(tag_name="v1.0.0", prerelease=False)]
+
+        with (
+            patch("fetchtastic.download.android.os.path.exists", return_value=True),
+            patch(
+                "fetchtastic.download.android.os.scandir",
+                side_effect=FileNotFoundError,
+            ),
+        ):
+            downloader.cleanup_prerelease_directories(cached_releases=releases)
+
+    def test_cleanup_prerelease_directories_logs_oserror(self, downloader):
+        """Test cleanup logs unexpected OSError."""
+        releases = [Release(tag_name="v1.0.0", prerelease=False)]
+
+        with (
+            patch("fetchtastic.download.android.logger") as mock_logger,
+            patch("fetchtastic.download.android.os.path.exists", return_value=True),
+            patch(
+                "fetchtastic.download.android.os.scandir", side_effect=OSError("boom")
+            ),
+        ):
+            downloader.cleanup_prerelease_directories(cached_releases=releases)
+
+        mock_logger.error.assert_called_once()
 
     def test_is_version_directory(self, downloader):
         """Test version directory detection."""
