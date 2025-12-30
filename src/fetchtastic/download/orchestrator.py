@@ -180,9 +180,9 @@ class DownloadOrchestrator:
 
     def _process_android_downloads(self) -> None:
         """
-        Orchestrates discovery and download of Android APK releases and prerelease APK assets and records each asset's outcome.
-
-        Fetches Android releases (cached per run), limits processing to the configured number of recent stable releases, skips releases already marked complete, downloads missing release assets, and processes eligible prerelease assets. Respects the `SAVE_APKS` configuration flag and records successes, skipped items, and failures via the orchestrator's result handling.
+        Orchestrates discovery and download of Android APK releases and prerelease APK assets.
+        
+        If APK saving is disabled in configuration, this does nothing. It limits work to the configured number of recent stable releases, skips releases already marked complete, downloads missing release assets, processes eligible prerelease APKs, records each asset's outcome in the orchestrator's result lists, and performs cleanup of managed prerelease directories.
         """
         try:
             if not self.config.get("SAVE_APKS", False):

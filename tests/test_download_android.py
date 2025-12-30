@@ -24,6 +24,15 @@ pytestmark = [pytest.mark.unit, pytest.mark.core_downloads, pytest.mark.user_int
 
 
 def _scandir_context(entries):
+    """
+    Create a context manager mock that yields the provided iterable of directory entries.
+    
+    Parameters:
+        entries (iterable): Sequence or iterator to be returned by the context manager's __enter__.
+    
+    Returns:
+        MagicMock: A mock context manager whose __enter__ returns `entries` and whose __exit__ returns False (does not suppress exceptions).
+    """
     context = MagicMock()
     context.__enter__.return_value = entries
     context.__exit__.return_value = False
@@ -73,7 +82,22 @@ class TestMeshtasticAndroidAppDownloader:
 
     @pytest.fixture
     def downloader(self, mock_config, mock_cache_manager):
-        """Create a MeshtasticAndroidAppDownloader instance with mocked dependencies."""
+        """
+        Constructs a MeshtasticAndroidAppDownloader preconfigured for tests with mocked collaborators.
+        
+        Creates a downloader using the provided mock configuration and cache manager, then replaces
+        its runtime collaborators with test doubles: `cache_manager` is set to the provided mock,
+        `version_manager` and `file_operations` are replaced with mocks, and the mock
+        `version_manager` is delegated to a real VersionManager for `get_release_tuple` and
+        `is_prerelease_version` behavior.
+        
+        Parameters:
+            mock_config (dict): Configuration dictionary used to initialize the downloader.
+            mock_cache_manager (Mock): Mocked CacheManager providing cache_dir and get_cache_file_path.
+        
+        Returns:
+            MeshtasticAndroidAppDownloader: Downloader instance wired with the test doubles.
+        """
         dl = MeshtasticAndroidAppDownloader(mock_config, mock_cache_manager)
         # Mock the dependencies that are set in __init__
         dl.cache_manager = mock_cache_manager
@@ -565,6 +589,15 @@ class TestMeshtasticAndroidAppDownloader:
         android_dir = os.path.join(downloader.download_dir, APKS_DIR_NAME)
 
         def _exists(path):
+            """
+            Determine whether the given path is the Android APK directory.
+            
+            Parameters:
+                path (str): Filesystem path to test.
+            
+            Returns:
+                True if `path` is equal to the configured Android APK directory path, False otherwise.
+            """
             return path == android_dir
 
         with (
@@ -651,6 +684,15 @@ class TestMeshtasticAndroidAppDownloader:
         android_dir = os.path.join(downloader.download_dir, APKS_DIR_NAME)
 
         def _exists(path):
+            """
+            Determine whether the given path is the Android APK directory.
+            
+            Parameters:
+                path (str): Filesystem path to test.
+            
+            Returns:
+                True if `path` is equal to the configured Android APK directory path, False otherwise.
+            """
             return path == android_dir
 
         with (
