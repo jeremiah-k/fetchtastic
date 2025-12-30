@@ -42,14 +42,14 @@ get_api_request_summary = _get_api_request_summary
 copy_to_clipboard_func = setup_config.copy_to_clipboard_func
 
 
-def display_version_info():
+def get_version_info():
     """
-    Return version information for the installed Fetchtastic package and the latest available release.
+    Return version information for installed Fetchtastic package and latest available release.
 
     Returns:
         Tuple[str | None, str | None, bool]: (current_version, latest_version, update_available)
     """
-    return setup_config.display_version_info()
+    return setup_config.get_version_info()
 
 
 def get_upgrade_command():
@@ -372,7 +372,7 @@ def main():
     if args.command == "setup":
         display_banner()
         # Display version information
-        current_version, latest_version, update_available = display_version_info()
+        _, latest_version, update_available = get_version_info()
 
         # Check if this is just an integrations update
         if hasattr(args, "update_integrations") and args.update_integrations:
@@ -429,6 +429,11 @@ def main():
         # Run the downloader
         reset_api_tracking()
         _handle_download_subcommand(args, integration, config)
+
+        # Check for update after download completes
+        _, latest_version, update_available = get_version_info()
+        if update_available and latest_version:
+            _display_update_reminder(latest_version)
     elif args.command == "cache":
         config, integration = _prepare_command_run()
         if integration is None or config is None:
@@ -477,7 +482,7 @@ def main():
     elif args.command == "version":
         display_banner()
         # Get version information
-        current_version, latest_version, update_available = display_version_info()
+        current_version, latest_version, update_available = get_version_info()
 
         # Log version information
         log_utils.logger.info(f"Fetchtastic v{current_version}")
@@ -500,7 +505,7 @@ def main():
     elif args.command == "repo":
         display_banner()
         # Display version information
-        current_version, latest_version, update_available = display_version_info()
+        _, latest_version, update_available = get_version_info()
 
         # Handle repo subcommands
         exists, _ = setup_config.config_exists()

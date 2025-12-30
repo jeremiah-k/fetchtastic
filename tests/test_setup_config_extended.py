@@ -838,12 +838,8 @@ def test_should_recommend_setup_current(mocker):
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_display_version_info_success(mocker):
-    """Test display_version_info successful version check."""
-    mock_version = mocker.MagicMock()
-    mock_version.parse.side_effect = (
-        lambda v: mocker.MagicMock()
-    )  # Mock version comparison
+def test_get_version_info_success(mocker):
+    """Test get_version_info successful version check."""
     mocker.patch("fetchtastic.setup_config.version", return_value="0.8.1")
 
     # Mock requests response
@@ -853,7 +849,7 @@ def test_display_version_info_success(mocker):
     mocker.patch("requests.get", return_value=mock_response)
     # Don't mock packaging.version.parse to avoid breaking version comparison
 
-    current, latest, available = setup_config.display_version_info()
+    current, latest, available = setup_config.get_version_info()
 
     assert current == "0.8.1"
     assert latest == "0.9.0"
@@ -862,12 +858,12 @@ def test_display_version_info_success(mocker):
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_display_version_info_request_failure(mocker):
-    """Test display_version_info when request fails."""
+def test_get_version_info_request_failure(mocker):
+    """Test get_version_info when request fails."""
     mocker.patch("fetchtastic.setup_config.version", return_value="0.8.1")
     mocker.patch("requests.get", side_effect=Exception("Network error"))
 
-    current, latest, available = setup_config.display_version_info()
+    current, latest, available = setup_config.get_version_info()
 
     assert current == "0.8.1"
     assert latest is None

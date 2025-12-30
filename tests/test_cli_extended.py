@@ -579,7 +579,7 @@ def test_cli_topic_command_clipboard_failure(mocker, capsys):
 def test_cli_version_command_update_available(mocker):
     """Test version command when update is available."""
     mocker.patch(
-        "fetchtastic.cli.display_version_info", return_value=("0.8.0", "0.9.0", True)
+        "fetchtastic.cli.get_version_info", return_value=("0.8.0", "0.9.0", True)
     )
     mocker.patch(
         "fetchtastic.cli.get_upgrade_command", return_value="pipx upgrade fetchtastic"

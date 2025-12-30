@@ -141,12 +141,12 @@ def test_should_recommend_setup_version_mismatch(mocker):
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_display_version_info_request_failure(mocker):
-    """Test display_version_info when request fails."""
+def test_get_version_info_request_failure(mocker):
+    """Test get_version_info when request fails."""
     mocker.patch("fetchtastic.setup_config.version", return_value="0.8.1")
     mocker.patch("requests.get", side_effect=Exception("Network error"))
 
-    current, latest, available = setup_config.display_version_info()
+    current, latest, available = setup_config.get_version_info()
 
     assert current == "0.8.1"
     assert latest is None
