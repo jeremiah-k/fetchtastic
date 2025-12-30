@@ -140,6 +140,30 @@ def test_cli_download_with_update_available(mocker):
 
 @pytest.mark.user_interface
 @pytest.mark.unit
+@pytest.mark.usefixtures("mock_cli_dependencies")
+def test_cli_download_with_no_update_available(mocker):
+    """Test 'download' command with no update available."""
+    mocker.patch("sys.argv", ["fetchtastic", "download"])
+    mocker.patch(
+        "fetchtastic.setup_config.config_exists", return_value=(True, "/fake/path")
+    )
+    mocker.patch("fetchtastic.setup_config.prompt_for_migration")
+    mocker.patch("fetchtastic.setup_config.migrate_config")
+
+    mock_get_version = mocker.patch("fetchtastic.cli.get_version_info")
+    mock_get_version.return_value = ("1.0.0", "1.0.0", False)
+    mock_reminder = mocker.patch("fetchtastic.cli._display_update_reminder")
+
+    cli.main()
+
+    # Verify version check was called
+    mock_get_version.assert_called_once()
+    # Verify update reminder was NOT displayed
+    mock_reminder.assert_not_called()
+
+
+@pytest.mark.user_interface
+@pytest.mark.unit
 def test_cli_setup_command_windows_integration_update(mocker):
     """Test the 'setup' command with Windows integration update."""
     mocker.patch("sys.argv", ["fetchtastic", "setup", "--update-integrations"])
