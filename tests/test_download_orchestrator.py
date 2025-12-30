@@ -377,6 +377,9 @@ class TestDownloadOrchestrator:
         orchestrator.cleanup_old_versions()
 
         mock_android.cleanup_old_versions.assert_called_once()
+        mock_android.cleanup_prerelease_directories.assert_called_once_with(
+            cached_releases=orchestrator.android_releases
+        )
         mock_firmware.cleanup_old_versions.assert_called_once()
 
     def test_get_latest_versions(self, orchestrator):

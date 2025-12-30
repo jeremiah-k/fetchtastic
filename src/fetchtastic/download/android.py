@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional
 import requests
 
 from fetchtastic.constants import (
+    APK_PRERELEASES_DIR_NAME,
     APKS_DIR_NAME,
     ERROR_TYPE_FILESYSTEM,
     ERROR_TYPE_NETWORK,
@@ -34,6 +35,7 @@ from fetchtastic.utils import make_github_api_request, matches_selected_patterns
 
 from .base import BaseDownloader
 from .cache import CacheManager
+from .files import _safe_rmtree, _sanitize_path_component
 from .interfaces import Asset, DownloadResult, Release
 from .prerelease_history import PrereleaseHistoryManager
 from .version import VersionManager
@@ -68,11 +70,15 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             self.latest_release_file
         )
 
-    def get_target_path_for_release(self, release_tag: str, file_name: str) -> str:
+    def get_target_path_for_release(
+        self, release_tag: str, file_name: str, is_prerelease: Optional[bool] = None
+    ) -> str:
         """
         Return filesystem path for an APK asset inside Android downloads directory, creating the release directory if it does not exist.
 
-        Input values are sanitized before use; function ensures directory {APKS_DIR_NAME}/<release_tag> exists under the configured download directory.
+        Input values are sanitized before use; function ensures directory
+        {APKS_DIR_NAME}/<release_tag> exists under the configured download
+        directory, using the prerelease subdirectory when requested.
 
         Returns:
             str: Filesystem path to the asset file.
@@ -80,9 +86,55 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         safe_release = self._sanitize_required(release_tag, "release tag")
         safe_name = self._sanitize_required(file_name, "file name")
 
-        version_dir = os.path.join(self.download_dir, APKS_DIR_NAME, safe_release)
+        if is_prerelease is None:
+            is_prerelease = _is_apk_prerelease_by_name(release_tag)
+            if not is_prerelease and isinstance(self.version_manager, VersionManager):
+                is_prerelease = self.version_manager.is_prerelease_version(release_tag)
+
+        base_dir = (
+            self._get_prerelease_base_dir()
+            if is_prerelease
+            else os.path.join(self.download_dir, APKS_DIR_NAME)
+        )
+        version_dir = os.path.join(base_dir, safe_release)
         os.makedirs(version_dir, exist_ok=True)
         return os.path.join(version_dir, safe_name)
+
+    def _get_prerelease_base_dir(self) -> str:
+        """
+        Ensure and return the base directory for APK prerelease downloads.
+
+        Returns:
+            str: Absolute path to the prerelease base directory under the APK downloads directory.
+        """
+        prerelease_dir = os.path.join(
+            self.download_dir, APKS_DIR_NAME, APK_PRERELEASES_DIR_NAME
+        )
+        os.makedirs(prerelease_dir, exist_ok=True)
+        return prerelease_dir
+
+    def _is_asset_complete_for_target(self, target_path: str, asset: Asset) -> bool:
+        """
+        Check whether the asset exists at the target path and matches expected size and integrity.
+
+        Returns:
+            bool: True if the target path exists and passes validation checks.
+        """
+        if not os.path.exists(target_path):
+            return False
+
+        if asset.size and self.file_operations.get_file_size(target_path) != asset.size:
+            return False
+
+        if not self.verify(target_path):
+            return False
+
+        if target_path.lower().endswith(".zip") and not self._is_zip_intact(
+            target_path
+        ):
+            return False
+
+        return True
 
     def get_releases(self, limit: Optional[int] = None) -> List[Release]:
         """
@@ -268,12 +320,17 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             DownloadResult: An object describing success or failure. On success contains the saved `file_path`, `download_url`, `file_size`, and `file_type`; if the download was skipped `was_skipped` will be true. On failure contains `error_message` and may set `is_retryable` and `error_type`.
         """
         target_path: Optional[str] = None
+        file_type = (
+            FILE_TYPE_ANDROID_PRERELEASE if release.prerelease else FILE_TYPE_ANDROID
+        )
         try:
             # Get target path for the APK
-            target_path = self.get_target_path_for_release(release.tag_name, asset.name)
+            target_path = self.get_target_path_for_release(
+                release.tag_name, asset.name, is_prerelease=release.prerelease
+            )
 
             # Check if we need to download
-            if self.is_asset_complete(release.tag_name, asset):
+            if self._is_asset_complete_for_target(target_path, asset):
                 logger.debug(f"APK {asset.name} already exists and is complete")
                 return self.create_download_result(
                     success=True,
@@ -281,7 +338,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                     file_path=target_path,
                     download_url=asset.download_url,
                     file_size=asset.size,
-                    file_type=FILE_TYPE_ANDROID,
+                    file_type=file_type,
                     was_skipped=True,
                 )
 
@@ -298,7 +355,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                         file_path=target_path,
                         download_url=asset.download_url,
                         file_size=asset.size,
-                        file_type=FILE_TYPE_ANDROID,
+                        file_type=file_type,
                     )
                 else:
                     logger.error(f"Verification failed for {asset.name}")
@@ -310,7 +367,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                         error_message="Verification failed",
                         download_url=asset.download_url,
                         file_size=asset.size,
-                        file_type=FILE_TYPE_ANDROID,
+                        file_type=file_type,
                         is_retryable=True,
                         error_type=ERROR_TYPE_VALIDATION,
                     )
@@ -323,7 +380,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                     error_message="download_file_with_retry returned False",
                     download_url=asset.download_url,
                     file_size=asset.size,
-                    file_type=FILE_TYPE_ANDROID,
+                    file_type=file_type,
                     is_retryable=True,
                     error_type=ERROR_TYPE_NETWORK,
                 )
@@ -347,7 +404,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                 error_message=str(exc),
                 download_url=getattr(asset, "download_url", None),
                 file_size=getattr(asset, "size", None),
-                file_type=FILE_TYPE_ANDROID,
+                file_type=file_type,
                 is_retryable=is_retryable,
                 error_type=error_type,
             )
@@ -431,6 +488,135 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
         except OSError:
             logger.exception("Error cleaning up old Android versions")
+
+    def cleanup_prerelease_directories(
+        self, cached_releases: Optional[List[Release]] = None
+    ) -> None:
+        """
+        Ensure APK prerelease directories live under the prerelease subfolder and remove outdated prereleases.
+
+        Moves any prerelease directories found at the root APK directory into the prerelease folder.
+        When prerelease checking is enabled and cached release data is provided, any prerelease
+        directories that do not match the current expected prerelease set are removed.
+        """
+        try:
+            android_dir = os.path.join(self.download_dir, APKS_DIR_NAME)
+            if not os.path.exists(android_dir):
+                return
+
+            prerelease_dir = os.path.join(android_dir, APK_PRERELEASES_DIR_NAME)
+            check_prereleases = self.config.get(
+                "CHECK_APK_PRERELEASES", self.config.get("CHECK_PRERELEASES", False)
+            )
+
+            expected_tags: set[str] = set()
+            prune_unexpected = False
+            if cached_releases and check_prereleases:
+                for release in self.handle_prereleases(cached_releases):
+                    safe_tag = _sanitize_path_component(release.tag_name)
+                    if safe_tag is None:
+                        logger.warning(
+                            "Skipping unsafe prerelease tag during cleanup: %s",
+                            release.tag_name,
+                        )
+                        continue
+                    expected_tags.add(safe_tag)
+                prune_unexpected = True
+
+            def _is_managed_prerelease_dir(name: str) -> bool:
+                if self.version_manager.get_release_tuple(name) is None:
+                    return False
+                if _is_apk_prerelease_by_name(name):
+                    return True
+                if isinstance(self.version_manager, VersionManager):
+                    return self.version_manager.is_prerelease_version(name)
+                return False
+
+            def _should_keep(tag_name: str) -> bool:
+                if not prune_unexpected:
+                    return True
+                return tag_name in expected_tags
+
+            try:
+                with os.scandir(android_dir) as it:
+                    for entry in it:
+                        if entry.name == APK_PRERELEASES_DIR_NAME:
+                            continue
+                        if entry.is_symlink():
+                            logger.warning(
+                                "Skipping symlink in APK directory during prerelease cleanup: %s",
+                                entry.name,
+                            )
+                            continue
+                        if not entry.is_dir(follow_symlinks=False):
+                            continue
+                        safe_name = _sanitize_path_component(entry.name)
+                        if safe_name is None or not _is_managed_prerelease_dir(
+                            safe_name
+                        ):
+                            continue
+                        if not _should_keep(safe_name):
+                            logger.info(
+                                "Removing superseded APK prerelease directory: %s",
+                                entry.name,
+                            )
+                            _safe_rmtree(entry.path, android_dir, entry.name)
+                            continue
+
+                        os.makedirs(prerelease_dir, exist_ok=True)
+                        target_dir = os.path.join(prerelease_dir, safe_name)
+                        if os.path.exists(target_dir):
+                            logger.warning(
+                                "Removing duplicate misplaced prerelease directory: %s",
+                                entry.name,
+                            )
+                            _safe_rmtree(entry.path, android_dir, entry.name)
+                            continue
+                        try:
+                            shutil.move(entry.path, target_dir)
+                            logger.info(
+                                "Moved APK prerelease into prerelease folder: %s",
+                                entry.name,
+                            )
+                        except OSError as exc:
+                            logger.error(
+                                "Error moving APK prerelease directory %s: %s",
+                                entry.name,
+                                exc,
+                            )
+            except FileNotFoundError:
+                return
+
+            if not os.path.exists(prerelease_dir):
+                return
+
+            try:
+                with os.scandir(prerelease_dir) as it:
+                    for entry in it:
+                        if entry.is_symlink():
+                            logger.warning(
+                                "Skipping symlink in APK prerelease folder: %s",
+                                entry.name,
+                            )
+                            continue
+                        if not entry.is_dir(follow_symlinks=False):
+                            continue
+                        safe_name = _sanitize_path_component(entry.name)
+                        if safe_name is None or not _is_managed_prerelease_dir(
+                            safe_name
+                        ):
+                            continue
+                        if _should_keep(safe_name):
+                            continue
+                        logger.info(
+                            "Removing superseded APK prerelease directory: %s",
+                            entry.name,
+                        )
+                        _safe_rmtree(entry.path, prerelease_dir, entry.name)
+            except FileNotFoundError:
+                return
+        except (OSError, ValueError) as exc:
+            logger.error("Error cleaning up APK prerelease directories: %s", exc)
 
     def _is_version_directory(self, dir_name: str) -> bool:
         """

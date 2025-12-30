@@ -1032,6 +1032,9 @@ class DownloadOrchestrator:
             # Clean up Android versions
             android_keep = self.config.get("ANDROID_VERSIONS_TO_KEEP", 5)
             self.android_downloader.cleanup_old_versions(android_keep)
+            self.android_downloader.cleanup_prerelease_directories(
+                cached_releases=self.android_releases
+            )
 
             # Clean up firmware versions
             firmware_keep = self.config.get("FIRMWARE_VERSIONS_TO_KEEP", 5)

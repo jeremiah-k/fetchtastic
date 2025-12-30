@@ -10,7 +10,11 @@ from unittest.mock import ANY, Mock, patch
 import pytest
 import requests
 
-from fetchtastic.constants import APKS_DIR_NAME
+from fetchtastic.constants import (
+    APK_PRERELEASES_DIR_NAME,
+    APKS_DIR_NAME,
+    FILE_TYPE_ANDROID_PRERELEASE,
+)
 from fetchtastic.download.android import MeshtasticAndroidAppDownloader
 from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.interfaces import Asset, Release
@@ -93,6 +97,21 @@ class TestMeshtasticAndroidAppDownloader:
 
         expected = os.path.join(
             str(tmp_path / "downloads"), APKS_DIR_NAME, "v1.0.0", "meshtastic.apk"
+        )
+        assert path == expected
+
+    def test_get_target_path_for_prerelease(self, downloader, tmp_path):
+        """Test target path generation for APK prereleases."""
+        path = downloader.get_target_path_for_release(
+            "v2.7.10-open.1", "meshtastic.apk"
+        )
+
+        expected = os.path.join(
+            str(tmp_path / "downloads"),
+            APKS_DIR_NAME,
+            APK_PRERELEASES_DIR_NAME,
+            "v2.7.10-open.1",
+            "meshtastic.apk",
         )
         assert path == expected
 
@@ -251,6 +270,31 @@ class TestMeshtasticAndroidAppDownloader:
         # Asset matches exclude patterns
         assert downloader.should_download_asset("meshtastic-beta.apk") is False
 
+    def test_download_apk_prerelease_uses_prerelease_dir(self, downloader):
+        """Test prerelease APKs are stored under the prerelease directory."""
+        release = Release(tag_name="v2.7.10-open.1", prerelease=True)
+        asset = Asset(
+            name="meshtastic.apk",
+            download_url="https://example.com/meshtastic.apk",
+            size=100,
+        )
+
+        downloader._is_asset_complete_for_target = Mock(return_value=False)
+        downloader.download = Mock(return_value=True)
+        downloader.verify = Mock(return_value=True)
+
+        result = downloader.download_apk(release, asset)
+
+        expected = os.path.join(
+            downloader.download_dir,
+            APKS_DIR_NAME,
+            APK_PRERELEASES_DIR_NAME,
+            release.tag_name,
+            asset.name,
+        )
+        assert str(result.file_path) == expected
+        assert result.file_type == FILE_TYPE_ANDROID_PRERELEASE
+
     @patch("fetchtastic.download.base.utils.download_file_with_retry")
     @patch("os.path.exists")
     @patch("os.path.getsize")
@@ -352,6 +396,73 @@ class TestMeshtasticAndroidAppDownloader:
         assert "v1.0.0" in args
         # Verify version manager was called to sort versions (exact count may vary)
         assert downloader.version_manager.get_release_tuple.call_count >= 1
+
+    def test_cleanup_prerelease_directories_moves_expected_prerelease(self, tmp_path):
+        """Test misplaced prerelease directories are moved into the prerelease folder."""
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path),
+            "CHECK_APK_PRERELEASES": True,
+        }
+        downloader = MeshtasticAndroidAppDownloader(
+            config, CacheManager(cache_dir=str(tmp_path / "cache"))
+        )
+
+        prerelease_tag = "v2.7.10-open.1"
+        misplaced = tmp_path / APKS_DIR_NAME / prerelease_tag
+        misplaced.mkdir(parents=True)
+        (misplaced / "app.apk").write_text("data", encoding="utf-8")
+
+        stable_dir = tmp_path / APKS_DIR_NAME / "v2.7.9"
+        stable_dir.mkdir(parents=True)
+
+        releases = [
+            Release(tag_name="v2.7.9", prerelease=False),
+            Release(tag_name=prerelease_tag, prerelease=True),
+        ]
+
+        downloader.cleanup_prerelease_directories(cached_releases=releases)
+
+        assert not misplaced.exists()
+        assert (
+            tmp_path / APKS_DIR_NAME / APK_PRERELEASES_DIR_NAME / prerelease_tag
+        ).exists()
+        assert stable_dir.exists()
+
+    def test_cleanup_prerelease_directories_removes_superseded_prereleases(
+        self, tmp_path
+    ):
+        """Test superseded prerelease directories are removed."""
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path),
+            "CHECK_APK_PRERELEASES": True,
+        }
+        downloader = MeshtasticAndroidAppDownloader(
+            config, CacheManager(cache_dir=str(tmp_path / "cache"))
+        )
+
+        root_prerelease = tmp_path / APKS_DIR_NAME / "v2.7.10-open.1"
+        root_prerelease.mkdir(parents=True)
+        prerelease_dir = (
+            tmp_path / APKS_DIR_NAME / APK_PRERELEASES_DIR_NAME / "v2.7.10-open.2"
+        )
+        prerelease_dir.mkdir(parents=True)
+        user_dir = tmp_path / APKS_DIR_NAME / APK_PRERELEASES_DIR_NAME / "notes"
+        user_dir.mkdir(parents=True)
+        stable_dir = tmp_path / APKS_DIR_NAME / "v2.7.10"
+        stable_dir.mkdir(parents=True)
+
+        releases = [
+            Release(tag_name="v2.7.10", prerelease=False),
+            Release(tag_name="v2.7.10-open.1", prerelease=True),
+            Release(tag_name="v2.7.10-open.2", prerelease=True),
+        ]
+
+        downloader.cleanup_prerelease_directories(cached_releases=releases)
+
+        assert not root_prerelease.exists()
+        assert not prerelease_dir.exists()
+        assert user_dir.exists()
+        assert stable_dir.exists()
 
     def test_is_version_directory(self, downloader):
         """Test version directory detection."""
