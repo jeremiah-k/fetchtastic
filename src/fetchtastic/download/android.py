@@ -16,7 +16,9 @@ from typing import Any, Dict, List, Optional
 import requests
 
 from fetchtastic.constants import (
+    APK_PRERELEASES_DIR_NAME,
     APKS_DIR_NAME,
+    DEFAULT_ANDROID_VERSIONS_TO_KEEP,
     ERROR_TYPE_FILESYSTEM,
     ERROR_TYPE_NETWORK,
     ERROR_TYPE_VALIDATION,
@@ -34,6 +36,7 @@ from fetchtastic.utils import make_github_api_request, matches_selected_patterns
 
 from .base import BaseDownloader
 from .cache import CacheManager
+from .files import _safe_rmtree, _sanitize_path_component
 from .interfaces import Asset, DownloadResult, Release
 from .prerelease_history import PrereleaseHistoryManager
 from .version import VersionManager
@@ -68,21 +71,74 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             self.latest_release_file
         )
 
-    def get_target_path_for_release(self, release_tag: str, file_name: str) -> str:
+    def get_target_path_for_release(
+        self, release_tag: str, file_name: str, is_prerelease: Optional[bool] = None
+    ) -> str:
         """
-        Return filesystem path for an APK asset inside Android downloads directory, creating the release directory if it does not exist.
+        Compute the filesystem path for an APK asset and ensure the corresponding release directory exists.
 
-        Input values are sanitized before use; function ensures directory {APKS_DIR_NAME}/<release_tag> exists under the configured download directory.
+        Sanitizes inputs and places prerelease APKs under the prerelease APKs subdirectory when `is_prerelease` is True or inferred; creates the release version directory if it does not exist.
+
+        Parameters:
+            is_prerelease (Optional[bool]): If provided, override inference and use the specified prerelease status to choose the base directory.
 
         Returns:
-            str: Filesystem path to the asset file.
+            str: Filesystem path to the asset file within the (possibly created) release directory.
         """
         safe_release = self._sanitize_required(release_tag, "release tag")
         safe_name = self._sanitize_required(file_name, "file name")
 
-        version_dir = os.path.join(self.download_dir, APKS_DIR_NAME, safe_release)
+        if is_prerelease is None:
+            is_prerelease = _is_apk_prerelease_by_name(
+                release_tag
+            ) or self.version_manager.is_prerelease_version(release_tag)
+
+        base_dir = (
+            self._get_prerelease_base_dir()
+            if is_prerelease
+            else os.path.join(self.download_dir, APKS_DIR_NAME)
+        )
+        version_dir = os.path.join(base_dir, safe_release)
         os.makedirs(version_dir, exist_ok=True)
         return os.path.join(version_dir, safe_name)
+
+    def _get_prerelease_base_dir(self) -> str:
+        """
+        Ensure and return the base directory for APK prerelease downloads.
+
+        Returns:
+            str: Absolute path to the prerelease base directory under the APK downloads directory.
+        """
+        prerelease_dir = os.path.join(
+            self.download_dir, APKS_DIR_NAME, APK_PRERELEASES_DIR_NAME
+        )
+        os.makedirs(prerelease_dir, exist_ok=True)
+        return prerelease_dir
+
+    def _is_asset_complete_for_target(self, target_path: str, asset: Asset) -> bool:
+        """
+        Determine whether the asset at target_path is present and passes size and integrity checks.
+
+        Performs these checks when applicable: file existence, file size equals asset.size (if provided), verifier integrity check, and ZIP integrity validation for files ending with `.zip`.
+
+        Returns:
+            True if all applicable checks pass, False otherwise.
+        """
+        if not os.path.exists(target_path):
+            return False
+
+        if asset.size and self.file_operations.get_file_size(target_path) != asset.size:
+            return False
+
+        if not self.verify(target_path):
+            return False
+
+        if target_path.lower().endswith(".zip") and not self._is_zip_intact(
+            target_path
+        ):
+            return False
+
+        return True
 
     def get_releases(self, limit: Optional[int] = None) -> List[Release]:
         """
@@ -256,24 +312,29 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
     def download_apk(self, release: Release, asset: Asset) -> DownloadResult:
         """
-        Download and verify an APK asset for a specific release and return a DownloadResult describing the outcome.
+        Download and verify the APK asset for the given release.
 
-        If the asset already exists and matches expectations the download is skipped; on a successful download the saved file is verified and returned; on verification or transfer failures a result is returned that includes an error message, an error_type (e.g., "network_error", "validation_error", or "filesystem_error"), and whether the failure is retryable.
+        Attempts to reuse an existing, validated file when present; otherwise downloads the asset, verifies the saved file, and removes it on verification failure.
 
         Parameters:
-            release (Release): Release object containing the APK asset (used for tag and metadata).
-            asset (Asset): Asset object describing the APK to download (includes name, size, and download_url).
+            release (Release): Release metadata (used for tag, prerelease flag, and publish data).
+            asset (Asset): Asset metadata including name, download_url, and expected size.
 
         Returns:
-            DownloadResult: An object describing success or failure. On success contains the saved `file_path`, `download_url`, `file_size`, and `file_type`; if the download was skipped `was_skipped` will be true. On failure contains `error_message` and may set `is_retryable` and `error_type`.
+            DownloadResult: Success entries include `file_path`, `download_url`, `file_size`, `file_type`, and `was_skipped` when applicable; failure entries include `error_message`, `error_type`, and `is_retryable`.
         """
         target_path: Optional[str] = None
+        file_type = (
+            FILE_TYPE_ANDROID_PRERELEASE if release.prerelease else FILE_TYPE_ANDROID
+        )
         try:
             # Get target path for the APK
-            target_path = self.get_target_path_for_release(release.tag_name, asset.name)
+            target_path = self.get_target_path_for_release(
+                release.tag_name, asset.name, is_prerelease=release.prerelease
+            )
 
             # Check if we need to download
-            if self.is_asset_complete(release.tag_name, asset):
+            if self._is_asset_complete_for_target(target_path, asset):
                 logger.debug(f"APK {asset.name} already exists and is complete")
                 return self.create_download_result(
                     success=True,
@@ -281,7 +342,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                     file_path=target_path,
                     download_url=asset.download_url,
                     file_size=asset.size,
-                    file_type=FILE_TYPE_ANDROID,
+                    file_type=file_type,
                     was_skipped=True,
                 )
 
@@ -298,7 +359,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                         file_path=target_path,
                         download_url=asset.download_url,
                         file_size=asset.size,
-                        file_type=FILE_TYPE_ANDROID,
+                        file_type=file_type,
                     )
                 else:
                     logger.error(f"Verification failed for {asset.name}")
@@ -310,7 +371,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                         error_message="Verification failed",
                         download_url=asset.download_url,
                         file_size=asset.size,
-                        file_type=FILE_TYPE_ANDROID,
+                        file_type=file_type,
                         is_retryable=True,
                         error_type=ERROR_TYPE_VALIDATION,
                     )
@@ -323,7 +384,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                     error_message="download_file_with_retry returned False",
                     download_url=asset.download_url,
                     file_size=asset.size,
-                    file_type=FILE_TYPE_ANDROID,
+                    file_type=file_type,
                     is_retryable=True,
                     error_type=ERROR_TYPE_NETWORK,
                 )
@@ -347,7 +408,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                 error_message=str(exc),
                 download_url=getattr(asset, "download_url", None),
                 file_size=getattr(asset, "size", None),
-                file_type=FILE_TYPE_ANDROID,
+                file_type=file_type,
                 is_retryable=is_retryable,
                 error_type=error_type,
             )
@@ -385,64 +446,131 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                 return False
         return True
 
-    def cleanup_old_versions(self, keep_limit: int) -> None:
+    def cleanup_old_versions(
+        self, keep_limit: int, cached_releases: Optional[List[Release]] = None
+    ) -> None:
         """
-        Delete Android version directories older than most recent specified number to keep.
-
-        Ignores directories that do not match version-style names. Deletion failures are logged and exceptions are suppressed.
-        Operates on the {APKS_DIR_NAME} subdirectory within the configured download directory.
+        Remove older Android versions by delegating to prerelease-aware cleanup.
 
         Parameters:
-            keep_limit (int): Number of most-recent version directories to retain; directories older than this are removed.
+            keep_limit (int): Number of most-recent version directories to retain.
+            cached_releases (Optional[List[Release]]): Optional release list to avoid redundant API calls.
         """
         try:
-            # Get all Android version directories
+            releases = cached_releases or self.get_releases()
+            if not releases:
+                return
+            self.cleanup_prerelease_directories(
+                cached_releases=releases, keep_limit_override=keep_limit
+            )
+        except (requests.RequestException, OSError, ValueError, TypeError) as exc:
+            logger.error("Error cleaning up old Android versions: %s", exc)
+
+    def cleanup_prerelease_directories(
+        self,
+        cached_releases: Optional[List[Release]] = None,
+        keep_limit_override: Optional[int] = None,
+    ) -> None:
+        """
+        Ensure APK prerelease directories reside under the dedicated prerelease subdirectory and remove directories that are not expected based on the provided releases.
+
+        Given an optional list of cached releases, this will:
+        - Keep the most recent stable release directories up to the configured ANDROID_VERSIONS_TO_KEEP value in the APK root.
+        - Ensure the APK prerelease subdirectory exists and contains only prerelease directories corresponding to the filtered prereleases.
+        - Remove unexpected entries (except symlinks) from the APK root and the prerelease subdirectory.
+
+        Parameters:
+            cached_releases (Optional[List[Release]]): Releases used to compute which stable and prerelease
+                directories should be retained; if None or empty, no action is taken.
+        """
+        try:
+            if not cached_releases:
+                return
+
             android_dir = os.path.join(self.download_dir, APKS_DIR_NAME)
             if not os.path.exists(android_dir):
                 return
 
-            # Get all version directories
-            version_dirs = []
-            try:
-                with os.scandir(android_dir) as it:
-                    for entry in it:
-                        if entry.is_dir() and self._is_version_directory(entry.name):
-                            version_dirs.append(entry.name)
-            except FileNotFoundError:
-                pass
-
-            # Sort versions (newest first) using VersionManager tuples
-            version_dirs.sort(
-                reverse=True,
-                key=lambda version: self.version_manager.get_release_tuple(version)
+            prerelease_dir = os.path.join(android_dir, APK_PRERELEASES_DIR_NAME)
+            keep_limit = (
+                int(keep_limit_override)
+                if keep_limit_override is not None
+                else int(
+                    self.config.get(
+                        "ANDROID_VERSIONS_TO_KEEP", DEFAULT_ANDROID_VERSIONS_TO_KEEP
+                    )
+                )
+            )
+            stable_releases = sorted(
+                [release for release in cached_releases if not release.prerelease],
+                key=lambda release: self.version_manager.get_release_tuple(
+                    release.tag_name
+                )
                 or (),
+                reverse=True,
+            )
+            prerelease_releases = self.handle_prereleases(cached_releases)
+
+            def _build_expected_set(
+                releases: List[Release], release_label: str
+            ) -> set[str]:
+                expected: set[str] = set()
+                for release in releases:
+                    safe_tag = _sanitize_path_component(release.tag_name)
+                    if safe_tag is None:
+                        logger.warning(
+                            "Skipping unsafe %s tag during cleanup: %s",
+                            release_label,
+                            release.tag_name,
+                        )
+                        continue
+                    expected.add(safe_tag)
+                return expected
+
+            expected_stable = _build_expected_set(
+                stable_releases[:keep_limit], "release"
+            )
+            expected_prerelease = _build_expected_set(prerelease_releases, "prerelease")
+
+            def _remove_unexpected_entries(base_dir: str, allowed: set[str]) -> None:
+                """
+                Scan base_dir and remove any filesystem entries whose names are not in `allowed`.
+
+                Parameters:
+                    base_dir (str): Directory path to scan for unexpected entries.
+                    allowed (set[str]): Set of entry names that must be preserved (files or directories).
+
+                Notes:
+                    - Symlinks are skipped and left untouched.
+                    - Removes unexpected entries recursively using a safe removal helper.
+                    - If base_dir does not exist, the function returns quietly.
+                """
+                try:
+                    with os.scandir(base_dir) as it:
+                        for entry in it:
+                            if entry.is_symlink():
+                                logger.warning(
+                                    "Skipping symlink in APK cleanup: %s", entry.name
+                                )
+                                continue
+                            if entry.name in allowed:
+                                continue
+                            logger.info("Removing unexpected APK entry: %s", entry.name)
+                            _safe_rmtree(entry.path, base_dir, entry.name)
+                except FileNotFoundError:
+                    return
+
+            _remove_unexpected_entries(
+                android_dir,
+                expected_stable | {APK_PRERELEASES_DIR_NAME},
             )
 
-            # Remove old versions
-            for old_version in version_dirs[keep_limit:]:
-                old_dir = os.path.join(android_dir, old_version)
-                try:
-                    shutil.rmtree(old_dir)
-                    logger.info(f"Removed old Android version: {old_version}")
-                except OSError as e:
-                    logger.error(
-                        f"Error removing old Android version {old_version}: {e}"
-                    )
+            if not os.path.exists(prerelease_dir):
+                return
 
-        except OSError:
-            logger.exception("Error cleaning up old Android versions")
-
-    def _is_version_directory(self, dir_name: str) -> bool:
-        """
-        Determine whether a directory name matches a semantic version-like pattern.
-
-        Parameters:
-            dir_name (str): Directory name to test.
-
-        Returns:
-            `true` if the name matches a version pattern optionally prefixed with 'v' and containing one to two dot-separated numeric components (e.g., '1.2', 'v1.2.3'), `false` otherwise.
-        """
-        return bool(re.match(r"^(v)?\d+(\.\d+){1,2}$", dir_name))
+            _remove_unexpected_entries(prerelease_dir, expected_prerelease)
+        except (OSError, ValueError) as exc:
+            logger.error("Error cleaning up APK prerelease directories: %s", exc)
 
     def get_latest_release_tag(self) -> Optional[str]:
         """
