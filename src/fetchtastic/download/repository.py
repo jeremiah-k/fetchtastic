@@ -386,31 +386,44 @@ class RepositoryDownloader(BaseDownloader):
 
             if not os.path.exists(repo_dir):
                 logger.info(
-                    "Repository downloads directory does not exist - nothing to clean"
+                    "Repository downloads directory does not exist - nothing to clean: %s",
+                    repo_dir,
                 )
                 self._cleanup_summary["success"] = True
                 return True
+
+            logger.info("Cleaning repository downloads directory: %s", repo_dir)
+
+            def _format_entry_path(path: str) -> str:
+                try:
+                    rel_path = os.path.relpath(path, repo_dir)
+                except ValueError:
+                    return path
+                if rel_path.startswith(os.pardir + os.sep) or rel_path == os.pardir:
+                    return path
+                return rel_path
 
             # Remove all contents of the repository directory
             had_errors = False
             with os.scandir(repo_dir) as it:
                 for entry in it:
                     try:
+                        entry_display = _format_entry_path(entry.path)
                         if entry.is_file() or entry.is_symlink():
                             os.remove(entry.path)
-                            logger.info(f"Removed file: {entry.path}")
+                            logger.info("Removed file: %s", entry_display)
                             self._cleanup_summary["removed_files"] += 1
                         elif entry.is_dir():
                             shutil.rmtree(entry.path)
-                            logger.info(f"Removed directory: {entry.path}")
+                            logger.info("Removed directory: %s", entry_display)
                             self._cleanup_summary["removed_dirs"] += 1
                     except OSError as e:
-                        logger.error(f"Error removing {entry.path}: {e}")
-                        self._cleanup_summary["errors"].append(f"{entry.path}: {e}")
+                        logger.error("Error removing %s: %s", entry_display, e)
+                        self._cleanup_summary["errors"].append(f"{entry_display}: {e}")
                         had_errors = True
 
             if not had_errors:
-                logger.info(f"Successfully cleaned repository directory: {repo_dir}")
+                logger.info("Successfully cleaned repository directory: %s", repo_dir)
             self._cleanup_summary["success"] = not had_errors
             return not had_errors
 
