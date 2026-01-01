@@ -389,9 +389,22 @@ class GradleBuildModule:
             build_env.setdefault("ANDROID_HOME", sdk_root)
             ensure_local_properties(repo_dir, sdk_root)
 
+        gradle_args: List[str] = []
+        if is_termux_env():
+            aapt2_path = shutil.which("aapt2")
+            if aapt2_path and not os.environ.get(
+                "ORG_GRADLE_PROJECT_android.aapt2FromMavenOverride"
+            ):
+                gradle_args.append(f"-Pandroid.aapt2FromMavenOverride={aapt2_path}")
+                logger.info("Using Termux aapt2 override: %s", aapt2_path)
+            elif not aapt2_path:
+                logger.warning(
+                    "Termux aapt2 not found; install with 'pkg install aapt2' if builds fail."
+                )
+
         try:
             subprocess.run(
-                [gradlew, self.gradle_tasks[build_type]],
+                [gradlew, *gradle_args, self.gradle_tasks[build_type]],
                 check=True,
                 cwd=repo_dir,
                 env=build_env,

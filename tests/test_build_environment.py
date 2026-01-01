@@ -29,10 +29,9 @@ def test_detect_missing_termux_packages(mocker):
 def test_detect_missing_termux_optional_packages(mocker):
     mocker.patch(
         "fetchtastic.build.environment.shutil.which",
-        side_effect=lambda cmd: None if cmd in {"aapt2", "apksigner"} else "/bin/ok",
+        side_effect=lambda cmd: None if cmd in {"apksigner"} else "/bin/ok",
     )
     missing = detect_missing_termux_optional_packages()
-    assert "aapt2" in missing
     assert "apksigner" in missing
 
 

@@ -56,14 +56,14 @@ Last updated: 2026-01-01
 ### Termux
 
 - 2026 package baseline (from `packages.termux.dev`):
-  - Required: `openjdk-21`, `git`, `curl`, `unzip`, `zip`.
-  - Recommended for on-device Android builds: `aapt2`, `apksigner`, `d8`, `android-tools`.
+  - Required: `openjdk-21`, `git`, `curl`, `unzip`, `zip`, `aapt2`.
+  - Recommended for on-device Android builds: `apksigner`, `d8`, `android-tools`.
   - Optional: `gradle` (useful for `gradle --stop`, but may pull in newer JDKs).
 - JAVA_HOME typically resolves to `$PREFIX/lib/jvm/java-21-openjdk` (verify via `readlink -f $(command -v javac)`).
 - Fetchtastic auto-downloads Android cmdline-tools from the Google repository manifest and installs them to `~/Android/sdk/cmdline-tools/latest`.
 - Gradle build is possible but heavy. Known issues and fixes:
   - If Gradle fails with module access errors, add `org.gradle.jvmargs=--add-opens=java.base/java.io=ALL-UNNAMED` to `gradle.properties`.
-  - If Gradle fails with aapt2 exec errors, add `android.aapt2FromMavenOverride=$(command -v aapt2)` to `gradle.properties`.
+  - Fetchtastic now passes `-Pandroid.aapt2FromMavenOverride=$(command -v aapt2)` on Termux to avoid x86 AAPT2 crashes.
   - Google build-tools are x86; on-device builds often need Termux-provided binaries (aapt2/apksigner/d8) instead of prebuilt build-tools.
 - Expected disk usage: 5-10GB+ (SDK + Gradle caches).
 - For Fetchtastic: provide prerequisite checklist and let user opt-in before attempting build.

@@ -27,10 +27,10 @@ TERMUX_PACKAGE_COMMANDS: Dict[str, Sequence[str]] = {
     "curl": ("curl", "wget"),
     "unzip": ("unzip",),
     "zip": ("zip",),
+    "aapt2": ("aapt2",),
 }
 
 TERMUX_OPTIONAL_PACKAGE_COMMANDS: Dict[str, Sequence[str]] = {
-    "aapt2": ("aapt2",),
     "apksigner": ("apksigner",),
     "d8": ("d8",),
     "android-tools": ("adb",),
@@ -478,15 +478,49 @@ def missing_sdk_packages(sdk_root: Optional[str], required: Sequence[str]) -> Li
     """
     if not sdk_root:
         return list(required)
+
+    def _has_prefixed_dir(root: str, prefix: str) -> bool:
+        if os.path.isdir(os.path.join(root, prefix)):
+            return True
+        try:
+            for entry in os.listdir(root):
+                if entry.startswith(prefix):
+                    return True
+        except OSError:
+            return False
+        return False
+
+    def _platform_installed(root: str, name: str) -> bool:
+        platform_root = os.path.join(root, "platforms")
+        return _has_prefixed_dir(platform_root, name)
+
+    def _build_tools_installed(root: str, name: str) -> bool:
+        tools_root = os.path.join(root, "build-tools")
+        if os.path.isdir(os.path.join(tools_root, name)):
+            return True
+        parts = name.split(".")
+        prefix = ".".join(parts[:2]) if len(parts) >= 2 else name
+        if _has_prefixed_dir(tools_root, prefix):
+            return True
+        if is_termux():
+            try:
+                return any(
+                    os.path.isdir(os.path.join(tools_root, entry))
+                    for entry in os.listdir(tools_root)
+                )
+            except OSError:
+                return False
+        return False
+
     missing: List[str] = []
     for package in required:
         if package.startswith("platforms;"):
             name = package.split(";", 1)[1]
-            if not os.path.isdir(os.path.join(sdk_root, "platforms", name)):
+            if not _platform_installed(sdk_root, name):
                 missing.append(package)
         elif package.startswith("build-tools;"):
             name = package.split(";", 1)[1]
-            if not os.path.isdir(os.path.join(sdk_root, "build-tools", name)):
+            if not _build_tools_installed(sdk_root, name):
                 missing.append(package)
         elif package == "platform-tools":
             if not os.path.isdir(os.path.join(sdk_root, "platform-tools")):

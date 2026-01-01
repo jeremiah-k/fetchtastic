@@ -20,8 +20,8 @@ DFU_REQUIREMENTS = {
         "Gradle wrapper downloads dependencies (network required)",
     ],
     "termux": [
-        "Packages: openjdk-21, git, curl, unzip, zip",
-        "Recommended Termux tools: aapt2, apksigner, d8, android-tools (gradle optional)",
+        "Packages: openjdk-21, git, curl, unzip, zip, aapt2",
+        "Recommended Termux tools: apksigner, d8, android-tools (gradle optional)",
         "JAVA_HOME set to the OpenJDK 21 install (see $PREFIX/lib/jvm/java-21-openjdk)",
         "Android SDK cmdline-tools + platforms;android-36 + build-tools",
         "Extra SDK tool workarounds may be required (see docs/dfu-build-progress.md)",
