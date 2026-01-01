@@ -18,7 +18,11 @@ import platformdirs
 import yaml
 
 from fetchtastic import menu_apk, menu_firmware
-from fetchtastic.build.base import resolve_android_sdk_root
+from fetchtastic.build.interactive import (
+    print_build_requirements,
+    prompt_yes_no,
+    run_module_build,
+)
 from fetchtastic.build.registry import get_build_module
 from fetchtastic.constants import (
     CONFIG_FILE_NAME,
@@ -762,59 +766,28 @@ def _setup_dfu_build(
         "This will clone the Nordic DFU repo and build a debug or release APK using Gradle."
     )
     print("Builds can take several minutes and multiple GB of disk space.\n")
-    for line in module.describe_requirements():
-        print(f"- {line}")
+    print_build_requirements(module)
     if not shutil.which("javac"):
         print("Warning: javac not found on PATH.")
 
-    sdk_root = resolve_android_sdk_root()
-    if not sdk_root:
-        print("Warning: Android SDK not detected (set ANDROID_SDK_ROOT).")
-
-    build_choice = (
-        input("Build the Nordic DFU APK now? [y/n] (default: no): ").strip().lower()
-        or "n"
-    )
-    if build_choice != "y":
+    if not prompt_yes_no(
+        "Build the Nordic DFU APK now? [y/n] (default: no): ",
+        default="no",
+    ):
         print("Skipping DFU build.")
         return config
 
-    if not shutil.which("git"):
-        print("Git is required to clone the DFU repository. Please install git.")
-        return config
-
-    build_type = (
-        input("Build type? [d]ebug/[r]elease (default: debug): ").strip().lower() or "d"
-    )
-    build_type = "release" if build_type.startswith("r") else "debug"
-
-    if build_type == "release":
-        missing_env = module.missing_release_env()
-        if missing_env:
-            print("Release builds require signing env vars:")
-            for name in missing_env:
-                print(f"- {name}")
-            print("Set these variables and re-run the build if needed.")
-            return config
-
-    allow_update_default = "yes"
-    allow_update = (
-        input(
-            f"Update the DFU repo before building? [y/n] (default: {allow_update_default}): "
-        )
-        .strip()
-        .lower()
-        or allow_update_default[0]
-    )
-
-    print("Building DFU APK (this can take a while)...")
     base_dir = os.path.expanduser(config.get("BASE_DIR", DEFAULT_BASE_DIR))
-    result = module.build(
-        build_type,
+    result = run_module_build(
+        module,
         base_dir=base_dir,
-        sdk_root=sdk_root,
-        allow_update=allow_update == "y",
+        prompt_for_build_type=True,
+        prompt_for_update=True,
+        update_prompt="Update the DFU repo before building? [y/n] (default: yes): ",
+        start_message="Building DFU APK (this can take a while)...",
     )
+    if result is None:
+        return config
     if result.success and result.dest_path:
         print(f"DFU APK saved to: {result.dest_path}")
     else:

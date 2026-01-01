@@ -10,13 +10,7 @@ DFU_REQUIREMENTS = {
     "default": [
         "JDK 17",
         "Android SDK with platforms;android-36 and build-tools",
-        "ANDROID_SDK_ROOT/ANDROID_HOME set (or SDK under ~/Android)",
-        "Gradle wrapper downloads dependencies (network required)",
-    ],
-    "linux": [
-        "JDK 17",
-        "Android SDK with platforms;android-36 and build-tools",
-        "ANDROID_SDK_ROOT/ANDROID_HOME set (or SDK under ~/Android)",
+        "ANDROID_SDK_ROOT/ANDROID_HOME set (or SDK under ~/Android/Sdk)",
         "Gradle wrapper downloads dependencies (network required)",
     ],
     "darwin": [

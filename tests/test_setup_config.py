@@ -1603,7 +1603,6 @@ def test_setup_dfu_build_user_declines(mocker, tmp_path):
     module = mocker.MagicMock()
     module.describe_requirements.return_value = ["JDK 17"]
     mocker.patch("fetchtastic.setup_config.get_build_module", return_value=module)
-    mocker.patch("fetchtastic.setup_config.resolve_android_sdk_root", return_value=None)
     mocker.patch("builtins.input", return_value="n")
 
     result = setup_config._setup_dfu_build(

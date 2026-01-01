@@ -16,6 +16,7 @@ Last updated: 2026-01-01
 - Updated setup section lists and unit tests for new `dfu` option.
 - Build module located at `src/fetchtastic/build/dfu/modules.py` with a shared Gradle build base.
 - Android SDK auto-detection now includes `~/Library/Android/sdk` and `~/Android/Sdk`.
+- Interactive DFU build flow refactored into `src/fetchtastic/build/interactive.py` to share prompts and checks.
 
 ## Sources Reviewed
 

@@ -12,7 +12,7 @@ import platformdirs
 import yaml
 
 from fetchtastic import log_utils, setup_config
-from fetchtastic.build.base import resolve_android_sdk_root
+from fetchtastic.build.interactive import print_build_requirements, run_module_build
 from fetchtastic.build.registry import get_build_module
 from fetchtastic.constants import (
     FIRMWARE_DIR_NAME,
@@ -947,40 +947,18 @@ def run_dfu_build(config, build_type: Optional[str], allow_update: bool) -> None
         return
 
     print("\n--- Nordic DFU Android Build ---")
-    for line in module.describe_requirements():
-        print(f"- {line}")
-
-    if not shutil.which("git"):
-        print("Git is required to clone the DFU repository. Please install git.")
-        return
-
-    sdk_root = resolve_android_sdk_root()
-    if not sdk_root:
-        print("Warning: Android SDK not detected (set ANDROID_SDK_ROOT).")
-
-    if not build_type:
-        build_type = (
-            input("Build type? [d]ebug/[r]elease (default: debug): ").strip().lower()
-            or "d"
-        )
-        build_type = "release" if build_type.startswith("r") else "debug"
-
-    if build_type == "release":
-        missing_env = module.missing_release_env()
-        if missing_env:
-            print("Release builds require signing env vars:")
-            for name in missing_env:
-                print(f"- {name}")
-            print("Set these variables and re-run the build if needed.")
-            return
+    print_build_requirements(module)
 
     base_dir = os.path.expanduser(config.get("BASE_DIR", setup_config.DEFAULT_BASE_DIR))
-    result = module.build(
-        build_type,
+    result = run_module_build(
+        module,
         base_dir=base_dir,
-        sdk_root=sdk_root,
+        build_type=build_type,
         allow_update=allow_update,
+        prompt_for_build_type=True,
     )
+    if result is None:
+        return
     if result.success:
         print(result.message)
     else:
