@@ -396,6 +396,16 @@ def main():
         help="Build type to produce",
     )
     dfu_build_parser.add_argument(
+        "--ref",
+        dest="dfu_build_ref",
+        help="Git ref to build (tag, branch, or commit). Defaults to latest tag.",
+    )
+    dfu_build_parser.add_argument(
+        "--repo-dir",
+        dest="dfu_repo_dir",
+        help="Base directory for the DFU repo checkout (defaults to Fetchtastic data dir).",
+    )
+    dfu_build_parser.add_argument(
         "--no-update",
         action="store_true",
         help="Skip updating the DFU repo before building",
@@ -607,6 +617,8 @@ def main():
             run_dfu_build(
                 config,
                 build_type=args.dfu_build_type,
+                build_ref=args.dfu_build_ref,
+                repo_base_dir=args.dfu_repo_dir,
                 allow_update=not args.no_update,
             )
 
@@ -1000,7 +1012,13 @@ def run_dfu_setup(
         print("DFU build environment is not ready yet.")
 
 
-def run_dfu_build(config, build_type: Optional[str], allow_update: bool) -> None:
+def run_dfu_build(
+    config,
+    build_type: Optional[str],
+    allow_update: bool,
+    build_ref: Optional[str] = None,
+    repo_base_dir: Optional[str] = None,
+) -> None:
     """
     Build the Nordic DFU Android app using the build module.
     """
@@ -1033,13 +1051,19 @@ def run_dfu_build(config, build_type: Optional[str], allow_update: bool) -> None
         build_type = prompt_build_type()
 
     base_dir = os.path.expanduser(config.get("BASE_DIR", setup_config.DEFAULT_BASE_DIR))
+    repo_base_dir = repo_base_dir or config.get("BUILD_REPOS_DIR")
+    if repo_base_dir:
+        repo_base_dir = os.path.expanduser(repo_base_dir)
     result = run_module_build(
         module,
         base_dir=base_dir,
         build_type=build_type,
+        ref=build_ref,
         allow_update=allow_update,
+        repo_base_dir=repo_base_dir,
         sdk_root=env_status.sdk_root,
         prompt_for_build_type=False,
+        prompt_for_ref=build_ref is None,
     )
     if result is None:
         return

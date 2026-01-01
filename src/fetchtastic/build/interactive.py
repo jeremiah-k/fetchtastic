@@ -6,11 +6,16 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
 from typing import Optional, Sequence
 
 from fetchtastic.build.base import (
     BuildResult,
     GradleBuildModule,
+    default_build_repo_root,
+    default_remote_branch,
+    latest_remote_tag,
+    latest_repo_tag,
     resolve_android_sdk_root,
 )
 from fetchtastic.build.environment import (
@@ -67,11 +72,32 @@ def prompt_build_type(
     return "release" if choice.startswith("r") else "debug"
 
 
+def prompt_build_ref(module: GradleBuildModule, repo_dir: Optional[str] = None) -> str:
+    """
+    Prompt for a git ref to build (tag/branch/commit).
+    """
+    if not sys.stdin.isatty():
+        return "latest"
+    latest_tag = latest_remote_tag(module.repo_url)
+    if not latest_tag and repo_dir:
+        latest_tag = latest_repo_tag(repo_dir)
+    default_branch = default_remote_branch(module.repo_url)
+    latest_label = f"latest ({latest_tag})" if latest_tag else "latest"
+    if default_branch:
+        print(f"Default branch: {default_branch}")
+        print(f"Enter '{default_branch}' to build the default branch.")
+    prompt = f"Build ref? [tag/branch/commit] (default: {latest_label}): "
+    choice = input(prompt).strip()
+    if not choice or choice.lower() == "latest":
+        return "latest"
+    return choice
+
+
 def check_build_environment(module: GradleBuildModule) -> BuildEnvironment:
     """
     Inspect the environment needed for a build module.
     """
-    java_home = detect_java_home()
+    java_home = detect_java_home(module.min_java_version)
     sdk_root = resolve_android_sdk_root()
     missing_packages: Sequence[str] = []
     if is_termux():
@@ -130,11 +156,36 @@ def prepare_build_environment(
                 install_termux_packages(optional_missing)
 
     if not env_status.java_home:
+        required_java = module.min_java_version or 17
         print("JAVA_HOME is not set and could not be detected.")
         if is_termux():
-            print("Install openjdk-17 and re-run: pkg install openjdk-17")
+            if prompt_yes_no(
+                f"Install openjdk-{required_java} now? [y/n] (default: yes): ",
+                default="yes",
+            ):
+                if not install_termux_packages([f"openjdk-{required_java}"]):
+                    return None
+                env_status = check_build_environment(module)
+                if env_status.java_home:
+                    exports, path_entries = build_shell_exports(
+                        env_status.java_home, env_status.sdk_root
+                    )
+                    update_process_env(exports, path_entries)
+                    if configure_shell and exports:
+                        update_shell_configs(exports, path_entries)
+                    if env_status.java_home:
+                        print("JAVA_HOME configured for DFU builds.")
+                    else:
+                        print(
+                            f"Install openjdk-{required_java} and re-run: pkg install openjdk-{required_java}"
+                        )
+                    if env_status.java_home:
+                        return env_status
+            print(
+                f"Install openjdk-{required_java} and re-run: pkg install openjdk-{required_java}"
+            )
         else:
-            print("Install JDK 17 and ensure JAVA_HOME is set.")
+            print(f"Install JDK {required_java} and ensure JAVA_HOME is set.")
         return None
 
     if not env_status.sdk_root:
@@ -189,17 +240,18 @@ def prepare_build_environment(
             "Install missing Android SDK packages now? [y/n] (default: yes): ",
             default="yes",
         ):
+            print("Accepting Android SDK licenses (required for installation)...")
+            if not accept_android_licenses(
+                env_status.sdkmanager_path, env_status.sdk_root
+            ):
+                print("Failed to accept Android SDK licenses.")
+                return None
             if not install_android_sdk_packages(
                 env_status.sdkmanager_path,
                 env_status.sdk_root,
                 env_status.missing_sdk_packages,
             ):
                 return None
-            if prompt_yes_no(
-                "Accept Android SDK licenses now? [y/n] (default: yes): ",
-                default="yes",
-            ):
-                accept_android_licenses(env_status.sdkmanager_path, env_status.sdk_root)
             env_status.missing_sdk_packages = missing_sdk_packages(
                 env_status.sdk_root, module.required_sdk_packages
             )
@@ -215,9 +267,12 @@ def run_module_build(
     *,
     base_dir: str,
     build_type: Optional[str] = None,
+    ref: Optional[str] = None,
     allow_update: Optional[bool] = None,
+    repo_base_dir: Optional[str] = None,
     sdk_root: Optional[str] = None,
     prompt_for_build_type: bool = True,
+    prompt_for_ref: bool = False,
     prompt_for_update: bool = False,
     update_prompt: Optional[str] = None,
     start_message: Optional[str] = None,
@@ -239,6 +294,12 @@ def run_module_build(
             build_type = prompt_build_type()
         else:
             build_type = "debug"
+
+    if ref is None and prompt_for_ref:
+        repo_root = repo_base_dir or default_build_repo_root()
+        candidate = os.path.join(repo_root, module.repo_dirname)
+        repo_dir = candidate if os.path.isdir(os.path.join(candidate, ".git")) else None
+        ref = prompt_build_ref(module, repo_dir=repo_dir)
 
     build_type = build_type.lower()
     if build_type == "release":
@@ -266,6 +327,8 @@ def run_module_build(
     return module.build(
         build_type,
         base_dir=base_dir,
+        ref=ref,
+        repo_base_dir=repo_base_dir,
         sdk_root=sdk_root,
         allow_update=allow_update,
     )

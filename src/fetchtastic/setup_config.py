@@ -18,9 +18,11 @@ import platformdirs
 import yaml
 
 from fetchtastic import menu_apk, menu_firmware
+from fetchtastic.build.base import default_build_repo_root
 from fetchtastic.build.interactive import (
     prepare_build_environment,
     print_build_requirements,
+    prompt_build_ref,
     prompt_build_type,
     prompt_yes_no,
     run_module_build,
@@ -780,10 +782,19 @@ def _setup_dfu_build(
     build_type = prompt_build_type()
 
     base_dir = os.path.expanduser(config.get("BASE_DIR", DEFAULT_BASE_DIR))
+    repo_base_dir = config.get("BUILD_REPOS_DIR")
+    if repo_base_dir:
+        repo_base_dir = os.path.expanduser(repo_base_dir)
+    repo_root = repo_base_dir or default_build_repo_root()
+    candidate = os.path.join(repo_root, module.repo_dirname)
+    repo_dir = candidate if os.path.isdir(os.path.join(candidate, ".git")) else None
+    build_ref = prompt_build_ref(module, repo_dir=repo_dir)
     result = run_module_build(
         module,
         base_dir=base_dir,
         build_type=build_type,
+        ref=build_ref,
+        repo_base_dir=repo_base_dir,
         sdk_root=env_status.sdk_root,
         prompt_for_build_type=False,
         prompt_for_update=True,

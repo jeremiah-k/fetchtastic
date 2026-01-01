@@ -1187,6 +1187,8 @@ def test_cli_dfu_build_command(mocker):
     assert args[0]["BASE_DIR"] == cli.setup_config.DEFAULT_BASE_DIR
     assert kwargs["build_type"] == "debug"
     assert kwargs["allow_update"] is True
+    assert kwargs["build_ref"] is None
+    assert kwargs["repo_base_dir"] is None
     mock_update.assert_called_once_with("1.2.3")
 
 

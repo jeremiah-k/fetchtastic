@@ -99,6 +99,179 @@ def newest_match(paths: Iterable[str]) -> Optional[str]:
     return max(path_list, key=os.path.getmtime)
 
 
+def default_build_repo_root() -> str:
+    """
+    Return the default base directory for build repositories.
+    """
+    return os.path.join(platformdirs.user_data_dir("fetchtastic"), "builds")
+
+
+def parse_semver_tag(tag: str) -> Optional[tuple]:
+    """
+    Parse a semantic version tuple from a git tag name.
+    """
+    match = re.match(r"^v?(\d+(?:\.\d+)+)$", tag)
+    if not match:
+        return None
+    return tuple(int(part) for part in match.group(1).split("."))
+
+
+def latest_tag_from_list(tags: Sequence[str]) -> Optional[str]:
+    """
+    Return the latest semantic version tag from a list, or None.
+    """
+    parsed = [(parse_semver_tag(tag), tag) for tag in tags]
+    parsed = [(version, tag) for version, tag in parsed if version]
+    if parsed:
+        return max(parsed, key=lambda item: item[0])[1]
+    return None
+
+
+def list_repo_tags(repo_dir: str) -> List[str]:
+    """
+    List git tags available in a repository.
+    """
+    result = subprocess.run(
+        ["git", "-C", repo_dir, "tag", "--list"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return []
+    return [tag.strip() for tag in result.stdout.splitlines() if tag.strip()]
+
+
+def latest_repo_tag(repo_dir: str) -> Optional[str]:
+    """
+    Return the latest tag from a local repository.
+    """
+    tags = list_repo_tags(repo_dir)
+    latest = latest_tag_from_list(tags)
+    if latest:
+        return latest
+    return tags[0] if tags else None
+
+
+def latest_remote_tag(repo_url: str) -> Optional[str]:
+    """
+    Return the latest tag from a remote repository.
+    """
+    result = subprocess.run(
+        ["git", "ls-remote", "--tags", repo_url],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+    tags: List[str] = []
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        ref = parts[1]
+        if not ref.startswith("refs/tags/"):
+            continue
+        tag = ref.replace("refs/tags/", "")
+        if tag.endswith("^{}"):
+            tag = tag[:-3]
+        if tag:
+            tags.append(tag)
+    latest = latest_tag_from_list(tags)
+    if latest:
+        return latest
+    return tags[0] if tags else None
+
+
+def default_remote_branch(repo_url: str) -> Optional[str]:
+    """
+    Return the default branch name for a remote repository.
+    """
+    result = subprocess.run(
+        ["git", "ls-remote", "--symref", repo_url, "HEAD"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+    for line in result.stdout.splitlines():
+        if line.startswith("ref:") and "refs/heads/" in line:
+            return line.split("refs/heads/", 1)[1].split()[0]
+    return None
+
+
+def is_shallow_repo(repo_dir: str) -> bool:
+    """
+    Return True if the repository is shallow.
+    """
+    result = subprocess.run(
+        ["git", "-C", repo_dir, "rev-parse", "--is-shallow-repository"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.returncode == 0 and result.stdout.strip().lower() == "true"
+
+
+def _fetch_tags(repo_dir: str) -> None:
+    """
+    Fetch tags for the repository, unshallowing if needed.
+    """
+    if is_shallow_repo(repo_dir):
+        subprocess.run(
+            ["git", "-C", repo_dir, "fetch", "--unshallow", "--tags"],
+            check=False,
+        )
+    else:
+        subprocess.run(["git", "-C", repo_dir, "fetch", "--tags"], check=False)
+
+
+def checkout_repo_ref(repo_dir: str, ref: str) -> Optional[str]:
+    """
+    Checkout a git ref (tag/branch/commit) and return the resolved ref.
+    """
+    if not ref:
+        return None
+    resolved = ref
+    fetch_tags = True
+    if ref.lower() == "latest":
+        _fetch_tags(repo_dir)
+        resolved = latest_repo_tag(repo_dir) or ""
+        fetch_tags = False
+    if not resolved:
+        return None
+
+    if fetch_tags:
+        _fetch_tags(repo_dir)
+
+    result = subprocess.run(
+        ["git", "-C", repo_dir, "checkout", resolved],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode == 0:
+        return resolved
+
+    remote_ref = f"origin/{resolved}"
+    result = subprocess.run(
+        ["git", "-C", repo_dir, "show-ref", "--verify", f"refs/remotes/{remote_ref}"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode == 0:
+        result = subprocess.run(
+            ["git", "-C", repo_dir, "checkout", "-B", resolved, remote_ref],
+            check=False,
+        )
+        if result.returncode == 0:
+            return resolved
+    return None
+
+
 @dataclass
 class BuildResult:
     success: bool
@@ -108,6 +281,7 @@ class BuildResult:
     artifact_path: Optional[str] = None
     dest_path: Optional[str] = None
     identifier: Optional[str] = None
+    ref: Optional[str] = None
 
 
 @dataclass
@@ -122,6 +296,7 @@ class GradleBuildModule:
     artifact_globs: Mapping[str, Sequence[str]]
     repo_clone_depth: Optional[int] = 1
     required_sdk_packages: Sequence[str] = ()
+    min_java_version: Optional[int] = None
     release_env_vars: Sequence[str] = ()
     requirements: Mapping[str, Sequence[str]] = field(default_factory=dict)
 
@@ -154,7 +329,8 @@ class GradleBuildModule:
         build_type: str,
         *,
         base_dir: str,
-        cache_dir: Optional[str] = None,
+        repo_base_dir: Optional[str] = None,
+        ref: Optional[str] = None,
         sdk_root: Optional[str] = None,
         allow_update: bool = True,
     ) -> BuildResult:
@@ -169,9 +345,9 @@ class GradleBuildModule:
                 build_type=build_type,
             )
 
-        cache_root = cache_dir or platformdirs.user_cache_dir("fetchtastic")
-        repo_dir = os.path.join(cache_root, self.repo_dirname)
-        os.makedirs(cache_root, exist_ok=True)
+        repo_root = repo_base_dir or default_build_repo_root()
+        repo_dir = os.path.join(repo_root, self.repo_dirname)
+        os.makedirs(repo_root, exist_ok=True)
 
         repo_ready = _ensure_repo(
             self.repo_url,
@@ -186,6 +362,17 @@ class GradleBuildModule:
                 build_type=build_type,
                 repo_dir=repo_dir,
             )
+
+        resolved_ref = None
+        if ref:
+            resolved_ref = checkout_repo_ref(repo_dir, ref)
+            if not resolved_ref:
+                return BuildResult(
+                    success=False,
+                    message=f"Could not find git ref: {ref}",
+                    build_type=build_type,
+                    repo_dir=repo_dir,
+                )
 
         gradlew = _resolve_gradlew(repo_dir)
         if not gradlew:
@@ -250,6 +437,7 @@ class GradleBuildModule:
             artifact_path=artifact,
             dest_path=dest_path,
             identifier=identifier,
+            ref=resolved_ref,
         )
 
 

@@ -1656,6 +1656,7 @@ def test_setup_dfu_build_success(mocker, tmp_path):
     mocker.patch("fetchtastic.setup_config.prompt_yes_no", return_value=True)
     mocker.patch("fetchtastic.setup_config.shutil.which", return_value="/usr/bin/javac")
     mocker.patch("fetchtastic.setup_config.prompt_build_type", return_value="debug")
+    mocker.patch("fetchtastic.setup_config.prompt_build_ref", return_value="latest")
     env_status = BuildEnvironment(
         java_home="/tmp/java",
         sdk_root="/tmp/sdk",

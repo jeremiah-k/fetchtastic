@@ -20,8 +20,8 @@ def test_dfu_build_module_missing_release_env():
 @pytest.mark.unit
 def test_dfu_build_module_build_debug_copies_apk(mocker, tmp_path):
     module = DFUBuildModule()
-    cache_dir = tmp_path / "cache"
-    repo_dir = cache_dir / module.repo_dirname
+    repo_base_dir = tmp_path / "builds"
+    repo_dir = repo_base_dir / module.repo_dirname
     base_dir = tmp_path / "base"
 
     (repo_dir / ".git").mkdir(parents=True)
@@ -37,7 +37,7 @@ def test_dfu_build_module_build_debug_copies_apk(mocker, tmp_path):
     result = module.build(
         "debug",
         base_dir=str(base_dir),
-        cache_dir=str(cache_dir),
+        repo_base_dir=str(repo_base_dir),
         sdk_root=None,
         allow_update=False,
     )

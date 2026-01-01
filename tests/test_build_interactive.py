@@ -10,7 +10,7 @@ def test_prepare_build_environment_missing_packages_declined(mocker):
         java_home=None,
         sdk_root=None,
         sdkmanager_path=None,
-        missing_packages=["openjdk-17"],
+        missing_packages=["git"],
         missing_sdk_packages=[],
     )
     mocker.patch(

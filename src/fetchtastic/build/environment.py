@@ -23,7 +23,6 @@ SHELL_BLOCK_START = "# >>> fetchtastic dfu setup >>>"
 SHELL_BLOCK_END = "# <<< fetchtastic dfu setup <<<"
 
 TERMUX_PACKAGE_COMMANDS: Dict[str, Sequence[str]] = {
-    "openjdk-17": ("javac", "java"),
     "git": ("git",),
     "curl": ("curl", "wget"),
     "unzip": ("unzip",),
@@ -184,31 +183,80 @@ def install_cmdline_tools(sdk_root: str, host_os: Optional[str] = None) -> bool:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
-def detect_java_home() -> Optional[str]:
+def _parse_java_version(text: str) -> Optional[int]:
+    match = re.search(r'version "(\d+)', text)
+    if match:
+        return int(match.group(1))
+    return None
+
+
+def _java_version_from_home(java_home: str) -> Optional[int]:
+    java_bin = os.path.join(java_home, "bin", "java")
+    if os.path.isfile(java_bin):
+        try:
+            result = subprocess.run(
+                [java_bin, "-version"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except OSError:
+            result = None
+        if result:
+            text = result.stderr or result.stdout
+            version = _parse_java_version(text)
+            if version:
+                return version
+    match = re.search(r"java[-_/](\d+)", java_home)
+    if match:
+        return int(match.group(1))
+    return None
+
+
+def _select_termux_java_home(min_version: Optional[int]) -> Optional[str]:
+    prefix = os.environ.get("PREFIX")
+    if not prefix:
+        return None
+    if min_version:
+        candidates = [21, 17, 11]
+        candidates = [version for version in candidates if version >= min_version]
+    else:
+        candidates = [17, 21, 11]
+    for version in candidates:
+        path = os.path.join(prefix, "lib", "jvm", f"java-{version}-openjdk")
+        if os.path.isdir(path):
+            return path
+    return None
+
+
+def detect_java_home(min_version: Optional[int] = None) -> Optional[str]:
     """
     Detect a JAVA_HOME path from environment or known locations.
     """
+    prefix = os.environ.get("PREFIX")
     env_java = os.environ.get("JAVA_HOME")
     if env_java and os.path.isdir(env_java):
-        return env_java
+        if min_version is None:
+            return env_java
+        version = _java_version_from_home(env_java)
+        if version and version >= min_version:
+            return env_java
 
-    prefix = os.environ.get("PREFIX")
-    if is_termux() and prefix:
-        for candidate in (
-            "java-17-openjdk",
-            "java-21-openjdk",
-            "java-11-openjdk",
-        ):
-            path = os.path.join(prefix, "lib", "jvm", candidate)
-            if os.path.isdir(path):
-                return path
+    if is_termux():
+        termux_home = _select_termux_java_home(min_version)
+        if termux_home:
+            return termux_home
 
     javac_path = shutil.which("javac")
     if javac_path:
         real_javac = os.path.realpath(javac_path)
         candidate = os.path.dirname(os.path.dirname(real_javac))
         if os.path.isdir(candidate):
-            return candidate
+            if min_version is None:
+                return candidate
+            version = _java_version_from_home(candidate)
+            if version and version >= min_version:
+                return candidate
 
     if prefix:
         for candidate in (
@@ -218,7 +266,11 @@ def detect_java_home() -> Optional[str]:
         ):
             path = os.path.join(prefix, "lib", "jvm", candidate)
             if os.path.isdir(path):
-                return path
+                if min_version is None:
+                    return path
+                version = _java_version_from_home(path)
+                if version and version >= min_version:
+                    return path
 
     return None
 

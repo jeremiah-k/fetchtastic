@@ -22,7 +22,6 @@ def test_detect_missing_termux_packages(mocker):
         side_effect=lambda cmd: None if cmd in {"javac", "java", "git"} else "/bin/ok",
     )
     missing = detect_missing_termux_packages()
-    assert "openjdk-17" in missing
     assert "git" in missing
 
 
@@ -63,6 +62,20 @@ def test_detect_java_home_termux_prefers_jdk17(mocker, tmp_path):
     )
 
     assert detect_java_home() == str(java17)
+
+
+@pytest.mark.unit
+def test_detect_java_home_termux_min_version_prefers_21(mocker, tmp_path):
+    prefix = tmp_path / "prefix"
+    java17 = prefix / "lib" / "jvm" / "java-17-openjdk"
+    java21 = prefix / "lib" / "jvm" / "java-21-openjdk"
+    java17.mkdir(parents=True)
+    java21.mkdir(parents=True)
+
+    mocker.patch.dict(os.environ, {"PREFIX": str(prefix)}, clear=True)
+    mocker.patch("fetchtastic.build.environment.is_termux", return_value=True)
+
+    assert detect_java_home(min_version=21) == str(java21)
 
 
 @pytest.mark.unit
