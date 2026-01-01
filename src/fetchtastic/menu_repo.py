@@ -1,8 +1,17 @@
+import curses
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import requests
-from pick import Option, pick
+from pick import (
+    KEYS_DOWN,
+    KEYS_ENTER,
+    KEYS_SELECT,
+    KEYS_UP,
+    Option,
+    Picker,
+    Position,
+)
 
 from fetchtastic.constants import (
     DEFAULT_PRERELEASE_COMMITS_TO_FETCH,
@@ -22,6 +31,94 @@ from fetchtastic.utils import make_github_api_request
 EXCLUDED_DIRS = [".git", ".github", "node_modules", "__pycache__", ".vscode"]
 EXCLUDED_FILES: List[str] = [".gitignore"]
 _VERSION_MANAGER = VersionManager()
+
+_KEY_PAGE_UP = getattr(curses, "KEY_PPAGE", None)
+_KEY_PAGE_DOWN = getattr(curses, "KEY_NPAGE", None)
+KEYS_PAGE_UP = tuple(k for k in (_KEY_PAGE_UP,) if k is not None)
+KEYS_PAGE_DOWN = tuple(k for k in (_KEY_PAGE_DOWN,) if k is not None)
+
+
+class MenuPicker(Picker):
+    """
+    Picker extension that supports PageUp/PageDown for faster navigation.
+    """
+
+    def _page_step(self, screen: "curses._CursesWindow") -> int:
+        max_y, max_x = screen.getmaxyx()
+        title_lines = len(self.get_title_lines(max_width=max_x))
+        max_rows = max_y - self.position.y
+        step = max_rows - title_lines - 1
+        return max(1, step)
+
+    def _is_action_option(self, option: Option) -> bool:
+        if not isinstance(option, Option):
+            return False
+        if not isinstance(option.value, dict):
+            return False
+        return option.value.get("type") in {"back", "quit"}
+
+    def run_loop(self, screen: "curses._CursesWindow", position: "Position") -> Any:
+        while True:
+            self.draw(screen)
+            c = screen.getch()
+            if self.quit_keys is not None and c in self.quit_keys:
+                if self.multiselect:
+                    return []
+                return None, -1
+            if c in KEYS_PAGE_UP:
+                for _ in range(self._page_step(screen)):
+                    self.move_up()
+                continue
+            if c in KEYS_PAGE_DOWN:
+                for _ in range(self._page_step(screen)):
+                    self.move_down()
+                continue
+            if c in KEYS_UP:
+                self.move_up()
+                continue
+            if c in KEYS_DOWN:
+                self.move_down()
+                continue
+            if c in KEYS_ENTER:
+                if (
+                    self.multiselect
+                    and len(self.selected_indexes) < self.min_selection_count
+                ):
+                    continue
+                if self.multiselect:
+                    option = self.options[self.index]
+                    if isinstance(option, Option) and self._is_action_option(option):
+                        return [(option, self.index)]
+                return self.get_selected()
+            if c in KEYS_SELECT and self.multiselect:
+                self.mark_index()
+
+
+def _pick_menu(
+    options: List[Option],
+    title: Optional[str] = None,
+    indicator: str = "*",
+    default_index: int = 0,
+    multiselect: bool = False,
+    min_selection_count: int = 0,
+    screen: Optional["curses._CursesWindow"] = None,
+    position: Optional[Position] = None,
+    clear_screen: bool = True,
+    quit_keys: Optional[List[int]] = None,
+) -> Any:
+    picker = MenuPicker(
+        options,
+        title=title,
+        indicator=indicator,
+        default_index=default_index,
+        multiselect=multiselect,
+        min_selection_count=min_selection_count,
+        screen=screen,
+        position=position or Position(0, 0),
+        clear_screen=clear_screen,
+        quit_keys=quit_keys,
+    )
+    return picker.start()
 
 
 def _process_repo_contents(
@@ -309,9 +406,12 @@ def select_item(items, current_path=""):
 
     # Add a title that shows the current path
     path_display = f" - {current_path}" if current_path else ""
-    title = f"Select an item to browse{path_display} (press ENTER to navigate, find a directory with files to select and download):"
+    title = (
+        f"Select an item to browse{path_display} (ENTER to open, PageUp/PageDown to jump). "
+        "Use [Quit] to exit."
+    )
 
-    option, _index = pick(display_options, title, indicator="*")
+    option, _index = _pick_menu(display_options, title, indicator="*")
 
     if isinstance(option, Option):
         return option.value
@@ -328,24 +428,36 @@ def select_files(files):
         files (list[dict]): List of file dictionaries as returned by the repository API. Each dictionary must include at least the "name" key; other keys (e.g., "download_url", "size") are preserved and returned.
 
     Returns:
-        list[dict] | None: A list of the selected file dictionaries in the same format as `files`, or `None` if the user cancels, chooses "[Quit]", or no files are selected.
+        list[dict] | dict | None: A list of the selected file dictionaries in the same format as `files`,
+        a dict like {"type": "back"} or {"type": "quit"} when navigation actions are chosen,
+        or `None` if the user cancels or no files are selected.
     """
     if not files:
         print("No files found in the selected directory.")
         return None
 
-    # Create a list of file names for the menu
-    file_names = [file["name"] for file in files]
+    display_options: List[Option] = [
+        Option(label="[Back]", value={"type": "back"}),
+        Option(label="[Quit]", value={"type": "quit"}),
+        Option(label="Files:", enabled=False),
+    ]
+    for file_info in files:
+        display_options.append(Option(label=file_info["name"], value=file_info))
+    display_options.append(Option(label="[Back]", value={"type": "back"}))
 
-    # Add a quit option
-    file_names.append("[Quit]")
+    title = (
+        "Select the files you want to download (SPACE to select, ENTER to confirm, "
+        "PageUp/PageDown to jump).\n"
+        f"Selected files will be downloaded to {REPO_DOWNLOADS_DIR}. "
+        "Use [Back] to return or [Quit] to exit."
+    )
 
-    title = f"""Select the files you want to download (press SPACE to select, ENTER to confirm):
-Note: Selected files will be downloaded to {REPO_DOWNLOADS_DIR} directory.
-Select "[Quit]" to exit without downloading."""
-
-    selected_options = pick(
-        file_names, title, multiselect=True, min_selection_count=0, indicator="*"
+    selected_options = _pick_menu(
+        display_options,
+        title,
+        multiselect=True,
+        min_selection_count=0,
+        indicator="*",
     )
 
     if not selected_options:
@@ -354,16 +466,25 @@ Select "[Quit]" to exit without downloading."""
 
     # Process selected options
     selected_files = []
+    action_type = None
     for option in selected_options:
-        # The 'pick' library returns a list of (option, index) tuples.
-        option_name = option[0] if isinstance(option, (tuple, list)) else str(option)
-        if option_name == "[Quit]":
-            print("Exiting without downloading.")
-            return None
-        for file_info in files:
-            if file_info["name"] == option_name:
-                selected_files.append(file_info)
-                break
+        option_obj = option[0] if isinstance(option, (tuple, list)) else option
+        if isinstance(option_obj, Option) and isinstance(option_obj.value, dict):
+            opt_type = option_obj.value.get("type")
+            if opt_type == "quit":
+                return {"type": "quit"}
+            if opt_type == "back":
+                action_type = "back"
+                continue
+        if isinstance(option_obj, Option) and isinstance(option_obj.value, dict):
+            selected_files.append(option_obj.value)
+
+    if action_type:
+        return {"type": action_type}
+
+    if not selected_files:
+        print("No files selected for download.")
+        return None
     return selected_files
 
 
@@ -433,6 +554,12 @@ def run_menu(config: Optional[Dict[str, Any]] = None):
                 files_in_dir = [item for item in items if item["type"] == "file"]
                 if files_in_dir:
                     selected_files = select_files(files_in_dir)
+                    if isinstance(selected_files, dict):
+                        if selected_files.get("type") == "quit":
+                            print("Exiting repository browser.")
+                            return None
+                        if selected_files.get("type") == "back":
+                            continue
                     if selected_files:
                         break
                     continue

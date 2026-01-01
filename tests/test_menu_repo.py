@@ -122,7 +122,7 @@ def test_fetch_repo_contents_uses_cache_manager(mocker):
 def test_select_item(mocker):
     """Test the user item selection menu logic."""
     # Patch where pick is looked up, which is in the menu_repo module
-    mock_pick = mocker.patch("fetchtastic.menu_repo.pick")
+    mock_pick = mocker.patch("fetchtastic.menu_repo._pick_menu")
     items = [
         {"name": "dir1", "path": "dir1", "type": "dir"},
         {"name": "file1.txt", "path": "file1.txt", "type": "file"},
@@ -151,22 +151,25 @@ def test_select_item(mocker):
 def test_select_files(mocker):
     """Test the user file selection menu logic."""
     # Patch where pick is looked up
-    mock_pick = mocker.patch("fetchtastic.menu_repo.pick")
+    mock_pick = mocker.patch("fetchtastic.menu_repo._pick_menu")
     files = [
         {"name": "file1.txt", "download_url": "url1"},
         {"name": "file2.txt", "download_url": "url2"},
     ]
 
     # 1. Select some files
-    mock_pick.return_value = [("file1.txt", 0), ("file2.txt", 1)]
+    mock_pick.return_value = [
+        (Option(label="file1.txt", value=files[0]), 0),
+        (Option(label="file2.txt", value=files[1]), 1),
+    ]
     selected = menu_repo.select_files(files)
     assert len(selected) == 2
     assert selected[0]["name"] == "file1.txt"
 
     # 2. Select "Quit"
-    mock_pick.return_value = [("[Quit]", 2)]
+    mock_pick.return_value = [(Option(label="[Quit]", value={"type": "quit"}), 2)]
     selected = menu_repo.select_files(files)
-    assert selected is None
+    assert selected == {"type": "quit"}
 
     # 3. Select nothing
     mock_pick.return_value = []
@@ -393,7 +396,7 @@ def test_select_item_empty_items():
 
 def test_select_item_with_current_path(mocker):
     """Test select_item with current path (shows go back and current directory)."""
-    mock_pick = mocker.patch("fetchtastic.menu_repo.pick")
+    mock_pick = mocker.patch("fetchtastic.menu_repo._pick_menu")
     items = [{"name": "file1.txt", "path": "file1.txt", "type": "file"}]
 
     # Test selecting current directory when in a subdirectory

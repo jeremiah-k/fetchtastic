@@ -67,7 +67,7 @@ def test_show_help_repo_unknown_subcommand(mocker, capsys):
 def test_select_item_pick_none(mocker):
     """Test select_item when user cancels with KeyboardInterrupt."""
     # Since select_item doesn't handle KeyboardInterrupt, we test that it propagates
-    mock_pick = mocker.patch("fetchtastic.menu_repo.pick")
+    mock_pick = mocker.patch("fetchtastic.menu_repo._pick_menu")
     mock_pick.side_effect = KeyboardInterrupt  # User cancelled with Ctrl+C
 
     # Test with proper item format (list of dicts)
@@ -85,7 +85,7 @@ def test_select_item_pick_none(mocker):
 @pytest.mark.unit
 def test_select_item_empty_list(mocker):
     """Test select_item with empty options list."""
-    mock_pick = mocker.patch("fetchtastic.menu_repo.pick")
+    mock_pick = mocker.patch("fetchtastic.menu_repo._pick_menu")
 
     result = menu_repo.select_item([], "current/path")
 
@@ -97,7 +97,7 @@ def test_select_item_empty_list(mocker):
 @pytest.mark.unit
 def test_select_item_single_option(mocker):
     """Test select_item with single option."""
-    mock_pick = mocker.patch("fetchtastic.menu_repo.pick")
+    mock_pick = mocker.patch("fetchtastic.menu_repo._pick_menu")
     mock_pick.return_value = (
         Option(
             label="[Select files in this directory (1 file)]",
@@ -117,9 +117,11 @@ def test_select_item_single_option(mocker):
 @pytest.mark.unit
 def test_select_files_user_quits(mocker):
     """Test select_files when user selects quit."""
-    mock_pick = mocker.patch("fetchtastic.menu_repo.pick")
+    mock_pick = mocker.patch("fetchtastic.menu_repo._pick_menu")
     # pick with multiselect returns a list of (option, index) tuples
-    mock_pick.return_value = [("[Quit]", 2)]  # Index 2 would be the [Quit] option
+    mock_pick.return_value = [
+        (Option(label="[Quit]", value={"type": "quit"}), 2)
+    ]  # Index 2 would be the [Quit] option
 
     test_files = [
         {"name": "file1.txt", "path": "file1.txt", "type": "file"},
@@ -128,7 +130,7 @@ def test_select_files_user_quits(mocker):
 
     result = menu_repo.select_files(test_files)
 
-    assert result is None
+    assert result == {"type": "quit"}
 
 
 @pytest.mark.user_interface
