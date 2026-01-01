@@ -386,14 +386,13 @@ def run_menu(config: Optional[Dict[str, Any]] = None):
     try:
         current_path = ""
         selected_files = []
+        github_token: Optional[str] = None
+        allow_env_token = True
+        cache_manager: Optional[CacheManager] = None
         if config is not None:
             github_token = config.get("GITHUB_TOKEN")
             allow_env_token = config.get("ALLOW_ENV_TOKEN", True)
             cache_manager = CacheManager()
-        else:
-            github_token = None
-            allow_env_token = True
-            cache_manager = None
         firmware_commit_times: Dict[str, datetime] = {}
 
         if cache_manager is not None:
@@ -446,24 +445,6 @@ def run_menu(config: Optional[Dict[str, Any]] = None):
             if selected_item["type"] == "dir":
                 # Navigate into the directory
                 current_path = selected_item["path"]
-                continue
-
-            # If we get here, we're in a directory with files
-            # Get all files in the current directory
-            files_in_dir = [item for item in items if item["type"] == "file"]
-
-            if files_in_dir:
-                # Use the select_files function to allow multi-selection
-                selected_files = select_files(files_in_dir)
-                if selected_files:
-                    break
-                else:
-                    # User didn't select any files or chose to quit
-                    # Go back to the current directory listing
-                    continue
-            else:
-                # No files in this directory, go back to directory listing
-                print("No files found in this directory.")
                 continue
 
         if not selected_files:

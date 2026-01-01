@@ -13,7 +13,7 @@ def mock_repo_contents():
     Return a mock list of items shaped like the GitHub repository contents API.
 
     The list includes a mix of directories and files used by tests:
-    - Directories: three firmware/event entries and one `.git` (the `.git` entry is intended to be excluded by the fetching logic).
+    - Directories: three firmware/event entries and `.git`/`.github` (both intended to be excluded by the fetching logic).
     - Files: `index.html`, `meshtastic-deb.asc`, and `README.md` (included by the production logic; only `.git` is excluded).
 
     Returns:
@@ -33,6 +33,7 @@ def mock_repo_contents():
         },
         {"name": "event", "path": "event", "type": "dir"},
         {"name": ".git", "path": ".git", "type": "dir"},  # Should be excluded
+        {"name": ".github", "path": ".github", "type": "dir"},  # Should be excluded
         # Files
         {
             "name": "index.html",
@@ -72,6 +73,7 @@ def test_fetch_repo_contents(mocker, mock_repo_contents):
     # Check filtering - should be 6 items (3 dirs, 3 files) - .git excluded
     assert len(items) == 6
     assert not any(item["name"] == ".git" for item in items)
+    assert not any(item["name"] == ".github" for item in items)
 
     # Check sorting
     assert (
@@ -486,19 +488,23 @@ def test_run_menu_user_cancels_file_selection(mocker):
     ]  # Called multiple times
     mocker.patch("fetchtastic.menu_repo.fetch_repo_contents", side_effect=fetch_calls)
 
-    # Select directory, then quit from file selection, then quit from directory
+    # Select directory, then open current directory file selection, then quit
     select_item_calls = [
         {"name": "dir1", "type": "dir", "path": "dir1"},
+        {"type": "current"},
         {"type": "quit"},
     ]
     mocker.patch("fetchtastic.menu_repo.select_item", side_effect=select_item_calls)
 
     # User cancels file selection
-    mocker.patch("fetchtastic.menu_repo.select_files", return_value=None)
+    mock_select_files = mocker.patch(
+        "fetchtastic.menu_repo.select_files", return_value=None
+    )
 
     result = menu_repo.run_menu()
 
     assert result is None
+    mock_select_files.assert_called_once()
 
 
 def test_run_menu_exception_handling(mocker):
