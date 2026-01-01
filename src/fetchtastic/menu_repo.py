@@ -260,9 +260,6 @@ def _build_firmware_commit_times(
         )
         return {}
 
-    if not commits:
-        return {}
-
     return prerelease_manager.extract_prerelease_directory_timestamps(commits)
 
 
@@ -314,36 +311,13 @@ def select_item(items, current_path=""):
     path_display = f" - {current_path}" if current_path else ""
     title = f"Select an item to browse{path_display} (press ENTER to navigate, find a directory with files to select and download):"
 
-    option, index = pick(display_options, title, indicator="*")
+    option, _index = pick(display_options, title, indicator="*")
 
     if isinstance(option, Option):
         if isinstance(option.value, dict):
             return option.value
         if option.value is not None:
             return option.value
-        if option.label == "[Quit]":
-            return {"type": "quit"}
-        if option.label == "[Go back to parent directory]":
-            return {"type": "back"}
-        if option.label.startswith("[Select files in this directory"):
-            return {"type": "current"}
-        return None
-
-    # Fallback for older tests/mocks that return strings.
-    if option == "[Quit]":
-        return {"type": "quit"}
-    if option == "[Go back to parent directory]":
-        return {"type": "back"}
-    if str(option).startswith("[Select files in this directory"):
-        return {"type": "current"}
-    if isinstance(option, str) and option.endswith("/"):
-        name = option[:-1]
-        for item in dirs:
-            if item.get("name") == name:
-                return item
-    for item in items:
-        if item.get("name") == option:
-            return item
     return None
 
 
@@ -412,10 +386,14 @@ def run_menu(config: Optional[Dict[str, Any]] = None):
     try:
         current_path = ""
         selected_files = []
-        has_config = config is not None
-        github_token = config.get("GITHUB_TOKEN") if has_config else None
-        allow_env_token = config.get("ALLOW_ENV_TOKEN", True) if has_config else True
-        cache_manager = CacheManager() if has_config else None
+        if config is not None:
+            github_token = config.get("GITHUB_TOKEN")
+            allow_env_token = config.get("ALLOW_ENV_TOKEN", True)
+            cache_manager = CacheManager()
+        else:
+            github_token = None
+            allow_env_token = True
+            cache_manager = None
         firmware_commit_times: Dict[str, datetime] = {}
 
         if cache_manager is not None:
