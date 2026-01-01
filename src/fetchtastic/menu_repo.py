@@ -476,7 +476,6 @@ def select_files(files):
             if opt_type == "back":
                 action_type = "back"
                 continue
-        if isinstance(option_obj, Option) and isinstance(option_obj.value, dict):
             selected_files.append(option_obj.value)
 
     if action_type:
