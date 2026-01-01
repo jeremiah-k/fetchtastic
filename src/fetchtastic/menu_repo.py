@@ -67,11 +67,7 @@ def _process_repo_contents(
     version_manager = VersionManager()
 
     def _lookup_commit_time(name: str) -> Optional[datetime]:
-        if not firmware_commit_times:
-            return None
-        return firmware_commit_times.get(name) or firmware_commit_times.get(
-            name.lower()
-        )
+        return firmware_commit_times.get(name.lower())
 
     # Sort firmware directories by commit time when available, otherwise by version.
     def _fw_dir_key(d: Dict[str, Any]):
@@ -390,9 +386,10 @@ def run_menu(config: Optional[Dict[str, Any]] = None):
     try:
         current_path = ""
         selected_files = []
-        github_token = config.get("GITHUB_TOKEN") if config else None
-        allow_env_token = config.get("ALLOW_ENV_TOKEN", True) if config else True
-        cache_manager = CacheManager() if config else None
+        has_config = config is not None
+        github_token = config.get("GITHUB_TOKEN") if has_config else None
+        allow_env_token = config.get("ALLOW_ENV_TOKEN", True) if has_config else True
+        cache_manager = CacheManager() if has_config else None
         firmware_commit_times: Dict[str, datetime] = {}
 
         if cache_manager is not None:

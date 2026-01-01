@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
+from fetchtastic import repo_downloader
 from fetchtastic.download.repository import RepositoryDownloader
 from fetchtastic.repo_downloader import download_repo_files
 
@@ -91,6 +92,21 @@ def test_get_safe_target_directory_invalid(repository_downloader, tmp_path):
     target_dir = repository_downloader._get_safe_target_directory("../../../etc")
     expected_dir = tmp_path / "firmware" / "repo-dls"
     assert target_dir == str(expected_dir)  # Should fall back to base directory
+
+
+def test_repo_downloader_main_no_selection(mocker, tmp_path):
+    """Test repo_downloader.main exits when no files are selected."""
+    config = {"DOWNLOAD_DIR": str(tmp_path)}
+    mock_run_menu = mocker.patch(
+        "fetchtastic.repo_downloader.menu_repo.run_menu", return_value=None
+    )
+    mock_logger = mocker.patch("fetchtastic.repo_downloader.logger")
+
+    repo_downloader.main(config)
+
+    mock_logger.info.assert_any_call("Starting Repository File Browser...")
+    mock_run_menu.assert_called_once_with(config)
+    mock_logger.info.assert_any_call("No files selected for download. Exiting.")
 
 
 @pytest.mark.unit

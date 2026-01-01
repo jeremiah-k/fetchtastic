@@ -50,7 +50,7 @@ def mock_repo_contents():
             "path": "README.md",
             "type": "file",
             "download_url": "url3",
-        },  # Should be excluded
+        },  # Included
     ]
 
 
@@ -81,6 +81,39 @@ def test_fetch_repo_contents(mocker, mock_repo_contents):
     assert items[3]["name"] == "README.md"  # Files sorted ascending
     assert items[4]["name"] == "index.html"
     assert items[5]["name"] == "meshtastic-deb.asc"
+
+
+def test_fetch_repo_contents_uses_cache_manager(mocker):
+    """Test fetch_repo_contents uses cache manager when provided."""
+
+    class FakeCache:
+        def __init__(self):
+            self.args = None
+
+        def get_repo_contents(self, path, github_token=None, allow_env_token=True):
+            self.args = (path, github_token, allow_env_token)
+            return [
+                {"name": "dir1", "path": "dir1", "type": "dir"},
+                {
+                    "name": "file1.txt",
+                    "path": "file1.txt",
+                    "type": "file",
+                    "download_url": "https://example.com/file1.txt",
+                },
+            ]
+
+    cache = FakeCache()
+    mocker.patch(
+        "fetchtastic.menu_repo.make_github_api_request",
+        side_effect=AssertionError("API request should not be called"),
+    )
+
+    items = menu_repo.fetch_repo_contents(
+        "subdir", allow_env_token=False, github_token="token", cache_manager=cache
+    )
+
+    assert cache.args == ("subdir", "token", False)
+    assert [item["name"] for item in items] == ["dir1", "file1.txt"]
 
 
 def test_select_item(mocker):
@@ -240,6 +273,71 @@ def test_fetch_repo_directories(mocker):
     assert directories == ["dir1", "dir2"]
 
 
+def test_build_firmware_commit_times_no_commits(mocker):
+    """Test prerelease commit time mapping when no commits are returned."""
+    from fetchtastic.download.cache import CacheManager
+
+    cache_manager = CacheManager()
+    mocker.patch(
+        "fetchtastic.menu_repo.PrereleaseHistoryManager.fetch_recent_repo_commits",
+        return_value=[],
+    )
+
+    result = menu_repo._build_firmware_commit_times(
+        cache_manager, github_token="token", allow_env_token=True
+    )
+
+    assert result == {}
+
+
+def test_build_firmware_commit_times_exception(mocker):
+    """Test prerelease commit time mapping when commit fetch fails."""
+    from fetchtastic.download.cache import CacheManager
+
+    cache_manager = CacheManager()
+    mocker.patch(
+        "fetchtastic.menu_repo.PrereleaseHistoryManager.fetch_recent_repo_commits",
+        side_effect=requests.RequestException("boom"),
+    )
+
+    result = menu_repo._build_firmware_commit_times(
+        cache_manager, github_token=None, allow_env_token=True
+    )
+
+    assert result == {}
+
+
+def test_build_firmware_commit_times_success(mocker):
+    """Test prerelease commit time mapping success path."""
+    from datetime import datetime, timezone
+
+    from fetchtastic.download.cache import CacheManager
+
+    cache_manager = CacheManager()
+    mocker.patch(
+        "fetchtastic.menu_repo.PrereleaseHistoryManager.fetch_recent_repo_commits",
+        return_value=[
+            {
+                "commit": {
+                    "message": "2.7.14.e959000 meshtastic/firmware@e959000",
+                    "committer": {"date": "2025-01-02T00:00:00Z"},
+                }
+            }
+        ],
+    )
+    expected = {"firmware-2.7.14.e959000": datetime(2025, 1, 2, tzinfo=timezone.utc)}
+    mocker.patch(
+        "fetchtastic.menu_repo.PrereleaseHistoryManager.extract_prerelease_directory_timestamps",
+        return_value=expected,
+    )
+
+    result = menu_repo._build_firmware_commit_times(
+        cache_manager, github_token="token", allow_env_token=False
+    )
+
+    assert result == expected
+
+
 def test_run_repository_downloader_menu_handles_exception(mocker):
     """Test that run_repository_downloader_menu logs and returns None on errors."""
     mocker.patch("fetchtastic.menu_repo.run_menu", side_effect=RuntimeError("boom"))
@@ -249,6 +347,17 @@ def test_run_repository_downloader_menu_handles_exception(mocker):
 
     assert result is None
     mock_logger.error.assert_called_once()
+
+
+def test_run_repository_downloader_menu_no_selection(mocker):
+    """Test run_repository_downloader_menu when no files are selected."""
+    mocker.patch("fetchtastic.menu_repo.run_menu", return_value=None)
+    mock_logger = mocker.patch("fetchtastic.menu_repo.logger")
+
+    result = menu_repo.run_repository_downloader_menu({"DOWNLOAD_DIR": "/tmp"})
+
+    assert result is None
+    mock_logger.info.assert_called_once_with("No files selected for download.")
 
 
 def test_fetch_directory_contents(mocker):
@@ -304,6 +413,20 @@ def test_run_menu_no_items(mocker):
 
     assert result is None
     mock_print.assert_any_call("No items found in the repository. Exiting.")
+
+
+def test_run_menu_uses_cache_with_empty_config(mocker):
+    """Test run_menu initializes cache with empty config dict."""
+    build_mock = mocker.patch(
+        "fetchtastic.menu_repo._build_firmware_commit_times", return_value={}
+    )
+    mocker.patch("fetchtastic.menu_repo.fetch_repo_contents", return_value=[])
+    mocker.patch("builtins.print")
+
+    result = menu_repo.run_menu({})
+
+    assert result is None
+    build_mock.assert_called_once()
 
 
 def test_run_menu_quit_immediately(mocker):
