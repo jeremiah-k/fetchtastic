@@ -1,5 +1,6 @@
 import pytest
 import requests
+from pick import Option
 
 from fetchtastic import menu_repo
 
@@ -126,18 +127,21 @@ def test_select_item(mocker):
     ]
 
     # 1. Select a directory
-    mock_pick.return_value = ("dir1/", 0)
+    mock_pick.return_value = (Option(label="dir1/", value=items[0]), 0)
     selected = menu_repo.select_item(items)
     assert selected["type"] == "dir"
     assert selected["name"] == "dir1"
 
     # 2. Select "Go back"
-    mock_pick.return_value = ("[Go back to parent directory]", 0)
+    mock_pick.return_value = (
+        Option(label="[Go back to parent directory]", value={"type": "back"}),
+        0,
+    )
     selected = menu_repo.select_item(items, current_path="some/path")
     assert selected["type"] == "back"
 
     # 3. Select "Quit"
-    mock_pick.return_value = ("[Quit]", 1)  # Index depends on options
+    mock_pick.return_value = (Option(label="[Quit]", value={"type": "quit"}), 1)
     selected = menu_repo.select_item(items)
     assert selected["type"] == "quit"
 
@@ -386,16 +390,21 @@ def test_select_item_empty_items():
 
 
 def test_select_item_with_current_path(mocker):
-    """Test select_item with current path (shows go back option)."""
+    """Test select_item with current path (shows go back and current directory)."""
     mock_pick = mocker.patch("fetchtastic.menu_repo.pick")
     items = [{"name": "file1.txt", "path": "file1.txt", "type": "file"}]
 
-    # Test selecting a file when in a subdirectory
-    mock_pick.return_value = ("file1.txt", 1)  # Index 1 because "Go back" is at index 0
+    # Test selecting current directory when in a subdirectory
+    mock_pick.return_value = (
+        Option(
+            label="[Select files in this directory (1 file)]",
+            value={"type": "current"},
+        ),
+        1,
+    )
     selected = menu_repo.select_item(items, current_path="some/path")
 
-    assert selected["type"] == "file"
-    assert selected["name"] == "file1.txt"
+    assert selected["type"] == "current"
 
 
 def test_select_files_empty_files():

@@ -4,6 +4,7 @@ import subprocess
 from unittest.mock import Mock, patch
 
 import pytest
+from pick import Option
 
 # Import package module (matches how users invoke it)
 import fetchtastic.cli as cli
@@ -97,15 +98,19 @@ def test_select_item_empty_list(mocker):
 def test_select_item_single_option(mocker):
     """Test select_item with single option."""
     mock_pick = mocker.patch("fetchtastic.menu_repo.pick")
-    # With current_path="current/path", display_names = ["[Go back to parent directory]", "only_option", "[Quit]"]
-    # So index 1 selects the actual item
-    mock_pick.return_value = ("only_option", 1)
+    mock_pick.return_value = (
+        Option(
+            label="[Select files in this directory (1 file)]",
+            value={"type": "current"},
+        ),
+        1,
+    )
 
     test_items = [{"name": "only_option", "path": "only_option", "type": "file"}]
     result = menu_repo.select_item(test_items, "current/path")
 
     assert result is not None
-    assert result["name"] == "only_option"
+    assert result["type"] == "current"
 
 
 @pytest.mark.user_interface

@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import requests
-from pick import pick
+from pick import Option, pick
 
 from fetchtastic.constants import (
     DEFAULT_PRERELEASE_COMMITS_TO_FETCH,
@@ -279,47 +279,72 @@ def select_item(items, current_path=""):
         print("No items found in repository.")
         return None
 
-    # Create display names for menu
-    display_names = []
-    for item in items:
-        if item["type"] == "dir":
-            display_names.append(f"{item['name']}/")
-        else:
-            display_names.append(item["name"])
+    dirs = [item for item in items if item.get("type") == "dir"]
+    files = [item for item in items if item.get("type") == "file"]
 
-    # Add navigation options
+    # Create display options for the menu.
+    display_options: List[Option] = []
     if current_path:
-        display_names.insert(0, "[Go back to parent directory]")
+        display_options.append(
+            Option(label="[Go back to parent directory]", value={"type": "back"})
+        )
+    if files:
+        file_count = len(files)
+        file_label = "file" if file_count == 1 else "files"
+        display_options.append(
+            Option(
+                label=f"[Select files in this directory ({file_count} {file_label})]",
+                value={"type": "current"},
+            )
+        )
+    for item in dirs:
+        display_options.append(Option(label=f"{item['name']}/", value=item))
+
+    if files:
+        display_options.append(Option(label="Files:", enabled=False))
+        for file_info in files:
+            display_options.append(
+                Option(label=f"  - {file_info['name']}", enabled=False)
+            )
 
     # Always add a quit option
-    display_names.append("[Quit]")
+    display_options.append(Option(label="[Quit]", value={"type": "quit"}))
 
     # Add a title that shows the current path
     path_display = f" - {current_path}" if current_path else ""
     title = f"Select an item to browse{path_display} (press ENTER to navigate, find a directory with files to select and download):"
 
-    option, index = pick(display_names, title, indicator="*")
+    option, index = pick(display_options, title, indicator="*")
 
-    # Handle "Go back" option
-    if current_path and index == 0:
-        # Return a special value to indicate going back
-        return {"type": "back"}
+    if isinstance(option, Option):
+        if isinstance(option.value, dict):
+            return option.value
+        if option.value is not None:
+            return option.value
+        if option.label == "[Quit]":
+            return {"type": "quit"}
+        if option.label == "[Go back to parent directory]":
+            return {"type": "back"}
+        if option.label.startswith("[Select files in this directory"):
+            return {"type": "current"}
+        return None
 
-    # Handle "Quit" option
+    # Fallback for older tests/mocks that return strings.
     if option == "[Quit]":
-        # Return a special value to indicate quitting
         return {"type": "quit"}
-
-    # Adjust index if we added a "Go back" option
-    if current_path and isinstance(index, int):
-        index -= 1
-
-    # Adjust for the quit option which is always at the end
-    if index == len(items):
-        # This shouldn't happen as we already handled quit option above
-        return {"type": "quit"}
-
-    return items[index]
+    if option == "[Go back to parent directory]":
+        return {"type": "back"}
+    if str(option).startswith("[Select files in this directory"):
+        return {"type": "current"}
+    if isinstance(option, str) and option.endswith("/"):
+        name = option[:-1]
+        for item in dirs:
+            if item.get("name") == name:
+                return item
+    for item in items:
+        if item.get("name") == option:
+            return item
+    return None
 
 
 def select_files(files):
@@ -428,6 +453,17 @@ def run_menu(config: Optional[Dict[str, Any]] = None):
             if selected_item.get("type") == "quit":
                 print("Exiting repository browser.")
                 return None
+
+            if selected_item.get("type") == "current":
+                # Show file selection for the current directory
+                files_in_dir = [item for item in items if item["type"] == "file"]
+                if files_in_dir:
+                    selected_files = select_files(files_in_dir)
+                    if selected_files:
+                        break
+                    continue
+                print("No files found in this directory.")
+                continue
 
             if selected_item["type"] == "dir":
                 # Navigate into the directory
