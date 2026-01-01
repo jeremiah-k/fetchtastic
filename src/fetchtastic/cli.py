@@ -12,6 +12,8 @@ import platformdirs
 import yaml
 
 from fetchtastic import log_utils, setup_config
+from fetchtastic.build.base import resolve_android_sdk_root
+from fetchtastic.build.registry import get_build_module
 from fetchtastic.constants import (
     FIRMWARE_DIR_NAME,
     FIRMWARE_DIR_PREFIX,
@@ -367,6 +369,30 @@ def main():
         ),
     )
 
+    # Command to build the Nordic DFU Android app
+    dfu_parser = subparsers.add_parser(
+        "dfu",
+        help="Build the Nordic DFU Android app",
+        description="Clone and build the Nordic DFU Android app using Gradle.",
+    )
+    dfu_subparsers = dfu_parser.add_subparsers(dest="dfu_command")
+    dfu_build_parser = dfu_subparsers.add_parser(
+        "build",
+        help="Build the Nordic DFU Android app",
+        description="Build a debug or release APK for the Nordic DFU Android app.",
+    )
+    dfu_build_parser.add_argument(
+        "--type",
+        choices=("debug", "release"),
+        dest="dfu_build_type",
+        help="Build type to produce",
+    )
+    dfu_build_parser.add_argument(
+        "--no-update",
+        action="store_true",
+        help="Skip updating the DFU repo before building",
+    )
+
     args = parser.parse_args()
 
     if args.command == "setup":
@@ -501,6 +527,8 @@ def main():
             help_command,
             help_subcommand,
             subparsers,
+            dfu_parser,
+            dfu_subparsers,
         )
     elif args.command == "repo":
         display_banner()
@@ -539,6 +567,25 @@ def main():
         else:
             # No repo subcommand provided
             repo_parser.print_help()
+    elif args.command == "dfu":
+        display_banner()
+        _, latest_version, update_available = get_version_info()
+
+        config = setup_config.load_config() or {
+            "BASE_DIR": setup_config.DEFAULT_BASE_DIR
+        }
+
+        if args.dfu_command == "build":
+            run_dfu_build(
+                config,
+                build_type=args.dfu_build_type,
+                allow_update=not args.no_update,
+            )
+
+            if update_available and latest_version:
+                _display_update_reminder(latest_version)
+        else:
+            dfu_parser.print_help()
     elif args.command is None:
         # No command provided
         parser.print_help()
@@ -553,14 +600,17 @@ def show_help(
     help_command,
     help_subcommand,
     main_subparsers=None,
+    dfu_parser=None,
+    dfu_subparsers=None,
 ):
     """
     Show contextual CLI help for a specific command or subcommand.
 
-    If no command is supplied, prints the general help. Handles the "repo" command specially:
-    prints repo help and, if a repo subcommand is supplied, prints that subcommand's help or an
-    available-subcommands listing. For other known top-level commands, prints that command's help.
-    If an unknown command is requested, prints an error and lists available commands when possible.
+    If no command is supplied, prints the general help. Handles the "repo" and "dfu" commands
+    specially: prints command help and, if a subcommand is supplied, prints that subcommand's help
+    or an available-subcommands listing. For other known top-level commands, prints that command's
+    help. If an unknown command is requested, prints an error and lists available commands when
+    possible.
 
     Parameters:
         help_command (str or None): The top-level command to show help for (e.g., "repo", "setup").
@@ -591,6 +641,19 @@ def show_help(
                 available = ", ".join(sorted(repo_subparsers.choices.keys()))
                 print(f"\nUnknown repo subcommand: {help_subcommand}")
                 print(f"Available repo subcommands: {available}")
+        return
+    if help_command == "dfu" and dfu_parser:
+        dfu_parser.print_help()
+
+        if help_subcommand and dfu_subparsers:
+            subparser = dfu_subparsers.choices.get(help_subcommand)
+            if subparser:
+                print(f"\nDFU '{help_subcommand}' command help:")
+                subparser.print_help()
+            else:
+                available = ", ".join(sorted(dfu_subparsers.choices.keys()))
+                print(f"\nUnknown dfu subcommand: {help_subcommand}")
+                print(f"Available dfu subcommands: {available}")
         return
     # Handle other main commands
     elif main_subparsers and help_command in main_subparsers.choices:
@@ -872,6 +935,56 @@ def run_repo_clean(config):
         for err in cleanup_summary.get("errors", []):
             print(f"Cleanup error: {err}", file=sys.stderr)
             log_utils.logger.warning(f"Repository cleanup error: {err}")
+
+
+def run_dfu_build(config, build_type: Optional[str], allow_update: bool) -> None:
+    """
+    Build the Nordic DFU Android app using the build module.
+    """
+    module = get_build_module("dfu")
+    if module is None:
+        log_utils.logger.error("DFU build module is not available.")
+        return
+
+    print("\n--- Nordic DFU Android Build ---")
+    for line in module.describe_requirements():
+        print(f"- {line}")
+
+    if not shutil.which("git"):
+        print("Git is required to clone the DFU repository. Please install git.")
+        return
+
+    sdk_root = resolve_android_sdk_root()
+    if not sdk_root:
+        print("Warning: Android SDK not detected (set ANDROID_SDK_ROOT).")
+
+    if not build_type:
+        build_type = (
+            input("Build type? [d]ebug/[r]elease (default: debug): ").strip().lower()
+            or "d"
+        )
+        build_type = "release" if build_type.startswith("r") else "debug"
+
+    if build_type == "release":
+        missing_env = module.missing_release_env()
+        if missing_env:
+            print("Release builds require signing env vars:")
+            for name in missing_env:
+                print(f"- {name}")
+            print("Set these variables and re-run the build if needed.")
+            return
+
+    base_dir = os.path.expanduser(config.get("BASE_DIR", setup_config.DEFAULT_BASE_DIR))
+    result = module.build(
+        build_type,
+        base_dir=base_dir,
+        sdk_root=sdk_root,
+        allow_update=allow_update,
+    )
+    if result.success:
+        print(result.message)
+    else:
+        print(f"DFU build failed: {result.message}", file=sys.stderr)
 
 
 if __name__ == "__main__":

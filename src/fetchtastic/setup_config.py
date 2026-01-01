@@ -18,6 +18,8 @@ import platformdirs
 import yaml
 
 from fetchtastic import menu_apk, menu_firmware
+from fetchtastic.build.base import resolve_android_sdk_root
+from fetchtastic.build.registry import get_build_module
 from fetchtastic.constants import (
     CONFIG_FILE_NAME,
     CRON_COMMAND_TIMEOUT_SECONDS,
@@ -186,6 +188,7 @@ SETUP_SECTION_CHOICES: Set[str] = {
     "notifications",  # NTFY configuration
     "automation",  # Cron/startup automation choices
     "github",  # GitHub API token configuration
+    "dfu",  # Nordic DFU app clone/build helper
 }
 
 SECTION_SHORTCUTS = {
@@ -195,6 +198,7 @@ SECTION_SHORTCUTS = {
     "n": "notifications",
     "m": "automation",
     "g": "github",
+    "d": "dfu",
 }
 
 
@@ -525,6 +529,7 @@ def _prompt_for_setup_sections() -> Optional[Set[str]]:
     print("  [n] notifications  — NTFY server/topic settings")
     print("  [m] automation     — scheduled/automatic execution options")
     print("  [g] github         — GitHub API token (rate-limit boost)")
+    print("  [d] dfu            — build Nordic DFU Android app (debug/release)")
 
     while True:
         response = input(
@@ -735,6 +740,85 @@ def _setup_android(config: dict, is_first_run: bool, default_versions: int) -> d
     except ValueError:
         print("Invalid number — keeping current value.")
         config["ANDROID_VERSIONS_TO_KEEP"] = int(current_versions)
+    return config
+
+
+def _setup_dfu_build(
+    config: dict, is_partial_run: bool, wants: Callable[[str], bool]
+) -> dict:
+    """
+    Optionally clone and build the Nordic DFU Android app.
+    """
+    if is_partial_run and not wants("dfu"):
+        return config
+
+    module = get_build_module("dfu")
+    if module is None:
+        print("DFU build module is not available.")
+        return config
+
+    print("\n--- Nordic DFU Android Build ---")
+    print(
+        "This will clone the Nordic DFU repo and build a debug or release APK using Gradle."
+    )
+    print("Builds can take several minutes and multiple GB of disk space.\n")
+    for line in module.describe_requirements():
+        print(f"- {line}")
+    if not shutil.which("javac"):
+        print("Warning: javac not found on PATH.")
+
+    sdk_root = resolve_android_sdk_root()
+    if not sdk_root:
+        print("Warning: Android SDK not detected (set ANDROID_SDK_ROOT).")
+
+    build_choice = (
+        input("Build the Nordic DFU APK now? [y/n] (default: no): ").strip().lower()
+        or "n"
+    )
+    if build_choice != "y":
+        print("Skipping DFU build.")
+        return config
+
+    if not shutil.which("git"):
+        print("Git is required to clone the DFU repository. Please install git.")
+        return config
+
+    build_type = (
+        input("Build type? [d]ebug/[r]elease (default: debug): ").strip().lower() or "d"
+    )
+    build_type = "release" if build_type.startswith("r") else "debug"
+
+    if build_type == "release":
+        missing_env = module.missing_release_env()
+        if missing_env:
+            print("Release builds require signing env vars:")
+            for name in missing_env:
+                print(f"- {name}")
+            print("Set these variables and re-run the build if needed.")
+            return config
+
+    allow_update_default = "yes"
+    allow_update = (
+        input(
+            f"Update the DFU repo before building? [y/n] (default: {allow_update_default}): "
+        )
+        .strip()
+        .lower()
+        or allow_update_default[0]
+    )
+
+    print("Building DFU APK (this can take a while)...")
+    base_dir = os.path.expanduser(config.get("BASE_DIR", DEFAULT_BASE_DIR))
+    result = module.build(
+        build_type,
+        base_dir=base_dir,
+        sdk_root=sdk_root,
+        allow_update=allow_update == "y",
+    )
+    if result.success and result.dest_path:
+        print(f"DFU APK saved to: {result.dest_path}")
+    else:
+        print(f"DFU build failed: {result.message}")
     return config
 
 
@@ -1742,6 +1826,9 @@ def run_setup(
     # Handle firmware configuration
     if save_firmware and (not is_partial_run or wants("firmware")):
         config = _setup_firmware(config, is_first_run, default_versions_to_keep)
+
+    # Handle optional Nordic DFU app build
+    config = _setup_dfu_build(config, is_partial_run, wants)
 
     # Ask if the user wants to only download when connected to Wi-Fi (Termux only)
     if is_termux():
