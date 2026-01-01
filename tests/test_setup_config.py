@@ -9,6 +9,7 @@ import yaml
 
 # Import package module (matches real usage)
 import fetchtastic.setup_config as setup_config
+from fetchtastic.build.base import BuildResult
 from tests.test_constants import TEST_CONFIG
 
 
@@ -1244,6 +1245,34 @@ def test_run_setup_first_run_termux(  # noqa: ARG001
 
 @pytest.mark.configuration
 @pytest.mark.unit
+def test_run_setup_termux_wifi_prompt_updates_config(mocker):
+    """Test Termux wifi-only prompt updates config during setup."""
+    from fetchtastic import setup_config
+
+    config = {}
+    mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
+    mocker.patch("fetchtastic.setup_config.config_exists", return_value=(False, None))
+    mocker.patch("fetchtastic.setup_config._setup_base", return_value=config)
+    mocker.patch(
+        "fetchtastic.setup_config._setup_downloads",
+        return_value=(config, False, False),
+    )
+    mocker.patch("fetchtastic.setup_config._setup_dfu_build", return_value=config)
+    mocker.patch("fetchtastic.setup_config._setup_automation", return_value=config)
+    mocker.patch("fetchtastic.setup_config._setup_notifications", return_value=config)
+    mocker.patch("fetchtastic.setup_config._setup_github", return_value=config)
+    mocker.patch("fetchtastic.setup_config.os.path.exists", return_value=True)
+    mocker.patch("fetchtastic.setup_config.yaml.dump")
+    mocker.patch("builtins.open", mock_open())
+    mocker.patch("builtins.input", return_value="y")
+
+    setup_config.run_setup(sections=["base"], perform_initial_download=False)
+
+    assert config["WIFI_ONLY"] is True
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
 @patch("builtins.input")
 @patch("fetchtastic.setup_config.platform.system", return_value="Linux")
 @patch("fetchtastic.setup_config.is_termux", return_value=False)
@@ -1611,6 +1640,36 @@ def test_setup_dfu_build_user_declines(mocker, tmp_path):
 
     assert result == config
     module.build.assert_not_called()
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_dfu_build_success(mocker, tmp_path):
+    """Test _setup_dfu_build runs build flow when user accepts."""
+    from fetchtastic import setup_config
+
+    config = {"BASE_DIR": str(tmp_path)}
+    module = mocker.MagicMock()
+    mocker.patch("fetchtastic.setup_config.get_build_module", return_value=module)
+    mocker.patch("fetchtastic.setup_config.print_build_requirements")
+    mocker.patch("fetchtastic.setup_config.prompt_yes_no", return_value=True)
+    mocker.patch("fetchtastic.setup_config.shutil.which", return_value="/usr/bin/javac")
+    result = BuildResult(
+        success=True,
+        message="ok",
+        build_type="debug",
+        dest_path=str(tmp_path / "DFU-ok.apk"),
+    )
+    mock_build = mocker.patch(
+        "fetchtastic.setup_config.run_module_build", return_value=result
+    )
+
+    updated = setup_config._setup_dfu_build(
+        config, is_partial_run=False, wants=lambda section: section == "dfu"
+    )
+
+    assert updated == config
+    mock_build.assert_called_once()
 
 
 @pytest.mark.configuration
