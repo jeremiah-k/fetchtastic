@@ -11,6 +11,7 @@ Last updated: 2026-01-01
 
 - Research done on DFU repo build tooling, plugin versions, and SDK requirements.
 - Termux build guidance captured from provided Reddit post and Termux issue comment.
+- Verified current Termux package versions from `packages.termux.dev` (openjdk-17 17.0.17-1, openjdk-21 21.0.9-1, gradle 9.2.0, aapt2 13.0.0.6-23, apksigner 33.0.1-1, android-tools 35.0.2-6, d8 13.0.0.6-23).
 - Implemented a new setup section (`dfu`) and dedicated build module with clone/build/copy flow (pending review).
 - Added a `fetchtastic dfu build` CLI command to run the DFU build outside of setup.
 - Added a `fetchtastic dfu setup` CLI command to install dependencies and configure JAVA_HOME/ANDROID_SDK_ROOT.
@@ -28,7 +29,10 @@ Last updated: 2026-01-01
 - Termux build instructions from:
   - Reddit: build apps on Termux (manual aapt/dx flow; Gradle caveats).
   - Termux issue comment: gradle + openjdk-17 + SDK manager + workarounds.
-- Attempted to re-fetch Termux sources via curl; GitHub returned generic HTML and Reddit was blocked by network security (used provided excerpts instead).
+- Termux package index: `https://packages.termux.dev/apt/termux-main/`.
+- Android environment variable docs: `https://developer.android.com/tools/variables`.
+- Termux NDK reference: `https://github.com/lzhiyong/termux-ndk`.
+- Termux SDK tool alternatives: `https://github.com/dingyi222666/termux-sdk-tools` (deprecated, points to aapt2 replacements).
 
 ## DFU Build Requirements (from Nordic config)
 
@@ -43,18 +47,22 @@ Last updated: 2026-01-01
 ### Linux / macOS
 
 - Need JDK 17, Android SDK with API 36 (platforms;android-36) and build-tools compatible with AGP 8.x.
-- `ANDROID_HOME`/`ANDROID_SDK_ROOT` set; otherwise Fetchtastic looks for `~/Android/Sdk` or `~/Library/Android/sdk`.
+- `ANDROID_HOME`/`ANDROID_SDK_ROOT` set; otherwise Fetchtastic looks for `~/Android/Sdk` or `~/Library/Android/sdk`. Android docs currently note `ANDROID_SDK_ROOT` as deprecated; Fetchtastic sets both for compatibility.
 - Build command: `./gradlew :app:assembleDebug`.
 
 ### Termux
 
-- User-provided short path: `pkg install openjdk-17 git aapt dx` (manual build).
+- 2026 package baseline (from `packages.termux.dev`):
+  - Required: `openjdk-17`, `git`, `curl`, `unzip`, `zip`.
+  - Recommended for on-device Android builds: `gradle`, `aapt2`, `apksigner`, `d8`, `android-tools`.
+- JAVA_HOME typically resolves to `$PREFIX/lib/jvm/java-17-openjdk` (verify via `readlink -f $(command -v javac)`).
+- Download Android cmdline-tools from `https://developer.android.com/studio#command-tools` and install to `~/Android/sdk/cmdline-tools/latest`.
 - Gradle build is possible but heavy. Known issues and fixes:
-  - Need `gradle` + `openjdk-17` + Android SDK cmdline tools + SDK platforms/build-tools.
-  - JDK 17 module access requires `--add-opens=java.base/java.io=ALL-UNNAMED` in `gradle.properties` (per Termux issue comment).
-  - SDK build-tools often require termux-friendly binaries (Lzhiyong sdk-tools) and symlink hacks.
+  - If Gradle fails with module access errors, add `org.gradle.jvmargs=--add-opens=java.base/java.io=ALL-UNNAMED` to `gradle.properties`.
+  - If Gradle fails with aapt2 exec errors, add `android.aapt2FromMavenOverride=$(command -v aapt2)` to `gradle.properties`.
+  - Google build-tools are x86; on-device builds often need Termux-provided binaries (aapt2/apksigner/d8) instead of prebuilt build-tools.
 - Expected disk usage: 5-10GB+ (SDK + Gradle caches).
-- For Fetchtastic: likely provide prerequisite checklist and let user opt-in before attempting build.
+- For Fetchtastic: provide prerequisite checklist and let user opt-in before attempting build.
 - `fetchtastic dfu setup` can install Termux packages and update shell rc files with JAVA_HOME/ANDROID_SDK_ROOT.
 
 ### Windows

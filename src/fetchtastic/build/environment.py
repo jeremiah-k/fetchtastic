@@ -26,6 +26,14 @@ TERMUX_PACKAGE_COMMANDS: Dict[str, Sequence[str]] = {
     "zip": ("zip",),
 }
 
+TERMUX_OPTIONAL_PACKAGE_COMMANDS: Dict[str, Sequence[str]] = {
+    "gradle": ("gradle",),
+    "aapt2": ("aapt2",),
+    "apksigner": ("apksigner",),
+    "d8": ("d8",),
+    "android-tools": ("adb",),
+}
+
 
 @dataclass
 class BuildEnvironment:
@@ -53,6 +61,17 @@ def detect_missing_termux_packages() -> List[str]:
     """
     missing: List[str] = []
     for package, commands in TERMUX_PACKAGE_COMMANDS.items():
+        if not any(shutil.which(cmd) for cmd in commands):
+            missing.append(package)
+    return missing
+
+
+def detect_missing_termux_optional_packages() -> List[str]:
+    """
+    Return optional Termux packages whose commands are missing from PATH.
+    """
+    missing: List[str] = []
+    for package, commands in TERMUX_OPTIONAL_PACKAGE_COMMANDS.items():
         if not any(shutil.which(cmd) for cmd in commands):
             missing.append(package)
     return missing
@@ -92,7 +111,7 @@ def default_android_sdk_root() -> str:
     Return a default Android SDK root based on platform.
     """
     if is_termux():
-        return os.path.expanduser("~/Android/Sdk")
+        return os.path.expanduser("~/Android/sdk")
     if os.name == "nt":
         return os.path.expanduser("~/AppData/Local/Android/Sdk")
     if platform.system().lower() == "darwin":

@@ -19,6 +19,7 @@ from fetchtastic.build.environment import (
     build_shell_exports,
     default_android_sdk_root,
     detect_java_home,
+    detect_missing_termux_optional_packages,
     detect_missing_termux_packages,
     find_sdkmanager,
     install_android_sdk_packages,
@@ -111,6 +112,20 @@ def prepare_build_environment(
         if not install_termux_packages(env_status.missing_packages):
             return None
         env_status = check_build_environment(module)
+
+    if is_termux():
+        optional_missing = detect_missing_termux_optional_packages()
+        if optional_missing:
+            print("Recommended Termux packages for Android build tooling:")
+            for package in optional_missing:
+                print(f"- {package}")
+            if not install_missing_packages:
+                print("Install these packages and re-run setup if builds fail.")
+            elif prompt_yes_no(
+                "Install recommended Termux packages now? [y/n] (default: yes): ",
+                default="yes",
+            ):
+                install_termux_packages(optional_missing)
 
     if not env_status.java_home:
         print("JAVA_HOME is not set and could not be detected.")
