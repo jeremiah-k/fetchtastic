@@ -1,5 +1,6 @@
 import pytest
 import requests
+from pick import Option
 
 from fetchtastic import menu_repo
 
@@ -12,8 +13,8 @@ def mock_repo_contents():
     Return a mock list of items shaped like the GitHub repository contents API.
 
     The list includes a mix of directories and files used by tests:
-    - Directories: three firmware/event entries and one `.git` (the `.git` entry is intended to be excluded by the fetching logic).
-    - Files: `index.html`, `meshtastic-deb.asc`, and `README.md` (the README and some other files are expected to be filtered out by the production logic).
+    - Directories: three firmware/event entries and `.git`/`.github` (both intended to be excluded by the fetching logic).
+    - Files: `index.html`, `meshtastic-deb.asc`, and `README.md` (included by the production logic; only `.git` is excluded).
 
     Returns:
         list[dict]: Mock content entries with keys like `name`, `path`, `type`, and optionally `download_url`.
@@ -32,6 +33,7 @@ def mock_repo_contents():
         },
         {"name": "event", "path": "event", "type": "dir"},
         {"name": ".git", "path": ".git", "type": "dir"},  # Should be excluded
+        {"name": ".github", "path": ".github", "type": "dir"},  # Should be excluded
         # Files
         {
             "name": "index.html",
@@ -50,7 +52,7 @@ def mock_repo_contents():
             "path": "README.md",
             "type": "file",
             "download_url": "url3",
-        },  # Should be excluded
+        },
     ]
 
 
@@ -68,10 +70,10 @@ def test_fetch_repo_contents(mocker, mock_repo_contents):
     mocker.patch.object(fetchtastic.utils, "_rate_limit_cache", {})
     items = menu_repo.fetch_repo_contents()
 
-    # Check filtering - should be 4 items (3 dirs, 1 file) - README.md and meshtastic-deb.asc filtered
-    assert len(items) == 4
+    # Check filtering - should be 6 items (3 dirs, 3 files) - .git excluded
+    assert len(items) == 6
     assert not any(item["name"] == ".git" for item in items)
-    assert not any(item["name"] == "README.md" for item in items)
+    assert not any(item["name"] == ".github" for item in items)
 
     # Check sorting
     assert (
@@ -79,31 +81,69 @@ def test_fetch_repo_contents(mocker, mock_repo_contents):
     )  # Firmware dirs sorted descending
     assert items[1]["name"] == "firmware-2.7.3.cf574c7"
     assert items[2]["name"] == "event"  # Other dirs sorted ascending
-    assert items[3]["name"] == "index.html"  # Files sorted ascending
+    assert items[3]["name"] == "README.md"  # Files sorted ascending
+    assert items[4]["name"] == "index.html"
+    assert items[5]["name"] == "meshtastic-deb.asc"
+
+
+def test_fetch_repo_contents_uses_cache_manager(mocker):
+    """Test fetch_repo_contents uses cache manager when provided."""
+
+    class FakeCache:
+        def __init__(self):
+            self.args = None
+
+        def get_repo_contents(self, path, github_token=None, allow_env_token=True):
+            self.args = (path, github_token, allow_env_token)
+            return [
+                {"name": "dir1", "path": "dir1", "type": "dir"},
+                {
+                    "name": "file1.txt",
+                    "path": "file1.txt",
+                    "type": "file",
+                    "download_url": "https://example.com/file1.txt",
+                },
+            ]
+
+    cache = FakeCache()
+    mocker.patch(
+        "fetchtastic.menu_repo.make_github_api_request",
+        side_effect=AssertionError("API request should not be called"),
+    )
+
+    items = menu_repo.fetch_repo_contents(
+        "subdir", allow_env_token=False, github_token="token", cache_manager=cache
+    )
+
+    assert cache.args == ("subdir", "token", False)
+    assert [item["name"] for item in items] == ["dir1", "file1.txt"]
 
 
 def test_select_item(mocker):
     """Test the user item selection menu logic."""
     # Patch where pick is looked up, which is in the menu_repo module
-    mock_pick = mocker.patch("fetchtastic.menu_repo.pick")
+    mock_pick = mocker.patch("fetchtastic.menu_repo._pick_menu")
     items = [
         {"name": "dir1", "path": "dir1", "type": "dir"},
         {"name": "file1.txt", "path": "file1.txt", "type": "file"},
     ]
 
     # 1. Select a directory
-    mock_pick.return_value = ("dir1/", 0)
+    mock_pick.return_value = (Option(label="dir1/", value=items[0]), 0)
     selected = menu_repo.select_item(items)
     assert selected["type"] == "dir"
     assert selected["name"] == "dir1"
 
     # 2. Select "Go back"
-    mock_pick.return_value = ("[Go back to parent directory]", 0)
+    mock_pick.return_value = (
+        Option(label="[Go back to parent directory]", value={"type": "back"}),
+        0,
+    )
     selected = menu_repo.select_item(items, current_path="some/path")
     assert selected["type"] == "back"
 
     # 3. Select "Quit"
-    mock_pick.return_value = ("[Quit]", 1)  # Index depends on options
+    mock_pick.return_value = (Option(label="[Quit]", value={"type": "quit"}), 1)
     selected = menu_repo.select_item(items)
     assert selected["type"] == "quit"
 
@@ -111,22 +151,25 @@ def test_select_item(mocker):
 def test_select_files(mocker):
     """Test the user file selection menu logic."""
     # Patch where pick is looked up
-    mock_pick = mocker.patch("fetchtastic.menu_repo.pick")
+    mock_pick = mocker.patch("fetchtastic.menu_repo._pick_menu")
     files = [
         {"name": "file1.txt", "download_url": "url1"},
         {"name": "file2.txt", "download_url": "url2"},
     ]
 
     # 1. Select some files
-    mock_pick.return_value = [("file1.txt", 0), ("file2.txt", 1)]
+    mock_pick.return_value = [
+        (Option(label="file1.txt", value=files[0]), 0),
+        (Option(label="file2.txt", value=files[1]), 1),
+    ]
     selected = menu_repo.select_files(files)
     assert len(selected) == 2
     assert selected[0]["name"] == "file1.txt"
 
     # 2. Select "Quit"
-    mock_pick.return_value = [("[Quit]", 2)]
+    mock_pick.return_value = [(Option(label="[Quit]", value={"type": "quit"}), 2)]
     selected = menu_repo.select_files(files)
-    assert selected is None
+    assert selected == {"type": "quit"}
 
     # 3. Select nothing
     mock_pick.return_value = []
@@ -239,6 +282,71 @@ def test_fetch_repo_directories(mocker):
     assert directories == ["dir1", "dir2"]
 
 
+def test_build_firmware_commit_times_no_commits(mocker):
+    """Test prerelease commit time mapping when no commits are returned."""
+    from fetchtastic.download.cache import CacheManager
+
+    cache_manager = CacheManager()
+    mocker.patch(
+        "fetchtastic.menu_repo.PrereleaseHistoryManager.fetch_recent_repo_commits",
+        return_value=[],
+    )
+
+    result = menu_repo._build_firmware_commit_times(
+        cache_manager, github_token="token", allow_env_token=True
+    )
+
+    assert result == {}
+
+
+def test_build_firmware_commit_times_exception(mocker):
+    """Test prerelease commit time mapping when commit fetch fails."""
+    from fetchtastic.download.cache import CacheManager
+
+    cache_manager = CacheManager()
+    mocker.patch(
+        "fetchtastic.menu_repo.PrereleaseHistoryManager.fetch_recent_repo_commits",
+        side_effect=requests.RequestException("boom"),
+    )
+
+    result = menu_repo._build_firmware_commit_times(
+        cache_manager, github_token=None, allow_env_token=True
+    )
+
+    assert result == {}
+
+
+def test_build_firmware_commit_times_success(mocker):
+    """Test prerelease commit time mapping success path."""
+    from datetime import datetime, timezone
+
+    from fetchtastic.download.cache import CacheManager
+
+    cache_manager = CacheManager()
+    mocker.patch(
+        "fetchtastic.menu_repo.PrereleaseHistoryManager.fetch_recent_repo_commits",
+        return_value=[
+            {
+                "commit": {
+                    "message": "2.7.14.e959000 meshtastic/firmware@e959000",
+                    "committer": {"date": "2025-01-02T00:00:00Z"},
+                }
+            }
+        ],
+    )
+    expected = {"firmware-2.7.14.e959000": datetime(2025, 1, 2, tzinfo=timezone.utc)}
+    mocker.patch(
+        "fetchtastic.menu_repo.PrereleaseHistoryManager.extract_prerelease_directory_timestamps",
+        return_value=expected,
+    )
+
+    result = menu_repo._build_firmware_commit_times(
+        cache_manager, github_token="token", allow_env_token=False
+    )
+
+    assert result == expected
+
+
 def test_run_repository_downloader_menu_handles_exception(mocker):
     """Test that run_repository_downloader_menu logs and returns None on errors."""
     mocker.patch("fetchtastic.menu_repo.run_menu", side_effect=RuntimeError("boom"))
@@ -248,6 +356,17 @@ def test_run_repository_downloader_menu_handles_exception(mocker):
 
     assert result is None
     mock_logger.error.assert_called_once()
+
+
+def test_run_repository_downloader_menu_no_selection(mocker):
+    """Test run_repository_downloader_menu when no files are selected."""
+    mocker.patch("fetchtastic.menu_repo.run_menu", return_value=None)
+    mock_logger = mocker.patch("fetchtastic.menu_repo.logger")
+
+    result = menu_repo.run_repository_downloader_menu({"DOWNLOAD_DIR": "/tmp"})
+
+    assert result is None
+    mock_logger.info.assert_called_once_with("No files selected for download.")
 
 
 def test_fetch_directory_contents(mocker):
@@ -276,16 +395,21 @@ def test_select_item_empty_items():
 
 
 def test_select_item_with_current_path(mocker):
-    """Test select_item with current path (shows go back option)."""
-    mock_pick = mocker.patch("fetchtastic.menu_repo.pick")
+    """Test select_item with current path (shows go back and current directory)."""
+    mock_pick = mocker.patch("fetchtastic.menu_repo._pick_menu")
     items = [{"name": "file1.txt", "path": "file1.txt", "type": "file"}]
 
-    # Test selecting a file when in a subdirectory
-    mock_pick.return_value = ("file1.txt", 1)  # Index 1 because "Go back" is at index 0
+    # Test selecting current directory when in a subdirectory
+    mock_pick.return_value = (
+        Option(
+            label="[Select files in this directory (1 file)]",
+            value={"type": "current"},
+        ),
+        1,
+    )
     selected = menu_repo.select_item(items, current_path="some/path")
 
-    assert selected["type"] == "file"
-    assert selected["name"] == "file1.txt"
+    assert selected["type"] == "current"
 
 
 def test_select_files_empty_files():
@@ -303,6 +427,20 @@ def test_run_menu_no_items(mocker):
 
     assert result is None
     mock_print.assert_any_call("No items found in the repository. Exiting.")
+
+
+def test_run_menu_uses_cache_with_empty_config(mocker):
+    """Test run_menu initializes cache with empty config dict."""
+    build_mock = mocker.patch(
+        "fetchtastic.menu_repo._build_firmware_commit_times", return_value={}
+    )
+    mocker.patch("fetchtastic.menu_repo.fetch_repo_contents", return_value=[])
+    mocker.patch("builtins.print")
+
+    result = menu_repo.run_menu({})
+
+    assert result is None
+    build_mock.assert_called_once()
 
 
 def test_run_menu_quit_immediately(mocker):
@@ -353,19 +491,23 @@ def test_run_menu_user_cancels_file_selection(mocker):
     ]  # Called multiple times
     mocker.patch("fetchtastic.menu_repo.fetch_repo_contents", side_effect=fetch_calls)
 
-    # Select directory, then quit from file selection, then quit from directory
+    # Select directory, then open current directory file selection, then quit
     select_item_calls = [
         {"name": "dir1", "type": "dir", "path": "dir1"},
+        {"type": "current"},
         {"type": "quit"},
     ]
     mocker.patch("fetchtastic.menu_repo.select_item", side_effect=select_item_calls)
 
     # User cancels file selection
-    mocker.patch("fetchtastic.menu_repo.select_files", return_value=None)
+    mock_select_files = mocker.patch(
+        "fetchtastic.menu_repo.select_files", return_value=None
+    )
 
     result = menu_repo.run_menu()
 
     assert result is None
+    mock_select_files.assert_called_once()
 
 
 def test_run_menu_exception_handling(mocker):
@@ -408,7 +550,7 @@ def test_fetch_repo_contents_debug_logging(mocker, mock_repo_contents):
     mock_logger.debug.assert_called_with(
         f"Fetched {len(mock_repo_contents)} items from repository"
     )
-    assert len(items) == 4  # Filtered items
+    assert len(items) == 6  # Filtered items
 
 
 def test_fetch_repo_contents_debug_logging_no_list_response(mocker):
@@ -471,6 +613,36 @@ def test_process_repo_contents_invalid_version():
 
     # Should still process both items
     assert len(items) == 2
-    # Both get version "0", sorted by name descending: 'i' > '2' so invalid comes first
-    assert items[0]["name"] == "firmware-invalid-version"
+    # Valid firmware version should sort ahead of invalid entries
+    assert items[0]["name"] == "firmware-2.7.4.c1f4f79"
+    assert items[1]["name"] == "firmware-invalid-version"
+
+
+def test_process_repo_contents_sort_by_commit_time():
+    """Test _process_repo_contents sorting using commit timestamps."""
+    from datetime import datetime, timezone
+
+    contents = [
+        {
+            "name": "firmware-2.7.4.c1f4f79",
+            "path": "firmware-2.7.4.c1f4f79",
+            "type": "dir",
+        },
+        {
+            "name": "firmware-2.7.4.ddee111",
+            "path": "firmware-2.7.4.ddee111",
+            "type": "dir",
+        },
+    ]
+
+    commit_times = {
+        "firmware-2.7.4.ddee111": datetime(2024, 1, 2, tzinfo=timezone.utc),
+        "firmware-2.7.4.c1f4f79": datetime(2024, 1, 1, tzinfo=timezone.utc),
+    }
+
+    items = menu_repo._process_repo_contents(
+        contents, firmware_commit_times=commit_times
+    )
+
+    assert items[0]["name"] == "firmware-2.7.4.ddee111"
     assert items[1]["name"] == "firmware-2.7.4.c1f4f79"

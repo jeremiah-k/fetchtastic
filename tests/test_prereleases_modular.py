@@ -143,6 +143,45 @@ def test_prerelease_manager_create_default_entry(prerelease_manager):
     assert entry == expected
 
 
+def test_extract_prerelease_directory_timestamps(prerelease_manager):
+    """Test extracting prerelease directory timestamps from commit history."""
+    commits = [
+        "not-a-dict",
+        {"commit": {"message": 123, "committer": {"date": "2025-01-01T00:00:00Z"}}},
+        {
+            "commit": {
+                "message": "Unrelated commit message",
+                "committer": {"date": "2025-01-01T00:00:00Z"},
+            }
+        },
+        {
+            "commit": {
+                "message": "2.7.14.e959000 meshtastic/firmware@e959000",
+                "committer": {},
+            }
+        },
+        {
+            "commit": {
+                "message": "2.7.14.e959000 meshtastic/firmware@e959000",
+                "committer": {"date": "2025-01-01T00:00:00Z"},
+            }
+        },
+        {
+            "commit": {
+                "message": "2.7.14.e959000 meshtastic/firmware@e959000",
+                "committer": {"date": "2025-01-02T00:00:00Z"},
+            }
+        },
+    ]
+
+    timestamps = prerelease_manager.extract_prerelease_directory_timestamps(commits)
+
+    assert list(timestamps.keys()) == ["firmware-2.7.14.e959000"]
+    assert timestamps["firmware-2.7.14.e959000"] == datetime(
+        2025, 1, 2, tzinfo=timezone.utc
+    )
+
+
 def test_cache_manager_commit_timestamp(cache_manager):
     """Test commit timestamp caching."""
     # Mock response for successful API call

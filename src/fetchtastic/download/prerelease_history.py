@@ -166,6 +166,46 @@ class PrereleaseHistoryManager:
 
         return all_commits[:limit]
 
+    def extract_prerelease_directory_timestamps(
+        self, commits: List[Dict[str, Any]]
+    ) -> Dict[str, datetime]:
+        """
+        Build a mapping of prerelease firmware directory names to their add-commit timestamps.
+
+        Scans the provided commit list for commit messages that match the prerelease
+        add pattern and records the committer timestamp for each corresponding
+        firmware directory (keyed by the lowercase directory name).
+
+        Parameters:
+            commits (List[Dict[str, Any]]): Commit objects as returned by the GitHub API.
+
+        Returns:
+            Dict[str, datetime]: Mapping of lowercase firmware directory name to commit datetime.
+        """
+        timestamps: Dict[str, datetime] = {}
+
+        for commit in commits or []:
+            if not isinstance(commit, dict):
+                continue
+            commit_info = commit.get("commit") or {}
+            message = commit_info.get("message") or ""
+            if not isinstance(message, str):
+                continue
+            m_add = self._PRERELEASE_ADD_RX.match(message.strip())
+            if not m_add:
+                continue
+            base_version, short_hash = m_add.group(1), m_add.group(2)
+            directory = f"{FIRMWARE_DIR_PREFIX}{base_version}.{short_hash}".lower()
+            timestamp_str = commit_info.get("committer", {}).get("date")
+            timestamp = parse_iso_datetime_utc(timestamp_str)
+            if timestamp is None:
+                continue
+            existing = timestamps.get(directory)
+            if existing is None or timestamp > existing:
+                timestamps[directory] = timestamp
+
+        return timestamps
+
     @staticmethod
     def _create_default_prerelease_entry(
         *, directory: str, identifier: str, base_version: str, commit_hash: str
