@@ -50,7 +50,7 @@ def mock_repo_contents():
             "path": "README.md",
             "type": "file",
             "download_url": "url3",
-        },  # Included
+        },
     ]
 
 

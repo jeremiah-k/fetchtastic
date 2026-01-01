@@ -21,6 +21,7 @@ from fetchtastic.utils import make_github_api_request
 # Module-level constants for repository content filtering
 EXCLUDED_DIRS = [".git", "node_modules", "__pycache__", ".vscode"]
 EXCLUDED_FILES: List[str] = []
+_VERSION_MANAGER = VersionManager()
 
 
 def _process_repo_contents(
@@ -64,7 +65,7 @@ def _process_repo_contents(
     other_dirs = [d for d in dirs if not d["name"].startswith(FIRMWARE_DIR_PREFIX)]
 
     firmware_commit_times = firmware_commit_times or {}
-    version_manager = VersionManager()
+    version_manager = _VERSION_MANAGER
 
     def _lookup_commit_time(name: str) -> Optional[datetime]:
         return firmware_commit_times.get(name.lower())
