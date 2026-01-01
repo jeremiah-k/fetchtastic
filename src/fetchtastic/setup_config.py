@@ -19,7 +19,9 @@ import yaml
 
 from fetchtastic import menu_apk, menu_firmware
 from fetchtastic.build.interactive import (
+    prepare_build_environment,
     print_build_requirements,
+    prompt_build_type,
     prompt_yes_no,
     run_module_build,
 )
@@ -771,11 +773,19 @@ def _setup_dfu_build(
         print("Skipping DFU build.")
         return config
 
+    env_status = prepare_build_environment(module)
+    if env_status is None or not env_status.is_ready():
+        return config
+
+    build_type = prompt_build_type()
+
     base_dir = os.path.expanduser(config.get("BASE_DIR", DEFAULT_BASE_DIR))
     result = run_module_build(
         module,
         base_dir=base_dir,
-        prompt_for_build_type=True,
+        build_type=build_type,
+        sdk_root=env_status.sdk_root,
+        prompt_for_build_type=False,
         prompt_for_update=True,
         update_prompt="Update the DFU repo before building? [y/n] (default: yes): ",
         start_message="Building DFU APK (this can take a while)...",

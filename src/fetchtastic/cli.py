@@ -12,7 +12,15 @@ import platformdirs
 import yaml
 
 from fetchtastic import log_utils, setup_config
-from fetchtastic.build.interactive import print_build_requirements, run_module_build
+from fetchtastic.build.environment import build_shell_exports, update_process_env
+from fetchtastic.build.interactive import (
+    check_build_environment,
+    prepare_build_environment,
+    print_build_requirements,
+    prompt_build_type,
+    prompt_yes_no,
+    run_module_build,
+)
 from fetchtastic.build.registry import get_build_module
 from fetchtastic.constants import (
     FIRMWARE_DIR_NAME,
@@ -392,6 +400,26 @@ def main():
         action="store_true",
         help="Skip updating the DFU repo before building",
     )
+    dfu_setup_parser = dfu_subparsers.add_parser(
+        "setup",
+        help="Prepare the DFU build environment",
+        description="Install dependencies and configure environment variables for DFU builds.",
+    )
+    dfu_setup_parser.add_argument(
+        "--no-install",
+        action="store_true",
+        help="Skip installing missing Termux packages",
+    )
+    dfu_setup_parser.add_argument(
+        "--no-shell",
+        action="store_true",
+        help="Skip updating shell configuration files",
+    )
+    dfu_setup_parser.add_argument(
+        "--no-sdk",
+        action="store_true",
+        help="Skip installing missing Android SDK packages",
+    )
 
     args = parser.parse_args()
 
@@ -584,6 +612,12 @@ def main():
 
             if update_available and latest_version:
                 _display_update_reminder(latest_version)
+        elif args.dfu_command == "setup":
+            run_dfu_setup(
+                install_missing_packages=not args.no_install,
+                configure_shell=not args.no_shell,
+                install_sdk_packages=not args.no_sdk,
+            )
         else:
             dfu_parser.print_help()
     elif args.command is None:
@@ -937,6 +971,35 @@ def run_repo_clean(config):
             log_utils.logger.warning(f"Repository cleanup error: {err}")
 
 
+def run_dfu_setup(
+    *,
+    install_missing_packages: bool = True,
+    configure_shell: bool = True,
+    install_sdk_packages: bool = True,
+) -> None:
+    """
+    Prepare the environment for DFU builds.
+    """
+    module = get_build_module("dfu")
+    if module is None:
+        log_utils.logger.error("DFU build module is not available.")
+        return
+
+    print("\n--- Nordic DFU Build Setup ---")
+    print_build_requirements(module)
+
+    env_status = prepare_build_environment(
+        module,
+        install_missing_packages=install_missing_packages,
+        configure_shell=configure_shell,
+        install_sdk_packages=install_sdk_packages,
+    )
+    if env_status and env_status.is_ready():
+        print("DFU build environment is ready.")
+    else:
+        print("DFU build environment is not ready yet.")
+
+
 def run_dfu_build(config, build_type: Optional[str], allow_update: bool) -> None:
     """
     Build the Nordic DFU Android app using the build module.
@@ -949,13 +1012,34 @@ def run_dfu_build(config, build_type: Optional[str], allow_update: bool) -> None
     print("\n--- Nordic DFU Android Build ---")
     print_build_requirements(module)
 
+    env_status = check_build_environment(module)
+    if not env_status.is_ready():
+        print("DFU build environment is not ready.")
+        if not prompt_yes_no(
+            "Run 'fetchtastic dfu setup' now? [y/n] (default: yes): ",
+            default="yes",
+        ):
+            return
+        env_status = prepare_build_environment(module)
+    if env_status is None or not env_status.is_ready():
+        return
+
+    exports, path_entries = build_shell_exports(
+        env_status.java_home, env_status.sdk_root
+    )
+    update_process_env(exports, path_entries)
+
+    if not build_type:
+        build_type = prompt_build_type()
+
     base_dir = os.path.expanduser(config.get("BASE_DIR", setup_config.DEFAULT_BASE_DIR))
     result = run_module_build(
         module,
         base_dir=base_dir,
         build_type=build_type,
         allow_update=allow_update,
-        prompt_for_build_type=True,
+        sdk_root=env_status.sdk_root,
+        prompt_for_build_type=False,
     )
     if result is None:
         return

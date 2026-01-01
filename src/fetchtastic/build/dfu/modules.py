@@ -20,7 +20,8 @@ DFU_REQUIREMENTS = {
         "Gradle wrapper downloads dependencies (network required)",
     ],
     "termux": [
-        "Packages: openjdk-17, git, gradle",
+        "Packages: openjdk-17, git, curl, unzip, zip",
+        "JAVA_HOME set to the OpenJDK 17 install",
         "Android SDK cmdline-tools + platforms;android-36 + build-tools",
         "Extra SDK tool workarounds may be required (see docs/dfu-build-progress.md)",
         "Gradle builds can require multiple GB of disk space",
@@ -59,6 +60,11 @@ class DFUBuildModule(GradleBuildModule):
                 "KEYSTORE_PSWD",
                 "KEYSTORE_ALIAS",
                 "KEYSTORE_KEY_PSWD",
+            ),
+            required_sdk_packages=(
+                "platforms;android-36",
+                "build-tools;36.0.0",
+                "platform-tools",
             ),
             requirements=DFU_REQUIREMENTS,
         )

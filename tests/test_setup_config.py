@@ -10,6 +10,7 @@ import yaml
 # Import package module (matches real usage)
 import fetchtastic.setup_config as setup_config
 from fetchtastic.build.base import BuildResult
+from fetchtastic.build.environment import BuildEnvironment
 from tests.test_constants import TEST_CONFIG
 
 
@@ -1654,6 +1655,17 @@ def test_setup_dfu_build_success(mocker, tmp_path):
     mocker.patch("fetchtastic.setup_config.print_build_requirements")
     mocker.patch("fetchtastic.setup_config.prompt_yes_no", return_value=True)
     mocker.patch("fetchtastic.setup_config.shutil.which", return_value="/usr/bin/javac")
+    mocker.patch("fetchtastic.setup_config.prompt_build_type", return_value="debug")
+    env_status = BuildEnvironment(
+        java_home="/tmp/java",
+        sdk_root="/tmp/sdk",
+        sdkmanager_path=None,
+        missing_packages=[],
+        missing_sdk_packages=[],
+    )
+    mocker.patch(
+        "fetchtastic.setup_config.prepare_build_environment", return_value=env_status
+    )
     result = BuildResult(
         success=True,
         message="ok",

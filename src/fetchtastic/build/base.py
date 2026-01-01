@@ -121,6 +121,7 @@ class GradleBuildModule:
     gradle_tasks: Mapping[str, str]
     artifact_globs: Mapping[str, Sequence[str]]
     repo_clone_depth: Optional[int] = 1
+    required_sdk_packages: Sequence[str] = ()
     release_env_vars: Sequence[str] = ()
     requirements: Mapping[str, Sequence[str]] = field(default_factory=dict)
 

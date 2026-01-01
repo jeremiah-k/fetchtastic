@@ -7,6 +7,7 @@ import pytest
 # Import the package module (matches how users invoke it)
 import fetchtastic.cli as cli
 from fetchtastic.build.base import BuildResult
+from fetchtastic.build.environment import BuildEnvironment
 
 
 @pytest.fixture
@@ -966,11 +967,51 @@ def test_run_dfu_build_module_missing(mocker):
     mock_logger.error.assert_called_once_with("DFU build module is not available.")
 
 
+def test_run_dfu_setup_module_missing(mocker):
+    """Test run_dfu_setup when the module is unavailable."""
+    mocker.patch("fetchtastic.cli.get_build_module", return_value=None)
+    mock_logger = mocker.patch("fetchtastic.cli.log_utils.logger")
+
+    cli.run_dfu_setup()
+
+    mock_logger.error.assert_called_once_with("DFU build module is not available.")
+
+
+def test_run_dfu_setup_ready(mocker, capsys):
+    """Test run_dfu_setup when the environment is ready."""
+    module = mocker.MagicMock()
+    mocker.patch("fetchtastic.cli.get_build_module", return_value=module)
+    mocker.patch("fetchtastic.cli.print_build_requirements")
+    env_status = BuildEnvironment(
+        java_home="/tmp/java",
+        sdk_root="/tmp/sdk",
+        sdkmanager_path=None,
+        missing_packages=[],
+        missing_sdk_packages=[],
+    )
+    mocker.patch("fetchtastic.cli.prepare_build_environment", return_value=env_status)
+
+    cli.run_dfu_setup()
+
+    captured = capsys.readouterr()
+    assert "DFU build environment is ready." in captured.out
+
+
 def test_run_dfu_build_result_none(mocker):
     """Test run_dfu_build when the build returns None."""
     module = mocker.MagicMock()
     mocker.patch("fetchtastic.cli.get_build_module", return_value=module)
     mocker.patch("fetchtastic.cli.print_build_requirements")
+    env_status = BuildEnvironment(
+        java_home="/tmp/java",
+        sdk_root="/tmp/sdk",
+        sdkmanager_path=None,
+        missing_packages=[],
+        missing_sdk_packages=[],
+    )
+    mocker.patch("fetchtastic.cli.check_build_environment", return_value=env_status)
+    mocker.patch("fetchtastic.cli.build_shell_exports", return_value=({}, []))
+    mocker.patch("fetchtastic.cli.update_process_env")
     mock_run = mocker.patch("fetchtastic.cli.run_module_build", return_value=None)
 
     cli.run_dfu_build({"BASE_DIR": "/tmp"}, build_type="debug", allow_update=False)
@@ -983,6 +1024,16 @@ def test_run_dfu_build_success(mocker, capsys):
     module = mocker.MagicMock()
     mocker.patch("fetchtastic.cli.get_build_module", return_value=module)
     mocker.patch("fetchtastic.cli.print_build_requirements")
+    env_status = BuildEnvironment(
+        java_home="/tmp/java",
+        sdk_root="/tmp/sdk",
+        sdkmanager_path=None,
+        missing_packages=[],
+        missing_sdk_packages=[],
+    )
+    mocker.patch("fetchtastic.cli.check_build_environment", return_value=env_status)
+    mocker.patch("fetchtastic.cli.build_shell_exports", return_value=({}, []))
+    mocker.patch("fetchtastic.cli.update_process_env")
     result = BuildResult(success=True, message="ok", build_type="debug")
     mocker.patch("fetchtastic.cli.run_module_build", return_value=result)
 
@@ -997,6 +1048,16 @@ def test_run_dfu_build_failure(mocker, capsys):
     module = mocker.MagicMock()
     mocker.patch("fetchtastic.cli.get_build_module", return_value=module)
     mocker.patch("fetchtastic.cli.print_build_requirements")
+    env_status = BuildEnvironment(
+        java_home="/tmp/java",
+        sdk_root="/tmp/sdk",
+        sdkmanager_path=None,
+        missing_packages=[],
+        missing_sdk_packages=[],
+    )
+    mocker.patch("fetchtastic.cli.check_build_environment", return_value=env_status)
+    mocker.patch("fetchtastic.cli.build_shell_exports", return_value=({}, []))
+    mocker.patch("fetchtastic.cli.update_process_env")
     result = BuildResult(success=False, message="fail", build_type="debug")
     mocker.patch("fetchtastic.cli.run_module_build", return_value=result)
 
@@ -1127,6 +1188,21 @@ def test_cli_dfu_build_command(mocker):
     assert kwargs["build_type"] == "debug"
     assert kwargs["allow_update"] is True
     mock_update.assert_called_once_with("1.2.3")
+
+
+def test_cli_dfu_setup_command(mocker):
+    """Test the 'dfu setup' command path."""
+    mocker.patch("sys.argv", ["fetchtastic", "dfu", "setup"])
+    mocker.patch("fetchtastic.cli.display_banner")
+    mocker.patch(
+        "fetchtastic.cli.get_version_info", return_value=("1.0.0", None, False)
+    )
+    mocker.patch("fetchtastic.setup_config.load_config", return_value={})
+    mock_setup = mocker.patch("fetchtastic.cli.run_dfu_setup")
+
+    cli.main()
+
+    mock_setup.assert_called_once()
 
 
 def test_cli_dfu_command_no_subcommand_prints_help(mocker):

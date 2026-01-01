@@ -13,10 +13,12 @@ Last updated: 2026-01-01
 - Termux build guidance captured from provided Reddit post and Termux issue comment.
 - Implemented a new setup section (`dfu`) and dedicated build module with clone/build/copy flow (pending review).
 - Added a `fetchtastic dfu build` CLI command to run the DFU build outside of setup.
+- Added a `fetchtastic dfu setup` CLI command to install dependencies and configure JAVA_HOME/ANDROID_SDK_ROOT.
 - Updated setup section lists and unit tests for new `dfu` option.
 - Build module located at `src/fetchtastic/build/dfu/modules.py` with a shared Gradle build base.
 - Android SDK auto-detection now includes `~/Library/Android/sdk` and `~/Android/Sdk`.
 - Interactive DFU build flow refactored into `src/fetchtastic/build/interactive.py` to share prompts and checks.
+- Environment helpers for shell rc updates live in `src/fetchtastic/build/environment.py`.
 
 ## Sources Reviewed
 
@@ -26,6 +28,7 @@ Last updated: 2026-01-01
 - Termux build instructions from:
   - Reddit: build apps on Termux (manual aapt/dx flow; Gradle caveats).
   - Termux issue comment: gradle + openjdk-17 + SDK manager + workarounds.
+- Attempted to re-fetch Termux sources via curl; GitHub returned generic HTML and Reddit was blocked by network security (used provided excerpts instead).
 
 ## DFU Build Requirements (from Nordic config)
 
@@ -52,6 +55,7 @@ Last updated: 2026-01-01
   - SDK build-tools often require termux-friendly binaries (Lzhiyong sdk-tools) and symlink hacks.
 - Expected disk usage: 5-10GB+ (SDK + Gradle caches).
 - For Fetchtastic: likely provide prerequisite checklist and let user opt-in before attempting build.
+- `fetchtastic dfu setup` can install Termux packages and update shell rc files with JAVA_HOME/ANDROID_SDK_ROOT.
 
 ### Windows
 

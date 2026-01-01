@@ -4,14 +4,30 @@ Interactive helpers for build modules.
 
 from __future__ import annotations
 
+import os
 import shutil
-from typing import Optional
+from typing import Optional, Sequence
 
 from fetchtastic.build.base import (
     BuildResult,
     GradleBuildModule,
     resolve_android_sdk_root,
 )
+from fetchtastic.build.environment import (
+    BuildEnvironment,
+    accept_android_licenses,
+    build_shell_exports,
+    default_android_sdk_root,
+    detect_java_home,
+    detect_missing_termux_packages,
+    find_sdkmanager,
+    install_android_sdk_packages,
+    install_termux_packages,
+    missing_sdk_packages,
+    update_process_env,
+    update_shell_configs,
+)
+from fetchtastic.env_utils import is_termux
 
 
 def print_build_requirements(module: GradleBuildModule) -> None:
@@ -46,6 +62,127 @@ def prompt_build_type(
     if not choice:
         choice = default
     return "release" if choice.startswith("r") else "debug"
+
+
+def check_build_environment(module: GradleBuildModule) -> BuildEnvironment:
+    """
+    Inspect the environment needed for a build module.
+    """
+    java_home = detect_java_home()
+    sdk_root = resolve_android_sdk_root()
+    missing_packages: Sequence[str] = []
+    if is_termux():
+        missing_packages = detect_missing_termux_packages()
+    sdkmanager_path = find_sdkmanager(sdk_root)
+    missing_sdk = missing_sdk_packages(sdk_root, module.required_sdk_packages)
+    return BuildEnvironment(
+        java_home=java_home,
+        sdk_root=sdk_root,
+        sdkmanager_path=sdkmanager_path,
+        missing_packages=list(missing_packages),
+        missing_sdk_packages=list(missing_sdk),
+    )
+
+
+def prepare_build_environment(
+    module: GradleBuildModule,
+    *,
+    install_missing_packages: bool = True,
+    configure_shell: bool = True,
+    install_sdk_packages: bool = True,
+) -> Optional[BuildEnvironment]:
+    """
+    Ensure a build environment is ready, prompting to install missing dependencies.
+    """
+    env_status = check_build_environment(module)
+    if env_status.missing_packages:
+        print("Missing Termux packages:")
+        for package in env_status.missing_packages:
+            print(f"- {package}")
+        if not install_missing_packages:
+            print("Install missing packages and re-run setup.")
+            return None
+        if not prompt_yes_no(
+            "Install missing Termux packages now? [y/n] (default: yes): ",
+            default="yes",
+        ):
+            print("Skipping package installation.")
+            return None
+        if not install_termux_packages(env_status.missing_packages):
+            return None
+        env_status = check_build_environment(module)
+
+    if not env_status.java_home:
+        print("JAVA_HOME is not set and could not be detected.")
+        if is_termux():
+            print("Install openjdk-17 and re-run: pkg install openjdk-17")
+        else:
+            print("Install JDK 17 and ensure JAVA_HOME is set.")
+        return None
+
+    if not env_status.sdk_root:
+        default_root = default_android_sdk_root()
+        if not prompt_yes_no(
+            f"Set ANDROID_SDK_ROOT to {default_root}? [y/n] (default: yes): ",
+            default="yes",
+        ):
+            print("Android SDK root not set; cannot continue.")
+            return None
+        os.makedirs(default_root, exist_ok=True)
+        env_status.sdk_root = default_root
+
+    exports, path_entries = build_shell_exports(
+        env_status.java_home, env_status.sdk_root
+    )
+    update_process_env(exports, path_entries)
+    if configure_shell and exports:
+        updated = update_shell_configs(exports, path_entries)
+        if updated:
+            print("Updated shell config files:")
+            for path in updated:
+                print(f"- {path}")
+            print("Restart your shell or source the updated file(s) to apply changes.")
+        else:
+            print("Shell config already contains Fetchtastic DFU settings.")
+
+    env_status.sdkmanager_path = find_sdkmanager(env_status.sdk_root)
+    env_status.missing_sdk_packages = missing_sdk_packages(
+        env_status.sdk_root, module.required_sdk_packages
+    )
+
+    if env_status.missing_sdk_packages:
+        if not env_status.sdkmanager_path:
+            print("Android sdkmanager not found. Install cmdline-tools and retry.")
+            return None
+        print("Missing Android SDK packages:")
+        for package in env_status.missing_sdk_packages:
+            print(f"- {package}")
+        if not install_sdk_packages:
+            print("Install required SDK packages and re-run setup.")
+            return None
+        if prompt_yes_no(
+            "Install missing Android SDK packages now? [y/n] (default: yes): ",
+            default="yes",
+        ):
+            if not install_android_sdk_packages(
+                env_status.sdkmanager_path,
+                env_status.sdk_root,
+                env_status.missing_sdk_packages,
+            ):
+                return None
+            if prompt_yes_no(
+                "Accept Android SDK licenses now? [y/n] (default: yes): ",
+                default="yes",
+            ):
+                accept_android_licenses(env_status.sdkmanager_path, env_status.sdk_root)
+            env_status.missing_sdk_packages = missing_sdk_packages(
+                env_status.sdk_root, module.required_sdk_packages
+            )
+        if env_status.missing_sdk_packages:
+            print("Android SDK packages are still missing.")
+            return None
+
+    return env_status
 
 
 def run_module_build(
