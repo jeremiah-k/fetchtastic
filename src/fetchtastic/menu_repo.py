@@ -19,7 +19,7 @@ from fetchtastic.log_utils import logger
 from fetchtastic.utils import make_github_api_request
 
 # Module-level constants for repository content filtering
-EXCLUDED_DIRS = [".git", "node_modules", "__pycache__", ".vscode"]
+EXCLUDED_DIRS = [".git", ".github", "node_modules", "__pycache__", ".vscode"]
 EXCLUDED_FILES: List[str] = []
 _VERSION_MANAGER = VersionManager()
 
