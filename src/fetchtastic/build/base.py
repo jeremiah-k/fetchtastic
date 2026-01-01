@@ -322,6 +322,7 @@ def _find_artifact(repo_dir: str, patterns: Sequence[str]) -> Optional[str]:
     if artifact:
         return artifact
 
+    candidates = []
     for build_dir_name in ("build", "app/build", "target", "dist"):
         build_dir_path = os.path.join(repo_dir, build_dir_name)
         if os.path.isdir(build_dir_path):
@@ -332,5 +333,5 @@ def _find_artifact(repo_dir: str, patterns: Sequence[str]) -> Optional[str]:
     if artifact:
         return artifact
 
-    candidates.extend(glob.glob(os.path.join(repo_dir, "**", "*.apk"), recursive=True))
+    candidates = glob.glob(os.path.join(repo_dir, "**", "*.apk"), recursive=True)
     return newest_match(candidates)
