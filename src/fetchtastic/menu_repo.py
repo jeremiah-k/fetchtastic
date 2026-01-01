@@ -314,10 +314,7 @@ def select_item(items, current_path=""):
     option, _index = pick(display_options, title, indicator="*")
 
     if isinstance(option, Option):
-        if isinstance(option.value, dict):
-            return option.value
-        if option.value is not None:
-            return option.value
+        return option.value
     return None
 
 
@@ -442,7 +439,7 @@ def run_menu(config: Optional[Dict[str, Any]] = None):
                 print("No files found in this directory.")
                 continue
 
-            if selected_item["type"] == "dir":
+            if selected_item.get("type") == "dir":
                 # Navigate into the directory
                 current_path = selected_item["path"]
                 continue
