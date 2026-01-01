@@ -120,6 +120,7 @@ class GradleBuildModule:
     output_dirname: str
     gradle_tasks: Mapping[str, str]
     artifact_globs: Mapping[str, Sequence[str]]
+    repo_clone_depth: Optional[int] = 1
     release_env_vars: Sequence[str] = ()
     requirements: Mapping[str, Sequence[str]] = field(default_factory=dict)
 
@@ -144,7 +145,7 @@ class GradleBuildModule:
         """
         if not self.release_env_vars:
             return []
-        env_map = env or os.environ
+        env_map = os.environ if env is None else env
         return [key for key in self.release_env_vars if not env_map.get(key)]
 
     def build(
@@ -171,7 +172,12 @@ class GradleBuildModule:
         repo_dir = os.path.join(cache_root, self.repo_dirname)
         os.makedirs(cache_root, exist_ok=True)
 
-        repo_ready = _ensure_repo(self.repo_url, repo_dir, allow_update=allow_update)
+        repo_ready = _ensure_repo(
+            self.repo_url,
+            repo_dir,
+            allow_update=allow_update,
+            clone_depth=self.repo_clone_depth,
+        )
         if not repo_ready:
             return BuildResult(
                 success=False,
@@ -246,7 +252,13 @@ class GradleBuildModule:
         )
 
 
-def _ensure_repo(repo_url: str, repo_dir: str, *, allow_update: bool) -> bool:
+def _ensure_repo(
+    repo_url: str,
+    repo_dir: str,
+    *,
+    allow_update: bool,
+    clone_depth: Optional[int],
+) -> bool:
     if os.path.exists(repo_dir):
         if not os.path.isdir(os.path.join(repo_dir, ".git")):
             logger.error("Existing path is not a git repo: %s", repo_dir)
@@ -278,7 +290,11 @@ def _ensure_repo(repo_url: str, repo_dir: str, *, allow_update: bool) -> bool:
         return True
 
     try:
-        subprocess.run(["git", "clone", "--depth", "1", repo_url, repo_dir], check=True)
+        clone_cmd = ["git", "clone"]
+        if clone_depth and clone_depth > 0:
+            clone_cmd.extend(["--depth", str(clone_depth)])
+        clone_cmd.extend([repo_url, repo_dir])
+        subprocess.run(clone_cmd, check=True)
         return True
     except (subprocess.CalledProcessError, OSError) as exc:
         logger.error("Failed to clone repo: %s", exc)
@@ -305,6 +321,16 @@ def _find_artifact(repo_dir: str, patterns: Sequence[str]) -> Optional[str]:
     artifact = newest_match(candidates)
     if artifact:
         return artifact
-    return newest_match(
-        glob.glob(os.path.join(repo_dir, "**", "*.apk"), recursive=True)
-    )
+
+    for build_dir_name in ("build", "app/build", "target", "dist"):
+        build_dir_path = os.path.join(repo_dir, build_dir_name)
+        if os.path.isdir(build_dir_path):
+            candidates.extend(
+                glob.glob(os.path.join(build_dir_path, "**", "*.apk"), recursive=True)
+            )
+    artifact = newest_match(candidates)
+    if artifact:
+        return artifact
+
+    candidates.extend(glob.glob(os.path.join(repo_dir, "**", "*.apk"), recursive=True))
+    return newest_match(candidates)
