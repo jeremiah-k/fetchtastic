@@ -7,6 +7,7 @@ from fetchtastic.build.environment import (
     detect_java_home,
     detect_missing_termux_optional_packages,
     detect_missing_termux_packages,
+    find_sdkmanager,
     missing_sdk_packages,
     render_shell_block,
     update_process_env,
@@ -94,3 +95,20 @@ def test_update_process_env_path(mocker):
     update_process_env({"JAVA_HOME": "/tmp/java"}, ["$JAVA_HOME/bin"])
     assert os.environ["JAVA_HOME"] == "/tmp/java"
     assert os.environ["PATH"].startswith("/tmp/java/bin:")
+
+
+@pytest.mark.unit
+def test_find_sdkmanager_marks_executable(tmp_path, mocker):
+    sdk_root = tmp_path / "sdk"
+    bin_dir = sdk_root / "cmdline-tools" / "latest" / "bin"
+    bin_dir.mkdir(parents=True)
+    sdkmanager = bin_dir / "sdkmanager"
+    sdkmanager.write_text("#!/bin/sh\n")
+    os.chmod(sdkmanager, 0o644)
+
+    mocker.patch("fetchtastic.build.environment.shutil.which", return_value=None)
+
+    found = find_sdkmanager(str(sdk_root))
+
+    assert found == str(sdkmanager)
+    assert os.access(found, os.X_OK)

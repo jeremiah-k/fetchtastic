@@ -175,6 +175,7 @@ def install_cmdline_tools(sdk_root: str, host_os: Optional[str] = None) -> bool:
         latest_dir = os.path.join(cmdline_root, "latest")
         shutil.rmtree(latest_dir, ignore_errors=True)
         shutil.move(extracted, latest_dir)
+        ensure_cmdline_tools_executables(latest_dir)
         return True
     except (OSError, zipfile.BadZipFile) as exc:
         logger.error("Failed to install cmdline-tools: %s", exc)
@@ -251,8 +252,42 @@ def find_sdkmanager(sdk_root: Optional[str]) -> Optional[str]:
     ]
     for candidate in candidates:
         if os.path.isfile(candidate):
-            return candidate
+            ensure_executable(candidate)
+            if os.access(candidate, os.X_OK) or os.name == "nt":
+                return candidate
     return None
+
+
+def ensure_executable(path: str) -> bool:
+    """
+    Ensure a filesystem path is executable. Returns True if executable.
+    """
+    try:
+        if not os.path.isfile(path):
+            return False
+        if os.access(path, os.X_OK):
+            return True
+        mode = os.stat(path).st_mode
+        os.chmod(path, mode | 0o111)
+        return os.access(path, os.X_OK)
+    except OSError as exc:
+        logger.warning("Failed to mark executable %s: %s", path, exc)
+        return False
+
+
+def ensure_cmdline_tools_executables(cmdline_root: str) -> None:
+    """
+    Ensure cmdline-tools bin scripts are executable.
+    """
+    bin_dir = os.path.join(cmdline_root, "bin")
+    if not os.path.isdir(bin_dir):
+        return
+    for name in os.listdir(bin_dir):
+        if name.endswith(".bat"):
+            continue
+        path = os.path.join(bin_dir, name)
+        if os.path.isfile(path):
+            ensure_executable(path)
 
 
 def build_shell_exports(
