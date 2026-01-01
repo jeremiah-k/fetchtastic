@@ -13,7 +13,7 @@ def mock_repo_contents():
 
     The list includes a mix of directories and files used by tests:
     - Directories: three firmware/event entries and one `.git` (the `.git` entry is intended to be excluded by the fetching logic).
-    - Files: `index.html`, `meshtastic-deb.asc`, and `README.md` (the README and some other files are expected to be filtered out by the production logic).
+    - Files: `index.html`, `meshtastic-deb.asc`, and `README.md` (included by the production logic; only `.git` is excluded).
 
     Returns:
         list[dict]: Mock content entries with keys like `name`, `path`, `type`, and optionally `download_url`.
@@ -68,10 +68,9 @@ def test_fetch_repo_contents(mocker, mock_repo_contents):
     mocker.patch.object(fetchtastic.utils, "_rate_limit_cache", {})
     items = menu_repo.fetch_repo_contents()
 
-    # Check filtering - should be 4 items (3 dirs, 1 file) - README.md and meshtastic-deb.asc filtered
-    assert len(items) == 4
+    # Check filtering - should be 6 items (3 dirs, 3 files) - .git excluded
+    assert len(items) == 6
     assert not any(item["name"] == ".git" for item in items)
-    assert not any(item["name"] == "README.md" for item in items)
 
     # Check sorting
     assert (
@@ -79,7 +78,9 @@ def test_fetch_repo_contents(mocker, mock_repo_contents):
     )  # Firmware dirs sorted descending
     assert items[1]["name"] == "firmware-2.7.3.cf574c7"
     assert items[2]["name"] == "event"  # Other dirs sorted ascending
-    assert items[3]["name"] == "index.html"  # Files sorted ascending
+    assert items[3]["name"] == "README.md"  # Files sorted ascending
+    assert items[4]["name"] == "index.html"
+    assert items[5]["name"] == "meshtastic-deb.asc"
 
 
 def test_select_item(mocker):
@@ -408,7 +409,7 @@ def test_fetch_repo_contents_debug_logging(mocker, mock_repo_contents):
     mock_logger.debug.assert_called_with(
         f"Fetched {len(mock_repo_contents)} items from repository"
     )
-    assert len(items) == 4  # Filtered items
+    assert len(items) == 6  # Filtered items
 
 
 def test_fetch_repo_contents_debug_logging_no_list_response(mocker):
@@ -471,6 +472,36 @@ def test_process_repo_contents_invalid_version():
 
     # Should still process both items
     assert len(items) == 2
-    # Both get version "0", sorted by name descending: 'i' > '2' so invalid comes first
-    assert items[0]["name"] == "firmware-invalid-version"
+    # Valid firmware version should sort ahead of invalid entries
+    assert items[0]["name"] == "firmware-2.7.4.c1f4f79"
+    assert items[1]["name"] == "firmware-invalid-version"
+
+
+def test_process_repo_contents_sort_by_commit_time():
+    """Test _process_repo_contents sorting using commit timestamps."""
+    from datetime import datetime, timezone
+
+    contents = [
+        {
+            "name": "firmware-2.7.4.c1f4f79",
+            "path": "firmware-2.7.4.c1f4f79",
+            "type": "dir",
+        },
+        {
+            "name": "firmware-2.7.4.ddee111",
+            "path": "firmware-2.7.4.ddee111",
+            "type": "dir",
+        },
+    ]
+
+    commit_times = {
+        "firmware-2.7.4.ddee111": datetime(2024, 1, 2, tzinfo=timezone.utc),
+        "firmware-2.7.4.c1f4f79": datetime(2024, 1, 1, tzinfo=timezone.utc),
+    }
+
+    items = menu_repo._process_repo_contents(
+        contents, firmware_commit_times=commit_times
+    )
+
+    assert items[0]["name"] == "firmware-2.7.4.ddee111"
     assert items[1]["name"] == "firmware-2.7.4.c1f4f79"

@@ -1,41 +1,44 @@
-from typing import Optional
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 import requests
-from packaging.version import InvalidVersion
-from packaging.version import parse as parse_version
 from pick import pick
 
 from fetchtastic.constants import (
+    DEFAULT_PRERELEASE_COMMITS_TO_FETCH,
     FIRMWARE_DIR_PREFIX,
     GITHUB_API_TIMEOUT,
     MESHTASTIC_GITHUB_IO_CONTENTS_URL,
     REPO_DOWNLOADS_DIR,
 )
+from fetchtastic.download.cache import CacheManager
+from fetchtastic.download.prerelease_history import PrereleaseHistoryManager
 from fetchtastic.download.repository import RepositoryDownloader
+from fetchtastic.download.version import VersionManager
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import make_github_api_request
 
 # Module-level constants for repository content filtering
-EXCLUDED_DIRS = [".git", ".github", "node_modules", "__pycache__", ".vscode"]
-EXCLUDED_FILES = [
-    ".gitignore",
-    "LICENSE",
-    "README.md",
-    "meshtastic-deb.asc",
-    "meshtastic-deb.gpg",
-]
+EXCLUDED_DIRS = [".git", "node_modules", "__pycache__", ".vscode"]
+EXCLUDED_FILES: List[str] = []
 
 
-def _process_repo_contents(contents):
+def _process_repo_contents(
+    contents: List[Dict[str, Any]],
+    firmware_commit_times: Optional[Dict[str, datetime]] = None,
+):
     """
     Process raw JSON contents from GitHub API and return sorted items.
+
+    When firmware commit timestamps are provided, firmware directories are sorted
+    by commit time (newest first) with version/name fallbacks.
     """
     # Filter for directories and files, excluding specific directories and files
     repo_items = []
 
     for item in contents:
         if item["type"] == "dir":
-            if item["name"] not in EXCLUDED_DIRS and not item["name"].startswith("."):
+            if item["name"] not in EXCLUDED_DIRS:
                 # Store directory info
                 repo_items.append(
                     {"name": item["name"], "path": item["path"], "type": "dir"}
@@ -60,15 +63,26 @@ def _process_repo_contents(contents):
     firmware_dirs = [d for d in dirs if d["name"].startswith(FIRMWARE_DIR_PREFIX)]
     other_dirs = [d for d in dirs if not d["name"].startswith(FIRMWARE_DIR_PREFIX)]
 
-    # Sort firmware directories by base version (x.y.z) desc, fallback to name
-    def _fw_dir_key(d):
+    firmware_commit_times = firmware_commit_times or {}
+    version_manager = VersionManager()
+
+    def _lookup_commit_time(name: str) -> Optional[datetime]:
+        if not firmware_commit_times:
+            return None
+        return firmware_commit_times.get(name) or firmware_commit_times.get(
+            name.lower()
+        )
+
+    # Sort firmware directories by commit time when available, otherwise by version.
+    def _fw_dir_key(d: Dict[str, Any]):
         name = d["name"]
         version_str = name.removeprefix(FIRMWARE_DIR_PREFIX)
-        try:
-            parsed = parse_version(version_str)
-        except InvalidVersion:
-            return (parse_version("0"), name)
-        return (parsed, name)
+        version_tuple = version_manager.get_release_tuple(version_str) or ()
+        if firmware_commit_times:
+            commit_time = _lookup_commit_time(name)
+            commit_ts = commit_time.timestamp() if commit_time else 0.0
+            return (1 if commit_time else 0, commit_ts, version_tuple, name)
+        return (version_tuple, name)
 
     firmware_dirs.sort(key=_fw_dir_key, reverse=True)
     # Sort other directories alphabetically
@@ -83,16 +97,24 @@ def _process_repo_contents(contents):
     return sorted_items
 
 
-def fetch_repo_contents(path="", allow_env_token=True, github_token=None):
+def fetch_repo_contents(
+    path: str = "",
+    allow_env_token: bool = True,
+    github_token: Optional[str] = None,
+    cache_manager: Optional[CacheManager] = None,
+    firmware_commit_times: Optional[Dict[str, datetime]] = None,
+):
     """
     Retrieve and process directory and file entries from the Meshtastic GitHub Pages repository for a given repository-relative path.
 
-    Given an optional path (leading/trailing slashes are ignored), queries the GitHub Contents API and returns a sorted list of item dictionaries describing directories and files in that path. Directory items include "name", "path", and "type" == "dir". File items include "name", "path", "type" == "file", and "download_url". Common repository infrastructure directories and files are excluded.
+    Given an optional path (leading/trailing slashes are ignored), queries the GitHub Contents API and returns a sorted list of item dictionaries describing directories and files in that path. Directory items include "name", "path", and "type" == "dir". File items include "name", "path", "type" == "file", and "download_url". Entries listed in EXCLUDED_DIRS/EXCLUDED_FILES are omitted.
 
     Parameters:
         path (str): Repository-relative path to list; use an empty string for the repository root.
         allow_env_token (bool): Whether to permit using the GITHUB_TOKEN environment variable for authentication.
         github_token (str | None): Optional explicit GitHub token to use; if provided it overrides environment-based token usage.
+        cache_manager (CacheManager | None): Optional cache manager for GitHub API responses.
+        firmware_commit_times (dict[str, datetime] | None): Optional mapping of firmware directory names to commit timestamps for sorting.
 
     Returns:
         list: A list of dictionaries representing directories and files (directories appear before files). Returns an empty list on network, parsing, or other unexpected errors.
@@ -107,14 +129,22 @@ def fetch_repo_contents(path="", allow_env_token=True, github_token=None):
         api_url = base_url
 
     try:
-        # Note: cache miss tracking is handled by the caller
-        response = make_github_api_request(
-            api_url,
-            github_token=github_token,
-            allow_env_token=allow_env_token,
-            timeout=GITHUB_API_TIMEOUT,
-        )
-        contents = response.json()
+        if cache_manager is not None:
+            contents = cache_manager.get_repo_contents(
+                path,
+                github_token=github_token,
+                allow_env_token=allow_env_token,
+            )
+        else:
+            # Note: cache miss tracking is handled by the caller
+            response = make_github_api_request(
+                api_url,
+                github_token=github_token,
+                allow_env_token=allow_env_token,
+                timeout=GITHUB_API_TIMEOUT,
+            )
+            contents = response.json()
+
         if isinstance(contents, list):
             logger.debug(f"Fetched {len(contents)} items from repository")
 
@@ -124,7 +154,9 @@ def fetch_repo_contents(path="", allow_env_token=True, github_token=None):
             )
             return []
 
-        return _process_repo_contents(contents)
+        return _process_repo_contents(
+            contents, firmware_commit_times=firmware_commit_times
+        )
 
     except requests.HTTPError as e:
         logger.warning(f"HTTP error fetching repository contents from GitHub API: {e}")
@@ -146,16 +178,20 @@ def fetch_repo_directories(
     path: str = "",
     allow_env_token: bool = True,
     github_token: Optional[str] = None,
+    cache_manager: Optional[CacheManager] = None,
+    firmware_commit_times: Optional[Dict[str, datetime]] = None,
 ):
     """
     List directory names at the given repository path on meshtastic.github.io.
 
-    Hidden and common excluded directories (e.g., those in EXCLUDED_DIRS) are omitted from the results.
+    Directories listed in EXCLUDED_DIRS are omitted from the results.
 
     Parameters:
         path (str): Repository-relative path to list (empty string for root).
         allow_env_token (bool): If True, allow using a GitHub token from the environment when making the API request.
         github_token (Optional[str]): Explicit GitHub token to use instead of an environment token.
+        cache_manager (CacheManager | None): Optional cache manager for GitHub API responses.
+        firmware_commit_times (dict[str, datetime] | None): Optional mapping of firmware directory names to commit timestamps for sorting.
 
     Returns:
         list[str]: Directory names found at the specified path.
@@ -164,13 +200,19 @@ def fetch_repo_directories(
         path=path,
         allow_env_token=allow_env_token,
         github_token=github_token,
+        cache_manager=cache_manager,
+        firmware_commit_times=firmware_commit_times,
     )
     return [item["name"] for item in items if item["type"] == "dir"]
 
 
 # Backward compatibility alias
 def fetch_directory_contents(
-    path: str = "", allow_env_token: bool = True, github_token: Optional[str] = None
+    path: str = "",
+    allow_env_token: bool = True,
+    github_token: Optional[str] = None,
+    cache_manager: Optional[CacheManager] = None,
+    firmware_commit_times: Optional[Dict[str, datetime]] = None,
 ):
     """
     Fetch only files from directory contents for backward compatibility.
@@ -179,6 +221,8 @@ def fetch_directory_contents(
         path (str): Optional repository-relative path to list.
         allow_env_token (bool): If True, allow using a GitHub token from the environment when making the API request.
         github_token (Optional[str]): Explicit GitHub token to use instead of an environment token.
+        cache_manager (CacheManager | None): Optional cache manager for GitHub API responses.
+        firmware_commit_times (dict[str, datetime] | None): Optional mapping of firmware directory names to commit timestamps for sorting.
 
     Returns:
         list: A list of dictionaries representing files only (directories filtered out).
@@ -187,10 +231,42 @@ def fetch_directory_contents(
         path=path,
         allow_env_token=allow_env_token,
         github_token=github_token,
+        cache_manager=cache_manager,
+        firmware_commit_times=firmware_commit_times,
     )
 
     # Filter to return only files, not directories
     return [item for item in all_items if item.get("type") == "file"]
+
+
+def _build_firmware_commit_times(
+    cache_manager: CacheManager,
+    github_token: Optional[str],
+    allow_env_token: bool,
+) -> Dict[str, datetime]:
+    """
+    Build a mapping of firmware directory names to commit timestamps from recent repo history.
+
+    Uses the prerelease commit history cache to avoid extra API calls.
+    """
+    prerelease_manager = PrereleaseHistoryManager()
+    try:
+        commits = prerelease_manager.fetch_recent_repo_commits(
+            DEFAULT_PRERELEASE_COMMITS_TO_FETCH,
+            cache_manager=cache_manager,
+            github_token=github_token,
+            allow_env_token=allow_env_token,
+        )
+    except (OSError, ValueError, TypeError, requests.RequestException) as exc:
+        logger.debug(
+            "Could not build prerelease commit history for repo sorting: %s", exc
+        )
+        return {}
+
+    if not commits:
+        return {}
+
+    return prerelease_manager.extract_prerelease_directory_timestamps(commits)
 
 
 def select_item(items, current_path=""):
@@ -298,9 +374,12 @@ Select "[Quit]" to exit without downloading."""
     return selected_files
 
 
-def run_menu():
+def run_menu(config: Optional[Dict[str, Any]] = None):
     """
     Interactively browse the Meshtastic GitHub Pages repository and select one or more files to download.
+
+    Parameters:
+        config (dict | None): Optional configuration used to supply a GitHub token and cache settings.
 
     Returns:
         result (dict or None): If files were selected, a dict with:
@@ -311,9 +390,24 @@ def run_menu():
     try:
         current_path = ""
         selected_files = []
+        github_token = config.get("GITHUB_TOKEN") if config else None
+        allow_env_token = config.get("ALLOW_ENV_TOKEN", True) if config else True
+        cache_manager = CacheManager() if config else None
+        firmware_commit_times: Dict[str, datetime] = {}
+
+        if cache_manager is not None:
+            firmware_commit_times = _build_firmware_commit_times(
+                cache_manager, github_token, allow_env_token
+            )
 
         while True:
-            items = fetch_repo_contents(current_path)
+            items = fetch_repo_contents(
+                current_path,
+                allow_env_token=allow_env_token,
+                github_token=github_token,
+                cache_manager=cache_manager,
+                firmware_commit_times=firmware_commit_times,
+            )
 
             if not items:
                 print(f"No items found in {current_path or 'the repository'}. Exiting.")
@@ -386,7 +480,7 @@ def run_repository_downloader_menu(config):
     """
     try:
         # Get user selection from the menu
-        selected_files = run_menu()
+        selected_files = run_menu(config)
         if not selected_files:
             logger.info("No files selected for download.")
             return None

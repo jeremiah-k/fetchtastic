@@ -215,8 +215,8 @@ def main(config):  # log_message_func removed
     logger.info("Starting Repository File Browser...")  # Was log_message_func
 
     # Run the menu to select files
-    selected_files = (
-        menu_repo.run_menu()
+    selected_files = menu_repo.run_menu(
+        config
     )  # Assuming menu_repo.run_menu() doesn't need log_message_func
 
     if not selected_files:
