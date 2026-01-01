@@ -33,6 +33,7 @@ from fetchtastic.constants import (
     NTFY_REQUEST_TIMEOUT,
     WINDOWS_SHORTCUT_FILE,
 )
+from fetchtastic.env_utils import is_termux
 from fetchtastic.log_utils import logger
 
 # Recommended default exclude patterns for firmware extraction
@@ -204,13 +205,6 @@ SECTION_SHORTCUTS = {
     "g": "github",
     "d": "dfu",
 }
-
-
-def is_termux():
-    """
-    Check if the script is running in a Termux environment.
-    """
-    return "com.termux" in os.environ.get("PREFIX", "")
 
 
 def is_fetchtastic_installed_via_pip():

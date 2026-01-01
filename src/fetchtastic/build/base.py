@@ -15,14 +15,8 @@ from typing import Iterable, List, Mapping, Optional, Sequence
 
 import platformdirs
 
+from fetchtastic.env_utils import is_termux as is_termux_env
 from fetchtastic.log_utils import logger
-
-
-def is_termux_env() -> bool:
-    """
-    Detect a Termux environment.
-    """
-    return "com.termux" in os.environ.get("PREFIX", "")
 
 
 def resolve_android_sdk_root() -> Optional[str]:
