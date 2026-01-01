@@ -5,6 +5,7 @@ import pytest
 from fetchtastic.build.environment import (
     build_shell_exports,
     detect_java_home,
+    detect_missing_termux_optional_packages,
     detect_missing_termux_packages,
     missing_sdk_packages,
     render_shell_block,
@@ -25,10 +26,42 @@ def test_detect_missing_termux_packages(mocker):
 
 
 @pytest.mark.unit
+def test_detect_missing_termux_optional_packages(mocker):
+    mocker.patch(
+        "fetchtastic.build.environment.shutil.which",
+        side_effect=lambda cmd: None if cmd in {"aapt2", "apksigner"} else "/bin/ok",
+    )
+    missing = detect_missing_termux_optional_packages()
+    assert "aapt2" in missing
+    assert "apksigner" in missing
+
+
+@pytest.mark.unit
 def test_detect_java_home_from_env(mocker):
     mocker.patch.dict(os.environ, {"JAVA_HOME": "/tmp/java"}, clear=True)
     mocker.patch("fetchtastic.build.environment.os.path.isdir", return_value=True)
     assert detect_java_home() == "/tmp/java"
+
+
+@pytest.mark.unit
+def test_detect_java_home_termux_prefers_jdk17(mocker, tmp_path):
+    prefix = tmp_path / "prefix"
+    java17 = prefix / "lib" / "jvm" / "java-17-openjdk"
+    java21 = prefix / "lib" / "jvm" / "java-21-openjdk"
+    java17.mkdir(parents=True)
+    java21.mkdir(parents=True)
+
+    mocker.patch.dict(os.environ, {"PREFIX": str(prefix)}, clear=True)
+    mocker.patch("fetchtastic.build.environment.is_termux", return_value=True)
+    mocker.patch(
+        "fetchtastic.build.environment.shutil.which", return_value="/bin/javac"
+    )
+    mocker.patch(
+        "fetchtastic.build.environment.os.path.realpath",
+        return_value=str(java21 / "bin" / "javac"),
+    )
+
+    assert detect_java_home() == str(java17)
 
 
 @pytest.mark.unit

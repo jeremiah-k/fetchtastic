@@ -17,12 +17,14 @@ from fetchtastic.build.environment import (
     BuildEnvironment,
     accept_android_licenses,
     build_shell_exports,
+    cmdline_tools_host_os,
     default_android_sdk_root,
     detect_java_home,
     detect_missing_termux_optional_packages,
     detect_missing_termux_packages,
     find_sdkmanager,
     install_android_sdk_packages,
+    install_cmdline_tools,
     install_termux_packages,
     missing_sdk_packages,
     update_process_env,
@@ -137,14 +139,13 @@ def prepare_build_environment(
 
     if not env_status.sdk_root:
         default_root = default_android_sdk_root()
-        if not prompt_yes_no(
-            f"Set ANDROID_SDK_ROOT to {default_root}? [y/n] (default: yes): ",
-            default="yes",
-        ):
-            print("Android SDK root not set; cannot continue.")
+        try:
+            os.makedirs(default_root, exist_ok=True)
+        except OSError as exc:
+            print(f"Failed to create Android SDK root at {default_root}: {exc}")
             return None
-        os.makedirs(default_root, exist_ok=True)
         env_status.sdk_root = default_root
+        print(f"Using ANDROID_SDK_ROOT: {default_root}")
 
     exports, path_entries = build_shell_exports(
         env_status.java_home, env_status.sdk_root
@@ -161,6 +162,15 @@ def prepare_build_environment(
             print("Shell config already contains Fetchtastic DFU settings.")
 
     env_status.sdkmanager_path = find_sdkmanager(env_status.sdk_root)
+    if not env_status.sdkmanager_path:
+        if not install_sdk_packages:
+            print("Android sdkmanager not found. Install cmdline-tools and retry.")
+            return None
+        if not install_cmdline_tools(
+            env_status.sdk_root, host_os=cmdline_tools_host_os()
+        ):
+            return None
+        env_status.sdkmanager_path = find_sdkmanager(env_status.sdk_root)
     env_status.missing_sdk_packages = missing_sdk_packages(
         env_status.sdk_root, module.required_sdk_packages
     )

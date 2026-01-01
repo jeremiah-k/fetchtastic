@@ -37,7 +37,9 @@ def test_prepare_build_environment_ready(mocker):
     )
     mocker.patch("fetchtastic.build.interactive.update_shell_configs", return_value=[])
     mocker.patch("fetchtastic.build.interactive.update_process_env")
-    mocker.patch("fetchtastic.build.interactive.find_sdkmanager", return_value=None)
+    mocker.patch(
+        "fetchtastic.build.interactive.find_sdkmanager", return_value="/tmp/sdkmanager"
+    )
     mocker.patch("fetchtastic.build.interactive.missing_sdk_packages", return_value=[])
 
     result = prepare_build_environment(mocker.MagicMock())

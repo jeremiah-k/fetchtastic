@@ -9,6 +9,10 @@ import platform
 import re
 import shutil
 import subprocess
+import tempfile
+import urllib.request
+import xml.etree.ElementTree as ET
+import zipfile
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -27,12 +31,16 @@ TERMUX_PACKAGE_COMMANDS: Dict[str, Sequence[str]] = {
 }
 
 TERMUX_OPTIONAL_PACKAGE_COMMANDS: Dict[str, Sequence[str]] = {
-    "gradle": ("gradle",),
     "aapt2": ("aapt2",),
     "apksigner": ("apksigner",),
     "d8": ("d8",),
     "android-tools": ("adb",),
 }
+
+CMDLINE_TOOLS_MANIFEST_URL = (
+    "https://dl.google.com/android/repository/repository2-1.xml"
+)
+CMDLINE_TOOLS_BASE_URL = "https://dl.google.com/android/repository/"
 
 
 @dataclass
@@ -77,6 +85,104 @@ def detect_missing_termux_optional_packages() -> List[str]:
     return missing
 
 
+def cmdline_tools_host_os() -> str:
+    """
+    Return the host-os label used by the Android cmdline-tools repository.
+    """
+    if is_termux():
+        return "linux"
+    system = platform.system().lower()
+    if system == "darwin":
+        return "macosx"
+    if system == "windows":
+        return "windows"
+    return "linux"
+
+
+def resolve_cmdline_tools_url(host_os: Optional[str] = None) -> Optional[str]:
+    """
+    Resolve a cmdline-tools archive URL for the given host.
+    """
+    host = host_os or cmdline_tools_host_os()
+    try:
+        xml_data = urllib.request.urlopen(CMDLINE_TOOLS_MANIFEST_URL, timeout=20).read()
+        root = ET.fromstring(xml_data)
+    except (OSError, ET.ParseError) as exc:
+        logger.error("Failed to load Android cmdline-tools manifest: %s", exc)
+        return None
+
+    best_version: Optional[Tuple[int, int, int]] = None
+    best_url: Optional[str] = None
+    for pkg in root.findall(".//{*}remotePackage"):
+        path = pkg.get("path") or ""
+        if not path.startswith("cmdline-tools;"):
+            continue
+        if any(tag in path for tag in ("alpha", "beta", "rc")):
+            continue
+        revision = pkg.find("{*}revision")
+        if revision is None:
+            continue
+        version = (
+            int(revision.findtext("{*}major", default="0")),
+            int(revision.findtext("{*}minor", default="0")),
+            int(revision.findtext("{*}micro", default="0")),
+        )
+        for archive in pkg.findall(".//{*}archive"):
+            if archive.findtext("{*}host-os") != host:
+                continue
+            url = archive.findtext("{*}complete/{*}url")
+            if not url:
+                continue
+            if best_version is None or version > best_version:
+                best_version = version
+                best_url = url
+
+    if not best_url:
+        return None
+    if best_url.startswith(("http://", "https://")):
+        return best_url
+    return CMDLINE_TOOLS_BASE_URL + best_url
+
+
+def install_cmdline_tools(sdk_root: str, host_os: Optional[str] = None) -> bool:
+    """
+    Download and install Android cmdline-tools into sdk_root/cmdline-tools/latest.
+    """
+    url = resolve_cmdline_tools_url(host_os)
+    if not url:
+        print("Unable to locate Android cmdline-tools download URL.")
+        return False
+
+    print(f"Downloading Android cmdline-tools from: {url}")
+    tmp_dir = tempfile.mkdtemp(prefix="fetchtastic-cmdline-tools-")
+    archive_path = os.path.join(tmp_dir, "cmdline-tools.zip")
+    try:
+        urllib.request.urlretrieve(url, archive_path)
+        with zipfile.ZipFile(archive_path, "r") as archive:
+            archive.extractall(tmp_dir)
+        extracted = os.path.join(tmp_dir, "cmdline-tools")
+        if not os.path.isdir(extracted):
+            for root, _dirs, files in os.walk(tmp_dir):
+                if "sdkmanager" in files and os.path.basename(root) == "bin":
+                    extracted = os.path.dirname(root)
+                    break
+        if not os.path.isdir(extracted):
+            print("Failed to locate cmdline-tools in downloaded archive.")
+            return False
+
+        cmdline_root = os.path.join(sdk_root, "cmdline-tools")
+        os.makedirs(cmdline_root, exist_ok=True)
+        latest_dir = os.path.join(cmdline_root, "latest")
+        shutil.rmtree(latest_dir, ignore_errors=True)
+        shutil.move(extracted, latest_dir)
+        return True
+    except (OSError, zipfile.BadZipFile) as exc:
+        logger.error("Failed to install cmdline-tools: %s", exc)
+        return False
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
 def detect_java_home() -> Optional[str]:
     """
     Detect a JAVA_HOME path from environment or known locations.
@@ -85,6 +191,17 @@ def detect_java_home() -> Optional[str]:
     if env_java and os.path.isdir(env_java):
         return env_java
 
+    prefix = os.environ.get("PREFIX")
+    if is_termux() and prefix:
+        for candidate in (
+            "java-17-openjdk",
+            "java-21-openjdk",
+            "java-11-openjdk",
+        ):
+            path = os.path.join(prefix, "lib", "jvm", candidate)
+            if os.path.isdir(path):
+                return path
+
     javac_path = shutil.which("javac")
     if javac_path:
         real_javac = os.path.realpath(javac_path)
@@ -92,7 +209,6 @@ def detect_java_home() -> Optional[str]:
         if os.path.isdir(candidate):
             return candidate
 
-    prefix = os.environ.get("PREFIX")
     if prefix:
         for candidate in (
             "java-17-openjdk",

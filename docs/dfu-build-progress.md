@@ -15,6 +15,7 @@ Last updated: 2026-01-01
 - Implemented a new setup section (`dfu`) and dedicated build module with clone/build/copy flow (pending review).
 - Added a `fetchtastic dfu build` CLI command to run the DFU build outside of setup.
 - Added a `fetchtastic dfu setup` CLI command to install dependencies and configure JAVA_HOME/ANDROID_SDK_ROOT.
+- DFU setup now auto-downloads Android cmdline-tools when sdkmanager is missing.
 - Updated setup section lists and unit tests for new `dfu` option.
 - Build module located at `src/fetchtastic/build/dfu/modules.py` with a shared Gradle build base.
 - Android SDK auto-detection now includes `~/Library/Android/sdk` and `~/Android/Sdk`.
@@ -54,7 +55,8 @@ Last updated: 2026-01-01
 
 - 2026 package baseline (from `packages.termux.dev`):
   - Required: `openjdk-17`, `git`, `curl`, `unzip`, `zip`.
-  - Recommended for on-device Android builds: `gradle`, `aapt2`, `apksigner`, `d8`, `android-tools`.
+  - Recommended for on-device Android builds: `aapt2`, `apksigner`, `d8`, `android-tools`.
+  - Optional: `gradle` (useful for `gradle --stop`, but may pull in newer JDKs).
 - JAVA_HOME typically resolves to `$PREFIX/lib/jvm/java-17-openjdk` (verify via `readlink -f $(command -v javac)`).
 - Download Android cmdline-tools from `https://developer.android.com/studio#command-tools` and install to `~/Android/sdk/cmdline-tools/latest`.
 - Gradle build is possible but heavy. Known issues and fixes:
