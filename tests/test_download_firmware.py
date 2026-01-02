@@ -97,6 +97,43 @@ class TestFirmwareReleaseDownloader:
         expected = "/tmp/test/firmware/v1.0.0/firmware.zip"
         assert path == expected
 
+    def test_ensure_release_notes_writes_file(self, tmp_path):
+        """Release notes should be written alongside firmware assets."""
+        cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
+        config = {"DOWNLOAD_DIR": str(tmp_path / "downloads")}
+        downloader = FirmwareReleaseDownloader(config, cache_manager)
+        release = Release(
+            tag_name="v1.0.0",
+            prerelease=False,
+            body="Release notes for v1.0.0",
+        )
+
+        notes_path = downloader.ensure_release_notes(release)
+
+        assert notes_path is not None
+        notes_file = Path(notes_path)
+        assert notes_file.exists()
+        assert "release_notes-v1.0.0.md" in str(notes_file)
+        assert "Release notes for v1.0.0" in notes_file.read_text(encoding="utf-8")
+
+    def test_ensure_release_notes_revoked_directory(self, tmp_path):
+        """Revoked firmware releases should store notes under a -revoked folder."""
+        cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
+        config = {"DOWNLOAD_DIR": str(tmp_path / "downloads")}
+        downloader = FirmwareReleaseDownloader(config, cache_manager)
+        release = Release(
+            tag_name="v1.0.1",
+            prerelease=False,
+            name="(Revoked)",
+            body="Revoked due to regressions.",
+        )
+
+        notes_path = downloader.ensure_release_notes(release)
+
+        assert notes_path is not None
+        assert "v1.0.1-revoked" in notes_path
+        assert Path(notes_path).exists()
+
     @patch("fetchtastic.download.firmware.make_github_api_request")
     def test_get_releases_success(self, mock_request, downloader):
         """Test successful release fetching from GitHub."""
@@ -358,10 +395,8 @@ class TestFirmwareReleaseDownloader:
         self, mock_rmtree, mock_scandir, mock_exists, downloader
     ):
         """Test cleanup when release tags contain unsafe characters."""
-        # Mock _sanitize_path_component to return None for unsafe tags
-        with patch(
-            "fetchtastic.download.firmware._sanitize_path_component"
-        ) as mock_sanitize:
+        # Mock _get_release_storage_tag to raise for unsafe tags
+        with patch.object(downloader, "_get_release_storage_tag") as mock_storage_tag:
             mock_exists.return_value = True
 
             # Create mock directory entries for os.scandir
@@ -378,7 +413,13 @@ class TestFirmwareReleaseDownloader:
             mock_v2.path = "/mock/firmware/v2.0.0"
 
             mock_scandir.return_value.__enter__.return_value = [mock_v1, mock_v2]
-            mock_sanitize.side_effect = ["v1.0.0", None]  # Second tag is unsafe
+
+            def _storage_tag_side_effect(release):
+                if release.tag_name == "v1.0.0":
+                    return "v1.0.0"
+                raise ValueError("Unsafe release tag")
+
+            mock_storage_tag.side_effect = _storage_tag_side_effect
             downloader.get_releases = Mock(
                 return_value=[
                     Release(tag_name="v1.0.0"),

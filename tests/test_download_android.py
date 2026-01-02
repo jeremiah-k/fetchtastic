@@ -125,6 +125,50 @@ class TestMeshtasticAndroidAppDownloader:
             assert dl.latest_release_file == "latest_android_release.json"
             mock_version.assert_called_once()
 
+    def test_ensure_release_notes_writes_file(self, tmp_path):
+        """Release notes should be written alongside Android APK assets."""
+        cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
+        config = {"DOWNLOAD_DIR": str(tmp_path / "downloads")}
+        downloader = MeshtasticAndroidAppDownloader(config, cache_manager)
+        release = Release(
+            tag_name="v2.7.10",
+            prerelease=False,
+            body="Android release notes",
+        )
+
+        notes_path = downloader.ensure_release_notes(release)
+
+        assert notes_path is not None
+        notes_file = Path(notes_path)
+        assert notes_file.exists()
+        assert str(notes_file).endswith(
+            os.path.join(APKS_DIR_NAME, "v2.7.10", "release_notes-v2.7.10.md")
+        )
+
+    def test_ensure_release_notes_prerelease_dir(self, tmp_path):
+        """Prerelease APK notes should live under the prerelease directory."""
+        cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
+        config = {"DOWNLOAD_DIR": str(tmp_path / "downloads")}
+        downloader = MeshtasticAndroidAppDownloader(config, cache_manager)
+        release = Release(
+            tag_name="v2.7.10-open.1",
+            prerelease=True,
+            body="Prerelease notes",
+        )
+
+        notes_path = downloader.ensure_release_notes(release)
+
+        assert notes_path is not None
+        notes_file = Path(notes_path)
+        assert notes_file.exists()
+        expected_suffix = os.path.join(
+            APKS_DIR_NAME,
+            APK_PRERELEASES_DIR_NAME,
+            "v2.7.10-open.1",
+            "release_notes-v2.7.10-open.1.md",
+        )
+        assert str(notes_file).endswith(expected_suffix)
+
     def test_get_target_path_for_release(self, downloader, tmp_path):
         """Test target path generation for APK releases."""
         path = downloader.get_target_path_for_release("v1.0.0", "meshtastic.apk")

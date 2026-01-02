@@ -208,8 +208,6 @@ class DownloadOrchestrator:
             for release in releases_to_process:
                 self.android_downloader.ensure_release_notes(release)
                 suffix = self.android_downloader.format_release_log_suffix(release)
-                if not isinstance(suffix, str):
-                    suffix = ""
                 logger.info(f"Checking {release.tag_name}{suffix}…")
                 if self.android_downloader.is_release_complete(release):
                     logger.debug(
@@ -282,8 +280,6 @@ class DownloadOrchestrator:
             for release in releases_to_process:
                 self.firmware_downloader.ensure_release_notes(release)
                 suffix = self.firmware_downloader.format_release_log_suffix(release)
-                if not isinstance(suffix, str):
-                    suffix = ""
                 logger.info(f"Checking {release.tag_name}{suffix}…")
                 if self.firmware_downloader.is_release_complete(release):
                     logger.debug(
