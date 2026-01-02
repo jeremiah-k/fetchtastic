@@ -27,6 +27,7 @@ from fetchtastic.build.environment import (
     detect_java_home,
     detect_missing_termux_optional_packages,
     detect_missing_termux_packages,
+    ensure_platform_alias,
     find_sdkmanager,
     install_android_sdk_packages,
     install_cmdline_tools,
@@ -258,6 +259,12 @@ def prepare_build_environment(
         if env_status.missing_sdk_packages:
             print("Android SDK packages are still missing.")
             return None
+
+    if env_status.sdk_root:
+        for package in module.required_sdk_packages:
+            if package.startswith("platforms;"):
+                name = package.split(";", 1)[1]
+                ensure_platform_alias(env_status.sdk_root, name)
 
     return env_status
 

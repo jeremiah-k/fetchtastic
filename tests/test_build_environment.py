@@ -7,6 +7,7 @@ from fetchtastic.build.environment import (
     detect_java_home,
     detect_missing_termux_optional_packages,
     detect_missing_termux_packages,
+    ensure_platform_alias,
     find_sdkmanager,
     missing_sdk_packages,
     render_shell_block,
@@ -99,6 +100,21 @@ def test_missing_sdk_packages(tmp_path):
         ["platforms;android-36", "build-tools;36.0.0", "platform-tools"],
     )
     assert missing == ["build-tools;36.0.0"]
+
+
+@pytest.mark.unit
+def test_ensure_platform_alias_creates_symlink(tmp_path):
+    if os.name == "nt":
+        pytest.skip("Symlink creation requires privileges on Windows")
+    sdk_root = tmp_path / "sdk"
+    platforms = sdk_root / "platforms"
+    target = platforms / "android-36.1"
+    target.mkdir(parents=True)
+
+    alias = ensure_platform_alias(str(sdk_root), "android-36")
+
+    assert alias is not None
+    assert os.path.isdir(alias)
 
 
 @pytest.mark.unit

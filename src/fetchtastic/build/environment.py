@@ -530,6 +530,54 @@ def missing_sdk_packages(sdk_root: Optional[str], required: Sequence[str]) -> Li
     return missing
 
 
+def _platform_version_tuple(name: str) -> Optional[tuple]:
+    if not name.startswith("android-"):
+        return None
+    version = name.split("android-", 1)[1]
+    parts: List[int] = []
+    for part in version.split("."):
+        if not part.isdigit():
+            return None
+        parts.append(int(part))
+    return tuple(parts)
+
+
+def ensure_platform_alias(sdk_root: str, platform_name: str) -> Optional[str]:
+    """
+    Ensure a platform alias directory exists (e.g., android-36 -> android-36.1).
+    """
+    platforms_root = os.path.join(sdk_root, "platforms")
+    expected = os.path.join(platforms_root, platform_name)
+    if os.path.isdir(expected):
+        return expected
+    if not os.path.isdir(platforms_root):
+        return None
+
+    prefix = f"{platform_name}."
+    candidates = [
+        entry for entry in os.listdir(platforms_root) if entry.startswith(prefix)
+    ]
+    if not candidates:
+        return None
+    candidates_with_versions = [
+        (entry, _platform_version_tuple(entry)) for entry in candidates
+    ]
+    candidates_with_versions = [item for item in candidates_with_versions if item[1]]
+    if not candidates_with_versions:
+        return None
+    target = max(candidates_with_versions, key=lambda item: item[1])[0]
+    target_path = os.path.join(platforms_root, target)
+    try:
+        os.symlink(target_path, expected)
+        logger.info("Created Android platform alias: %s -> %s", expected, target_path)
+        return expected
+    except OSError as exc:
+        logger.warning(
+            "Could not create Android platform alias for %s: %s", platform_name, exc
+        )
+        return None
+
+
 def install_termux_packages(packages: Sequence[str]) -> bool:
     """
     Install Termux packages via pkg.
