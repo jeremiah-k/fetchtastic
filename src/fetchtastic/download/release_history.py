@@ -74,11 +74,11 @@ def is_release_revoked(release: Release) -> bool:
     """
     Determine whether a release is revoked by scanning name and explicit body markers.
     """
-    name_text = release.name or ""
+    name_text = release.name if isinstance(release.name, str) else ""
     if _REVOKED_TITLE_RX.search(name_text):
         return True
 
-    body = release.body or ""
+    body = release.body if isinstance(release.body, str) else ""
     if not body:
         return False
 
@@ -169,7 +169,7 @@ class ReleaseHistoryManager:
             entry.update(
                 {
                     "tag_name": release.tag_name,
-                    "name": release.name or "",
+                    "name": release.name if isinstance(release.name, str) else "",
                     "published_at": release.published_at,
                     "channel": channel,
                     "base_version": base_version,

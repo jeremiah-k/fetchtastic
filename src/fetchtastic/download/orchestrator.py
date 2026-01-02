@@ -375,7 +375,7 @@ class DownloadOrchestrator:
         best_tuple: Optional[Tuple[int, ...]] = None
 
         for release in releases:
-            if self.firmware_downloader.is_release_revoked(release) is True:
+            if self.firmware_downloader.is_release_revoked(release):
                 continue
             release_tuple = self.version_manager.get_release_tuple(release.tag_name)
             if release_tuple is None:

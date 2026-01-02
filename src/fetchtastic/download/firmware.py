@@ -447,7 +447,14 @@ class FirmwareReleaseDownloader(BaseDownloader):
         Returns:
             True if all selected assets exist and pass integrity and size checks, False otherwise.
         """
-        storage_tag = self._get_release_storage_tag(release)
+        try:
+            storage_tag = self._get_release_storage_tag(release)
+        except ValueError:
+            logger.warning(
+                "Skipping completeness check for unsafe firmware tag: %s",
+                release.tag_name,
+            )
+            return False
         version_dir = os.path.join(self.download_dir, FIRMWARE_DIR_NAME, storage_tag)
         if not os.path.isdir(version_dir):
             return False

@@ -424,8 +424,6 @@ class BaseDownloader(Downloader, ABC):
         if os.path.exists(notes_path):
             return notes_path
 
-        os.makedirs(release_dir, exist_ok=True)
-
         try:
             real_base = os.path.realpath(base_dir)
             real_notes = os.path.realpath(notes_path)
@@ -439,6 +437,8 @@ class BaseDownloader(Downloader, ABC):
                 release_tag,
             )
             return None
+
+        os.makedirs(release_dir, exist_ok=True)
 
         notes_content = strip_unwanted_chars(body)
         if not notes_content.strip():
