@@ -408,7 +408,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
         if channel and channel not in _STORAGE_CHANNEL_SUFFIXES:
             channel = ""
 
-        all_channels = [channel, ""] + sorted(_STORAGE_CHANNEL_SUFFIXES)
+        all_channels = [channel, "", *sorted(_STORAGE_CHANNEL_SUFFIXES)]
         channels = list(dict.fromkeys(all_channels))
 
         candidates: List[str] = []

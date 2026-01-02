@@ -428,6 +428,21 @@ class BaseDownloader(Downloader, ABC):
             return None
 
         notes_path = os.path.join(release_dir, f"release_notes-{safe_tag}.md")
+
+        try:
+            real_base = os.path.realpath(base_dir)
+            real_release_dir = os.path.realpath(release_dir)
+            release_dir_common = os.path.commonpath([real_base, real_release_dir])
+        except ValueError:
+            release_dir_common = None
+
+        if release_dir_common != real_base:
+            logger.warning(
+                "Skipping write of release notes for %s: release directory path escapes download base",
+                release_tag,
+            )
+            return None
+
         if os.path.lexists(notes_path):
             if os.path.islink(notes_path):
                 logger.warning(
@@ -440,7 +455,6 @@ class BaseDownloader(Downloader, ABC):
         os.makedirs(release_dir, exist_ok=True)
 
         try:
-            real_base = os.path.realpath(base_dir)
             real_notes = os.path.realpath(notes_path)
             notes_common = os.path.commonpath([real_base, real_notes])
         except ValueError:

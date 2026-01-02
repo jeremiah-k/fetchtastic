@@ -378,28 +378,26 @@ class DownloadOrchestrator:
         """
         best_release: Optional[Release] = None
         best_tuple: Optional[Tuple[int, ...]] = None
-
-        for release in releases:
-            if self.firmware_downloader.is_release_revoked(release):
-                continue
-            release_tuple = self.version_manager.get_release_tuple(release.tag_name)
-            if release_tuple is None:
-                continue
-            if best_tuple is None or release_tuple > best_tuple:
-                best_tuple = release_tuple
-                best_release = release
-        if best_release is not None:
-            return best_release
+        best_revoked_release: Optional[Release] = None
+        best_revoked_tuple: Optional[Tuple[int, ...]] = None
 
         for release in releases:
             release_tuple = self.version_manager.get_release_tuple(release.tag_name)
             if release_tuple is None:
                 continue
-            if best_tuple is None or release_tuple > best_tuple:
-                best_tuple = release_tuple
-                best_release = release
+            is_revoked = self.firmware_downloader.is_release_revoked(release)
+            if is_revoked:
+                if best_revoked_tuple is None or release_tuple > best_revoked_tuple:
+                    best_revoked_tuple = release_tuple
+                    best_revoked_release = release
+            else:
+                if best_tuple is None or release_tuple > best_tuple:
+                    best_tuple = release_tuple
+                    best_release = release
 
-        return best_release or (releases[0] if releases else None)
+        return (
+            best_release or best_revoked_release or (releases[0] if releases else None)
+        )
 
     def _download_android_release(self, release: Release) -> bool:
         """
