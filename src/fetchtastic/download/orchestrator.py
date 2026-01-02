@@ -197,6 +197,7 @@ class DownloadOrchestrator:
                 logger.info("No Android releases found")
                 return
 
+            self.android_downloader.update_release_history(android_releases)
             keep_count = self.config.get(
                 "ANDROID_VERSIONS_TO_KEEP", DEFAULT_ANDROID_VERSIONS_TO_KEEP
             )
@@ -205,7 +206,10 @@ class DownloadOrchestrator:
 
             releases_to_download = []
             for release in releases_to_process:
-                logger.info(f"Checking {release.tag_name}…")
+                suffix = self.android_downloader.format_release_log_suffix(release)
+                if not isinstance(suffix, str):
+                    suffix = ""
+                logger.info(f"Checking {release.tag_name}{suffix}…")
                 if self.android_downloader.is_release_complete(release):
                     logger.debug(
                         f"Release {release.tag_name} already exists and is complete"
@@ -265,6 +269,7 @@ class DownloadOrchestrator:
                 logger.info("No firmware releases found")
                 return
 
+            self.firmware_downloader.update_release_history(firmware_releases)
             latest_release = self._select_latest_release_by_version(firmware_releases)
             keep_count = self.config.get(
                 "FIRMWARE_VERSIONS_TO_KEEP", DEFAULT_FIRMWARE_VERSIONS_TO_KEEP
@@ -273,7 +278,10 @@ class DownloadOrchestrator:
 
             releases_to_download = []
             for release in releases_to_process:
-                logger.info(f"Checking {release.tag_name}…")
+                suffix = self.firmware_downloader.format_release_log_suffix(release)
+                if not isinstance(suffix, str):
+                    suffix = ""
+                logger.info(f"Checking {release.tag_name}{suffix}…")
                 if self.firmware_downloader.is_release_complete(release):
                     logger.debug(
                         f"Release {release.tag_name} already exists and is complete"
@@ -359,13 +367,25 @@ class DownloadOrchestrator:
         """
         Select the release with the highest semantic version parsed from release tag names.
 
-        If one or more tag names parse as semantic versions, returns the release whose parsed version is greatest. If no tag parses successfully, returns the first release in the provided list. Returns None when the input list is empty.
+        If one or more tag names parse as semantic versions, returns the release whose parsed version is greatest, preferring non-revoked releases when possible. If no tag parses successfully, returns the first release in the provided list. Returns None when the input list is empty.
 
         Returns:
             The release with the highest parsed version, the first release if none parse, or None if no releases were provided.
         """
         best_release: Optional[Release] = None
         best_tuple: Optional[Tuple[int, ...]] = None
+
+        for release in releases:
+            if self.firmware_downloader.is_release_revoked(release):
+                continue
+            release_tuple = self.version_manager.get_release_tuple(release.tag_name)
+            if release_tuple is None:
+                continue
+            if best_tuple is None or release_tuple > best_tuple:
+                best_tuple = release_tuple
+                best_release = release
+        if best_release is not None:
+            return best_release
 
         for release in releases:
             release_tuple = self.version_manager.get_release_tuple(release.tag_name)

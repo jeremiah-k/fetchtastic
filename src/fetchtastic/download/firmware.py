@@ -26,6 +26,7 @@ from fetchtastic.constants import (
     FIRMWARE_DIR_NAME,
     FIRMWARE_DIR_PREFIX,
     FIRMWARE_PRERELEASES_DIR_NAME,
+    FIRMWARE_RELEASE_HISTORY_JSON_FILE,
     LATEST_FIRMWARE_PRERELEASE_JSON_FILE,
     LATEST_FIRMWARE_RELEASE_JSON_FILE,
     MESHTASTIC_FIRMWARE_RELEASES_URL,
@@ -44,9 +45,9 @@ from fetchtastic.utils import (
 
 from .base import BaseDownloader
 from .cache import CacheManager
-from .files import _sanitize_path_component
 from .interfaces import Asset, DownloadResult, Release
 from .prerelease_history import PrereleaseHistoryManager
+from .release_history import ReleaseHistoryManager
 from .version import VersionManager
 
 
@@ -78,6 +79,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
         self.latest_prerelease_file = LATEST_FIRMWARE_PRERELEASE_JSON_FILE
         self.latest_release_path = self.cache_manager.get_cache_file_path(
             self.latest_release_file
+        )
+        self.release_history_path = self.cache_manager.get_cache_file_path(
+            FIRMWARE_RELEASE_HISTORY_JSON_FILE
+        )
+        self.release_history_manager = ReleaseHistoryManager(
+            self.cache_manager, self.release_history_path
         )
 
         device_api_config = self.config.get("DEVICE_HARDWARE_API", {})
@@ -174,6 +181,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     tag_name=release_data["tag_name"],
                     prerelease=release_data.get("prerelease", False),
                     published_at=release_data.get("published_at"),
+                    name=release_data.get("name"),
                     body=release_data.get("body"),
                 )
 
@@ -226,6 +234,81 @@ class FirmwareReleaseDownloader(BaseDownloader):
         """
         return asset.download_url
 
+    def update_release_history(
+        self, releases: List[Release], *, log_summary: bool = True
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Update the on-disk release history cache and optionally log status summaries.
+
+        Parameters:
+            releases (List[Release]): Releases to record in history.
+            log_summary (bool): When True, emit summary logs for revoked/removed releases
+                and duplicated base versions.
+
+        Returns:
+            Optional[Dict[str, Any]]: The updated history data, or None when no releases
+                were supplied.
+        """
+        if not releases:
+            return None
+        history = self.release_history_manager.update_release_history(releases)
+        if log_summary:
+            self.release_history_manager.log_release_status_summary(
+                history, label="Firmware"
+            )
+            self.release_history_manager.log_duplicate_base_versions(
+                releases, label="Firmware"
+            )
+        return history
+
+    def format_release_log_suffix(self, release: Release) -> str:
+        """
+        Build a log suffix that includes channel/revoked context when available.
+        """
+        return self.release_history_manager.format_release_log_suffix(release)
+
+    def is_release_revoked(self, release: Release) -> bool:
+        """
+        Return True if a release appears revoked based on its metadata.
+        """
+        return self.release_history_manager.is_release_revoked(release)
+
+    def _get_release_storage_tag(self, release: Release) -> str:
+        """
+        Return the release directory tag, appending "-revoked" when appropriate.
+
+        If a release's revocation status changes, attempts to rename the existing
+        directory to match the current status.
+        """
+        safe_tag = self._sanitize_required(release.tag_name, "release tag")
+        revoked_tag = f"{safe_tag}-revoked"
+        target_tag = revoked_tag if self.is_release_revoked(release) else safe_tag
+        alternate_tag = safe_tag if target_tag == revoked_tag else revoked_tag
+
+        firmware_dir = os.path.join(self.download_dir, FIRMWARE_DIR_NAME)
+        target_path = os.path.join(firmware_dir, target_tag)
+        alternate_path = os.path.join(firmware_dir, alternate_tag)
+
+        if os.path.isdir(alternate_path) and not os.path.exists(target_path):
+            try:
+                os.rename(alternate_path, target_path)
+                logger.info(
+                    "Renamed firmware release directory %s -> %s",
+                    alternate_tag,
+                    target_tag,
+                )
+                return target_tag
+            except OSError as exc:
+                logger.warning(
+                    "Unable to rename firmware release directory %s -> %s: %s",
+                    alternate_tag,
+                    target_tag,
+                    exc,
+                )
+                return alternate_tag
+
+        return target_tag
+
     def download_firmware(self, release: Release, asset: Asset) -> DownloadResult:
         """
         Download and verify a single firmware asset for a release and produce a structured DownloadResult.
@@ -239,11 +322,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
         """
         target_path: Optional[str] = None
         try:
+            storage_tag = self._get_release_storage_tag(release)
             # Get target path for the firmware ZIP
-            target_path = self.get_target_path_for_release(release.tag_name, asset.name)
+            target_path = self.get_target_path_for_release(storage_tag, asset.name)
 
             # Check if we need to download
-            if self.is_asset_complete(release.tag_name, asset):
+            if self.is_asset_complete(storage_tag, asset):
                 logger.debug(
                     "Firmware %s already exists and is complete",
                     asset.name,
@@ -339,9 +423,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
         Returns:
             True if all selected assets exist and pass integrity and size checks, False otherwise.
         """
-        version_dir = os.path.join(
-            self.download_dir, FIRMWARE_DIR_NAME, release.tag_name
-        )
+        storage_tag = self._get_release_storage_tag(release)
+        version_dir = os.path.join(self.download_dir, FIRMWARE_DIR_NAME, storage_tag)
         if not os.path.isdir(version_dir):
             return False
 
@@ -482,7 +565,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
             exclude_patterns = exclude_patterns or []
 
             # Get the path to the downloaded ZIP file
-            zip_path = self.get_target_path_for_release(release.tag_name, asset.name)
+            storage_tag = self._get_release_storage_tag(release)
+            zip_path = self.get_target_path_for_release(storage_tag, asset.name)
             if not os.path.exists(zip_path):
                 return self.create_download_result(
                     success=False,
@@ -598,8 +682,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
             release_tags_to_keep = set()
             for release in latest_releases:
-                safe_tag = _sanitize_path_component(release.tag_name)
-                if safe_tag is None:
+                try:
+                    safe_tag = self._get_release_storage_tag(release)
+                except ValueError:
                     logger.warning(
                         "Skipping unsafe firmware release tag during cleanup: %s",
                         release.tag_name,

@@ -30,6 +30,9 @@ class Release:
     published_at: Optional[str] = None
     """ISO 8601 timestamp when the release was published"""
 
+    name: Optional[str] = None
+    """Human-readable release name/title"""
+
     body: Optional[str] = None
     """Release notes/markdown content"""
 

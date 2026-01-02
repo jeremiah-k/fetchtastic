@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional
 import requests
 
 from fetchtastic.constants import (
+    ANDROID_RELEASE_HISTORY_JSON_FILE,
     APK_PRERELEASES_DIR_NAME,
     APKS_DIR_NAME,
     DEFAULT_ANDROID_VERSIONS_TO_KEEP,
@@ -39,6 +40,7 @@ from .cache import CacheManager
 from .files import _safe_rmtree, _sanitize_path_component
 from .interfaces import Asset, DownloadResult, Release
 from .prerelease_history import PrereleaseHistoryManager
+from .release_history import ReleaseHistoryManager
 from .version import VersionManager
 
 
@@ -69,6 +71,12 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         self.latest_prerelease_file = LATEST_ANDROID_PRERELEASE_JSON_FILE
         self.latest_release_path = self.cache_manager.get_cache_file_path(
             self.latest_release_file
+        )
+        self.release_history_path = self.cache_manager.get_cache_file_path(
+            ANDROID_RELEASE_HISTORY_JSON_FILE
+        )
+        self.release_history_manager = ReleaseHistoryManager(
+            self.cache_manager, self.release_history_path
         )
 
     def get_target_path_for_release(
@@ -114,6 +122,35 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         )
         os.makedirs(prerelease_dir, exist_ok=True)
         return prerelease_dir
+
+    def update_release_history(
+        self, releases: List[Release], *, log_summary: bool = True
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Update the on-disk release history cache and optionally log status summaries.
+
+        Parameters:
+            releases (List[Release]): Releases to record in history.
+            log_summary (bool): When True, emit summary logs for revoked/removed releases.
+
+        Returns:
+            Optional[Dict[str, Any]]: The updated history data, or None when no releases
+                were supplied.
+        """
+        if not releases:
+            return None
+        history = self.release_history_manager.update_release_history(releases)
+        if log_summary:
+            self.release_history_manager.log_release_status_summary(
+                history, label="Android"
+            )
+        return history
+
+    def format_release_log_suffix(self, release: Release) -> str:
+        """
+        Build a log suffix that includes channel/revoked context when available.
+        """
+        return self.release_history_manager.format_release_log_suffix(release)
 
     def _is_asset_complete_for_target(self, target_path: str, asset: Asset) -> bool:
         """
@@ -216,6 +253,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                         tag_name=tag_name,
                         prerelease=_is_apk_prerelease(release_data),
                         published_at=release_data.get("published_at"),
+                        name=release_data.get("name"),
                         body=release_data.get("body"),
                     )
 
