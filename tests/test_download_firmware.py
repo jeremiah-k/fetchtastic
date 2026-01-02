@@ -878,6 +878,34 @@ class TestFirmwareReleaseDownloader:
 
         assert result == str(notes_path)
 
+    def test_write_release_notes_existing_symlink(self, tmp_path):
+        """Symlinked release notes should be rejected."""
+        cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
+        config = {"DOWNLOAD_DIR": str(tmp_path / "downloads")}
+        downloader = FirmwareReleaseDownloader(config, cache_manager)
+
+        release_dir = tmp_path / "downloads" / "firmware" / "v1.2.1"
+        release_dir.mkdir(parents=True)
+        notes_path = release_dir / "release_notes-v1.2.1.md"
+        target_path = tmp_path / "target.md"
+        target_path.write_text("Target", encoding="utf-8")
+
+        try:
+            os.symlink(target_path, notes_path)
+        except (OSError, NotImplementedError):
+            pytest.skip("Symlinks not supported on this platform")
+
+        with patch.object(log_utils.logger, "warning") as mock_warning:
+            result = downloader._write_release_notes(
+                release_dir=str(release_dir),
+                release_tag="v1.2.1",
+                body="New notes",
+                base_dir=str(tmp_path / "downloads" / "firmware"),
+            )
+
+        assert result is None
+        assert mock_warning.called
+
     def test_write_release_notes_path_escape(self, tmp_path):
         """Release notes should not be written outside the base directory."""
         cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))

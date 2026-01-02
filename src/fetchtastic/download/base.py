@@ -407,17 +407,17 @@ class BaseDownloader(Downloader, ABC):
     ) -> Optional[str]:
         """
         Write sanitized release notes to a markdown file within the given release directory if not already present.
-        
+
         Validates and sanitizes the provided release_tag; skips writing if the tag is unsafe. Ensures the target notes path is located inside base_dir (prevents path escape), creates release_dir as needed, strips unwanted characters from body, and writes the file atomically via the downloader's cache_manager. If the notes file already exists, returns its path without modifying it.
-        
+
         Parameters:
-        	release_dir (str): Directory where the release notes file should be placed.
-        	release_tag (str): Tag used to derive a safe filename component; will be sanitized.
-        	body (Optional[str]): Release notes content; nothing is written if empty or whitespace after sanitization.
-        	base_dir (str): Base download directory used to verify the notes path does not escape the allowed location.
-        
+                release_dir (str): Directory where the release notes file should be placed.
+                release_tag (str): Tag used to derive a safe filename component; will be sanitized.
+                body (Optional[str]): Release notes content; nothing is written if empty or whitespace after sanitization.
+                base_dir (str): Base download directory used to verify the notes path does not escape the allowed location.
+
         Returns:
-        	notes_path (Optional[str]): Path to the release notes file if written or already present, `None` otherwise.
+                notes_path (Optional[str]): Path to the release notes file if written or already present, `None` otherwise.
         """
         if not body:
             return None
@@ -428,8 +428,16 @@ class BaseDownloader(Downloader, ABC):
             return None
 
         notes_path = os.path.join(release_dir, f"release_notes-{safe_tag}.md")
-        if os.path.exists(notes_path):
+        if os.path.lexists(notes_path):
+            if os.path.islink(notes_path):
+                logger.warning(
+                    "Refusing to use existing symlink for release notes: %s",
+                    notes_path,
+                )
+                return None
             return notes_path
+
+        os.makedirs(release_dir, exist_ok=True)
 
         try:
             real_base = os.path.realpath(base_dir)
@@ -444,8 +452,6 @@ class BaseDownloader(Downloader, ABC):
                 release_tag,
             )
             return None
-
-        os.makedirs(release_dir, exist_ok=True)
 
         notes_content = strip_unwanted_chars(body)
         if not notes_content.strip():

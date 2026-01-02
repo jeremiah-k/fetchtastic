@@ -408,10 +408,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
         if channel and channel not in _STORAGE_CHANNEL_SUFFIXES:
             channel = ""
 
-        channels = [channel, ""]
-        for candidate in sorted(_STORAGE_CHANNEL_SUFFIXES):
-            if candidate not in channels:
-                channels.append(candidate)
+        all_channels = [channel, ""] + sorted(_STORAGE_CHANNEL_SUFFIXES)
+        channels = list(dict.fromkeys(all_channels))
 
         candidates: List[str] = []
         for is_revoked in (revoked, not revoked):
