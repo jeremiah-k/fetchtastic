@@ -406,11 +406,18 @@ class BaseDownloader(Downloader, ABC):
         base_dir: str,
     ) -> Optional[str]:
         """
-        Write release notes to a markdown file in the release directory when missing.
-
+        Write sanitized release notes to a markdown file within the given release directory if not already present.
+        
+        Validates and sanitizes the provided release_tag; skips writing if the tag is unsafe. Ensures the target notes path is located inside base_dir (prevents path escape), creates release_dir as needed, strips unwanted characters from body, and writes the file atomically via the downloader's cache_manager. If the notes file already exists, returns its path without modifying it.
+        
+        Parameters:
+        	release_dir (str): Directory where the release notes file should be placed.
+        	release_tag (str): Tag used to derive a safe filename component; will be sanitized.
+        	body (Optional[str]): Release notes content; nothing is written if empty or whitespace after sanitization.
+        	base_dir (str): Base download directory used to verify the notes path does not escape the allowed location.
+        
         Returns:
-            Optional[str]: Path to the release notes file if written or already present,
-                otherwise None.
+        	notes_path (Optional[str]): Path to the release notes file if written or already present, `None` otherwise.
         """
         if not body:
             return None

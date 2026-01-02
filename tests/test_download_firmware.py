@@ -438,6 +438,18 @@ class TestFirmwareReleaseDownloader:
             mock_scandir.return_value.__enter__.return_value = [mock_v1, mock_v2]
 
             def _storage_tag_side_effect(release):
+                """
+                Map a safe release to its storage tag or raise an error for unsafe tags.
+                
+                Parameters:
+                    release: An object with a `tag_name` attribute representing the release tag.
+                
+                Returns:
+                    str: The storage tag corresponding to the provided release.
+                
+                Raises:
+                    ValueError: If the release tag is considered unsafe.
+                """
                 if release.tag_name == "v1.0.0":
                     return "v1.0.0"
                 raise ValueError("Unsafe release tag")
