@@ -273,6 +273,30 @@ class FirmwareReleaseDownloader(BaseDownloader):
         """
         return self.release_history_manager.is_release_revoked(release)
 
+    def ensure_release_notes(self, release: Release) -> Optional[str]:
+        """
+        Ensure release notes are stored alongside firmware assets.
+
+        Returns:
+            Optional[str]: Path to the release notes file if written or already present.
+        """
+        try:
+            storage_tag = self._get_release_storage_tag(release)
+        except ValueError:
+            logger.warning(
+                "Skipping release notes for unsafe firmware tag: %s", release.tag_name
+            )
+            return None
+
+        release_dir = os.path.join(self.download_dir, FIRMWARE_DIR_NAME, storage_tag)
+        base_dir = os.path.join(self.download_dir, FIRMWARE_DIR_NAME)
+        return self._write_release_notes(
+            release_dir=release_dir,
+            release_tag=release.tag_name,
+            body=release.body,
+            base_dir=base_dir,
+        )
+
     def _get_release_storage_tag(self, release: Release) -> str:
         """
         Return the release directory tag, appending "-revoked" when appropriate.

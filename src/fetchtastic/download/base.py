@@ -19,7 +19,7 @@ from fetchtastic.log_utils import logger
 from fetchtastic.utils import matches_selected_patterns
 
 from .cache import CacheManager
-from .files import FileOperations, _sanitize_path_component
+from .files import FileOperations, _sanitize_path_component, strip_unwanted_chars
 from .interfaces import Asset, Downloader, DownloadResult, Pathish
 from .version import VersionManager
 
@@ -396,6 +396,60 @@ class BaseDownloader(Downloader, ABC):
             bool: `True` if the file was removed, `False` otherwise.
         """
         return self.file_operations.cleanup_file(file_path)
+
+    def _write_release_notes(
+        self,
+        *,
+        release_dir: str,
+        release_tag: str,
+        body: Optional[str],
+        base_dir: str,
+    ) -> Optional[str]:
+        """
+        Write release notes to a markdown file in the release directory when missing.
+
+        Returns:
+            Optional[str]: Path to the release notes file if written or already present,
+                otherwise None.
+        """
+        if not body:
+            return None
+
+        safe_tag = _sanitize_path_component(release_tag)
+        if safe_tag is None:
+            logger.warning("Skipping release notes for unsafe tag: %s", release_tag)
+            return None
+
+        notes_path = os.path.join(release_dir, f"release_notes-{safe_tag}.md")
+        if os.path.exists(notes_path):
+            return notes_path
+
+        os.makedirs(release_dir, exist_ok=True)
+
+        try:
+            real_base = os.path.realpath(base_dir)
+            real_notes = os.path.realpath(notes_path)
+            notes_common = os.path.commonpath([real_base, real_notes])
+        except ValueError:
+            notes_common = None
+
+        if notes_common != real_base:
+            logger.warning(
+                "Skipping write of release notes for %s: path escapes download base",
+                release_tag,
+            )
+            return None
+
+        notes_content = strip_unwanted_chars(body)
+        if not notes_content.strip():
+            return None
+
+        if self.cache_manager.atomic_write_text(notes_path, notes_content):
+            logger.debug("Saved release notes to %s", notes_path)
+            return notes_path
+
+        logger.warning("Could not atomically write release notes to %s", notes_path)
+        return None
 
     def _is_zip_intact(self, file_path: str) -> bool:
         """

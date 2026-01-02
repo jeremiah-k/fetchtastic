@@ -206,6 +206,7 @@ class DownloadOrchestrator:
 
             releases_to_download = []
             for release in releases_to_process:
+                self.android_downloader.ensure_release_notes(release)
                 suffix = self.android_downloader.format_release_log_suffix(release)
                 if not isinstance(suffix, str):
                     suffix = ""
@@ -227,6 +228,7 @@ class DownloadOrchestrator:
             logger.info("Checking for pre-release APK...")
             prereleases = self.android_downloader.handle_prereleases(android_releases)
             for prerelease in prereleases:
+                self.android_downloader.ensure_release_notes(prerelease)
                 for asset in prerelease.assets:
                     if not self.android_downloader.should_download_asset(asset.name):
                         continue
@@ -278,6 +280,7 @@ class DownloadOrchestrator:
 
             releases_to_download = []
             for release in releases_to_process:
+                self.firmware_downloader.ensure_release_notes(release)
                 suffix = self.firmware_downloader.format_release_log_suffix(release)
                 if not isinstance(suffix, str):
                     suffix = ""
@@ -376,7 +379,7 @@ class DownloadOrchestrator:
         best_tuple: Optional[Tuple[int, ...]] = None
 
         for release in releases:
-            if self.firmware_downloader.is_release_revoked(release):
+            if self.firmware_downloader.is_release_revoked(release) is True:
                 continue
             release_tuple = self.version_manager.get_release_tuple(release.tag_name)
             if release_tuple is None:

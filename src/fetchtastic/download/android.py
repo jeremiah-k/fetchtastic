@@ -152,6 +152,38 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         """
         return self.release_history_manager.format_release_log_suffix(release)
 
+    def ensure_release_notes(self, release: Release) -> Optional[str]:
+        """
+        Ensure release notes are stored alongside APK assets.
+
+        Returns:
+            Optional[str]: Path to the release notes file if written or already present.
+        """
+        safe_release = _sanitize_path_component(release.tag_name)
+        if safe_release is None:
+            logger.warning(
+                "Skipping release notes for unsafe Android tag: %s", release.tag_name
+            )
+            return None
+
+        is_prerelease = (
+            release.prerelease
+            or _is_apk_prerelease_by_name(release.tag_name)
+            or self.version_manager.is_prerelease_version(release.tag_name)
+        )
+        base_dir = (
+            self._get_prerelease_base_dir()
+            if is_prerelease
+            else os.path.join(self.download_dir, APKS_DIR_NAME)
+        )
+        release_dir = os.path.join(base_dir, safe_release)
+        return self._write_release_notes(
+            release_dir=release_dir,
+            release_tag=release.tag_name,
+            body=release.body,
+            base_dir=base_dir,
+        )
+
     def _is_asset_complete_for_target(self, target_path: str, asset: Asset) -> bool:
         """
         Determine whether the asset at target_path is present and passes size and integrity checks.
