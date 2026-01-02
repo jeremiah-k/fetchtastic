@@ -1,6 +1,7 @@
 # src/fetchtastic/menu_apk.py
 
 import json
+from typing import cast
 
 from pick import pick
 
@@ -15,7 +16,7 @@ from fetchtastic.utils import (
 )
 
 
-def fetch_apk_assets():
+def fetch_apk_assets() -> list[str]:
     """
     Retrieve APK filenames from the latest Meshtastic Android release on GitHub.
 
@@ -48,7 +49,7 @@ def fetch_apk_assets():
     return asset_names
 
 
-def select_assets(assets):
+def select_assets(assets: list[str]) -> dict[str, list[str]] | None:
     """
     Present an interactive multi-select prompt for APK asset filenames and return selected base-name patterns.
 
@@ -66,7 +67,9 @@ Note: These are files from the latest release. Version numbers may change in oth
     selected_options = pick(
         options, title, multiselect=True, min_selection_count=0, indicator="*"
     )
-    selected_assets = [option[0] for option in selected_options]
+    selected_assets = [
+        option[0] for option in cast(list[tuple[str, int]], selected_options)
+    ]
     if not selected_assets:
         print("No APK files selected. APKs will not be downloaded.")
         return None
@@ -79,7 +82,7 @@ Note: These are files from the latest release. Version numbers may change in oth
     return {"selected_assets": base_patterns}
 
 
-def run_menu():
+def run_menu() -> dict[str, list[str]] | None:
     """
     Orchestrate fetching APK asset names and prompting the user to select one or more; return the selection.
 

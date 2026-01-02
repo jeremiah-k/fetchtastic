@@ -1,6 +1,7 @@
 # src/fetchtastic/menu_firmware.py
 
 import json
+from typing import cast
 
 from pick import pick
 
@@ -12,7 +13,7 @@ from fetchtastic.utils import (
 )
 
 
-def fetch_firmware_assets():
+def fetch_firmware_assets() -> list[str]:
     """
     Retrieve firmware asset filenames from the latest Meshtastic GitHub release.
 
@@ -45,7 +46,7 @@ def fetch_firmware_assets():
     return asset_names
 
 
-def select_assets(assets):
+def select_assets(assets: list[str]) -> dict[str, list[str]] | None:
     """
     Present an interactive multiselect menu of firmware asset filenames and return their base-name patterns.
 
@@ -64,7 +65,9 @@ Note: These are files from the latest release. Version numbers may change in oth
     selected_options = pick(
         options, title, multiselect=True, min_selection_count=0, indicator="*"
     )
-    selected_assets = [option[0] for option in selected_options]
+    selected_assets = [
+        option[0] for option in cast(list[tuple[str, int]], selected_options)
+    ]
     if not selected_assets:
         print("No firmware files selected. Firmware will not be downloaded.")
         return None
@@ -77,7 +80,7 @@ Note: These are files from the latest release. Version numbers may change in oth
     return {"selected_assets": base_patterns}
 
 
-def run_menu():
+def run_menu() -> dict[str, list[str]] | None:
     """
     Runs the firmware selection menu and returns the selected patterns.
     """

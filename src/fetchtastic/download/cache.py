@@ -8,7 +8,7 @@ commit timestamps, and other download-related data.
 import json
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, cast
 from urllib.parse import urlencode
 
 import requests
@@ -139,7 +139,7 @@ class CacheManager:
             bool: `True` if the file was written and moved into place, `False` otherwise.
         """
 
-        def _write_text_content(f):
+        def _write_text_content(f: Any) -> None:
             """
             Write preset text content into the provided writable text file-like object.
 
@@ -150,7 +150,7 @@ class CacheManager:
 
         return self.atomic_write(file_path, _write_text_content, suffix=".txt")
 
-    def atomic_write_json(self, file_path: str, data: Dict) -> bool:
+    def atomic_write_json(self, file_path: str, data: Dict[str, Any]) -> bool:
         """
         Atomically write the given mapping to the specified path as JSON.
 
@@ -163,7 +163,7 @@ class CacheManager:
         """
         return _atomic_write_json(file_path, data)
 
-    def read_json(self, file_path: str) -> Optional[Dict]:
+    def read_json(self, file_path: str) -> Optional[Dict[str, Any]]:
         """
         Load and parse JSON from the given file path.
 
@@ -175,14 +175,14 @@ class CacheManager:
 
         try:
             with open(file_path, "r", encoding="utf-8") as f:
-                return json.load(f)
+                return cast(Dict[str, Any], json.load(f))
         except (IOError, json.JSONDecodeError) as e:
             logger.error(f"Could not read JSON file {file_path}: {e}")
             return None
 
     def read_json_with_backward_compatibility(
         self, file_path: str, key_mapping: Optional[Dict[str, str]] = None
-    ) -> Optional[Dict]:
+    ) -> Optional[Dict[str, Any]]:
         """
         Read a JSON file and return its contents with legacy keys remapped to new keys.
 
@@ -216,7 +216,7 @@ class CacheManager:
         return self.read_json(cache_file)
 
     def cache_with_expiry(
-        self, cache_file: str, data: Dict, expiry_hours: float
+        self, cache_file: str, data: Dict[str, Any], expiry_hours: float
     ) -> bool:
         """
         Store `data` in `cache_file` along with UTC `cached_at` and `expires_at` ISO‑8601 timestamps.
@@ -238,7 +238,7 @@ class CacheManager:
         }
         return self.atomic_write_json(cache_file, cache_data)
 
-    def read_cache_with_expiry(self, cache_file: str) -> Optional[Dict]:
+    def read_cache_with_expiry(self, cache_file: str) -> Optional[Dict[str, Any]]:
         """
         Retrieve the cached value stored under the "data" key if the cache file exists and has not expired.
 
@@ -397,14 +397,17 @@ class CacheManager:
             return [d for d in directories if isinstance(d, str)]
 
         try:
-            return self._get_cached_github_data(
-                cache_key=cache_key,
-                cache_file=cache_file,
-                data_field_name="directories",
-                fetcher_func=fetch_directories,
-                force_refresh=force_refresh,
-                cache_expiry_seconds=FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
-                path_description=f"prerelease directories for {normalized_path or '/'}",
+            return cast(
+                List[str],
+                self._get_cached_github_data(
+                    cache_key=cache_key,
+                    cache_file=cache_file,
+                    data_field_name="directories",
+                    fetcher_func=fetch_directories,
+                    force_refresh=force_refresh,
+                    cache_expiry_seconds=FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
+                    path_description=f"prerelease directories for {normalized_path or '/'}",
+                ),
             )
         except (ValueError, KeyError, TypeError) as e:
             logger.error(
@@ -460,14 +463,17 @@ class CacheManager:
             return [c for c in contents if isinstance(c, dict)]
 
         try:
-            return self._get_cached_github_data(
-                cache_key=cache_key,
-                cache_file=cache_file,
-                data_field_name="contents",
-                fetcher_func=fetch_contents,
-                force_refresh=force_refresh,
-                cache_expiry_seconds=FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
-                path_description=f"repo contents for {normalized_path or '/'}",
+            return cast(
+                List[Dict[str, Any]],
+                self._get_cached_github_data(
+                    cache_key=cache_key,
+                    cache_file=cache_file,
+                    data_field_name="contents",
+                    fetcher_func=fetch_contents,
+                    force_refresh=force_refresh,
+                    cache_expiry_seconds=FIRMWARE_PRERELEASE_DIR_CACHE_EXPIRY_SECONDS,
+                    path_description=f"repo contents for {normalized_path or '/'}",
+                ),
             )
         except (ValueError, KeyError, TypeError) as e:
             logger.error(
@@ -709,7 +715,7 @@ class CacheManager:
             return False
 
     def atomic_write_with_timestamp(
-        self, file_path: str, data: Dict, timestamp_key: str = "last_updated"
+        self, file_path: str, data: Dict[str, Any], timestamp_key: str = "last_updated"
     ) -> bool:
         """
         Atomically write a JSON file containing the provided data and a UTC ISO 8601 timestamp.
@@ -728,7 +734,9 @@ class CacheManager:
 
         return self.atomic_write_json(file_path, data_with_timestamp)
 
-    def read_with_expiry(self, file_path: str, expiry_hours: float) -> Optional[Dict]:
+    def read_with_expiry(
+        self, file_path: str, expiry_hours: float
+    ) -> Optional[Dict[str, Any]]:
         """
         Return the parsed JSON cache if it exists and its timestamp is not older than expiry_hours.
 
@@ -833,7 +841,9 @@ class CacheManager:
         """
         return (datetime.now(timezone.utc) + timedelta(hours=expiry_hours)).isoformat()
 
-    def validate_cache_format(self, cache_data: Dict, required_keys: List[str]) -> bool:
+    def validate_cache_format(
+        self, cache_data: Dict[str, Any], required_keys: List[str]
+    ) -> bool:
         """
         Check that the given cache mapping contains all required top-level keys.
 

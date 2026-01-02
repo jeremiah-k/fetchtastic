@@ -863,7 +863,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
             try:
                 with open(latest_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    return data.get("latest_version")
+                    from typing import cast
+
+                    return cast(Optional[str], data.get("latest_version"))
             except (IOError, json.JSONDecodeError):
                 pass
         return None
@@ -1303,7 +1305,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
         history_entries: List[Dict[str, Any]],
         clean_latest_release: str,
         expected_version: str,
-    ):
+    ) -> None:
         """
         Log counts and a formatted list of prerelease commits for a given version.
 

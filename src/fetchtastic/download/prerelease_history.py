@@ -44,7 +44,7 @@ class PrereleaseHistoryManager:
     _PRERELEASE_ADD_RX = re.compile(PRERELEASE_ADD_COMMIT_PATTERN)
     _PRERELEASE_DELETE_RX = re.compile(PRERELEASE_DELETE_COMMIT_PATTERN)
 
-    def __init__(self):
+    def __init__(self) -> None:
         """
         Initialize the PrereleaseHistoryManager and its version utilities.
 
@@ -94,7 +94,12 @@ class PrereleaseHistoryManager:
                     "Using in-memory prerelease commit cache (cached %.0fs ago)",
                     (now - self._in_memory_commits_timestamp).total_seconds(),
                 )
-                return self._in_memory_commits_cache.get("commits", [])[:limit]
+                from typing import cast
+
+                return cast(
+                    List[Dict[str, Any]],
+                    self._in_memory_commits_cache.get("commits", [])[:limit],
+                )
 
         cached = cache_manager.read_json(cache_file)
         if isinstance(cached, dict):

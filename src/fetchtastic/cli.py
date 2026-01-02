@@ -42,7 +42,7 @@ get_api_request_summary = _get_api_request_summary
 copy_to_clipboard_func = setup_config.copy_to_clipboard_func
 
 
-def get_version_info():
+def get_version_info() -> Tuple[str, Optional[str], bool]:
     """
     Return version information for installed Fetchtastic package and latest available release.
 
@@ -52,7 +52,7 @@ def get_version_info():
     return setup_config.get_version_info()
 
 
-def get_upgrade_command():
+def get_upgrade_command() -> str:
     """
     Get the platform-appropriate shell command that performs an upgrade of Fetchtastic.
 

@@ -3,6 +3,7 @@
 import os
 import platform
 import shutil
+from typing import Any, Dict, List
 
 from fetchtastic import menu_repo
 from fetchtastic.constants import (
@@ -15,7 +16,9 @@ from fetchtastic.log_utils import logger  # Import new logger
 from fetchtastic.utils import download_file_with_retry
 
 
-def download_repo_files(selected_files, download_dir):  # log_message_func removed
+def download_repo_files(
+    selected_files: Dict[str, Any], download_dir: str
+) -> List[str]:  # log_message_func removed
     """
     Download selected repository files into the repository downloads folder under the given base download directory.
 
@@ -150,7 +153,7 @@ def download_repo_files(selected_files, download_dir):  # log_message_func remov
     return downloaded_files
 
 
-def clean_repo_directory(download_dir):  # log_message_func removed
+def clean_repo_directory(download_dir: str) -> bool:  # log_message_func removed
     """
     Clean the repository downloads directory under the given base download directory.
 
@@ -196,7 +199,7 @@ def clean_repo_directory(download_dir):  # log_message_func removed
         return False
 
 
-def main(config):  # log_message_func removed
+def main(config: Dict[str, Any]) -> None:  # log_message_func removed
     """
     Run the repository downloader flow: launch the interactive file browser, download selected files into the configured download directory, and on Windows optionally prompt to open the download folder.
 

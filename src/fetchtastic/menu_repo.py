@@ -1,6 +1,9 @@
 import curses
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
+
+if TYPE_CHECKING:
+    import _curses  # type: ignore[import-not-found]
 
 import requests
 from pick import (
@@ -43,7 +46,7 @@ class MenuPicker(Picker):
     Picker extension that supports PageUp/PageDown for faster navigation.
     """
 
-    def _page_step(self, screen: "curses._CursesWindow") -> int:
+    def _page_step(self, screen: Any) -> int:  # type: ignore[attr-defined]
         max_y, max_x = screen.getmaxyx()
         title_lines = len(self.get_title_lines(max_width=max_x))
         max_rows = max_y - self.position.y
@@ -57,7 +60,7 @@ class MenuPicker(Picker):
             return False
         return option.value.get("type") in {"back", "quit"}
 
-    def run_loop(self, screen: "curses._CursesWindow", position: "Position") -> Any:
+    def run_loop(self, screen: Any, position: "Position") -> Any:  # type: ignore[attr-defined]
         while True:
             self.draw(screen)
             c = screen.getch()
@@ -101,7 +104,7 @@ def _pick_menu(
     default_index: int = 0,
     multiselect: bool = False,
     min_selection_count: int = 0,
-    screen: Optional["curses._CursesWindow"] = None,
+    screen: Optional["curses._CursesWindow"] = None,  # type: ignore[attr-defined]
     position: Optional[Position] = None,
     clear_screen: bool = True,
     quit_keys: Optional[List[int]] = None,
@@ -124,7 +127,7 @@ def _pick_menu(
 def _process_repo_contents(
     contents: List[Dict[str, Any]],
     firmware_commit_times: Optional[Dict[str, datetime]] = None,
-):
+) -> List[Any]:
     """
     Process raw JSON contents from GitHub API and return sorted items.
 
@@ -197,7 +200,7 @@ def fetch_repo_contents(
     github_token: Optional[str] = None,
     cache_manager: Optional[CacheManager] = None,
     firmware_commit_times: Optional[Dict[str, datetime]] = None,
-):
+) -> List[Dict[str, Any]]:
     """
     Retrieve and process directory and file entries from the Meshtastic GitHub Pages repository for a given repository-relative path.
 
@@ -274,7 +277,7 @@ def fetch_repo_directories(
     github_token: Optional[str] = None,
     cache_manager: Optional[CacheManager] = None,
     firmware_commit_times: Optional[Dict[str, datetime]] = None,
-):
+) -> List[str]:
     """
     List directory names at the given repository path on meshtastic.github.io.
 
@@ -307,7 +310,7 @@ def fetch_directory_contents(
     github_token: Optional[str] = None,
     cache_manager: Optional[CacheManager] = None,
     firmware_commit_times: Optional[Dict[str, datetime]] = None,
-):
+) -> List[Dict[str, Any]]:
     """
     Fetch only files from directory contents for backward compatibility.
 
@@ -418,7 +421,9 @@ def select_item(items, current_path=""):
     return None
 
 
-def select_files(files):
+def select_files(
+    files: list[dict],
+) -> list[dict[str, Any]] | dict[str, Any] | None:
     """
     Present a multi-select menu for choosing repository files to download.
 
@@ -487,7 +492,7 @@ def select_files(files):
     return selected_files
 
 
-def run_menu(config: Optional[Dict[str, Any]] = None):
+def run_menu(config: Optional[Dict[str, Any]] = None) -> None:
     """
     Interactively browse the Meshtastic GitHub Pages repository and select one or more files to download.
 
@@ -606,6 +611,8 @@ def run_repository_downloader_menu(config):
 
         # Convert selected files to the format expected by the new downloader
         files_to_download = []
+        if selected_files is None:
+            return
         for file_info in selected_files["files"]:
             file_data = {
                 "name": file_info["name"],
