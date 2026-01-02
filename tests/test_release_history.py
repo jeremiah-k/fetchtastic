@@ -33,6 +33,16 @@ def test_is_release_revoked_from_body():
     assert is_release_revoked(release) is True
 
 
+def test_is_release_revoked_ignores_previous_revocation():
+    release = Release(
+        tag_name="v2.0.2",
+        prerelease=False,
+        body="If you installed the previously revoked 2.0.1 release, upgrade.",
+    )
+
+    assert is_release_revoked(release) is False
+
+
 def test_update_release_history_marks_revoked_and_removed(tmp_path):
     cache_manager = CacheManager(cache_dir=str(tmp_path))
     history_path = cache_manager.get_cache_file_path("release_history_test")

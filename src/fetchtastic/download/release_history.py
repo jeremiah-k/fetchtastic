@@ -24,7 +24,11 @@ STATUS_REMOVED = "removed"
 CHANNEL_STABLE = "stable"
 CHANNEL_PRERELEASE = "prerelease"
 
-_REVOKED_RX = re.compile(r"\brevoked\b", re.IGNORECASE)
+_REVOKED_TITLE_RX = re.compile(r"\brevoked\b", re.IGNORECASE)
+_REVOKED_BODY_LINE_RX = re.compile(
+    r"^(this release (has been|was|is) revoked|release (has been|was) revoked|revoked\b)",
+    re.IGNORECASE,
+)
 _CHANNEL_RX = {
     "alpha": re.compile(r"\balpha\b", re.IGNORECASE),
     "beta": re.compile(r"\bbeta\b", re.IGNORECASE),
@@ -68,9 +72,32 @@ def detect_release_channel(release: Release) -> str:
 
 def is_release_revoked(release: Release) -> bool:
     """
-    Determine whether a release is revoked by scanning name/body text.
+    Determine whether a release is revoked by scanning name and explicit body markers.
     """
-    return bool(_REVOKED_RX.search(_join_text([release.name, release.body])))
+    name_text = release.name or ""
+    if _REVOKED_TITLE_RX.search(name_text):
+        return True
+
+    body = release.body or ""
+    if not body:
+        return False
+
+    for line in body.splitlines()[:14]:
+        cleaned = line.strip()
+        if not cleaned:
+            continue
+        while cleaned.startswith(">"):
+            cleaned = cleaned[1:].lstrip()
+        cleaned = re.sub(r"^[^a-zA-Z0-9]+", "", cleaned)
+        if not cleaned:
+            continue
+        lower = cleaned.lower()
+        if lower.startswith("previously revoked"):
+            continue
+        if _REVOKED_BODY_LINE_RX.match(cleaned):
+            return True
+
+    return False
 
 
 class ReleaseHistoryManager:
