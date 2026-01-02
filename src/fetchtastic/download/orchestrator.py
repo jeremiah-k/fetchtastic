@@ -180,9 +180,9 @@ class DownloadOrchestrator:
 
     def _process_android_downloads(self) -> None:
         """
-        Orchestrates discovery and download of Android APK releases and prerelease APK assets.
-
-        If APK saving is disabled in configuration, this does nothing. It limits work to the configured number of recent stable releases, skips releases already marked complete, downloads missing release assets, processes eligible prerelease APKs, and records each asset's outcome in the orchestrator's result lists.
+        Coordinate discovery and downloading of Android APK releases and prerelease APK assets.
+        
+        If APK saving is disabled via configuration, the function returns without action. It limits work to the configured number of recent stable releases, skips releases already marked complete, downloads missing release assets, processes eligible prerelease APK assets, and records each asset's outcome in the orchestrator's result lists.
         """
         try:
             if not self.config.get("SAVE_APKS", False):
@@ -252,9 +252,9 @@ class DownloadOrchestrator:
 
     def _process_firmware_downloads(self) -> None:
         """
-        Ensure configured recent firmware releases and repository prereleases are downloaded and remove unexpected prerelease directories.
-
-        Scans up to the configured number of latest firmware releases, downloads any releases that are not already complete, attempts to fetch repository prerelease firmware for the selected latest release, and records each download outcome in the orchestrator's result lists. Afterwards, inspects the firmware prerelease directory and safely removes entries that are not valid managed prerelease directories (skipping symlinks and entries that fail safety or version checks). Errors encountered during the process are caught and logged.
+        Ensure recent firmware releases and repository prereleases are downloaded and remove unmanaged prerelease directories.
+        
+        Scans the configured recent firmware releases, downloads any missing release assets and repository prerelease firmware for the selected latest release, records each outcome in the orchestrator's result lists, and safely removes unexpected or unmanaged directories from the firmware prereleases folder. Errors encountered during processing are caught and logged.
         """
         try:
             if not self.config.get("SAVE_FIRMWARE", False):
@@ -364,12 +364,12 @@ class DownloadOrchestrator:
         self, releases: List[Release]
     ) -> Optional[Release]:
         """
-        Select the release with the highest semantic version parsed from release tag names.
-
-        If one or more tag names parse as semantic versions, returns the release whose parsed version is greatest, preferring non-revoked releases when possible. If no tag parses successfully, returns the first release in the provided list. Returns None when the input list is empty.
-
+        Choose the release with the highest semantic version parsed from its tag name, preferring non-revoked releases when possible.
+        
+        If one or more tag names parse as semantic versions, returns the release whose parsed version is greatest. If no tag parses successfully, returns the first release in the provided list. Returns None when the input list is empty.
+        
         Returns:
-            The release with the highest parsed version, the first release if none parse, or None if no releases were provided.
+            The selected Release, the first release if no tags parse, or None if no releases were provided.
         """
         best_release: Optional[Release] = None
         best_tuple: Optional[Tuple[int, ...]] = None

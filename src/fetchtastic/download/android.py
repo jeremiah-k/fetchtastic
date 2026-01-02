@@ -112,10 +112,10 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
     def _get_prerelease_base_dir(self) -> str:
         """
-        Ensure and return the base directory for APK prerelease downloads.
-
+        Return the absolute path to the prerelease APKs directory, creating the directory if it does not exist.
+        
         Returns:
-            str: Absolute path to the prerelease base directory under the APK downloads directory.
+            str: Absolute filesystem path to the prerelease APKs directory under the APK downloads directory.
         """
         prerelease_dir = os.path.join(
             self.download_dir, APKS_DIR_NAME, APK_PRERELEASES_DIR_NAME
@@ -148,16 +148,22 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
     def format_release_log_suffix(self, release: Release) -> str:
         """
-        Build a log suffix that includes channel/revoked context when available.
+        Create a log suffix describing the release channel and revoked status when available.
+        
+        Returns:
+            suffix (str): Formatted log suffix containing channel and revoked information, or an empty string if no contextual info is available.
         """
         return self.release_history_manager.format_release_log_suffix(release)
 
     def ensure_release_notes(self, release: Release) -> Optional[str]:
         """
-        Ensure release notes are stored alongside APK assets.
-
+        Write the release notes for the given release into the appropriate APK directory and return the notes file path.
+        
+        Parameters:
+            release (Release): Release metadata containing tag_name and body used to determine the notes filename and content.
+        
         Returns:
-            Optional[str]: Path to the release notes file if written or already present.
+            Optional[str]: Path to the release notes file if written or already present, `None` if the tag is unsafe or notes cannot be determined.
         """
         safe_release = _sanitize_path_component(release.tag_name)
         if safe_release is None:
@@ -186,10 +192,10 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
     def _is_asset_complete_for_target(self, target_path: str, asset: Asset) -> bool:
         """
-        Determine whether the asset at target_path is present and passes size and integrity checks.
-
-        Performs these checks when applicable: file existence, file size equals asset.size (if provided), verifier integrity check, and ZIP integrity validation for files ending with `.zip`.
-
+        Determine whether the asset file at target_path exists and is valid for the provided Asset.
+        
+        Performs the applicable checks: file existence, file size equals Asset.size (when provided), verifier integrity check, and ZIP integrity validation for files ending with `.zip`.
+        
         Returns:
             True if all applicable checks pass, False otherwise.
         """
@@ -211,15 +217,15 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
     def get_releases(self, limit: Optional[int] = None) -> List[Release]:
         """
-        Fetches Android APK releases from GitHub and constructs Release objects populated with their APK assets.
-
-        Uses a cached GitHub response when available, filters out releases that have no APK assets or that are considered legacy/unsupported, and respects the configured scan window for finding a minimum number of stable releases. If `limit` is provided, the function returns at most that many releases.
-
+        Retrieve Android APK releases from GitHub and construct Release objects populated with their APK assets.
+        
+        Respects cached responses and the configured scan window; when no `limit` is provided the function expands its scan to collect a configured minimum number of stable releases.
+        
         Parameters:
-            limit (Optional[int]): Maximum number of releases to return. If `None`, the scan size is determined from configuration and the function will expand its scan up to a configured maximum to find a minimum number of stable releases.
-
+            limit (Optional[int]): Maximum number of releases to return. If `None`, the function uses configured scan parameters to determine how many releases to fetch.
+        
         Returns:
-            List[Release]: A list of Release objects with their Asset entries; returns an empty list on error or if no valid releases are found.
+            List[Release]: Release objects populated with their APK Asset entries; returns an empty list on error or if no valid releases are found.
         """
         try:
             max_scan = GITHUB_MAX_PER_PAGE
