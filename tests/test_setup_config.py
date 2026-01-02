@@ -9,6 +9,8 @@ import yaml
 
 # Import package module (matches real usage)
 import fetchtastic.setup_config as setup_config
+from fetchtastic.build.base import BuildResult
+from fetchtastic.build.environment import BuildEnvironment
 from tests.test_constants import TEST_CONFIG
 
 
@@ -1035,6 +1037,7 @@ def test_run_setup_first_run_linux_simple(
         "2",  # Keep 2 versions of firmware
         "n",  # No pre-releases
         "n",  # No auto-extract
+        "n",  # Skip DFU build
         "n",  # No cron job
         "n",  # No reboot cron job
         "n",  # No NTFY notifications
@@ -1119,6 +1122,7 @@ def test_run_setup_first_run_windows(
         "2",  # Keep 2 versions of firmware
         "n",  # No auto-extract
         "n",  # No pre-releases
+        "n",  # Skip DFU build
         "y",  # create startup shortcut
         "n",  # No NTFY notifications
         "n",  # Would you like to set up a GitHub token now?
@@ -1211,6 +1215,7 @@ def test_run_setup_first_run_termux(  # noqa: ARG001
         "1",  # Keep 1 version of firmware
         "n",  # No pre-releases
         "n",  # No auto-extract
+        "n",  # Skip DFU build
         "y",  # wifi only
         "h",  # hourly cron job
         "y",  # boot script
@@ -1237,6 +1242,34 @@ def test_run_setup_first_run_termux(  # noqa: ARG001
         saved_config = mock_yaml_dump.call_args[0][0]
         assert saved_config["WIFI_ONLY"] is True
         assert saved_config["CHECK_APK_PRERELEASES"] is True
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_run_setup_termux_wifi_prompt_updates_config(mocker):
+    """Test Termux wifi-only prompt updates config during setup."""
+    from fetchtastic import setup_config
+
+    config = {}
+    mocker.patch("fetchtastic.setup_config.is_termux", return_value=True)
+    mocker.patch("fetchtastic.setup_config.config_exists", return_value=(False, None))
+    mocker.patch("fetchtastic.setup_config._setup_base", return_value=config)
+    mocker.patch(
+        "fetchtastic.setup_config._setup_downloads",
+        return_value=(config, False, False),
+    )
+    mocker.patch("fetchtastic.setup_config._setup_dfu_build", return_value=config)
+    mocker.patch("fetchtastic.setup_config._setup_automation", return_value=config)
+    mocker.patch("fetchtastic.setup_config._setup_notifications", return_value=config)
+    mocker.patch("fetchtastic.setup_config._setup_github", return_value=config)
+    mocker.patch("fetchtastic.setup_config.os.path.exists", return_value=True)
+    mocker.patch("fetchtastic.setup_config.yaml.dump")
+    mocker.patch("builtins.open", mock_open())
+    mocker.patch("builtins.input", return_value="y")
+
+    setup_config.run_setup(sections=["base"], perform_initial_download=False)
+
+    assert config["WIFI_ONLY"] is True
 
 
 @pytest.mark.configuration
@@ -1305,6 +1338,7 @@ def test_run_setup_existing_config(
         "y",  # Auto-extract
         "rak4631- tbeam",  # Extraction patterns
         "y",  # Check for pre-releases
+        "n",  # Skip DFU build
         "y",  # reconfigure cron
         "n",  # no daily cron
         "n",  # no reboot cron
@@ -1456,9 +1490,10 @@ def test_section_shortcuts_mapping():
     assert SECTION_SHORTCUTS["n"] == "notifications"
     assert SECTION_SHORTCUTS["m"] == "automation"
     assert SECTION_SHORTCUTS["g"] == "github"
+    assert SECTION_SHORTCUTS["d"] == "dfu"
 
     # Test that all expected shortcuts exist
-    expected_shortcuts = {"b", "a", "f", "n", "m", "g"}
+    expected_shortcuts = {"b", "a", "f", "n", "m", "g", "d"}
     assert set(SECTION_SHORTCUTS.keys()) == expected_shortcuts
 
 
@@ -1475,6 +1510,7 @@ def test_setup_section_choices():
         "notifications",
         "automation",
         "github",
+        "dfu",
     }
     assert SETUP_SECTION_CHOICES == expected_sections
 
@@ -1570,6 +1606,83 @@ def test_prompt_for_setup_sections_semicolon_separator(mock_input):
     mock_input.return_value = "f; a; n"
     result = _prompt_for_setup_sections()
     assert result == {"firmware", "android", "notifications"}
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_dfu_build_skips_when_not_requested(mocker):
+    """Test _setup_dfu_build skips prompts when dfu section isn't requested."""
+    from fetchtastic import setup_config
+
+    mock_input = mocker.patch("builtins.input")
+    result = setup_config._setup_dfu_build(
+        {}, is_partial_run=True, wants=lambda section: section == "firmware"
+    )
+
+    assert result == {}
+    mock_input.assert_not_called()
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_dfu_build_user_declines(mocker, tmp_path):
+    """Test _setup_dfu_build returns without running commands when user declines."""
+    from fetchtastic import setup_config
+
+    config = {"BASE_DIR": str(tmp_path)}
+    module = mocker.MagicMock()
+    module.describe_requirements.return_value = ["JDK 17"]
+    mocker.patch("fetchtastic.setup_config.get_build_module", return_value=module)
+    mocker.patch("builtins.input", return_value="n")
+
+    result = setup_config._setup_dfu_build(
+        config, is_partial_run=False, wants=lambda section: section == "dfu"
+    )
+
+    assert result == config
+    module.build.assert_not_called()
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_dfu_build_success(mocker, tmp_path):
+    """Test _setup_dfu_build runs build flow when user accepts."""
+    from fetchtastic import setup_config
+
+    config = {"BASE_DIR": str(tmp_path)}
+    module = mocker.MagicMock()
+    mocker.patch("fetchtastic.setup_config.get_build_module", return_value=module)
+    mocker.patch("fetchtastic.setup_config.print_build_requirements")
+    mocker.patch("fetchtastic.setup_config.prompt_yes_no", return_value=True)
+    mocker.patch("fetchtastic.setup_config.shutil.which", return_value="/usr/bin/javac")
+    mocker.patch("fetchtastic.setup_config.prompt_build_type", return_value="debug")
+    mocker.patch("fetchtastic.setup_config.prompt_build_ref", return_value="latest")
+    env_status = BuildEnvironment(
+        java_home="/tmp/java",
+        sdk_root="/tmp/sdk",
+        sdkmanager_path=None,
+        missing_packages=[],
+        missing_sdk_packages=[],
+    )
+    mocker.patch(
+        "fetchtastic.setup_config.prepare_build_environment", return_value=env_status
+    )
+    result = BuildResult(
+        success=True,
+        message="ok",
+        build_type="debug",
+        dest_path=str(tmp_path / "DFU-ok.apk"),
+    )
+    mock_build = mocker.patch(
+        "fetchtastic.setup_config.run_module_build", return_value=result
+    )
+
+    updated = setup_config._setup_dfu_build(
+        config, is_partial_run=False, wants=lambda section: section == "dfu"
+    )
+
+    assert updated == config
+    mock_build.assert_called_once()
 
 
 @pytest.mark.configuration

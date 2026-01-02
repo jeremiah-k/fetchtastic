@@ -6,6 +6,8 @@ import pytest
 
 # Import the package module (matches how users invoke it)
 import fetchtastic.cli as cli
+from fetchtastic.build.base import BuildResult
+from fetchtastic.build.environment import BuildEnvironment
 
 
 @pytest.fixture
@@ -955,6 +957,116 @@ def test_cli_setup_windows_integration_non_windows(mocker):
     # The flag should not be available, so this is expected behavior
 
 
+def test_run_dfu_build_module_missing(mocker):
+    """Test run_dfu_build when the module is unavailable."""
+    mocker.patch("fetchtastic.cli.get_build_module", return_value=None)
+    mock_logger = mocker.patch("fetchtastic.cli.log_utils.logger")
+
+    cli.run_dfu_build({}, build_type="debug", allow_update=True)
+
+    mock_logger.error.assert_called_once_with("DFU build module is not available.")
+
+
+def test_run_dfu_setup_module_missing(mocker):
+    """Test run_dfu_setup when the module is unavailable."""
+    mocker.patch("fetchtastic.cli.get_build_module", return_value=None)
+    mock_logger = mocker.patch("fetchtastic.cli.log_utils.logger")
+
+    cli.run_dfu_setup()
+
+    mock_logger.error.assert_called_once_with("DFU build module is not available.")
+
+
+def test_run_dfu_setup_ready(mocker, capsys):
+    """Test run_dfu_setup when the environment is ready."""
+    module = mocker.MagicMock()
+    mocker.patch("fetchtastic.cli.get_build_module", return_value=module)
+    mocker.patch("fetchtastic.cli.print_build_requirements")
+    env_status = BuildEnvironment(
+        java_home="/tmp/java",
+        sdk_root="/tmp/sdk",
+        sdkmanager_path=None,
+        missing_packages=[],
+        missing_sdk_packages=[],
+    )
+    mocker.patch("fetchtastic.cli.prepare_build_environment", return_value=env_status)
+
+    cli.run_dfu_setup()
+
+    captured = capsys.readouterr()
+    assert "DFU build environment is ready." in captured.out
+
+
+def test_run_dfu_build_result_none(mocker):
+    """Test run_dfu_build when the build returns None."""
+    module = mocker.MagicMock()
+    mocker.patch("fetchtastic.cli.get_build_module", return_value=module)
+    mocker.patch("fetchtastic.cli.print_build_requirements")
+    env_status = BuildEnvironment(
+        java_home="/tmp/java",
+        sdk_root="/tmp/sdk",
+        sdkmanager_path=None,
+        missing_packages=[],
+        missing_sdk_packages=[],
+    )
+    mocker.patch("fetchtastic.cli.check_build_environment", return_value=env_status)
+    mocker.patch("fetchtastic.cli.build_shell_exports", return_value=({}, []))
+    mocker.patch("fetchtastic.cli.update_process_env")
+    mock_run = mocker.patch("fetchtastic.cli.run_module_build", return_value=None)
+
+    cli.run_dfu_build({"BASE_DIR": "/tmp"}, build_type="debug", allow_update=False)
+
+    mock_run.assert_called_once()
+
+
+def test_run_dfu_build_success(mocker, capsys):
+    """Test run_dfu_build on a successful build."""
+    module = mocker.MagicMock()
+    mocker.patch("fetchtastic.cli.get_build_module", return_value=module)
+    mocker.patch("fetchtastic.cli.print_build_requirements")
+    env_status = BuildEnvironment(
+        java_home="/tmp/java",
+        sdk_root="/tmp/sdk",
+        sdkmanager_path=None,
+        missing_packages=[],
+        missing_sdk_packages=[],
+    )
+    mocker.patch("fetchtastic.cli.check_build_environment", return_value=env_status)
+    mocker.patch("fetchtastic.cli.build_shell_exports", return_value=({}, []))
+    mocker.patch("fetchtastic.cli.update_process_env")
+    result = BuildResult(success=True, message="ok", build_type="debug")
+    mocker.patch("fetchtastic.cli.run_module_build", return_value=result)
+
+    cli.run_dfu_build({"BASE_DIR": "/tmp"}, build_type="debug", allow_update=False)
+
+    captured = capsys.readouterr()
+    assert "ok" in captured.out
+
+
+def test_run_dfu_build_failure(mocker, capsys):
+    """Test run_dfu_build on a failed build."""
+    module = mocker.MagicMock()
+    mocker.patch("fetchtastic.cli.get_build_module", return_value=module)
+    mocker.patch("fetchtastic.cli.print_build_requirements")
+    env_status = BuildEnvironment(
+        java_home="/tmp/java",
+        sdk_root="/tmp/sdk",
+        sdkmanager_path=None,
+        missing_packages=[],
+        missing_sdk_packages=[],
+    )
+    mocker.patch("fetchtastic.cli.check_build_environment", return_value=env_status)
+    mocker.patch("fetchtastic.cli.build_shell_exports", return_value=({}, []))
+    mocker.patch("fetchtastic.cli.update_process_env")
+    result = BuildResult(success=False, message="fail", build_type="debug")
+    mocker.patch("fetchtastic.cli.run_module_build", return_value=result)
+
+    cli.run_dfu_build({"BASE_DIR": "/tmp"}, build_type="debug", allow_update=False)
+
+    captured = capsys.readouterr()
+    assert "DFU build failed: fail" in captured.err
+
+
 def test_cli_version_with_update_available_legacy(mocker):
     """Test the 'version' command with update available."""
     mocker.patch("sys.argv", ["fetchtastic", "version"])
@@ -1056,6 +1168,60 @@ def test_cli_help_command_unknown(mocker):
     assert help_subcommand is None
 
 
+def test_cli_dfu_build_command(mocker):
+    """Test the 'dfu build' command path."""
+    mocker.patch("sys.argv", ["fetchtastic", "dfu", "build", "--type", "debug"])
+    mocker.patch("fetchtastic.cli.display_banner")
+    mocker.patch(
+        "fetchtastic.cli.get_version_info",
+        return_value=("1.0.0", "1.2.3", True),
+    )
+    mocker.patch("fetchtastic.setup_config.load_config", return_value=None)
+    mock_run_dfu = mocker.patch("fetchtastic.cli.run_dfu_build")
+    mock_update = mocker.patch("fetchtastic.cli._display_update_reminder")
+
+    cli.main()
+
+    mock_run_dfu.assert_called_once()
+    args, kwargs = mock_run_dfu.call_args
+    assert args[0]["BASE_DIR"] == cli.setup_config.DEFAULT_BASE_DIR
+    assert kwargs["build_type"] == "debug"
+    assert kwargs["allow_update"] is True
+    assert kwargs["build_ref"] is None
+    assert kwargs["repo_base_dir"] is None
+    mock_update.assert_called_once_with("1.2.3")
+
+
+def test_cli_dfu_setup_command(mocker):
+    """Test the 'dfu setup' command path."""
+    mocker.patch("sys.argv", ["fetchtastic", "dfu", "setup"])
+    mocker.patch("fetchtastic.cli.display_banner")
+    mocker.patch(
+        "fetchtastic.cli.get_version_info", return_value=("1.0.0", None, False)
+    )
+    mocker.patch("fetchtastic.setup_config.load_config", return_value={})
+    mock_setup = mocker.patch("fetchtastic.cli.run_dfu_setup")
+
+    cli.main()
+
+    mock_setup.assert_called_once()
+
+
+def test_cli_dfu_command_no_subcommand_prints_help(mocker):
+    """Test the 'dfu' command without subcommand."""
+    mocker.patch("sys.argv", ["fetchtastic", "dfu"])
+    mocker.patch("fetchtastic.cli.display_banner")
+    mocker.patch(
+        "fetchtastic.cli.get_version_info", return_value=("1.0.0", None, False)
+    )
+    mocker.patch("fetchtastic.setup_config.load_config", return_value={})
+    mock_print_help = mocker.patch("argparse.ArgumentParser.print_help")
+
+    cli.main()
+
+    mock_print_help.assert_called_once()
+
+
 def test_show_help_general(mocker):
     """Test show_help function with no specific command."""
     mock_parser = mocker.MagicMock()
@@ -1123,6 +1289,58 @@ def test_show_help_repo_unknown_subcommand(mocker, capsys):
     captured = capsys.readouterr()
     assert "Unknown repo subcommand: unknown" in captured.out
     assert "Available repo subcommands: browse, clean" in captured.out
+
+
+def test_show_help_dfu_subcommand(mocker, capsys):
+    """Test show_help function with dfu subcommand."""
+    mock_parser = mocker.MagicMock()
+    mock_repo_parser = mocker.MagicMock()
+    mock_repo_subparsers = mocker.MagicMock()
+    mock_dfu_parser = mocker.MagicMock()
+    mock_dfu_subparsers = mocker.MagicMock()
+    mock_build_parser = mocker.MagicMock()
+
+    mock_dfu_subparsers.choices = {"build": mock_build_parser}
+
+    cli.show_help(
+        mock_parser,
+        mock_repo_parser,
+        mock_repo_subparsers,
+        "dfu",
+        "build",
+        dfu_parser=mock_dfu_parser,
+        dfu_subparsers=mock_dfu_subparsers,
+    )
+
+    mock_dfu_parser.print_help.assert_called_once()
+    mock_build_parser.print_help.assert_called_once()
+    captured = capsys.readouterr()
+    assert "DFU 'build' command help:" in captured.out
+
+
+def test_show_help_dfu_unknown_subcommand(mocker, capsys):
+    """Test show_help function with unknown dfu subcommand."""
+    mock_parser = mocker.MagicMock()
+    mock_repo_parser = mocker.MagicMock()
+    mock_repo_subparsers = mocker.MagicMock()
+    mock_dfu_parser = mocker.MagicMock()
+    mock_dfu_subparsers = mocker.MagicMock()
+    mock_dfu_subparsers.choices = {"build": mocker.MagicMock()}
+
+    cli.show_help(
+        mock_parser,
+        mock_repo_parser,
+        mock_repo_subparsers,
+        "dfu",
+        "unknown",
+        dfu_parser=mock_dfu_parser,
+        dfu_subparsers=mock_dfu_subparsers,
+    )
+
+    mock_dfu_parser.print_help.assert_called_once()
+    captured = capsys.readouterr()
+    assert "Unknown dfu subcommand: unknown" in captured.out
+    assert "Available dfu subcommands: build" in captured.out
 
 
 def test_show_help_other_commands(mocker, capsys):

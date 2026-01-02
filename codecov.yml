@@ -57,10 +57,23 @@ component_management:
         - type: patch
           target: 50%
           threshold: 2%
+    - component_id: build
+      name: Build System
+      paths:
+        - src/fetchtastic/build/*.py
+        - src/fetchtastic/build/**/*.py
+      statuses:
+        - type: project
+          target: 50%
+          threshold: 3%
+        - type: patch
+          target: 50%
+          threshold: 3%
     - component_id: infrastructure
       name: Infrastructure
       paths:
         - src/fetchtastic/constants.py
+        - src/fetchtastic/env_utils.py
         - src/fetchtastic/log_utils.py
         - src/fetchtastic/__init__.py
       statuses:
