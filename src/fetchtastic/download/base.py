@@ -19,7 +19,7 @@ from fetchtastic.log_utils import logger
 from fetchtastic.utils import matches_selected_patterns
 
 from .cache import CacheManager
-from .files import FileOperations, _sanitize_path_component
+from .files import FileOperations, _sanitize_path_component, strip_unwanted_chars
 from .interfaces import Asset, Downloader, DownloadResult, Pathish
 from .version import VersionManager
 
@@ -396,6 +396,87 @@ class BaseDownloader(Downloader, ABC):
             bool: `True` if the file was removed, `False` otherwise.
         """
         return self.file_operations.cleanup_file(file_path)
+
+    def _write_release_notes(
+        self,
+        *,
+        release_dir: str,
+        release_tag: str,
+        body: Optional[str],
+        base_dir: str,
+    ) -> Optional[str]:
+        """
+        Write sanitized release notes to a markdown file within the given release directory if not already present.
+
+        Validates and sanitizes the provided release_tag; skips writing if the tag is unsafe. Ensures the target notes path is located inside base_dir (prevents path escape), creates release_dir as needed, strips unwanted characters from body, and writes the file atomically via the downloader's cache_manager. If the notes file already exists, returns its path without modifying it.
+
+        Parameters:
+                release_dir (str): Directory where the release notes file should be placed.
+                release_tag (str): Tag used to derive a safe filename component; will be sanitized.
+                body (Optional[str]): Release notes content; nothing is written if empty or whitespace after sanitization.
+                base_dir (str): Base download directory used to verify the notes path does not escape the allowed location.
+
+        Returns:
+                notes_path (Optional[str]): Path to the release notes file if written or already present, `None` otherwise.
+        """
+        if not body:
+            return None
+
+        safe_tag = _sanitize_path_component(release_tag)
+        if safe_tag is None:
+            logger.warning("Skipping release notes for unsafe tag: %s", release_tag)
+            return None
+
+        notes_path = os.path.join(release_dir, f"release_notes-{safe_tag}.md")
+
+        try:
+            real_base = os.path.realpath(base_dir)
+            real_release_dir = os.path.realpath(release_dir)
+            release_dir_common = os.path.commonpath([real_base, real_release_dir])
+        except ValueError:
+            release_dir_common = None
+
+        if release_dir_common != real_base:
+            logger.warning(
+                "Skipping write of release notes for %s: release directory path escapes download base",
+                release_tag,
+            )
+            return None
+
+        if os.path.lexists(notes_path):
+            if os.path.islink(notes_path):
+                logger.warning(
+                    "Refusing to use existing symlink for release notes: %s",
+                    notes_path,
+                )
+                return None
+            return notes_path
+
+        os.makedirs(release_dir, exist_ok=True)
+
+        try:
+            real_notes = os.path.realpath(notes_path)
+            notes_common = os.path.commonpath([real_base, real_notes])
+        except ValueError:
+            notes_common = None
+
+        if notes_common != real_base:
+            logger.warning(
+                "Skipping write of release notes for %s: path escapes download base",
+                release_tag,
+            )
+            return None
+
+        notes_content = strip_unwanted_chars(body)
+        if not notes_content.strip():
+            return None
+
+        if self.cache_manager.atomic_write_text(notes_path, notes_content):
+            logger.debug("Saved release notes to %s", notes_path)
+            return notes_path
+
+        logger.warning("Could not atomically write release notes to %s", notes_path)
+        return None
 
     def _is_zip_intact(self, file_path: str) -> bool:
         """

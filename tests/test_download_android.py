@@ -125,6 +125,81 @@ class TestMeshtasticAndroidAppDownloader:
             assert dl.latest_release_file == "latest_android_release.json"
             mock_version.assert_called_once()
 
+    def test_update_release_history_empty_returns_none(self, downloader):
+        """Empty release lists should return None."""
+        assert downloader.update_release_history([]) is None
+
+    def test_update_release_history_logs_summary(self, downloader):
+        """Android history updates should emit status summaries."""
+        downloader.release_history_manager.update_release_history = Mock(
+            return_value={"entries": {}}
+        )
+        downloader.release_history_manager.log_release_status_summary = Mock()
+
+        history = downloader.update_release_history([Release(tag_name="v1.0.0")])
+
+        assert history == {"entries": {}}
+        downloader.release_history_manager.log_release_status_summary.assert_called_once()
+
+    def test_format_release_log_suffix(self, downloader):
+        """Release log suffixes should delegate to the history manager."""
+        downloader.release_history_manager.format_release_log_suffix = Mock(
+            return_value=" (alpha)"
+        )
+        release = Release(tag_name="v1.0.0", prerelease=False)
+
+        assert downloader.format_release_log_suffix(release) == " (alpha)"
+
+    def test_ensure_release_notes_unsafe_tag(self, downloader):
+        """Unsafe tags should skip Android release note writes."""
+        release = Release(tag_name="../v1.0.0", prerelease=False, body="notes")
+
+        assert downloader.ensure_release_notes(release) is None
+
+    def test_ensure_release_notes_writes_file(self, tmp_path):
+        """Release notes should be written alongside Android APK assets."""
+        cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
+        config = {"DOWNLOAD_DIR": str(tmp_path / "downloads")}
+        downloader = MeshtasticAndroidAppDownloader(config, cache_manager)
+        release = Release(
+            tag_name="v2.7.10",
+            prerelease=False,
+            body="Android release notes",
+        )
+
+        notes_path = downloader.ensure_release_notes(release)
+
+        assert notes_path is not None
+        notes_file = Path(notes_path)
+        assert notes_file.exists()
+        assert str(notes_file).endswith(
+            os.path.join(APKS_DIR_NAME, "v2.7.10", "release_notes-v2.7.10.md")
+        )
+
+    def test_ensure_release_notes_prerelease_dir(self, tmp_path):
+        """Prerelease APK notes should live under the prerelease directory."""
+        cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
+        config = {"DOWNLOAD_DIR": str(tmp_path / "downloads")}
+        downloader = MeshtasticAndroidAppDownloader(config, cache_manager)
+        release = Release(
+            tag_name="v2.7.10-open.1",
+            prerelease=True,
+            body="Prerelease notes",
+        )
+
+        notes_path = downloader.ensure_release_notes(release)
+
+        assert notes_path is not None
+        notes_file = Path(notes_path)
+        assert notes_file.exists()
+        expected_suffix = os.path.join(
+            APKS_DIR_NAME,
+            APK_PRERELEASES_DIR_NAME,
+            "v2.7.10-open.1",
+            "release_notes-v2.7.10-open.1.md",
+        )
+        assert str(notes_file).endswith(expected_suffix)
+
     def test_get_target_path_for_release(self, downloader, tmp_path):
         """Test target path generation for APK releases."""
         path = downloader.get_target_path_for_release("v1.0.0", "meshtastic.apk")

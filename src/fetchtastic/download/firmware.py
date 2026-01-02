@@ -26,6 +26,7 @@ from fetchtastic.constants import (
     FIRMWARE_DIR_NAME,
     FIRMWARE_DIR_PREFIX,
     FIRMWARE_PRERELEASES_DIR_NAME,
+    FIRMWARE_RELEASE_HISTORY_JSON_FILE,
     LATEST_FIRMWARE_PRERELEASE_JSON_FILE,
     LATEST_FIRMWARE_RELEASE_JSON_FILE,
     MESHTASTIC_FIRMWARE_RELEASES_URL,
@@ -44,10 +45,12 @@ from fetchtastic.utils import (
 
 from .base import BaseDownloader
 from .cache import CacheManager
-from .files import _sanitize_path_component
 from .interfaces import Asset, DownloadResult, Release
 from .prerelease_history import PrereleaseHistoryManager
+from .release_history import ReleaseHistoryManager
 from .version import VersionManager
+
+_STORAGE_CHANNEL_SUFFIXES = {"alpha", "beta", "rc"}
 
 
 class FirmwareReleaseDownloader(BaseDownloader):
@@ -78,6 +81,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
         self.latest_prerelease_file = LATEST_FIRMWARE_PRERELEASE_JSON_FILE
         self.latest_release_path = self.cache_manager.get_cache_file_path(
             self.latest_release_file
+        )
+        self.release_history_path = self.cache_manager.get_cache_file_path(
+            FIRMWARE_RELEASE_HISTORY_JSON_FILE
+        )
+        self.release_history_manager = ReleaseHistoryManager(
+            self.cache_manager, self.release_history_path
         )
 
         device_api_config = self.config.get("DEVICE_HARDWARE_API", {})
@@ -174,6 +183,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     tag_name=release_data["tag_name"],
                     prerelease=release_data.get("prerelease", False),
                     published_at=release_data.get("published_at"),
+                    name=release_data.get("name"),
                     body=release_data.get("body"),
                 )
 
@@ -219,12 +229,196 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
     def get_download_url(self, asset: Asset) -> str:
         """
-        Return the direct download URL for the asset.
+        Get the direct download URL for an asset.
 
         Returns:
-            str: Direct download URL for the asset.
+            The asset's direct download URL.
         """
         return asset.download_url
+
+    def update_release_history(
+        self, releases: List[Release], *, log_summary: bool = True
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Update the on-disk release history cache and optionally log status summaries.
+
+        Parameters:
+            releases (List[Release]): Releases to record in history.
+            log_summary (bool): When True, emit summary logs for revoked/removed releases
+                and duplicated base versions.
+
+        Returns:
+            Optional[Dict[str, Any]]: The updated history data, or None when no releases
+                were supplied.
+        """
+        if not releases:
+            return None
+        history = self.release_history_manager.update_release_history(releases)
+        if log_summary:
+            self.release_history_manager.log_release_channel_summary(
+                releases, label="Firmware"
+            )
+            self.release_history_manager.log_release_status_summary(
+                history, label="Firmware"
+            )
+            self.release_history_manager.log_duplicate_base_versions(
+                releases, label="Firmware"
+            )
+        return history
+
+    def format_release_log_suffix(self, release: Release) -> str:
+        """
+        Return a log suffix that annotates the release with its channel and revoked status when available.
+
+        Returns:
+            suffix (str): A string suitable for appending to log messages describing the release's channel (e.g., "-beta") and/or a revoked indicator; empty string if no annotation is necessary.
+        """
+        return self.release_history_manager.format_release_log_suffix(release)
+
+    def is_release_revoked(self, release: Release) -> bool:
+        """
+        Determine whether the given release is recorded as revoked in the release history.
+
+        Parameters:
+            release (Release): The release to check.
+
+        Returns:
+            bool: `True` if the release is revoked, `False` otherwise.
+        """
+        return self.release_history_manager.is_release_revoked(release)
+
+    def ensure_release_notes(self, release: Release) -> Optional[str]:
+        """
+        Store the given release's release notes alongside its firmware assets and return the notes file path.
+
+        Parameters:
+            release (Release): Release object whose release notes should be stored.
+
+        Returns:
+            str or None: Path to the release notes file if written or already present; `None` if the release tag is unsafe or the notes were not stored.
+        """
+        try:
+            storage_tag = self._get_release_storage_tag(release)
+        except ValueError:
+            logger.warning(
+                "Skipping release notes for unsafe firmware tag: %s", release.tag_name
+            )
+            return None
+
+        release_dir = os.path.join(self.download_dir, FIRMWARE_DIR_NAME, storage_tag)
+        base_dir = os.path.join(self.download_dir, FIRMWARE_DIR_NAME)
+        return self._write_release_notes(
+            release_dir=release_dir,
+            release_tag=release.tag_name,
+            body=release.body,
+            base_dir=base_dir,
+        )
+
+    def _get_release_storage_tag(self, release: Release) -> str:
+        """
+        Compute the filesystem storage tag for a release by combining a sanitized tag with any channel and revoked suffixes.
+
+        If an existing on-disk directory matches a different valid storage tag for the same release, the method will attempt to rename that directory to the computed target tag; if the rename fails it will return the existing directory tag. If multiple candidate directories are present, the first candidate found is returned.
+
+        Returns:
+            storage_tag (str): The storage tag that should be used for the release's directory.
+        """
+        safe_tag = self._sanitize_required(release.tag_name, "release tag")
+        is_revoked = self.is_release_revoked(release)
+        channel = self.release_history_manager.get_release_channel(release)
+        channel_suffix = channel if channel in _STORAGE_CHANNEL_SUFFIXES else ""
+        if is_revoked and channel_suffix == "alpha":
+            channel_suffix = ""
+        target_tag = self._build_storage_tag(safe_tag, channel_suffix, is_revoked)
+
+        firmware_dir = os.path.join(self.download_dir, FIRMWARE_DIR_NAME)
+        target_path = os.path.join(firmware_dir, target_tag)
+        if os.path.isdir(target_path):
+            return target_tag
+
+        candidates = self._get_storage_tag_candidates(
+            safe_tag, channel_suffix, is_revoked, target_tag
+        )
+        existing = [
+            tag for tag in candidates if os.path.isdir(os.path.join(firmware_dir, tag))
+        ]
+        if len(existing) == 1:
+            alternate_tag = existing[0]
+            alternate_path = os.path.join(firmware_dir, alternate_tag)
+            try:
+                os.rename(alternate_path, target_path)
+                logger.info(
+                    "Renamed firmware release directory %s -> %s",
+                    alternate_tag,
+                    target_tag,
+                )
+                return target_tag
+            except OSError as exc:
+                logger.warning(
+                    "Unable to rename firmware release directory %s -> %s: %s",
+                    alternate_tag,
+                    target_tag,
+                    exc,
+                )
+                return alternate_tag
+        if len(existing) > 1:
+            logger.warning(
+                "Multiple firmware release directories found for %s: %s",
+                release.tag_name,
+                ", ".join(existing),
+            )
+            return existing[0]
+
+        return target_tag
+
+    def _build_storage_tag(self, safe_tag: str, channel: str, revoked: bool) -> str:
+        """
+        Builds a storage tag by appending an optional channel suffix and a revoked suffix to a sanitized base tag.
+
+        Parameters:
+            safe_tag (str): Sanitized release tag to use as the base (no channel or revoked suffixes).
+            channel (str): Channel suffix to append (e.g., "beta"); if empty, no channel suffix is added.
+            revoked (bool): If True, appends "-revoked" to the tag.
+
+        Returns:
+            str: The resulting storage tag.
+        """
+        tag = safe_tag
+        if channel:
+            tag = f"{tag}-{channel}"
+        if revoked:
+            tag = f"{tag}-revoked"
+        return tag
+
+    def _get_storage_tag_candidates(
+        self, safe_tag: str, channel: str, revoked: bool, target_tag: str
+    ) -> List[str]:
+        """
+        Generate alternative storage-tag candidates for an existing release directory by combining possible channel suffixes and revoked states, excluding the provided target tag.
+
+        Parameters:
+            safe_tag (str): Sanitized base tag name (filesystem-safe) to build candidates from.
+            channel (str): Optional channel suffix to prioritize (must be one of the configured channel suffixes); ignored if invalid or empty.
+            revoked (bool): Whether to prefer revoked variants first when ordering candidates.
+            target_tag (str): Storage tag to exclude from the returned list.
+
+        Returns:
+            List[str]: Ordered list of distinct candidate storage tags (each a string) excluding `target_tag`.
+        """
+        if channel and channel not in _STORAGE_CHANNEL_SUFFIXES:
+            channel = ""
+
+        all_channels = [channel, "", *sorted(_STORAGE_CHANNEL_SUFFIXES)]
+        channels = list(dict.fromkeys(all_channels))
+
+        candidates: List[str] = []
+        for is_revoked in (revoked, not revoked):
+            for candidate in channels:
+                tag = self._build_storage_tag(safe_tag, candidate, is_revoked)
+                if tag not in candidates:
+                    candidates.append(tag)
+
+        return [tag for tag in candidates if tag != target_tag]
 
     def download_firmware(self, release: Release, asset: Asset) -> DownloadResult:
         """
@@ -239,11 +433,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
         """
         target_path: Optional[str] = None
         try:
+            storage_tag = self._get_release_storage_tag(release)
             # Get target path for the firmware ZIP
-            target_path = self.get_target_path_for_release(release.tag_name, asset.name)
+            target_path = self.get_target_path_for_release(storage_tag, asset.name)
 
             # Check if we need to download
-            if self.is_asset_complete(release.tag_name, asset):
+            if self.is_asset_complete(storage_tag, asset):
                 logger.debug(
                     "Firmware %s already exists and is complete",
                     asset.name,
@@ -339,9 +534,15 @@ class FirmwareReleaseDownloader(BaseDownloader):
         Returns:
             True if all selected assets exist and pass integrity and size checks, False otherwise.
         """
-        version_dir = os.path.join(
-            self.download_dir, FIRMWARE_DIR_NAME, release.tag_name
-        )
+        try:
+            storage_tag = self._get_release_storage_tag(release)
+        except ValueError:
+            logger.warning(
+                "Skipping completeness check for unsafe firmware tag: %s",
+                release.tag_name,
+            )
+            return False
+        version_dir = os.path.join(self.download_dir, FIRMWARE_DIR_NAME, storage_tag)
         if not os.path.isdir(version_dir):
             return False
 
@@ -482,7 +683,8 @@ class FirmwareReleaseDownloader(BaseDownloader):
             exclude_patterns = exclude_patterns or []
 
             # Get the path to the downloaded ZIP file
-            zip_path = self.get_target_path_for_release(release.tag_name, asset.name)
+            storage_tag = self._get_release_storage_tag(release)
+            zip_path = self.get_target_path_for_release(storage_tag, asset.name)
             if not os.path.exists(zip_path):
                 return self.create_download_result(
                     success=False,
@@ -598,8 +800,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
             release_tags_to_keep = set()
             for release in latest_releases:
-                safe_tag = _sanitize_path_component(release.tag_name)
-                if safe_tag is None:
+                try:
+                    safe_tag = self._get_release_storage_tag(release)
+                except ValueError:
                     logger.warning(
                         "Skipping unsafe firmware release tag during cleanup: %s",
                         release.tag_name,

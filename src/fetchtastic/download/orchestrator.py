@@ -138,6 +138,7 @@ class DownloadOrchestrator:
         # Cache releases to avoid redundant API calls within a single run
         self.android_releases: Optional[List[Release]] = None
         self.firmware_releases: Optional[List[Release]] = None
+        self.firmware_release_history: Optional[Dict[str, Any]] = None
 
     def run_download_pipeline(
         self,
@@ -180,9 +181,9 @@ class DownloadOrchestrator:
 
     def _process_android_downloads(self) -> None:
         """
-        Orchestrates discovery and download of Android APK releases and prerelease APK assets.
+        Coordinate discovery and downloading of Android APK releases and prerelease APK assets.
 
-        If APK saving is disabled in configuration, this does nothing. It limits work to the configured number of recent stable releases, skips releases already marked complete, downloads missing release assets, processes eligible prerelease APKs, and records each asset's outcome in the orchestrator's result lists.
+        If APK saving is disabled via configuration, the function returns without action. It limits work to the configured number of recent stable releases, skips releases already marked complete, downloads missing release assets, processes eligible prerelease APK assets, and records each asset's outcome in the orchestrator's result lists.
         """
         try:
             if not self.config.get("SAVE_APKS", False):
@@ -197,6 +198,7 @@ class DownloadOrchestrator:
                 logger.info("No Android releases found")
                 return
 
+            self.android_downloader.update_release_history(android_releases)
             keep_count = self.config.get(
                 "ANDROID_VERSIONS_TO_KEEP", DEFAULT_ANDROID_VERSIONS_TO_KEEP
             )
@@ -205,7 +207,9 @@ class DownloadOrchestrator:
 
             releases_to_download = []
             for release in releases_to_process:
-                logger.info(f"Checking {release.tag_name}…")
+                self.android_downloader.ensure_release_notes(release)
+                suffix = self.android_downloader.format_release_log_suffix(release)
+                logger.info(f"Checking {release.tag_name}{suffix}…")
                 if self.android_downloader.is_release_complete(release):
                     logger.debug(
                         f"Release {release.tag_name} already exists and is complete"
@@ -223,6 +227,7 @@ class DownloadOrchestrator:
             logger.info("Checking for pre-release APK...")
             prereleases = self.android_downloader.handle_prereleases(android_releases)
             for prerelease in prereleases:
+                self.android_downloader.ensure_release_notes(prerelease)
                 for asset in prerelease.assets:
                     if not self.android_downloader.should_download_asset(asset.name):
                         continue
@@ -248,9 +253,9 @@ class DownloadOrchestrator:
 
     def _process_firmware_downloads(self) -> None:
         """
-        Ensure configured recent firmware releases and repository prereleases are downloaded and remove unexpected prerelease directories.
+        Ensure recent firmware releases and repository prereleases are downloaded and remove unmanaged prerelease directories.
 
-        Scans up to the configured number of latest firmware releases, downloads any releases that are not already complete, attempts to fetch repository prerelease firmware for the selected latest release, and records each download outcome in the orchestrator's result lists. Afterwards, inspects the firmware prerelease directory and safely removes entries that are not valid managed prerelease directories (skipping symlinks and entries that fail safety or version checks). Errors encountered during the process are caught and logged.
+        Scans the configured recent firmware releases, downloads any missing release assets and repository prerelease firmware for the selected latest release, records each outcome in the orchestrator's result lists, and safely removes unexpected or unmanaged directories from the firmware prereleases folder. Errors encountered during processing are caught and logged.
         """
         try:
             if not self.config.get("SAVE_FIRMWARE", False):
@@ -265,6 +270,11 @@ class DownloadOrchestrator:
                 logger.info("No firmware releases found")
                 return
 
+            self.firmware_release_history = (
+                self.firmware_downloader.update_release_history(
+                    firmware_releases, log_summary=False
+                )
+            )
             latest_release = self._select_latest_release_by_version(firmware_releases)
             keep_count = self.config.get(
                 "FIRMWARE_VERSIONS_TO_KEEP", DEFAULT_FIRMWARE_VERSIONS_TO_KEEP
@@ -273,7 +283,9 @@ class DownloadOrchestrator:
 
             releases_to_download = []
             for release in releases_to_process:
-                logger.info(f"Checking {release.tag_name}…")
+                self.firmware_downloader.ensure_release_notes(release)
+                suffix = self.firmware_downloader.format_release_log_suffix(release)
+                logger.info(f"Checking {release.tag_name}{suffix}…")
                 if self.firmware_downloader.is_release_complete(release):
                     logger.debug(
                         f"Release {release.tag_name} already exists and is complete"
@@ -357,25 +369,35 @@ class DownloadOrchestrator:
         self, releases: List[Release]
     ) -> Optional[Release]:
         """
-        Select the release with the highest semantic version parsed from release tag names.
+        Choose the release with the highest semantic version parsed from its tag name, preferring non-revoked releases when possible.
 
         If one or more tag names parse as semantic versions, returns the release whose parsed version is greatest. If no tag parses successfully, returns the first release in the provided list. Returns None when the input list is empty.
 
         Returns:
-            The release with the highest parsed version, the first release if none parse, or None if no releases were provided.
+            The selected Release, the first release if no tags parse, or None if no releases were provided.
         """
         best_release: Optional[Release] = None
         best_tuple: Optional[Tuple[int, ...]] = None
+        best_revoked_release: Optional[Release] = None
+        best_revoked_tuple: Optional[Tuple[int, ...]] = None
 
         for release in releases:
             release_tuple = self.version_manager.get_release_tuple(release.tag_name)
             if release_tuple is None:
                 continue
-            if best_tuple is None or release_tuple > best_tuple:
-                best_tuple = release_tuple
-                best_release = release
+            is_revoked = self.firmware_downloader.is_release_revoked(release)
+            if is_revoked:
+                if best_revoked_tuple is None or release_tuple > best_revoked_tuple:
+                    best_revoked_tuple = release_tuple
+                    best_revoked_release = release
+            else:
+                if best_tuple is None or release_tuple > best_tuple:
+                    best_tuple = release_tuple
+                    best_release = release
 
-        return best_release or (releases[0] if releases else None)
+        return (
+            best_release or best_revoked_release or (releases[0] if releases else None)
+        )
 
     def _download_android_release(self, release: Release) -> bool:
         """
@@ -943,6 +965,20 @@ class DownloadOrchestrator:
             logger.warning(
                 f"{total_failures} downloads failed - check logs for details"
             )
+
+    def log_firmware_release_history_summary(self) -> None:
+        """
+        Emit firmware release channel/status summaries near the end of the run.
+        """
+        if not self.firmware_release_history or not self.firmware_releases:
+            return
+
+        manager = self.firmware_downloader.release_history_manager
+        manager.log_release_channel_summary(self.firmware_releases, label="Firmware")
+        manager.log_release_status_summary(
+            self.firmware_release_history, label="Firmware"
+        )
+        manager.log_duplicate_base_versions(self.firmware_releases, label="Firmware")
 
     def get_download_statistics(self) -> Dict[str, Any]:
         """

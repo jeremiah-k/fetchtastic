@@ -216,6 +216,28 @@ def test_run_download_successful(mocker):
     assert any(call[0] == ("v2.0.0", "v1.9.0") for call in calls)
 
 
+def test_log_download_results_summary_logs_history_summary(mocker):
+    """Summary logging should emit firmware history summaries when available."""
+    integration = DownloadCLIIntegration()
+    integration.orchestrator = mocker.MagicMock()
+    integration.get_latest_versions = mocker.MagicMock(
+        return_value={"firmware_prerelease": "", "android_prerelease": ""}
+    )
+
+    integration.log_download_results_summary(
+        elapsed_seconds=1.23,
+        downloaded_firmwares=[],
+        downloaded_apks=[],
+        failed_downloads=[],
+        latest_firmware_version="v1.0.0",
+        latest_apk_version="v2.0.0",
+        new_firmware_versions=[],
+        new_apk_versions=[],
+    )
+
+    integration.orchestrator.log_firmware_release_history_summary.assert_called_once()
+
+
 def test_run_download_with_force_refresh(mocker):
     """run_download should clear caches when force_refresh=True."""
     integration = DownloadCLIIntegration()

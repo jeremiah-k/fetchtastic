@@ -7,8 +7,6 @@ This module implements the specific downloader for Meshtastic Android APK files.
 import fnmatch
 import json
 import os
-import re
-import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -16,6 +14,7 @@ from typing import Any, Dict, List, Optional
 import requests
 
 from fetchtastic.constants import (
+    ANDROID_RELEASE_HISTORY_JSON_FILE,
     APK_PRERELEASES_DIR_NAME,
     APKS_DIR_NAME,
     DEFAULT_ANDROID_VERSIONS_TO_KEEP,
@@ -39,6 +38,7 @@ from .cache import CacheManager
 from .files import _safe_rmtree, _sanitize_path_component
 from .interfaces import Asset, DownloadResult, Release
 from .prerelease_history import PrereleaseHistoryManager
+from .release_history import ReleaseHistoryManager
 from .version import VersionManager
 
 
@@ -69,6 +69,12 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         self.latest_prerelease_file = LATEST_ANDROID_PRERELEASE_JSON_FILE
         self.latest_release_path = self.cache_manager.get_cache_file_path(
             self.latest_release_file
+        )
+        self.release_history_path = self.cache_manager.get_cache_file_path(
+            ANDROID_RELEASE_HISTORY_JSON_FILE
+        )
+        self.release_history_manager = ReleaseHistoryManager(
+            self.cache_manager, self.release_history_path
         )
 
     def get_target_path_for_release(
@@ -104,10 +110,10 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
     def _get_prerelease_base_dir(self) -> str:
         """
-        Ensure and return the base directory for APK prerelease downloads.
+        Return the absolute path to the prerelease APKs directory, creating the directory if it does not exist.
 
         Returns:
-            str: Absolute path to the prerelease base directory under the APK downloads directory.
+            str: Absolute filesystem path to the prerelease APKs directory under the APK downloads directory.
         """
         prerelease_dir = os.path.join(
             self.download_dir, APKS_DIR_NAME, APK_PRERELEASES_DIR_NAME
@@ -115,11 +121,78 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         os.makedirs(prerelease_dir, exist_ok=True)
         return prerelease_dir
 
+    def update_release_history(
+        self, releases: List[Release], *, log_summary: bool = True
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Update the on-disk release history cache and optionally log status summaries.
+
+        Parameters:
+            releases (List[Release]): Releases to record in history.
+            log_summary (bool): When True, emit summary logs for revoked/removed releases.
+
+        Returns:
+            Optional[Dict[str, Any]]: The updated history data, or None when no releases
+                were supplied.
+        """
+        if not releases:
+            return None
+        history = self.release_history_manager.update_release_history(releases)
+        if log_summary:
+            self.release_history_manager.log_release_status_summary(
+                history, label="Android"
+            )
+        return history
+
+    def format_release_log_suffix(self, release: Release) -> str:
+        """
+        Create a log suffix describing the release channel and revoked status when available.
+
+        Returns:
+            suffix (str): Formatted log suffix containing channel and revoked information, or an empty string if no contextual info is available.
+        """
+        return self.release_history_manager.format_release_log_suffix(release)
+
+    def ensure_release_notes(self, release: Release) -> Optional[str]:
+        """
+        Write the release notes for the given release into the appropriate APK directory and return the notes file path.
+
+        Parameters:
+            release (Release): Release metadata containing tag_name and body used to determine the notes filename and content.
+
+        Returns:
+            Optional[str]: Path to the release notes file if written or already present, `None` if the tag is unsafe or notes cannot be determined.
+        """
+        safe_release = _sanitize_path_component(release.tag_name)
+        if safe_release is None:
+            logger.warning(
+                "Skipping release notes for unsafe Android tag: %s", release.tag_name
+            )
+            return None
+
+        is_prerelease = (
+            release.prerelease
+            or _is_apk_prerelease_by_name(release.tag_name)
+            or self.version_manager.is_prerelease_version(release.tag_name)
+        )
+        base_dir = (
+            self._get_prerelease_base_dir()
+            if is_prerelease
+            else os.path.join(self.download_dir, APKS_DIR_NAME)
+        )
+        release_dir = os.path.join(base_dir, safe_release)
+        return self._write_release_notes(
+            release_dir=release_dir,
+            release_tag=release.tag_name,
+            body=release.body,
+            base_dir=base_dir,
+        )
+
     def _is_asset_complete_for_target(self, target_path: str, asset: Asset) -> bool:
         """
-        Determine whether the asset at target_path is present and passes size and integrity checks.
+        Determine whether the asset file at target_path exists and is valid for the provided Asset.
 
-        Performs these checks when applicable: file existence, file size equals asset.size (if provided), verifier integrity check, and ZIP integrity validation for files ending with `.zip`.
+        Performs the applicable checks: file existence, file size equals Asset.size (when provided), verifier integrity check, and ZIP integrity validation for files ending with `.zip`.
 
         Returns:
             True if all applicable checks pass, False otherwise.
@@ -142,15 +215,15 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
     def get_releases(self, limit: Optional[int] = None) -> List[Release]:
         """
-        Fetches Android APK releases from GitHub and constructs Release objects populated with their APK assets.
+        Retrieve Android APK releases from GitHub and construct Release objects populated with their APK assets.
 
-        Uses a cached GitHub response when available, filters out releases that have no APK assets or that are considered legacy/unsupported, and respects the configured scan window for finding a minimum number of stable releases. If `limit` is provided, the function returns at most that many releases.
+        Respects cached responses and the configured scan window; when no `limit` is provided the function expands its scan to collect a configured minimum number of stable releases.
 
         Parameters:
-            limit (Optional[int]): Maximum number of releases to return. If `None`, the scan size is determined from configuration and the function will expand its scan up to a configured maximum to find a minimum number of stable releases.
+            limit (Optional[int]): Maximum number of releases to return. If `None`, the function uses configured scan parameters to determine how many releases to fetch.
 
         Returns:
-            List[Release]: A list of Release objects with their Asset entries; returns an empty list on error or if no valid releases are found.
+            List[Release]: Release objects populated with their APK Asset entries; returns an empty list on error or if no valid releases are found.
         """
         try:
             max_scan = GITHUB_MAX_PER_PAGE
@@ -216,6 +289,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                         tag_name=tag_name,
                         prerelease=_is_apk_prerelease(release_data),
                         published_at=release_data.get("published_at"),
+                        name=release_data.get("name"),
                         body=release_data.get("body"),
                     )
 

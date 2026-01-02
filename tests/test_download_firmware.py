@@ -97,6 +97,102 @@ class TestFirmwareReleaseDownloader:
         expected = "/tmp/test/firmware/v1.0.0/firmware.zip"
         assert path == expected
 
+    def test_ensure_release_notes_writes_file(self, tmp_path):
+        """Release notes should be written alongside firmware assets."""
+        cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
+        config = {"DOWNLOAD_DIR": str(tmp_path / "downloads")}
+        downloader = FirmwareReleaseDownloader(config, cache_manager)
+        release = Release(
+            tag_name="v1.0.0",
+            prerelease=False,
+            body="Release notes for v1.0.0",
+        )
+
+        notes_path = downloader.ensure_release_notes(release)
+
+        assert notes_path is not None
+        notes_file = Path(notes_path)
+        assert notes_file.exists()
+        assert "release_notes-v1.0.0.md" in str(notes_file)
+        assert "Release notes for v1.0.0" in notes_file.read_text(encoding="utf-8")
+
+    def test_ensure_release_notes_revoked_directory(self, tmp_path):
+        """Revoked firmware releases should store notes under a -revoked folder."""
+        cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
+        config = {"DOWNLOAD_DIR": str(tmp_path / "downloads")}
+        downloader = FirmwareReleaseDownloader(config, cache_manager)
+        release = Release(
+            tag_name="v1.0.1",
+            prerelease=False,
+            name="(Revoked)",
+            body="Revoked due to regressions.",
+        )
+
+        notes_path = downloader.ensure_release_notes(release)
+
+        assert notes_path is not None
+        assert "v1.0.1-revoked" in notes_path
+        assert Path(notes_path).exists()
+
+    def test_ensure_release_notes_alpha_directory(self, tmp_path):
+        """Alpha firmware releases should store notes under an -alpha folder."""
+        cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
+        config = {"DOWNLOAD_DIR": str(tmp_path / "downloads")}
+        downloader = FirmwareReleaseDownloader(config, cache_manager)
+        release = Release(
+            tag_name="v1.0.2",
+            prerelease=False,
+            name="Meshtastic Firmware 1.0.2 Alpha",
+            body="Alpha notes for v1.0.2",
+        )
+
+        base_dir = Path(config["DOWNLOAD_DIR"]) / FIRMWARE_DIR_NAME
+        old_dir = base_dir / "v1.0.2"
+        old_dir.mkdir(parents=True)
+
+        notes_path = downloader.ensure_release_notes(release)
+
+        assert notes_path is not None
+        assert "v1.0.2-alpha" in notes_path
+        assert (base_dir / "v1.0.2-alpha").exists()
+        assert not old_dir.exists()
+
+    def test_ensure_release_notes_alpha_revoked_directory(self, tmp_path):
+        """Alpha + revoked firmware releases should store notes under -revoked."""
+        cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
+        config = {"DOWNLOAD_DIR": str(tmp_path / "downloads")}
+        downloader = FirmwareReleaseDownloader(config, cache_manager)
+        release = Release(
+            tag_name="v1.0.3",
+            prerelease=False,
+            name="Meshtastic Firmware 1.0.3 Alpha (Revoked)",
+            body="This release was revoked due to regressions.",
+        )
+
+        base_dir = Path(config["DOWNLOAD_DIR"]) / FIRMWARE_DIR_NAME
+        old_dir = base_dir / "v1.0.3-alpha-revoked"
+        old_dir.mkdir(parents=True)
+
+        notes_path = downloader.ensure_release_notes(release)
+
+        assert notes_path is not None
+        assert "v1.0.3-revoked" in notes_path
+        assert (base_dir / "v1.0.3-revoked").exists()
+        assert not old_dir.exists()
+
+    def test_ensure_release_notes_unsafe_tag(self, tmp_path):
+        """Unsafe tags should skip release notes storage."""
+        cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
+        config = {"DOWNLOAD_DIR": str(tmp_path / "downloads")}
+        downloader = FirmwareReleaseDownloader(config, cache_manager)
+        release = Release(
+            tag_name="../v1.0.4",
+            prerelease=False,
+            body="Bad tag notes",
+        )
+
+        assert downloader.ensure_release_notes(release) is None
+
     @patch("fetchtastic.download.firmware.make_github_api_request")
     def test_get_releases_success(self, mock_request, downloader):
         """Test successful release fetching from GitHub."""
@@ -358,10 +454,8 @@ class TestFirmwareReleaseDownloader:
         self, mock_rmtree, mock_scandir, mock_exists, downloader
     ):
         """Test cleanup when release tags contain unsafe characters."""
-        # Mock _sanitize_path_component to return None for unsafe tags
-        with patch(
-            "fetchtastic.download.firmware._sanitize_path_component"
-        ) as mock_sanitize:
+        # Mock _get_release_storage_tag to raise for unsafe tags
+        with patch.object(downloader, "_get_release_storage_tag") as mock_storage_tag:
             mock_exists.return_value = True
 
             # Create mock directory entries for os.scandir
@@ -378,7 +472,25 @@ class TestFirmwareReleaseDownloader:
             mock_v2.path = "/mock/firmware/v2.0.0"
 
             mock_scandir.return_value.__enter__.return_value = [mock_v1, mock_v2]
-            mock_sanitize.side_effect = ["v1.0.0", None]  # Second tag is unsafe
+
+            def _storage_tag_side_effect(release):
+                """
+                Map a safe release to its storage tag or raise an error for unsafe tags.
+
+                Parameters:
+                    release: An object with a `tag_name` attribute representing the release tag.
+
+                Returns:
+                    str: The storage tag corresponding to the provided release.
+
+                Raises:
+                    ValueError: If the release tag is considered unsafe.
+                """
+                if release.tag_name == "v1.0.0":
+                    return "v1.0.0"
+                raise ValueError("Unsafe release tag")
+
+            mock_storage_tag.side_effect = _storage_tag_side_effect
             downloader.get_releases = Mock(
                 return_value=[
                     Release(tag_name="v1.0.0"),
@@ -722,6 +834,207 @@ class TestFirmwareReleaseDownloader:
 
         # Firmware GitHub prerelease flags are treated as stable.
         assert result == []
+
+    def test_update_release_history_logs_summary(self, downloader):
+        """Firmware history updates should emit channel/status summaries."""
+        downloader.release_history_manager.update_release_history = Mock(
+            return_value={"entries": {}}
+        )
+        downloader.release_history_manager.log_release_channel_summary = Mock()
+        downloader.release_history_manager.log_release_status_summary = Mock()
+        downloader.release_history_manager.log_duplicate_base_versions = Mock()
+
+        history = downloader.update_release_history([Release(tag_name="v1.0.0")])
+
+        assert history == {"entries": {}}
+        downloader.release_history_manager.log_release_channel_summary.assert_called_once()
+        downloader.release_history_manager.log_release_status_summary.assert_called_once()
+        downloader.release_history_manager.log_duplicate_base_versions.assert_called_once()
+
+    def test_cleanup_file_delegates_to_file_ops(self, downloader):
+        """cleanup_file should call the file operations cleanup helper."""
+        downloader.file_operations.cleanup_file = Mock(return_value=True)
+
+        assert downloader.cleanup_file("/tmp/file.bin") is True
+        downloader.file_operations.cleanup_file.assert_called_once_with("/tmp/file.bin")
+
+    def test_write_release_notes_existing_file(self, tmp_path):
+        """Existing release notes should be returned without rewriting."""
+        cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
+        config = {"DOWNLOAD_DIR": str(tmp_path / "downloads")}
+        downloader = FirmwareReleaseDownloader(config, cache_manager)
+
+        release_dir = tmp_path / "downloads" / "firmware" / "v1.2.0"
+        release_dir.mkdir(parents=True)
+        notes_path = release_dir / "release_notes-v1.2.0.md"
+        notes_path.write_text("Existing notes", encoding="utf-8")
+
+        result = downloader._write_release_notes(
+            release_dir=str(release_dir),
+            release_tag="v1.2.0",
+            body="New notes",
+            base_dir=str(tmp_path / "downloads" / "firmware"),
+        )
+
+        assert result == str(notes_path)
+
+    def test_write_release_notes_existing_symlink(self, tmp_path):
+        """Symlinked release notes should be rejected."""
+        cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
+        config = {"DOWNLOAD_DIR": str(tmp_path / "downloads")}
+        downloader = FirmwareReleaseDownloader(config, cache_manager)
+
+        release_dir = tmp_path / "downloads" / "firmware" / "v1.2.1"
+        release_dir.mkdir(parents=True)
+        notes_path = release_dir / "release_notes-v1.2.1.md"
+        target_path = tmp_path / "target.md"
+        target_path.write_text("Target", encoding="utf-8")
+
+        try:
+            os.symlink(target_path, notes_path)
+        except (OSError, NotImplementedError):
+            pytest.skip("Symlinks not supported on this platform")
+
+        with patch.object(log_utils.logger, "warning") as mock_warning:
+            result = downloader._write_release_notes(
+                release_dir=str(release_dir),
+                release_tag="v1.2.1",
+                body="New notes",
+                base_dir=str(tmp_path / "downloads" / "firmware"),
+            )
+
+        assert result is None
+        assert mock_warning.called
+
+    def test_write_release_notes_path_escape(self, tmp_path):
+        """Release notes should not be written outside the base directory."""
+        cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
+        config = {"DOWNLOAD_DIR": str(tmp_path / "downloads")}
+        downloader = FirmwareReleaseDownloader(config, cache_manager)
+
+        base_dir = tmp_path / "downloads" / "firmware"
+        release_dir = base_dir / ".." / "escape"
+
+        result = downloader._write_release_notes(
+            release_dir=str(release_dir),
+            release_tag="v1.3.0",
+            body="Notes",
+            base_dir=str(base_dir),
+        )
+
+        assert result is None
+
+    def test_write_release_notes_empty_after_sanitize(self, tmp_path):
+        """Empty notes after sanitization should skip writing."""
+        cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
+        config = {"DOWNLOAD_DIR": str(tmp_path / "downloads")}
+        downloader = FirmwareReleaseDownloader(config, cache_manager)
+
+        with patch(
+            "fetchtastic.download.base.strip_unwanted_chars", return_value="   "
+        ):
+            result = downloader._write_release_notes(
+                release_dir=str(tmp_path / "downloads" / "firmware" / "v1.4.0"),
+                release_tag="v1.4.0",
+                body="Notes",
+                base_dir=str(tmp_path / "downloads" / "firmware"),
+            )
+
+        assert result is None
+
+    def test_write_release_notes_atomic_write_failure(self, tmp_path):
+        """Failed atomic writes should return None."""
+        cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
+        config = {"DOWNLOAD_DIR": str(tmp_path / "downloads")}
+        downloader = FirmwareReleaseDownloader(config, cache_manager)
+        downloader.cache_manager.atomic_write_text = Mock(return_value=False)
+
+        result = downloader._write_release_notes(
+            release_dir=str(tmp_path / "downloads" / "firmware" / "v1.5.0"),
+            release_tag="v1.5.0",
+            body="Notes",
+            base_dir=str(tmp_path / "downloads" / "firmware"),
+        )
+
+        assert result is None
+
+    def test_needs_download_size_mismatch(self, downloader):
+        """Size mismatches should force downloads."""
+        downloader.get_existing_file_path = Mock(return_value="/tmp/file.zip")
+        downloader.file_operations.get_file_size = Mock(return_value=10)
+
+        assert downloader.needs_download("v1.0.0", "file.zip", expected_size=20) is True
+
+    def test_get_release_storage_tag_rename_failure(self, tmp_path):
+        """Rename failures should fall back to the existing directory tag."""
+        cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
+        config = {"DOWNLOAD_DIR": str(tmp_path / "downloads")}
+        downloader = FirmwareReleaseDownloader(config, cache_manager)
+        firmware_dir = tmp_path / "downloads" / "firmware"
+        firmware_dir.mkdir(parents=True)
+        alternate_dir = firmware_dir / "v1.0.0-revoked"
+        alternate_dir.mkdir()
+
+        release = Release(tag_name="v1.0.0", prerelease=False)
+
+        with patch("os.rename", side_effect=OSError("boom")):
+            storage_tag = downloader._get_release_storage_tag(release)
+
+        assert storage_tag == "v1.0.0-revoked"
+
+    def test_get_release_storage_tag_multiple_existing(self, tmp_path):
+        """Multiple candidate directories should return the first match."""
+        cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
+        config = {"DOWNLOAD_DIR": str(tmp_path / "downloads")}
+        downloader = FirmwareReleaseDownloader(config, cache_manager)
+        firmware_dir = tmp_path / "downloads" / "firmware"
+        firmware_dir.mkdir(parents=True)
+        (firmware_dir / "v1.0.1-alpha").mkdir()
+        (firmware_dir / "v1.0.1-beta").mkdir()
+
+        release = Release(tag_name="v1.0.1", prerelease=False)
+        storage_tag = downloader._get_release_storage_tag(release)
+
+        assert storage_tag in {"v1.0.1-alpha", "v1.0.1-beta"}
+
+    def test_get_storage_tag_candidates_invalid_channel(self, downloader):
+        """Invalid channel suffixes should be ignored."""
+        candidates = downloader._get_storage_tag_candidates(
+            "v1.0.2", "gamma", False, "v1.0.2"
+        )
+
+        assert "v1.0.2-gamma" not in candidates
+
+    def test_is_release_complete_unsafe_tag(self, downloader):
+        """Unsafe tags should return False during completeness checks."""
+        release = Release(tag_name="../v1.0.0", prerelease=False, assets=[])
+
+        assert downloader.is_release_complete(release) is False
+
+    def test_is_release_complete_missing_dir(self, downloader):
+        """Missing release directories should return False."""
+        release = Release(tag_name="v9.9.9", prerelease=False, assets=[])
+
+        assert downloader.is_release_complete(release) is False
+
+    def test_extract_firmware_missing_zip(self, downloader):
+        """Missing ZIP files should return a validation error result."""
+        release = Release(tag_name="v1.0.0", prerelease=False)
+        asset = Asset(
+            name="firmware-test.zip",
+            download_url="https://example.com/fw.zip",
+            size=100,
+        )
+
+        result = downloader.extract_firmware(release, asset, ["*.bin"], [])
+
+        assert result.success is False
+        assert result.error_type == "validation_error"
+
+    def test_cleanup_superseded_prereleases_error(self, downloader):
+        """Superseded prerelease cleanup should handle version errors."""
+        with patch.object(VersionManager, "get_release_tuple", side_effect=ValueError):
+            assert downloader.cleanup_superseded_prereleases("v1.2.3") is False
 
     def test_download_firmware_exception_uses_firmware_dir(self, downloader, tmp_path):
         """Ensure validation errors fall back to the firmware directory."""

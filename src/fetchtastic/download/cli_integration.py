@@ -211,6 +211,10 @@ class DownloadCLIIntegration:
             new_apk_versions (List[str]): Unused; retained for backward compatibility.
         """
         log = logger_override or logger
+
+        if self.orchestrator:
+            self.orchestrator.log_firmware_release_history_summary()
+
         log.info(f"\nCompleted in {elapsed_seconds:.1f}s")
 
         downloaded_count = len(downloaded_firmwares) + len(downloaded_apks)
