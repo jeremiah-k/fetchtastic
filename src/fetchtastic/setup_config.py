@@ -12,7 +12,7 @@ import subprocess
 import sys
 from datetime import datetime
 from importlib.metadata import PackageNotFoundError, version
-from typing import Callable, Optional, Sequence, Set
+from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple, cast
 
 import platformdirs
 import yaml
@@ -62,7 +62,7 @@ def _crontab_available() -> bool:
 
 
 # Decorator for functions that require crontab command
-def cron_command_required(func):
+def cron_command_required(func: Callable[..., Any]) -> Callable[..., Any]:
     """
     Decorator that ensures the system 'crontab' command is available before running the wrapped function.
 
@@ -70,7 +70,7 @@ def cron_command_required(func):
     """
 
     @functools.wraps(func)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
         """
         Ensure the system `crontab` command is available and inject its path into the wrapped function.
 
@@ -94,7 +94,7 @@ def cron_command_required(func):
 
 
 # Convenience decorator for check functions that should return False when crontab unavailable
-def cron_check_command_required(func):
+def cron_check_command_required(func: Callable[..., Any]) -> Callable[..., Any]:
     """
     Decorator for check-style functions that ensures the system 'crontab' command is available before running them.
 
@@ -108,7 +108,7 @@ def cron_check_command_required(func):
     """
 
     @functools.wraps(func)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
         """
         Ensures the `crontab` command is present and injects its resolved path into the wrapped call.
 
@@ -155,7 +155,7 @@ CRON_SCHEDULES = {
 # Import Windows-specific modules if on Windows
 if platform.system() == "Windows":
     try:
-        import winshell  # type: ignore[import]
+        import winshell  # type: ignore[import-not-found]
 
         WINDOWS_MODULES_AVAILABLE = True
     except ImportError:
@@ -198,14 +198,14 @@ SECTION_SHORTCUTS = {
 }
 
 
-def is_termux():
+def is_termux() -> bool:
     """
     Check if the script is running in a Termux environment.
     """
     return "com.termux" in os.environ.get("PREFIX", "")
 
 
-def is_fetchtastic_installed_via_pip():
+def is_fetchtastic_installed_via_pip() -> bool:
     """
     Check if fetchtastic is installed via pip (not pipx).
 
@@ -225,7 +225,7 @@ def is_fetchtastic_installed_via_pip():
     return False
 
 
-def is_fetchtastic_installed_via_pipx():
+def is_fetchtastic_installed_via_pipx() -> bool:
     """
     Check if fetchtastic is installed via pipx.
 
@@ -245,7 +245,7 @@ def is_fetchtastic_installed_via_pipx():
     return False
 
 
-def get_fetchtastic_installation_method():
+def get_fetchtastic_installation_method() -> str:
     """
     Determine how fetchtastic is currently installed.
 
@@ -260,7 +260,7 @@ def get_fetchtastic_installation_method():
         return "unknown"
 
 
-def migrate_pip_to_pipx():
+def migrate_pip_to_pipx() -> bool:
     """
     Migrate fetchtastic from pip to pipx installation in Termux.
 
@@ -375,7 +375,7 @@ def migrate_pip_to_pipx():
         return False
 
 
-def get_platform():
+def get_platform() -> str:
     """
     Determine the platform on which the script is running.
     """
@@ -389,7 +389,7 @@ def get_platform():
         return "unknown"
 
 
-def get_downloads_dir():
+def get_downloads_dir() -> str:
     """
     Determine the default Downloads directory for the current platform.
 
@@ -430,7 +430,7 @@ CONFIG_FILE = os.path.join(CONFIG_DIR, CONFIG_FILE_NAME)
 BASE_DIR = DEFAULT_BASE_DIR
 
 
-def config_exists(directory=None):
+def config_exists(directory: Optional[str] = None) -> Tuple[bool, Optional[str]]:
     """
     Return whether a Fetchtastic configuration file exists and its path.
 
@@ -460,7 +460,7 @@ def config_exists(directory=None):
     return False, None
 
 
-def check_storage_setup():
+def check_storage_setup() -> bool:
     """
     Ensure Termux storage and the Downloads directory are available and writable.
 
@@ -558,8 +558,8 @@ def _prompt_for_setup_sections() -> Optional[Set[str]]:
 
 
 def _setup_downloads(
-    config: dict, is_partial_run: bool, wants: Callable[[str], bool]
-) -> tuple[dict, bool, bool]:
+    config: Dict[str, Any], is_partial_run: bool, wants: Callable[[str], bool]
+) -> Tuple[Dict[str, Any], bool, bool]:
     """
     Configure which asset types (APKs and/or firmware) to download and update the provided configuration.
 
@@ -707,7 +707,9 @@ def _setup_downloads(
     return config, save_apks, save_firmware
 
 
-def _setup_android(config: dict, is_first_run: bool, default_versions: int) -> dict:
+def _setup_android(
+    config: Dict[str, Any], is_first_run: bool, default_versions: int
+) -> Dict[str, Any]:
     """
     Prompt for how many Android APK versions to keep and save the choice to the config.
 
@@ -738,7 +740,7 @@ def _setup_android(config: dict, is_first_run: bool, default_versions: int) -> d
     return config
 
 
-def configure_exclude_patterns(config: dict) -> None:
+def configure_exclude_patterns(config: Dict[str, Any]) -> None:
     """
     Configure firmware exclude patterns and store them in the given configuration dictionary.
 
@@ -838,7 +840,9 @@ def configure_exclude_patterns(config: dict) -> None:
             print("Let's reconfigure the exclude patterns...")
 
 
-def _setup_firmware(config: dict, is_first_run: bool, default_versions: int) -> dict:
+def _setup_firmware(
+    config: Dict[str, Any], is_first_run: bool, default_versions: int
+) -> Dict[str, Any]:
     """
     Configure firmware retention, automatic extraction, extraction/exclusion patterns, and prerelease handling in the provided config.
 
@@ -1017,8 +1021,8 @@ def _prompt_for_cron_frequency() -> str:
 
 
 def _setup_automation(
-    config: dict, is_partial_run: bool, wants: Callable[[str], bool]
-) -> dict:
+    config: Dict[str, Any], is_partial_run: bool, wants: Callable[[str], bool]
+) -> Dict[str, Any]:
     """
     Configure platform-specific automation for Fetchtastic (cron jobs, startup/boot shortcuts).
 
@@ -1040,7 +1044,7 @@ def _setup_automation(
             # Windows doesn't support cron jobs, but we can offer to create a startup shortcut
             if WINDOWS_MODULES_AVAILABLE:
                 # Check if startup shortcut already exists
-                startup_folder = winshell.startup()  # type: ignore[possibly-unbound]
+                startup_folder: str = winshell.startup()
                 startup_shortcut_path = os.path.join(startup_folder, "Fetchtastic.lnk")
 
                 if os.path.exists(startup_shortcut_path):
@@ -1231,7 +1235,7 @@ def _setup_automation(
     return config
 
 
-def _setup_notifications(config: dict) -> dict:
+def _setup_notifications(config: Dict[str, Any]) -> Dict[str, Any]:
     """
     Configure NTFY notifications interactively.
 
@@ -1365,7 +1369,7 @@ def _setup_notifications(config: dict) -> dict:
     return config
 
 
-def _setup_github(config: dict) -> dict:
+def _setup_github(config: Dict[str, Any]) -> Dict[str, Any]:
     """
     Configure GitHub API token for higher rate limits interactively.
 
@@ -1462,8 +1466,11 @@ def _setup_github(config: dict) -> dict:
 
 
 def _setup_base(
-    config: dict, is_partial_run: bool, is_first_run: bool, wants: Callable[[str], bool]
-) -> dict:
+    config: Dict[str, Any],
+    is_partial_run: bool,
+    is_first_run: bool,
+    wants: Callable[[str], bool],
+) -> Dict[str, Any]:
     """
     Handle base directory setup, Termux packages, and Windows shortcuts.
 
@@ -1665,7 +1672,7 @@ def _setup_base(
 
 def run_setup(
     sections: Optional[Sequence[str]] = None, perform_initial_download: bool = True
-):
+) -> None:
     """
         Run the interactive Fetchtastic setup wizard.
 
@@ -1840,7 +1847,7 @@ def run_setup(
         print("Selected setup sections updated. Run 'fetchtastic download' when ready.")
 
 
-def check_for_updates():
+def check_for_updates() -> Tuple[str, Optional[str], bool]:
     """
     Check whether a newer release of Fetchtastic is available on PyPI.
 
@@ -1879,7 +1886,7 @@ def check_for_updates():
             return "unknown", None, False
 
 
-def get_upgrade_command():
+def get_upgrade_command() -> str:
     """
     Returns the appropriate shell command to upgrade Fetchtastic for the current platform and installation method.
 
@@ -1897,7 +1904,7 @@ def get_upgrade_command():
         return "pipx upgrade fetchtastic"
 
 
-def should_recommend_setup():
+def should_recommend_setup() -> Tuple[bool, str, Optional[str], Optional[str]]:
     """
     Determine whether running the interactive setup should be recommended.
 
@@ -1935,7 +1942,7 @@ def should_recommend_setup():
         return True, "Could not determine setup status", None, None
 
 
-def get_version_info():
+def get_version_info() -> Tuple[str, Optional[str], bool]:
     """
     Retrieves the current and latest Fetchtastic version information and update status.
 
@@ -1949,7 +1956,7 @@ def get_version_info():
     return current_version, latest_version, update_available
 
 
-def migrate_config():
+def migrate_config() -> bool:
     """
     Migrates the configuration from the old location to the new location.
 
@@ -1999,10 +2006,10 @@ def migrate_config():
         return False
 
 
-def prompt_for_migration():
+def prompt_for_migration() -> bool:
     """
-    Automatically migrates the configuration from the old location to the new location
-    without prompting the user.
+    Automatically migrates configuration from old location to new location
+    without prompting user.
 
     Returns:
         bool: Always returns True to indicate migration should proceed.
@@ -2015,7 +2022,7 @@ def prompt_for_migration():
     return True
 
 
-def create_windows_menu_shortcuts(config_file_path, base_dir):
+def create_windows_menu_shortcuts(config_file_path: str, base_dir: str) -> bool:
     """
     Create Windows Start Menu shortcuts and supporting batch files for Fetchtastic.
 
@@ -2197,7 +2204,7 @@ def create_windows_menu_shortcuts(config_file_path, base_dir):
         download_shortcut_path = os.path.join(
             WINDOWS_START_MENU_FOLDER, "Fetchtastic Download.lnk"
         )
-        winshell.CreateShortcut(  # type: ignore[possibly-unbound]
+        winshell.CreateShortcut(
             Path=download_shortcut_path,
             Target=download_batch_path,
             Description="Download Meshtastic firmware and APKs",
@@ -2208,7 +2215,7 @@ def create_windows_menu_shortcuts(config_file_path, base_dir):
         setup_shortcut_path = os.path.join(
             WINDOWS_START_MENU_FOLDER, "Fetchtastic Setup.lnk"
         )
-        winshell.CreateShortcut(  # type: ignore[possibly-unbound]
+        winshell.CreateShortcut(
             Path=setup_shortcut_path,
             Target=setup_batch_path,
             Description="Configure Fetchtastic settings",
@@ -2219,7 +2226,7 @@ def create_windows_menu_shortcuts(config_file_path, base_dir):
         repo_shortcut_path = os.path.join(
             WINDOWS_START_MENU_FOLDER, "Fetchtastic Repository Browser.lnk"
         )
-        winshell.CreateShortcut(  # type: ignore[possibly-unbound]
+        winshell.CreateShortcut(
             Path=repo_shortcut_path,
             Target=repo_batch_path,
             Description="Browse and download files from the Meshtastic repository",
@@ -2230,7 +2237,7 @@ def create_windows_menu_shortcuts(config_file_path, base_dir):
         config_shortcut_path = os.path.join(
             WINDOWS_START_MENU_FOLDER, "Fetchtastic Configuration.lnk"
         )
-        winshell.CreateShortcut(  # type: ignore[possibly-unbound]
+        winshell.CreateShortcut(
             Path=config_shortcut_path,
             Target=config_file_path,
             Description=f"Edit Fetchtastic Configuration File ({CONFIG_FILE_NAME})",
@@ -2241,7 +2248,7 @@ def create_windows_menu_shortcuts(config_file_path, base_dir):
         base_dir_shortcut_path = os.path.join(
             WINDOWS_START_MENU_FOLDER, "Meshtastic Downloads.lnk"
         )
-        winshell.CreateShortcut(  # type: ignore[possibly-unbound]
+        winshell.CreateShortcut(
             Path=base_dir_shortcut_path,
             Target=base_dir,
             Description="Open Meshtastic Downloads Folder",
@@ -2272,7 +2279,7 @@ def create_windows_menu_shortcuts(config_file_path, base_dir):
         log_shortcut_path = os.path.join(
             WINDOWS_START_MENU_FOLDER, "Fetchtastic Log.lnk"
         )
-        winshell.CreateShortcut(  # type: ignore[possibly-unbound]
+        winshell.CreateShortcut(
             Path=log_shortcut_path,
             Target=log_file,
             Description="View Fetchtastic Log File",
@@ -2283,7 +2290,7 @@ def create_windows_menu_shortcuts(config_file_path, base_dir):
         update_shortcut_path = os.path.join(
             WINDOWS_START_MENU_FOLDER, "Fetchtastic - Check for Updates.lnk"
         )
-        winshell.CreateShortcut(  # type: ignore[possibly-unbound]
+        winshell.CreateShortcut(
             Path=update_shortcut_path,
             Target=update_batch_path,
             Description="Check for and install Fetchtastic updates",
@@ -2297,7 +2304,7 @@ def create_windows_menu_shortcuts(config_file_path, base_dir):
         return False
 
 
-def create_config_shortcut(config_file_path, target_dir):
+def create_config_shortcut(config_file_path: str, target_dir: str) -> bool:
     """
     Create a Windows shortcut to the Fetchtastic configuration file in the specified directory.
 
@@ -2315,7 +2322,7 @@ def create_config_shortcut(config_file_path, target_dir):
         shortcut_path = os.path.join(target_dir, WINDOWS_SHORTCUT_FILE)
 
         # Create the shortcut using winshell
-        winshell.CreateShortcut(  # type: ignore[possibly-unbound]
+        winshell.CreateShortcut(
             Path=shortcut_path,
             Target=config_file_path,
             Description=f"Fetchtastic Configuration File ({CONFIG_FILE_NAME})",
@@ -2329,7 +2336,7 @@ def create_config_shortcut(config_file_path, target_dir):
         return False
 
 
-def create_startup_shortcut():
+def create_startup_shortcut() -> bool:
     """
     Creates a shortcut to run fetchtastic on Windows startup.
     Only works on Windows.
@@ -2348,7 +2355,7 @@ def create_startup_shortcut():
             return False
 
         # Get the startup folder path
-        startup_folder = winshell.startup()  # type: ignore[possibly-unbound]
+        startup_folder = winshell.startup()
 
         # Create batch files in the config directory instead of the startup folder
         batch_dir = os.path.join(CONFIG_DIR, "batch")
@@ -2369,7 +2376,7 @@ def create_startup_shortcut():
         # Use direct shortcut creation without WindowStyle parameter
         try:
             # First try with WindowStyle parameter (newer versions of winshell)
-            winshell.CreateShortcut(  # type: ignore[possibly-unbound]
+            winshell.CreateShortcut(
                 Path=shortcut_path,
                 Target=batch_path,
                 Description="Run Fetchtastic on startup",
@@ -2378,7 +2385,7 @@ def create_startup_shortcut():
             )
         except TypeError:
             # If WindowStyle is not supported, use basic parameters
-            winshell.CreateShortcut(  # type: ignore[possibly-unbound]
+            winshell.CreateShortcut(
                 Path=shortcut_path,
                 Target=batch_path,
                 Description="Run Fetchtastic on startup",
@@ -2392,7 +2399,7 @@ def create_startup_shortcut():
         return False
 
 
-def copy_to_clipboard_func(text):
+def copy_to_clipboard_func(text: Optional[str]) -> bool:
     """
     Place the given text on the system clipboard using a platform-appropriate mechanism.
 
@@ -2404,6 +2411,9 @@ def copy_to_clipboard_func(text):
     Returns:
         bool: `True` if the text was copied to the clipboard, `False` otherwise.
     """
+    if text is None:
+        return False
+
     if is_termux():
         # Termux environment
         try:
@@ -2417,13 +2427,13 @@ def copy_to_clipboard_func(text):
     elif platform.system() == "Windows" and WINDOWS_MODULES_AVAILABLE:
         # Windows environment with win32com available
         try:
-            import win32clipboard  # type: ignore[import]
+            import win32clipboard  # type: ignore[import-untyped]
 
             win32clipboard.OpenClipboard()
             win32clipboard.EmptyClipboard()
             try:
                 # Try the newer API with explicit format
-                import win32con  # type: ignore[import]
+                import win32con  # type: ignore[import-untyped]
 
                 win32clipboard.SetClipboardData(win32con.CF_UNICODETEXT, text)
             except (ImportError, TypeError):
@@ -2447,14 +2457,14 @@ def copy_to_clipboard_func(text):
                 if shutil.which("xclip"):
                     subprocess.run(
                         ["xclip", "-selection", "clipboard"],
-                        input=text.encode("utf-8"),
+                        input=text.encode("utf-8"),  # type: ignore[arg-type]
                         check=True,
                     )
                     return True
                 elif shutil.which("xsel"):
                     subprocess.run(
                         ["xsel", "--clipboard", "--input"],
-                        input=text.encode("utf-8"),
+                        input=text.encode("utf-8"),  # type: ignore[arg-type]
                         check=True,
                     )
                     return True
@@ -2473,9 +2483,9 @@ def copy_to_clipboard_func(text):
             return False
 
 
-def install_termux_packages():
+def install_termux_packages() -> None:
     """
-    Installs required packages in the Termux environment.
+    Installs required packages in Termux environment.
     """
     # Install termux-api, termux-services, and cronie if they are not installed
     packages_to_install = []
@@ -2496,9 +2506,14 @@ def install_termux_packages():
         print("All required Termux packages are already installed.")
 
 
-def setup_storage():
+def setup_storage() -> None:
     """
-    Runs termux-setup-storage to set up storage access in Termux.
+    Run termux-setup-storage in Termux to grant storage permissions.
+
+    This function is intended for Termux environments only. On other platforms, it prints a message that it's not supported.
+
+    Returns:
+        None
     """
     # Run termux-setup-storage
     print("Setting up Termux storage access...")
@@ -2509,11 +2524,11 @@ def setup_storage():
         print("Please grant storage permissions when prompted.")
 
 
-def install_crond():
+def install_crond() -> None:
     """
-    Ensure the Termux crond service is installed and enabled.
+    Install and enable the Termux crond service for running cron jobs.
 
-    When running inside Termux, installs the 'cronie' package if it is not present and enables the 'crond' service; prints progress and error messages. On non-Termux platforms this function is a no-op.
+    This function is intended for Termux environments only. On other platforms, it does nothing.
     """
     if is_termux():
         try:
@@ -2682,11 +2697,11 @@ def remove_cron_job(*, crontab_path: str = "crontab"):
         logger.error(f"An error occurred while removing the cron job: {exc}")
 
 
-def setup_boot_script():
+def setup_boot_script() -> None:
     """
-    Create a Termux boot script that runs the `fetchtastic download` command on device startup.
+    Create a boot script that runs fetchtastic on device boot in Termux.
 
-    If necessary, creates the ~/.termux/boot directory and writes an executable shell script named fetchtastic.sh that sleeps briefly and then invokes the Fetchtastic download command. The function modifies file permissions to make the script executable. Requires Termux:Boot to be installed and launched at least once for boot scripts to run.
+    This function is intended for Termux environments only. On other platforms, it does nothing.
     """
     boot_dir = os.path.expanduser("~/.termux/boot")
     boot_script = os.path.join(boot_dir, "fetchtastic.sh")
@@ -2708,11 +2723,11 @@ def setup_boot_script():
     )
 
 
-def remove_boot_script():
+def remove_boot_script() -> None:
     """
-    Remove Fetchtastic's Termux boot script if present.
+    Remove the boot script if it exists.
 
-    If a file exists at "~/.termux/boot/fetchtastic.sh", delete it and print a confirmation message.
+    This function is intended for Termux environments only. On other platforms, it does nothing.
     """
     boot_script = os.path.expanduser("~/.termux/boot/fetchtastic.sh")
     if os.path.exists(boot_script):
@@ -2880,14 +2895,14 @@ def check_any_cron_jobs_exist(*, crontab_path: str = "crontab"):
         return False
 
 
-def check_boot_script_exists():
+def check_boot_script_exists() -> bool:
     """
-    Determine whether the Fetchtastic Termux boot script is present.
+    Check if the boot script exists.
 
-    Checks for the existence of the file ~/.termux/boot/fetchtastic.sh.
+    This function is intended for Termux environments only. On other platforms, it returns False.
 
     Returns:
-        True if ~/.termux/boot/fetchtastic.sh exists, False otherwise.
+        bool: True if boot script exists, False otherwise
     """
     boot_script = os.path.expanduser("~/.termux/boot/fetchtastic.sh")
     return os.path.exists(boot_script)
@@ -2925,21 +2940,23 @@ def check_cron_job_exists(*, crontab_path: str = "crontab"):
         return False
 
 
-def load_config(directory=None):
+def load_config(directory: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """
-    Load the Fetchtastic configuration YAML and update module state.
+    Load and return configuration from YAML file.
 
-    If `directory` is provided, loads CONFIG_FILE_NAME from that directory (backwards-compatibility or explicit load),
-    sets the global BASE_DIR to that directory, and warns if the file is in a non-standard location.
-    If `directory` is not provided, prefers the platformdirs-managed CONFIG_FILE, falling back to the old location OLD_CONFIG_FILE.
-    When a loaded config contains a "BASE_DIR" key, the global BASE_DIR is updated from that value.
+    Looks for configuration in the specified directory (if provided),
+    or in the new platformdirs location (CONFIG_FILE) if it exists,
+    otherwise in the legacy location (OLD_CONFIG_FILE).
+    If directory is provided and the config file exists there, loads it.
+    If no directory is provided, checks new location first, then legacy.
 
     Parameters:
-        directory (str | None): Optional directory to load the config from. If None, the function checks CONFIG_FILE
-            then OLD_CONFIG_FILE.
+        directory (str, optional): Directory to look for configuration file.
+                                     If not provided, checks default locations.
 
     Returns:
-        dict | None: The parsed configuration dictionary on success, or None if no configuration file was found.
+        dict | None: Parsed configuration dictionary, or None if no config file found
+                      or if the file could not be parsed.
     """
     global BASE_DIR
 

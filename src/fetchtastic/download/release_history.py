@@ -453,7 +453,9 @@ class ReleaseHistoryManager:
         timestamps = [ts for ts in timestamps if ts is not None]
         if not timestamps:
             return None
-        return min(timestamps)
+        from typing import cast
+
+        return cast(datetime, min(timestamps))
 
     def _should_mark_removed(
         self, entry: Dict[str, Any], oldest_published: Optional[datetime]

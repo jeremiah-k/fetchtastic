@@ -10,7 +10,7 @@ import os
 import zipfile
 from abc import ABC
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from requests.exceptions import RequestException
 

@@ -15,7 +15,7 @@ import shutil
 import tempfile
 import zipfile
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import IO, Any, Callable, Dict, List, Optional
 
 from fetchtastic.constants import (
     EXECUTABLE_PERMISSIONS,
@@ -138,7 +138,9 @@ def _find_asset_by_name(
     """Find an asset dict by name in release data."""
     for asset in release_data.get("assets", []) or []:
         if asset.get("name") == asset_name:
-            return asset
+            from typing import cast
+
+            return cast(Dict[str, Any], asset)
     return None
 
 
@@ -391,7 +393,7 @@ def _atomic_write(
     return True
 
 
-def _atomic_write_json(file_path: str, data: dict) -> bool:
+def _atomic_write_json(file_path: str, data: dict[str, Any]) -> bool:
     """
     Atomically write the given dictionary to the target file as pretty-printed JSON.
 
@@ -434,7 +436,7 @@ class FileOperations:
             bool: `True` if the write and atomic replacement succeeded, `False` on error.
         """
 
-        def _write_content(f):
+        def _write_content(f: IO[str]) -> None:
             """
             Write the provided string content to the given writable file-like object.
 
@@ -773,12 +775,12 @@ class FileOperations:
             # Validate algorithm is available
             try:
 
-                def hash_func():
+                def hash_func() -> "hashlib._Hash":
                     """
                     Create and return a new hash object for the configured algorithm.
 
                     Returns:
-                        A new hash object suitable for incremental updates and digest computation using the selected algorithm.
+                        A new hash object suitable for incremental updates and digest computation using selected algorithm.
                     """
                     return hashlib.new(algorithm.lower())
 

@@ -30,9 +30,9 @@ from .files import _atomic_write_json
 
 # Import for type annotations only (available in older packaging versions)
 try:
-    from packaging.version import LegacyVersion  # type: ignore
+    from packaging.version import LegacyVersion  # type: ignore[import-not-found]
 except ImportError:
-    LegacyVersion = None  # type: ignore
+    LegacyVersion = None  # type: ignore[assignment]
 
 
 class VersionManager:
@@ -633,7 +633,9 @@ class VersionManager:
             version, release_type, additional_data=additional_data
         )
 
-        return cache_manager.atomic_write_json(file_path, tracking_data)
+        from typing import cast
+
+        return cast(bool, cache_manager.atomic_write_json(file_path, tracking_data))
 
     def read_version_tracking_file(
         self,
@@ -654,13 +656,18 @@ class VersionManager:
             Optional[Dict[str, Any]]: Parsed tracking data with keys normalized according to `backward_compatible_keys`,
             or `None` if the file does not exist or cannot be read.
         """
-        return cache_manager.read_json_with_backward_compatibility(
-            file_path,
-            backward_compatible_keys
-            or {
-                "version": "latest_version",
-                "last_updated": "timestamp",
-            },
+        from typing import cast
+
+        return cast(
+            Optional[Dict[str, Any]],
+            cache_manager.read_json_with_backward_compatibility(
+                file_path,
+                backward_compatible_keys
+                or {
+                    "version": "latest_version",
+                    "last_updated": "timestamp",
+                },
+            ),
         )
 
     def migrate_legacy_version_tracking(
@@ -681,8 +688,13 @@ class VersionManager:
         Returns:
             bool: `True` if the migration succeeded, `False` otherwise.
         """
-        return cache_manager.migrate_legacy_cache_file(
-            legacy_file_path, new_file_path, legacy_to_new_mapping
+        from typing import cast
+
+        return cast(
+            bool,
+            cache_manager.migrate_legacy_cache_file(
+                legacy_file_path, new_file_path, legacy_to_new_mapping
+            ),
         )
 
     def validate_version_tracking_data(
@@ -979,7 +991,9 @@ def _parse_new_json_format(
     return _version_manager.parse_legacy_prerelease_tracking(tracking_data)
 
 
-def _read_prerelease_tracking_data(tracking_file: str):
+def _read_prerelease_tracking_data(
+    tracking_file: str,
+) -> tuple[list[str], Optional[str], Optional[str]]:
     # This function is used by tests
     """
     Read a prerelease tracking JSON file and extract commits, the current release tag, and last-updated timestamp.

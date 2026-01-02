@@ -3,7 +3,7 @@
 import importlib.resources
 
 
-def get_batch_file_path(filename):
+def get_batch_file_path(filename: str) -> str:
     """
     Return the filesystem path to a batch file stored in the `fetchtastic.tools` package resources.
 
@@ -17,7 +17,7 @@ def get_batch_file_path(filename):
     return str(importlib.resources.files("fetchtastic.tools").joinpath(filename))
 
 
-def get_install_script_path(platform):
+def get_install_script_path(platform: str) -> str:
     """
     Get the filesystem path to the Fetchtastic installation script for the given platform.
 
