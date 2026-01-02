@@ -73,16 +73,21 @@ def prompt_build_type(
     return "release" if choice.startswith("r") else "debug"
 
 
-def prompt_build_ref(module: GradleBuildModule, repo_dir: Optional[str] = None) -> str:
+def prompt_build_ref(
+    module: GradleBuildModule,
+    repo_dir: Optional[str] = None,
+    repo_url: Optional[str] = None,
+) -> str:
     """
     Prompt for a git ref to build (tag/branch/commit).
     """
     if not sys.stdin.isatty():
         return "latest"
-    latest_tag = latest_remote_tag(module.repo_url)
+    resolved_repo_url = repo_url or module.repo_url
+    latest_tag = latest_remote_tag(resolved_repo_url)
     if not latest_tag and repo_dir:
         latest_tag = latest_repo_tag(repo_dir)
-    default_branch = default_remote_branch(module.repo_url)
+    default_branch = default_remote_branch(resolved_repo_url)
     latest_label = f"latest ({latest_tag})" if latest_tag else "latest"
     if default_branch:
         print(f"Default branch: {default_branch}")
@@ -175,7 +180,7 @@ def prepare_build_environment(
                     if configure_shell and exports:
                         update_shell_configs(exports, path_entries)
                     if env_status.java_home:
-                        print("JAVA_HOME configured for DFU builds.")
+                        print("JAVA_HOME configured for Android builds.")
                     else:
                         print(
                             f"Install openjdk-{required_java} and re-run: pkg install openjdk-{required_java}"
@@ -211,7 +216,7 @@ def prepare_build_environment(
                 print(f"- {path}")
             print("Restart your shell or source the updated file(s) to apply changes.")
         else:
-            print("Shell config already contains Fetchtastic DFU settings.")
+            print("Shell config already contains Fetchtastic Android build settings.")
 
     env_status.sdkmanager_path = find_sdkmanager(env_status.sdk_root)
     if not env_status.sdkmanager_path:
@@ -278,6 +283,7 @@ def run_module_build(
     allow_update: Optional[bool] = None,
     repo_base_dir: Optional[str] = None,
     sdk_root: Optional[str] = None,
+    repo_url: Optional[str] = None,
     prompt_for_build_type: bool = True,
     prompt_for_ref: bool = False,
     prompt_for_update: bool = False,
@@ -304,9 +310,10 @@ def run_module_build(
 
     if ref is None and prompt_for_ref:
         repo_root = repo_base_dir or default_build_repo_root()
-        candidate = os.path.join(repo_root, module.repo_dirname)
+        repo_dirname = module.resolve_repo_dirname(repo_url)
+        candidate = os.path.join(repo_root, repo_dirname)
         repo_dir = candidate if os.path.isdir(os.path.join(candidate, ".git")) else None
-        ref = prompt_build_ref(module, repo_dir=repo_dir)
+        ref = prompt_build_ref(module, repo_dir=repo_dir, repo_url=repo_url)
 
     build_type = build_type.lower()
     if build_type == "release":
@@ -338,4 +345,5 @@ def run_module_build(
         repo_base_dir=repo_base_dir,
         sdk_root=sdk_root,
         allow_update=allow_update,
+        repo_url=repo_url,
     )

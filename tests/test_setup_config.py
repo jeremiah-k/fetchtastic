@@ -1038,6 +1038,7 @@ def test_run_setup_first_run_linux_simple(
         "n",  # No pre-releases
         "n",  # No auto-extract
         "n",  # Skip DFU build
+        "n",  # Skip mtand build
         "n",  # No cron job
         "n",  # No reboot cron job
         "n",  # No NTFY notifications
@@ -1123,6 +1124,7 @@ def test_run_setup_first_run_windows(
         "n",  # No auto-extract
         "n",  # No pre-releases
         "n",  # Skip DFU build
+        "n",  # Skip mtand build
         "y",  # create startup shortcut
         "n",  # No NTFY notifications
         "n",  # Would you like to set up a GitHub token now?
@@ -1216,6 +1218,7 @@ def test_run_setup_first_run_termux(  # noqa: ARG001
         "n",  # No pre-releases
         "n",  # No auto-extract
         "n",  # Skip DFU build
+        "n",  # Skip mtand build
         "y",  # wifi only
         "h",  # hourly cron job
         "y",  # boot script
@@ -1259,6 +1262,7 @@ def test_run_setup_termux_wifi_prompt_updates_config(mocker):
         return_value=(config, False, False),
     )
     mocker.patch("fetchtastic.setup_config._setup_dfu_build", return_value=config)
+    mocker.patch("fetchtastic.setup_config._setup_mtand_build", return_value=config)
     mocker.patch("fetchtastic.setup_config._setup_automation", return_value=config)
     mocker.patch("fetchtastic.setup_config._setup_notifications", return_value=config)
     mocker.patch("fetchtastic.setup_config._setup_github", return_value=config)
@@ -1339,6 +1343,7 @@ def test_run_setup_existing_config(
         "rak4631- tbeam",  # Extraction patterns
         "y",  # Check for pre-releases
         "n",  # Skip DFU build
+        "n",  # Skip mtand build
         "y",  # reconfigure cron
         "n",  # no daily cron
         "n",  # no reboot cron
@@ -1491,9 +1496,10 @@ def test_section_shortcuts_mapping():
     assert SECTION_SHORTCUTS["m"] == "automation"
     assert SECTION_SHORTCUTS["g"] == "github"
     assert SECTION_SHORTCUTS["d"] == "dfu"
+    assert SECTION_SHORTCUTS["t"] == "mtand"
 
     # Test that all expected shortcuts exist
-    expected_shortcuts = {"b", "a", "f", "n", "m", "g", "d"}
+    expected_shortcuts = {"b", "a", "f", "n", "m", "g", "d", "t"}
     assert set(SECTION_SHORTCUTS.keys()) == expected_shortcuts
 
 
@@ -1511,6 +1517,7 @@ def test_setup_section_choices():
         "automation",
         "github",
         "dfu",
+        "mtand",
     }
     assert SETUP_SECTION_CHOICES == expected_sections
 
@@ -1679,6 +1686,89 @@ def test_setup_dfu_build_success(mocker, tmp_path):
 
     updated = setup_config._setup_dfu_build(
         config, is_partial_run=False, wants=lambda section: section == "dfu"
+    )
+
+    assert updated == config
+    mock_build.assert_called_once()
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_mtand_build_skips_when_not_requested(mocker):
+    """Test _setup_mtand_build skips prompts when mtand section isn't requested."""
+    from fetchtastic import setup_config
+
+    mock_input = mocker.patch("builtins.input")
+    result = setup_config._setup_mtand_build(
+        {}, is_partial_run=True, wants=lambda section: section == "firmware"
+    )
+
+    assert result == {}
+    mock_input.assert_not_called()
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_mtand_build_user_declines(mocker, tmp_path):
+    """Test _setup_mtand_build returns without running commands when user declines."""
+    from fetchtastic import setup_config
+
+    config = {"BASE_DIR": str(tmp_path)}
+    module = mocker.MagicMock()
+    module.repo_url = "https://github.com/meshtastic/Meshtastic-Android.git"
+    module.repo_dirname = "Meshtastic-Android"
+    module.resolve_repo_dirname.return_value = module.repo_dirname
+    module.describe_requirements.return_value = ["JDK 21"]
+    mocker.patch("fetchtastic.setup_config.get_build_module", return_value=module)
+    mocker.patch("builtins.input", return_value="n")
+
+    result = setup_config._setup_mtand_build(
+        config, is_partial_run=False, wants=lambda section: section == "mtand"
+    )
+
+    assert result == config
+    module.build.assert_not_called()
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+def test_setup_mtand_build_success(mocker, tmp_path):
+    """Test _setup_mtand_build runs build flow when user accepts."""
+    from fetchtastic import setup_config
+
+    config = {"BASE_DIR": str(tmp_path)}
+    module = mocker.MagicMock()
+    module.repo_url = "https://github.com/meshtastic/Meshtastic-Android.git"
+    module.repo_dirname = "Meshtastic-Android"
+    mocker.patch("fetchtastic.setup_config.get_build_module", return_value=module)
+    mocker.patch("fetchtastic.setup_config.print_build_requirements")
+    mocker.patch("fetchtastic.setup_config.prompt_yes_no", return_value=True)
+    mocker.patch("fetchtastic.setup_config.shutil.which", return_value="/usr/bin/javac")
+    mocker.patch("fetchtastic.setup_config.prompt_build_type", return_value="debug")
+    mocker.patch("fetchtastic.setup_config.prompt_build_ref", return_value="latest")
+    mocker.patch("builtins.input", return_value="")
+    env_status = BuildEnvironment(
+        java_home="/tmp/java",
+        sdk_root="/tmp/sdk",
+        sdkmanager_path=None,
+        missing_packages=[],
+        missing_sdk_packages=[],
+    )
+    mocker.patch(
+        "fetchtastic.setup_config.prepare_build_environment", return_value=env_status
+    )
+    result = BuildResult(
+        success=True,
+        message="ok",
+        build_type="debug",
+        dest_path=str(tmp_path / "mtand-ok.apk"),
+    )
+    mock_build = mocker.patch(
+        "fetchtastic.setup_config.run_module_build", return_value=result
+    )
+
+    updated = setup_config._setup_mtand_build(
+        config, is_partial_run=False, wants=lambda section: section == "mtand"
     )
 
     assert updated == config

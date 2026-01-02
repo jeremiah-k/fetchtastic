@@ -12,6 +12,7 @@ import platformdirs
 import yaml
 
 from fetchtastic import log_utils, setup_config
+from fetchtastic.build.base import resolve_repo_url
 from fetchtastic.build.environment import build_shell_exports, update_process_env
 from fetchtastic.build.interactive import (
     check_build_environment,
@@ -431,6 +432,70 @@ def main():
         help="Skip installing missing Android SDK packages",
     )
 
+    # Command to build the Meshtastic Android app (mtand)
+    mtand_parser = subparsers.add_parser(
+        "mtand",
+        help="Build the Meshtastic Android app (mtand)",
+        description="Clone and build the Meshtastic Android app using Gradle.",
+    )
+    mtand_subparsers = mtand_parser.add_subparsers(dest="mtand_command")
+    mtand_build_parser = mtand_subparsers.add_parser(
+        "build",
+        help="Build the Meshtastic Android app (mtand)",
+        description="Build a debug or release APK for the Meshtastic Android app.",
+    )
+    mtand_build_parser.add_argument(
+        "--type",
+        choices=("debug", "release"),
+        dest="mtand_build_type",
+        help="Build type to produce",
+    )
+    mtand_build_parser.add_argument(
+        "--ref",
+        dest="mtand_build_ref",
+        help="Git ref to build (tag, branch, or commit). Defaults to latest tag.",
+    )
+    mtand_build_parser.add_argument(
+        "--repo-dir",
+        dest="mtand_repo_dir",
+        help="Base directory for the mtand repo checkout (defaults to Fetchtastic data dir).",
+    )
+    mtand_build_parser.add_argument(
+        "--repo-url",
+        dest="mtand_repo_url",
+        help="Full git URL for the mtand repository (overrides default).",
+    )
+    mtand_build_parser.add_argument(
+        "--fork",
+        dest="mtand_repo_fork",
+        help="GitHub fork owner (or owner/repo) to build instead of upstream.",
+    )
+    mtand_build_parser.add_argument(
+        "--no-update",
+        action="store_true",
+        help="Skip updating the mtand repo before building",
+    )
+    mtand_setup_parser = mtand_subparsers.add_parser(
+        "setup",
+        help="Prepare the mtand build environment",
+        description="Install dependencies and configure environment variables for mtand builds.",
+    )
+    mtand_setup_parser.add_argument(
+        "--no-install",
+        action="store_true",
+        help="Skip installing missing Termux packages",
+    )
+    mtand_setup_parser.add_argument(
+        "--no-shell",
+        action="store_true",
+        help="Skip updating shell configuration files",
+    )
+    mtand_setup_parser.add_argument(
+        "--no-sdk",
+        action="store_true",
+        help="Skip installing missing Android SDK packages",
+    )
+
     args = parser.parse_args()
 
     if args.command == "setup":
@@ -567,6 +632,8 @@ def main():
             subparsers,
             dfu_parser,
             dfu_subparsers,
+            mtand_parser,
+            mtand_subparsers,
         )
     elif args.command == "repo":
         display_banner()
@@ -632,6 +699,35 @@ def main():
             )
         else:
             dfu_parser.print_help()
+    elif args.command == "mtand":
+        display_banner()
+        _, latest_version, update_available = get_version_info()
+
+        config = setup_config.load_config() or {
+            "BASE_DIR": setup_config.DEFAULT_BASE_DIR
+        }
+
+        if args.mtand_command == "build":
+            run_mtand_build(
+                config,
+                build_type=args.mtand_build_type,
+                build_ref=args.mtand_build_ref,
+                repo_base_dir=args.mtand_repo_dir,
+                repo_url=args.mtand_repo_url,
+                repo_fork=args.mtand_repo_fork,
+                allow_update=not args.no_update,
+            )
+
+            if update_available and latest_version:
+                _display_update_reminder(latest_version)
+        elif args.mtand_command == "setup":
+            run_mtand_setup(
+                install_missing_packages=not args.no_install,
+                configure_shell=not args.no_shell,
+                install_sdk_packages=not args.no_sdk,
+            )
+        else:
+            mtand_parser.print_help()
     elif args.command is None:
         # No command provided
         parser.print_help()
@@ -648,6 +744,8 @@ def show_help(
     main_subparsers=None,
     dfu_parser=None,
     dfu_subparsers=None,
+    mtand_parser=None,
+    mtand_subparsers=None,
 ):
     """
     Show contextual CLI help for a specific command or subcommand.
@@ -700,6 +798,19 @@ def show_help(
                 available = ", ".join(sorted(dfu_subparsers.choices.keys()))
                 print(f"\nUnknown dfu subcommand: {help_subcommand}")
                 print(f"Available dfu subcommands: {available}")
+        return
+    if help_command == "mtand" and mtand_parser:
+        mtand_parser.print_help()
+
+        if help_subcommand and mtand_subparsers:
+            subparser = mtand_subparsers.choices.get(help_subcommand)
+            if subparser:
+                print(f"\nmtand '{help_subcommand}' command help:")
+                subparser.print_help()
+            else:
+                available = ", ".join(sorted(mtand_subparsers.choices.keys()))
+                print(f"\nUnknown mtand subcommand: {help_subcommand}")
+                print(f"Available mtand subcommands: {available}")
         return
     # Handle other main commands
     elif main_subparsers and help_command in main_subparsers.choices:
@@ -1071,6 +1182,117 @@ def run_dfu_build(
         print(result.message)
     else:
         print(f"DFU build failed: {result.message}", file=sys.stderr)
+
+
+def run_mtand_setup(
+    *,
+    install_missing_packages: bool = True,
+    configure_shell: bool = True,
+    install_sdk_packages: bool = True,
+) -> None:
+    """
+    Prepare the environment for mtand builds.
+    """
+    module = get_build_module("mtand")
+    if module is None:
+        log_utils.logger.error("mtand build module is not available.")
+        return
+
+    print("\n--- mtand Build Setup ---")
+    print_build_requirements(module)
+
+    env_status = prepare_build_environment(
+        module,
+        install_missing_packages=install_missing_packages,
+        configure_shell=configure_shell,
+        install_sdk_packages=install_sdk_packages,
+    )
+    if env_status and env_status.is_ready():
+        print("mtand build environment is ready.")
+    else:
+        print("mtand build environment is not ready yet.")
+
+
+def run_mtand_build(
+    config,
+    build_type: Optional[str],
+    allow_update: bool,
+    build_ref: Optional[str] = None,
+    repo_base_dir: Optional[str] = None,
+    repo_url: Optional[str] = None,
+    repo_fork: Optional[str] = None,
+) -> None:
+    """
+    Build the Meshtastic Android app (mtand) using the build module.
+    """
+    module = get_build_module("mtand")
+    if module is None:
+        log_utils.logger.error("mtand build module is not available.")
+        return
+
+    print("\n--- Meshtastic Android (mtand) Build ---")
+    print_build_requirements(module)
+
+    env_status = check_build_environment(module)
+    if not env_status.is_ready():
+        print("mtand build environment is not ready.")
+        if not prompt_yes_no(
+            "Run 'fetchtastic mtand setup' now? [y/n] (default: yes): ",
+            default="yes",
+        ):
+            return
+        env_status = prepare_build_environment(module)
+    if env_status is None or not env_status.is_ready():
+        return
+
+    exports, path_entries = build_shell_exports(
+        env_status.java_home, env_status.sdk_root
+    )
+    update_process_env(exports, path_entries)
+
+    if not build_type:
+        build_type = prompt_build_type()
+
+    base_dir = os.path.expanduser(config.get("BASE_DIR", setup_config.DEFAULT_BASE_DIR))
+    repo_base_dir = repo_base_dir or config.get("BUILD_REPOS_DIR")
+    if repo_base_dir:
+        repo_base_dir = os.path.expanduser(repo_base_dir)
+
+    config_repo_url = config.get("MTAND_REPO_URL")
+    if repo_url or repo_fork:
+        resolved_repo_url = resolve_repo_url(
+            module.repo_url,
+            module.repo_dirname,
+            repo_url=repo_url,
+            fork=repo_fork,
+        )
+    else:
+        resolved_repo_url = resolve_repo_url(
+            module.repo_url,
+            module.repo_dirname,
+            repo_url=config_repo_url,
+        )
+    if resolved_repo_url != module.repo_url:
+        print(f"Using mtand repo: {resolved_repo_url}")
+
+    result = run_module_build(
+        module,
+        base_dir=base_dir,
+        build_type=build_type,
+        ref=build_ref,
+        allow_update=allow_update,
+        repo_base_dir=repo_base_dir,
+        sdk_root=env_status.sdk_root,
+        repo_url=resolved_repo_url,
+        prompt_for_build_type=False,
+        prompt_for_ref=build_ref is None,
+    )
+    if result is None:
+        return
+    if result.success:
+        print(result.message)
+    else:
+        print(f"mtand build failed: {result.message}", file=sys.stderr)
 
 
 if __name__ == "__main__":

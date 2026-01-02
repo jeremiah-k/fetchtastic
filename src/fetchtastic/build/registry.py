@@ -6,9 +6,11 @@ from typing import Dict, List, Optional
 
 from fetchtastic.build.base import GradleBuildModule
 from fetchtastic.build.dfu.modules import DFUBuildModule
+from fetchtastic.build.mtand.modules import MtandBuildModule
 
 _MODULES: Dict[str, GradleBuildModule] = {
     "dfu": DFUBuildModule(),
+    "mtand": MtandBuildModule(),
 }
 
 

@@ -62,6 +62,88 @@ def _safe_identifier(value: str) -> str:
     return cleaned or "unknown"
 
 
+def parse_github_repo_url(repo_url: str) -> Optional[tuple[str, str]]:
+    """
+    Parse a GitHub repository owner/name from a URL or SSH-style path.
+    """
+    if not repo_url:
+        return None
+    candidate = repo_url.strip().rstrip("/")
+    match = re.search(r"github\\.com[:/](?P<owner>[^/]+)/(?P<repo>[^/]+)$", candidate)
+    if not match:
+        return None
+    owner = match.group("owner").strip()
+    repo = match.group("repo").strip()
+    if repo.endswith(".git"):
+        repo = repo[:-4]
+    if not owner or not repo:
+        return None
+    return owner, repo
+
+
+def repo_dirname_from_url(repo_url: str, fallback: str) -> str:
+    """
+    Build a deterministic repo directory name from a GitHub URL.
+    """
+    parsed = parse_github_repo_url(repo_url)
+    if not parsed:
+        return fallback
+    owner, repo = parsed
+    return _safe_identifier(f"{owner}-{repo}") or fallback
+
+
+def build_github_repo_url(owner: str, repo: str) -> str:
+    """
+    Build a GitHub HTTPS repository URL from owner/repo.
+    """
+    return f"https://github.com/{owner}/{repo}.git"
+
+
+def _normalize_repo_url(repo_url: str) -> str:
+    """
+    Normalize GitHub repo URLs to include the .git suffix when missing.
+    """
+    trimmed = repo_url.strip().rstrip("/")
+    if "github.com" in trimmed and not trimmed.endswith(".git"):
+        return f"{trimmed}.git"
+    return trimmed
+
+
+def resolve_repo_url(
+    default_repo_url: str,
+    default_repo_dirname: str,
+    *,
+    repo_url: Optional[str] = None,
+    fork: Optional[str] = None,
+) -> str:
+    """
+    Resolve a repository URL based on an optional override or GitHub fork hint.
+    """
+    if repo_url:
+        return _normalize_repo_url(repo_url)
+    if not fork:
+        return default_repo_url
+    fork_value = fork.strip()
+    if not fork_value:
+        return default_repo_url
+    if fork_value.startswith(("http://", "https://", "git@")):
+        return _normalize_repo_url(fork_value)
+    owner = ""
+    repo = ""
+    if "/" in fork_value:
+        owner, repo = fork_value.split("/", 1)
+    else:
+        owner = fork_value
+    if not repo:
+        parsed = parse_github_repo_url(default_repo_url)
+        repo = parsed[1] if parsed else default_repo_dirname
+    if repo.endswith(".git"):
+        repo = repo[:-4]
+    if not owner:
+        return default_repo_url
+    return build_github_repo_url(owner, repo)
+
+
 def git_identifier(repo_dir: str) -> str:
     """
     Return a git tag if HEAD is tagged, otherwise a short commit hash.
@@ -300,6 +382,15 @@ class GradleBuildModule:
     release_env_vars: Sequence[str] = ()
     requirements: Mapping[str, Sequence[str]] = field(default_factory=dict)
 
+    def resolve_repo_dirname(self, repo_url: Optional[str] = None) -> str:
+        """
+        Resolve the checkout directory name for a given repository URL.
+        """
+        url = repo_url or self.repo_url
+        if url == self.repo_url:
+            return self.repo_dirname
+        return repo_dirname_from_url(url, self.repo_dirname)
+
     def describe_requirements(self) -> List[str]:
         """
         Return a list of requirement lines for the current platform.
@@ -333,6 +424,7 @@ class GradleBuildModule:
         ref: Optional[str] = None,
         sdk_root: Optional[str] = None,
         allow_update: bool = True,
+        repo_url: Optional[str] = None,
     ) -> BuildResult:
         """
         Build the module using Gradle and copy the artifact into base_dir/output_dirname.
@@ -345,12 +437,14 @@ class GradleBuildModule:
                 build_type=build_type,
             )
 
+        resolved_repo_url = repo_url or self.repo_url
         repo_root = repo_base_dir or default_build_repo_root()
-        repo_dir = os.path.join(repo_root, self.repo_dirname)
+        repo_dirname = self.resolve_repo_dirname(resolved_repo_url)
+        repo_dir = os.path.join(repo_root, repo_dirname)
         os.makedirs(repo_root, exist_ok=True)
 
         repo_ready = _ensure_repo(
-            self.repo_url,
+            resolved_repo_url,
             repo_dir,
             allow_update=allow_update,
             clone_depth=self.repo_clone_depth,

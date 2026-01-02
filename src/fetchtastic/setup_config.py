@@ -18,7 +18,7 @@ import platformdirs
 import yaml
 
 from fetchtastic import menu_apk, menu_firmware
-from fetchtastic.build.base import default_build_repo_root
+from fetchtastic.build.base import default_build_repo_root, resolve_repo_url
 from fetchtastic.build.interactive import (
     prepare_build_environment,
     print_build_requirements,
@@ -198,6 +198,7 @@ SETUP_SECTION_CHOICES: Set[str] = {
     "automation",  # Cron/startup automation choices
     "github",  # GitHub API token configuration
     "dfu",  # Nordic DFU app clone/build helper
+    "mtand",  # Meshtastic Android app clone/build helper
 }
 
 SECTION_SHORTCUTS = {
@@ -208,6 +209,7 @@ SECTION_SHORTCUTS = {
     "m": "automation",
     "g": "github",
     "d": "dfu",
+    "t": "mtand",
 }
 
 
@@ -532,6 +534,7 @@ def _prompt_for_setup_sections() -> Optional[Set[str]]:
     print("  [m] automation     — scheduled/automatic execution options")
     print("  [g] github         — GitHub API token (rate-limit boost)")
     print("  [d] dfu            — build Nordic DFU Android app (debug/release)")
+    print("  [t] mtand          — build Meshtastic Android app (mtand)")
 
     while True:
         response = input(
@@ -807,6 +810,100 @@ def _setup_dfu_build(
         print(f"DFU APK saved to: {result.dest_path}")
     else:
         print(f"DFU build failed: {result.message}")
+    return config
+
+
+def _setup_mtand_build(
+    config: dict, is_partial_run: bool, wants: Callable[[str], bool]
+) -> dict:
+    """
+    Optionally clone and build the Meshtastic Android app (mtand).
+    """
+    if is_partial_run and not wants("mtand"):
+        return config
+
+    module = get_build_module("mtand")
+    if module is None:
+        print("mtand build module is not available.")
+        return config
+
+    print("\n--- Meshtastic Android (mtand) Build ---")
+    print(
+        "This will clone the Meshtastic Android repo and build a debug or release APK using Gradle."
+    )
+    print("Builds can take several minutes and multiple GB of disk space.\n")
+    print_build_requirements(module)
+    if not shutil.which("javac"):
+        print("Warning: javac not found on PATH.")
+
+    if not prompt_yes_no(
+        "Build the mtand APK now? [y/n] (default: no): ",
+        default="no",
+    ):
+        print("Skipping mtand build.")
+        return config
+
+    env_status = prepare_build_environment(module)
+    if env_status is None or not env_status.is_ready():
+        return config
+
+    build_type = prompt_build_type()
+
+    base_dir = os.path.expanduser(config.get("BASE_DIR", DEFAULT_BASE_DIR))
+    repo_base_dir = config.get("BUILD_REPOS_DIR")
+    if repo_base_dir:
+        repo_base_dir = os.path.expanduser(repo_base_dir)
+
+    default_repo_url = resolve_repo_url(
+        module.repo_url,
+        module.repo_dirname,
+        repo_url=config.get("MTAND_REPO_URL"),
+    )
+    repo_input = input(
+        f"Repo to build? [owner/repo or URL] (default: {default_repo_url}): "
+    ).strip()
+    if repo_input:
+        if repo_input.startswith(("http://", "https://", "git@")):
+            resolved_repo_url = resolve_repo_url(
+                module.repo_url, module.repo_dirname, repo_url=repo_input
+            )
+        else:
+            resolved_repo_url = resolve_repo_url(
+                module.repo_url, module.repo_dirname, fork=repo_input
+            )
+        if resolved_repo_url != module.repo_url:
+            config["MTAND_REPO_URL"] = resolved_repo_url
+        else:
+            config.pop("MTAND_REPO_URL", None)
+    else:
+        resolved_repo_url = default_repo_url
+    if resolved_repo_url != module.repo_url:
+        print(f"Using mtand repo: {resolved_repo_url}")
+
+    repo_root = repo_base_dir or default_build_repo_root()
+    repo_dirname = module.resolve_repo_dirname(resolved_repo_url)
+    candidate = os.path.join(repo_root, repo_dirname)
+    repo_dir = candidate if os.path.isdir(os.path.join(candidate, ".git")) else None
+    build_ref = prompt_build_ref(module, repo_dir=repo_dir, repo_url=resolved_repo_url)
+    result = run_module_build(
+        module,
+        base_dir=base_dir,
+        build_type=build_type,
+        ref=build_ref,
+        repo_base_dir=repo_base_dir,
+        sdk_root=env_status.sdk_root,
+        repo_url=resolved_repo_url,
+        prompt_for_build_type=False,
+        prompt_for_update=True,
+        update_prompt="Update the mtand repo before building? [y/n] (default: yes): ",
+        start_message="Building mtand APK (this can take a while)...",
+    )
+    if result is None:
+        return config
+    if result.success and result.dest_path:
+        print(f"mtand APK saved to: {result.dest_path}")
+    else:
+        print(f"mtand build failed: {result.message}")
     return config
 
 
@@ -1817,6 +1914,8 @@ def run_setup(
 
     # Handle optional Nordic DFU app build
     config = _setup_dfu_build(config, is_partial_run, wants)
+    # Handle optional Meshtastic Android app build
+    config = _setup_mtand_build(config, is_partial_run, wants)
 
     # Ask if the user wants to only download when connected to Wi-Fi (Termux only)
     if is_termux():
