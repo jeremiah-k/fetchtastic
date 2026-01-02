@@ -7,8 +7,6 @@ This module implements the specific downloader for Meshtastic Android APK files.
 import fnmatch
 import json
 import os
-import re
-import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -113,7 +111,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     def _get_prerelease_base_dir(self) -> str:
         """
         Return the absolute path to the prerelease APKs directory, creating the directory if it does not exist.
-        
+
         Returns:
             str: Absolute filesystem path to the prerelease APKs directory under the APK downloads directory.
         """
@@ -149,7 +147,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     def format_release_log_suffix(self, release: Release) -> str:
         """
         Create a log suffix describing the release channel and revoked status when available.
-        
+
         Returns:
             suffix (str): Formatted log suffix containing channel and revoked information, or an empty string if no contextual info is available.
         """
@@ -158,10 +156,10 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     def ensure_release_notes(self, release: Release) -> Optional[str]:
         """
         Write the release notes for the given release into the appropriate APK directory and return the notes file path.
-        
+
         Parameters:
             release (Release): Release metadata containing tag_name and body used to determine the notes filename and content.
-        
+
         Returns:
             Optional[str]: Path to the release notes file if written or already present, `None` if the tag is unsafe or notes cannot be determined.
         """
@@ -193,9 +191,9 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     def _is_asset_complete_for_target(self, target_path: str, asset: Asset) -> bool:
         """
         Determine whether the asset file at target_path exists and is valid for the provided Asset.
-        
+
         Performs the applicable checks: file existence, file size equals Asset.size (when provided), verifier integrity check, and ZIP integrity validation for files ending with `.zip`.
-        
+
         Returns:
             True if all applicable checks pass, False otherwise.
         """
@@ -218,12 +216,12 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
     def get_releases(self, limit: Optional[int] = None) -> List[Release]:
         """
         Retrieve Android APK releases from GitHub and construct Release objects populated with their APK assets.
-        
+
         Respects cached responses and the configured scan window; when no `limit` is provided the function expands its scan to collect a configured minimum number of stable releases.
-        
+
         Parameters:
             limit (Optional[int]): Maximum number of releases to return. If `None`, the function uses configured scan parameters to determine how many releases to fetch.
-        
+
         Returns:
             List[Release]: Release objects populated with their APK Asset entries; returns an empty list on error or if no valid releases are found.
         """
