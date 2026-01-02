@@ -450,12 +450,12 @@ class ReleaseHistoryManager:
         timestamps = [
             parse_iso_datetime_utc(release.published_at) for release in releases
         ]
-        timestamps = [ts for ts in timestamps if ts is not None]
-        if not timestamps:
+        filtered_timestamps: list[datetime] = [
+            ts for ts in timestamps if ts is not None
+        ]
+        if not filtered_timestamps:
             return None
-        from typing import cast
-
-        return cast(datetime, min(timestamps))
+        return min(filtered_timestamps)
 
     def _should_mark_removed(
         self, entry: Dict[str, Any], oldest_published: Optional[datetime]

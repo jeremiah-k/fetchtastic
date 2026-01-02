@@ -28,12 +28,6 @@ from fetchtastic.log_utils import logger
 
 from .files import _atomic_write_json
 
-# Import for type annotations only (available in older packaging versions)
-try:
-    from packaging.version import LegacyVersion  # type: ignore[import-not-found]
-except ImportError:
-    LegacyVersion = None  # type: ignore[assignment]
-
 
 class VersionManager:
     """

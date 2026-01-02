@@ -9,7 +9,7 @@ import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 import requests
 
@@ -658,7 +658,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             try:
                 with open(latest_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    return data.get("latest_version")
+                    return cast(Optional[str], data.get("latest_version"))
             except (IOError, json.JSONDecodeError):
                 pass
         return None

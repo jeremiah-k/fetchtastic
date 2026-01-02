@@ -67,7 +67,9 @@ class BaseDownloader(Downloader, ABC):
         Returns:
             download_dir (str): The resolved download directory path (e.g. '~/meshtastic' when not configured).
         """
-        return self.config.get("DOWNLOAD_DIR", os.path.expanduser("~/meshtastic"))
+        return cast(
+            str, self.config.get("DOWNLOAD_DIR", os.path.expanduser("~/meshtastic"))
+        )
 
     def _get_versions_to_keep(self) -> int:
         """
@@ -360,7 +362,7 @@ class BaseDownloader(Downloader, ABC):
             release_tag=release_tag,
             file_path=Path(file_path),
             error_message=error_message,
-            extracted_files=extracted_files,  # type: ignore[arg-type]
+            extracted_files=extracted_files,
             download_url=download_url,
             file_size=file_size,
             file_type=file_type,
@@ -429,8 +431,8 @@ class BaseDownloader(Downloader, ABC):
 
         notes_path = os.path.join(release_dir, f"release_notes-{safe_tag}.md")
 
+        real_base = os.path.realpath(base_dir)
         try:
-            real_base = os.path.realpath(base_dir)
             real_release_dir = os.path.realpath(release_dir)
             release_dir_common = os.path.commonpath([real_base, real_release_dir])
         except ValueError:
