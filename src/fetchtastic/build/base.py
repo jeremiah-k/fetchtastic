@@ -69,7 +69,7 @@ def parse_github_repo_url(repo_url: str) -> Optional[tuple[str, str]]:
     if not repo_url:
         return None
     candidate = repo_url.strip().rstrip("/")
-    match = re.search(r"github\\.com[:/](?P<owner>[^/]+)/(?P<repo>[^/]+)$", candidate)
+    match = re.search(r"github\.com[:/](?P<owner>[^/]+)/(?P<repo>[^/]+)$", candidate)
     if not match:
         return None
     owner = match.group("owner").strip()
