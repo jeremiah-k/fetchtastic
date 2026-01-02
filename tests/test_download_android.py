@@ -125,6 +125,37 @@ class TestMeshtasticAndroidAppDownloader:
             assert dl.latest_release_file == "latest_android_release.json"
             mock_version.assert_called_once()
 
+    def test_update_release_history_empty_returns_none(self, downloader):
+        """Empty release lists should return None."""
+        assert downloader.update_release_history([]) is None
+
+    def test_update_release_history_logs_summary(self, downloader):
+        """Android history updates should emit status summaries."""
+        downloader.release_history_manager.update_release_history = Mock(
+            return_value={"entries": {}}
+        )
+        downloader.release_history_manager.log_release_status_summary = Mock()
+
+        history = downloader.update_release_history([Release(tag_name="v1.0.0")])
+
+        assert history == {"entries": {}}
+        downloader.release_history_manager.log_release_status_summary.assert_called_once()
+
+    def test_format_release_log_suffix(self, downloader):
+        """Release log suffixes should delegate to the history manager."""
+        downloader.release_history_manager.format_release_log_suffix = Mock(
+            return_value=" (alpha)"
+        )
+        release = Release(tag_name="v1.0.0", prerelease=False)
+
+        assert downloader.format_release_log_suffix(release) == " (alpha)"
+
+    def test_ensure_release_notes_unsafe_tag(self, downloader):
+        """Unsafe tags should skip Android release note writes."""
+        release = Release(tag_name="../v1.0.0", prerelease=False, body="notes")
+
+        assert downloader.ensure_release_notes(release) is None
+
     def test_ensure_release_notes_writes_file(self, tmp_path):
         """Release notes should be written alongside Android APK assets."""
         cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))

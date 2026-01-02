@@ -40,10 +40,10 @@ _CHANNEL_ORDER = ("alpha", "beta", "rc", CHANNEL_PRERELEASE, CHANNEL_STABLE)
 def _join_text(parts: Iterable[Optional[str]]) -> str:
     """
     Concatenate non-empty string parts with single spaces and return the result in lowercase.
-    
+
     Parameters:
         parts (Iterable[Optional[str]]): An iterable of values; non-string items and strings that are empty or only whitespace are ignored.
-    
+
     Returns:
         joined (str): The cleaned parts joined by single spaces, converted to lowercase.
     """
@@ -60,9 +60,9 @@ def _join_text(parts: Iterable[Optional[str]]) -> str:
 def detect_release_channel(release: Release) -> str:
     """
     Determine the release channel from the release's name, tag, body, and prerelease flag.
-    
+
     The function checks, in order: combined name and tag, the release body, and finally the release.prerelease boolean to classify the release.
-    
+
     Returns:
         One of "alpha", "beta", "rc", "prerelease", or "stable" indicating the inferred channel.
     """
@@ -120,10 +120,10 @@ class ReleaseHistoryManager:
     def __init__(self, cache_manager: CacheManager, history_path: str) -> None:
         """
         Initialize the ReleaseHistoryManager.
-        
+
         Stores the provided cache manager and history file path, and creates a VersionManager used for parsing and deriving base versions.
         Parameters:
-        	history_path (str): Filesystem path to the JSON file used to persist release history.
+                history_path (str): Filesystem path to the JSON file used to persist release history.
         """
         self.cache_manager = cache_manager
         self.history_path = history_path
@@ -132,10 +132,10 @@ class ReleaseHistoryManager:
     def get_release_channel(self, release: Release) -> str:
         """
         Determine the release channel for a given release.
-        
+
         Parameters:
             release (Release): The release object (e.g., GitHub release) to inspect.
-        
+
         Returns:
             str: The release channel, one of "alpha", "beta", "rc", "prerelease", or "stable".
         """
@@ -144,10 +144,10 @@ class ReleaseHistoryManager:
     def is_release_revoked(self, release: Release) -> bool:
         """
         Determine whether a release has been marked as revoked.
-        
+
         Parameters:
             release (Release): The release object to inspect for revoked indicators.
-        
+
         Returns:
             `true` if the release is revoked, `false` otherwise.
         """
@@ -163,13 +163,13 @@ class ReleaseHistoryManager:
     ) -> str:
         """
         Create a display label for a release by combining its tag name with optional channel and status annotations.
-        
+
         Parameters:
             release (Release): The release object whose tag, channel, and status will be used to build the label.
             include_channel (bool): If true, append the release channel (e.g., "alpha", "beta") unless it is "stable" and `include_stable` is False.
             include_status (bool): If true, append the revoked status label when the release is detected as revoked.
             include_stable (bool): If true, include the "stable" channel explicitly when present; otherwise omit stable channel.
-        
+
         Returns:
             label (str): A string containing the release tag name, optionally followed by parenthesized annotations (e.g., "v1.2.3 (alpha, revoked)" or "v1.2.3").
         """
@@ -188,10 +188,10 @@ class ReleaseHistoryManager:
     def format_release_log_suffix(self, release: Release) -> str:
         """
         Return the label suffix for a release when the formatted label differs from its tag name.
-        
+
         Parameters:
             release (Release): Release object whose label will be formatted.
-        
+
         Returns:
             str: The substring of the formatted label that follows `release.tag_name`, or an empty string if the formatted label equals the tag name.
         """
@@ -205,10 +205,10 @@ class ReleaseHistoryManager:
     def update_release_history(self, releases: List[Release]) -> Dict[str, Any]:
         """
         Merge the given releases into the persisted release history, updating per-release metadata, status transitions, and removal markers.
-        
+
         Parameters:
             releases (List[Release]): Iterable of release objects to incorporate; releases without a `tag_name` are ignored.
-        
+
         Returns:
             dict: The updated history object containing at least the "entries" mapping (tag_name -> entry) and "last_updated" timestamp. The method persists the updated history to self.history_path (via the cache manager) and will set or update fields such as `first_seen`, `last_seen`, `status`, `status_updated_at`, and `removed_at` as appropriate.
         """
@@ -274,12 +274,12 @@ class ReleaseHistoryManager:
     ) -> None:
         """
         Log a concise summary of releases marked revoked or removed in the provided history.
-        
+
         Examines history["entries"] (expected to be a dict of release entries keyed by tag) and, if any entries have status "revoked" or "removed", logs a header with counts and then logs each matching entry in sorted order. If "entries" is missing or not a dict, or no revoked/removed entries exist, the function does nothing.
-        
+
         Parameters:
-        	history (Dict[str, Any]): History object containing an "entries" mapping where each entry is a dict with at least a "status" field.
-        	label (str): Prefix label used in log messages (e.g., source or context name).
+                history (Dict[str, Any]): History object containing an "entries" mapping where each entry is a dict with at least a "status" field.
+                label (str): Prefix label used in log messages (e.g., source or context name).
         """
         entries = history.get("entries") or {}
         if not isinstance(entries, dict):
@@ -310,9 +310,9 @@ class ReleaseHistoryManager:
     ) -> None:
         """
         Log a summary of releases grouped by inferred channel and list releases per channel.
-        
+
         Groups the provided releases by channel (using get_release_channel), logs a compact count for each channel in a preferred order (alpha, beta, rc, prerelease, stable, then other channels alphabetically), and logs a per-channel list of release labels for non-empty channels.
-        
+
         Parameters:
             releases (List[Release]): Releases to summarize; releases without entries are ignored.
             label (str): Prefix label used in the logged summary message.
@@ -323,7 +323,10 @@ class ReleaseHistoryManager:
         channel_map: Dict[str, List[Release]] = {}
         for release in releases:
             channel = self.get_release_channel(release)
-            channel_map.setdefault(channel, []).append(release)
+            channel_map.setdefault(channel, [])
+            if not release.tag_name:
+                continue
+            channel_map[channel].append(release)
 
         summary_parts = []
         for channel in _CHANNEL_ORDER:
@@ -367,7 +370,7 @@ class ReleaseHistoryManager:
     def _log_release_status_entry(self, entry: Dict[str, Any]) -> None:
         """
         Log a single release history entry as a colored, struck-through tag with optional channel and status.
-        
+
         Parameters:
             entry (Dict[str, Any]): Release history entry containing `tag_name`, optional `channel`, and optional `status`. The `channel` is omitted from the output when equal to the stable channel.
         """
@@ -394,9 +397,9 @@ class ReleaseHistoryManager:
     ) -> None:
         """
         Logs base-version collisions where multiple releases share the same base version.
-        
+
         Groups the provided releases by the base version derived from each release's tag_name and emits an info-level log entry for each base version that appears in two or more releases. Each log message is prefixed with the given label.
-        
+
         Parameters:
             releases (List[Release]): Releases to inspect for duplicate base versions.
             label (str): Prefix to include in each log message.
@@ -424,10 +427,10 @@ class ReleaseHistoryManager:
     def _get_base_version(self, tag_name: str) -> str:
         """
         Derives the canonical base version string from a release tag.
-        
+
         Parameters:
             tag_name (str): The release tag or version string to normalize.
-        
+
         Returns:
             The base version with any leading 'v' or 'V' removed.
         """
@@ -437,10 +440,10 @@ class ReleaseHistoryManager:
     def _get_oldest_published_at(self, releases: List[Release]) -> Optional[datetime]:
         """
         Return the earliest UTC published_at timestamp found among the given releases.
-        
+
         Parameters:
             releases (List[Release]): Releases whose `published_at` values will be parsed and considered; missing or unparsable timestamps are ignored.
-        
+
         Returns:
             Optional[datetime]: The minimum parsed UTC `published_at` datetime, or `None` if no valid timestamps are present.
         """
@@ -457,11 +460,11 @@ class ReleaseHistoryManager:
     ) -> bool:
         """
         Determine whether a history entry should be marked as removed based on its published timestamp.
-        
+
         Parameters:
             entry (dict): A history entry object expected to contain a `published_at` ISO-8601 UTC timestamp string.
             oldest_published (datetime | None): The cutoff UTC datetime; entries published at or after this time are eligible.
-        
+
         Returns:
             bool: `True` if `entry.published_at` is present, parses to a UTC datetime, and is greater than or equal to `oldest_published`; `False` otherwise.
         """
@@ -475,15 +478,16 @@ class ReleaseHistoryManager:
     def _sort_entries(self, entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
         Sort a list of release history entries so the most recently published appear first.
-        
+
         Sort order: primary key is `published_at` (ISO-8601 datetime); entries without `published_at` are treated as oldest. Ties are broken by `tag_name` in descending lexicographic order.
-        
+
         Parameters:
             entries (List[Dict[str, Any]]): List of entry objects. Each entry may contain the keys `"published_at"` (ISO-8601 string) and `"tag_name"` (string).
-        
+
         Returns:
             List[Dict[str, Any]]: The input entries sorted by published date (newest first) and then by tag name.
         """
+
         def _sort_key(entry: Dict[str, Any]) -> tuple[datetime, str]:
             ts = parse_iso_datetime_utc(
                 entry.get("published_at")

@@ -230,7 +230,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
     def get_download_url(self, asset: Asset) -> str:
         """
         Get the direct download URL for an asset.
-        
+
         Returns:
             The asset's direct download URL.
         """
@@ -269,7 +269,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
     def format_release_log_suffix(self, release: Release) -> str:
         """
         Return a log suffix that annotates the release with its channel and revoked status when available.
-        
+
         Returns:
             suffix (str): A string suitable for appending to log messages describing the release's channel (e.g., "-beta") and/or a revoked indicator; empty string if no annotation is necessary.
         """
@@ -278,10 +278,10 @@ class FirmwareReleaseDownloader(BaseDownloader):
     def is_release_revoked(self, release: Release) -> bool:
         """
         Determine whether the given release is recorded as revoked in the release history.
-        
+
         Parameters:
             release (Release): The release to check.
-        
+
         Returns:
             bool: `True` if the release is revoked, `False` otherwise.
         """
@@ -290,10 +290,10 @@ class FirmwareReleaseDownloader(BaseDownloader):
     def ensure_release_notes(self, release: Release) -> Optional[str]:
         """
         Store the given release's release notes alongside its firmware assets and return the notes file path.
-        
+
         Parameters:
             release (Release): Release object whose release notes should be stored.
-        
+
         Returns:
             str or None: Path to the release notes file if written or already present; `None` if the release tag is unsafe or the notes were not stored.
         """
@@ -317,16 +317,18 @@ class FirmwareReleaseDownloader(BaseDownloader):
     def _get_release_storage_tag(self, release: Release) -> str:
         """
         Compute the filesystem storage tag for a release by combining a sanitized tag with any channel and revoked suffixes.
-        
+
         If an existing on-disk directory matches a different valid storage tag for the same release, the method will attempt to rename that directory to the computed target tag; if the rename fails it will return the existing directory tag. If multiple candidate directories are present, the first candidate found is returned.
-        
+
         Returns:
             storage_tag (str): The storage tag that should be used for the release's directory.
         """
         safe_tag = self._sanitize_required(release.tag_name, "release tag")
+        is_revoked = self.is_release_revoked(release)
         channel = self.release_history_manager.get_release_channel(release)
         channel_suffix = channel if channel in _STORAGE_CHANNEL_SUFFIXES else ""
-        is_revoked = self.is_release_revoked(release)
+        if is_revoked and channel_suffix == "alpha":
+            channel_suffix = ""
         target_tag = self._build_storage_tag(safe_tag, channel_suffix, is_revoked)
 
         firmware_dir = os.path.join(self.download_dir, FIRMWARE_DIR_NAME)
@@ -372,12 +374,12 @@ class FirmwareReleaseDownloader(BaseDownloader):
     def _build_storage_tag(self, safe_tag: str, channel: str, revoked: bool) -> str:
         """
         Builds a storage tag by appending an optional channel suffix and a revoked suffix to a sanitized base tag.
-        
+
         Parameters:
             safe_tag (str): Sanitized release tag to use as the base (no channel or revoked suffixes).
             channel (str): Channel suffix to append (e.g., "beta"); if empty, no channel suffix is added.
             revoked (bool): If True, appends "-revoked" to the tag.
-        
+
         Returns:
             str: The resulting storage tag.
         """
@@ -393,13 +395,13 @@ class FirmwareReleaseDownloader(BaseDownloader):
     ) -> List[str]:
         """
         Generate alternative storage-tag candidates for an existing release directory by combining possible channel suffixes and revoked states, excluding the provided target tag.
-        
+
         Parameters:
             safe_tag (str): Sanitized base tag name (filesystem-safe) to build candidates from.
             channel (str): Optional channel suffix to prioritize (must be one of the configured channel suffixes); ignored if invalid or empty.
             revoked (bool): Whether to prefer revoked variants first when ordering candidates.
             target_tag (str): Storage tag to exclude from the returned list.
-        
+
         Returns:
             List[str]: Ordered list of distinct candidate storage tags (each a string) excluding `target_tag`.
         """

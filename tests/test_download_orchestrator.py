@@ -82,6 +82,79 @@ class TestDownloadOrchestrator:
             mock_version.assert_called_once()
             mock_prerelease.assert_called_once()
 
+    def test_process_android_downloads_no_releases(self, orchestrator):
+        """Android processing should stop when no releases are found."""
+        orchestrator.android_downloader.get_releases.return_value = []
+        orchestrator.config["SAVE_APKS"] = True
+
+        orchestrator._process_android_downloads()
+
+        orchestrator.android_downloader.get_releases.assert_called_once()
+
+    def test_process_android_downloads_skips_complete_and_prerelease_assets(
+        self, orchestrator
+    ):
+        """Completed releases and skipped prerelease assets should be handled cleanly."""
+        orchestrator.config["SAVE_APKS"] = True
+        release = Release(tag_name="v1.0.0", prerelease=False, assets=[])
+        prerelease = Release(
+            tag_name="v1.0.1-beta", prerelease=True, assets=[Mock(name="app.apk")]
+        )
+        prerelease.assets[0].name = "app.apk"
+
+        orchestrator.android_downloader.get_releases.return_value = [release]
+        orchestrator.android_downloader.update_release_history.return_value = {}
+        orchestrator.android_downloader.ensure_release_notes.return_value = None
+        orchestrator.android_downloader.format_release_log_suffix.return_value = ""
+        orchestrator.android_downloader.is_release_complete.return_value = True
+        orchestrator.android_downloader.handle_prereleases.return_value = [prerelease]
+        orchestrator.android_downloader.should_download_asset.return_value = False
+
+        orchestrator._process_android_downloads()
+
+        orchestrator.android_downloader.is_release_complete.assert_called_once()
+        orchestrator.android_downloader.download_apk.assert_not_called()
+
+    def test_process_firmware_downloads_no_releases(self, orchestrator):
+        """Firmware processing should stop when no releases are found."""
+        orchestrator.firmware_downloader.get_releases.return_value = []
+        orchestrator.config["SAVE_FIRMWARE"] = True
+
+        orchestrator._process_firmware_downloads()
+
+        orchestrator.firmware_downloader.get_releases.assert_called_once()
+
+    def test_select_latest_release_by_version_all_revoked(self, orchestrator):
+        """When all releases are revoked, fallback selection should still work."""
+        orchestrator.firmware_downloader.is_release_revoked.return_value = True
+        orchestrator.version_manager.get_release_tuple.side_effect = lambda tag: (
+            (1, 0, 0) if tag == "v1.0.0" else None
+        )
+
+        releases = [
+            Release(tag_name="junk", prerelease=False, assets=[]),
+            Release(tag_name="v1.0.0", prerelease=False, assets=[]),
+        ]
+
+        selected = orchestrator._select_latest_release_by_version(releases)
+
+        assert selected is not None
+        assert selected.tag_name == "v1.0.0"
+
+    def test_log_firmware_release_history_summary(self, orchestrator):
+        """Firmware release history summaries should call the history manager."""
+        orchestrator.firmware_release_history = {"entries": {}}
+        orchestrator.firmware_releases = [Release(tag_name="v1.0.0", prerelease=False)]
+
+        manager = Mock()
+        orchestrator.firmware_downloader.release_history_manager = manager
+
+        orchestrator.log_firmware_release_history_summary()
+
+        manager.log_release_channel_summary.assert_called_once()
+        manager.log_release_status_summary.assert_called_once()
+        manager.log_duplicate_base_versions.assert_called_once()
+
     def test_select_latest_release_by_version_ignores_prerelease_flag(
         self, mock_config
     ):
