@@ -50,6 +50,8 @@ from .prerelease_history import PrereleaseHistoryManager
 from .release_history import ReleaseHistoryManager
 from .version import VersionManager
 
+_STORAGE_CHANNEL_SUFFIXES = {"alpha", "beta", "rc"}
+
 
 class FirmwareReleaseDownloader(BaseDownloader):
     """
@@ -253,6 +255,9 @@ class FirmwareReleaseDownloader(BaseDownloader):
             return None
         history = self.release_history_manager.update_release_history(releases)
         if log_summary:
+            self.release_history_manager.log_release_channel_summary(
+                releases, label="Firmware"
+            )
             self.release_history_manager.log_release_status_summary(
                 history, label="Firmware"
             )
@@ -299,21 +304,31 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
     def _get_release_storage_tag(self, release: Release) -> str:
         """
-        Return the release directory tag, appending "-revoked" when appropriate.
+        Return the release directory tag, appending channel and revoked suffixes.
 
-        If a release's revocation status changes, attempts to rename the existing
-        directory to match the current status.
+        If a release's channel or revocation status changes, attempts to rename the
+        existing directory to match the current status.
         """
         safe_tag = self._sanitize_required(release.tag_name, "release tag")
-        revoked_tag = f"{safe_tag}-revoked"
-        target_tag = revoked_tag if self.is_release_revoked(release) else safe_tag
-        alternate_tag = safe_tag if target_tag == revoked_tag else revoked_tag
+        channel = self.release_history_manager.get_release_channel(release)
+        channel_suffix = channel if channel in _STORAGE_CHANNEL_SUFFIXES else ""
+        is_revoked = self.is_release_revoked(release)
+        target_tag = self._build_storage_tag(safe_tag, channel_suffix, is_revoked)
 
         firmware_dir = os.path.join(self.download_dir, FIRMWARE_DIR_NAME)
         target_path = os.path.join(firmware_dir, target_tag)
-        alternate_path = os.path.join(firmware_dir, alternate_tag)
+        if os.path.isdir(target_path):
+            return target_tag
 
-        if os.path.isdir(alternate_path) and not os.path.exists(target_path):
+        candidates = self._get_storage_tag_candidates(
+            safe_tag, channel_suffix, is_revoked, target_tag
+        )
+        existing = [
+            tag for tag in candidates if os.path.isdir(os.path.join(firmware_dir, tag))
+        ]
+        if len(existing) == 1:
+            alternate_tag = existing[0]
+            alternate_path = os.path.join(firmware_dir, alternate_tag)
             try:
                 os.rename(alternate_path, target_path)
                 logger.info(
@@ -330,8 +345,43 @@ class FirmwareReleaseDownloader(BaseDownloader):
                     exc,
                 )
                 return alternate_tag
+        if len(existing) > 1:
+            logger.warning(
+                "Multiple firmware release directories found for %s: %s",
+                release.tag_name,
+                ", ".join(existing),
+            )
+            return existing[0]
 
         return target_tag
+
+    def _build_storage_tag(self, safe_tag: str, channel: str, revoked: bool) -> str:
+        tag = safe_tag
+        if channel:
+            tag = f"{tag}-{channel}"
+        if revoked:
+            tag = f"{tag}-revoked"
+        return tag
+
+    def _get_storage_tag_candidates(
+        self, safe_tag: str, channel: str, revoked: bool, target_tag: str
+    ) -> List[str]:
+        if channel and channel not in _STORAGE_CHANNEL_SUFFIXES:
+            channel = ""
+
+        channels = [channel, ""]
+        for candidate in sorted(_STORAGE_CHANNEL_SUFFIXES):
+            if candidate not in channels:
+                channels.append(candidate)
+
+        candidates: List[str] = []
+        for is_revoked in (revoked, not revoked):
+            for candidate in channels:
+                tag = self._build_storage_tag(safe_tag, candidate, is_revoked)
+                if tag not in candidates:
+                    candidates.append(tag)
+
+        return [tag for tag in candidates if tag != target_tag]
 
     def download_firmware(self, release: Release, asset: Asset) -> DownloadResult:
         """

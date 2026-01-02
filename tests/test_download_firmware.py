@@ -134,6 +134,29 @@ class TestFirmwareReleaseDownloader:
         assert "v1.0.1-revoked" in notes_path
         assert Path(notes_path).exists()
 
+    def test_ensure_release_notes_alpha_directory(self, tmp_path):
+        """Alpha firmware releases should store notes under an -alpha folder."""
+        cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
+        config = {"DOWNLOAD_DIR": str(tmp_path / "downloads")}
+        downloader = FirmwareReleaseDownloader(config, cache_manager)
+        release = Release(
+            tag_name="v1.0.2",
+            prerelease=False,
+            name="Meshtastic Firmware 1.0.2 Alpha",
+            body="Alpha notes for v1.0.2",
+        )
+
+        base_dir = Path(config["DOWNLOAD_DIR"]) / FIRMWARE_DIR_NAME
+        old_dir = base_dir / "v1.0.2"
+        old_dir.mkdir(parents=True)
+
+        notes_path = downloader.ensure_release_notes(release)
+
+        assert notes_path is not None
+        assert "v1.0.2-alpha" in notes_path
+        assert (base_dir / "v1.0.2-alpha").exists()
+        assert not old_dir.exists()
+
     @patch("fetchtastic.download.firmware.make_github_api_request")
     def test_get_releases_success(self, mock_request, downloader):
         """Test successful release fetching from GitHub."""

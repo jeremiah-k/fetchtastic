@@ -34,6 +34,7 @@ _CHANNEL_RX = {
     "beta": re.compile(r"\bbeta\b", re.IGNORECASE),
     "rc": re.compile(r"\b(?:rc|release candidate)\b", re.IGNORECASE),
 }
+_CHANNEL_ORDER = ("alpha", "beta", "rc", CHANNEL_PRERELEASE, CHANNEL_STABLE)
 
 
 def _join_text(parts: Iterable[Optional[str]]) -> str:
@@ -220,24 +221,83 @@ class ReleaseHistoryManager:
             len(revoked),
             len(removed),
         )
-        for entry in self._sort_entries(revoked + removed):
-            tag_name = entry.get("tag_name") or "<unknown>"
-            channel = entry.get("channel")
-            parts = []
-            if channel and channel != CHANNEL_STABLE:
-                parts.append(channel)
-            status = entry.get("status") or ""
-            if status:
-                parts.append(status)
-            detail = f" ({', '.join(parts)})" if parts else ""
-            color = "yellow" if status == STATUS_REVOKED else "red"
-            logger.info(
-                "  - [%s][strike]%s[/strike][/%s]%s",
-                color,
-                tag_name,
-                color,
-                detail,
+        if revoked:
+            logger.info("%s revoked releases:", label)
+            for entry in self._sort_entries(revoked):
+                self._log_release_status_entry(entry)
+        if removed:
+            logger.info("%s removed releases:", label)
+            for entry in self._sort_entries(removed):
+                self._log_release_status_entry(entry)
+
+    def log_release_channel_summary(
+        self, releases: List[Release], *, label: str
+    ) -> None:
+        if not releases:
+            return
+
+        channel_map: Dict[str, List[Release]] = {}
+        for release in releases:
+            channel = self.get_release_channel(release)
+            channel_map.setdefault(channel, []).append(release)
+
+        summary_parts = []
+        for channel in _CHANNEL_ORDER:
+            count = len(channel_map.get(channel, []))
+            if count:
+                summary_parts.append(f"{channel}={count}")
+        for channel in sorted(set(channel_map) - set(_CHANNEL_ORDER)):
+            count = len(channel_map.get(channel, []))
+            if count:
+                summary_parts.append(f"{channel}={count}")
+
+        if not summary_parts:
+            return
+
+        logger.info("%s release channels: %s", label, ", ".join(summary_parts))
+
+        for channel in _CHANNEL_ORDER:
+            releases_for_channel = channel_map.get(channel)
+            if not releases_for_channel:
+                continue
+            items = ", ".join(
+                self.format_release_label(
+                    release, include_channel=False, include_status=True
+                )
+                for release in releases_for_channel
             )
+            logger.info("  - %s: %s", channel, items)
+
+        for channel in sorted(set(channel_map) - set(_CHANNEL_ORDER)):
+            releases_for_channel = channel_map.get(channel, [])
+            if not releases_for_channel:
+                continue
+            items = ", ".join(
+                self.format_release_label(
+                    release, include_channel=False, include_status=True
+                )
+                for release in releases_for_channel
+            )
+            logger.info("  - %s: %s", channel, items)
+
+    def _log_release_status_entry(self, entry: Dict[str, Any]) -> None:
+        tag_name = entry.get("tag_name") or "<unknown>"
+        channel = entry.get("channel")
+        parts = []
+        if channel and channel != CHANNEL_STABLE:
+            parts.append(channel)
+        status = entry.get("status") or ""
+        if status:
+            parts.append(status)
+        detail = f" ({', '.join(parts)})" if parts else ""
+        color = "yellow" if status == STATUS_REVOKED else "red"
+        logger.info(
+            "  - [%s][strike]%s[/strike][/%s]%s",
+            color,
+            tag_name,
+            color,
+            detail,
+        )
 
     def log_duplicate_base_versions(
         self, releases: List[Release], *, label: str
