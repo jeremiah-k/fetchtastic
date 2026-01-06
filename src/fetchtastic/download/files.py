@@ -137,8 +137,8 @@ def _find_asset_by_name(
 ) -> Optional[Dict[str, Any]]:
     """Find an asset dict by name in release data."""
     for asset in release_data.get("assets", []) or []:
-        if asset.get("name") == asset_name:
-            return cast(dict[str, Any], asset)
+        if isinstance(asset, dict) and asset.get("name") == asset_name:
+            return asset
     return None
 
 

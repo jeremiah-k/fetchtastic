@@ -47,7 +47,7 @@ def get_version_info() -> tuple[str, str | None, bool]:
     Return version information for installed Fetchtastic package and latest available release.
 
     Returns:
-        Tuple[str | None, str | None, bool]: (current_version, latest_version, update_available)
+        tuple[str, str | None, bool]: (current_version, latest_version, update_available)
     """
     return setup_config.get_version_info()
 

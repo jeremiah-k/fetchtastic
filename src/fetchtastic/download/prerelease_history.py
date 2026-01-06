@@ -95,15 +95,15 @@ class PrereleaseHistoryManager:
                     (now - self._in_memory_commits_timestamp).total_seconds(),
                 )
                 commits = self._in_memory_commits_cache.get("commits", [])
-                if not isinstance(commits, list):
+                if not isinstance(commits, list) or not all(
+                    isinstance(c, dict) for c in commits
+                ):
                     logger.warning("Invalid commits cache structure, ignoring")
                     self._in_memory_commits_cache = None
+                    self._in_memory_commits_timestamp = None
                     # Fall through to fetch from file cache
                 else:
-                    return cast(
-                        list[dict[str, Any]],
-                        commits[:limit],
-                    )
+                    return commits[:limit]
 
         cached = cache_manager.read_json(cache_file)
         if isinstance(cached, dict):
