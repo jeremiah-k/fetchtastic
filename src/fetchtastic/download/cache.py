@@ -404,7 +404,7 @@ class CacheManager:
 
         try:
             return cast(
-                List[str],
+                list[str],
                 self._get_cached_github_data(
                     cache_key=cache_key,
                     cache_file=cache_file,
@@ -470,7 +470,7 @@ class CacheManager:
 
         try:
             return cast(
-                List[Dict[str, Any]],
+                list[dict[str, Any]],
                 self._get_cached_github_data(
                     cache_key=cache_key,
                     cache_file=cache_file,

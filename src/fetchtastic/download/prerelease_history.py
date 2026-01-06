@@ -101,7 +101,7 @@ class PrereleaseHistoryManager:
                     # Fall through to fetch from file cache
                 else:
                     return cast(
-                        List[Dict[str, Any]],
+                        list[dict[str, Any]],
                         commits[:limit],
                     )
 

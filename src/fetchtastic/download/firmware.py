@@ -863,7 +863,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
             try:
                 with open(latest_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    return cast(Optional[str], data.get("latest_version"))
+                    return cast(str | None, data.get("latest_version"))
             except (IOError, json.JSONDecodeError):
                 pass
         return None

@@ -138,7 +138,7 @@ def _find_asset_by_name(
     """Find an asset dict by name in release data."""
     for asset in release_data.get("assets", []) or []:
         if asset.get("name") == asset_name:
-            return cast(Dict[str, Any], asset)
+            return cast(dict[str, Any], asset)
     return None
 
 
@@ -773,7 +773,7 @@ class FileOperations:
             # Validate algorithm is available
             try:
 
-                def hash_func() -> "hashlib._Hash":
+                def hash_func() -> "hashlib.Hash":
                     """
                     Create and return a new hash object for the configured algorithm.
 
