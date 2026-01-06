@@ -8,7 +8,7 @@ commit timestamps, and other download-related data.
 import json
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Dict, List, Optional, cast
+from typing import IO, Any, Callable, Dict, List, Optional, cast
 from urllib.parse import urlencode
 
 import requests
@@ -139,7 +139,7 @@ class CacheManager:
             bool: `True` if the file was written and moved into place, `False` otherwise.
         """
 
-        def _write_text_content(f: Any) -> None:
+        def _write_text_content(f: IO[str]) -> None:
             """
             Write preset text content into the provided writable text file-like object.
 

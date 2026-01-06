@@ -94,10 +94,16 @@ class PrereleaseHistoryManager:
                     "Using in-memory prerelease commit cache (cached %.0fs ago)",
                     (now - self._in_memory_commits_timestamp).total_seconds(),
                 )
-                return cast(
-                    List[Dict[str, Any]],
-                    self._in_memory_commits_cache.get("commits", [])[:limit],
-                )
+                commits = self._in_memory_commits_cache.get("commits", [])
+                if not isinstance(commits, list):
+                    logger.warning("Invalid commits cache structure, ignoring")
+                    self._in_memory_commits_cache = None
+                    # Fall through to fetch from file cache
+                else:
+                    return cast(
+                        List[Dict[str, Any]],
+                        commits[:limit],
+                    )
 
         cached = cache_manager.read_json(cache_file)
         if isinstance(cached, dict):

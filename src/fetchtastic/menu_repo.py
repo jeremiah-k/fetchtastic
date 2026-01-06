@@ -1,9 +1,6 @@
 import curses
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
-
-if TYPE_CHECKING:
-    pass  # type: ignore[import-not-found]
+from typing import Any, Dict, List, Optional, Union
 
 import requests
 from pick import (
@@ -46,7 +43,7 @@ class MenuPicker(Picker):
     Picker extension that supports PageUp/PageDown for faster navigation.
     """
 
-    def _page_step(self, screen: Any) -> int:  # type: ignore[attr-defined]
+    def _page_step(self, screen: Any) -> int:
         max_y, max_x = screen.getmaxyx()
         title_lines = len(self.get_title_lines(max_width=max_x))
         max_rows = max_y - self.position.y
@@ -60,7 +57,7 @@ class MenuPicker(Picker):
             return False
         return option.value.get("type") in {"back", "quit"}
 
-    def run_loop(self, screen: Any, position: "Position") -> Any:  # type: ignore[attr-defined]
+    def run_loop(self, screen: Any, position: "Position") -> Any:
         while True:
             self.draw(screen)
             c = screen.getch()
@@ -104,7 +101,7 @@ def _pick_menu(
     default_index: int = 0,
     multiselect: bool = False,
     min_selection_count: int = 0,
-    screen: Optional["curses._CursesWindow"] = None,  # type: ignore[attr-defined]
+    screen: Optional[Any] = None,
     position: Optional[Position] = None,
     clear_screen: bool = True,
     quit_keys: Optional[List[int]] = None,
@@ -127,7 +124,7 @@ def _pick_menu(
 def _process_repo_contents(
     contents: List[Dict[str, Any]],
     firmware_commit_times: Optional[Dict[str, datetime]] = None,
-) -> List[Any]:
+) -> List[Dict[str, Any]]:
     """
     Process raw JSON contents from GitHub API and return sorted items.
 
@@ -422,8 +419,8 @@ def select_item(items, current_path=""):
 
 
 def select_files(
-    files: list[dict],
-) -> list[dict[str, Any]] | dict[str, Any] | None:
+    files: List[Dict[str, Any]],
+) -> Optional[Union[List[Dict[str, Any]], Dict[str, Any]]]:
     """
     Present a multi-select menu for choosing repository files to download.
 
@@ -611,8 +608,6 @@ def run_repository_downloader_menu(config):
 
         # Convert selected files to the format expected by the new downloader
         files_to_download = []
-        if selected_files is None:
-            return
         for file_info in selected_files["files"]:
             file_data = {
                 "name": file_info["name"],
