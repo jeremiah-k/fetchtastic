@@ -136,7 +136,10 @@ def _find_asset_by_name(
     release_data: Dict[str, Any], asset_name: str
 ) -> Optional[Dict[str, Any]]:
     """Find an asset dict by name in release data."""
-    for asset in release_data.get("assets", []) or []:
+    assets = release_data.get("assets")
+    if not isinstance(assets, list):
+        return None
+    for asset in assets:
         if isinstance(asset, dict) and asset.get("name") == asset_name:
             return asset
     return None
@@ -164,7 +167,10 @@ def _is_release_complete(
         return False
 
     expected_assets: list[str] = []
-    for asset in release_data.get("assets", []) or []:
+    assets = release_data.get("assets")
+    if not isinstance(assets, list):
+        return False
+    for asset in assets:
         file_name = asset.get("name", "")
         if not file_name:
             continue
