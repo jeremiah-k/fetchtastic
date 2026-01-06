@@ -175,7 +175,13 @@ class CacheManager:
 
         try:
             with open(file_path, "r", encoding="utf-8") as f:
-                return cast(Dict[str, Any], json.load(f))
+                data = json.load(f)
+                if not isinstance(data, dict):
+                    logger.error(
+                        f"JSON file {file_path} does not contain an object at top level"
+                    )
+                    return None
+                return cast(Dict[str, Any], data)
         except (IOError, json.JSONDecodeError) as e:
             logger.error(f"Could not read JSON file {file_path}: {e}")
             return None

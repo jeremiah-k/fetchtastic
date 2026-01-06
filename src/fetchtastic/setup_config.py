@@ -2454,17 +2454,18 @@ def copy_to_clipboard_func(text: Optional[str]) -> bool:
                 return True
             elif system == "Linux":
                 # Linux
+                encoded_text = text.encode("utf-8")
                 if shutil.which("xclip"):
                     subprocess.run(
                         ["xclip", "-selection", "clipboard"],
-                        input=text.encode("utf-8"),  # type: ignore[arg-type]
+                        input=encoded_text,
                         check=True,
                     )
                     return True
                 elif shutil.which("xsel"):
                     subprocess.run(
                         ["xsel", "--clipboard", "--input"],
-                        input=text.encode("utf-8"),  # type: ignore[arg-type]
+                        input=encoded_text,
                         check=True,
                     )
                     return True

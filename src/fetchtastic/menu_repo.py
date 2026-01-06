@@ -1,6 +1,6 @@
 import curses
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Protocol
 
 import requests
 from pick import (
@@ -27,9 +27,22 @@ from fetchtastic.download.version import VersionManager
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import make_github_api_request
 
+
+class CursesScreen(Protocol):
+    """Protocol for curses screen objects used by MenuPicker."""
+
+    def getmaxyx(self) -> tuple[int, int]:
+        """Get the screen size."""
+        ...
+
+    def getch(self) -> int:
+        """Get a character from the keyboard."""
+        ...
+
+
 # Module-level constants for repository content filtering
 EXCLUDED_DIRS = [".git", ".github", "node_modules", "__pycache__", ".vscode"]
-EXCLUDED_FILES: List[str] = [".gitignore"]
+EXCLUDED_FILES: list[str] = [".gitignore"]
 _VERSION_MANAGER = VersionManager()
 
 _KEY_PAGE_UP = getattr(curses, "KEY_PPAGE", None)
@@ -43,7 +56,7 @@ class MenuPicker(Picker):
     Picker extension that supports PageUp/PageDown for faster navigation.
     """
 
-    def _page_step(self, screen: Any) -> int:
+    def _page_step(self, screen: CursesScreen) -> int:
         max_y, max_x = screen.getmaxyx()
         title_lines = len(self.get_title_lines(max_width=max_x))
         max_rows = max_y - self.position.y
@@ -57,7 +70,7 @@ class MenuPicker(Picker):
             return False
         return option.value.get("type") in {"back", "quit"}
 
-    def run_loop(self, screen: Any, position: "Position") -> Any:
+    def run_loop(self, screen: CursesScreen, position: "Position") -> Any:
         while True:
             self.draw(screen)
             c = screen.getch()
@@ -95,16 +108,16 @@ class MenuPicker(Picker):
 
 
 def _pick_menu(
-    options: List[Option],
-    title: Optional[str] = None,
+    options: list[Option],
+    title: str | None = None,
     indicator: str = "*",
     default_index: int = 0,
     multiselect: bool = False,
     min_selection_count: int = 0,
-    screen: Optional[Any] = None,
-    position: Optional[Position] = None,
+    screen: CursesScreen | None = None,
+    position: Position | None = None,
     clear_screen: bool = True,
-    quit_keys: Optional[List[int]] = None,
+    quit_keys: list[int] | None = None,
 ) -> Any:
     picker = MenuPicker(
         options,
@@ -122,9 +135,9 @@ def _pick_menu(
 
 
 def _process_repo_contents(
-    contents: List[Dict[str, Any]],
-    firmware_commit_times: Optional[Dict[str, datetime]] = None,
-) -> List[Dict[str, Any]]:
+    contents: list[dict[str, Any]],
+    firmware_commit_times: dict[str, datetime] | None = None,
+) -> list[dict[str, Any]]:
     """
     Process raw JSON contents from GitHub API and return sorted items.
 
@@ -164,11 +177,11 @@ def _process_repo_contents(
     firmware_commit_times = firmware_commit_times or {}
     version_manager = _VERSION_MANAGER
 
-    def _lookup_commit_time(name: str) -> Optional[datetime]:
+    def _lookup_commit_time(name: str) -> datetime | None:
         return firmware_commit_times.get(name.lower())
 
     # Sort firmware directories by commit time when available, otherwise by version.
-    def _fw_dir_key(d: Dict[str, Any]):
+    def _fw_dir_key(d: dict[str, Any]):
         name = d["name"]
         version_str = name.removeprefix(FIRMWARE_DIR_PREFIX)
         version_tuple = version_manager.get_release_tuple(version_str) or ()
@@ -194,10 +207,10 @@ def _process_repo_contents(
 def fetch_repo_contents(
     path: str = "",
     allow_env_token: bool = True,
-    github_token: Optional[str] = None,
-    cache_manager: Optional[CacheManager] = None,
-    firmware_commit_times: Optional[Dict[str, datetime]] = None,
-) -> List[Dict[str, Any]]:
+    github_token: str | None = None,
+    cache_manager: CacheManager | None = None,
+    firmware_commit_times: dict[str, datetime] | None = None,
+) -> list[dict[str, Any]]:
     """
     Retrieve and process directory and file entries from the Meshtastic GitHub Pages repository for a given repository-relative path.
 
@@ -271,10 +284,10 @@ def fetch_repo_contents(
 def fetch_repo_directories(
     path: str = "",
     allow_env_token: bool = True,
-    github_token: Optional[str] = None,
-    cache_manager: Optional[CacheManager] = None,
-    firmware_commit_times: Optional[Dict[str, datetime]] = None,
-) -> List[str]:
+    github_token: str | None = None,
+    cache_manager: CacheManager | None = None,
+    firmware_commit_times: dict[str, datetime] | None = None,
+) -> list[str]:
     """
     List directory names at the given repository path on meshtastic.github.io.
 
@@ -304,10 +317,10 @@ def fetch_repo_directories(
 def fetch_directory_contents(
     path: str = "",
     allow_env_token: bool = True,
-    github_token: Optional[str] = None,
-    cache_manager: Optional[CacheManager] = None,
-    firmware_commit_times: Optional[Dict[str, datetime]] = None,
-) -> List[Dict[str, Any]]:
+    github_token: str | None = None,
+    cache_manager: CacheManager | None = None,
+    firmware_commit_times: dict[str, datetime] | None = None,
+) -> list[dict[str, Any]]:
     """
     Fetch only files from directory contents for backward compatibility.
 
@@ -335,9 +348,9 @@ def fetch_directory_contents(
 
 def _build_firmware_commit_times(
     cache_manager: CacheManager,
-    github_token: Optional[str],
+    github_token: str | None,
     allow_env_token: bool,
-) -> Dict[str, datetime]:
+) -> dict[str, datetime]:
     """
     Build a mapping of firmware directory names to commit timestamps from recent repo history.
 
@@ -377,7 +390,7 @@ def select_item(items, current_path=""):
     files = [item for item in items if item.get("type") == "file"]
 
     # Create display options for the menu.
-    display_options: List[Option] = []
+    display_options: list[Option] = []
     if current_path:
         display_options.append(
             Option(label="[Go back to parent directory]", value={"type": "back"})
@@ -419,8 +432,8 @@ def select_item(items, current_path=""):
 
 
 def select_files(
-    files: List[Dict[str, Any]],
-) -> Optional[Union[List[Dict[str, Any]], Dict[str, Any]]]:
+    files: list[dict[str, Any]],
+) -> list[dict[str, Any]] | dict[str, Any] | None:
     """
     Present a multi-select menu for choosing repository files to download.
 
@@ -438,7 +451,7 @@ def select_files(
         print("No files found in the selected directory.")
         return None
 
-    display_options: List[Option] = [
+    display_options: list[Option] = [
         Option(label="[Back]", value={"type": "back"}),
         Option(label="[Quit]", value={"type": "quit"}),
         Option(label="Files:", enabled=False),
@@ -489,7 +502,7 @@ def select_files(
     return selected_files
 
 
-def run_menu(config: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+def run_menu(config: dict[str, Any] | None = None) -> dict[str, Any] | None:
     """
     Interactively browse the Meshtastic GitHub Pages repository and select one or more files to download.
 
@@ -505,14 +518,14 @@ def run_menu(config: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]
     try:
         current_path = ""
         selected_files = []
-        github_token: Optional[str] = None
+        github_token: str | None = None
         allow_env_token = True
-        cache_manager: Optional[CacheManager] = None
+        cache_manager: CacheManager | None = None
         if config is not None:
             github_token = config.get("GITHUB_TOKEN")
             allow_env_token = config.get("ALLOW_ENV_TOKEN", True)
             cache_manager = CacheManager()
-        firmware_commit_times: Dict[str, datetime] = {}
+        firmware_commit_times: dict[str, datetime] = {}
 
         if cache_manager is not None:
             firmware_commit_times = _build_firmware_commit_times(
