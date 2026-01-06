@@ -450,7 +450,7 @@ class ReleaseHistoryManager:
         timestamps = [
             parse_iso_datetime_utc(release.published_at) for release in releases
         ]
-        filtered_timestamps: list[datetime] = [
+        filtered_timestamps: List[datetime] = [
             ts for ts in timestamps if ts is not None
         ]
         if not filtered_timestamps:

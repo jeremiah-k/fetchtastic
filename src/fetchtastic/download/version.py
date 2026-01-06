@@ -627,9 +627,7 @@ class VersionManager:
             version, release_type, additional_data=additional_data
         )
 
-        from typing import cast
-
-        return cast(bool, cache_manager.atomic_write_json(file_path, tracking_data))
+        return cache_manager.atomic_write_json(file_path, tracking_data)
 
     def read_version_tracking_file(
         self,
@@ -650,18 +648,13 @@ class VersionManager:
             Optional[Dict[str, Any]]: Parsed tracking data with keys normalized according to `backward_compatible_keys`,
             or `None` if the file does not exist or cannot be read.
         """
-        from typing import cast
-
-        return cast(
-            Optional[Dict[str, Any]],
-            cache_manager.read_json_with_backward_compatibility(
-                file_path,
-                backward_compatible_keys
-                or {
-                    "version": "latest_version",
-                    "last_updated": "timestamp",
-                },
-            ),
+        return cache_manager.read_json_with_backward_compatibility(
+            file_path,
+            backward_compatible_keys
+            or {
+                "version": "latest_version",
+                "last_updated": "timestamp",
+            },
         )
 
     def migrate_legacy_version_tracking(
@@ -680,15 +673,10 @@ class VersionManager:
             legacy_to_new_mapping (Dict[str, str]): Mapping from legacy keys to their new key names.
 
         Returns:
-            bool: `True` if the migration succeeded, `False` otherwise.
+            bool: `True` if migration succeeded, `False` otherwise.
         """
-        from typing import cast
-
-        return cast(
-            bool,
-            cache_manager.migrate_legacy_cache_file(
-                legacy_file_path, new_file_path, legacy_to_new_mapping
-            ),
+        return cache_manager.migrate_legacy_cache_file(
+            legacy_file_path, new_file_path, legacy_to_new_mapping
         )
 
     def validate_version_tracking_data(

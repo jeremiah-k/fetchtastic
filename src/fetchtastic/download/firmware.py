@@ -9,7 +9,7 @@ import json
 import os
 import shutil
 import zipfile
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 import requests
 
@@ -863,8 +863,6 @@ class FirmwareReleaseDownloader(BaseDownloader):
             try:
                 with open(latest_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    from typing import cast
-
                     return cast(Optional[str], data.get("latest_version"))
             except (IOError, json.JSONDecodeError):
                 pass

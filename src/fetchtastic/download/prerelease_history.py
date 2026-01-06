@@ -10,7 +10,7 @@ import json
 import os
 import re
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 import requests
 
@@ -94,8 +94,6 @@ class PrereleaseHistoryManager:
                     "Using in-memory prerelease commit cache (cached %.0fs ago)",
                     (now - self._in_memory_commits_timestamp).total_seconds(),
                 )
-                from typing import cast
-
                 return cast(
                     List[Dict[str, Any]],
                     self._in_memory_commits_cache.get("commits", [])[:limit],

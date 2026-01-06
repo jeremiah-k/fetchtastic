@@ -15,7 +15,7 @@ import shutil
 import tempfile
 import zipfile
 from pathlib import Path
-from typing import IO, Any, Callable, Dict, List, Optional
+from typing import IO, Any, Callable, Dict, List, Optional, cast
 
 from fetchtastic.constants import (
     EXECUTABLE_PERMISSIONS,
@@ -138,8 +138,6 @@ def _find_asset_by_name(
     """Find an asset dict by name in release data."""
     for asset in release_data.get("assets", []) or []:
         if asset.get("name") == asset_name:
-            from typing import cast
-
             return cast(Dict[str, Any], asset)
     return None
 

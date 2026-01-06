@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 if TYPE_CHECKING:
-    import _curses  # type: ignore[import-not-found]
+    pass  # type: ignore[import-not-found]
 
 import requests
 from pick import (
@@ -492,7 +492,7 @@ def select_files(
     return selected_files
 
 
-def run_menu(config: Optional[Dict[str, Any]] = None) -> None:
+def run_menu(config: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
     """
     Interactively browse the Meshtastic GitHub Pages repository and select one or more files to download.
 
