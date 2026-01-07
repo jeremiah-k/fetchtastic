@@ -201,7 +201,7 @@ class TestChannelSuffixes:
         )
 
         target_path = downloader.get_target_path_for_release(
-            release.tag_name, "app.apk", is_prerelease=False
+            release.tag_name, "app.apk", is_prerelease=False, release=release
         )
         version_dir = Path(target_path).parent
         assert str(version_dir.name) == "v2.0.0"

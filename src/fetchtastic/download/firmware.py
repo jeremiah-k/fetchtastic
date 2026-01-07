@@ -47,7 +47,7 @@ from fetchtastic.utils import (
 
 from .base import BaseDownloader
 from .cache import CacheManager
-from .files import build_storage_tag_with_channel
+from .files import build_storage_tag_with_channel, get_channel_suffix
 from .interfaces import Asset, DownloadResult, Release
 from .prerelease_history import PrereleaseHistoryManager
 from .release_history import ReleaseHistoryManager
@@ -415,15 +415,16 @@ class FirmwareReleaseDownloader(BaseDownloader):
             DEFAULT_ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES,
         )
 
-        # Determine current channel from release
-        current_channel = ""
-        if not release.prerelease and add_channel_suffixes:
-            channel = self.release_history_manager.get_release_channel(release)
-            if channel and channel in STORAGE_CHANNEL_SUFFIXES:
-                if is_revoked and channel == "alpha":
-                    current_channel = ""
-                else:
-                    current_channel = channel
+        # Determine current channel from release using shared helper
+        current_channel_suffix = get_channel_suffix(
+            release=release,
+            release_history_manager=self.release_history_manager,
+            is_revoked=is_revoked,
+            add_channel_suffixes=add_channel_suffixes and not release.prerelease,
+        )
+        current_channel = (
+            current_channel_suffix.lstrip("-") if current_channel_suffix else ""
+        )
 
         # Build list of channel names to try
         channels_to_try = [current_channel, ""]
