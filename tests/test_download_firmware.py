@@ -1008,11 +1008,13 @@ class TestFirmwareReleaseDownloader:
 
     def test_get_storage_tag_candidates_invalid_channel(self, downloader):
         """Only valid channel suffixes (alpha, beta, rc) should be included in candidates."""
-        # Without ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES, no channel suffixes are added
-        candidates = downloader._get_storage_tag_candidates("v1.0.2", "v1.0.2", False)
+        # Without ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES enabled, no channel suffixes are added
+        downloader.config["ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES"] = False
+        release = Release(tag_name="v1.0.2", prerelease=False)
+        candidates = downloader._get_storage_tag_candidates(release, "v1.0.2")
 
-        # Standard suffixes (alpha, beta, rc) should be present
-        # but only when the feature is enabled
+        # Standard suffixes (alpha, beta, rc) should not be present
+        # when feature is disabled
         assert "v1.0.2-alpha" not in candidates
         assert "v1.0.2-beta" not in candidates
         assert "v1.0.2-rc" not in candidates

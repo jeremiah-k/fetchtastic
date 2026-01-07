@@ -18,9 +18,11 @@ from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, Callable, Protocol
 
 from fetchtastic.constants import (
+    DEFAULT_ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES,
     EXECUTABLE_PERMISSIONS,
     FIRMWARE_DIR_PREFIX,
     SHELL_SCRIPT_EXTENSION,
+    STORAGE_CHANNEL_SUFFIXES,
 )
 from fetchtastic.log_utils import logger
 
@@ -1009,9 +1011,6 @@ def safe_extract_path(extract_dir: str, file_path: str) -> str:
     return normalized_path
 
 
-_STORAGE_CHANNEL_SUFFIXES = {"alpha", "beta", "rc"}
-
-
 def build_storage_tag_with_channel(
     release_tag: str,
     release: "Release",
@@ -1042,9 +1041,12 @@ def build_storage_tag_with_channel(
     channel_suffix = ""
 
     # Only add channel suffixes for full releases when feature is enabled
-    if not is_prerelease and config.get("ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES", False):
+    if not is_prerelease and config.get(
+        "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES",
+        DEFAULT_ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES,
+    ):
         channel = release_history_manager.get_release_channel(release)
-        if channel and channel in _STORAGE_CHANNEL_SUFFIXES:
+        if channel and channel in STORAGE_CHANNEL_SUFFIXES:
             # Special case: don't add -alpha to revoked releases.
             # Alpha revoked releases use the tag format v1.0.0-revoked (no -alpha suffix),
             # while beta/rc revoked releases keep their channel suffix: v1.0.0-beta-revoked or v1.0.0-rc-revoked.
@@ -1054,10 +1056,7 @@ def build_storage_tag_with_channel(
                 channel_suffix = f"-{channel}"
 
     # Build final tag
-    tag = safe_tag
-    if channel_suffix:
-        tag = f"{tag}{channel_suffix}"
-    if is_revoked:
-        tag = f"{tag}-revoked"
+    revoked_suffix = "-revoked" if is_revoked else ""
+    tag = f"{safe_tag}{channel_suffix}{revoked_suffix}"
 
     return tag
