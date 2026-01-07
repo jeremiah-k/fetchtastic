@@ -316,6 +316,14 @@ def test_cli_download_config_load_failure(mocker):
 @pytest.mark.unit
 def test_cli_download_failed_downloads_reporting(mocker):
     """Test CLI download command error reporting for failed downloads."""
+
+    # Mock SSL/urllib3 to prevent SystemTimeWarning
+    mocker.patch("urllib3.connectionpool.HTTPSConnectionPool")
+    mocker.patch("urllib3.connection.HTTPSConnection")
+    mocker.patch("urllib3.connection.HTTPConnection")
+    mocker.patch("requests.get", return_value=mocker.MagicMock())
+    mocker.patch("requests.Session.get", return_value=mocker.MagicMock())
+
     mock_integration = mocker.MagicMock()
     failed_downloads = [
         {

@@ -1454,10 +1454,17 @@ def test_cli_download_with_log_level_config(mocker):
 
 
 def test_cli_download_without_log_level_config(mocker):
-    """Test the 'download' command without LOG_LEVEL configuration."""
+    """Test 'download' command without LOG_LEVEL configuration."""
     mocker.patch("sys.argv", ["fetchtastic", "download"])
     mock_set_log_level = mocker.patch("fetchtastic.log_utils.set_log_level")
     mock_setup_run = mocker.patch("fetchtastic.setup_config.run_setup")
+
+    # Mock SSL/urllib3 to prevent SystemTimeWarning
+    mocker.patch("urllib3.connectionpool.HTTPSConnectionPool")
+    mocker.patch("urllib3.connection.HTTPSConnection")
+    mocker.patch("urllib3.connection.HTTPConnection")
+    mocker.patch("requests.get", return_value=mocker.MagicMock())
+    mocker.patch("requests.Session.get", return_value=mocker.MagicMock())
 
     # Mock external dependencies
     mocker.patch("fetchtastic.cli.reset_api_tracking")
