@@ -439,21 +439,25 @@ class ReleaseHistoryManager:
 
     def _get_oldest_published_at(self, releases: List[Release]) -> Optional[datetime]:
         """
-        Return the earliest UTC published_at timestamp found among the given releases.
+        Get the earliest UTC `published_at` timestamp among the provided releases.
+
+        Parses each release's `published_at` value and ignores missing or unparsable timestamps.
 
         Parameters:
-            releases (List[Release]): Releases whose `published_at` values will be parsed and considered; missing or unparsable timestamps are ignored.
+            releases (List[Release]): Releases whose `published_at` values will be parsed and considered.
 
         Returns:
-            Optional[datetime]: The minimum parsed UTC `published_at` datetime, or `None` if no valid timestamps are present.
+            Optional[datetime]: The earliest parsed UTC `published_at` datetime, or `None` if no valid timestamps are present.
         """
         timestamps = [
             parse_iso_datetime_utc(release.published_at) for release in releases
         ]
-        timestamps = [ts for ts in timestamps if ts is not None]
-        if not timestamps:
+        filtered_timestamps: list[datetime] = [
+            ts for ts in timestamps if ts is not None
+        ]
+        if not filtered_timestamps:
             return None
-        return min(timestamps)
+        return min(filtered_timestamps)
 
     def _should_mark_removed(
         self, entry: Dict[str, Any], oldest_published: Optional[datetime]

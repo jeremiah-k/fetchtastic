@@ -9,7 +9,7 @@ import json
 import os
 import shutil
 import zipfile
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 import requests
 
@@ -853,17 +853,17 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
     def get_latest_release_tag(self) -> Optional[str]:
         """
-        Return the latest firmware release tag stored in the tracking JSON file.
+        Read the tracked latest firmware release tag from the local tracking JSON file.
 
         Returns:
-            latest_version (Optional[str]): The tracked latest release tag, or None if the tracking file is missing or contains invalid JSON.
+            latest_version (Optional[str]): The stored latest release tag, or `None` if the tracking file does not exist or contains invalid JSON.
         """
         latest_file = self.latest_release_path
         if os.path.exists(latest_file):
             try:
                 with open(latest_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    return data.get("latest_version")
+                    return cast(str | None, data.get("latest_version"))
             except (IOError, json.JSONDecodeError):
                 pass
         return None
@@ -1303,7 +1303,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
         history_entries: List[Dict[str, Any]],
         clean_latest_release: str,
         expected_version: str,
-    ):
+    ) -> None:
         """
         Log counts and a formatted list of prerelease commits for a given version.
 

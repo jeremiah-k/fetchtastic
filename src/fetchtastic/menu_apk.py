@@ -1,6 +1,7 @@
 # src/fetchtastic/menu_apk.py
 
 import json
+from typing import cast
 
 from pick import pick
 
@@ -15,7 +16,7 @@ from fetchtastic.utils import (
 )
 
 
-def fetch_apk_assets():
+def fetch_apk_assets() -> list[str]:
     """
     Retrieve APK filenames from the latest Meshtastic Android release on GitHub.
 
@@ -48,17 +49,17 @@ def fetch_apk_assets():
     return asset_names
 
 
-def select_assets(assets):
+def select_assets(assets: list[str]) -> dict[str, list[str]] | None:
     """
-    Present an interactive multi-select prompt for APK asset filenames and return selected base-name patterns.
+    Present an interactive multi-select prompt of APK filenames and return selected base-name patterns.
 
-    Displays an interactive list of the provided APK asset filenames and allows the user to select zero or more entries. For each selected filename this function computes a base-name pattern using extract_base_name and returns a dict {"selected_assets": [...base patterns...]}. If the user selects no assets, prints a short message and returns None.
+    Displays the provided APK filenames for multi-selection; for each chosen filename this function computes a base-name pattern using `extract_base_name` and returns a dictionary `{"selected_assets": [base_pattern, ...]`. If no assets are selected, the function prints a short message and returns `None`.
 
     Parameters:
-        assets (list[str]): List of APK asset filenames to present for selection.
+        assets (list[str]): APK asset filenames to present for selection.
 
     Returns:
-        dict or None: A dictionary with key "selected_assets" mapping to a list of base-name patterns when one or more assets are chosen; otherwise None.
+        dict[str, list[str]] | None: `{"selected_assets": [base_pattern, ...]}` when one or more assets are selected, `None` if no selection was made.
     """
     title = """Select the APK files you want to download (press SPACE to select, ENTER to confirm):
 Note: These are files from the latest release. Version numbers may change in other releases."""
@@ -66,7 +67,9 @@ Note: These are files from the latest release. Version numbers may change in oth
     selected_options = pick(
         options, title, multiselect=True, min_selection_count=0, indicator="*"
     )
-    selected_assets = [option[0] for option in selected_options]
+    selected_assets = [
+        option[0] for option in cast(list[tuple[str, int]], selected_options)
+    ]
     if not selected_assets:
         print("No APK files selected. APKs will not be downloaded.")
         return None
@@ -79,11 +82,17 @@ Note: These are files from the latest release. Version numbers may change in oth
     return {"selected_assets": base_patterns}
 
 
-def run_menu():
+def run_menu() -> dict[str, list[str]] | None:
     """
-    Orchestrate fetching APK asset names and prompting the user to select one or more; return the selection.
+    Show an interactive APK selection menu and return the chosen base-name patterns.
 
-    Calls fetch_apk_assets() to retrieve APK asset names from the latest Meshtastic Android release, then calls select_assets(assets) to present a multi-select prompt. Returns the dictionary produced by select_assets (e.g., {"selected_assets": [...base name patterns...]}) when the user makes a selection. Returns None if the user selects nothing, aborts, or if an error occurs (errors are caught and logged).
+    Presents a multi-select prompt for available APK filenames and returns a dictionary
+    with selected base-name patterns when one or more items are chosen.
+
+    Returns:
+        dict[str, list[str]]: A mapping with key "selected_assets" to the list of selected
+            base-name patterns (e.g., {"selected_assets": [...]}).
+        None: If no selection is made, the user aborts, or an error occurs.
     """
     try:
         assets = fetch_apk_assets()

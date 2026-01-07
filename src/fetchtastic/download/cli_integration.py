@@ -52,11 +52,11 @@ class DownloadCLIIntegration:
     - Progress reporting
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """
         Initialize a DownloadCLIIntegration instance and set initial internal state.
 
-        Sets attributes used to connect the CLI to the download subsystem:
+        Sets attributes used to connect CLI to download subsystem:
         - orchestrator: Orchestrator instance or None until initialized.
         - android_downloader: Android downloader instance or None until initialized.
         - firmware_downloader: Firmware downloader instance or None until initialized.

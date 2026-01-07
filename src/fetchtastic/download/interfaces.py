@@ -8,7 +8,7 @@ the foundation of the modular download architecture.
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Optional, Union
+from typing import TYPE_CHECKING, Any, List, Optional, Union
 
 Pathish = Union[str, Path]
 
@@ -98,7 +98,7 @@ class DownloadResult:
     error_type: Optional[str] = None
     """Type/category of error (network, permission, validation, etc.)"""
 
-    error_details: Optional[dict] = None
+    error_details: Optional[dict[str, Any]] = None
     """Detailed error information for debugging"""
 
     http_status_code: Optional[int] = None

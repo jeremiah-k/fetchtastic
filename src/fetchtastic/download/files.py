@@ -15,7 +15,7 @@ import shutil
 import tempfile
 import zipfile
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import IO, Any, Callable, Protocol
 
 from fetchtastic.constants import (
     EXECUTABLE_PERMISSIONS,
@@ -34,26 +34,70 @@ from fetchtastic.utils import (
 NON_ASCII_RX = re.compile(r"[^\x00-\x7F]+")
 
 
+class HashAlgorithm(Protocol):
+    """Protocol for hash objects returned by hashlib."""
+
+    name: str
+    digest_size: int
+    block_size: int
+
+    def update(self, data: bytes) -> None:
+        """
+        Update the hash object's internal state with the given bytes.
+
+        Parameters:
+            data (bytes): Input bytes to incorporate into the ongoing digest computation.
+        """
+        ...
+
+    def digest(self) -> bytes:
+        """
+        Return the binary digest for the current hash state.
+
+        Returns:
+            bytes: The raw hash digest corresponding to the current state of the hash object.
+        """
+        ...
+
+    def hexdigest(self) -> str:
+        """
+        Return the hexadecimal digest string representing the hash's current state.
+
+        Returns:
+            str: Hexadecimal string of the digest computed from the data processed so far.
+        """
+        ...
+
+    def copy(self) -> "HashAlgorithm":
+        """
+        Create an independent copy of the hash object preserving its current internal state.
+
+        Returns:
+            HashAlgorithm: A new hash object for the same algorithm with the same internal state as the original.
+        """
+        ...
+
+
 def strip_unwanted_chars(text: str) -> str:
     """
-    Remove non-ASCII characters from a string.
+    Remove characters outside the ASCII range from the given text.
 
     Parameters:
-        text (str): The input string to sanitize.
+        text (str): Input string to sanitize; characters with code point greater than 127 are removed.
 
     Returns:
-        str: The input string with all non-ASCII characters removed.
+        str: The sanitized string containing only ASCII characters.
     """
     return NON_ASCII_RX.sub("", text)
 
 
-def _matches_exclude(name: str, patterns: List[str]) -> bool:
+def _matches_exclude(name: str, patterns: list[str]) -> bool:
     """
     Shared case-insensitive glob exclude matcher.
 
     Parameters:
         name (str): The name to test (typically a filename or path component).
-        patterns (List[str]): Glob patterns to test against; matching is performed case-insensitively.
+        patterns (list[str]): Glob patterns to test against; matching is performed case-insensitively.
 
     Returns:
         bool: `True` if `name` matches at least one pattern, `False` otherwise.
@@ -64,17 +108,17 @@ def _matches_exclude(name: str, patterns: List[str]) -> bool:
     return any(fnmatch.fnmatch(name_l, p.lower()) for p in patterns)
 
 
-def _sanitize_path_component(component: Optional[str]) -> Optional[str]:
+def _sanitize_path_component(component: str | None) -> str | None:
     """
     Validate and sanitize a single filesystem path component.
 
     Trims surrounding whitespace and returns the cleaned component if it is a safe, relative path segment. Returns None when the input is None or when the component is unsafe — specifically if it is empty after trimming, equals "." or "..", is an absolute path, contains a null byte, or contains path separator characters.
 
     Parameters:
-        component (Optional[str]): The candidate path component to validate and sanitize.
+        component (str | None): The candidate path component to validate and sanitize.
 
     Returns:
-        Optional[str]: The trimmed, safe component string, or `None` if the component is unsafe or `None`.
+        str | None: The trimmed, safe component string, or `None` if the component is unsafe or `None`.
     """
     if component is None:
         return None
@@ -133,29 +177,37 @@ def _get_existing_prerelease_dirs(prerelease_dir: str) -> list[str]:
 
 
 def _find_asset_by_name(
-    release_data: Dict[str, Any], asset_name: str
-) -> Optional[Dict[str, Any]]:
-    """Find an asset dict by name in release data."""
-    for asset in release_data.get("assets", []) or []:
-        if asset.get("name") == asset_name:
+    release_data: dict[str, Any], asset_name: str
+) -> dict[str, Any] | None:
+    """
+    Locate an asset entry with the given name in release metadata.
+
+    Returns:
+        The matching asset dictionary if found, `None` otherwise.
+    """
+    assets = release_data.get("assets")
+    if not isinstance(assets, list):
+        return None
+    for asset in assets:
+        if isinstance(asset, dict) and asset.get("name") == asset_name:
             return asset
     return None
 
 
 def _is_release_complete(
-    release_data: Dict[str, Any],
+    release_data: dict[str, Any],
     release_dir: str,
-    selected_patterns: Optional[List[str]],
-    exclude_patterns: List[str],
+    selected_patterns: list[str] | None,
+    exclude_patterns: list[str],
 ) -> bool:
     """
     Check that a release directory contains every expected asset (filtered by inclusion/exclusion patterns) and that each asset appears intact.
 
     Parameters:
-        release_data (Dict[str, Any]): Release metadata with an "assets" list; each asset object should include at least a "name" and may include a "size".
+        release_data (dict[str, Any]): Release metadata with an "assets" list; each asset object should include at least a "name" and may include a "size".
         release_dir (str): Path to the directory holding downloaded release assets.
-        selected_patterns (Optional[List[str]]): Optional glob-style inclusion patterns; when provided, only assets matching these patterns are considered.
-        exclude_patterns (List[str]): Glob-style exclusion patterns; assets matching any of these are ignored.
+        selected_patterns (list[str] | None): Optional glob-style inclusion patterns; when provided, only assets matching these patterns are considered.
+        exclude_patterns (list[str]): Glob-style exclusion patterns; assets matching any of these are ignored.
 
     Returns:
         bool: `True` if every expected asset (after applying inclusion/exclusion patterns) exists in release_dir and passes integrity checks (ZIP files are not corrupted and file sizes match any declared sizes), `False` otherwise.
@@ -164,7 +216,12 @@ def _is_release_complete(
         return False
 
     expected_assets: list[str] = []
-    for asset in release_data.get("assets", []) or []:
+    assets = release_data.get("assets")
+    if not isinstance(assets, list):
+        return False
+    for asset in assets:
+        if not isinstance(asset, dict):
+            continue
         file_name = asset.get("name", "")
         if not file_name:
             continue
@@ -354,18 +411,18 @@ def _safe_rmtree(path_to_remove: str, base_dir: str, item_name: str) -> bool:
 
 
 def _atomic_write(
-    file_path: str, writer_func: Callable[[Any], None], suffix: str = ".tmp"
+    file_path: str, writer_func: Callable[[IO[str]], None], suffix: str = ".tmp"
 ) -> bool:
     """
-    Write data to a file atomically by writing to a temporary file and atomically replacing the target on success.
+    Atomically write content to a target path by writing to a temporary file and replacing the target on success.
 
     Parameters:
-        file_path (str): Destination file path to be written.
-        writer_func (Callable[[Any], None]): Callable that receives an open text file-like object and writes the desired content to it.
+        file_path (str): Destination filesystem path to write.
+        writer_func (Callable[[IO[str]], None]): Callable that receives an open text file-like object (opened for writing, UTF-8) and writes the desired content.
         suffix (str): Suffix to use for the temporary file name (default ".tmp").
 
     Returns:
-        bool: `True` if the temporary write and atomic replace succeeded, `False` on any error.
+        bool: `True` if the temporary write and atomic replace succeeded, `False` otherwise.
     """
     try:
         temp_fd, temp_path = tempfile.mkstemp(
@@ -391,7 +448,7 @@ def _atomic_write(
     return True
 
 
-def _atomic_write_json(file_path: str, data: dict) -> bool:
+def _atomic_write_json(file_path: str, data: dict[str, Any]) -> bool:
     """
     Atomically write the given dictionary to the target file as pretty-printed JSON.
 
@@ -434,26 +491,26 @@ class FileOperations:
             bool: `True` if the write and atomic replacement succeeded, `False` on error.
         """
 
-        def _write_content(f):
+        def _write_content(f: IO[str]) -> None:
             """
-            Write the provided string content to the given writable file-like object.
+            Write the surrounding scope's `content` string to the provided writable text file-like object.
 
             Parameters:
-                f (typing.IO): Writable file-like object to receive the content.
+                f (IO[str]): Writable text file-like object that will receive the content.
             """
             f.write(content)
 
         return _atomic_write(file_path, _write_content, suffix=".txt")
 
     def verify_file_hash(
-        self, file_path: str, expected_hash: Optional[str] = None
+        self, file_path: str, expected_hash: str | None = None
     ) -> bool:
         """
         Determine whether a file exists and, if provided, whether its SHA-256 hash matches the expected value.
 
         Parameters:
             file_path (str): Path to the file to verify.
-            expected_hash (Optional[str]): Expected SHA-256 hex digest; when omitted, only existence is checked.
+            expected_hash (str | None): Expected SHA-256 hex digest; when omitted, only existence is checked.
 
         Returns:
             bool: `True` if the file exists and (when `expected_hash` is provided) its SHA-256 hex digest equals `expected_hash`; `False` otherwise.
@@ -475,20 +532,20 @@ class FileOperations:
         self,
         zip_path: str,
         extract_dir: str,
-        patterns: List[str],
-        exclude_patterns: List[str],
-    ) -> List[Path]:
+        patterns: list[str],
+        exclude_patterns: list[str],
+    ) -> list[Path]:
         """
         Extract files from a ZIP archive whose basenames match the given inclusion patterns and do not match the exclusion patterns into the target directory.
 
         Parameters:
             zip_path (str): Path to the ZIP archive.
             extract_dir (str): Destination directory for extracted files.
-            patterns (List[str]): Filename glob patterns to include; an empty list results in no extraction (legacy behavior).
-            exclude_patterns (List[str]): Filename glob patterns to exclude (case-insensitive).
+            patterns (list[str]): Filename glob patterns to include; an empty list results in no extraction (legacy behavior).
+            exclude_patterns (list[str]): Filename glob patterns to exclude (case-insensitive).
 
         Returns:
-            List[Path]: Paths of files that were successfully extracted; returns an empty list if no files were extracted or on error.
+            list[Path]: Paths of files that were successfully extracted; returns an empty list if no files were extracted or on error.
         """
         if not patterns:
             # Legacy behavior: empty pattern list means do not extract anything
@@ -550,13 +607,13 @@ class FileOperations:
             logger.error(f"Error extracting archive {zip_path}: {e}")
             return []
 
-    def _matches_exclude(self, filename: str, patterns: List[str]) -> bool:
+    def _matches_exclude(self, filename: str, patterns: list[str]) -> bool:
         """
         Instance wrapper around module-level exclude matcher.
 
         Parameters:
             filename (str): The name to test; comparison is performed against the pattern(s).
-            patterns (List[str]): Iterable of glob-style patterns; matching is case-insensitive.
+            patterns (list[str]): Iterable of glob-style patterns; matching is case-insensitive.
 
         Returns:
             bool: `True` if `filename` matches any pattern in `patterns`, `False` otherwise.
@@ -568,7 +625,7 @@ class FileOperations:
         Determine whether an archive member name is safe to extract.
 
         Returns:
-            `true` if the member name contains no absolute paths, parent-directory references, or null bytes, `false` otherwise.
+            True if the member name does not contain absolute paths, parent-directory references (".."), or null bytes; False otherwise.
         """
         if (
             not member_name
@@ -592,17 +649,19 @@ class FileOperations:
         return True
 
     def validate_extraction_patterns(
-        self, patterns: List[str], exclude_patterns: List[str]
+        self, patterns: list[str], exclude_patterns: list[str]
     ) -> bool:
         """
-        Validate inclusion and exclusion glob patterns for safe archive extraction.
+        Validate include and exclude glob patterns to ensure they are safe for archive extraction.
+
+        Checks that each pattern is non-empty, does not contain path-separator characters, uses a reasonable number of wildcards, and compiles as a valid glob pattern.
 
         Parameters:
-            patterns (List[str]): Glob patterns of files to include during extraction.
-            exclude_patterns (List[str]): Glob patterns of files to exclude during extraction.
+            patterns (list[str]): Glob patterns that select files to extract.
+            exclude_patterns (list[str]): Glob patterns that exclude files from extraction.
 
         Returns:
-            bool: True if all provided patterns are well-formed and do not pose path-traversal or overly-broad wildcard risks, False otherwise.
+            bool: `True` if all patterns pass validation, `False` otherwise.
         """
         try:
             # Check for empty patterns that might cause issues
@@ -640,8 +699,8 @@ class FileOperations:
         self,
         zip_path: str,
         extract_dir: str,
-        patterns: List[str],
-        exclude_patterns: List[str],
+        patterns: list[str],
+        exclude_patterns: list[str],
     ) -> bool:
         """
         Determine whether the ZIP archive requires extraction by comparing candidate members against existing files in extract_dir.
@@ -651,8 +710,8 @@ class FileOperations:
         Parameters:
             zip_path (str): Path to the ZIP archive.
             extract_dir (str): Target directory where files would be extracted.
-            patterns (List[str]): Filename patterns to select candidates (matched against the base filename).
-            exclude_patterns (List[str]): Filename patterns to exclude (matched against the base filename).
+            patterns (list[str]): Filename patterns to select candidates (matched against the base filename).
+            exclude_patterns (list[str]): Filename patterns to exclude (matched against the base filename).
 
         Returns:
             bool: `True` if extraction should be performed, `False` if extraction can be skipped. If the ZIP file is missing, returns `False`. On any error while checking, returns `True` (assumes extraction is needed).
@@ -715,20 +774,20 @@ class FileOperations:
         self,
         zip_path: str,
         extract_dir: str,
-        patterns: List[str],
-        exclude_patterns: List[str],
-    ) -> List[Path]:
+        patterns: list[str],
+        exclude_patterns: list[str],
+    ) -> list[Path]:
         """
         Extract files from a ZIP archive that match the provided include/exclude patterns after validating patterns and confirming extraction is necessary.
 
         Parameters:
             zip_path (str): Path to the ZIP archive to extract from.
             extract_dir (str): Destination directory for extracted files.
-            patterns (List[str]): Glob patterns selecting which file basenames to include.
-            exclude_patterns (List[str]): Glob patterns selecting which file basenames to exclude.
+            patterns (list[str]): Glob patterns selecting which file basenames to include.
+            exclude_patterns (list[str]): Glob patterns selecting which file basenames to exclude.
 
         Returns:
-            List[Path]: Paths of files that were actually extracted; empty list if extraction was skipped or failed.
+            list[Path]: Paths of files that were actually extracted; empty list if extraction was skipped or failed.
         """
         # Validate patterns first
         if not self.validate_extraction_patterns(patterns, exclude_patterns):
@@ -753,19 +812,19 @@ class FileOperations:
         return extracted
 
     def generate_hash_for_extracted_files(
-        self, extracted_files: List[Path], algorithm: str = "sha256"
-    ) -> Dict[str, str]:
+        self, extracted_files: list[Path], algorithm: str = "sha256"
+    ) -> dict[str, str]:
         """
         Compute cryptographic digests for the provided extracted files and persist SHA-256 hashes to the cache.
 
         Processes only paths that exist and are readable. The `algorithm` parameter selects the hashing algorithm (case-insensitive); if the algorithm is unsupported it falls back to SHA-256. When `algorithm` is "sha256" the resulting hex digests are saved to the centralized cache via save_file_hash; digests produced with other algorithms are returned but not persisted.
 
         Parameters:
-            extracted_files (List[Path]): Iterable of file paths to hash; non-existent or unreadable files are skipped.
+            extracted_files (list[Path]): Iterable of file paths to hash; non-existent or unreadable files are skipped.
             algorithm (str): Hash algorithm name (e.g., "sha256", "md5"); defaults to "sha256" and is interpreted case-insensitively.
 
         Returns:
-            Dict[str, str]: Mapping from each processed file's path string to its hexadecimal digest. Only successfully hashed files appear in the mapping.
+            dict[str, str]: Mapping from each processed file's path string to its hexadecimal digest. Only successfully hashed files appear in the mapping.
         """
         hash_dict = {}
 
@@ -773,12 +832,12 @@ class FileOperations:
             # Validate algorithm is available
             try:
 
-                def hash_func():
+                def hash_func() -> HashAlgorithm:
                     """
-                    Create and return a new hash object for the configured algorithm.
+                    Create a new hash object for the configured algorithm.
 
                     Returns:
-                        A new hash object suitable for incremental updates and digest computation using the selected algorithm.
+                        HashAlgorithm: A fresh hash object suitable for incremental `update` calls and digest computation.
                     """
                     return hashlib.new(algorithm.lower())
 
@@ -863,12 +922,12 @@ class FileOperations:
             logger.error(f"Could not create directory {directory}: {e}")
             return False
 
-    def get_file_size(self, file_path: str) -> Optional[int]:
+    def get_file_size(self, file_path: str) -> int | None:
         """
-        Retrieve the size of a file in bytes.
+        Return the size of the given file in bytes.
 
         Returns:
-            The file size in bytes, or None if the file does not exist or cannot be accessed.
+            The file size in bytes, or None if the file is missing or cannot be read.
         """
         try:
             return os.path.getsize(file_path)
@@ -894,7 +953,7 @@ class FileOperations:
 
         return hash1 == hash2
 
-    def _get_file_hash(self, file_path: str) -> Optional[str]:
+    def _get_file_hash(self, file_path: str) -> str | None:
         """
         Compute the SHA-256 hash of a file.
 
@@ -902,7 +961,7 @@ class FileOperations:
             file_path (str): Path to the file to hash.
 
         Returns:
-            Optional[str]: SHA-256 hex digest string if the file exists and is readable, `None` if the file does not exist or cannot be read.
+            str | None: SHA-256 hex digest string if the file exists and is readable, `None` if the file does not exist or cannot be read.
         """
         if not os.path.exists(file_path):
             return None

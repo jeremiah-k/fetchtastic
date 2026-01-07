@@ -3,6 +3,7 @@
 import os
 import platform
 import shutil
+from typing import Any
 
 from fetchtastic import menu_repo
 from fetchtastic.constants import (
@@ -15,14 +16,16 @@ from fetchtastic.log_utils import logger  # Import new logger
 from fetchtastic.utils import download_file_with_retry
 
 
-def download_repo_files(selected_files, download_dir):  # log_message_func removed
+def download_repo_files(
+    selected_files: dict[str, Any], download_dir: str
+) -> list[str]:  # log_message_func removed
     """
     Download selected repository files into the repository downloads folder under the given base download directory.
 
     Files are saved under <download_dir>/<FIRMWARE_DIR_NAME>/<REPO_DOWNLOADS_DIR>/<directory> (or the repository base directory if the provided directory is unsafe). File names are sanitized to prevent path traversal and files whose original names end with the shell script extension are made executable when download succeeds.
 
     Parameters:
-        selected_files (dict): Mapping with keys:
+        selected_files (dict[str, Any]): Mapping with keys:
             - "directory" (str): Subdirectory name inside the repo downloads directory (may be empty).
             - "files" (iterable[dict]): Iterable of file descriptors where each dict must include:
                 - "name" (str): Original file name.
@@ -150,7 +153,7 @@ def download_repo_files(selected_files, download_dir):  # log_message_func remov
     return downloaded_files
 
 
-def clean_repo_directory(download_dir):  # log_message_func removed
+def clean_repo_directory(download_dir: str) -> bool:  # log_message_func removed
     """
     Clean the repository downloads directory under the given base download directory.
 
@@ -196,12 +199,14 @@ def clean_repo_directory(download_dir):  # log_message_func removed
         return False
 
 
-def main(config):  # log_message_func removed
+def main(config: dict[str, Any]) -> None:  # log_message_func removed
     """
-    Run the repository downloader flow: launch the interactive file browser, download selected files into the configured download directory, and on Windows optionally prompt to open the download folder.
+    Run the repository downloader flow that lets the user select repository files and downloads them to the configured directory.
+
+    Reads "DOWNLOAD_DIR" from the provided config, launches the interactive repository file browser, downloads the selected files into the repository downloads directory, logs outcomes, and on Windows optionally prompts the user to open the download folder.
 
     Parameters:
-        config (dict): Configuration mapping that must include the key "DOWNLOAD_DIR" with the base download directory path.
+        config (dict[str, Any]): Configuration mapping that must include the key "DOWNLOAD_DIR" with the base download directory path.
     """
     # Removed local log_message_func definition
 
