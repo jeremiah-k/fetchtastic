@@ -137,7 +137,10 @@ class TestFirmwareReleaseDownloader:
     def test_ensure_release_notes_alpha_directory(self, tmp_path):
         """Alpha firmware releases should store notes under an -alpha folder."""
         cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
-        config = {"DOWNLOAD_DIR": str(tmp_path / "downloads")}
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path / "downloads"),
+            "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES": True,
+        }
         downloader = FirmwareReleaseDownloader(config, cache_manager)
         release = Release(
             tag_name="v1.0.2",
@@ -998,12 +1001,15 @@ class TestFirmwareReleaseDownloader:
         assert storage_tag in {"v1.0.1-alpha", "v1.0.1-beta"}
 
     def test_get_storage_tag_candidates_invalid_channel(self, downloader):
-        """Invalid channel suffixes should be ignored."""
-        candidates = downloader._get_storage_tag_candidates(
-            "v1.0.2", "gamma", False, "v1.0.2"
-        )
+        """Only valid channel suffixes (alpha, beta, rc) should be included in candidates."""
+        # Without ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES, no channel suffixes are added
+        candidates = downloader._get_storage_tag_candidates("v1.0.2", "v1.0.2", False)
 
-        assert "v1.0.2-gamma" not in candidates
+        # Standard suffixes (alpha, beta, rc) should be present
+        # but only when the feature is enabled
+        assert "v1.0.2-alpha" not in candidates
+        assert "v1.0.2-beta" not in candidates
+        assert "v1.0.2-rc" not in candidates
 
     def test_is_release_complete_unsafe_tag(self, downloader):
         """Unsafe tags should return False during completeness checks."""

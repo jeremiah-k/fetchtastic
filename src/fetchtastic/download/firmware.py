@@ -425,8 +425,10 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 else:
                     current_channel_suffix = f"-{channel}"
 
-        # Build list of channels to try
-        all_channels = [current_channel_suffix, "", *sorted(_STORAGE_CHANNEL_SUFFIXES)]
+        # Build list of channels to try - only include alpha/beta/rc when feature is enabled
+        all_channels = [current_channel_suffix, ""]
+        if self.config.get("ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES", False):
+            all_channels.extend([f"-{ch}" for ch in sorted(_STORAGE_CHANNEL_SUFFIXES)])
         channels = list(dict.fromkeys(all_channels))
 
         candidates: List[str] = []

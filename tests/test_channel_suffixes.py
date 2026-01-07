@@ -23,7 +23,7 @@ class TestChannelSuffixes:
         cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
         config = {
             "DOWNLOAD_DIR": str(tmp_path / "downloads"),
-            "ADD_CHANNEL_SUFFIXes_TO_DIRECTORIES": True,
+            "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES": True,
         }
         downloader = FirmwareReleaseDownloader(config, cache_manager)
 
@@ -38,11 +38,11 @@ class TestChannelSuffixes:
         assert storage_tag == "v1.0.0-alpha"
 
     def test_firmware_channel_suffix_disabled(self, tmp_path):
-        """Firmware should NOT add -alpha suffix when ADD_CHANNEL_SUFFIXes_TO_DIRECTORIES is False."""
+        """Firmware should NOT add -alpha suffix when ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES is False."""
         cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
         config = {
             "DOWNLOAD_DIR": str(tmp_path / "downloads"),
-            "ADD_CHANNEL_SUFFIXes_TO_DIRECTORIES": False,
+            "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES": False,
         }
         downloader = FirmwareReleaseDownloader(config, cache_manager)
 
@@ -61,7 +61,7 @@ class TestChannelSuffixes:
         cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
         config = {
             "DOWNLOAD_DIR": str(tmp_path / "downloads"),
-            "ADD_CHANNEL_SUFFIXes_TO_DIRECTORIES": True,
+            "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES": True,
         }
         downloader = FirmwareReleaseDownloader(config, cache_manager)
 
@@ -80,7 +80,7 @@ class TestChannelSuffixes:
         cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
         config = {
             "DOWNLOAD_DIR": str(tmp_path / "downloads"),
-            "ADD_CHANNEL_SUFFIXes_TO_DIRECTORIES": True,
+            "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES": True,
         }
         downloader = FirmwareReleaseDownloader(config, cache_manager)
 
@@ -100,7 +100,7 @@ class TestChannelSuffixes:
         cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
         config = {
             "DOWNLOAD_DIR": str(tmp_path / "downloads"),
-            "ADD_CHANNEL_SUFFIXes_TO_DIRECTORIES": True,
+            "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES": True,
         }
         downloader = FirmwareReleaseDownloader(config, cache_manager)
 
@@ -115,11 +115,11 @@ class TestChannelSuffixes:
         assert storage_tag == "v2.0.0"
 
     def test_android_channel_suffix_enabled(self, tmp_path):
-        """Android APK should add -alpha suffix when ADD_CHANNEL_SUFFIXes_TO_DIRECTORIES is True."""
+        """Android APK should add -alpha suffix when ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES is True."""
         cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
         config = {
             "DOWNLOAD_DIR": str(tmp_path / "downloads"),
-            "ADD_CHANNEL_SUFFIXes_TO_DIRECTORIES": True,
+            "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES": True,
         }
         downloader = MeshtasticAndroidAppDownloader(config, cache_manager)
 
@@ -131,17 +131,17 @@ class TestChannelSuffixes:
         )
 
         target_path = downloader.get_target_path_for_release(
-            release.tag_name, "app.apk", is_prerelease=False
+            release.tag_name, "app.apk", is_prerelease=False, release=release
         )
         version_dir = Path(target_path).parent
         assert str(version_dir.name) == "v1.0.0-alpha"
 
     def test_android_channel_suffix_disabled(self, tmp_path):
-        """Android APK should NOT add -alpha suffix when ADD_CHANNEL_SUFFIXes_TO_DIRECTORIES is False."""
+        """Android APK should NOT add -alpha suffix when ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES is False."""
         cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
         config = {
             "DOWNLOAD_DIR": str(tmp_path / "downloads"),
-            "ADD_CHANNEL_SUFFIXes_TO_DIRECTORIES": False,
+            "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES": False,
         }
         downloader = MeshtasticAndroidAppDownloader(config, cache_manager)
 
@@ -163,7 +163,7 @@ class TestChannelSuffixes:
         cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
         config = {
             "DOWNLOAD_DIR": str(tmp_path / "downloads"),
-            "ADD_CHANNEL_SUFFIXes_TO_DIRECTORIES": True,
+            "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES": True,
         }
         downloader = MeshtasticAndroidAppDownloader(config, cache_manager)
 
@@ -187,7 +187,7 @@ class TestChannelSuffixes:
         cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
         config = {
             "DOWNLOAD_DIR": str(tmp_path / "downloads"),
-            "ADD_CHANNEL_SUFFIXes_TO_DIRECTORIES": True,
+            "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES": True,
         }
         downloader = MeshtasticAndroidAppDownloader(config, cache_manager)
 
@@ -209,7 +209,7 @@ class TestChannelSuffixes:
         cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
         config = {
             "DOWNLOAD_DIR": str(tmp_path / "downloads"),
-            "ADD_CHANNEL_SUFFIXes_TO_DIRECTORIES": True,
+            "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES": True,
         }
         downloader = MeshtasticAndroidAppDownloader(config, cache_manager)
 

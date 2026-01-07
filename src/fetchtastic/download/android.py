@@ -82,7 +82,11 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         )
 
     def get_target_path_for_release(
-        self, release_tag: str, file_name: str, is_prerelease: Optional[bool] = None
+        self,
+        release_tag: str,
+        file_name: str,
+        is_prerelease: Optional[bool] = None,
+        release: Optional[Release] = None,
     ) -> str:
         """
         Compute the filesystem path for an APK asset and ensure the corresponding release directory exists.
@@ -91,6 +95,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
         Parameters:
             is_prerelease (Optional[bool]): If provided, override inference and use the specified prerelease status to choose the base directory.
+            release (Optional[Release]): If provided, use for channel suffix detection when ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES is enabled.
 
         Returns:
             str: Filesystem path to the asset file within the (possibly created) release directory.
@@ -107,16 +112,17 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         if not is_prerelease and self.config.get(
             "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES", False
         ):
-            # Create a dummy release object for channel detection
-            from .interfaces import Release
+            if release is None:
+                # Create a dummy release object for channel detection
+                from .interfaces import Release
 
-            dummy_release = Release(
-                tag_name=release_tag,
-                prerelease=False,
-            )
+                release = Release(
+                    tag_name=release_tag,
+                    prerelease=False,
+                )
             safe_release = build_storage_tag_with_channel(
                 release_tag=safe_release,
-                release=dummy_release,
+                release=release,
                 release_history_manager=self.release_history_manager,
                 config=self.config,
                 is_prerelease=False,
@@ -443,7 +449,10 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         try:
             # Get target path for the APK
             target_path = self.get_target_path_for_release(
-                release.tag_name, asset.name, is_prerelease=release.prerelease
+                release.tag_name,
+                asset.name,
+                is_prerelease=release.prerelease,
+                release=release,
             )
 
             # Check if we need to download
