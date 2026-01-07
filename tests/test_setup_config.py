@@ -1115,6 +1115,7 @@ def test_run_setup_first_run_windows(
         "",  # Use default base directory
         "y",  # create menu
         "b",  # Both APKs and firmware
+        "n",  # Add channel suffixes
         "y",  # Check for APK prereleases
         "2",  # Keep 2 versions of Android app
         "2",  # Keep 2 versions of firmware
@@ -1207,6 +1208,7 @@ def test_run_setup_first_run_termux(  # noqa: ARG001
         "n",  # don't migrate to pipx (so setup continues)
         "",  # Use default base directory
         "b",  # Both APKs and firmware
+        "n",  # Add channel suffixes
         "y",  # Check for APK prereleases
         "1",  # Keep 1 version of Android app
         "1",  # Keep 1 version of firmware
@@ -1302,6 +1304,7 @@ def test_run_setup_existing_config(
         "",  # choose full setup at the new prompt
         "/new/base/dir",  # New base directory
         "f",  # Only firmware
+        "n",  # Add channel suffixes
         "5",  # Keep 5 versions of firmware
         "y",  # Auto-extract
         "rak4631- tbeam",  # Extraction patterns
