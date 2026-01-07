@@ -471,7 +471,7 @@ def select_item(
     Present a navigation menu for repository items and return the user's chosen action or item.
 
     Parameters:
-        items (list[dict[str, Any]]): Repository entries where each item has at least to "type" key with value "dir" or "file".
+        items (list[dict[str, Any]]): Repository entries where each item has at least a "type" key with value "dir" or "file".
         current_path (str): Path shown in menu title to indicate the current directory (empty for root).
 
     Returns:
