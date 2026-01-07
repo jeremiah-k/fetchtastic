@@ -110,19 +110,16 @@ def cron_check_command_required(func: Callable[..., Any]) -> Callable[..., Any]:
     @functools.wraps(func)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
         """
-        Ensures the `crontab` command is present and injects its resolved path into the wrapped call.
-
-        If `crontab` is not available, logs a warning and returns `False`. Otherwise resolves the `crontab`
-        executable path and calls the wrapped function with an added keyword argument `crontab_path` set
-        to that path (or the literal "crontab" if resolution returns a non-string).
-
+        Ensure the system 'crontab' command is available and inject its resolved path into the wrapped call.
+        
+        If the 'crontab' executable is not found, logs a warning and returns False. If found, adds or overwrites the keyword argument `crontab_path` with the resolved executable path (falls back to the literal string "crontab" if resolution returns a non-string) before invoking the wrapped function.
+        
         Parameters:
             args: Positional arguments forwarded to the wrapped function.
-            kwargs: Keyword arguments forwarded to the wrapped function; the `crontab_path` key may be
-                added or overwritten.
-
+            kwargs: Keyword arguments forwarded to the wrapped function; the `crontab_path` key may be added or overwritten.
+        
         Returns:
-            The wrapped function's return value, or `False` if the `crontab` command is not available.
+            The wrapped function's return value, or `False` if the 'crontab' command is not available.
         """
         if not _crontab_available():
             logger.warning(
@@ -200,7 +197,10 @@ SECTION_SHORTCUTS = {
 
 def is_termux() -> bool:
     """
-    Check if the script is running in a Termux environment.
+    Detects whether the process is running under Termux.
+    
+    Returns:
+        `true` if the PREFIX environment variable contains "com.termux", `false` otherwise.
     """
     return "com.termux" in os.environ.get("PREFIX", "")
 
@@ -247,10 +247,10 @@ def is_fetchtastic_installed_via_pipx() -> bool:
 
 def get_fetchtastic_installation_method() -> str:
     """
-    Determine how fetchtastic is currently installed.
-
+    Determine the method used to install Fetchtastic.
+    
     Returns:
-        str: 'pip', 'pipx', or 'unknown'
+        str: 'pipx' if installed via pipx, 'pip' if installed via pip, 'unknown' otherwise.
     """
     if is_fetchtastic_installed_via_pipx():
         return "pipx"
@@ -262,10 +262,12 @@ def get_fetchtastic_installation_method() -> str:
 
 def migrate_pip_to_pipx() -> bool:
     """
-    Migrate fetchtastic from pip to pipx installation in Termux.
-
+    Migrate Fetchtastic from a pip installation to pipx on Termux.
+    
+    This is an interactive operation that (when run on Termux and confirmed by the user) backs up the current configuration, ensures pipx is installed, uninstalls the pip-installed package, installs Fetchtastic with pipx, and restores the configuration file. The function prints progress and error messages to the console and skips migration when not running on Termux.
+    
     Returns:
-        bool: True if migration successful, False otherwise
+        bool: `True` if migration completed successfully, `False` otherwise.
     """
     if not is_termux():
         print("Migration is only supported in Termux.")
@@ -377,7 +379,10 @@ def migrate_pip_to_pipx() -> bool:
 
 def get_platform() -> str:
     """
-    Determine the platform on which the script is running.
+    Determine the running platform identifier.
+    
+    Returns:
+        str: "termux" if running in Termux, "mac" for macOS, "linux" for Linux, or "unknown" if none of the above.
     """
     if is_termux():
         return "termux"
@@ -432,16 +437,15 @@ BASE_DIR = DEFAULT_BASE_DIR
 
 def config_exists(directory: Optional[str] = None) -> Tuple[bool, Optional[str]]:
     """
-    Return whether a Fetchtastic configuration file exists and its path.
-
-    If `directory` is provided, checks for CONFIG_FILE_NAME inside that directory.
-    If `directory` is None, checks the new platformdirs location (CONFIG_FILE) first,
-    then the legacy location (OLD_CONFIG_FILE).
-
+    Check for the presence of a Fetchtastic configuration file and report its path.
+    
+    Parameters:
+        directory (Optional[str]): If provided, look for CONFIG_FILE_NAME inside this directory.
+            If omitted, check the canonical CONFIG_FILE location first, then the legacy OLD_CONFIG_FILE.
+    
     Returns:
-        (bool, str|None): Tuple where the first element is True if a config file was
-        found, and the second element is the full path to the found config file or
-        None if not found.
+        Tuple[bool, Optional[str]]: `True` if a configuration file was found, `False` otherwise;
+        the second element is the full path to the found configuration file, or `None` if not found.
     """
     if directory:
         config_path = os.path.join(directory, CONFIG_FILE_NAME)
@@ -561,17 +565,17 @@ def _setup_downloads(
     config: Dict[str, Any], is_partial_run: bool, wants: Callable[[str], bool]
 ) -> Tuple[Dict[str, Any], bool, bool]:
     """
-    Configure which asset types (APKs and/or firmware) to download and update the provided configuration.
-
-    When appropriate this will prompt the user (or reuse existing values during a partial run), optionally re-run APK/firmware selection menus, and write final choices into the config. It updates the keys "SAVE_APKS", "SAVE_FIRMWARE", and when menus are run may set "SELECTED_APK_ASSETS" and "SELECTED_FIRMWARE_ASSETS". If neither asset type is selected and the current run is responsible for download sections, the function returns early to allow the caller to handle the empty selection.
-
+    Configure which asset types (APKs and firmware) should be downloaded and update the provided configuration accordingly.
+    
+    Prompts the user (or reuses existing values when is_partial_run is True) to choose APK and/or firmware downloads, optionally re-runs APK/firmware selection menus, and records choices in the config. The function updates the keys "SAVE_APKS" and "SAVE_FIRMWARE", and when menus are run may set "SELECTED_APK_ASSETS", "SELECTED_FIRMWARE_ASSETS", and "CHECK_APK_PRERELEASES". If neither asset type is selected while the run is responsible for download sections, the function returns early so the caller can handle an empty selection.
+    
     Parameters:
-        config (dict): Mutable configuration dictionary that will be updated in place.
-        is_partial_run (bool): If True, only prompt sections for which wants(section) is True and prefer existing config defaults.
+        config (dict): Mutable configuration dictionary to update in place.
+        is_partial_run (bool): When True, only prompt sections for which wants(section) is True and prefer existing config defaults.
         wants (Callable[[str], bool]): Callable that accepts a section name (e.g., "android" or "firmware") and returns True when that section should be processed in this run.
-
+    
     Returns:
-        tuple[dict, bool, bool]: (updated_config, save_apks, save_firmware) where save_apks and save_firmware are booleans reflecting the final selection.
+        tuple[dict, bool, bool]: (updated_config, save_apks, save_firmware) where save_apks and save_firmware reflect the final selection state.
     """
     # Prompt to save APKs, firmware, or both
     if not is_partial_run:
@@ -711,20 +715,17 @@ def _setup_android(
     config: Dict[str, Any], is_first_run: bool, default_versions: int
 ) -> Dict[str, Any]:
     """
-    Prompt for how many Android APK versions to keep and save the choice to the config.
-
-    Reads the current value from config["ANDROID_VERSIONS_TO_KEEP"] (falls back to default_versions if absent),
-    prompts the user (prompt wording changes when is_first_run is True), converts the response to int, and stores
-    it back into config["ANDROID_VERSIONS_TO_KEEP"]. If the user input is not a valid integer, the existing
-    value is retained.
-
+    Prompt the user for how many Android APK versions to keep and store the result in the config.
+    
+    Prompts using first-run or regular phrasing based on is_first_run, interprets the user's input as an integer, and updates config["ANDROID_VERSIONS_TO_KEEP"]. If no value exists in config, default_versions is used as the fallback; if the user's input is not a valid integer, the existing value is retained.
+    
     Parameters:
         config (dict): Configuration dictionary to read and update; modified in place.
-        is_first_run (bool): If True, use first-run phrasing in the prompt.
+        is_first_run (bool): When True, use first-run wording in the prompt.
         default_versions (int): Fallback value used when the config does not already contain a value.
-
+    
     Returns:
-        dict: The updated configuration dictionary with "ANDROID_VERSIONS_TO_KEEP" set.
+        dict: The updated configuration dictionary with "ANDROID_VERSIONS_TO_KEEP" set to an integer.
     """
     current_versions = config.get("ANDROID_VERSIONS_TO_KEEP", default_versions)
     if is_first_run:
@@ -742,12 +743,11 @@ def _setup_android(
 
 def configure_exclude_patterns(config: Dict[str, Any]) -> None:
     """
-    Configure firmware exclude patterns and store them in the given configuration dictionary.
-
-    Interactively prompts the user to accept recommended patterns, add additional patterns, or provide a custom space-separated list. In non-interactive environments (CI or when stdin is not a TTY), the recommended patterns are applied automatically. Input is normalized by trimming whitespace, removing empty entries, and deduplicating while preserving order.
-
+    Configure firmware exclude patterns and store them in the provided configuration dictionary.
+    
+    Prompts the user to accept recommended exclude patterns, add additional patterns, or supply a custom space-separated list. In non-interactive environments (CI or when stdin is not a TTY), the recommended patterns are applied automatically. Input is normalized by trimming whitespace, removing empty entries, and deduplicating while preserving order. The resulting list is stored in config["EXCLUDE_PATTERNS"]; the function does not persist the configuration to disk.
     Parameters:
-        config (dict): Mutable configuration dictionary; this function sets config["EXCLUDE_PATTERNS"] to a list of string patterns. The function does not persist the configuration to disk.
+        config (dict): Mutable configuration dictionary; this function sets config["EXCLUDE_PATTERNS"] to a list of string patterns.
     """
     # In non-interactive environments, use recommended defaults
     if not sys.stdin.isatty() or os.environ.get("CI"):
@@ -844,15 +844,21 @@ def _setup_firmware(
     config: Dict[str, Any], is_first_run: bool, default_versions: int
 ) -> Dict[str, Any]:
     """
-    Configure firmware retention, automatic extraction, extraction/exclusion patterns, and prerelease handling in the provided config.
-
+    Configure firmware retention, automatic extraction, exclusion patterns, and prerelease handling in the provided config.
+    
     Parameters:
-        config (dict): Configuration mapping to read defaults from and write updated firmware-related keys into.
-        is_first_run (bool): When True, use first-run wording and defaults for prompts.
-        default_versions (int): Fallback number of firmware versions to keep when not present in config.
-
+        config (Dict[str, Any]): Configuration mapping to read defaults from and write firmware-related keys into.
+        is_first_run (bool): When True, prompt wording and defaults are oriented for a first-time setup.
+        default_versions (int): Default number of firmware versions to retain when the config does not specify one.
+    
     Returns:
-        dict: The same config object updated with keys such as FIRMWARE_VERSIONS_TO_KEEP, AUTO_EXTRACT, EXTRACT_PATTERNS, EXCLUDE_PATTERNS, CHECK_PRERELEASES, and SELECTED_PRERELEASE_ASSETS.
+        Dict[str, Any]: The same config object updated with firmware-related keys, including:
+            - FIRMWARE_VERSIONS_TO_KEEP: number of firmware versions to retain
+            - AUTO_EXTRACT: whether automatic extraction from firmware archives is enabled
+            - EXTRACT_PATTERNS: list of patterns/keywords to extract from archives
+            - EXCLUDE_PATTERNS: list of patterns to exclude from extraction
+            - CHECK_PRERELEASES: whether to check for pre-release firmware
+            - SELECTED_PRERELEASE_ASSETS: list of asset patterns selected for pre-release downloads
     """
 
     # Prompt for firmware versions to keep
@@ -1472,16 +1478,21 @@ def _setup_base(
     wants: Callable[[str], bool],
 ) -> Dict[str, Any]:
     """
-    Handle base directory setup, Termux packages, and Windows shortcuts.
-
-    Args:
-        config: Current configuration dictionary
-        is_partial_run: Whether this is a partial setup run
-        is_first_run: Whether this is the first time setup is being run
-        wants: Function to check if a section should be processed
-
+    Configure or confirm the application's base directory and perform platform-specific base setup.
+    
+    Performs platform-specific initialization required before other setup sections:
+    - On Termux, ensures required packages are installed, storage is configured, and optionally offers migration from pip to pipx.
+    - Loads an existing configuration if present, prompts the user for a base directory (respecting partial-run behavior), updates the global BASE_DIR, and creates the directory if missing.
+    - On Windows, optionally creates a config shortcut in the base directory and can create/update Start Menu shortcuts when optional Windows integrations are available.
+    
+    Parameters:
+        config (Dict[str, Any]): Current configuration; may be updated or replaced when an existing config is loaded.
+        is_partial_run (bool): When true, only process base setup if explicitly requested.
+        is_first_run (bool): When true, use first-run defaults for prompts (e.g., default base directory).
+        wants (Callable[[str], bool]): Predicate that returns True if the named setup section should be processed (used when is_partial_run is True).
+    
     Returns:
-        Updated configuration dictionary
+        Dict[str, Any]: The updated configuration dictionary with an ensured and stored "BASE_DIR" value.
     """
     global BASE_DIR
 
@@ -1674,16 +1685,13 @@ def run_setup(
     sections: Optional[Sequence[str]] = None, perform_initial_download: bool = True
 ) -> None:
     """
-        Run the interactive Fetchtastic setup wizard.
-
-        Guides the user through creating or migrating the Fetchtastic configuration, selecting assets and retention policies, configuring notifications and automation/startup behavior, and persisting the resulting settings to the user's YAML config file. Behavior adapts to the current platform (e.g., Termux, Windows, macOS/Linux) and will only prompt for sections requested via the `sections` parameter.
-
+    Run the interactive Fetchtastic setup wizard.
+    
+    Guides the user through creating or migrating the Fetchtastic configuration, selecting asset types and retention policies, configuring notifications and GitHub token, and setting up platform-specific automation (cron/boot scripts on Termux/Linux/macOS or Start Menu/startup shortcuts on Windows). The wizard can run in full interactive mode or in a partial mode limited to specified sections; results are persisted to the YAML config file.
+    
     Parameters:
-            sections (Optional[Sequence[str]]): Optional sequence of setup section names to run (e.g., elements of
-                SETUP_SECTION_CHOICES). When provided, wizard only prompts for those sections and preserves
-                other configuration values; when `None`, full interactive setup is executed.
-            perform_initial_download (bool): When True (default), offers to run an initial download after setup completes
-                on non-Windows platforms for full (non-partial) setup runs. When False, skips the initial download prompt.
+        sections (Optional[Sequence[str]]): Sequence of setup section names to run (lowercase names from SETUP_SECTION_CHOICES). When provided, only those sections are prompted and other configuration values are preserved; when `None`, a full interactive setup is executed.
+        perform_initial_download (bool): If True (default) and a full setup was performed on non-Windows platforms, offer to start an initial download after setup completes. When False, skip the initial-download prompt.
     """
     global BASE_DIR
     partial_sections: Optional[Set[str]] = None
@@ -1849,16 +1857,15 @@ def run_setup(
 
 def check_for_updates() -> Tuple[str, Optional[str], bool]:
     """
-    Check whether a newer release of Fetchtastic is available on PyPI.
-
-    Performs a local read of the installed package version and queries the PyPI JSON API
-    for the latest release. Compares versions using PEP 440-aware parsing.
-
+    Determine whether a newer release of Fetchtastic is available on PyPI.
+    
+    Queries the local installed fetchtastic version and the PyPI package index, then compares the two versions.
+    
     Returns:
         tuple: (current_version, latest_version, update_available)
             - current_version (str): the installed fetchtastic version or "unknown" if it cannot be determined.
             - latest_version (str|None): the latest version string from PyPI, or None if the lookup failed.
-            - update_available (bool): True if a newer release exists on PyPI, False otherwise (including on lookup errors).
+            - update_available (bool): `true` if a newer release exists on PyPI, `false` otherwise.
     """
     try:
         # Get current version
@@ -1888,9 +1895,11 @@ def check_for_updates() -> Tuple[str, Optional[str], bool]:
 
 def get_upgrade_command() -> str:
     """
-    Returns the appropriate shell command to upgrade Fetchtastic for the current platform and installation method.
-
-    On Termux, selects between pip and pipx based on how Fetchtastic was installed. On other platforms, defaults to pipx.
+    Select the shell command to upgrade Fetchtastic for the current platform and installation method.
+    
+    On Termux this will choose the pip command if Fetchtastic was installed via pip, otherwise it selects the pipx upgrade command. On non-Termux platforms it returns the pipx upgrade command.
+    Returns:
+        str: Shell command to run to upgrade Fetchtastic.
     """
     if is_termux():
         # Check how fetchtastic is installed in Termux
@@ -1906,15 +1915,14 @@ def get_upgrade_command() -> str:
 
 def should_recommend_setup() -> Tuple[bool, str, Optional[str], Optional[str]]:
     """
-    Determine whether running the interactive setup should be recommended.
-
-    Checks for an existing configuration and compares the recorded setup version to the currently installed package version.
-    Returns a tuple (should_recommend, reason, last_setup_version, current_version):
-
-    - should_recommend (bool): True if setup is recommended (no config, missing recorded setup version, version changed, or an error occurred); False if setup appears up-to-date.
-    - reason (str): Short human-readable explanation for the recommendation.
-    - last_setup_version (str | None): Version value stored in the configuration under "LAST_SETUP_VERSION", or None if unavailable.
-    - current_version (str | None): Currently installed fetchtastic package version as reported by importlib.metadata, or None if it could not be determined.
+    Decides whether the interactive setup wizard should be recommended.
+    
+    Returns:
+        tuple:
+            should_recommend (bool): `True` if setup should be recommended (no configuration found, no recorded setup version, installed package version differs from recorded version, or an error occurred); `False` if the recorded setup version matches the installed package.
+            reason (str): Short human-readable explanation for the recommendation.
+            last_setup_version (Optional[str]): Version string stored in configuration under `LAST_SETUP_VERSION`, or `None` if unavailable.
+            current_version (Optional[str]): Installed fetchtastic package version as reported by importlib.metadata, or `None` if it cannot be determined.
     """
     try:
         config = load_config()
@@ -1944,10 +1952,13 @@ def should_recommend_setup() -> Tuple[bool, str, Optional[str], Optional[str]]:
 
 def get_version_info() -> Tuple[str, Optional[str], bool]:
     """
-    Retrieves the current and latest Fetchtastic version information and update status.
-
+    Return the installed Fetchtastic version, the latest available version (if known), and whether an update is available.
+    
     Returns:
-        A tuple of (current_version, latest_version, update_available), where update_available is True if a newer version is available.
+        tuple: (current_version, latest_version, update_available)
+            current_version (str): Installed package version or "unknown" if it cannot be determined.
+            latest_version (Optional[str]): Latest version from the registry, or `None` on network/error.
+            update_available (bool): `True` if a newer version is available, `False` otherwise.
     """
     current_version, latest_version, update_available = check_for_updates()
 
@@ -1958,10 +1969,12 @@ def get_version_info() -> Tuple[str, Optional[str], bool]:
 
 def migrate_config() -> bool:
     """
-    Migrates the configuration from the old location to the new location.
-
+    Move a legacy configuration file from the old location to the current CONFIG_FILE path and remove the legacy file on success.
+    
+    Creates the new config directory if needed, writes the migrated YAML configuration to CONFIG_FILE, and logs errors if migration fails or if the legacy file cannot be removed after a successful migration.
+    
     Returns:
-        bool: True if migration was successful, False otherwise.
+        True if migration succeeded and the legacy file was removed or handled, `False` otherwise.
     """
     # Import here to avoid circular imports
     from fetchtastic.log_utils import logger
@@ -2338,11 +2351,12 @@ def create_config_shortcut(config_file_path: str, target_dir: str) -> bool:
 
 def create_startup_shortcut() -> bool:
     """
-    Creates a shortcut to run fetchtastic on Windows startup.
-    Only works on Windows.
-
+    Create a Windows startup shortcut that runs Fetchtastic at user login.
+    
+    This attempts to create a minimized shortcut in the current user's Startup folder that runs a batch wrapper which invokes the `fetchtastic download` command. Has no effect on non-Windows systems or when the required Windows helper modules are not available.
+    
     Returns:
-        bool: True if shortcut was created successfully, False otherwise
+        bool: `True` if the shortcut was created successfully, `False` otherwise.
     """
     if platform.system() != "Windows" or not WINDOWS_MODULES_AVAILABLE:
         return False
@@ -2401,15 +2415,15 @@ def create_startup_shortcut() -> bool:
 
 def copy_to_clipboard_func(text: Optional[str]) -> bool:
     """
-    Place the given text on the system clipboard using a platform-appropriate mechanism.
-
-    Supports Termux (termux-clipboard-set), Windows (win32clipboard when available), macOS (pbcopy), and Linux (xclip or xsel). Falls back to logging a warning and returning False when no supported mechanism is available or an error occurs.
-
+    Copy the provided text to the system clipboard using a platform-appropriate mechanism.
+    
+    Supports Termux, Windows (when win32 modules are available), macOS (pbcopy), and Linux (xclip or xsel). If no supported mechanism is available or an error occurs, nothing is copied.
+    
     Parameters:
-        text (str): The text to copy to the clipboard.
-
+        text (Optional[str]): The text to copy. If `None`, the function does nothing.
+    
     Returns:
-        bool: `True` if the text was copied to the clipboard, `False` otherwise.
+        bool: `True` if the text was successfully copied to the clipboard, `False` otherwise.
     """
     if text is None:
         return False
@@ -2486,7 +2500,9 @@ def copy_to_clipboard_func(text: Optional[str]) -> bool:
 
 def install_termux_packages() -> None:
     """
-    Installs required packages in Termux environment.
+    Ensure Termux has termux-api, termux-services, and cronie installed.
+    
+    Checks for the required Termux utilities using `shutil.which` and installs any missing packages via the `pkg` package manager by invoking `pkg install`. May raise subprocess.CalledProcessError if the underlying package installation command fails.
     """
     # Install termux-api, termux-services, and cronie if they are not installed
     packages_to_install = []
@@ -2509,12 +2525,11 @@ def install_termux_packages() -> None:
 
 def setup_storage() -> None:
     """
-    Run termux-setup-storage in Termux to grant storage permissions.
-
-    This function is intended for Termux environments only. On other platforms, it prints a message that it's not supported.
-
-    Returns:
-        None
+    Invoke Termux's storage permission flow to grant the app access to shared storage.
+    
+    On Termux, this runs the system prompt (termux-setup-storage) and prints status messages.
+    On non-Termux platforms, prints a message indicating the operation is not supported.
+    If the setup command fails, an informative message is printed advising the user to grant permissions when prompted.
     """
     # Run termux-setup-storage
     print("Setting up Termux storage access...")
@@ -2527,9 +2542,9 @@ def setup_storage() -> None:
 
 def install_crond() -> None:
     """
-    Install and enable the Termux crond service for running cron jobs.
-
-    This function is intended for Termux environments only. On other platforms, it does nothing.
+    Install and enable the Termux crond service.
+    
+    On Termux, installs the cronie package if it is not present and enables the crond service; on non-Termux platforms this function has no effect.
     """
     if is_termux():
         try:
@@ -2726,9 +2741,9 @@ def setup_boot_script() -> None:
 
 def remove_boot_script() -> None:
     """
-    Remove the boot script if it exists.
-
-    This function is intended for Termux environments only. On other platforms, it does nothing.
+    Delete the Termux boot script used to run Fetchtastic on device startup.
+    
+    If the file ~/.termux/boot/fetchtastic.sh exists, it is removed; on non-Termux systems this function has no effect.
     """
     boot_script = os.path.expanduser("~/.termux/boot/fetchtastic.sh")
     if os.path.exists(boot_script):
@@ -2898,12 +2913,12 @@ def check_any_cron_jobs_exist(*, crontab_path: str = "crontab"):
 
 def check_boot_script_exists() -> bool:
     """
-    Check if the boot script exists.
-
-    This function is intended for Termux environments only. On other platforms, it returns False.
-
+    Determine whether the Termux boot script for Fetchtastic exists.
+    
+    This checks for the file at ~/.termux/boot/fetchtastic.sh; on non-Termux platforms the path will not exist and the function returns False.
+    
     Returns:
-        bool: True if boot script exists, False otherwise
+        True if the boot script file exists at ~/.termux/boot/fetchtastic.sh, False otherwise.
     """
     boot_script = os.path.expanduser("~/.termux/boot/fetchtastic.sh")
     return os.path.exists(boot_script)
@@ -2912,13 +2927,13 @@ def check_boot_script_exists() -> bool:
 @cron_check_command_required
 def check_cron_job_exists(*, crontab_path: str = "crontab"):
     """
-    Determine whether any Fetchtastic cron entries (excluding `@reboot` lines) exist in the current user's crontab.
-
+    Determine whether any Fetchtastic cron entries exist in the current user's crontab (ignoring '@reboot' lines).
+    
     Parameters:
-        crontab_path (str): Path or command name for the `crontab` executable injected by the caller.
-
+        crontab_path (str): Path or command name for the `crontab` executable to invoke.
+    
     Returns:
-        `true` if any matching Fetchtastic cron entries are found (excluding `@reboot` lines), `false` otherwise.
+        True if any matching Fetchtastic cron entries are found (excluding lines that start with '@reboot'), False otherwise.
     """
     try:
         result = subprocess.run(
@@ -2943,21 +2958,21 @@ def check_cron_job_exists(*, crontab_path: str = "crontab"):
 
 def load_config(directory: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """
-    Load and return configuration from YAML file.
-
-    Looks for configuration in the specified directory (if provided),
-    or in the new platformdirs location (CONFIG_FILE) if it exists,
-    otherwise in the legacy location (OLD_CONFIG_FILE).
-    If directory is provided and the config file exists there, loads it.
-    If no directory is provided, checks new location first, then legacy.
-
+    Load configuration from a YAML file and return it as a dictionary.
+    
+    If `directory` is provided, looks for CONFIG_FILE_NAME in that directory and loads it.
+    Otherwise checks the new platform-specific CONFIG_FILE first, then the legacy OLD_CONFIG_FILE.
+    When a configuration is loaded, the global BASE_DIR is updated from the config or set to
+    the provided directory. When a config is found in a non-standard or legacy location,
+    the function may print a message suggesting migration to the standard CONFIG_FILE location.
+    
     Parameters:
-        directory (str, optional): Directory to look for configuration file.
-                                     If not provided, checks default locations.
-
+        directory (str | None): Optional directory to load CONFIG_FILE_NAME from. If omitted,
+                                default locations (CONFIG_FILE then OLD_CONFIG_FILE) are used.
+    
     Returns:
-        dict | None: Parsed configuration dictionary, or None if no config file found
-                      or if the file could not be parsed.
+        dict | None: Parsed configuration dictionary if a config file was found and parsed,
+                     otherwise `None`.
     """
     global BASE_DIR
 

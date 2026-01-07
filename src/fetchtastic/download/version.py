@@ -959,16 +959,18 @@ def _parse_new_json_format(
     tracking_data: Dict[str, Any],
 ) -> Tuple[List[str], Optional[str], Optional[str]]:
     """
-    Parse prerelease tracking JSON data in the new format into commits, current release, and last-updated timestamp.
-
+    Parse prerelease tracking JSON in the new format and return its normalized components.
+    
+    Parses a prerelease tracking JSON object and extracts:
+    - commits: normalized list of commit identifiers,
+    - current_release: normalized current prerelease version prefixed with "v" when present, or None,
+    - last_updated: ISO 8601 timestamp string when the tracking was last updated, or None.
+    
     Parameters:
-        tracking_data (Dict[str, Any]): Parsed JSON object representing prerelease tracking information.
-
+        tracking_data (Dict[str, Any]): Parsed prerelease tracking JSON object.
+    
     Returns:
-        Tuple[List[str], Optional[str], Optional[str]]: A tuple with
-            - commits: list of commit identifiers (strings),
-            - current_release: normalized current prerelease version string or None,
-            - last_updated: ISO 8601 timestamp string when the tracking was last updated, or None.
+        Tuple[List[str], Optional[str], Optional[str]]: (commits, current_release, last_updated)
     """
     return _version_manager.parse_legacy_prerelease_tracking(tracking_data)
 
@@ -978,16 +980,16 @@ def _read_prerelease_tracking_data(
 ) -> tuple[list[str], Optional[str], Optional[str]]:
     # This function is used by tests
     """
-    Read a prerelease tracking JSON file and extract commits, the current release tag, and last-updated timestamp.
-
+    Read a prerelease tracking JSON file and extract the commits list, current prerelease tag, and last-updated timestamp.
+    
     Parameters:
         tracking_file (str): Path to the prerelease tracking JSON file.
-
+    
     Returns:
-        tuple: A 3-tuple (commits, current_release, last_updated) where
-            commits (List[str]) is the list of commit identifiers (empty if none or on error),
-            current_release (Optional[str]) is the current prerelease version tag or None,
-            last_updated (Optional[str]) is the ISO timestamp string from the file or None.
+        tuple[list[str], Optional[str], Optional[str]]: A 3-tuple (commits, current_release, last_updated) where
+            commits is a list of commit identifiers (empty if none, missing, or on error),
+            current_release is the current prerelease version tag (or `None` if not present or on error),
+            last_updated is the ISO timestamp string from the file (or `None` if not present or on error).
     """
     commits: List[str] = []
     current_release: Optional[str] = None

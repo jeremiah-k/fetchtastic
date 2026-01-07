@@ -201,10 +201,12 @@ def clean_repo_directory(download_dir: str) -> bool:  # log_message_func removed
 
 def main(config: Dict[str, Any]) -> None:  # log_message_func removed
     """
-    Run the repository downloader flow: launch the interactive file browser, download selected files into the configured download directory, and on Windows optionally prompt to open the download folder.
-
+    Run the repository downloader flow that lets the user select repository files and downloads them to the configured directory.
+    
+    Reads "DOWNLOAD_DIR" from the provided config, launches the interactive repository file browser, downloads the selected files into the repository downloads directory, logs outcomes, and on Windows optionally prompts the user to open the download folder.
+    
     Parameters:
-        config (dict): Configuration mapping that must include the key "DOWNLOAD_DIR" with the base download directory path.
+        config (Dict[str, Any]): Configuration mapping that must include the key "DOWNLOAD_DIR" with the base download directory path.
     """
     # Removed local log_message_func definition
 
