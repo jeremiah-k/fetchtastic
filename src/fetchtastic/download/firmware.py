@@ -854,7 +854,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
     def get_latest_release_tag(self) -> Optional[str]:
         """
         Read the tracked latest firmware release tag from the local tracking JSON file.
-        
+
         Returns:
             latest_version (Optional[str]): The stored latest release tag, or `None` if the tracking file does not exist or contains invalid JSON.
         """

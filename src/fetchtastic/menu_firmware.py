@@ -49,10 +49,10 @@ def fetch_firmware_assets() -> list[str]:
 def select_assets(assets: list[str]) -> dict[str, list[str]] | None:
     """
     Show an interactive multiselect of firmware filenames and return the selected base-name patterns.
-    
+
     Parameters:
         assets (list[str]): Firmware asset filenames (typically from the GitHub releases API).
-    
+
     Returns:
         dict[str, list[str]]: Dictionary {"selected_assets": [base_pattern, ...]} containing base-name patterns for the chosen files.
         None: If the user selects no files.
@@ -81,7 +81,7 @@ Note: These are files from the latest release. Version numbers may change in oth
 def run_menu() -> dict[str, list[str]] | None:
     """
     Execute the firmware asset selection flow and produce base-name patterns for chosen assets.
-    
+
     Returns:
         dict[str, list[str]]: A dictionary with key "selected_assets" mapping to a list of selected asset base-name patterns.
         `None` if no assets were selected or an error occurred.

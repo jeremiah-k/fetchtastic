@@ -131,7 +131,7 @@ class CacheManager:
     def atomic_write_text(self, file_path: str, content: str) -> bool:
         """
         Atomically writes the provided text to the specified file, replacing the target only after the full content has been written.
-        
+
         Returns:
             `True` if the file was written and moved into place, `False` otherwise.
         """
@@ -139,7 +139,7 @@ class CacheManager:
         def _write_text_content(f: IO[str]) -> None:
             """
             Write the module's preset text content to the provided writable text file-like object.
-            
+
             Parameters:
                 f (IO[str]): A writable text file-like object that will receive the content. The function does not close the file.
             """
@@ -150,7 +150,7 @@ class CacheManager:
     def atomic_write_json(self, file_path: str, data: Dict[str, Any]) -> bool:
         """
         Atomically write a mapping as JSON to the specified filesystem path.
-        
+
         Returns:
             bool: `True` if the file was written successfully, `False` otherwise.
         """
@@ -159,7 +159,7 @@ class CacheManager:
     def read_json(self, file_path: str) -> Optional[Dict[str, Any]]:
         """
         Load and parse a JSON object from the specified file path.
-        
+
         Returns:
             dict: The parsed top-level JSON object as a mapping, or `None` if the file does not exist, cannot be read/decoded, or its top-level value is not a JSON object.
         """
@@ -184,11 +184,11 @@ class CacheManager:
     ) -> Optional[Dict[str, Any]]:
         """
         Load a JSON object from disk and remap legacy top-level keys to new names.
-        
+
         Parameters:
             file_path (str): Path to the JSON file to read.
             key_mapping (Optional[Dict[str, str]]): Mapping from legacy key -> new key. For each pair, if the legacy key exists and the new key is absent, the value is copied to the new key in the returned object.
-        
+
         Returns:
             Optional[Dict[str, Any]]: The parsed JSON object with remapped keys, or `None` if the file could not be read or did not contain a top-level object.
         """
@@ -349,15 +349,15 @@ class CacheManager:
     ) -> List[str]:
         """
         Get directory names under the meshtastic.github.io repository path, using a short on-disk TTL cache.
-        
+
         Uses cached data when fresh; queries the GitHub Contents API and updates the cache when missing or stale. On malformed responses or request failures this function returns an empty list.
-        
+
         Parameters:
             path: Repository path relative to the site root (leading/trailing slashes are ignored).
             force_refresh: If True, skip the on-disk cache and fetch fresh data from the API.
             github_token: Personal access token to use for the GitHub API call; if None an environment token may be used.
             allow_env_token: Whether to allow using a token from the environment when `github_token` is not provided.
-        
+
         Returns:
             List[str]: Directory names found at the requested path; empty list on error or if no directories are present.
         """
@@ -446,9 +446,9 @@ class CacheManager:
         def fetch_contents() -> List[Dict[str, Any]]:
             """
             Fetches and returns JSON entries from a GitHub API endpoint.
-            
+
             If the HTTP response body is not a JSON list, an empty list is returned. Only items that are JSON objects (mappings) are included in the result.
-            
+
             Returns:
                 List[Dict[str, Any]]: Parsed JSON objects from the response; empty list if the response is not a JSON list.
             """
@@ -695,7 +695,7 @@ class CacheManager:
     def clear_all_caches(self) -> bool:
         """
         Removes all `.json` and `.tmp` files from the instance cache directory.
-        
+
         Returns:
             bool: `True` if all targeted files were removed successfully or none were present, `False` if the directory could not be accessed or any removal failed.
         """
@@ -720,11 +720,11 @@ class CacheManager:
     ) -> bool:
         """
         Write JSON data to a file atomically and add a UTC ISO 8601 timestamp under the given key.
-        
+
         Parameters:
             data (Dict[str, Any]): Mapping to serialize into the JSON file; a shallow copy is made before adding the timestamp.
             timestamp_key (str): Key under which the current UTC ISO 8601 timestamp will be inserted.
-        
+
         Returns:
             bool: True if the file was written successfully, False otherwise.
         """
@@ -739,13 +739,13 @@ class CacheManager:
     ) -> Optional[Dict[str, Any]]:
         """
         Determine whether a JSON cache file is still valid and return its parsed contents if so.
-        
+
         Checks the cache file for a timestamp under "last_updated", "timestamp", or "cached_at". If a timestamp is present it is parsed as an ISO-8601 UTC datetime and the cache is considered expired when that timestamp is more than expiry_hours in the past. If no timestamp key is present the cache is treated as valid. If the file is missing, unreadable, or the timestamp is malformed, the function returns None.
-        
+
         Parameters:
             file_path (str): Path to the JSON cache file to read.
             expiry_hours (float): Number of hours before a cached entry is considered expired.
-        
+
         Returns:
             Optional[Dict[str, Any]]: The parsed cache dictionary when present and not expired, `None` otherwise.
         """
@@ -846,14 +846,14 @@ class CacheManager:
     ) -> bool:
         """
         Validate that a cache mapping contains all required top-level keys.
-        
+
         Parameters:
             cache_data (Dict[str, Any]): The cache mapping to validate.
             required_keys (List[str]): List of keys that must be present at the top level of `cache_data`.
-        
+
         Returns:
             bool: `True` if every key in `required_keys` exists in `cache_data`, `False` otherwise.
-        
+
         Notes:
             Logs a warning for the first missing key encountered.
         """

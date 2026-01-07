@@ -440,12 +440,12 @@ class ReleaseHistoryManager:
     def _get_oldest_published_at(self, releases: List[Release]) -> Optional[datetime]:
         """
         Get the earliest UTC `published_at` timestamp among the provided releases.
-        
+
         Parses each release's `published_at` value and ignores missing or unparsable timestamps.
-        
+
         Parameters:
             releases (List[Release]): Releases whose `published_at` values will be parsed and considered.
-        
+
         Returns:
             Optional[datetime]: The earliest parsed UTC `published_at` datetime, or `None` if no valid timestamps are present.
         """

@@ -41,43 +41,50 @@ class HashAlgorithm(Protocol):
     digest_size: int
     block_size: int
 
-    def update(self, data: bytes) -> None: """
-Update the hash object's internal state with the given bytes.
+    def update(self, data: bytes) -> None:
+        """
+        Update the hash object's internal state with the given bytes.
 
-Parameters:
-    data (bytes): Input bytes to incorporate into the ongoing digest computation.
-"""
-...
-    def digest(self) -> bytes: """
-Return the binary digest for the current hash state.
+        Parameters:
+            data (bytes): Input bytes to incorporate into the ongoing digest computation.
+        """
+        ...
 
-Returns:
-    bytes: The raw hash digest corresponding to the current state of the hash object.
-"""
-...
-    def hexdigest(self) -> str: """
-Return the hexadecimal digest string representing the hash's current state.
+    def digest(self) -> bytes:
+        """
+        Return the binary digest for the current hash state.
 
-Returns:
-    str: Hexadecimal string of the digest computed from the data processed so far.
-"""
-...
-    def copy(self) -> "HashAlgorithm": """
-Create an independent copy of the hash object preserving its current internal state.
+        Returns:
+            bytes: The raw hash digest corresponding to the current state of the hash object.
+        """
+        ...
 
-Returns:
-    HashAlgorithm: A new hash object for the same algorithm with the same internal state as the original.
-"""
-...
+    def hexdigest(self) -> str:
+        """
+        Return the hexadecimal digest string representing the hash's current state.
+
+        Returns:
+            str: Hexadecimal string of the digest computed from the data processed so far.
+        """
+        ...
+
+    def copy(self) -> "HashAlgorithm":
+        """
+        Create an independent copy of the hash object preserving its current internal state.
+
+        Returns:
+            HashAlgorithm: A new hash object for the same algorithm with the same internal state as the original.
+        """
+        ...
 
 
 def strip_unwanted_chars(text: str) -> str:
     """
     Remove characters outside the ASCII range from the given text.
-    
+
     Parameters:
         text (str): Input string to sanitize; characters with code point greater than 127 are removed.
-    
+
     Returns:
         str: The sanitized string containing only ASCII characters.
     """
@@ -174,7 +181,7 @@ def _find_asset_by_name(
 ) -> dict[str, Any] | None:
     """
     Locate an asset entry with the given name in release metadata.
-    
+
     Returns:
         The matching asset dictionary if found, `None` otherwise.
     """
@@ -408,12 +415,12 @@ def _atomic_write(
 ) -> bool:
     """
     Atomically write content to a target path by writing to a temporary file and replacing the target on success.
-    
+
     Parameters:
         file_path (str): Destination filesystem path to write.
         writer_func (Callable[[Any], None]): Callable that receives an open text file-like object (opened for writing, UTF-8) and writes the desired content.
         suffix (str): Suffix to use for the temporary file name (default ".tmp").
-    
+
     Returns:
         bool: `True` if the temporary write and atomic replace succeeded, `False` otherwise.
     """
@@ -487,7 +494,7 @@ class FileOperations:
         def _write_content(f: IO[str]) -> None:
             """
             Write the surrounding scope's `content` string to the provided writable text file-like object.
-            
+
             Parameters:
                 f (IO[str]): Writable text file-like object that will receive the content.
             """
@@ -616,7 +623,7 @@ class FileOperations:
     def _is_safe_archive_member(self, member_name: str) -> bool:
         """
         Determine whether an archive member name is safe to extract.
-        
+
         Returns:
             True if the member name does not contain absolute paths, parent-directory references (".."), or null bytes; False otherwise.
         """
@@ -646,13 +653,13 @@ class FileOperations:
     ) -> bool:
         """
         Validate include and exclude glob patterns to ensure they are safe for archive extraction.
-        
+
         Checks that each pattern is non-empty, does not contain path-separator characters, uses a reasonable number of wildcards, and compiles as a valid glob pattern.
-        
+
         Parameters:
             patterns (list[str]): Glob patterns that select files to extract.
             exclude_patterns (list[str]): Glob patterns that exclude files from extraction.
-        
+
         Returns:
             bool: `True` if all patterns pass validation, `False` otherwise.
         """
@@ -828,7 +835,7 @@ class FileOperations:
                 def hash_func() -> HashAlgorithm:
                     """
                     Create a new hash object for the configured algorithm.
-                    
+
                     Returns:
                         HashAlgorithm: A fresh hash object suitable for incremental `update` calls and digest computation.
                     """
@@ -918,7 +925,7 @@ class FileOperations:
     def get_file_size(self, file_path: str) -> int | None:
         """
         Return the size of the given file in bytes.
-        
+
         Returns:
             The file size in bytes, or None if the file is missing or cannot be read.
         """

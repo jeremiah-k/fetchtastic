@@ -52,12 +52,12 @@ def fetch_apk_assets() -> list[str]:
 def select_assets(assets: list[str]) -> dict[str, list[str]] | None:
     """
     Present an interactive multi-select prompt of APK filenames and return selected base-name patterns.
-    
+
     Displays the provided APK filenames for multi-selection; for each chosen filename this function computes a base-name pattern using `extract_base_name` and returns a dictionary `{"selected_assets": [base_pattern, ...]`. If no assets are selected, the function prints a short message and returns `None`.
-    
+
     Parameters:
         assets (list[str]): APK asset filenames to present for selection.
-    
+
     Returns:
         dict[str, list[str]] | None: `{"selected_assets": [base_pattern, ...]}` when one or more assets are selected, `None` if no selection was made.
     """
@@ -85,10 +85,10 @@ Note: These are files from the latest release. Version numbers may change in oth
 def run_menu() -> dict[str, list[str]] | None:
     """
     Show an interactive APK selection menu and return the chosen base-name patterns.
-    
+
     Presents a multi-select prompt for available APK filenames and returns a dictionary
     with selected base-name patterns when one or more items are chosen.
-    
+
     Returns:
         dict[str, list[str]]: A mapping with key "selected_assets" to the list of selected
             base-name patterns (e.g., {"selected_assets": [...]}).

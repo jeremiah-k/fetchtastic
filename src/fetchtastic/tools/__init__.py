@@ -6,10 +6,10 @@ import importlib.resources
 def get_batch_file_path(filename: str) -> str:
     """
     Get the filesystem path to a batch file located in the fetchtastic.tools package resources.
-    
+
     Parameters:
         filename (str): Name of the resource file to locate within the package.
-    
+
     Returns:
         str: Filesystem path to the requested batch file.
     """
