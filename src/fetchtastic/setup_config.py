@@ -2355,7 +2355,7 @@ def create_startup_shortcut() -> bool:
             return False
 
         # Get the startup folder path
-        startup_folder = winshell.startup()
+        startup_folder: str = winshell.startup()
 
         # Create batch files in the config directory instead of the startup folder
         batch_dir = os.path.join(CONFIG_DIR, "batch")
