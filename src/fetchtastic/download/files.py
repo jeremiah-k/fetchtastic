@@ -15,7 +15,7 @@ import shutil
 import tempfile
 import zipfile
 from pathlib import Path
-from typing import IO, Any, Callable
+from typing import IO, Any, Callable, Protocol
 
 from fetchtastic.constants import (
     EXECUTABLE_PERMISSIONS,
@@ -32,6 +32,19 @@ from fetchtastic.utils import (
 )
 
 NON_ASCII_RX = re.compile(r"[^\x00-\x7F]+")
+
+
+class HashAlgorithm(Protocol):
+    """Protocol for hash objects returned by hashlib."""
+
+    name: str
+    digest_size: int
+    block_size: int
+
+    def update(self, data: bytes) -> None: ...
+    def digest(self) -> bytes: ...
+    def hexdigest(self) -> str: ...
+    def copy(self) -> "HashAlgorithm": ...
 
 
 def strip_unwanted_chars(text: str) -> str:
@@ -171,6 +184,8 @@ def _is_release_complete(
     if not isinstance(assets, list):
         return False
     for asset in assets:
+        if not isinstance(asset, dict):
+            continue
         file_name = asset.get("name", "")
         if not file_name:
             continue
@@ -779,12 +794,12 @@ class FileOperations:
             # Validate algorithm is available
             try:
 
-                def hash_func() -> Any:
+                def hash_func() -> HashAlgorithm:
                     """
                     Create and return a new hash object for the configured algorithm.
 
                     Returns:
-                        A new hash object suitable for incremental updates and digest computation using selected algorithm.
+                        HashAlgorithm: A new hash object suitable for incremental updates and digest computation.
                     """
                     return hashlib.new(algorithm.lower())
 

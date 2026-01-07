@@ -181,7 +181,9 @@ def _process_repo_contents(
         return firmware_commit_times.get(name.lower())
 
     # Sort firmware directories by commit time when available, otherwise by version.
-    def _fw_dir_key(d: dict[str, Any]):
+    def _fw_dir_key(
+        d: dict[str, Any],
+    ) -> tuple[int, float, tuple, str] | tuple[tuple, str]:
         name = d["name"]
         version_str = name.removeprefix(FIRMWARE_DIR_PREFIX)
         version_tuple = version_manager.get_release_tuple(version_str) or ()
