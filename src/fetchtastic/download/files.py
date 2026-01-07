@@ -41,21 +41,45 @@ class HashAlgorithm(Protocol):
     digest_size: int
     block_size: int
 
-    def update(self, data: bytes) -> None: ...
-    def digest(self) -> bytes: ...
-    def hexdigest(self) -> str: ...
-    def copy(self) -> "HashAlgorithm": ...
+    def update(self, data: bytes) -> None: """
+Update the hash object's internal state with the given bytes.
+
+Parameters:
+    data (bytes): Input bytes to incorporate into the ongoing digest computation.
+"""
+...
+    def digest(self) -> bytes: """
+Return the binary digest for the current hash state.
+
+Returns:
+    bytes: The raw hash digest corresponding to the current state of the hash object.
+"""
+...
+    def hexdigest(self) -> str: """
+Return the hexadecimal digest string representing the hash's current state.
+
+Returns:
+    str: Hexadecimal string of the digest computed from the data processed so far.
+"""
+...
+    def copy(self) -> "HashAlgorithm": """
+Create an independent copy of the hash object preserving its current internal state.
+
+Returns:
+    HashAlgorithm: A new hash object for the same algorithm with the same internal state as the original.
+"""
+...
 
 
 def strip_unwanted_chars(text: str) -> str:
     """
-    Remove non-ASCII characters from a string.
-
+    Remove characters outside the ASCII range from the given text.
+    
     Parameters:
-        text (str): The input string to sanitize.
-
+        text (str): Input string to sanitize; characters with code point greater than 127 are removed.
+    
     Returns:
-        str: The input string with all non-ASCII characters removed.
+        str: The sanitized string containing only ASCII characters.
     """
     return NON_ASCII_RX.sub("", text)
 
@@ -148,7 +172,12 @@ def _get_existing_prerelease_dirs(prerelease_dir: str) -> list[str]:
 def _find_asset_by_name(
     release_data: dict[str, Any], asset_name: str
 ) -> dict[str, Any] | None:
-    """Find an asset dict by name in release data."""
+    """
+    Locate an asset entry with the given name in release metadata.
+    
+    Returns:
+        The matching asset dictionary if found, `None` otherwise.
+    """
     assets = release_data.get("assets")
     if not isinstance(assets, list):
         return None
@@ -378,15 +407,15 @@ def _atomic_write(
     file_path: str, writer_func: Callable[[Any], None], suffix: str = ".tmp"
 ) -> bool:
     """
-    Write data to a file atomically by writing to a temporary file and atomically replacing the target on success.
-
+    Atomically write content to a target path by writing to a temporary file and replacing the target on success.
+    
     Parameters:
-        file_path (str): Destination file path to be written.
-        writer_func (Callable[[Any], None]): Callable that receives an open text file-like object and writes the desired content to it.
+        file_path (str): Destination filesystem path to write.
+        writer_func (Callable[[Any], None]): Callable that receives an open text file-like object (opened for writing, UTF-8) and writes the desired content.
         suffix (str): Suffix to use for the temporary file name (default ".tmp").
-
+    
     Returns:
-        bool: `True` if the temporary write and atomic replace succeeded, `False` on any error.
+        bool: `True` if the temporary write and atomic replace succeeded, `False` otherwise.
     """
     try:
         temp_fd, temp_path = tempfile.mkstemp(
@@ -457,10 +486,10 @@ class FileOperations:
 
         def _write_content(f: IO[str]) -> None:
             """
-            Write the provided string content to the given writable file-like object.
-
+            Write the surrounding scope's `content` string to the provided writable text file-like object.
+            
             Parameters:
-                f (typing.IO): Writable file-like object to receive the content.
+                f (IO[str]): Writable text file-like object that will receive the content.
             """
             f.write(content)
 
@@ -587,9 +616,9 @@ class FileOperations:
     def _is_safe_archive_member(self, member_name: str) -> bool:
         """
         Determine whether an archive member name is safe to extract.
-
+        
         Returns:
-            `true` if the member name contains no absolute paths, parent-directory references, or null bytes, `false` otherwise.
+            True if the member name does not contain absolute paths, parent-directory references (".."), or null bytes; False otherwise.
         """
         if (
             not member_name
@@ -616,14 +645,16 @@ class FileOperations:
         self, patterns: list[str], exclude_patterns: list[str]
     ) -> bool:
         """
-        Validate inclusion and exclusion glob patterns for safe archive extraction.
-
+        Validate include and exclude glob patterns to ensure they are safe for archive extraction.
+        
+        Checks that each pattern is non-empty, does not contain path-separator characters, uses a reasonable number of wildcards, and compiles as a valid glob pattern.
+        
         Parameters:
-            patterns (list[str]): Glob patterns of files to include during extraction.
-            exclude_patterns (list[str]): Glob patterns of files to exclude during extraction.
-
+            patterns (list[str]): Glob patterns that select files to extract.
+            exclude_patterns (list[str]): Glob patterns that exclude files from extraction.
+        
         Returns:
-            bool: True if all provided patterns are well-formed and do not pose path-traversal or overly-broad wildcard risks, False otherwise.
+            bool: `True` if all patterns pass validation, `False` otherwise.
         """
         try:
             # Check for empty patterns that might cause issues
@@ -796,10 +827,10 @@ class FileOperations:
 
                 def hash_func() -> HashAlgorithm:
                     """
-                    Create and return a new hash object for the configured algorithm.
-
+                    Create a new hash object for the configured algorithm.
+                    
                     Returns:
-                        HashAlgorithm: A new hash object suitable for incremental updates and digest computation.
+                        HashAlgorithm: A fresh hash object suitable for incremental `update` calls and digest computation.
                     """
                     return hashlib.new(algorithm.lower())
 
@@ -886,10 +917,10 @@ class FileOperations:
 
     def get_file_size(self, file_path: str) -> int | None:
         """
-        Retrieve the size of a file in bytes.
-
+        Return the size of the given file in bytes.
+        
         Returns:
-            The file size in bytes, or None if the file does not exist or cannot be accessed.
+            The file size in bytes, or None if the file is missing or cannot be read.
         """
         try:
             return os.path.getsize(file_path)

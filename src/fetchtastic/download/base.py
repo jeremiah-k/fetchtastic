@@ -73,10 +73,10 @@ class BaseDownloader(Downloader, ABC):
 
     def _get_versions_to_keep(self) -> int:
         """
-        Return how many release versions should be retained.
-
-        Reads `VERSIONS_TO_KEEP` from the downloader configuration and returns its integer value; defaults to 5 when unset.
-
+        Number of release versions to retain.
+        
+        Reads the `VERSIONS_TO_KEEP` configuration value and returns it as an integer; defaults to 5 when unset.
+        
         Returns:
             int: Number of versions to keep.
         """

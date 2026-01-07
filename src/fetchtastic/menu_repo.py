@@ -32,11 +32,21 @@ class CursesScreen(Protocol):
     """Protocol for curses screen objects used by MenuPicker."""
 
     def getmaxyx(self) -> tuple[int, int]:
-        """Get the screen size."""
+        """
+        Return the current screen dimensions.
+        
+        Returns:
+            (rows, cols): A tuple with the number of rows (height) and columns (width) of the screen in character cells.
+        """
         ...
 
     def getch(self) -> int:
-        """Get a character from the keyboard."""
+        """
+        Read a single key code from the screen input.
+        
+        Returns:
+            int: Integer key code for the pressed key.
+        """
         ...
 
 
@@ -57,6 +67,12 @@ class MenuPicker(Picker):
     """
 
     def _page_step(self, screen: CursesScreen) -> int:
+        """
+        Compute how many rows to move when paging through the menu based on available screen rows and title lines.
+        
+        Returns:
+            int: Number of rows to move for a page step (at least 1).
+        """
         max_y, max_x = screen.getmaxyx()
         title_lines = len(self.get_title_lines(max_width=max_x))
         max_rows = max_y - self.position.y
@@ -64,6 +80,15 @@ class MenuPicker(Picker):
         return max(1, step)
 
     def _is_action_option(self, option: Option) -> bool:
+        """
+        Check whether a menu Option represents a navigation action ('back' or 'quit').
+        
+        Parameters:
+            option (Option): The menu option to inspect.
+        
+        Returns:
+            bool: `True` if `option` is an Option whose `value` is a dict with `"type"` equal to `"back"` or `"quit"`, `False` otherwise.
+        """
         if not isinstance(option, Option):
             return False
         if not isinstance(option.value, dict):
@@ -71,6 +96,19 @@ class MenuPicker(Picker):
         return option.value.get("type") in {"back", "quit"}
 
     def run_loop(self, screen: CursesScreen, _position: Position) -> Any:
+        """
+        Run the picker's interactive input loop, handling navigation, selection, and quit actions.
+        
+        This repeatedly draws the UI, reads a key from the provided screen, and updates or finalizes the picker's selection state according to navigation keys (page up/down, up/down), selection keys, enter, and configured quit keys.
+        
+        Parameters:
+            screen (CursesScreen): Screen-like object used for drawing and reading key input.
+            _position (Position): Ignored; present for API compatibility.
+        
+        Returns:
+            For single-select mode: a tuple (selected_item, index) when an item is chosen, or (None, -1) if the user quit.
+            For multi-select mode: a list of selected items (or action tuples) when the user confirms, or an empty list if the user quit.
+        """
         while True:
             self.draw(screen)
             c = screen.getch()
@@ -119,6 +157,23 @@ def _pick_menu(
     clear_screen: bool = True,
     quit_keys: list[int] | None = None,
 ) -> Any:
+    """
+    Present a terminal menu and return the user's selection(s).
+    
+    Parameters:
+        options (list[Option]): List of menu options to display.
+        title (str | None): Optional title shown above the menu.
+        indicator (str): Character used to mark the current selection.
+        default_index (int): Index highlighted when the menu opens.
+        multiselect (bool): If True, allow selecting multiple options.
+        min_selection_count (int): Minimum number of items required when multiselect is enabled.
+        clear_screen (bool): If True, clear the screen before drawing the menu.
+        quit_keys (list[int] | None): Additional key codes that trigger quitting/canceling the menu.
+    
+    Returns:
+        Any: For single-select mode, returns the chosen Option, or `(None, -1)` if canceled.
+             For multi-select mode, returns a list of selected Option objects, or an empty list if canceled.
+    """
     picker = MenuPicker(
         options,
         title=title,
@@ -139,10 +194,16 @@ def _process_repo_contents(
     firmware_commit_times: dict[str, datetime] | None = None,
 ) -> list[dict[str, Any]]:
     """
-    Process raw JSON contents from GitHub API and return sorted items.
-
-    When firmware commit timestamps are provided, firmware directories are sorted
-    by commit time (newest first) with version/name fallbacks.
+    Process raw GitHub API content entries into a filtered, sorted list of directory and file items.
+    
+    Filters out entries listed in EXCLUDED_DIRS and EXCLUDED_FILES, converts directories to items with keys `name`, `path`, and `type: "dir"`, and files to items with keys `name`, `path`, `type: "file"`, and `download_url`. Directories are ordered with firmware directories (names starting with FIRMWARE_DIR_PREFIX) first; when `firmware_commit_times` is provided, firmware directories are ordered by commit timestamp (newest first) with release-version and name used as fallbacks. Non-firmware directories and files are sorted alphabetically by name.
+    
+    Parameters:
+        contents (list[dict[str, Any]]): Raw JSON objects returned by the GitHub contents API.
+        firmware_commit_times (dict[str, datetime] | None): Optional mapping from firmware directory name (lowercase) to its commit timestamp used to order firmware directories.
+    
+    Returns:
+        list[dict[str, Any]]: Filtered and sorted list of items representing directories and files ready for display or further processing.
     """
     # Filter for directories and files, excluding specific directories and files
     repo_items = []
@@ -178,12 +239,30 @@ def _process_repo_contents(
     version_manager = _VERSION_MANAGER
 
     def _lookup_commit_time(name: str) -> datetime | None:
+        """
+        Return the commit timestamp associated with a firmware directory name, using a case-insensitive lookup.
+        
+        Parameters:
+        	name (str): Firmware directory name to look up.
+        
+        Returns:
+        	datetime | None: The commit timestamp for the given directory name if present, otherwise `None`.
+        """
         return firmware_commit_times.get(name.lower())
 
     # Sort firmware directories by commit time when available, otherwise by version.
     def _fw_dir_key(
         d: dict[str, Any],
     ) -> tuple[int, float, tuple, str] | tuple[tuple, str]:
+        """
+        Provide a sorting key for a firmware directory entry.
+        
+        Parameters:
+            d (dict[str, Any]): Directory entry dictionary with a "name" key containing the directory name (expected to start with FIRMWARE_DIR_PREFIX).
+        
+        Returns:
+            tuple: A tuple suitable for sorting firmware directories. If firmware commit timestamps are available, returns `(1 if a commit timestamp exists else 0, commit_timestamp (float), version_tuple, name)`; otherwise returns `(version_tuple, name)`.
+        """
         name = d["name"]
         version_str = name.removeprefix(FIRMWARE_DIR_PREFIX)
         version_tuple = version_manager.get_release_tuple(version_str) or ()
@@ -354,9 +433,17 @@ def _build_firmware_commit_times(
     allow_env_token: bool,
 ) -> dict[str, datetime]:
     """
-    Build a mapping of firmware directory names to commit timestamps from recent repo history.
-
-    Uses the prerelease commit history cache to avoid extra API calls.
+    Build a mapping of firmware directory names to commit timestamps using recent repository history.
+    
+    Attempts to fetch recent commits via PrereleaseHistoryManager (using the provided cache and token settings) and returns a mapping from prerelease directory name to its latest commit timestamp. If fetching commits fails, an empty dict is returned.
+    
+    Parameters:
+        cache_manager (CacheManager): Cache manager used to read/write prerelease commit history.
+        github_token (str | None): GitHub token to use for API requests, or None to rely on environment/config.
+        allow_env_token (bool): Whether using a token from the environment is permitted when `github_token` is None.
+    
+    Returns:
+        dict[str, datetime]: Mapping of firmware directory name to commit timestamp; empty on failure.
     """
     prerelease_manager = PrereleaseHistoryManager()
     try:
@@ -377,12 +464,19 @@ def _build_firmware_commit_times(
 
 def select_item(items, current_path=""):
     """
-    Displays a menu for user to select a repository item (directory or file).
-    Returns selected item information.
-
-    Args:
-        items: List of items (directories and files) to display
-        current_path: Current path in repository (for display purposes)
+    Present a navigation menu for repository items and return the user's chosen action or item.
+    
+    Parameters:
+        items (list[dict]): Repository entries where each item has at least a "type" key with value "dir" or "file".
+        current_path (str): Path shown in the menu title to indicate the current directory (empty for root).
+    
+    Returns:
+        dict | None: The selected value:
+          - For directory selection: the directory item dict (contains its metadata).
+          - For choosing files in the current directory: {"type": "current"}.
+          - For going up one level: {"type": "back"}.
+          - For quitting: {"type": "quit"}.
+          - `None` if no valid selection was made.
     """
     if not items:
         print("No items found in repository.")
@@ -437,16 +531,14 @@ def select_files(
     files: list[dict[str, Any]],
 ) -> list[dict[str, Any]] | dict[str, Any] | None:
     """
-    Present a multi-select menu for choosing repository files to download.
-
-    Displays file names with a trailing "[Quit]" option and returns the chosen file descriptors in the same dict form as provided.
-
+    Present a multi-select menu allowing the user to choose repository files for download.
+    
     Parameters:
-        files (list[dict]): List of file dictionaries as returned by the repository API. Each dictionary must include at least the "name" key; other keys (e.g., "download_url", "size") are preserved and returned.
-
+        files (list[dict[str, Any]]): List of file dictionaries from the repository API. Each dictionary must include a "name" key; other keys (e.g., "download_url", "size") are preserved and returned.
+    
     Returns:
-        list[dict] | dict | None: A list of the selected file dictionaries in the same format as `files`,
-        a dict like {"type": "back"} or {"type": "quit"} when navigation actions are chosen,
+        list[dict[str, Any]] | dict[str, Any] | None: A list of the selected file dictionaries in the same format as `files`,
+        a dict like `{"type": "back"}` or `{"type": "quit"}` when a navigation action is chosen,
         or `None` if the user cancels or no files are selected.
     """
     if not files:

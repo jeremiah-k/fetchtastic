@@ -130,21 +130,18 @@ class CacheManager:
 
     def atomic_write_text(self, file_path: str, content: str) -> bool:
         """
-        Write text content to a file atomically.
-
-        Performs an atomic write (via a temporary file and rename) to ensure the target
-        file is replaced only after the complete content has been written.
-
+        Atomically writes the provided text to the specified file, replacing the target only after the full content has been written.
+        
         Returns:
-            bool: `True` if the file was written and moved into place, `False` otherwise.
+            `True` if the file was written and moved into place, `False` otherwise.
         """
 
         def _write_text_content(f: IO[str]) -> None:
             """
-            Write preset text content into the provided writable text file-like object.
-
+            Write the module's preset text content to the provided writable text file-like object.
+            
             Parameters:
-                f (io.TextIOBase): A writable text file-like object that will receive the content.
+                f (IO[str]): A writable text file-like object that will receive the content. The function does not close the file.
             """
             f.write(content)
 
@@ -152,12 +149,8 @@ class CacheManager:
 
     def atomic_write_json(self, file_path: str, data: Dict[str, Any]) -> bool:
         """
-        Atomically write the given mapping to the specified path as JSON.
-
-        Parameters:
-            file_path (str): Destination filesystem path for the JSON file.
-            data (Dict): Mapping to serialize to JSON.
-
+        Atomically write a mapping as JSON to the specified filesystem path.
+        
         Returns:
             bool: `True` if the file was written successfully, `False` otherwise.
         """
@@ -165,10 +158,10 @@ class CacheManager:
 
     def read_json(self, file_path: str) -> Optional[Dict[str, Any]]:
         """
-        Load and parse JSON from the given file path.
-
+        Load and parse a JSON object from the specified file path.
+        
         Returns:
-            dict: Parsed JSON object, or `None` if the file is missing or cannot be read/decoded.
+            dict: The parsed top-level JSON object as a mapping, or `None` if the file does not exist, cannot be read/decoded, or its top-level value is not a JSON object.
         """
         if not os.path.exists(file_path):
             return None
@@ -190,14 +183,14 @@ class CacheManager:
         self, file_path: str, key_mapping: Optional[Dict[str, str]] = None
     ) -> Optional[Dict[str, Any]]:
         """
-        Read a JSON file and return its contents with legacy keys remapped to new keys.
-
+        Load a JSON object from disk and remap legacy top-level keys to new names.
+        
         Parameters:
-            file_path (str): Path to the JSON file.
-            key_mapping (Optional[Dict[str, str]]): Mapping from legacy key names to new key names. If a legacy key exists and the corresponding new key is absent, the value is copied to the new key.
-
+            file_path (str): Path to the JSON file to read.
+            key_mapping (Optional[Dict[str, str]]): Mapping from legacy key -> new key. For each pair, if the legacy key exists and the new key is absent, the value is copied to the new key in the returned object.
+        
         Returns:
-            Optional[Dict]: Parsed JSON object with remapped keys, or None if the file could not be read.
+            Optional[Dict[str, Any]]: The parsed JSON object with remapped keys, or `None` if the file could not be read or did not contain a top-level object.
         """
         data = self.read_json(file_path)
         if data is None or not key_mapping:
@@ -355,18 +348,18 @@ class CacheManager:
         allow_env_token: bool = True,
     ) -> List[str]:
         """
-        Return directory names under the meshtastic.github.io repository path, using a short TTL on-disk cache.
-
-        Retrieves directory entries for the given repository path; if a fresh cached entry exists it will be returned, otherwise the GitHub Contents API is queried and the cache is updated. On malformed responses or request failures an empty list is returned.
-
+        Get directory names under the meshtastic.github.io repository path, using a short on-disk TTL cache.
+        
+        Uses cached data when fresh; queries the GitHub Contents API and updates the cache when missing or stale. On malformed responses or request failures this function returns an empty list.
+        
         Parameters:
-            path (str): Repository path relative to the site root (leading/trailing slashes are ignored).
-            force_refresh (bool): If True, skip any on-disk cache and fetch fresh data from the API.
-            github_token (Optional[str]): Personal access token to use for the GitHub API call; if None an environment token may be used.
-            allow_env_token (bool): Whether to allow using a token from the environment when `github_token` is not provided.
-
+            path: Repository path relative to the site root (leading/trailing slashes are ignored).
+            force_refresh: If True, skip the on-disk cache and fetch fresh data from the API.
+            github_token: Personal access token to use for the GitHub API call; if None an environment token may be used.
+            allow_env_token: Whether to allow using a token from the environment when `github_token` is not provided.
+        
         Returns:
-            List[str]: A list of directory names (strings) found at the requested path; returns an empty list on error or if no directories are present.
+            List[str]: Directory names found at the requested path; empty list on error or if no directories are present.
         """
         normalized_path = (path or "").strip("/")
         cache_key = f"repo:{normalized_path or '/'}"
@@ -452,10 +445,12 @@ class CacheManager:
 
         def fetch_contents() -> List[Dict[str, Any]]:
             """
-            Fetches JSON data from a GitHub API endpoint and returns the parsed entries.
-
+            Fetches and returns JSON entries from a GitHub API endpoint.
+            
+            If the HTTP response body is not a JSON list, an empty list is returned. Only items that are JSON objects (mappings) are included in the result.
+            
             Returns:
-                List[Dict[str, Any]]: List of JSON objects from the response; empty list if the response is not a JSON list.
+                List[Dict[str, Any]]: Parsed JSON objects from the response; empty list if the response is not a JSON list.
             """
             response = make_github_api_request(
                 api_url,
@@ -699,10 +694,10 @@ class CacheManager:
 
     def clear_all_caches(self) -> bool:
         """
-        Remove all cache files with .json or .tmp extensions from the cache directory.
-
+        Removes all `.json` and `.tmp` files from the instance cache directory.
+        
         Returns:
-            bool: `True` if all targeted files were removed successfully or none were present, `False` if any removal or directory access failed.
+            bool: `True` if all targeted files were removed successfully or none were present, `False` if the directory could not be accessed or any removal failed.
         """
         try:
             with os.scandir(self.cache_dir) as it:
@@ -724,15 +719,14 @@ class CacheManager:
         self, file_path: str, data: Dict[str, Any], timestamp_key: str = "last_updated"
     ) -> bool:
         """
-        Atomically write a JSON file containing the provided data and a UTC ISO 8601 timestamp.
-
+        Write JSON data to a file atomically and add a UTC ISO 8601 timestamp under the given key.
+        
         Parameters:
-            file_path (str): Destination path for the JSON file.
-            data (Dict): Mapping to serialize into the JSON file.
-            timestamp_key (str): Key under which the current UTC ISO 8601 timestamp will be stored in the data.
-
+            data (Dict[str, Any]): Mapping to serialize into the JSON file; a shallow copy is made before adding the timestamp.
+            timestamp_key (str): Key under which the current UTC ISO 8601 timestamp will be inserted.
+        
         Returns:
-            `true` if the file was written successfully, `false` otherwise.
+            bool: True if the file was written successfully, False otherwise.
         """
         # Add timestamp to data
         data_with_timestamp = data.copy()
@@ -744,16 +738,16 @@ class CacheManager:
         self, file_path: str, expiry_hours: float
     ) -> Optional[Dict[str, Any]]:
         """
-        Return the parsed JSON cache if it exists and its timestamp is not older than expiry_hours.
-
-        Checks for a timestamp under one of the keys "last_updated", "timestamp", or "cached_at"; if present, parses it as an ISO-8601 UTC datetime and treats the entry as expired when that timestamp is more than expiry_hours in the past. If no timestamp key is present the cache is treated as valid.
-
+        Determine whether a JSON cache file is still valid and return its parsed contents if so.
+        
+        Checks the cache file for a timestamp under "last_updated", "timestamp", or "cached_at". If a timestamp is present it is parsed as an ISO-8601 UTC datetime and the cache is considered expired when that timestamp is more than expiry_hours in the past. If no timestamp key is present the cache is treated as valid. If the file is missing, unreadable, or the timestamp is malformed, the function returns None.
+        
         Parameters:
             file_path (str): Path to the JSON cache file to read.
             expiry_hours (float): Number of hours before a cached entry is considered expired.
-
+        
         Returns:
-            Optional[Dict]: The parsed cache data when present and not expired, `None` otherwise.
+            Optional[Dict[str, Any]]: The parsed cache dictionary when present and not expired, `None` otherwise.
         """
         cache_data = self.read_json(file_path)
         if not cache_data:
@@ -851,14 +845,17 @@ class CacheManager:
         self, cache_data: Dict[str, Any], required_keys: List[str]
     ) -> bool:
         """
-        Check that the given cache mapping contains all required top-level keys.
-
+        Validate that a cache mapping contains all required top-level keys.
+        
         Parameters:
-            cache_data (Dict): Mapping representing cached data to validate.
-            required_keys (List[str]): Keys that must be present in cache_data.
-
+            cache_data (Dict[str, Any]): The cache mapping to validate.
+            required_keys (List[str]): List of keys that must be present at the top level of `cache_data`.
+        
         Returns:
             bool: `True` if every key in `required_keys` exists in `cache_data`, `False` otherwise.
+        
+        Notes:
+            Logs a warning for the first missing key encountered.
         """
         for key in required_keys:
             if key not in cache_data:
