@@ -1031,7 +1031,7 @@ def get_channel_suffix(
     """
     channel_suffix = ""
 
-    if not release.prerelease and add_channel_suffixes:
+    if add_channel_suffixes:
         channel = release_history_manager.get_release_channel(release)
         if channel and channel in STORAGE_CHANNEL_SUFFIXES:
             # Special case: don't add -alpha to revoked releases.

@@ -148,6 +148,22 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         os.makedirs(prerelease_dir, exist_ok=True)
         return prerelease_dir
 
+    def _is_android_prerelease(self, release: Release) -> bool:
+        """
+        Determine if an Android release is a prerelease.
+
+        Parameters:
+            release (Release): Release object to check.
+
+        Returns:
+            bool: True if the release is a prerelease, False otherwise.
+        """
+        return (
+            release.prerelease
+            or _is_apk_prerelease_by_name(release.tag_name)
+            or self.version_manager.is_prerelease_version(release.tag_name)
+        )
+
     def _get_storage_tag_for_release(self, release: Release) -> str:
         """
         Compute storage tag for a release with appropriate channel suffix when configured.
@@ -162,11 +178,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             str: Storage tag with channel suffix if applicable.
         """
         safe_tag = self._sanitize_required(release.tag_name, "release tag")
-        is_prerelease = (
-            release.prerelease
-            or _is_apk_prerelease_by_name(release.tag_name)
-            or self.version_manager.is_prerelease_version(release.tag_name)
-        )
+        is_prerelease = self._is_android_prerelease(release)
 
         if not is_prerelease and self.config.get(
             "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES", False
@@ -230,11 +242,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             )
             return None
 
-        is_prerelease = (
-            release.prerelease
-            or _is_apk_prerelease_by_name(release.tag_name)
-            or self.version_manager.is_prerelease_version(release.tag_name)
-        )
+        is_prerelease = self._is_android_prerelease(release)
 
         storage_tag = self._get_storage_tag_for_release(release)
 

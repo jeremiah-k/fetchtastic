@@ -435,8 +435,6 @@ class FirmwareReleaseDownloader(BaseDownloader):
         candidates: List[str] = []
         for revoked_flag in (is_revoked, not is_revoked):
             for channel_name in channels:
-                if channel_name and channel_name not in STORAGE_CHANNEL_SUFFIXES:
-                    channel_name = ""
                 tag = self._build_storage_tag(safe_tag, channel_name, revoked_flag)
                 if tag not in candidates:
                     candidates.append(tag)
