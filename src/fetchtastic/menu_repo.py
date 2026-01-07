@@ -103,7 +103,7 @@ class MenuPicker(Picker):
 
         Parameters:
             screen (CursesScreen): Screen-like object used for drawing and reading key input.
-            position (Position): Position for to picker; ignored in this override.
+            position (Position): Position for the picker; intentionally ignored in this override.
 
         Returns:
             For single-select mode: a tuple (selected_item, index) when an item is chosen, or (None, -1) if the user quit.
@@ -168,7 +168,7 @@ def _pick_menu(
         multiselect (bool): If True, allow selecting multiple options.
         min_selection_count (int): Minimum number of items required when multiselect is enabled.
         screen (CursesScreen | None): Optional pre-initialized curses screen to use for rendering.
-        position (Position | None): Optional position for to picker; defaults to Position(0, 0) if None.
+        position (Position | None): Optional position for the picker; defaults to Position(0, 0) if None.
         clear_screen (bool): If True, clear the screen before drawing the menu.
         quit_keys (list[int] | None): Additional key codes that trigger quitting/canceling the menu.
 
@@ -468,11 +468,11 @@ def select_item(
     items: list[dict[str, Any]], current_path: str = ""
 ) -> dict[str, Any] | None:
     """
-    Present a navigation menu for repository items and return to user's chosen action or item.
+    Present a navigation menu for repository items and return the user's chosen action or item.
 
     Parameters:
         items (list[dict[str, Any]]): Repository entries where each item has at least to "type" key with value "dir" or "file".
-        current_path (str): Path shown in menu title to indicate of current directory (empty for root).
+        current_path (str): Path shown in menu title to indicate the current directory (empty for root).
 
     Returns:
         dict[str, Any] | None: The selected value:

@@ -411,14 +411,14 @@ def _safe_rmtree(path_to_remove: str, base_dir: str, item_name: str) -> bool:
 
 
 def _atomic_write(
-    file_path: str, writer_func: Callable[[Any], None], suffix: str = ".tmp"
+    file_path: str, writer_func: Callable[[IO[str]], None], suffix: str = ".tmp"
 ) -> bool:
     """
     Atomically write content to a target path by writing to a temporary file and replacing the target on success.
 
     Parameters:
         file_path (str): Destination filesystem path to write.
-        writer_func (Callable[[Any], None]): Callable that receives an open text file-like object (opened for writing, UTF-8) and writes the desired content.
+        writer_func (Callable[[IO[str]], None]): Callable that receives an open text file-like object (opened for writing, UTF-8) and writes the desired content.
         suffix (str): Suffix to use for the temporary file name (default ".tmp").
 
     Returns:
