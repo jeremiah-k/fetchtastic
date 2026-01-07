@@ -70,7 +70,7 @@ class MenuPicker(Picker):
             return False
         return option.value.get("type") in {"back", "quit"}
 
-    def run_loop(self, screen: CursesScreen) -> Any:
+    def run_loop(self, screen: CursesScreen, position: Position) -> Any:
         while True:
             self.draw(screen)
             c = screen.getch()
