@@ -33,6 +33,11 @@ from fetchtastic.constants import (
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import make_github_api_request, matches_selected_patterns
 
+_CHANNEL_SUFFIX_RELEASE_REQUIRED_MSG = (
+    "release parameter is required when ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES is enabled "
+    "for full releases, to correctly detect channel suffixes"
+)
+
 from .base import BaseDownloader
 from .cache import CacheManager
 from .files import (
@@ -118,10 +123,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             if not is_prerelease and self.config.get(
                 "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES", False
             ):
-                raise ValueError(
-                    "release parameter is required when ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES is enabled "
-                    "for full releases, to correctly detect channel suffixes"
-                )
+                raise ValueError(_CHANNEL_SUFFIX_RELEASE_REQUIRED_MSG)
 
         base_dir = (
             self._get_prerelease_base_dir()
@@ -179,18 +181,14 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         is_prerelease = self._is_android_prerelease(release)
         is_revoked = self.is_release_revoked(release)
 
-        if not is_prerelease and self.config.get(
-            "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES", False
-        ):
-            return build_storage_tag_with_channel(
-                sanitized_release_tag=safe_tag,
-                release=release,
-                release_history_manager=self.release_history_manager,
-                config=self.config,
-                is_prerelease=False,
-                is_revoked=is_revoked,
-            )
-        return safe_tag
+        return build_storage_tag_with_channel(
+            sanitized_release_tag=safe_tag,
+            release=release,
+            release_history_manager=self.release_history_manager,
+            config=self.config,
+            is_prerelease=is_prerelease,
+            is_revoked=is_revoked,
+        )
 
     def update_release_history(
         self, releases: List[Release], *, log_summary: bool = True
@@ -689,7 +687,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                         release=release,
                         release_history_manager=self.release_history_manager,
                         config=self.config,
-                        is_prerelease=release.prerelease,
+                        is_prerelease=self._is_android_prerelease(release),
                         is_revoked=self.is_release_revoked(release),
                     )
                     expected.add(storage_tag)
