@@ -118,7 +118,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                     prerelease=False,
                 )
             safe_release = build_storage_tag_with_channel(
-                release_tag=safe_release,
+                sanitized_release_tag=safe_release,
                 release=release,
                 release_history_manager=self.release_history_manager,
                 config=self.config,
@@ -209,7 +209,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES", False
         ):
             storage_tag = build_storage_tag_with_channel(
-                release_tag=safe_release,
+                sanitized_release_tag=safe_release,
                 release=release,
                 release_history_manager=self.release_history_manager,
                 config=self.config,
@@ -544,12 +544,18 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         """
         safe_tag = self._sanitize_required(release.tag_name, "release tag")
 
+        is_prerelease = (
+            release.prerelease
+            or _is_apk_prerelease_by_name(release.tag_name)
+            or self.version_manager.is_prerelease_version(release.tag_name)
+        )
+
         # Apply channel suffix for full releases when configured
-        if not release.prerelease and self.config.get(
+        if not is_prerelease and self.config.get(
             "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES", False
         ):
             safe_tag = build_storage_tag_with_channel(
-                release_tag=safe_tag,
+                sanitized_release_tag=safe_tag,
                 release=release,
                 release_history_manager=self.release_history_manager,
                 config=self.config,
@@ -658,7 +664,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                         )
                         continue
                     storage_tag = build_storage_tag_with_channel(
-                        release_tag=safe_tag,
+                        sanitized_release_tag=safe_tag,
                         release=release,
                         release_history_manager=self.release_history_manager,
                         config=self.config,

@@ -327,7 +327,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
         safe_tag = self._sanitize_required(release.tag_name, "release tag")
         is_revoked = self.is_release_revoked(release)
         target_tag = build_storage_tag_with_channel(
-            release_tag=safe_tag,
+            sanitized_release_tag=safe_tag,
             release=release,
             release_history_manager=self.release_history_manager,
             config=self.config,
@@ -410,12 +410,14 @@ class FirmwareReleaseDownloader(BaseDownloader):
         safe_tag = self._sanitize_required(release.tag_name, "release tag")
         is_revoked = self.is_release_revoked(release)
 
-        # Determine current channel from release
-        current_channel = ""
-        if self.config.get(
+        add_channel_suffixes = self.config.get(
             "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES",
             DEFAULT_ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES,
-        ):
+        )
+
+        # Determine current channel from release
+        current_channel = ""
+        if not release.prerelease and add_channel_suffixes:
             channel = self.release_history_manager.get_release_channel(release)
             if channel and channel in STORAGE_CHANNEL_SUFFIXES:
                 if is_revoked and channel == "alpha":
@@ -425,10 +427,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
         # Build list of channel names to try
         channels_to_try = [current_channel, ""]
-        if self.config.get(
-            "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES",
-            DEFAULT_ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES,
-        ):
+        if not release.prerelease and add_channel_suffixes:
             channels_to_try.extend(sorted(STORAGE_CHANNEL_SUFFIXES))
         channels = list(dict.fromkeys(channels_to_try))
 

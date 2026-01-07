@@ -1012,12 +1012,12 @@ def safe_extract_path(extract_dir: str, file_path: str) -> str:
 
 
 def build_storage_tag_with_channel(
-    release_tag: str,
+    sanitized_release_tag: str,
     release: "Release",
     release_history_manager: "ReleaseHistoryManager",
-    config: dict[str, Any],
-    is_prerelease: bool = False,
-    is_revoked: bool = False,
+    config: dict,
+    is_prerelease: bool,
+    is_revoked: bool,
 ) -> str:
     """
     Build a storage tag for a release with optional channel and revoked suffixes.
@@ -1027,7 +1027,7 @@ def build_storage_tag_with_channel(
     Also appends -revoked suffix if is_revoked is True.
 
     Parameters:
-        release_tag (str): The sanitized release tag to use as base.
+        sanitized_release_tag (str): The sanitized release tag to use as base.
         release: Release object to query for channel information.
         release_history_manager: Manager instance to query for release channel.
         config (dict): Configuration dict containing ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES setting.
@@ -1037,7 +1037,7 @@ def build_storage_tag_with_channel(
     Returns:
         str: The storage tag with appropriate suffixes.
     """
-    safe_tag = release_tag
+    safe_tag = sanitized_release_tag
     channel_suffix = ""
 
     # Only add channel suffixes for full releases when feature is enabled
