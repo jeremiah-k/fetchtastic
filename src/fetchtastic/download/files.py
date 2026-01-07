@@ -1023,7 +1023,7 @@ def get_channel_suffix(
     Parameters:
         release (Release): Release object to query for channel information.
         release_history_manager (ReleaseHistoryManager): Manager instance to query for release channel.
-        is_revoked (bool): If True, handles special case for alpha channel (no suffix).
+        is_revoked (bool): If True, revoked status replaces the channel suffix with -revoked.
         add_channel_suffixes (bool): If True, attempt to detect and add channel suffix.
 
     Returns:
@@ -1034,10 +1034,10 @@ def get_channel_suffix(
     if add_channel_suffixes:
         channel = release_history_manager.get_release_channel(release)
         if channel and channel in STORAGE_CHANNEL_SUFFIXES:
-            # Special case: don't add -alpha to revoked releases.
-            # Alpha revoked releases use the tag format v1.0.0-revoked (no -alpha suffix),
-            # while beta/rc revoked releases keep their channel suffix: v1.0.0-beta-revoked or v1.0.0-rc-revoked.
-            if is_revoked and channel == "alpha":
+            # Revoked releases replace their channel suffix with -revoked instead of adding to it.
+            # For example: v1.0.0-alpha becomes v1.0.0-revoked, not v1.0.0-alpha-revoked.
+            # This applies to all channels (alpha, beta, rc) for consistency.
+            if is_revoked:
                 channel_suffix = ""
             else:
                 channel_suffix = f"-{channel}"

@@ -103,28 +103,25 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         safe_release = self._sanitize_required(release_tag, "release tag")
         safe_name = self._sanitize_required(file_name, "file name")
 
-        if is_prerelease is None:
-            is_prerelease = _is_apk_prerelease_by_name(
-                release_tag
-            ) or self.version_manager.is_prerelease_version(release_tag)
+        # Use Release object for comprehensive prerelease detection and channel suffix when available
+        if release is not None:
+            safe_release = self._get_storage_tag_for_release(release)
+            is_prerelease = self._is_android_prerelease(release)
+        else:
+            # Infer prerelease status from tag name when Release object not available
+            if is_prerelease is None:
+                is_prerelease = _is_apk_prerelease_by_name(
+                    release_tag
+                ) or self.version_manager.is_prerelease_version(release_tag)
 
-        # Apply channel suffix for full releases when configured
-        if not is_prerelease and self.config.get(
-            "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES", False
-        ):
-            if release is None:
+            # Apply channel suffix for full releases when configured
+            if not is_prerelease and self.config.get(
+                "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES", False
+            ):
                 raise ValueError(
                     "release parameter is required when ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES is enabled "
                     "for full releases, to correctly detect channel suffixes"
                 )
-            safe_release = build_storage_tag_with_channel(
-                sanitized_release_tag=safe_release,
-                release=release,
-                release_history_manager=self.release_history_manager,
-                config=self.config,
-                is_prerelease=False,
-                is_revoked=False,
-            )
 
         base_dir = (
             self._get_prerelease_base_dir()
@@ -170,6 +167,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
         Determines if the release is a prerelease using a comprehensive check, and applies
         channel suffix only for full releases when ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES is enabled.
+        Also handles revoked status to replace channel suffix with -revoked when applicable.
 
         Parameters:
             release (Release): Release object containing tag_name and other metadata.
@@ -179,6 +177,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         """
         safe_tag = self._sanitize_required(release.tag_name, "release tag")
         is_prerelease = self._is_android_prerelease(release)
+        is_revoked = self.is_release_revoked(release)
 
         if not is_prerelease and self.config.get(
             "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES", False
@@ -189,7 +188,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                 release_history_manager=self.release_history_manager,
                 config=self.config,
                 is_prerelease=False,
-                is_revoked=False,
+                is_revoked=is_revoked,
             )
         return safe_tag
 
@@ -224,6 +223,18 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             suffix (str): Formatted log suffix containing channel and revoked information, or an empty string if no contextual info is available.
         """
         return self.release_history_manager.format_release_log_suffix(release)
+
+    def is_release_revoked(self, release: Release) -> bool:
+        """
+        Determine whether the given release is recorded as revoked in the release history.
+
+        Parameters:
+            release (Release): The release to check.
+
+        Returns:
+            bool: `True` if the release is revoked, `False` otherwise.
+        """
+        return self.release_history_manager.is_release_revoked(release)
 
     def ensure_release_notes(self, release: Release) -> Optional[str]:
         """
@@ -679,7 +690,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                         release_history_manager=self.release_history_manager,
                         config=self.config,
                         is_prerelease=release.prerelease,
-                        is_revoked=False,
+                        is_revoked=self.is_release_revoked(release),
                     )
                     expected.add(storage_tag)
                 return expected

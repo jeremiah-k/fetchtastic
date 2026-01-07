@@ -247,7 +247,7 @@ class TestChannelSuffixes:
         assert storage_tag == "v1.0.0-revoked"
 
     def test_revoked_beta_channel_suffix(self, tmp_path):
-        """Revoked beta releases should produce v1.0.0-beta-revoked (keeps -beta suffix)."""
+        """Revoked beta releases should produce v1.0.0-revoked (replaces -beta suffix)."""
         cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
         config = {
             "DOWNLOAD_DIR": str(tmp_path / "downloads"),
@@ -263,10 +263,10 @@ class TestChannelSuffixes:
         )
 
         storage_tag = downloader._get_release_storage_tag(release)
-        assert storage_tag == "v1.0.0-beta-revoked"
+        assert storage_tag == "v1.0.0-revoked"
 
     def test_revoked_rc_channel_suffix(self, tmp_path):
-        """Revoked rc releases should produce v1.0.0-rc-revoked (keeps -rc suffix)."""
+        """Revoked rc releases should produce v1.0.0-revoked (replaces -rc suffix)."""
         cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
         config = {
             "DOWNLOAD_DIR": str(tmp_path / "downloads"),
@@ -282,7 +282,7 @@ class TestChannelSuffixes:
         )
 
         storage_tag = downloader._get_release_storage_tag(release)
-        assert storage_tag == "v1.0.0-rc-revoked"
+        assert storage_tag == "v1.0.0-revoked"
 
     def test_revoked_stable_channel_suffix(self, tmp_path):
         """Revoked stable releases should produce v1.0.0-revoked (no channel suffix)."""
