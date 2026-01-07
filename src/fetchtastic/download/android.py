@@ -113,9 +113,6 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES", False
         ):
             if release is None:
-                # Create a dummy release object for channel detection
-                from .interfaces import Release
-
                 release = Release(
                     tag_name=release_tag,
                     prerelease=False,
@@ -660,7 +657,15 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                             release.tag_name,
                         )
                         continue
-                    expected.add(safe_tag)
+                    storage_tag = build_storage_tag_with_channel(
+                        release_tag=safe_tag,
+                        release=release,
+                        release_history_manager=self.release_history_manager,
+                        config=self.config,
+                        is_prerelease=release.prerelease,
+                        is_revoked=False,
+                    )
+                    expected.add(storage_tag)
                 return expected
 
             expected_stable = _build_expected_set(

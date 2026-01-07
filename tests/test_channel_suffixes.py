@@ -15,6 +15,8 @@ from fetchtastic.download.firmware import FirmwareReleaseDownloader
 from fetchtastic.download.interfaces import Release
 
 
+@pytest.mark.unit
+@pytest.mark.core_downloads
 class TestChannelSuffixes:
     """Tests for channel suffixes configuration in firmware and APK downloaders."""
 
@@ -175,7 +177,7 @@ class TestChannelSuffixes:
         )
 
         target_path = downloader.get_target_path_for_release(
-            release.tag_name, "app.apk", is_prerelease=False
+            release.tag_name, "app.apk"
         )
         # Prereleases should go to prerelease subdirectory
         version_dir = Path(target_path).parent
@@ -224,3 +226,79 @@ class TestChannelSuffixes:
         assert notes_path is not None
         assert "v1.0.0-alpha" in notes_path
         assert (Path(config["DOWNLOAD_DIR"]) / APKS_DIR_NAME / "v1.0.0-alpha").exists()
+
+    def test_revoked_alpha_channel_suffix(self, tmp_path):
+        """Revoked alpha releases should produce v1.0.0-revoked (no -alpha suffix)."""
+        cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path / "downloads"),
+            "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES": True,
+        }
+        downloader = FirmwareReleaseDownloader(config, cache_manager)
+
+        release = Release(
+            tag_name="v1.0.0",
+            prerelease=False,
+            name="(Revoked) Meshtastic Firmware 1.0.0 Alpha",
+            body="This is an alpha release",
+        )
+
+        storage_tag = downloader._get_release_storage_tag(release)
+        assert storage_tag == "v1.0.0-revoked"
+
+    def test_revoked_beta_channel_suffix(self, tmp_path):
+        """Revoked beta releases should produce v1.0.0-beta-revoked (keeps -beta suffix)."""
+        cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path / "downloads"),
+            "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES": True,
+        }
+        downloader = FirmwareReleaseDownloader(config, cache_manager)
+
+        release = Release(
+            tag_name="v1.0.0",
+            prerelease=False,
+            name="(Revoked) Meshtastic Firmware 1.0.0 Beta",
+            body="This is a beta release",
+        )
+
+        storage_tag = downloader._get_release_storage_tag(release)
+        assert storage_tag == "v1.0.0-beta-revoked"
+
+    def test_revoked_rc_channel_suffix(self, tmp_path):
+        """Revoked rc releases should produce v1.0.0-rc-revoked (keeps -rc suffix)."""
+        cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path / "downloads"),
+            "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES": True,
+        }
+        downloader = FirmwareReleaseDownloader(config, cache_manager)
+
+        release = Release(
+            tag_name="v1.0.0",
+            prerelease=False,
+            name="(Revoked) Meshtastic Firmware 1.0.0 RC",
+            body="This is a rc release",
+        )
+
+        storage_tag = downloader._get_release_storage_tag(release)
+        assert storage_tag == "v1.0.0-rc-revoked"
+
+    def test_revoked_stable_channel_suffix(self, tmp_path):
+        """Revoked stable releases should produce v1.0.0-revoked (no channel suffix)."""
+        cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path / "downloads"),
+            "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES": True,
+        }
+        downloader = FirmwareReleaseDownloader(config, cache_manager)
+
+        release = Release(
+            tag_name="v1.0.0",
+            prerelease=False,
+            name="(Revoked) Meshtastic Firmware 1.0.0 Stable",
+            body="This is a stable release",
+        )
+
+        storage_tag = downloader._get_release_storage_tag(release)
+        assert storage_tag == "v1.0.0-revoked"

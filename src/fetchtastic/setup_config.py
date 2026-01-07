@@ -629,7 +629,7 @@ def _setup_downloads(
     # Ask early before menu scripts
     if save_apks or save_firmware:
         add_channel_suffixes_current = config.get(
-            "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES", False
+            "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES", True
         )
         add_channel_suffixes_default = "yes" if add_channel_suffixes_current else "no"
         add_channel_suffixes_input = (

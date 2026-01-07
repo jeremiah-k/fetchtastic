@@ -411,9 +411,6 @@ class FirmwareReleaseDownloader(BaseDownloader):
         # Determine what channel suffix to use based on config
         current_channel_suffix = ""
         if self.config.get("ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES", False):
-            # Create a dummy release to get channel
-            from .interfaces import Release
-
             dummy_release = Release(
                 tag_name=safe_tag,
                 prerelease=False,
@@ -432,16 +429,15 @@ class FirmwareReleaseDownloader(BaseDownloader):
         channels = list(dict.fromkeys(all_channels))
 
         candidates: List[str] = []
-        for is_revoked in (is_revoked, not is_revoked):
+        for revoked_flag in (is_revoked, not is_revoked):
             for candidate_channel in channels:
-                candidate_suffix = candidate_channel
                 # Convert suffix like "-alpha" to channel name "alpha"
                 channel_name = (
                     candidate_channel.lstrip("-") if candidate_channel else ""
                 )
                 if candidate_channel and channel_name not in _STORAGE_CHANNEL_SUFFIXES:
                     channel_name = ""
-                tag = self._build_storage_tag(safe_tag, channel_name, is_revoked)
+                tag = self._build_storage_tag(safe_tag, channel_name, revoked_flag)
                 if tag not in candidates:
                     candidates.append(tag)
 
