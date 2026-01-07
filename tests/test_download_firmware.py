@@ -163,7 +163,10 @@ class TestFirmwareReleaseDownloader:
     def test_ensure_release_notes_alpha_revoked_directory(self, tmp_path):
         """Alpha + revoked firmware releases should store notes under -revoked."""
         cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
-        config = {"DOWNLOAD_DIR": str(tmp_path / "downloads")}
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path / "downloads"),
+            "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES": True,
+        }
         downloader = FirmwareReleaseDownloader(config, cache_manager)
         release = Release(
             tag_name="v1.0.3",
@@ -988,7 +991,10 @@ class TestFirmwareReleaseDownloader:
     def test_get_release_storage_tag_multiple_existing(self, tmp_path):
         """Multiple candidate directories should return the first match."""
         cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
-        config = {"DOWNLOAD_DIR": str(tmp_path / "downloads")}
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path / "downloads"),
+            "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES": True,
+        }
         downloader = FirmwareReleaseDownloader(config, cache_manager)
         firmware_dir = tmp_path / "downloads" / "firmware"
         firmware_dir.mkdir(parents=True)

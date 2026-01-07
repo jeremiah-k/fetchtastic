@@ -1030,11 +1030,12 @@ def test_run_setup_first_run_linux_simple(
     user_inputs = [
         "",  # Use default base directory
         "b",  # Both APKs and firmware
+        "n",  # Add channel suffixes
         "y",  # Check for APK prereleases
         "2",  # Keep 2 versions of Android app
         "2",  # Keep 2 versions of firmware
-        "n",  # No pre-releases
         "n",  # No auto-extract
+        "n",  # No pre-releases
         "n",  # No cron job
         "n",  # No reboot cron job
         "n",  # No NTFY notifications
