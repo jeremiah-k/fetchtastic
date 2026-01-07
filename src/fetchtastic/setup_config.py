@@ -1950,14 +1950,14 @@ def should_recommend_setup() -> Tuple[bool, str, Optional[str], Optional[str]]:
         return True, "Could not determine setup status", None, None
 
 
-def get_version_info() -> Tuple[str, Optional[str], bool]:
+def get_version_info() -> tuple[str, str | None, bool]:
     """
-    Return the installed Fetchtastic version, the latest available version (if known), and whether an update is available.
+    Return to installed Fetchtastic version, to latest available version (if known), and whether an update is available.
 
     Returns:
         tuple: (current_version, latest_version, update_available)
             current_version (str): Installed package version or "unknown" if it cannot be determined.
-            latest_version (Optional[str]): Latest version from the registry, or `None` on network/error.
+            latest_version (str | None): Latest version from registry, or `None` on network/error.
             update_available (bool): `True` if a newer version is available, `False` otherwise.
     """
     current_version, latest_version, update_available = check_for_updates()

@@ -95,7 +95,7 @@ class MenuPicker(Picker):
             return False
         return option.value.get("type") in {"back", "quit"}
 
-    def run_loop(self, screen: CursesScreen, _position: Position) -> Any:
+    def run_loop(self, screen: CursesScreen, position: Position) -> Any:
         """
         Run the picker's interactive input loop, handling navigation, selection, and quit actions.
 
@@ -103,7 +103,7 @@ class MenuPicker(Picker):
 
         Parameters:
             screen (CursesScreen): Screen-like object used for drawing and reading key input.
-            _position (Position): Ignored; present for API compatibility.
+            position (Position): Position for to picker; ignored in this override.
 
         Returns:
             For single-select mode: a tuple (selected_item, index) when an item is chosen, or (None, -1) if the user quit.
@@ -167,6 +167,8 @@ def _pick_menu(
         default_index (int): Index highlighted when the menu opens.
         multiselect (bool): If True, allow selecting multiple options.
         min_selection_count (int): Minimum number of items required when multiselect is enabled.
+        screen (CursesScreen | None): Optional pre-initialized curses screen to use for rendering.
+        position (Position | None): Optional position for to picker; defaults to Position(0, 0) if None.
         clear_screen (bool): If True, clear the screen before drawing the menu.
         quit_keys (list[int] | None): Additional key codes that trigger quitting/canceling the menu.
 
@@ -462,18 +464,20 @@ def _build_firmware_commit_times(
     return prerelease_manager.extract_prerelease_directory_timestamps(commits)
 
 
-def select_item(items, current_path=""):
+def select_item(
+    items: list[dict[str, Any]], current_path: str = ""
+) -> dict[str, Any] | None:
     """
-    Present a navigation menu for repository items and return the user's chosen action or item.
+    Present a navigation menu for repository items and return to user's chosen action or item.
 
     Parameters:
-        items (list[dict]): Repository entries where each item has at least a "type" key with value "dir" or "file".
-        current_path (str): Path shown in the menu title to indicate the current directory (empty for root).
+        items (list[dict[str, Any]]): Repository entries where each item has at least to "type" key with value "dir" or "file".
+        current_path (str): Path shown in menu title to indicate of current directory (empty for root).
 
     Returns:
-        dict | None: The selected value:
-          - For directory selection: the directory item dict (contains its metadata).
-          - For choosing files in the current directory: {"type": "current"}.
+        dict[str, Any] | None: The selected value:
+          - For directory selection: directory item dict (contains its metadata).
+          - For choosing files in current directory: {"type": "current"}.
           - For going up one level: {"type": "back"}.
           - For quitting: {"type": "quit"}.
           - `None` if no valid selection was made.
