@@ -45,6 +45,7 @@ from fetchtastic.utils import (
 
 from .base import BaseDownloader
 from .cache import CacheManager
+from .files import build_storage_tag_with_channel
 from .interfaces import Asset, DownloadResult, Release
 from .prerelease_history import PrereleaseHistoryManager
 from .release_history import ReleaseHistoryManager
@@ -325,20 +326,21 @@ class FirmwareReleaseDownloader(BaseDownloader):
         """
         safe_tag = self._sanitize_required(release.tag_name, "release tag")
         is_revoked = self.is_release_revoked(release)
-        channel = self.release_history_manager.get_release_channel(release)
-        channel_suffix = channel if channel in _STORAGE_CHANNEL_SUFFIXES else ""
-        if is_revoked and channel_suffix == "alpha":
-            channel_suffix = ""
-        target_tag = self._build_storage_tag(safe_tag, channel_suffix, is_revoked)
+        target_tag = build_storage_tag_with_channel(
+            release_tag=safe_tag,
+            release=release,
+            release_history_manager=self.release_history_manager,
+            config=self.config,
+            is_prerelease=release.prerelease,
+            is_revoked=is_revoked,
+        )
 
         firmware_dir = os.path.join(self.download_dir, FIRMWARE_DIR_NAME)
         target_path = os.path.join(firmware_dir, target_tag)
         if os.path.isdir(target_path):
             return target_tag
 
-        candidates = self._get_storage_tag_candidates(
-            safe_tag, channel_suffix, is_revoked, target_tag
-        )
+        candidates = self._get_storage_tag_candidates(safe_tag, target_tag, is_revoked)
         existing = [
             tag for tag in candidates if os.path.isdir(os.path.join(firmware_dir, tag))
         ]
@@ -391,30 +393,53 @@ class FirmwareReleaseDownloader(BaseDownloader):
         return tag
 
     def _get_storage_tag_candidates(
-        self, safe_tag: str, channel: str, revoked: bool, target_tag: str
+        self, safe_tag: str, target_tag: str, is_revoked: bool
     ) -> List[str]:
         """
         Generate alternative storage-tag candidates for an existing release directory by combining possible channel suffixes and revoked states, excluding the provided target tag.
 
+        This method respects the ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES config option.
+
         Parameters:
             safe_tag (str): Sanitized base tag name (filesystem-safe) to build candidates from.
-            channel (str): Optional channel suffix to prioritize (must be one of the configured channel suffixes); ignored if invalid or empty.
-            revoked (bool): Whether to prefer revoked variants first when ordering candidates.
             target_tag (str): Storage tag to exclude from the returned list.
+            is_revoked (bool): Whether to prefer revoked variants first when ordering candidates.
 
         Returns:
             List[str]: Ordered list of distinct candidate storage tags (each a string) excluding `target_tag`.
         """
-        if channel and channel not in _STORAGE_CHANNEL_SUFFIXES:
-            channel = ""
+        # Determine what channel suffix to use based on config
+        current_channel_suffix = ""
+        if self.config.get("ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES", False):
+            # Create a dummy release to get channel
+            from .interfaces import Release
 
-        all_channels = [channel, "", *sorted(_STORAGE_CHANNEL_SUFFIXES)]
+            dummy_release = Release(
+                tag_name=safe_tag,
+                prerelease=False,
+            )
+            channel = self.release_history_manager.get_release_channel(dummy_release)
+            if channel and channel in _STORAGE_CHANNEL_SUFFIXES:
+                if is_revoked and channel == "alpha":
+                    current_channel_suffix = ""
+                else:
+                    current_channel_suffix = f"-{channel}"
+
+        # Build list of channels to try
+        all_channels = [current_channel_suffix, "", *sorted(_STORAGE_CHANNEL_SUFFIXES)]
         channels = list(dict.fromkeys(all_channels))
 
         candidates: List[str] = []
-        for is_revoked in (revoked, not revoked):
-            for candidate in channels:
-                tag = self._build_storage_tag(safe_tag, candidate, is_revoked)
+        for is_revoked in (is_revoked, not is_revoked):
+            for candidate_channel in channels:
+                candidate_suffix = candidate_channel
+                # Convert suffix like "-alpha" to channel name "alpha"
+                channel_name = (
+                    candidate_channel.lstrip("-") if candidate_channel else ""
+                )
+                if candidate_channel and channel_name not in _STORAGE_CHANNEL_SUFFIXES:
+                    channel_name = ""
+                tag = self._build_storage_tag(safe_tag, channel_name, is_revoked)
                 if tag not in candidates:
                     candidates.append(tag)
 

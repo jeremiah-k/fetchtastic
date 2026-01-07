@@ -35,7 +35,11 @@ from fetchtastic.utils import make_github_api_request, matches_selected_patterns
 
 from .base import BaseDownloader
 from .cache import CacheManager
-from .files import _safe_rmtree, _sanitize_path_component
+from .files import (
+    _safe_rmtree,
+    _sanitize_path_component,
+    build_storage_tag_with_channel,
+)
 from .interfaces import Asset, DownloadResult, Release
 from .prerelease_history import PrereleaseHistoryManager
 from .release_history import ReleaseHistoryManager
@@ -98,6 +102,26 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             is_prerelease = _is_apk_prerelease_by_name(
                 release_tag
             ) or self.version_manager.is_prerelease_version(release_tag)
+
+        # Apply channel suffix for full releases when configured
+        if not is_prerelease and self.config.get(
+            "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES", False
+        ):
+            # Create a dummy release object for channel detection
+            from .interfaces import Release
+
+            dummy_release = Release(
+                tag_name=release_tag,
+                prerelease=False,
+            )
+            safe_release = build_storage_tag_with_channel(
+                release_tag=safe_release,
+                release=dummy_release,
+                release_history_manager=self.release_history_manager,
+                config=self.config,
+                is_prerelease=False,
+                is_revoked=False,
+            )
 
         base_dir = (
             self._get_prerelease_base_dir()
@@ -175,12 +199,27 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             or _is_apk_prerelease_by_name(release.tag_name)
             or self.version_manager.is_prerelease_version(release.tag_name)
         )
+
+        # Apply channel suffix for full releases when configured
+        storage_tag = safe_release
+        if not is_prerelease and self.config.get(
+            "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES", False
+        ):
+            storage_tag = build_storage_tag_with_channel(
+                release_tag=safe_release,
+                release=release,
+                release_history_manager=self.release_history_manager,
+                config=self.config,
+                is_prerelease=False,
+                is_revoked=False,
+            )
+
         base_dir = (
             self._get_prerelease_base_dir()
             if is_prerelease
             else os.path.join(self.download_dir, APKS_DIR_NAME)
         )
-        release_dir = os.path.join(base_dir, safe_release)
+        release_dir = os.path.join(base_dir, storage_tag)
         return self._write_release_notes(
             release_dir=release_dir,
             release_tag=release.tag_name,
@@ -498,6 +537,20 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
             `true` if all selected assets are present and their file sizes equal the assets' expected sizes, `false` otherwise.
         """
         safe_tag = self._sanitize_required(release.tag_name, "release tag")
+
+        # Apply channel suffix for full releases when configured
+        if not release.prerelease and self.config.get(
+            "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES", False
+        ):
+            safe_tag = build_storage_tag_with_channel(
+                release_tag=safe_tag,
+                release=release,
+                release_history_manager=self.release_history_manager,
+                config=self.config,
+                is_prerelease=False,
+                is_revoked=False,
+            )
+
         version_dir = os.path.join(self.download_dir, APKS_DIR_NAME, safe_tag)
         if not os.path.isdir(version_dir):
             return False

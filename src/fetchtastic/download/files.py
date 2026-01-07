@@ -980,7 +980,7 @@ def safe_extract_path(extract_dir: str, file_path: str) -> str:
     """
     Resolve a safe absolute extraction path and prevent directory traversal.
 
-    Ensures the absolute path for file_path, when joined to extract_dir, resides within extract_dir.
+    Ensures that absolute path for file_path, when joined to extract_dir, resides within extract_dir.
 
     Parameters:
         extract_dir (str): Base directory intended for extraction.
@@ -990,7 +990,7 @@ def safe_extract_path(extract_dir: str, file_path: str) -> str:
         str: Absolute, normalized path inside extract_dir suitable for extraction.
 
     Raises:
-        ValueError: If the resolved path is outside extract_dir.
+        ValueError: If resolved path is outside extract_dir.
     """
     real_extract_dir = os.path.realpath(extract_dir)
     prospective_path = os.path.join(real_extract_dir, file_path)
@@ -1002,3 +1002,55 @@ def safe_extract_path(extract_dir: str, file_path: str) -> str:
         )
 
     return normalized_path
+
+
+_STORAGE_CHANNEL_SUFFIXES = {"alpha", "beta", "rc"}
+
+
+def build_storage_tag_with_channel(
+    release_tag: str,
+    release,
+    release_history_manager,
+    config: dict[str, Any],
+    is_prerelease: bool = False,
+    is_revoked: bool = False,
+) -> str:
+    """
+    Build a storage tag for a release with optional channel and revoked suffixes.
+
+    If ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES is enabled in config and the release is not a
+    prerelease, appends the channel suffix (-alpha, -beta, -rc) to the storage tag.
+    Also appends -revoked suffix if is_revoked is True.
+
+    Parameters:
+        release_tag (str): The sanitized release tag to use as base.
+        release: Release object to query for channel information.
+        release_history_manager: Manager instance to query for release channel.
+        config (dict): Configuration dict containing ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES setting.
+        is_prerelease (bool): If True, channel suffixes are not added (only for full releases).
+        is_revoked (bool): If True, -revoked suffix is added.
+
+    Returns:
+        str: The storage tag with appropriate suffixes.
+    """
+    safe_tag = release_tag
+    channel_suffix = ""
+
+    # Only add channel suffixes for full releases when feature is enabled
+    if not is_prerelease and config.get("ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES", False):
+        channel = release_history_manager.get_release_channel(release)
+        if channel and channel in _STORAGE_CHANNEL_SUFFIXES:
+            # Special case: don't add -alpha to revoked releases
+            if is_revoked and channel == "alpha":
+                channel_suffix = ""
+            else:
+                channel_suffix = f"-{channel}"
+
+    # Build final tag
+    tag = safe_tag
+    if channel_suffix:
+        tag = f"{tag}{channel_suffix}"
+    if is_revoked:
+        tag = f"{tag}-revoked"
+
+    return tag
