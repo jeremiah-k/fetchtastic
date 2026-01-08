@@ -427,6 +427,14 @@ class FirmwareReleaseDownloader(BaseDownloader):
                 if tag not in candidates:
                     candidates.append(tag)
 
+        if is_revoked:
+            for channel_name in channels:
+                if not channel_name:
+                    continue
+                legacy_revoked = f"{safe_tag}-{channel_name}-revoked"
+                if legacy_revoked not in candidates:
+                    candidates.append(legacy_revoked)
+
         return [tag for tag in candidates if tag != target_tag]
 
     def download_firmware(self, release: Release, asset: Asset) -> DownloadResult:

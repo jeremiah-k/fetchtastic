@@ -27,6 +27,11 @@ if TYPE_CHECKING:
     from .interfaces import Release
 
 
+_MISSING_HISTORY_MANAGER_MSG = (
+    "{cls} does not have a release_history_manager and cannot check revoked status"
+)
+
+
 class BaseDownloader(Downloader, ABC):
     """
     Base implementation of the Downloader interface.
@@ -546,8 +551,7 @@ class BaseDownloader(Downloader, ABC):
         """
         if not hasattr(self, "release_history_manager"):
             raise AttributeError(
-                f"{self.__class__.__name__} does not have a release_history_manager "
-                "and cannot check revoked status"
+                _MISSING_HISTORY_MANAGER_MSG.format(cls=self.__class__.__name__)
             )
         return self.release_history_manager.is_release_revoked(release)  # type: ignore[attr-defined]
 

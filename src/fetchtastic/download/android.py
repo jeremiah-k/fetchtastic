@@ -102,23 +102,6 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         safe_release = self._sanitize_required(release_tag, "release tag")
         safe_name = self._sanitize_required(file_name, "file name")
 
-        # Warn if release object not provided but channel suffixes are enabled
-        add_channel_suffixes = self.config.get(
-            "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES", False
-        )
-        if add_channel_suffixes and release is None:
-            # Check if this is likely a full release (not a prerelease)
-            is_likely_full_release = is_prerelease is False or (
-                is_prerelease is None
-                and not _is_apk_prerelease_by_name(release_tag)
-                and not self.version_manager.is_prerelease_version(release_tag)
-            )
-            if is_likely_full_release:
-                logger.warning(
-                    "Release object not provided but channel suffixes are enabled; "
-                    "channel suffix may not be applied correctly"
-                )
-
         # Use Release object for comprehensive prerelease detection when available
         if release is not None:
             safe_release = self._get_storage_tag_for_release(release)
