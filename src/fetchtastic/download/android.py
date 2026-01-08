@@ -197,18 +197,6 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         """
         return self.release_history_manager.format_release_log_suffix(release)
 
-    def is_release_revoked(self, release: Release) -> bool:
-        """
-        Determine whether the given release is recorded as revoked in the release history.
-
-        Parameters:
-            release (Release): The release to check.
-
-        Returns:
-            bool: `True` if the release is revoked, `False` otherwise.
-        """
-        return self.release_history_manager.is_release_revoked(release)
-
     def ensure_release_notes(self, release: Release) -> Optional[str]:
         """
         Write the release notes for the given release into the appropriate APK directory and return the notes file path.
