@@ -362,21 +362,21 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
     def _build_storage_tag(self, safe_tag: str, channel: str, revoked: bool) -> str:
         """
-        Builds a storage tag by appending an optional channel suffix and a revoked suffix to a sanitized base tag.
+        Builds a storage tag by appending an optional channel suffix to a sanitized base tag, or replacing with -revoked suffix.
 
         Parameters:
             safe_tag (str): Sanitized release tag to use as the base (no channel or revoked suffixes).
             channel (str): Channel suffix to append (e.g., "beta"); if empty, no channel suffix is added.
-            revoked (bool): If True, appends "-revoked" to the tag.
+            revoked (bool): If True, replaces any channel suffix with "-revoked".
 
         Returns:
             str: The resulting storage tag.
         """
+        if revoked:
+            return f"{safe_tag}-revoked"
         tag = safe_tag
         if channel:
             tag = f"{tag}-{channel}"
-        if revoked:
-            tag = f"{tag}-revoked"
         return tag
 
     def _get_storage_tag_candidates(
@@ -408,7 +408,6 @@ class FirmwareReleaseDownloader(BaseDownloader):
         current_channel_suffix = get_channel_suffix(
             release=release,
             release_history_manager=self.release_history_manager,
-            is_revoked=is_revoked,
             add_channel_suffixes=True,
         )
         current_channel = (

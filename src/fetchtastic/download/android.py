@@ -94,13 +94,30 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
         Parameters:
             is_prerelease (Optional[bool]): If provided, override inference and use the specified prerelease status to choose the base directory. This parameter is ignored if a `release` object is also provided.
-            release (Optional[Release]): Required when ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES is enabled for full releases to correctly detect channel suffixes.
+            release (Optional[Release]): Should be provided when ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES is enabled for full releases to correctly detect channel suffixes.
 
         Returns:
             str: Filesystem path to the asset file within the (possibly created) release directory.
         """
         safe_release = self._sanitize_required(release_tag, "release tag")
         safe_name = self._sanitize_required(file_name, "file name")
+
+        # Warn if release object not provided but channel suffixes are enabled
+        add_channel_suffixes = self.config.get(
+            "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES", False
+        )
+        if add_channel_suffixes and release is None:
+            # Check if this is likely a full release (not a prerelease)
+            is_likely_full_release = is_prerelease is False or (
+                is_prerelease is None
+                and not _is_apk_prerelease_by_name(release_tag)
+                and not self.version_manager.is_prerelease_version(release_tag)
+            )
+            if is_likely_full_release:
+                logger.warning(
+                    "Release object not provided but channel suffixes are enabled; "
+                    "channel suffix may not be applied correctly"
+                )
 
         # Use Release object for comprehensive prerelease detection when available
         if release is not None:

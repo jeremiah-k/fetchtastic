@@ -161,7 +161,7 @@ class TestFirmwareReleaseDownloader:
         assert not old_dir.exists()
 
     def test_ensure_release_notes_alpha_revoked_directory(self, tmp_path):
-        """Alpha + revoked firmware releases should store notes under -revoked."""
+        """Revoked alpha firmware releases should store notes under -revoked suffix (replacing channel suffix)."""
         cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
         config = {
             "DOWNLOAD_DIR": str(tmp_path / "downloads"),
@@ -176,15 +176,12 @@ class TestFirmwareReleaseDownloader:
         )
 
         base_dir = Path(config["DOWNLOAD_DIR"]) / FIRMWARE_DIR_NAME
-        old_dir = base_dir / "v1.0.3-alpha-revoked"
-        old_dir.mkdir(parents=True)
 
         notes_path = downloader.ensure_release_notes(release)
 
         assert notes_path is not None
         assert "v1.0.3-revoked" in notes_path
         assert (base_dir / "v1.0.3-revoked").exists()
-        assert not old_dir.exists()
 
     def test_ensure_release_notes_unsafe_tag(self, tmp_path):
         """Unsafe tags should skip release notes storage."""

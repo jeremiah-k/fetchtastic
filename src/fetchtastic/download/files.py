@@ -854,10 +854,9 @@ class FileOperations:
                     f"Unsupported hash algorithm: {algorithm}, using SHA-256"
                 )
                 algorithm = "sha256"
-                hash_func = cast(
-                    Callable[[], HashAlgorithm],
-                    lambda: cast(HashAlgorithm, hashlib.sha256()),
-                )
+
+                def hash_func() -> HashAlgorithm:
+                    return cast(HashAlgorithm, hashlib.sha256())
 
             for file_path in extracted_files:
                 if os.path.exists(file_path):
@@ -1017,7 +1016,6 @@ def safe_extract_path(extract_dir: str, file_path: str) -> str:
 def get_channel_suffix(
     release: "Release",
     release_history_manager: "ReleaseHistoryManager",
-    is_revoked: bool,
     add_channel_suffixes: bool,
 ) -> str:
     """
@@ -1026,13 +1024,12 @@ def get_channel_suffix(
     Parameters:
         release (Release): Release object to query for channel information.
         release_history_manager (ReleaseHistoryManager): Manager instance to query for release channel.
-        is_revoked (bool): If True, no channel suffix is returned, allowing the caller to handle revoked status.
         add_channel_suffixes (bool): If True, attempt to detect and add channel suffix.
 
     Returns:
         str: Channel suffix (e.g., "-alpha", "-beta", "-rc") or empty string if no suffix applies.
     """
-    if not add_channel_suffixes or is_revoked:
+    if not add_channel_suffixes:
         return ""
 
     channel = release_history_manager.get_release_channel(release)
@@ -1052,9 +1049,9 @@ def build_storage_tag_with_channel(
     """
     Build a storage tag for a release with optional channel and revoked suffixes.
 
-    If ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES is enabled in config, appends the channel
+    If a release is revoked, it gets a "-revoked" suffix, which replaces any channel suffix.
+    Otherwise, if ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES is enabled, appends the channel
     suffix (-alpha, -beta, -rc) to the storage tag for releases with a detected channel.
-    Also appends -revoked suffix if is_revoked is True.
 
     Note: This is used for full releases only. Prereleases are handled separately.
 
@@ -1068,7 +1065,8 @@ def build_storage_tag_with_channel(
     Returns:
         str: The storage tag with appropriate suffixes.
     """
-    safe_tag = sanitized_release_tag
+    if is_revoked:
+        return f"{sanitized_release_tag}-revoked"
 
     add_channel_suffixes = config.get(
         "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES",
@@ -1078,15 +1076,7 @@ def build_storage_tag_with_channel(
     channel_suffix = get_channel_suffix(
         release=release,
         release_history_manager=release_history_manager,
-        is_revoked=is_revoked,
         add_channel_suffixes=add_channel_suffixes,
     )
 
-    # Build final tag
-    # Revoked releases replace their channel suffix with -revoked instead of adding to it.
-    # For example: v1.0.0-alpha becomes v1.0.0-revoked, not v1.0.0-alpha-revoked.
-    # This applies to all channels (alpha, beta, rc) for consistency.
-    revoked_suffix = "-revoked" if is_revoked else ""
-    tag = f"{safe_tag}{channel_suffix}{revoked_suffix}"
-
-    return tag
+    return f"{sanitized_release_tag}{channel_suffix}"
