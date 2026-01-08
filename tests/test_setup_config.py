@@ -1030,18 +1030,17 @@ def test_run_setup_first_run_linux_simple(
     user_inputs = [
         "",  # Use default base directory
         "b",  # Both APKs and firmware
-        "n",  # Add channel suffixes
+        "n",  # Check for firmware prereleases
         "y",  # Check for APK prereleases
+        "n",  # Add channel suffixes
         "2",  # Keep 2 versions of Android app
         "2",  # Keep 2 versions of firmware
         "n",  # No auto-extract
-        "n",  # No pre-releases
         "n",  # No cron job
         "n",  # No reboot cron job
         "n",  # No NTFY notifications
         "n",  # Would you like to set up a GitHub token now?
         "n",  # Don't perform first run now
-        "",  # Extra input buffer
     ]
     mock_input.side_effect = user_inputs
 
@@ -1115,12 +1114,12 @@ def test_run_setup_first_run_windows(
         "",  # Use default base directory
         "y",  # create menu
         "b",  # Both APKs and firmware
-        "n",  # Add channel suffixes
+        "n",  # Check for firmware prereleases
         "y",  # Check for APK prereleases
+        "n",  # Add channel suffixes
         "2",  # Keep 2 versions of Android app
         "2",  # Keep 2 versions of firmware
         "n",  # No auto-extract
-        "n",  # No pre-releases
         "y",  # create startup shortcut
         "n",  # No NTFY notifications
         "n",  # Would you like to set up a GitHub token now?
@@ -1208,18 +1207,17 @@ def test_run_setup_first_run_termux(  # noqa: ARG001
         "n",  # don't migrate to pipx (so setup continues)
         "",  # Use default base directory
         "b",  # Both APKs and firmware
-        "n",  # Add channel suffixes
+        "n",  # Check for firmware prereleases
         "y",  # Check for APK prereleases
+        "n",  # Add channel suffixes
         "1",  # Keep 1 version of Android app
         "1",  # Keep 1 version of firmware
-        "n",  # No pre-releases
         "n",  # No auto-extract
         "y",  # wifi only
         "h",  # hourly cron job
         "y",  # boot script
         "n",  # No NTFY notifications
         "n",  # Would you like to set up a GitHub token now?
-        "n",  # No GitHub token setup
         "n",  # Don't perform first run now
     ]
     mock_input.side_effect = user_inputs
@@ -1304,13 +1302,13 @@ def test_run_setup_existing_config(
         "",  # choose full setup at the new prompt
         "/new/base/dir",  # New base directory
         "f",  # Only firmware
+        "y",  # Check for pre-releases
         "n",  # Add channel suffixes
         "5",  # Keep 5 versions of firmware
         "y",  # Auto-extract
         "rak4631- tbeam",  # Extraction patterns
-        "y",  # Check for pre-releases
         "y",  # reconfigure cron
-        "n",  # no daily cron
+        "n",  # no cron job
         "n",  # no reboot cron
         "y",  # reconfigure ntfy
         "https://ntfy.sh/new",  # new server
@@ -1415,7 +1413,15 @@ def test_run_setup_partial_firmware_section(
     mock_menu_firmware.reset_mock()
     mock_menu_apk.reset_mock()
 
-    mock_input.side_effect = ["y", "y", "3", "y", "esp32- rak4631-", "y", "n", "y", "y"]
+    mock_input.side_effect = [
+        "y",  # Download firmware releases
+        "y",  # Re-run firmware menu
+        "y",  # Check for firmware prereleases
+        "n",  # Add channel suffixes
+        "3",  # Keep 3 versions of firmware
+        "y",  # Auto-extract
+        "esp32- rak4631-",  # Extraction patterns
+    ]
 
     with patch("builtins.open", mock_open()):
         setup_config.run_setup(sections=["firmware"])
@@ -1671,10 +1677,10 @@ def test_run_setup_skips_prompt_when_sections_provided(mock_prompt, mock_config_
 @patch("builtins.input")
 def test_setup_firmware_selected_prerelease_assets_new_config(mock_input):
     """Test setup wizard prompts for SELECTED_PRERELEASE_ASSETS with new configuration."""
-    config = {}
+    config = {"CHECK_PRERELEASES": True}
 
-    # Simulate user inputs: 3 versions, yes to auto-extract, device patterns, yes to prereleases
-    mock_input.side_effect = ["3", "y", "rak4631- tbeam", "y", "y"]
+    # Simulate user inputs: 3 versions, yes to auto-extract, device patterns
+    mock_input.side_effect = ["3", "y", "rak4631- tbeam"]
 
     result = setup_config._setup_firmware(config, is_first_run=True, default_versions=2)
 
@@ -1692,13 +1698,13 @@ def test_setup_firmware_selected_prerelease_assets_migration_accept(mock_input):
     """Test migration from EXTRACT_PATTERNS to SELECTED_PRERELEASE_ASSETS when user accepts."""
     config = {
         "FIRMWARE_VERSIONS_TO_KEEP": 2,
-        "CHECK_PRERELEASES": False,
+        "CHECK_PRERELEASES": True,
         "EXTRACT_PATTERNS": ["station-", "heltec-", "rak4631-"],
         "AUTO_EXTRACT": True,
     }
 
-    # Simulate user inputs: keep 2 versions, keep auto-extract, keep current extraction patterns, enable prereleases
-    mock_input.side_effect = ["2", "y", "y", "y"]
+    # Simulate user inputs: keep 2 versions, keep auto-extract, keep current extraction patterns
+    mock_input.side_effect = ["2", "y", "y"]
 
     result = setup_config._setup_firmware(
         config, is_first_run=False, default_versions=2
@@ -1721,13 +1727,13 @@ def test_setup_firmware_selected_prerelease_assets_migration_decline(mock_input)
     """Test migration from EXTRACT_PATTERNS to SELECTED_PRERELEASE_ASSETS when user declines."""
     config = {
         "FIRMWARE_VERSIONS_TO_KEEP": 2,
-        "CHECK_PRERELEASES": False,
+        "CHECK_PRERELEASES": True,
         "EXTRACT_PATTERNS": ["station-", "heltec-"],
         "AUTO_EXTRACT": True,
     }
 
-    # Simulate user inputs: keep 2 versions, keep auto-extract, change extraction patterns, new patterns, enable prereleases
-    mock_input.side_effect = ["2", "y", "n", "esp32- rak4631-", "y"]
+    # Simulate user inputs: keep 2 versions, keep auto-extract, change extraction patterns, new patterns
+    mock_input.side_effect = ["2", "y", "n", "esp32- rak4631-"]
 
     result = setup_config._setup_firmware(
         config, is_first_run=False, default_versions=2
@@ -1751,8 +1757,8 @@ def test_setup_firmware_selected_prerelease_assets_existing_keep(mock_input):
         "AUTO_EXTRACT": False,
     }
 
-    # Simulate user inputs: keep 3 versions, no auto-extract, keep prereleases
-    mock_input.side_effect = ["3", "n", "y"]
+    # Simulate user inputs: keep 3 versions, no auto-extract
+    mock_input.side_effect = ["3", "n"]
 
     result = setup_config._setup_firmware(
         config, is_first_run=False, default_versions=2
@@ -1775,8 +1781,8 @@ def test_setup_firmware_selected_prerelease_assets_existing_change(mock_input):
         "EXTRACT_PATTERNS": ["old-pattern"],
     }
 
-    # Simulate user inputs: keep 3 versions, keep auto-extract, don't keep patterns, new patterns, keep prereleases
-    mock_input.side_effect = ["3", "y", "n", "new-pattern device-", "y"]
+    # Simulate user inputs: keep 3 versions, keep auto-extract, don't keep patterns, new patterns
+    mock_input.side_effect = ["3", "y", "n", "new-pattern device-"]
 
     result = setup_config._setup_firmware(
         config, is_first_run=False, default_versions=2
@@ -1795,13 +1801,13 @@ def test_setup_firmware_selected_prerelease_assets_disabled_prereleases(mock_inp
     """Test that SELECTED_PRERELEASE_ASSETS is cleared when prereleases are disabled."""
     config = {
         "FIRMWARE_VERSIONS_TO_KEEP": 2,
-        "CHECK_PRERELEASES": True,
+        "CHECK_PRERELEASES": False,
         "SELECTED_PRERELEASE_ASSETS": ["rak4631-", "tbeam"],
         "AUTO_EXTRACT": False,
     }
 
-    # Simulate user inputs: keep 2 versions, disable prereleases, no auto-extract
-    mock_input.side_effect = ["2", "n", "n"]
+    # Simulate user inputs: keep 2 versions, no auto-extract
+    mock_input.side_effect = ["2", "n"]
 
     result = setup_config._setup_firmware(
         config, is_first_run=False, default_versions=2
@@ -1817,10 +1823,10 @@ def test_setup_firmware_selected_prerelease_assets_disabled_prereleases(mock_inp
 @patch("builtins.input")
 def test_setup_firmware_selected_prerelease_assets_empty_patterns(mock_input):
     """Test handling of empty prerelease asset patterns."""
-    config = {}
+    config = {"CHECK_PRERELEASES": True}
 
-    # Simulate user inputs: 2 versions, yes to auto-extract, empty patterns, yes to prereleases
-    mock_input.side_effect = ["2", "y", "", "y"]
+    # Simulate user inputs: 2 versions, yes to auto-extract, empty patterns
+    mock_input.side_effect = ["2", "y", ""]
 
     result = setup_config._setup_firmware(config, is_first_run=True, default_versions=2)
 
@@ -1836,13 +1842,13 @@ def test_setup_firmware_selected_prerelease_assets_migration_empty_input(mock_in
     """Test migration scenario when user provides empty input after declining migration."""
     config = {
         "FIRMWARE_VERSIONS_TO_KEEP": 2,
-        "CHECK_PRERELEASES": False,
+        "CHECK_PRERELEASES": True,
         "EXTRACT_PATTERNS": ["station-", "heltec-"],
         "AUTO_EXTRACT": False,
     }
 
-    # Simulate user inputs: keep 2 versions, yes to auto-extract, decline to keep patterns, empty input, yes to prereleases
-    mock_input.side_effect = ["2", "y", "n", "", "y"]
+    # Simulate user inputs: keep 2 versions, yes to auto-extract, decline to keep patterns, empty input
+    mock_input.side_effect = ["2", "y", "n", ""]
 
     result = setup_config._setup_firmware(
         config, is_first_run=False, default_versions=2

@@ -167,6 +167,9 @@ def test_migrate_pip_to_pipx_backup_failure(mocker, tmp_path):
     )
     mocker.patch("shutil.which", return_value="/usr/bin/pipx")
     mocker.patch("builtins.input", return_value="y")
+    mocker.patch(
+        "subprocess.run", return_value=mocker.MagicMock(returncode=0, stdout="")
+    )
 
     # Mock file operations to fail on backup read
     def mock_open_failure(filename, mode="r"):
@@ -193,8 +196,8 @@ def test_setup_downloads_apk_only(mocker, capsys):
         "builtins.input",
         side_effect=[
             "a",  # Choose APK only
-            "n",  # Add channel suffixes
             "y",  # Check APK prereleases
+            "n",  # Add channel suffixes
         ],
     )
 
@@ -224,7 +227,8 @@ def test_setup_downloads_firmware_only(mocker, capsys):
         "builtins.input",
         side_effect=[
             "f",  # Choose firmware only
-            "n",  # Don't rerun menu
+            "n",  # Check firmware prereleases
+            "n",  # Add channel suffixes
         ],
     )
 
@@ -253,9 +257,9 @@ def test_setup_downloads_both_selected(mocker, capsys):
         "builtins.input",
         side_effect=[
             "b",  # Choose both
-            "n",  # Don't rerun APK menu
-            "n",  # Don't rerun firmware menu
+            "n",  # Check firmware prereleases
             "y",  # Check APK prereleases
+            "n",  # Add channel suffixes
         ],
     )
 
@@ -284,9 +288,7 @@ def test_setup_downloads_no_selection(mocker, capsys):
     config = {}
 
     # Mock input to select APK but then menu returns None
-    mocker.patch(
-        "builtins.input", side_effect=["a", "n"]
-    )  # Choose APK, Add channel suffixes
+    mocker.patch("builtins.input", side_effect=["a"])  # Choose APK only
     mocker.patch("fetchtastic.menu_apk.run_menu", return_value=None)
 
     result_config, save_apks, save_firmware = setup_config._setup_downloads(
@@ -317,10 +319,10 @@ def test_setup_downloads_partial_run(mocker):
     mocker.patch(
         "builtins.input",
         side_effect=[
-            "y",  # Keep APK selection
-            "n",  # Add channel suffixes
+            "y",  # Download Android APKs
             "n",  # Don't rerun menu (keep existing selection)
             "y",  # Enable prereleases
+            "n",  # Add channel suffixes
         ],
     )
 
