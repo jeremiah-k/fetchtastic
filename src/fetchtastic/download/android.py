@@ -195,7 +195,12 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         Returns:
             suffix (str): Formatted log suffix containing channel and revoked information, or an empty string if no contextual info is available.
         """
-        return self.release_history_manager.format_release_log_suffix(release)
+        label = self.release_history_manager.format_release_label(
+            release, include_channel=False, include_status=True
+        )
+        if label == release.tag_name:
+            return ""
+        return label[len(release.tag_name) :]
 
     def ensure_release_notes(self, release: Release) -> Optional[str]:
         """
