@@ -1021,31 +1021,25 @@ def get_channel_suffix(
     add_channel_suffixes: bool,
 ) -> str:
     """
-    Determine the channel suffix for a release based on its channel and revoked status.
+    Determine the channel suffix for a release based on its channel.
 
     Parameters:
         release (Release): Release object to query for channel information.
         release_history_manager (ReleaseHistoryManager): Manager instance to query for release channel.
-        is_revoked (bool): If True, revoked status replaces the channel suffix with -revoked.
+        is_revoked (bool): If True, no channel suffix is returned, allowing the caller to handle revoked status.
         add_channel_suffixes (bool): If True, attempt to detect and add channel suffix.
 
     Returns:
         str: Channel suffix (e.g., "-alpha", "-beta", "-rc") or empty string if no suffix applies.
     """
-    channel_suffix = ""
+    if not add_channel_suffixes or is_revoked:
+        return ""
 
-    if add_channel_suffixes:
-        channel = release_history_manager.get_release_channel(release)
-        if channel and channel in STORAGE_CHANNEL_SUFFIXES:
-            # Revoked releases replace their channel suffix with -revoked instead of adding to it.
-            # For example: v1.0.0-alpha becomes v1.0.0-revoked, not v1.0.0-alpha-revoked.
-            # This applies to all channels (alpha, beta, rc) for consistency.
-            if is_revoked:
-                channel_suffix = ""
-            else:
-                channel_suffix = f"-{channel}"
+    channel = release_history_manager.get_release_channel(release)
+    if channel and channel in STORAGE_CHANNEL_SUFFIXES:
+        return f"-{channel}"
 
-    return channel_suffix
+    return ""
 
 
 def build_storage_tag_with_channel(
@@ -1089,6 +1083,9 @@ def build_storage_tag_with_channel(
     )
 
     # Build final tag
+    # Revoked releases replace their channel suffix with -revoked instead of adding to it.
+    # For example: v1.0.0-alpha becomes v1.0.0-revoked, not v1.0.0-alpha-revoked.
+    # This applies to all channels (alpha, beta, rc) for consistency.
     revoked_suffix = "-revoked" if is_revoked else ""
     tag = f"{safe_tag}{channel_suffix}{revoked_suffix}"
 

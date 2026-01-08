@@ -93,7 +93,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         Sanitizes inputs and places prerelease APKs under the prerelease APKs subdirectory when `is_prerelease` is True or inferred; creates the release version directory if it does not exist.
 
         Parameters:
-            is_prerelease (Optional[bool]): If provided, override inference and use the specified prerelease status to choose the base directory.
+            is_prerelease (Optional[bool]): If provided, override inference and use the specified prerelease status to choose the base directory. This parameter is ignored if a `release` object is also provided.
             release (Optional[Release]): Required when ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES is enabled for full releases to correctly detect channel suffixes.
 
         Returns:
