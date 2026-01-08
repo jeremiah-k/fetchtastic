@@ -116,8 +116,8 @@ class TestChannelSuffixes:
         storage_tag = downloader._get_release_storage_tag(release)
         assert storage_tag == "v2.0.0"
 
-    def test_android_channel_suffix_enabled(self, tmp_path):
-        """Android APK should add -alpha suffix when ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES is True."""
+    def test_android_channel_suffix_disabled(self, tmp_path):
+        """Android APK should NOT add channel suffixes regardless of ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES setting."""
         cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
         config = {
             "DOWNLOAD_DIR": str(tmp_path / "downloads"),
@@ -134,28 +134,6 @@ class TestChannelSuffixes:
 
         target_path = downloader.get_target_path_for_release(
             release.tag_name, "app.apk", is_prerelease=False, release=release
-        )
-        version_dir = Path(target_path).parent
-        assert str(version_dir.name) == "v1.0.0-alpha"
-
-    def test_android_channel_suffix_disabled(self, tmp_path):
-        """Android APK should NOT add -alpha suffix when ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES is False."""
-        cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
-        config = {
-            "DOWNLOAD_DIR": str(tmp_path / "downloads"),
-            "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES": False,
-        }
-        downloader = MeshtasticAndroidAppDownloader(config, cache_manager)
-
-        release = Release(
-            tag_name="v1.0.0",
-            prerelease=False,
-            name="Meshtastic Android 1.0.0 Alpha",
-            body="This is an alpha release",
-        )
-
-        target_path = downloader.get_target_path_for_release(
-            release.tag_name, "app.apk", is_prerelease=False
         )
         version_dir = Path(target_path).parent
         assert str(version_dir.name) == "v1.0.0"
@@ -206,8 +184,8 @@ class TestChannelSuffixes:
         version_dir = Path(target_path).parent
         assert str(version_dir.name) == "v2.0.0"
 
-    def test_android_ensure_release_notes_with_suffix(self, tmp_path):
-        """Android ensure_release_notes should use channel suffix when enabled."""
+    def test_android_ensure_release_notes_no_suffix(self, tmp_path):
+        """Android ensure_release_notes should NOT use channel suffixes."""
         cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
         config = {
             "DOWNLOAD_DIR": str(tmp_path / "downloads"),
@@ -224,8 +202,8 @@ class TestChannelSuffixes:
 
         notes_path = downloader.ensure_release_notes(release)
         assert notes_path is not None
-        assert "v1.0.0-alpha" in notes_path
-        assert (Path(config["DOWNLOAD_DIR"]) / APKS_DIR_NAME / "v1.0.0-alpha").exists()
+        assert "v1.0.0" in notes_path
+        assert (Path(config["DOWNLOAD_DIR"]) / APKS_DIR_NAME / "v1.0.0").exists()
 
     def test_revoked_alpha_channel_suffix(self, tmp_path):
         """Revoked alpha releases should produce v1.0.0-revoked (no -alpha suffix)."""

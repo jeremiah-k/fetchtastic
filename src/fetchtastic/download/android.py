@@ -33,17 +33,11 @@ from fetchtastic.constants import (
 from fetchtastic.log_utils import logger
 from fetchtastic.utils import make_github_api_request, matches_selected_patterns
 
-_CHANNEL_SUFFIX_RELEASE_REQUIRED_MSG = (
-    "release parameter is required when ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES is enabled "
-    "for full releases, to correctly detect channel suffixes"
-)
-
 from .base import BaseDownloader
 from .cache import CacheManager
 from .files import (
     _safe_rmtree,
     _sanitize_path_component,
-    build_storage_tag_with_channel,
 )
 from .interfaces import Asset, DownloadResult, Release
 from .prerelease_history import PrereleaseHistoryManager
@@ -108,7 +102,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         safe_release = self._sanitize_required(release_tag, "release tag")
         safe_name = self._sanitize_required(file_name, "file name")
 
-        # Use Release object for comprehensive prerelease detection and channel suffix when available
+        # Use Release object for comprehensive prerelease detection when available
         if release is not None:
             safe_release = self._get_storage_tag_for_release(release)
             is_prerelease = self._is_android_prerelease(release)
@@ -118,12 +112,6 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                 is_prerelease = _is_apk_prerelease_by_name(
                     release_tag
                 ) or self.version_manager.is_prerelease_version(release_tag)
-
-            # Apply channel suffix for full releases when configured
-            if not is_prerelease and self.config.get(
-                "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES", False
-            ):
-                raise ValueError(_CHANNEL_SUFFIX_RELEASE_REQUIRED_MSG)
 
         base_dir = (
             self._get_prerelease_base_dir()
@@ -165,30 +153,17 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
 
     def _get_storage_tag_for_release(self, release: Release) -> str:
         """
-        Compute storage tag for a release with appropriate channel suffix when configured.
+        Compute storage tag for an APK release.
 
-        Determines if the release is a prerelease using a comprehensive check, and applies
-        channel suffix only for full releases when ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES is enabled.
-        Also handles revoked status to replace channel suffix with -revoked when applicable.
+        APK releases do not use channel suffixes; returns only the sanitized tag name.
 
         Parameters:
             release (Release): Release object containing tag_name and other metadata.
 
         Returns:
-            str: Storage tag with channel suffix if applicable.
+            str: Sanitized storage tag without any channel or revoked suffixes.
         """
-        safe_tag = self._sanitize_required(release.tag_name, "release tag")
-        is_prerelease = self._is_android_prerelease(release)
-        is_revoked = self.is_release_revoked(release)
-
-        return build_storage_tag_with_channel(
-            sanitized_release_tag=safe_tag,
-            release=release,
-            release_history_manager=self.release_history_manager,
-            config=self.config,
-            is_prerelease=is_prerelease,
-            is_revoked=is_revoked,
-        )
+        return self._sanitize_required(release.tag_name, "release tag")
 
     def update_release_history(
         self, releases: List[Release], *, log_summary: bool = True
@@ -682,15 +657,7 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
                             release.tag_name,
                         )
                         continue
-                    storage_tag = build_storage_tag_with_channel(
-                        sanitized_release_tag=safe_tag,
-                        release=release,
-                        release_history_manager=self.release_history_manager,
-                        config=self.config,
-                        is_prerelease=self._is_android_prerelease(release),
-                        is_revoked=self.is_release_revoked(release),
-                    )
-                    expected.add(storage_tag)
+                    expected.add(safe_tag)
                 return expected
 
             expected_stable = _build_expected_set(
