@@ -15,7 +15,7 @@ import shutil
 import tempfile
 import zipfile
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any, Callable, Protocol
+from typing import IO, TYPE_CHECKING, Any, Callable, Protocol, cast
 
 from fetchtastic.constants import (
     DEFAULT_ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES,
@@ -846,7 +846,7 @@ class FileOperations:
                     Returns:
                         HashAlgorithm: A fresh hash object suitable for incremental `update` calls and digest computation.
                     """
-                    return hashlib.new(algorithm.lower())
+                    return cast(HashAlgorithm, hashlib.new(algorithm.lower()))
 
                 hash_func()  # Test that algorithm is valid
             except ValueError:
@@ -854,7 +854,10 @@ class FileOperations:
                     f"Unsupported hash algorithm: {algorithm}, using SHA-256"
                 )
                 algorithm = "sha256"
-                hash_func = hashlib.sha256
+                hash_func = cast(
+                    Callable[[], HashAlgorithm],
+                    lambda: cast(HashAlgorithm, hashlib.sha256()),
+                )
 
             for file_path in extracted_files:
                 if os.path.exists(file_path):
