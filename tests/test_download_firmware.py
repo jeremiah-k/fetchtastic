@@ -732,22 +732,22 @@ class TestFirmwareReleaseDownloader:
         )
 
         entry_keep1 = Mock()
-        entry_keep1.name = "v2.7.17.83c6161"
+        entry_keep1.name = "v2.7.17.83c6161-alpha"
         entry_keep1.is_symlink.return_value = False
         entry_keep1.is_dir.return_value = True
-        entry_keep1.path = "/mock/firmware/v2.7.17.83c6161"
+        entry_keep1.path = "/mock/firmware/v2.7.17.83c6161-alpha"
 
         entry_keep2 = Mock()
-        entry_keep2.name = "v2.7.16.a597230"
+        entry_keep2.name = "v2.7.16.a597230-alpha"
         entry_keep2.is_symlink.return_value = False
         entry_keep2.is_dir.return_value = True
-        entry_keep2.path = "/mock/firmware/v2.7.16.a597230"
+        entry_keep2.path = "/mock/firmware/v2.7.16.a597230-alpha"
 
         entry_remove = Mock()
-        entry_remove.name = "v2.7.15.567b8ea"
+        entry_remove.name = "v2.7.15.567b8ea-alpha"
         entry_remove.is_symlink.return_value = False
         entry_remove.is_dir.return_value = True
-        entry_remove.path = "/mock/firmware/v2.7.15.567b8ea"
+        entry_remove.path = "/mock/firmware/v2.7.15.567b8ea-alpha"
 
         mock_scandir.return_value.__enter__.return_value = [
             entry_keep1,
@@ -757,7 +757,7 @@ class TestFirmwareReleaseDownloader:
 
         downloader.cleanup_old_versions(keep_limit=2)
 
-        mock_rmtree.assert_called_once_with("/mock/firmware/v2.7.15.567b8ea")
+        mock_rmtree.assert_called_once_with("/mock/firmware/v2.7.15.567b8ea-alpha")
 
     def test_get_prerelease_tracking_file(self, downloader):
         """Test prerelease tracking file path generation."""

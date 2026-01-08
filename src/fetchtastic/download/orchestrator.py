@@ -7,7 +7,9 @@ downloaders in a single fetchtastic download run.
 
 import json
 import os
+import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -151,6 +153,12 @@ class DownloadOrchestrator:
         """
         start_time = time.time()
         logger.info("Starting download pipeline...")
+        logger.debug(
+            "Execution context: cwd=%s, python=%s, fetchtastic=%s",
+            os.getcwd(),
+            sys.executable,
+            shutil.which("fetchtastic"),
+        )
 
         if is_termux() and self.config.get("WIFI_ONLY", False):
             if not is_connected_to_wifi():

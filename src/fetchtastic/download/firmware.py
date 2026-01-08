@@ -327,18 +327,6 @@ class FirmwareReleaseDownloader(BaseDownloader):
             "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES",
             DEFAULT_ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES,
         )
-        if (
-            add_channel_suffixes
-            and not is_revoked
-            and target_tag == safe_tag
-            and self.version_manager.is_prerelease_version(release.tag_name)
-        ):
-            target_tag = f"{safe_tag}-alpha"
-            logger.debug(
-                "Inferred alpha channel suffix from prerelease-style tag %s -> %s",
-                release.tag_name,
-                target_tag,
-            )
         if add_channel_suffixes and not is_revoked and target_tag == safe_tag:
             existing_channel_dirs = [
                 f"{safe_tag}-{channel}"
