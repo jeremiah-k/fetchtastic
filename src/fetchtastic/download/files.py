@@ -1063,8 +1063,8 @@ def build_storage_tag_with_channel(
 
     Parameters:
         sanitized_release_tag (str): The sanitized release tag to use as base.
-        release: Release object to query for channel information.
-        release_history_manager: Manager instance to query for release channel.
+        release (Release): Release object to query for channel information.
+        release_history_manager (ReleaseHistoryManager): Manager instance to query for release channel.
         config (dict): Configuration dict containing ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES setting.
         is_revoked (bool): If True, -revoked suffix is added.
 
