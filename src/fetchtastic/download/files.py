@@ -1050,7 +1050,6 @@ def build_storage_tag_with_channel(
     release: "Release",
     release_history_manager: "ReleaseHistoryManager",
     config: dict,
-    is_prerelease: bool,
     is_revoked: bool,
 ) -> str:
     """
@@ -1067,7 +1066,6 @@ def build_storage_tag_with_channel(
         release: Release object to query for channel information.
         release_history_manager: Manager instance to query for release channel.
         config (dict): Configuration dict containing ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES setting.
-        is_prerelease (bool): Unused - full releases can have channels regardless of prerelease flag.
         is_revoked (bool): If True, -revoked suffix is added.
 
     Returns:

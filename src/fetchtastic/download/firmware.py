@@ -319,7 +319,6 @@ class FirmwareReleaseDownloader(BaseDownloader):
             release=release,
             release_history_manager=self.release_history_manager,
             config=self.config,
-            is_prerelease=False,
             is_revoked=is_revoked,
         )
 

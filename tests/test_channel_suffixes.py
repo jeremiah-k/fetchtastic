@@ -2,13 +2,11 @@
 Tests for channel suffixes feature (adding -alpha/-beta/-rc to release directories)
 """
 
-import os
-import tempfile
 from pathlib import Path
 
 import pytest
 
-from fetchtastic.constants import APKS_DIR_NAME, FIRMWARE_DIR_NAME
+from fetchtastic.constants import APKS_DIR_NAME
 from fetchtastic.download.android import MeshtasticAndroidAppDownloader
 from fetchtastic.download.cache import CacheManager
 from fetchtastic.download.firmware import FirmwareReleaseDownloader
@@ -155,7 +153,7 @@ class TestChannelSuffixes:
         )
 
         target_path = downloader.get_target_path_for_release(
-            release.tag_name, "app.apk"
+            release.tag_name, "app.apk", is_prerelease=True, release=release
         )
         # Prereleases should go to prerelease subdirectory
         version_dir = Path(target_path).parent
