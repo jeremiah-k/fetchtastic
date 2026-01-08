@@ -1056,16 +1056,18 @@ def build_storage_tag_with_channel(
     """
     Build a storage tag for a release with optional channel and revoked suffixes.
 
-    If ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES is enabled in config and the release is not a
-    prerelease, appends the channel suffix (-alpha, -beta, -rc) to the storage tag.
+    If ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES is enabled in config, appends the channel
+    suffix (-alpha, -beta, -rc) to the storage tag for releases with a detected channel.
     Also appends -revoked suffix if is_revoked is True.
+
+    Note: This is used for full releases only. Prereleases are handled separately.
 
     Parameters:
         sanitized_release_tag (str): The sanitized release tag to use as base.
         release: Release object to query for channel information.
         release_history_manager: Manager instance to query for release channel.
         config (dict): Configuration dict containing ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES setting.
-        is_prerelease (bool): If True, channel suffixes are not added (only for full releases).
+        is_prerelease (bool): Unused - full releases can have channels regardless of prerelease flag.
         is_revoked (bool): If True, -revoked suffix is added.
 
     Returns:
@@ -1082,7 +1084,7 @@ def build_storage_tag_with_channel(
         release=release,
         release_history_manager=release_history_manager,
         is_revoked=is_revoked,
-        add_channel_suffixes=add_channel_suffixes and not is_prerelease,
+        add_channel_suffixes=add_channel_suffixes,
     )
 
     # Build final tag

@@ -331,7 +331,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
             release=release,
             release_history_manager=self.release_history_manager,
             config=self.config,
-            is_prerelease=release.prerelease,
+            is_prerelease=False,
             is_revoked=is_revoked,
         )
 
@@ -416,11 +416,13 @@ class FirmwareReleaseDownloader(BaseDownloader):
         )
 
         # Determine current channel from release using shared helper
+        # Always detect channel for candidate generation (regardless of feature flag)
+        # so we can find existing directories created with different suffixes
         current_channel_suffix = get_channel_suffix(
             release=release,
             release_history_manager=self.release_history_manager,
             is_revoked=is_revoked,
-            add_channel_suffixes=add_channel_suffixes and not release.prerelease,
+            add_channel_suffixes=True,
         )
         current_channel = (
             current_channel_suffix.lstrip("-") if current_channel_suffix else ""
