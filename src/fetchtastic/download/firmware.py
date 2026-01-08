@@ -444,26 +444,21 @@ class FirmwareReleaseDownloader(BaseDownloader):
             channels_to_try.extend(sorted(STORAGE_CHANNEL_SUFFIXES))
         channels = list(dict.fromkeys(channels_to_try))
 
-        candidates: List[str] = []
+        # Build all possible non-revoked and revoked tags
+        non_revoked_tags = [
+            self._build_storage_tag(safe_tag, c, False) for c in channels
+        ]
+        revoked_tag = self._build_storage_tag(safe_tag, "", True)
+
+        # Order candidates based on whether the release is revoked
         if is_revoked:
-            revoked_tag = self._build_storage_tag(safe_tag, "", True)
-            candidates.append(revoked_tag)
-
-            for channel_name in channels:
-                tag = self._build_storage_tag(safe_tag, channel_name, False)
-                if tag not in candidates:
-                    candidates.append(tag)
+            ordered_candidates = [revoked_tag] + non_revoked_tags
         else:
-            for channel_name in channels:
-                tag = self._build_storage_tag(safe_tag, channel_name, False)
-                if tag not in candidates:
-                    candidates.append(tag)
+            ordered_candidates = non_revoked_tags + [revoked_tag]
 
-            revoked_tag = self._build_storage_tag(safe_tag, "", True)
-            if revoked_tag not in candidates:
-                candidates.append(revoked_tag)
-
-        return [tag for tag in candidates if tag != target_tag]
+        # Remove duplicates while preserving order and filter out the target_tag
+        unique_candidates = list(dict.fromkeys(ordered_candidates))
+        return [tag for tag in unique_candidates if tag != target_tag]
 
     def download_firmware(self, release: Release, asset: Asset) -> DownloadResult:
         """
