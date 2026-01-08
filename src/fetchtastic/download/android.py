@@ -198,8 +198,6 @@ class MeshtasticAndroidAppDownloader(BaseDownloader):
         label = self.release_history_manager.format_release_label(
             release, include_channel=False, include_status=True
         )
-        if label == release.tag_name:
-            return ""
         return label[len(release.tag_name) :]
 
     def ensure_release_notes(self, release: Release) -> Optional[str]:
