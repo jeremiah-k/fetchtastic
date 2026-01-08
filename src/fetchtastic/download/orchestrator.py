@@ -291,10 +291,10 @@ class DownloadOrchestrator:
 
             releases_to_download = []
             for release in releases_to_process:
-                self.firmware_downloader.ensure_release_notes(release)
                 suffix = self.firmware_downloader.format_release_log_suffix(release)
                 logger.info(f"Checking {release.tag_name}{suffix}…")
                 if self.firmware_downloader.is_release_complete(release):
+                    self.firmware_downloader.ensure_release_notes(release)
                     logger.debug(
                         f"Release {release.tag_name} already exists and is complete"
                     )
@@ -305,6 +305,7 @@ class DownloadOrchestrator:
             if releases_to_download:
                 for release in releases_to_download:
                     logger.info(f"Downloading firmware release {release.tag_name}")
+                    self.firmware_downloader.ensure_release_notes(release)
                     if self._download_firmware_release(release):
                         any_firmware_downloaded = True
 
