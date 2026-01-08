@@ -193,6 +193,7 @@ def test_setup_downloads_apk_only(mocker, capsys):
         "builtins.input",
         side_effect=[
             "a",  # Choose APK only
+            "n",  # Add channel suffixes
             "y",  # Check APK prereleases
         ],
     )
@@ -283,7 +284,9 @@ def test_setup_downloads_no_selection(mocker, capsys):
     config = {}
 
     # Mock input to select APK but then menu returns None
-    mocker.patch("builtins.input", side_effect=["a"])  # Choose APK
+    mocker.patch(
+        "builtins.input", side_effect=["a", "n"]
+    )  # Choose APK, Add channel suffixes
     mocker.patch("fetchtastic.menu_apk.run_menu", return_value=None)
 
     result_config, save_apks, save_firmware = setup_config._setup_downloads(
@@ -315,6 +318,7 @@ def test_setup_downloads_partial_run(mocker):
         "builtins.input",
         side_effect=[
             "y",  # Keep APK selection
+            "n",  # Add channel suffixes
             "n",  # Don't rerun menu (keep existing selection)
             "y",  # Enable prereleases
         ],

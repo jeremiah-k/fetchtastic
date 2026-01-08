@@ -10,7 +10,7 @@ import os
 import zipfile
 from abc import ABC
 from pathlib import Path
-from typing import Any, Dict, List, Optional, cast
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, cast
 
 from requests.exceptions import RequestException
 
@@ -22,6 +22,9 @@ from .cache import CacheManager
 from .files import FileOperations, _sanitize_path_component, strip_unwanted_chars
 from .interfaces import Asset, Downloader, DownloadResult, Pathish
 from .version import VersionManager
+
+if TYPE_CHECKING:
+    from .interfaces import Release
 
 
 class BaseDownloader(Downloader, ABC):
@@ -524,6 +527,29 @@ class BaseDownloader(Downloader, ABC):
             return False
 
         return True
+
+    def is_release_revoked(self, release: "Release") -> bool:
+        """
+        Determine whether the given release is recorded as revoked in release history.
+
+        This method is only available in downloaders that have a release_history_manager
+        (e.g., FirmwareReleaseDownloader, MeshtasticAndroidAppDownloader).
+
+        Parameters:
+            release (Release): The release to check.
+
+        Returns:
+            bool: `True` if the release is revoked, `False` otherwise.
+
+        Raises:
+            AttributeError: If the downloader does not have a release_history_manager.
+        """
+        if not hasattr(self, "release_history_manager"):
+            raise AttributeError(
+                f"{self.__class__.__name__} does not have a release_history_manager "
+                "and cannot check revoked status"
+            )
+        return self.release_history_manager.is_release_revoked(release)  # type: ignore[attr-defined]
 
     def needs_download(
         self, release_tag: str, file_name: str, expected_size: int

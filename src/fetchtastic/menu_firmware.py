@@ -92,6 +92,6 @@ def run_menu() -> dict[str, list[str]] | None:
         if selection is None:
             return None
         return selection
-    except Exception as e:
+    except Exception:
         logger.exception("Firmware menu failed")
         return None

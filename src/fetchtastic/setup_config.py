@@ -625,6 +625,25 @@ def _setup_downloads(
     config["SAVE_APKS"] = save_apks
     config["SAVE_FIRMWARE"] = save_firmware
 
+    # --- Channel Suffix Configuration ---
+    # Ask early before menu scripts
+    if save_apks or save_firmware:
+        add_channel_suffixes_current = config.get(
+            "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES", True
+        )
+        add_channel_suffixes_default = "yes" if add_channel_suffixes_current else "no"
+        add_channel_suffixes_input = (
+            input(
+                f"\nWould you like to add -alpha/-beta/-rc suffixes to release directories (e.g., v1.0.0-alpha)? [y/n] (default: {add_channel_suffixes_default}): "
+            )
+            .strip()
+            .lower()
+            or add_channel_suffixes_default
+        )
+        config["ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES"] = (
+            add_channel_suffixes_input[0] == "y"
+        )
+
     # Run the menu scripts based on user choices
     # Small tip to help users choose precise firmware patterns
     if save_firmware and (not is_partial_run or wants("firmware")):

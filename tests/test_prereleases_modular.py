@@ -315,11 +315,12 @@ def test_fetch_recent_repo_commits_uses_cached_data(tmp_path):
     cache_file = os.path.join(cache_manager.cache_dir, PRERELEASE_COMMITS_CACHE_FILE)
     entry = _fresh_cache_entry()
 
-    with patch.object(
-        cache_manager, "read_json", return_value=entry
-    ) as mock_read, patch(
-        "fetchtastic.download.prerelease_history.make_github_api_request"
-    ) as mock_request:
+    with (
+        patch.object(cache_manager, "read_json", return_value=entry) as mock_read,
+        patch(
+            "fetchtastic.download.prerelease_history.make_github_api_request"
+        ) as mock_request,
+    ):
         commits = manager.fetch_recent_repo_commits(
             5, cache_manager=cache_manager, github_token=None
         )
@@ -336,16 +337,20 @@ def test_fetch_recent_repo_commits_refreshes_expired_cache(tmp_path):
     mock_response = Mock()
     mock_response.json.return_value = [{"sha": "fresh"}]
 
-    with patch.object(cache_manager, "read_json", return_value=entry), patch(
-        "fetchtastic.download.prerelease_history.make_github_api_request",
-        return_value=mock_response,
-    ) as mock_request, patch.object(
-        cache_manager, "atomic_write_json", return_value=True
-    ) as mock_write:
+    with (
+        patch.object(cache_manager, "read_json", return_value=entry),
+        patch(
+            "fetchtastic.download.prerelease_history.make_github_api_request",
+            return_value=mock_response,
+        ) as mock_request,
+        patch.object(
+            cache_manager, "atomic_write_json", return_value=True
+        ) as mock_write,
+    ):
         commits = manager.fetch_recent_repo_commits(
             1,
             cache_manager=cache_manager,
-            github_token="token",  # nosec B106
+            github_token="token",
             allow_env_token=False,
         )
 
@@ -365,9 +370,10 @@ def test_prerelease_history_uses_cached_entries(tmp_path):
         }
     }
 
-    with patch.object(
-        cache_manager, "read_json", return_value=cache_value
-    ) as mock_read, patch.object(manager, "fetch_recent_repo_commits") as mock_fetch:
+    with (
+        patch.object(cache_manager, "read_json", return_value=cache_value) as mock_read,
+        patch.object(manager, "fetch_recent_repo_commits") as mock_fetch,
+    ):
         entries = manager.get_prerelease_commit_history(
             version,
             cache_manager=cache_manager,
@@ -394,21 +400,24 @@ def test_prerelease_history_refreshes_stale_cache(tmp_path):
         }
     }
 
-    with patch.object(
-        cache_manager, "read_json", return_value=stale_value
-    ), patch.object(
-        manager, "fetch_recent_repo_commits", return_value=[{"sha": "newsha"}]
-    ) as mock_fetch, patch.object(
-        manager,
-        "build_simplified_prerelease_history",
-        return_value=([{"sha": "newsha"}], {"newsha"}),
-    ) as mock_build, patch.object(
-        cache_manager, "atomic_write_json", return_value=True
-    ) as mock_write:
+    with (
+        patch.object(cache_manager, "read_json", return_value=stale_value),
+        patch.object(
+            manager, "fetch_recent_repo_commits", return_value=[{"sha": "newsha"}]
+        ) as mock_fetch,
+        patch.object(
+            manager,
+            "build_simplified_prerelease_history",
+            return_value=([{"sha": "newsha"}], {"newsha"}),
+        ) as mock_build,
+        patch.object(
+            cache_manager, "atomic_write_json", return_value=True
+        ) as mock_write,
+    ):
         entries = manager.get_prerelease_commit_history(
             version,
             cache_manager=cache_manager,
-            github_token="token",  # nosec B106
+            github_token="token",
             allow_env_token=False,
         )
 
@@ -430,19 +439,22 @@ def test_find_latest_remote_prerelease_dir_prefers_commit_history(
         {"identifier": "2.7.17.def456"},
     ]
 
-    with patch.object(
-        cache_manager,
-        "get_repo_directories",
-        return_value=directories,
-    ), patch.object(
-        prerelease_manager,
-        "get_prerelease_commit_history",
-        return_value=history_entries,
+    with (
+        patch.object(
+            cache_manager,
+            "get_repo_directories",
+            return_value=directories,
+        ),
+        patch.object(
+            prerelease_manager,
+            "get_prerelease_commit_history",
+            return_value=history_entries,
+        ),
     ):
         result = prerelease_manager.find_latest_remote_prerelease_dir(
             "2.7.17",
             cache_manager=cache_manager,
-            github_token="token",  # nosec B106
+            github_token="token",
             allow_env_token=False,
         )
 
@@ -453,19 +465,22 @@ def test_find_latest_remote_prerelease_dir_returns_none_when_no_match(
     tmp_path, prerelease_manager
 ):
     cache_manager = CacheManager(str(tmp_path))
-    with patch.object(
-        cache_manager,
-        "get_repo_directories",
-        return_value=["firmware-2.7.16.acomm1"],
-    ), patch.object(
-        prerelease_manager,
-        "get_prerelease_commit_history",
-        return_value=[],
+    with (
+        patch.object(
+            cache_manager,
+            "get_repo_directories",
+            return_value=["firmware-2.7.16.acomm1"],
+        ),
+        patch.object(
+            prerelease_manager,
+            "get_prerelease_commit_history",
+            return_value=[],
+        ),
     ):
         result = prerelease_manager.find_latest_remote_prerelease_dir(
             "2.7.17",
             cache_manager=cache_manager,
-            github_token="token",  # nosec B106
+            github_token="token",
             allow_env_token=False,
         )
 
