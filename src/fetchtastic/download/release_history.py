@@ -35,6 +35,7 @@ _CHANNEL_RX = {
     "rc": re.compile(r"\b(?:rc|release candidate)\b", re.IGNORECASE),
 }
 _CHANNEL_ORDER = ("alpha", "beta", "rc", CHANNEL_PRERELEASE, CHANNEL_STABLE)
+_HASH_TAGGED_RELEASE_RX = re.compile(r"^v?\d+\.\d+\.\d+\.[a-f0-9]{6,}$", re.IGNORECASE)
 
 
 def _join_text(parts: Iterable[Optional[str]]) -> str:
@@ -75,6 +76,10 @@ def detect_release_channel(release: Release) -> str:
     for label, rx in _CHANNEL_RX.items():
         if rx.search(body_text):
             return label
+
+    tag_name = release.tag_name if isinstance(release.tag_name, str) else ""
+    if tag_name and _HASH_TAGGED_RELEASE_RX.match(tag_name):
+        return "alpha"
 
     if release.prerelease:
         return CHANNEL_PRERELEASE
@@ -417,7 +422,7 @@ class ReleaseHistoryManager:
             if len(grouped) < 2:
                 continue
             items = ", ".join(self.format_release_label(r) for r in grouped)
-            logger.info(
+            logger.warning(
                 "%s: multiple releases share base version %s: %s",
                 label,
                 base_version,
