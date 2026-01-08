@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional, cast
 import requests
 
 from fetchtastic.constants import (
+    DEFAULT_ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES,
     DEVICE_HARDWARE_API_URL,
     DEVICE_HARDWARE_CACHE_HOURS,
     ERROR_TYPE_EXTRACTION,
@@ -32,6 +33,7 @@ from fetchtastic.constants import (
     MESHTASTIC_FIRMWARE_RELEASES_URL,
     RELEASES_CACHE_EXPIRY_HOURS,
     REPO_DOWNLOADS_DIR,
+    STORAGE_CHANNEL_SUFFIXES,
 )
 from fetchtastic.device_hardware import DeviceHardwareManager
 from fetchtastic.log_utils import logger
@@ -45,12 +47,11 @@ from fetchtastic.utils import (
 
 from .base import BaseDownloader
 from .cache import CacheManager
+from .files import build_storage_tag_with_channel, get_channel_suffix
 from .interfaces import Asset, DownloadResult, Release
 from .prerelease_history import PrereleaseHistoryManager
 from .release_history import ReleaseHistoryManager
 from .version import VersionManager
-
-_STORAGE_CHANNEL_SUFFIXES = {"alpha", "beta", "rc"}
 
 
 class FirmwareReleaseDownloader(BaseDownloader):
@@ -275,18 +276,6 @@ class FirmwareReleaseDownloader(BaseDownloader):
         """
         return self.release_history_manager.format_release_log_suffix(release)
 
-    def is_release_revoked(self, release: Release) -> bool:
-        """
-        Determine whether the given release is recorded as revoked in the release history.
-
-        Parameters:
-            release (Release): The release to check.
-
-        Returns:
-            bool: `True` if the release is revoked, `False` otherwise.
-        """
-        return self.release_history_manager.is_release_revoked(release)
-
     def ensure_release_notes(self, release: Release) -> Optional[str]:
         """
         Store the given release's release notes alongside its firmware assets and return the notes file path.
@@ -325,20 +314,44 @@ class FirmwareReleaseDownloader(BaseDownloader):
         """
         safe_tag = self._sanitize_required(release.tag_name, "release tag")
         is_revoked = self.is_release_revoked(release)
-        channel = self.release_history_manager.get_release_channel(release)
-        channel_suffix = channel if channel in _STORAGE_CHANNEL_SUFFIXES else ""
-        if is_revoked and channel_suffix == "alpha":
-            channel_suffix = ""
-        target_tag = self._build_storage_tag(safe_tag, channel_suffix, is_revoked)
+        target_tag = build_storage_tag_with_channel(
+            sanitized_release_tag=safe_tag,
+            release=release,
+            release_history_manager=self.release_history_manager,
+            config=self.config,
+            is_revoked=is_revoked,
+        )
 
         firmware_dir = os.path.join(self.download_dir, FIRMWARE_DIR_NAME)
+        add_channel_suffixes = self.config.get(
+            "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES",
+            DEFAULT_ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES,
+        )
+        if add_channel_suffixes and not is_revoked and target_tag == safe_tag:
+            existing_channel_dirs = [
+                f"{safe_tag}-{channel}"
+                for channel in sorted(STORAGE_CHANNEL_SUFFIXES)
+                if os.path.isdir(os.path.join(firmware_dir, f"{safe_tag}-{channel}"))
+            ]
+            if existing_channel_dirs:
+                if len(existing_channel_dirs) > 1:
+                    logger.warning(
+                        "Multiple channel-suffixed firmware directories found for %s: %s",
+                        release.tag_name,
+                        ", ".join(existing_channel_dirs),
+                    )
+                logger.debug(
+                    "Using existing channel-suffixed firmware directory for %s: %s",
+                    release.tag_name,
+                    existing_channel_dirs[0],
+                )
+                target_tag = existing_channel_dirs[0]
+
         target_path = os.path.join(firmware_dir, target_tag)
         if os.path.isdir(target_path):
             return target_tag
 
-        candidates = self._get_storage_tag_candidates(
-            safe_tag, channel_suffix, is_revoked, target_tag
-        )
+        candidates = self._get_storage_tag_candidates(release, target_tag)
         existing = [
             tag for tag in candidates if os.path.isdir(os.path.join(firmware_dir, tag))
         ]
@@ -373,52 +386,79 @@ class FirmwareReleaseDownloader(BaseDownloader):
 
     def _build_storage_tag(self, safe_tag: str, channel: str, revoked: bool) -> str:
         """
-        Builds a storage tag by appending an optional channel suffix and a revoked suffix to a sanitized base tag.
+        Builds a storage tag by appending an optional channel suffix to a sanitized base tag, or replacing with -revoked suffix.
 
         Parameters:
             safe_tag (str): Sanitized release tag to use as the base (no channel or revoked suffixes).
             channel (str): Channel suffix to append (e.g., "beta"); if empty, no channel suffix is added.
-            revoked (bool): If True, appends "-revoked" to the tag.
+            revoked (bool): If True, replaces any channel suffix with "-revoked".
 
         Returns:
             str: The resulting storage tag.
         """
+        if revoked:
+            return f"{safe_tag}-revoked"
         tag = safe_tag
         if channel:
             tag = f"{tag}-{channel}"
-        if revoked:
-            tag = f"{tag}-revoked"
         return tag
 
     def _get_storage_tag_candidates(
-        self, safe_tag: str, channel: str, revoked: bool, target_tag: str
+        self, release: Release, target_tag: str
     ) -> List[str]:
         """
         Generate alternative storage-tag candidates for an existing release directory by combining possible channel suffixes and revoked states, excluding the provided target tag.
 
+        This method respects the ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES config option.
+
         Parameters:
-            safe_tag (str): Sanitized base tag name (filesystem-safe) to build candidates from.
-            channel (str): Optional channel suffix to prioritize (must be one of the configured channel suffixes); ignored if invalid or empty.
-            revoked (bool): Whether to prefer revoked variants first when ordering candidates.
+            release (Release): Release object to query for channel information.
             target_tag (str): Storage tag to exclude from the returned list.
 
         Returns:
             List[str]: Ordered list of distinct candidate storage tags (each a string) excluding `target_tag`.
         """
-        if channel and channel not in _STORAGE_CHANNEL_SUFFIXES:
-            channel = ""
+        safe_tag = self._sanitize_required(release.tag_name, "release tag")
+        is_revoked = self.is_release_revoked(release)
 
-        all_channels = [channel, "", *sorted(_STORAGE_CHANNEL_SUFFIXES)]
-        channels = list(dict.fromkeys(all_channels))
+        add_channel_suffixes = self.config.get(
+            "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES",
+            DEFAULT_ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES,
+        )
 
-        candidates: List[str] = []
-        for is_revoked in (revoked, not revoked):
-            for candidate in channels:
-                tag = self._build_storage_tag(safe_tag, candidate, is_revoked)
-                if tag not in candidates:
-                    candidates.append(tag)
+        # Determine current channel from release using shared helper
+        # Always detect channel for candidate generation (regardless of feature flag)
+        # so we can find existing directories created with different suffixes
+        current_channel_suffix = get_channel_suffix(
+            release=release,
+            release_history_manager=self.release_history_manager,
+            add_channel_suffixes=True,
+        )
+        current_channel = (
+            current_channel_suffix.lstrip("-") if current_channel_suffix else ""
+        )
 
-        return [tag for tag in candidates if tag != target_tag]
+        # Build list of channel names to try
+        channels_to_try = [current_channel, ""]
+        if not release.prerelease and add_channel_suffixes:
+            channels_to_try.extend(sorted(STORAGE_CHANNEL_SUFFIXES))
+        channels = list(dict.fromkeys(channels_to_try))
+
+        # Build all possible non-revoked and revoked tags
+        non_revoked_tags = [
+            self._build_storage_tag(safe_tag, c, False) for c in channels
+        ]
+        revoked_tag = self._build_storage_tag(safe_tag, "", True)
+
+        # Order candidates based on whether the release is revoked
+        if is_revoked:
+            ordered_candidates = [revoked_tag] + non_revoked_tags
+        else:
+            ordered_candidates = non_revoked_tags + [revoked_tag]
+
+        # Remove duplicates while preserving order and filter out the target_tag
+        unique_candidates = list(dict.fromkeys(ordered_candidates))
+        return [tag for tag in unique_candidates if tag != target_tag]
 
     def download_firmware(self, release: Release, asset: Asset) -> DownloadResult:
         """

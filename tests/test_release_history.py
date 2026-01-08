@@ -360,10 +360,10 @@ def test_log_duplicate_base_versions(tmp_path):
         Release(tag_name="v1.2.3.bbbbbbb", prerelease=False),
     ]
 
-    with patch.object(log_utils.logger, "info") as mock_info:
+    with patch.object(log_utils.logger, "warning") as mock_warning:
         manager.log_duplicate_base_versions(releases, label="Firmware")
 
-    assert mock_info.called
+    assert mock_warning.called
 
 
 def test_log_duplicate_base_versions_skips_invalid_entries(tmp_path):

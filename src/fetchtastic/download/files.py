@@ -15,14 +15,21 @@ import shutil
 import tempfile
 import zipfile
 from pathlib import Path
-from typing import IO, Any, Callable, Protocol
+from typing import IO, TYPE_CHECKING, Any, Callable, Protocol, cast
 
 from fetchtastic.constants import (
+    DEFAULT_ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES,
     EXECUTABLE_PERMISSIONS,
     FIRMWARE_DIR_PREFIX,
     SHELL_SCRIPT_EXTENSION,
+    STORAGE_CHANNEL_SUFFIXES,
 )
 from fetchtastic.log_utils import logger
+
+if TYPE_CHECKING:
+    from .interfaces import Release
+    from .release_history import ReleaseHistoryManager
+
 from fetchtastic.utils import (
     get_hash_file_path,
     get_legacy_hash_file_path,
@@ -839,7 +846,7 @@ class FileOperations:
                     Returns:
                         HashAlgorithm: A fresh hash object suitable for incremental `update` calls and digest computation.
                     """
-                    return hashlib.new(algorithm.lower())
+                    return cast(HashAlgorithm, hashlib.new(algorithm.lower()))
 
                 hash_func()  # Test that algorithm is valid
             except ValueError:
@@ -847,7 +854,9 @@ class FileOperations:
                     f"Unsupported hash algorithm: {algorithm}, using SHA-256"
                 )
                 algorithm = "sha256"
-                hash_func = hashlib.sha256
+
+                def hash_func() -> HashAlgorithm:
+                    return cast(HashAlgorithm, hashlib.sha256())
 
             for file_path in extracted_files:
                 if os.path.exists(file_path):
@@ -980,7 +989,7 @@ def safe_extract_path(extract_dir: str, file_path: str) -> str:
     """
     Resolve a safe absolute extraction path and prevent directory traversal.
 
-    Ensures the absolute path for file_path, when joined to extract_dir, resides within extract_dir.
+    Ensures that absolute path for file_path, when joined to extract_dir, resides within extract_dir.
 
     Parameters:
         extract_dir (str): Base directory intended for extraction.
@@ -990,7 +999,7 @@ def safe_extract_path(extract_dir: str, file_path: str) -> str:
         str: Absolute, normalized path inside extract_dir suitable for extraction.
 
     Raises:
-        ValueError: If the resolved path is outside extract_dir.
+        ValueError: If resolved path is outside extract_dir.
     """
     real_extract_dir = os.path.realpath(extract_dir)
     prospective_path = os.path.join(real_extract_dir, file_path)
@@ -1002,3 +1011,72 @@ def safe_extract_path(extract_dir: str, file_path: str) -> str:
         )
 
     return normalized_path
+
+
+def get_channel_suffix(
+    release: "Release",
+    release_history_manager: "ReleaseHistoryManager",
+    add_channel_suffixes: bool,
+) -> str:
+    """
+    Determine the channel suffix for a release based on its channel.
+
+    Parameters:
+        release (Release): Release object to query for channel information.
+        release_history_manager (ReleaseHistoryManager): Manager instance to query for release channel.
+        add_channel_suffixes (bool): If True, attempt to detect and add channel suffix.
+
+    Returns:
+        str: Channel suffix (e.g., "-alpha", "-beta", "-rc") or empty string if no suffix applies.
+    """
+    if not add_channel_suffixes:
+        return ""
+
+    channel = release_history_manager.get_release_channel(release)
+    if channel and channel in STORAGE_CHANNEL_SUFFIXES:
+        return f"-{channel}"
+
+    return ""
+
+
+def build_storage_tag_with_channel(
+    sanitized_release_tag: str,
+    release: "Release",
+    release_history_manager: "ReleaseHistoryManager",
+    config: dict,
+    is_revoked: bool,
+) -> str:
+    """
+    Build a storage tag for a release with optional channel and revoked suffixes.
+
+    If a release is revoked, it gets a "-revoked" suffix, which replaces any channel suffix.
+    Otherwise, if ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES is enabled, appends the channel
+    suffix (-alpha, -beta, -rc) to the storage tag for releases with a detected channel.
+
+    Note: This is used for full releases only. Prereleases are handled separately.
+
+    Parameters:
+        sanitized_release_tag (str): The sanitized release tag to use as base.
+        release (Release): Release object to query for channel information.
+        release_history_manager (ReleaseHistoryManager): Manager instance to query for release channel.
+        config (dict): Configuration dict containing ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES setting.
+        is_revoked (bool): If True, -revoked suffix is added.
+
+    Returns:
+        str: The storage tag with appropriate suffixes.
+    """
+    if is_revoked:
+        return f"{sanitized_release_tag}-revoked"
+
+    add_channel_suffixes = config.get(
+        "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES",
+        DEFAULT_ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES,
+    )
+
+    channel_suffix = get_channel_suffix(
+        release=release,
+        release_history_manager=release_history_manager,
+        add_channel_suffixes=add_channel_suffixes,
+    )
+
+    return f"{sanitized_release_tag}{channel_suffix}"

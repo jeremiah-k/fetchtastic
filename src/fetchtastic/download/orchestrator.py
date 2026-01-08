@@ -7,7 +7,9 @@ downloaders in a single fetchtastic download run.
 
 import json
 import os
+import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -151,6 +153,12 @@ class DownloadOrchestrator:
         """
         start_time = time.time()
         logger.info("Starting download pipeline...")
+        logger.debug(
+            "Execution context: cwd=%s, python=%s, fetchtastic=%s",
+            os.getcwd(),
+            sys.executable,
+            shutil.which("fetchtastic"),
+        )
 
         if is_termux() and self.config.get("WIFI_ONLY", False):
             if not is_connected_to_wifi():
@@ -283,10 +291,10 @@ class DownloadOrchestrator:
 
             releases_to_download = []
             for release in releases_to_process:
-                self.firmware_downloader.ensure_release_notes(release)
                 suffix = self.firmware_downloader.format_release_log_suffix(release)
                 logger.info(f"Checking {release.tag_name}{suffix}…")
                 if self.firmware_downloader.is_release_complete(release):
+                    self.firmware_downloader.ensure_release_notes(release)
                     logger.debug(
                         f"Release {release.tag_name} already exists and is complete"
                     )
@@ -297,6 +305,7 @@ class DownloadOrchestrator:
             if releases_to_download:
                 for release in releases_to_download:
                     logger.info(f"Downloading firmware release {release.tag_name}")
+                    self.firmware_downloader.ensure_release_notes(release)
                     if self._download_firmware_release(release):
                         any_firmware_downloaded = True
 

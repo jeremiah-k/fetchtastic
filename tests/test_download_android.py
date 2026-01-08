@@ -142,13 +142,13 @@ class TestMeshtasticAndroidAppDownloader:
         downloader.release_history_manager.log_release_status_summary.assert_called_once()
 
     def test_format_release_log_suffix(self, downloader):
-        """Release log suffixes should delegate to the history manager."""
-        downloader.release_history_manager.format_release_log_suffix = Mock(
-            return_value=" (alpha)"
+        """Release log suffixes should omit channel details for Android."""
+        downloader.release_history_manager.format_release_label = Mock(
+            return_value="v1.0.0"
         )
         release = Release(tag_name="v1.0.0", prerelease=False)
 
-        assert downloader.format_release_log_suffix(release) == " (alpha)"
+        assert downloader.format_release_log_suffix(release) == ""
 
     def test_ensure_release_notes_unsafe_tag(self, downloader):
         """Unsafe tags should skip Android release note writes."""

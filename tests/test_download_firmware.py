@@ -137,7 +137,10 @@ class TestFirmwareReleaseDownloader:
     def test_ensure_release_notes_alpha_directory(self, tmp_path):
         """Alpha firmware releases should store notes under an -alpha folder."""
         cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
-        config = {"DOWNLOAD_DIR": str(tmp_path / "downloads")}
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path / "downloads"),
+            "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES": True,
+        }
         downloader = FirmwareReleaseDownloader(config, cache_manager)
         release = Release(
             tag_name="v1.0.2",
@@ -158,9 +161,12 @@ class TestFirmwareReleaseDownloader:
         assert not old_dir.exists()
 
     def test_ensure_release_notes_alpha_revoked_directory(self, tmp_path):
-        """Alpha + revoked firmware releases should store notes under -revoked."""
+        """Revoked alpha firmware releases should store notes under -revoked suffix (replacing channel suffix)."""
         cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
-        config = {"DOWNLOAD_DIR": str(tmp_path / "downloads")}
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path / "downloads"),
+            "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES": True,
+        }
         downloader = FirmwareReleaseDownloader(config, cache_manager)
         release = Release(
             tag_name="v1.0.3",
@@ -170,15 +176,11 @@ class TestFirmwareReleaseDownloader:
         )
 
         base_dir = Path(config["DOWNLOAD_DIR"]) / FIRMWARE_DIR_NAME
-        old_dir = base_dir / "v1.0.3-alpha-revoked"
-        old_dir.mkdir(parents=True)
-
         notes_path = downloader.ensure_release_notes(release)
 
         assert notes_path is not None
         assert "v1.0.3-revoked" in notes_path
         assert (base_dir / "v1.0.3-revoked").exists()
-        assert not old_dir.exists()
 
     def test_ensure_release_notes_unsafe_tag(self, tmp_path):
         """Unsafe tags should skip release notes storage."""
@@ -730,22 +732,22 @@ class TestFirmwareReleaseDownloader:
         )
 
         entry_keep1 = Mock()
-        entry_keep1.name = "v2.7.17.83c6161"
+        entry_keep1.name = "v2.7.17.83c6161-alpha"
         entry_keep1.is_symlink.return_value = False
         entry_keep1.is_dir.return_value = True
-        entry_keep1.path = "/mock/firmware/v2.7.17.83c6161"
+        entry_keep1.path = "/mock/firmware/v2.7.17.83c6161-alpha"
 
         entry_keep2 = Mock()
-        entry_keep2.name = "v2.7.16.a597230"
+        entry_keep2.name = "v2.7.16.a597230-alpha"
         entry_keep2.is_symlink.return_value = False
         entry_keep2.is_dir.return_value = True
-        entry_keep2.path = "/mock/firmware/v2.7.16.a597230"
+        entry_keep2.path = "/mock/firmware/v2.7.16.a597230-alpha"
 
         entry_remove = Mock()
-        entry_remove.name = "v2.7.15.567b8ea"
+        entry_remove.name = "v2.7.15.567b8ea-alpha"
         entry_remove.is_symlink.return_value = False
         entry_remove.is_dir.return_value = True
-        entry_remove.path = "/mock/firmware/v2.7.15.567b8ea"
+        entry_remove.path = "/mock/firmware/v2.7.15.567b8ea-alpha"
 
         mock_scandir.return_value.__enter__.return_value = [
             entry_keep1,
@@ -755,7 +757,7 @@ class TestFirmwareReleaseDownloader:
 
         downloader.cleanup_old_versions(keep_limit=2)
 
-        mock_rmtree.assert_called_once_with("/mock/firmware/v2.7.15.567b8ea")
+        mock_rmtree.assert_called_once_with("/mock/firmware/v2.7.15.567b8ea-alpha")
 
     def test_get_prerelease_tracking_file(self, downloader):
         """Test prerelease tracking file path generation."""
@@ -985,7 +987,10 @@ class TestFirmwareReleaseDownloader:
     def test_get_release_storage_tag_multiple_existing(self, tmp_path):
         """Multiple candidate directories should return the first match."""
         cache_manager = CacheManager(cache_dir=str(tmp_path / "cache"))
-        config = {"DOWNLOAD_DIR": str(tmp_path / "downloads")}
+        config = {
+            "DOWNLOAD_DIR": str(tmp_path / "downloads"),
+            "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES": True,
+        }
         downloader = FirmwareReleaseDownloader(config, cache_manager)
         firmware_dir = tmp_path / "downloads" / "firmware"
         firmware_dir.mkdir(parents=True)
@@ -997,13 +1002,18 @@ class TestFirmwareReleaseDownloader:
 
         assert storage_tag in {"v1.0.1-alpha", "v1.0.1-beta"}
 
-    def test_get_storage_tag_candidates_invalid_channel(self, downloader):
-        """Invalid channel suffixes should be ignored."""
-        candidates = downloader._get_storage_tag_candidates(
-            "v1.0.2", "gamma", False, "v1.0.2"
-        )
+    def test_get_storage_tag_candidates_with_suffixes_disabled(self, downloader):
+        """Channel suffixes should not be generated when ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES is False."""
+        # Without ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES enabled, no channel suffixes are added
+        downloader.config["ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES"] = False
+        release = Release(tag_name="v1.0.2", prerelease=False)
+        candidates = downloader._get_storage_tag_candidates(release, "v1.0.2")
 
-        assert "v1.0.2-gamma" not in candidates
+        # Standard suffixes (alpha, beta, rc) should not be present
+        # when feature is disabled
+        assert "v1.0.2-alpha" not in candidates
+        assert "v1.0.2-beta" not in candidates
+        assert "v1.0.2-rc" not in candidates
 
     def test_is_release_complete_unsafe_tag(self, downloader):
         """Unsafe tags should return False during completeness checks."""
