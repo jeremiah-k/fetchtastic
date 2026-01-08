@@ -323,6 +323,30 @@ class FirmwareReleaseDownloader(BaseDownloader):
         )
 
         firmware_dir = os.path.join(self.download_dir, FIRMWARE_DIR_NAME)
+        add_channel_suffixes = self.config.get(
+            "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES",
+            DEFAULT_ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES,
+        )
+        if add_channel_suffixes and not is_revoked and target_tag == safe_tag:
+            existing_channel_dirs = [
+                f"{safe_tag}-{channel}"
+                for channel in sorted(STORAGE_CHANNEL_SUFFIXES)
+                if os.path.isdir(os.path.join(firmware_dir, f"{safe_tag}-{channel}"))
+            ]
+            if existing_channel_dirs:
+                if len(existing_channel_dirs) > 1:
+                    logger.warning(
+                        "Multiple channel-suffixed firmware directories found for %s: %s",
+                        release.tag_name,
+                        ", ".join(existing_channel_dirs),
+                    )
+                logger.debug(
+                    "Using existing channel-suffixed firmware directory for %s: %s",
+                    release.tag_name,
+                    existing_channel_dirs[0],
+                )
+                target_tag = existing_channel_dirs[0]
+
         target_path = os.path.join(firmware_dir, target_tag)
         if os.path.isdir(target_path):
             return target_tag
