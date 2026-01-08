@@ -896,20 +896,6 @@ def _setup_firmware(
         print("Invalid number — keeping current value.")
         config["FIRMWARE_VERSIONS_TO_KEEP"] = int(current_versions)
 
-    # --- File Extraction Configuration ---
-    print("\n--- File Extraction Configuration ---")
-    print("Configure which files to extract from downloaded firmware archives.")
-    print("\nTips for precise selection:")
-    print(
-        "- Use the separator seen in filenames to target a family (e.g., 'rak4631-' vs 'rak4631_')."
-    )
-    print(
-        "- 'rak4631-' matches base RAK4631 files (e.g., firmware-rak4631-...), "
-        "while 'rak4631_' matches underscore variants (e.g., firmware-rak4631_eink-...)."
-    )
-    print(f"- Example keywords: {' '.join(DEFAULT_EXTRACTION_PATTERNS)}")
-    print("- You can re-run 'fetchtastic setup' anytime to adjust your patterns.\n")
-
     # Prompt for automatic extraction
     auto_extract_current = config.get("AUTO_EXTRACT", False)
     auto_extract_default = "yes" if auto_extract_current else "no"
@@ -924,6 +910,20 @@ def _setup_firmware(
     config["AUTO_EXTRACT"] = auto_extract == "y"
 
     if config["AUTO_EXTRACT"]:
+        # --- File Extraction Configuration ---
+        print("\n--- File Extraction Configuration ---")
+        print("Configure which files to extract from downloaded firmware archives.")
+        print("\nTips for precise selection:")
+        print(
+            "- Use the separator seen in filenames to target a family (e.g., 'rak4631-' vs 'rak4631_')."
+        )
+        print(
+            "- 'rak4631-' matches base RAK4631 files (e.g., firmware-rak4631-...), "
+            "while 'rak4631_' matches underscore variants (e.g., firmware-rak4631_eink-...)."
+        )
+        print(f"- Example keywords: {' '.join(DEFAULT_EXTRACTION_PATTERNS)}")
+        print("- You can re-run 'fetchtastic setup' anytime to adjust your patterns.\n")
+
         print(
             "Enter the keywords to match for extraction from the firmware zip files, separated by spaces."
         )

@@ -876,6 +876,7 @@ def test_setup_automation_linux_new_setup(mocker):
     mocker.patch("fetchtastic.setup_config.platform.system", return_value="Linux")
     mocker.patch("fetchtastic.setup_config.is_termux", return_value=False)
     mocker.patch("fetchtastic.setup_config._crontab_available", return_value=True)
+    mocker.patch("fetchtastic.setup_config.check_cron_job_exists", return_value=False)
     mocker.patch(
         "fetchtastic.setup_config.check_any_cron_jobs_exist", return_value=False
     )
@@ -1689,6 +1690,38 @@ def test_setup_firmware_selected_prerelease_assets_new_config(mock_input):
     assert result["EXTRACT_PATTERNS"] == ["rak4631-", "tbeam"]
     assert result["CHECK_PRERELEASES"] is True
     assert result["SELECTED_PRERELEASE_ASSETS"] == ["rak4631-", "tbeam"]
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("builtins.input")
+def test_setup_firmware_extraction_tips_only_when_enabled(mock_input, capsys):
+    """Extraction tips should only appear when auto-extract is enabled."""
+    config = {"CHECK_PRERELEASES": False}
+
+    mock_input.side_effect = ["2", "n"]
+
+    setup_config._setup_firmware(config, is_first_run=True, default_versions=2)
+
+    captured = capsys.readouterr()
+    assert "File Extraction Configuration" not in captured.out
+    assert "Tips for precise selection" not in captured.out
+
+
+@pytest.mark.configuration
+@pytest.mark.unit
+@patch("builtins.input")
+def test_setup_firmware_extraction_tips_when_enabled(mock_input, capsys):
+    """Extraction tips should appear after auto-extract is enabled."""
+    config = {"CHECK_PRERELEASES": False}
+
+    mock_input.side_effect = ["2", "y", ""]
+
+    setup_config._setup_firmware(config, is_first_run=True, default_versions=2)
+
+    captured = capsys.readouterr()
+    assert "File Extraction Configuration" in captured.out
+    assert "Tips for precise selection" in captured.out
 
 
 @pytest.mark.configuration
