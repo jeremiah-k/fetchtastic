@@ -176,7 +176,6 @@ class TestFirmwareReleaseDownloader:
         )
 
         base_dir = Path(config["DOWNLOAD_DIR"]) / FIRMWARE_DIR_NAME
-
         notes_path = downloader.ensure_release_notes(release)
 
         assert notes_path is not None

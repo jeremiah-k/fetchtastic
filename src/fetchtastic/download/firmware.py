@@ -421,19 +421,23 @@ class FirmwareReleaseDownloader(BaseDownloader):
         channels = list(dict.fromkeys(channels_to_try))
 
         candidates: List[str] = []
-        for revoked_flag in (is_revoked, not is_revoked):
+        if is_revoked:
+            revoked_tag = self._build_storage_tag(safe_tag, "", True)
+            candidates.append(revoked_tag)
+
             for channel_name in channels:
-                tag = self._build_storage_tag(safe_tag, channel_name, revoked_flag)
+                tag = self._build_storage_tag(safe_tag, channel_name, False)
+                if tag not in candidates:
+                    candidates.append(tag)
+        else:
+            for channel_name in channels:
+                tag = self._build_storage_tag(safe_tag, channel_name, False)
                 if tag not in candidates:
                     candidates.append(tag)
 
-        if is_revoked:
-            for channel_name in channels:
-                if not channel_name:
-                    continue
-                legacy_revoked = f"{safe_tag}-{channel_name}-revoked"
-                if legacy_revoked not in candidates:
-                    candidates.append(legacy_revoked)
+            revoked_tag = self._build_storage_tag(safe_tag, "", True)
+            if revoked_tag not in candidates:
+                candidates.append(revoked_tag)
 
         return [tag for tag in candidates if tag != target_tag]
 
