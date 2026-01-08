@@ -635,7 +635,7 @@ def _setup_downloads(
                 .strip()
                 .lower()
             )
-            if keep_existing == "n":
+            if keep_existing.startswith("n"):
                 rerun_menu = False
         if rerun_menu:
             firmware_selection = menu_firmware.run_menu()
@@ -670,7 +670,7 @@ def _setup_downloads(
                 .strip()
                 .lower()
             )
-            if keep_existing == "n":
+            if keep_existing.startswith("n"):
                 rerun_menu = False
         if rerun_menu:
             apk_selection = menu_apk.run_menu()
@@ -904,9 +904,8 @@ def _setup_firmware(
         "- Use the separator seen in filenames to target a family (e.g., 'rak4631-' vs 'rak4631_')."
     )
     print(
-        "- 'rak4631-' matches base RAK4631 files (e.g., firmware-rak4631-...),"
-        " while 'rak4631_' matches underscore variants (e.g., firmware-rak4631_eink-...).",
-        sep="",
+        "- 'rak4631-' matches base RAK4631 files (e.g., firmware-rak4631-...), "
+        "while 'rak4631_' matches underscore variants (e.g., firmware-rak4631_eink-...)."
     )
     print(f"- Example keywords: {' '.join(DEFAULT_EXTRACTION_PATTERNS)}")
     print("- You can re-run 'fetchtastic setup' anytime to adjust your patterns.\n")
