@@ -625,38 +625,43 @@ def _setup_downloads(
     config["SAVE_APKS"] = save_apks
     config["SAVE_FIRMWARE"] = save_firmware
 
-    # --- Channel Suffix Configuration ---
-    # Ask early before menu scripts
-    if save_apks or save_firmware:
-        add_channel_suffixes_current = config.get(
-            "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES", True
-        )
-        add_channel_suffixes_default = "yes" if add_channel_suffixes_current else "no"
-        add_channel_suffixes_input = (
+    if save_firmware and (not is_partial_run or wants("firmware")):
+        rerun_menu = True
+        if is_partial_run:
+            keep_existing = (
+                input(
+                    "Re-run the firmware asset selection menu? [y/n] (default: yes): "
+                )
+                .strip()
+                .lower()
+            )
+            if keep_existing == "n":
+                rerun_menu = False
+        if rerun_menu:
+            firmware_selection = menu_firmware.run_menu()
+            if not firmware_selection:
+                print("No firmware assets selected. Firmware will not be downloaded.")
+                save_firmware = False
+                config["SAVE_FIRMWARE"] = False
+            else:
+                config["SELECTED_FIRMWARE_ASSETS"] = firmware_selection[
+                    "selected_assets"
+                ]
+
+    # --- Firmware Pre-release Configuration ---
+    if save_firmware and (not is_partial_run or wants("firmware")):
+        check_prereleases_current = config.get("CHECK_PRERELEASES", False)
+        check_prereleases_default = "yes" if check_prereleases_current else "no"
+        check_prereleases_input = (
             input(
-                f"\nWould you like to add -alpha/-beta/-rc suffixes to release directories (e.g., v1.0.0-alpha)? [y/n] (default: {add_channel_suffixes_default}): "
+                f"\nWould you like to check for and download pre-release firmware from meshtastic.github.io? [y/n] (default: {check_prereleases_default}): "
             )
             .strip()
             .lower()
-            or add_channel_suffixes_default
+            or check_prereleases_default
         )
-        config["ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES"] = (
-            add_channel_suffixes_input[0] == "y"
-        )
+        config["CHECK_PRERELEASES"] = check_prereleases_input[0] == "y"
 
-    # Run the menu scripts based on user choices
-    # Small tip to help users choose precise firmware patterns
-    if save_firmware and (not is_partial_run or wants("firmware")):
-        print("\nTips for precise selection:")
-        print(
-            "- Use the separator seen in filenames to target a family (e.g., 'rak4631-' vs 'rak4631_')."
-        )
-        print(
-            "- 'rak4631-' matches base RAK4631 files (e.g., firmware-rak4631-...),"
-            " while 'rak4631_' matches underscore variants (e.g., firmware-rak4631_eink-...).",
-            sep="",
-        )
-        print("- You can re-run 'fetchtastic setup' anytime to adjust your patterns.\n")
     if save_apks and (not is_partial_run or wants("android")):
         rerun_menu = True
         if is_partial_run:
@@ -692,28 +697,26 @@ def _setup_downloads(
         )
         config["CHECK_APK_PRERELEASES"] = check_apk_prereleases_input[0] == "y"
 
-    if save_firmware and (not is_partial_run or wants("firmware")):
-        rerun_menu = True
-        if is_partial_run:
-            keep_existing = (
+    # --- Channel Suffix Configuration ---
+    if save_apks or save_firmware:
+        if not is_partial_run or wants("android") or wants("firmware"):
+            add_channel_suffixes_current = config.get(
+                "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES", True
+            )
+            add_channel_suffixes_default = (
+                "yes" if add_channel_suffixes_current else "no"
+            )
+            add_channel_suffixes_input = (
                 input(
-                    "Re-run the firmware asset selection menu? [y/n] (default: yes): "
+                    f"\nWould you like to add -alpha/-beta/-rc suffixes to release directories (e.g., v1.0.0-alpha)? [y/n] (default: {add_channel_suffixes_default}): "
                 )
                 .strip()
                 .lower()
+                or add_channel_suffixes_default
             )
-            if keep_existing == "n":
-                rerun_menu = False
-        if rerun_menu:
-            firmware_selection = menu_firmware.run_menu()
-            if not firmware_selection:
-                print("No firmware assets selected. Firmware will not be downloaded.")
-                save_firmware = False
-                config["SAVE_FIRMWARE"] = False
-            else:
-                config["SELECTED_FIRMWARE_ASSETS"] = firmware_selection[
-                    "selected_assets"
-                ]
+            config["ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES"] = (
+                add_channel_suffixes_input[0] == "y"
+            )
 
     # If both save_apks and save_firmware are False, inform the user and exit setup.
     # During partial runs that only update non-download sections (e.g. automation),
@@ -896,6 +899,17 @@ def _setup_firmware(
     # --- File Extraction Configuration ---
     print("\n--- File Extraction Configuration ---")
     print("Configure which files to extract from downloaded firmware archives.")
+    print("\nTips for precise selection:")
+    print(
+        "- Use the separator seen in filenames to target a family (e.g., 'rak4631-' vs 'rak4631_')."
+    )
+    print(
+        "- 'rak4631-' matches base RAK4631 files (e.g., firmware-rak4631-...),"
+        " while 'rak4631_' matches underscore variants (e.g., firmware-rak4631_eink-...).",
+        sep="",
+    )
+    print(f"- Example keywords: {' '.join(DEFAULT_EXTRACTION_PATTERNS)}")
+    print("- You can re-run 'fetchtastic setup' anytime to adjust your patterns.\n")
 
     # Prompt for automatic extraction
     auto_extract_current = config.get("AUTO_EXTRACT", False)
@@ -914,7 +928,6 @@ def _setup_firmware(
         print(
             "Enter the keywords to match for extraction from the firmware zip files, separated by spaces."
         )
-        print(f"Example: {' '.join(DEFAULT_EXTRACTION_PATTERNS)}")
 
         current_patterns = config.get("EXTRACT_PATTERNS", [])
         if isinstance(current_patterns, str):
@@ -957,18 +970,7 @@ def _setup_firmware(
         config["EXCLUDE_PATTERNS"] = []
 
     # --- Pre-release Configuration ---
-    check_prereleases_current = config.get("CHECK_PRERELEASES", False)
-    check_prereleases_default = "yes" if check_prereleases_current else "no"
-    check_prereleases_input = (
-        input(
-            f"\nWould you like to check for and download pre-release firmware from meshtastic.github.io? [y/n] (default: {check_prereleases_default}): "
-        )
-        .strip()
-        .lower()
-        or check_prereleases_default
-    )
-    config["CHECK_PRERELEASES"] = check_prereleases_input[0] == "y"
-
+    config["CHECK_PRERELEASES"] = bool(config.get("CHECK_PRERELEASES", False))
     if config["CHECK_PRERELEASES"]:
         # Use a copy to avoid aliasing EXTRACT_PATTERNS
         prerelease_patterns = list(config.get("EXTRACT_PATTERNS", []))
