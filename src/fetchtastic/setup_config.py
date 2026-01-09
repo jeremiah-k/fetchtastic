@@ -205,6 +205,29 @@ def is_termux() -> bool:
     return "com.termux" in os.environ.get("PREFIX", "")
 
 
+def _coerce_bool(value: Any, default: bool = False) -> bool:
+    """
+    Coerce common truthy/falsey representations into a boolean.
+
+    Accepts booleans, integers, and common string values (y/n, yes/no, true/false, 1/0, on/off).
+    Falls back to the provided default when the value is unrecognized.
+    """
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    if isinstance(value, int):
+        return value != 0
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"y", "yes", "true", "t", "1", "on"}:
+            return True
+        if normalized in {"n", "no", "false", "f", "0", "off"}:
+            return False
+        return default
+    return default
+
+
 def is_fetchtastic_installed_via_pip() -> bool:
     """
     Check if fetchtastic is installed via pip (not pipx).
@@ -304,9 +327,12 @@ def migrate_pip_to_pipx() -> bool:
         print("1. Backing up configuration...")
         config_backup = None
         if os.path.exists(CONFIG_FILE):
-            with open(CONFIG_FILE, "r") as f:
-                config_backup = f.read()
-            print("   Configuration backed up.")
+            try:
+                with open(CONFIG_FILE, "r") as f:
+                    config_backup = f.read()
+                print("   Configuration backed up.")
+            except OSError as exc:
+                print(f"   Warning: Could not back up configuration: {exc}")
         else:
             print("   No existing configuration found.")
 
@@ -628,15 +654,16 @@ def _setup_downloads(
     if save_firmware and (not is_partial_run or wants("firmware")):
         rerun_menu = True
         if is_partial_run:
-            keep_existing = (
-                input(
-                    "Re-run the firmware asset selection menu? [y/n] (default: yes): "
+            if config.get("SELECTED_FIRMWARE_ASSETS"):
+                keep_existing = (
+                    input(
+                        "Re-run the firmware asset selection menu? [y/n] (default: yes): "
+                    )
+                    .strip()
+                    .lower()
                 )
-                .strip()
-                .lower()
-            )
-            if keep_existing.startswith("n"):
-                rerun_menu = False
+                if keep_existing.startswith("n"):
+                    rerun_menu = False
         if rerun_menu:
             firmware_selection = menu_firmware.run_menu()
             if not firmware_selection:
@@ -651,7 +678,7 @@ def _setup_downloads(
     # --- Firmware Pre-release Configuration ---
     if save_firmware and (not is_partial_run or wants("firmware")):
         check_prereleases_current = config.get("CHECK_PRERELEASES", False)
-        check_prereleases_default = "yes" if check_prereleases_current else "no"
+        check_prereleases_default = "y" if check_prereleases_current else "n"
         check_prereleases_input = (
             input(
                 f"\nWould you like to check for and download pre-release firmware from meshtastic.github.io? [y/n] (default: {check_prereleases_default}): "
@@ -969,7 +996,7 @@ def _setup_firmware(
         config["EXCLUDE_PATTERNS"] = []
 
     # --- Pre-release Configuration ---
-    config["CHECK_PRERELEASES"] = bool(config.get("CHECK_PRERELEASES", False))
+    config["CHECK_PRERELEASES"] = _coerce_bool(config.get("CHECK_PRERELEASES", False))
     if config["CHECK_PRERELEASES"]:
         # Use a copy to avoid aliasing EXTRACT_PATTERNS
         prerelease_patterns = list(config.get("EXTRACT_PATTERNS", []))

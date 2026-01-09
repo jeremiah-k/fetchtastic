@@ -170,11 +170,15 @@ def test_migrate_pip_to_pipx_backup_failure(mocker, tmp_path):
     mocker.patch(
         "subprocess.run", return_value=mocker.MagicMock(returncode=0, stdout="")
     )
+    mocker.patch(
+        "os.path.exists",
+        side_effect=lambda path: str(path) == str(mock_config_file),
+    )
 
     # Mock file operations to fail on backup read
-    def mock_open_failure(filename, mode="r"):
-        if "r" in mode and str(mock_config_file) in filename:
-            raise IOError("Permission denied")
+    def mock_open_failure(filename, mode="r", *args, **kwargs):
+        if "r" in mode and str(mock_config_file) in str(filename):
+            raise OSError("Permission denied")
         return mock_open()(filename, mode)
 
     mocker.patch("builtins.open", side_effect=mock_open_failure)

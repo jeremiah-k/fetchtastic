@@ -1049,7 +1049,8 @@ def test_run_setup_first_run_linux_simple(
     mock_menu_firmware.return_value = {"selected_assets": ["meshtastic-firmware"]}
 
     with patch("builtins.open", mock_open()):
-        setup_config.run_setup()
+        with patch("sys.stdin.isatty", return_value=False):
+            setup_config.run_setup()
 
         mock_yaml_dump.assert_called()
         saved_config = mock_yaml_dump.call_args[0][0]
@@ -1425,7 +1426,8 @@ def test_run_setup_partial_firmware_section(
     ]
 
     with patch("builtins.open", mock_open()):
-        setup_config.run_setup(sections=["firmware"])
+        with patch("sys.stdin.isatty", return_value=False):
+            setup_config.run_setup(sections=["firmware"])
 
     mock_menu_firmware.assert_called_once()
     mock_menu_apk.assert_not_called()
@@ -1683,7 +1685,10 @@ def test_setup_firmware_selected_prerelease_assets_new_config(mock_input):
     # Simulate user inputs: 3 versions, yes to auto-extract, device patterns
     mock_input.side_effect = ["3", "y", "rak4631- tbeam"]
 
-    result = setup_config._setup_firmware(config, is_first_run=True, default_versions=2)
+    with patch("sys.stdin.isatty", return_value=False):
+        result = setup_config._setup_firmware(
+            config, is_first_run=True, default_versions=2
+        )
 
     assert result["FIRMWARE_VERSIONS_TO_KEEP"] == 3
     assert result["AUTO_EXTRACT"] is True
@@ -1739,9 +1744,10 @@ def test_setup_firmware_selected_prerelease_assets_migration_accept(mock_input):
     # Simulate user inputs: keep 2 versions, keep auto-extract, keep current extraction patterns
     mock_input.side_effect = ["2", "y", "y"]
 
-    result = setup_config._setup_firmware(
-        config, is_first_run=False, default_versions=2
-    )
+    with patch("sys.stdin.isatty", return_value=False):
+        result = setup_config._setup_firmware(
+            config, is_first_run=False, default_versions=2
+        )
 
     assert result["CHECK_PRERELEASES"] is True
     assert result["SELECTED_PRERELEASE_ASSETS"] == [
@@ -1768,9 +1774,10 @@ def test_setup_firmware_selected_prerelease_assets_migration_decline(mock_input)
     # Simulate user inputs: keep 2 versions, keep auto-extract, change extraction patterns, new patterns
     mock_input.side_effect = ["2", "y", "n", "esp32- rak4631-"]
 
-    result = setup_config._setup_firmware(
-        config, is_first_run=False, default_versions=2
-    )
+    with patch("sys.stdin.isatty", return_value=False):
+        result = setup_config._setup_firmware(
+            config, is_first_run=False, default_versions=2
+        )
 
     assert result["CHECK_PRERELEASES"] is True
     assert result["SELECTED_PRERELEASE_ASSETS"] == ["esp32-", "rak4631-"]
@@ -1793,9 +1800,10 @@ def test_setup_firmware_selected_prerelease_assets_existing_keep(mock_input):
     # Simulate user inputs: keep 3 versions, no auto-extract
     mock_input.side_effect = ["3", "n"]
 
-    result = setup_config._setup_firmware(
-        config, is_first_run=False, default_versions=2
-    )
+    with patch("sys.stdin.isatty", return_value=False):
+        result = setup_config._setup_firmware(
+            config, is_first_run=False, default_versions=2
+        )
 
     assert result["CHECK_PRERELEASES"] is True
     assert result["SELECTED_PRERELEASE_ASSETS"] == []
@@ -1817,9 +1825,10 @@ def test_setup_firmware_selected_prerelease_assets_existing_change(mock_input):
     # Simulate user inputs: keep 3 versions, keep auto-extract, don't keep patterns, new patterns
     mock_input.side_effect = ["3", "y", "n", "new-pattern device-"]
 
-    result = setup_config._setup_firmware(
-        config, is_first_run=False, default_versions=2
-    )
+    with patch("sys.stdin.isatty", return_value=False):
+        result = setup_config._setup_firmware(
+            config, is_first_run=False, default_versions=2
+        )
 
     assert result["CHECK_PRERELEASES"] is True
     assert result["EXTRACT_PATTERNS"] == ["new-pattern", "device-"]
@@ -1861,7 +1870,10 @@ def test_setup_firmware_selected_prerelease_assets_empty_patterns(mock_input):
     # Simulate user inputs: 2 versions, yes to auto-extract, empty patterns
     mock_input.side_effect = ["2", "y", ""]
 
-    result = setup_config._setup_firmware(config, is_first_run=True, default_versions=2)
+    with patch("sys.stdin.isatty", return_value=False):
+        result = setup_config._setup_firmware(
+            config, is_first_run=True, default_versions=2
+        )
 
     assert result["CHECK_PRERELEASES"] is True
     assert result["SELECTED_PRERELEASE_ASSETS"] == []
@@ -1883,9 +1895,10 @@ def test_setup_firmware_selected_prerelease_assets_migration_empty_input(mock_in
     # Simulate user inputs: keep 2 versions, yes to auto-extract, decline to keep patterns, empty input
     mock_input.side_effect = ["2", "y", "n", ""]
 
-    result = setup_config._setup_firmware(
-        config, is_first_run=False, default_versions=2
-    )
+    with patch("sys.stdin.isatty", return_value=False):
+        result = setup_config._setup_firmware(
+            config, is_first_run=False, default_versions=2
+        )
 
     assert result["CHECK_PRERELEASES"] is True
     assert result["SELECTED_PRERELEASE_ASSETS"] == []  # Empty when no input provided
