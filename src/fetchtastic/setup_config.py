@@ -197,20 +197,29 @@ SECTION_SHORTCUTS = {
 
 def is_termux() -> bool:
     """
-    Detects whether the process is running under Termux.
-
+    Determine whether the current process is running under Termux.
+    
     Returns:
-        `true` if the PREFIX environment variable contains "com.termux", `false` otherwise.
+        bool: True if the `PREFIX` environment variable contains "com.termux", False otherwise.
     """
     return "com.termux" in os.environ.get("PREFIX", "")
 
 
 def _coerce_bool(value: Any, default: bool = False) -> bool:
     """
-    Coerce common truthy/falsey representations into a boolean.
-
-    Accepts booleans, integers, and common string values (y/n, yes/no, true/false, 1/0, on/off).
-    Falls back to the provided default when the value is unrecognized.
+    Normalize a variety of common truthy and falsey representations to a boolean.
+    
+    Accepts booleans, integers, and common string forms such as "y"/"yes", "n"/"no",
+    "true"/"false", "1"/"0", and "on"/"off". If the input cannot be interpreted,
+    returns the provided default.
+    
+    Parameters:
+        value (Any): The value to coerce to bool.
+        default (bool): Value to return when `value` is unrecognized (defaults to False).
+    
+    Returns:
+        bool: `True` if `value` represents truth, `False` if it represents falsehood,
+        or `default` when the representation is unrecognized.
     """
     if isinstance(value, bool):
         return value
@@ -230,10 +239,12 @@ def _coerce_bool(value: Any, default: bool = False) -> bool:
 
 def is_fetchtastic_installed_via_pip() -> bool:
     """
-    Check if fetchtastic is installed via pip (not pipx).
-
+    Determine whether Fetchtastic is installed via the system `pip` command.
+    
+    If the `pip` command is unavailable or the check fails, this function returns False.
+    
     Returns:
-        bool: True if installed via pip, False otherwise
+        True if 'fetchtastic' appears in `pip list` output, False otherwise.
     """
     try:
         # Check if fetchtastic is in pip list
@@ -285,10 +296,10 @@ def get_fetchtastic_installation_method() -> str:
 
 def migrate_pip_to_pipx() -> bool:
     """
-    Migrate Fetchtastic from a pip installation to pipx on Termux.
-
-    This is an interactive operation that (when run on Termux and confirmed by the user) backs up the current configuration, ensures pipx is installed, uninstalls the pip-installed package, installs Fetchtastic with pipx, and restores the configuration file. The function prints progress and error messages to the console and skips migration when not running on Termux.
-
+    Migrate a Termux-installed Fetchtastic package from pip to pipx while preserving the user's configuration.
+    
+    This is an interactive operation that runs only on Termux. It prompts the user for confirmation, ensures pipx is available, uninstalls the pip-installed Fetchtastic package, installs Fetchtastic with pipx, and restores the backed-up configuration file if present. If Fetchtastic is not installed via pip, the function treats migration as unnecessary and exits successfully.
+    
     Returns:
         bool: `True` if migration completed successfully, `False` otherwise.
     """
