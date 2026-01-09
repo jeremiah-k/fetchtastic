@@ -467,7 +467,7 @@ def main():
             resp = (
                 setup_config._safe_input(copy_prompt_text, default="y").strip().lower()
             )
-            if resp in {"y", "yes"}:
+            if setup_config._coerce_bool(resp, default=True):
                 success = copy_to_clipboard_func(text_to_copy)
                 if success:
                     if setup_config.is_termux():

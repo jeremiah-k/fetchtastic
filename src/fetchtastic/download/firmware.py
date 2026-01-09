@@ -409,7 +409,7 @@ class FirmwareReleaseDownloader(BaseDownloader):
         """
         Generate alternative storage-tag candidates for an existing release directory by combining possible channel suffixes and revoked states, excluding the provided target tag.
 
-        This method respects the ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES config option.
+        This method keeps channel suffix candidates for discovery even when suffixes are disabled.
 
         Parameters:
             release (Release): Release object to query for channel information.
@@ -420,11 +420,6 @@ class FirmwareReleaseDownloader(BaseDownloader):
         """
         safe_tag = self._sanitize_required(release.tag_name, "release tag")
         is_revoked = self.is_release_revoked(release)
-
-        add_channel_suffixes = self.config.get(
-            "ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES",
-            DEFAULT_ADD_CHANNEL_SUFFIXES_TO_DIRECTORIES,
-        )
 
         # Determine current channel from release using shared helper
         # Always detect channel for candidate generation (regardless of feature flag)
@@ -438,14 +433,11 @@ class FirmwareReleaseDownloader(BaseDownloader):
             current_channel_suffix.lstrip("-") if current_channel_suffix else ""
         )
 
-        # Build list of channel names to try
-        if not add_channel_suffixes:
-            channels = [""]
-        else:
-            channels_to_try = [current_channel, ""]
-            if not release.prerelease:
-                channels_to_try.extend(sorted(STORAGE_CHANNEL_SUFFIXES))
-            channels = list(dict.fromkeys(channels_to_try))
+        # Build list of channel names to try for discovery even when suffixes are disabled.
+        channels_to_try = [current_channel, ""]
+        if not release.prerelease:
+            channels_to_try.extend(sorted(STORAGE_CHANNEL_SUFFIXES))
+        channels = list(dict.fromkeys(channels_to_try))
 
         # Build all possible non-revoked and revoked tags
         non_revoked_tags = [
@@ -922,10 +914,14 @@ class FirmwareReleaseDownloader(BaseDownloader):
                         continue
                     if entry.is_dir():
                         base_name = entry.name
-                        for suffix in suffixes:
-                            if base_name.endswith(suffix):
-                                base_name = base_name[: -len(suffix)]
-                                break
+                        stripped = True
+                        while stripped:
+                            stripped = False
+                            for suffix in suffixes:
+                                if base_name.endswith(suffix):
+                                    base_name = base_name[: -len(suffix)]
+                                    stripped = True
+                                    break
                         if (
                             entry.name not in release_tags_to_keep
                             and base_name not in keep_base_tags

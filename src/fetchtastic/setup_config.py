@@ -724,6 +724,8 @@ def _setup_downloads(
 
     config["SAVE_APKS"] = save_apks
     config["SAVE_FIRMWARE"] = save_firmware
+    if not save_firmware and (not is_partial_run or wants("firmware")):
+        config["SELECTED_PRERELEASE_ASSETS"] = []
 
     if save_firmware and (not is_partial_run or wants("firmware")):
         rerun_menu = True
@@ -747,6 +749,7 @@ def _setup_downloads(
                 config["SAVE_FIRMWARE"] = False
                 config["SELECTED_FIRMWARE_ASSETS"] = []
                 config["CHECK_PRERELEASES"] = False
+                config["SELECTED_PRERELEASE_ASSETS"] = []
             else:
                 config["SELECTED_FIRMWARE_ASSETS"] = firmware_selection[
                     "selected_assets"
@@ -759,6 +762,7 @@ def _setup_downloads(
             config["SAVE_FIRMWARE"] = False
             config["SELECTED_FIRMWARE_ASSETS"] = []
             config["CHECK_PRERELEASES"] = False
+            config["SELECTED_PRERELEASE_ASSETS"] = []
 
     # --- Firmware Pre-release Configuration ---
     if save_firmware and (not is_partial_run or wants("firmware")):
@@ -1030,12 +1034,13 @@ def _setup_firmware(
     # Prompt for automatic extraction
     auto_extract_current = _coerce_bool(config.get("AUTO_EXTRACT", False))
     auto_extract_default = "yes" if auto_extract_current else "no"
+    auto_extract_input = _safe_input(
+        f"Would you like to automatically extract specific files from firmware zip archives? [y/n] (default: {auto_extract_default}): ",
+        default=auto_extract_default,
+    ).strip()
     auto_extract = _coerce_bool(
-        _safe_input(
-            f"Would you like to automatically extract specific files from firmware zip archives? [y/n] (default: {auto_extract_default}): ",
-            default=auto_extract_default,
-        ).strip(),
-        default=False,
+        auto_extract_input or auto_extract_default,
+        default=auto_extract_current,
     )
     config["AUTO_EXTRACT"] = auto_extract
 
@@ -1073,7 +1078,10 @@ def _setup_firmware(
                 .strip()
                 .lower()
             )
-            if not _coerce_bool(keep_patterns_input):
+            if not _coerce_bool(
+                keep_patterns_input or keep_patterns_default,
+                default=True,
+            ):
                 current_patterns = []  # Clear to prompt for new ones
 
         if not current_patterns:
@@ -2024,7 +2032,7 @@ def run_setup(
                 .strip()
                 .lower()
             )
-            if perform_first_run == "y":
+            if _coerce_bool(perform_first_run, default=True):
                 from fetchtastic.download.cli_integration import DownloadCLIIntegration
 
                 print(
