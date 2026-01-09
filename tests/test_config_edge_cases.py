@@ -67,12 +67,13 @@ class TestConfigEdgeCases:
     def test_load_config_invalid_yaml(self, tmp_path, mocker):
         """Test load_config with invalid YAML."""
         config_file = tmp_path / "config.yaml"
-        config_file.write_text("invalid: yaml: content: [")
+        config_file.write_text("invalid: yaml: content: [", encoding="utf-8")
 
         mocker.patch("fetchtastic.setup_config.CONFIG_FILE", str(config_file))
+        mock_logger = mocker.patch("fetchtastic.setup_config.logger")
 
-        with pytest.raises(yaml.YAMLError):
-            setup_config.load_config()
+        assert setup_config.load_config() is None
+        mock_logger.error.assert_called()
 
     def test_load_config_file_not_found(self, tmp_path, mocker):
         """Test load_config when file doesn't exist."""
