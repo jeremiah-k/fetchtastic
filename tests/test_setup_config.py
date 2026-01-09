@@ -1604,7 +1604,8 @@ def test_run_setup_existing_config(
     mock_menu_firmware.return_value = {"selected_assets": ["new-firmware"]}
 
     with patch("builtins.open", mock_open()):
-        setup_config.run_setup()
+        with patch("sys.stdin.isatty", return_value=False):
+            setup_config.run_setup()
 
         mock_yaml_dump.assert_called()
         saved_config = mock_yaml_dump.call_args[0][0]

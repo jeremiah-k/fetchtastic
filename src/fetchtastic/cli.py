@@ -113,11 +113,7 @@ def _load_and_prepare_config() -> Tuple[Optional[Dict[str, Any]], Optional[str]]
             log_utils.logger.info(f"{separator}\n")
 
     if exists:
-        try:
-            config = setup_config.load_config()
-        except (ValueError, OSError, TypeError, yaml.YAMLError) as error:
-            log_utils.logger.error(f"Failed to load configuration: {error}")
-            config = None
+        config = setup_config.load_config()
     else:
         config = None
         config_path = None

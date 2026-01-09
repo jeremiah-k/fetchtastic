@@ -52,6 +52,27 @@ RECOMMENDED_EXCLUDE_PATTERNS = [
 ]
 
 
+def _safe_input(prompt: str, *, default: str = "") -> str:
+    """
+    Safely get user input with EOFError handling for non-interactive environments.
+
+    Wraps input() to handle EOFError which can occur in non-interactive
+    environments (CI, piped input, etc.). When EOFError is raised,
+    returns the default value instead of crashing.
+
+    Parameters:
+        prompt (str): The prompt string to display to the user.
+        default (str): Default value to return if EOFError is raised.
+
+    Returns:
+        str: User input or default value if EOFError occurred.
+    """
+    try:
+        return input(prompt)
+    except EOFError:
+        return default
+
+
 def _crontab_available() -> bool:
     """
     Check whether the system has the 'crontab' command available.
@@ -651,8 +672,9 @@ def _setup_downloads(
     # Prompt to save APKs, firmware, or both
     if not is_partial_run:
         save_choice = (
-            input(
-                "Would you like to download APKs, firmware, or both? [a/f/b] (default: both): "
+            _safe_input(
+                "Would you like to download APKs, firmware, or both? [a/f/b] (default: both): ",
+                default="both",
             )
             .strip()
             .lower()
@@ -673,8 +695,9 @@ def _setup_downloads(
         if wants("android"):
             current_apk_default = "y" if save_apks else "n"
             choice = (
-                input(
-                    f"Download Android APKs? [y/n] (current: {current_apk_default}): "
+                _safe_input(
+                    f"Download Android APKs? [y/n] (current: {current_apk_default}): ",
+                    default=current_apk_default,
                 )
                 .strip()
                 .lower()
@@ -684,8 +707,9 @@ def _setup_downloads(
         if wants("firmware"):
             current_fw_default = "y" if save_firmware else "n"
             choice = (
-                input(
-                    f"Download firmware releases? [y/n] (current: {current_fw_default}): "
+                _safe_input(
+                    f"Download firmware releases? [y/n] (current: {current_fw_default}): ",
+                    default=current_fw_default,
                 )
                 .strip()
                 .lower()
@@ -701,8 +725,9 @@ def _setup_downloads(
         if is_partial_run:
             if config.get("SELECTED_FIRMWARE_ASSETS"):
                 rerun_menu_choice = (
-                    input(
-                        "Re-run the firmware asset selection menu? [y/n] (default: yes): "
+                    _safe_input(
+                        "Re-run the firmware asset selection menu? [y/n] (default: yes): ",
+                        default="y",
                     )
                     .strip()
                     .lower()
@@ -727,8 +752,9 @@ def _setup_downloads(
         check_prereleases_current = _coerce_bool(config.get("CHECK_PRERELEASES", False))
         check_prereleases_default = "y" if check_prereleases_current else "n"
         check_prereleases_input = (
-            input(
-                f"\nWould you like to check for and download pre-release firmware from meshtastic.github.io? [y/n] (default: {check_prereleases_default}): "
+            _safe_input(
+                f"\nWould you like to check for and download pre-release firmware from meshtastic.github.io? [y/n] (default: {check_prereleases_default}): ",
+                default=check_prereleases_default,
             )
             .strip()
             .lower()
@@ -741,8 +767,9 @@ def _setup_downloads(
         if is_partial_run:
             if config.get("SELECTED_APK_ASSETS"):
                 rerun_menu_choice = (
-                    input(
-                        "Re-run the Android APK selection menu? [y/n] (default: yes): "
+                    _safe_input(
+                        "Re-run the Android APK selection menu? [y/n] (default: yes): ",
+                        default="y",
                     )
                     .strip()
                     .lower()
@@ -773,8 +800,9 @@ def _setup_downloads(
         )  # Default: True. APK prereleases are typically more stable than firmware prereleases and safer to enable by default.
         check_apk_prereleases_default = "yes" if check_apk_prereleases_current else "no"
         check_apk_prereleases_input = (
-            input(
-                f"\nWould you like to check for and download pre-release APKs from GitHub? [y/n] (default: {check_apk_prereleases_default}): "
+            _safe_input(
+                f"\nWould you like to check for and download pre-release APKs from GitHub? [y/n] (default: {check_apk_prereleases_default}): ",
+                default=check_apk_prereleases_default,
             )
             .strip()
             .lower()
@@ -792,8 +820,9 @@ def _setup_downloads(
                 "yes" if add_channel_suffixes_current else "no"
             )
             add_channel_suffixes_input = (
-                input(
-                    f"\nWould you like to add -alpha/-beta/-rc suffixes to release directories (e.g., v1.0.0-alpha)? [y/n] (default: {add_channel_suffixes_default}): "
+                _safe_input(
+                    f"\nWould you like to add -alpha/-beta/-rc suffixes to release directories (e.g., v1.0.0-alpha)? [y/n] (default: {add_channel_suffixes_default}): ",
+                    default=add_channel_suffixes_default,
                 )
                 .strip()
                 .lower()
@@ -839,7 +868,9 @@ def _setup_android(
         prompt_text = f"How many versions of the Android app would you like to keep? (default is {current_versions}): "
     else:
         prompt_text = f"How many versions of the Android app would you like to keep? (current: {current_versions}): "
-    raw = input(prompt_text).strip() or str(current_versions)
+    raw = _safe_input(prompt_text, default=str(current_versions)).strip() or str(
+        current_versions
+    )
     try:
         config["ANDROID_VERSIONS_TO_KEEP"] = int(raw)
     except ValueError:
@@ -872,9 +903,10 @@ def configure_exclude_patterns(config: Dict[str, Any]) -> None:
         recommended_str = " ".join(RECOMMENDED_EXCLUDE_PATTERNS)
         use_defaults_default = "yes"
         use_defaults = (
-            input(
+            _safe_input(
                 f"Would you like to use our recommended exclude patterns?\n"
-                f"These skip common specialized variants and debug files: [y/n] (default: {use_defaults_default}): "
+                f"These skip common specialized variants and debug files: [y/n] (default: {use_defaults_default}): ",
+                default=use_defaults_default,
             )
             .strip()
             .lower()
@@ -889,8 +921,9 @@ def configure_exclude_patterns(config: Dict[str, Any]) -> None:
             # Ask for additional patterns
             add_more_default = "no"
             add_more = (
-                input(
-                    f"Would you like to add any additional exclude patterns? [y/n] (default: {add_more_default}): "
+                _safe_input(
+                    f"Would you like to add any additional exclude patterns? [y/n] (default: {add_more_default}): ",
+                    default=add_more_default,
                 )
                 .strip()
                 .lower()
@@ -905,8 +938,9 @@ def configure_exclude_patterns(config: Dict[str, Any]) -> None:
                     exclude_patterns.extend(additional_patterns.split())
         else:
             # User doesn't want defaults, get custom patterns
-            custom_patterns = input(
-                "Enter your exclude patterns (space-separated, or press Enter for none): "
+            custom_patterns = _safe_input(
+                "Enter your exclude patterns (space-separated, or press Enter for none): ",
+                default="",
             ).strip()
             if custom_patterns:
                 exclude_patterns = custom_patterns.split()
@@ -928,7 +962,10 @@ def configure_exclude_patterns(config: Dict[str, Any]) -> None:
 
         confirm_default = "yes"
         confirm = (
-            input(f"Is this correct? [y/n] (default: {confirm_default}): ")
+            _safe_input(
+                f"Is this correct? [y/n] (default: {confirm_default}): ",
+                default=confirm_default,
+            )
             .strip()
             .lower()
             or confirm_default[0]
@@ -974,7 +1011,9 @@ def _setup_firmware(
         prompt_text = f"How many versions of the firmware would you like to keep? (default is {current_versions}): "
     else:
         prompt_text = f"How many versions of the firmware would you like to keep? (current: {current_versions}): "
-    raw = input(prompt_text).strip() or str(current_versions)
+    raw = _safe_input(prompt_text, default=str(current_versions)).strip() or str(
+        current_versions
+    )
     try:
         config["FIRMWARE_VERSIONS_TO_KEEP"] = int(raw)
     except ValueError:
@@ -985,8 +1024,9 @@ def _setup_firmware(
     auto_extract_current = _coerce_bool(config.get("AUTO_EXTRACT", False))
     auto_extract_default = "yes" if auto_extract_current else "no"
     auto_extract = (
-        input(
-            f"Would you like to automatically extract specific files from firmware zip archives? [y/n] (default: {auto_extract_default}): "
+        _safe_input(
+            f"Would you like to automatically extract specific files from firmware zip archives? [y/n] (default: {auto_extract_default}): ",
+            default=auto_extract_default,
         )
         .strip()
         .lower()
@@ -1021,8 +1061,9 @@ def _setup_firmware(
             print(f"Current patterns: {' '.join(current_patterns)}")
             keep_patterns_default = "yes"
             keep_patterns_input = (
-                input(
-                    f"Do you want to keep the current extraction patterns? [y/n] (default: {keep_patterns_default}): "
+                _safe_input(
+                    f"Do you want to keep the current extraction patterns? [y/n] (default: {keep_patterns_default}): ",
+                    default=keep_patterns_default,
                 )
                 .strip()
                 .lower()
@@ -1032,7 +1073,9 @@ def _setup_firmware(
                 current_patterns = []  # Clear to prompt for new ones
 
         if not current_patterns:
-            extract_patterns_input = input("Extraction patterns: ").strip()
+            extract_patterns_input = _safe_input(
+                "Extraction patterns: ", default=""
+            ).strip()
             if extract_patterns_input:
                 config["EXTRACT_PATTERNS"] = extract_patterns_input.split()
                 print(f"Extraction patterns set to: {extract_patterns_input}")
