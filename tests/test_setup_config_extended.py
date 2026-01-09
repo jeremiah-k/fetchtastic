@@ -48,7 +48,9 @@ def test_migrate_pip_to_pipx_success(mocker, tmp_path):
     )
 
     # Mock file operations
-    mocker.patch("builtins.open", mock_open(read_data=yaml.dump(mock_config_content)))
+    mocker.patch(
+        "builtins.open", mock_open(read_data=yaml.safe_dump(mock_config_content))
+    )
     mocker.patch("os.path.exists", return_value=True)
     mocker.patch("os.makedirs")
 
@@ -989,7 +991,7 @@ def test_migrate_config_success(mocker, tmp_path):
 
     # Mock file operations
     mocker.patch("os.path.exists", side_effect=lambda path: path == str(old_config))
-    mocker.patch("builtins.open", mock_open(read_data=yaml.dump(test_config_data)))
+    mocker.patch("builtins.open", mock_open(read_data=yaml.safe_dump(test_config_data)))
     mocker.patch("os.makedirs")
     mocker.patch("os.remove")
     mocker.patch("fetchtastic.log_utils.logger")

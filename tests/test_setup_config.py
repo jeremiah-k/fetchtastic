@@ -1276,7 +1276,7 @@ def test_windows_shortcut_creation_scandir_fallback(mocker):
 @patch("fetchtastic.setup_config.config_exists", return_value=(False, None))
 @patch("fetchtastic.setup_config.os.path.exists", return_value=False)
 @patch("fetchtastic.setup_config.os.makedirs")
-@patch("fetchtastic.setup_config.yaml.dump")
+@patch("fetchtastic.setup_config.yaml.safe_dump")
 @patch("fetchtastic.setup_config.menu_apk.run_menu")
 @patch("fetchtastic.setup_config.menu_firmware.run_menu")
 @patch("fetchtastic.setup_config.check_any_cron_jobs_exist", return_value=False)
@@ -1358,7 +1358,7 @@ def test_run_setup_first_run_linux_simple(
 @patch("fetchtastic.setup_config.config_exists", return_value=(False, None))
 @patch("fetchtastic.setup_config.os.path.exists", return_value=False)
 @patch("fetchtastic.setup_config.os.makedirs")
-@patch("fetchtastic.setup_config.yaml.dump")
+@patch("fetchtastic.setup_config.yaml.safe_dump")
 @patch("fetchtastic.setup_config.menu_apk.run_menu")
 @patch("fetchtastic.setup_config.menu_firmware.run_menu")
 @patch("fetchtastic.setup_config.create_windows_menu_shortcuts")
@@ -1439,7 +1439,7 @@ def test_run_setup_first_run_windows(
 @patch("fetchtastic.setup_config.config_exists", return_value=(False, None))
 @patch("fetchtastic.setup_config.os.path.exists", return_value=False)
 @patch("fetchtastic.setup_config.os.makedirs")
-@patch("fetchtastic.setup_config.yaml.dump")
+@patch("fetchtastic.setup_config.yaml.safe_dump")
 @patch("fetchtastic.setup_config.menu_apk.run_menu")
 @patch("fetchtastic.setup_config.menu_firmware.run_menu")
 @patch("fetchtastic.setup_config.install_termux_packages")
@@ -1528,7 +1528,7 @@ def test_run_setup_first_run_termux(  # noqa: ARG001
 @patch("fetchtastic.setup_config.is_termux", return_value=False)
 @patch("fetchtastic.setup_config.os.path.exists")
 @patch("fetchtastic.setup_config.os.makedirs")
-@patch("fetchtastic.setup_config.yaml.dump")
+@patch("fetchtastic.setup_config.yaml.safe_dump")
 @patch("fetchtastic.setup_config.yaml.safe_load")
 @patch("fetchtastic.setup_config.menu_apk.run_menu")
 @patch("fetchtastic.setup_config.menu_firmware.run_menu")
@@ -1637,7 +1637,7 @@ def test_run_setup_existing_config(
 @patch("fetchtastic.setup_config.is_termux", return_value=False)
 @patch("fetchtastic.setup_config.os.path.exists")
 @patch("fetchtastic.setup_config.os.makedirs")
-@patch("fetchtastic.setup_config.yaml.dump")
+@patch("fetchtastic.setup_config.yaml.safe_dump")
 @patch("fetchtastic.setup_config.yaml.safe_load")
 @patch("fetchtastic.setup_config.menu_apk.run_menu")
 @patch("fetchtastic.setup_config.menu_firmware.run_menu")
@@ -1895,7 +1895,7 @@ def test_run_setup_valid_sections():
         ):
             with patch("builtins.input", side_effect=["", "n", "n", "n", "n", "n"]):
                 with patch("builtins.open", mock_open()):
-                    with patch("fetchtastic.setup_config.yaml.dump"):
+                    with patch("fetchtastic.setup_config.yaml.safe_dump"):
                         with patch("os.makedirs"):
                             try:
                                 run_setup(sections=[section])
@@ -1918,7 +1918,7 @@ def test_run_setup_prompts_for_sections_when_config_exists(
 
     with patch("builtins.input", side_effect=["", "n", "n"]):
         with patch("builtins.open", mock_open()):
-            with patch("fetchtastic.setup_config.yaml.dump"):
+            with patch("fetchtastic.setup_config.yaml.safe_dump"):
                 with patch("fetchtastic.setup_config.load_config", return_value={}):
                     with patch("os.makedirs"):
                         try:
@@ -1941,7 +1941,7 @@ def test_run_setup_skips_prompt_when_sections_provided(mock_prompt, mock_config_
 
     with patch("builtins.input", side_effect=["", "n", "n"]):
         with patch("builtins.open", mock_open()):
-            with patch("fetchtastic.setup_config.yaml.dump"):
+            with patch("fetchtastic.setup_config.yaml.safe_dump"):
                 with patch("fetchtastic.setup_config.load_config", return_value={}):
                     with patch("os.makedirs"):
                         try:
