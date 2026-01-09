@@ -49,7 +49,7 @@ def test_detect_release_channel_ignores_body():
     release = Release(
         tag_name="v2.1.0",
         prerelease=False,
-        body="This is an Alpha preview release.",
+        body="This is a Beta preview release.",
     )
 
     assert detect_release_channel(release) == "alpha"
@@ -153,7 +153,13 @@ def test_log_release_status_entry_includes_channel_and_status(tmp_path, mocker):
         }
     )
 
-    assert mock_logger.info.called
+    mock_logger.info.assert_any_call(
+        "  - [%s][strike]%s[/strike][/%s]%s",
+        "yellow",
+        "v5.0.0",
+        "yellow",
+        " (alpha, revoked)",
+    )
 
 
 def test_log_release_status_entry_skips_empty_parts(tmp_path, mocker):
@@ -171,7 +177,13 @@ def test_log_release_status_entry_skips_empty_parts(tmp_path, mocker):
         }
     )
 
-    assert mock_logger.info.called
+    mock_logger.info.assert_any_call(
+        "  - [%s][strike]%s[/strike][/%s]%s",
+        "red",
+        "v6.0.0",
+        "red",
+        "",
+    )
 
 
 def test_format_release_log_suffix_includes_annotations(tmp_path):

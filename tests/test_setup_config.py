@@ -450,7 +450,7 @@ def test_load_config_old_location_suggests_migration(tmp_path, mocker):
 @pytest.mark.configuration
 @pytest.mark.unit
 def test_load_config_invalid_yaml(tmp_path, mocker):
-    """Test loading config with invalid YAML raises appropriate error."""
+    """Test loading config with invalid YAML returns None and logs error."""
     new_config_path = tmp_path / "new_config.yaml"
     mocker.patch("fetchtastic.setup_config.CONFIG_FILE", str(new_config_path))
 
@@ -458,9 +458,10 @@ def test_load_config_invalid_yaml(tmp_path, mocker):
     with open(new_config_path, "w") as f:
         f.write("invalid: [unclosed")
 
-    # The function should raise a YAML parsing error
-    with pytest.raises(yaml.YAMLError):
-        setup_config.load_config()
+    mock_logger = mocker.patch("fetchtastic.setup_config.logger")
+
+    assert setup_config.load_config() is None
+    assert mock_logger.error.called
 
 
 @pytest.mark.configuration

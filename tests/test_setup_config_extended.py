@@ -177,19 +177,7 @@ def test_migrate_pip_to_pipx_backup_failure(mocker, tmp_path):
 
     # Mock file operations to fail on backup read
     def mock_open_failure(filename, mode="r", *_args, **_kwargs):
-        """
-        Simulate an open() that raises a permission error when attempting to read the test config file.
-
-        Parameters:
-                filename: Path or filename passed to open(); if it refers to the test config file and mode includes "r", a PermissionError is raised.
-                mode (str): File mode passed to open(). Defaults to "r". Other args/kwargs are forwarded to the standard mock_open.
-
-        Returns:
-                A file-like object produced by mock_open for the given filename and mode when no simulated error occurs.
-
-        Raises:
-                PermissionError: Raised when mode includes "r" and filename matches the test config path.
-        """
+        """Raise PermissionError when reading the test config file."""
         if "r" in mode and str(mock_config_file) in str(filename):
             raise PermissionError("Permission denied")
         return mock_open()(filename, mode, *_args, **_kwargs)

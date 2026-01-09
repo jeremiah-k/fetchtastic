@@ -572,8 +572,12 @@ class TestMeshtasticAndroidAppDownloader:
 
         downloader.cleanup_prerelease_directories(cached_releases=releases)
 
-        # Ensure we hit the early-return warning path.
-        mock_logger.debug.assert_called_once()
+        # Ensure we hit the early-return path and logged the reason.
+        assert any(
+            "no stable releases" in str(call.args[0]).lower()
+            for call in mock_logger.method_calls
+            if call.args
+        )
 
     def test_cleanup_prerelease_directories_removes_superseded_prereleases(
         self, tmp_path

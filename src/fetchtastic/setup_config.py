@@ -335,8 +335,6 @@ def migrate_pip_to_pipx() -> bool:
         return False
 
     try:
-        import shutil
-
         # Step 1: Backup configuration
         print("1. Backing up configuration...")
         config_backup = None
@@ -3049,9 +3047,18 @@ def load_config(directory: Optional[str] = None) -> Optional[Dict[str, Any]]:
         if not os.path.exists(config_path):
             return None
 
-        with open(config_path, "r", encoding="utf-8") as f:
-            config = yaml.safe_load(f) or {}
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                config = yaml.safe_load(f) or {}
+        except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+            logger.error("Error loading config %s: %s", config_path, exc)
+            return None
         if not isinstance(config, dict):
+            logger.error(
+                "Invalid config %s: expected YAML mapping, got %s",
+                config_path,
+                type(config).__name__,
+            )
             return None
 
         # Update global variables
@@ -3066,9 +3073,18 @@ def load_config(directory: Optional[str] = None) -> Optional[Dict[str, Any]]:
     else:
         # First check if config exists in the platformdirs location
         if os.path.exists(CONFIG_FILE):
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                config = yaml.safe_load(f) or {}
+            try:
+                with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                    config = yaml.safe_load(f) or {}
+            except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+                logger.error("Error loading config %s: %s", CONFIG_FILE, exc)
+                return None
             if not isinstance(config, dict):
+                logger.error(
+                    "Invalid config %s: expected YAML mapping, got %s",
+                    CONFIG_FILE,
+                    type(config).__name__,
+                )
                 return None
 
             # Update BASE_DIR from config
@@ -3079,9 +3095,18 @@ def load_config(directory: Optional[str] = None) -> Optional[Dict[str, Any]]:
 
         # Then check the old location
         elif os.path.exists(OLD_CONFIG_FILE):
-            with open(OLD_CONFIG_FILE, "r", encoding="utf-8") as f:
-                config = yaml.safe_load(f) or {}
+            try:
+                with open(OLD_CONFIG_FILE, "r", encoding="utf-8") as f:
+                    config = yaml.safe_load(f) or {}
+            except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+                logger.error("Error loading config %s: %s", OLD_CONFIG_FILE, exc)
+                return None
             if not isinstance(config, dict):
+                logger.error(
+                    "Invalid config %s: expected YAML mapping, got %s",
+                    OLD_CONFIG_FILE,
+                    type(config).__name__,
+                )
                 return None
 
             # Update BASE_DIR from config

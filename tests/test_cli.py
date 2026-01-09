@@ -1425,7 +1425,9 @@ def test_run_clean_requires_tty(mocker, monkeypatch):
 
     cli.run_clean()
 
-    mock_logger.error.assert_called_once()
+    mock_logger.error.assert_called_once_with(
+        "Clean operation requires an interactive terminal; aborting."
+    )
 
 
 def test_run_clean_user_says_no_explicitly(mocker):
