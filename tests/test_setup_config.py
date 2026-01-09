@@ -72,6 +72,7 @@ def test_is_termux_no_prefix():
         (1, False, True),
         (0, True, False),
         (float("nan"), True, True),
+        (float("nan"), False, False),
         ("yes", False, True),
         ("no", True, False),
         ("ON", False, True),
@@ -230,8 +231,8 @@ def test_setup_downloads_partial_reruns_apk_menu(mocker):
 
 @pytest.mark.configuration
 @pytest.mark.unit
-def test_setup_downloads_partial_skips_channel_suffix_prompt(mocker):
-    """Channel suffix prompt should be skipped when sections are not selected."""
+def test_setup_downloads_partial_skips_all_prompts(mocker):
+    """No prompts should be shown when no sections are selected."""
     from fetchtastic.setup_config import _setup_downloads
 
     config = {
@@ -461,7 +462,7 @@ def test_load_config_invalid_yaml(tmp_path, mocker):
     mock_logger = mocker.patch("fetchtastic.setup_config.logger")
 
     assert setup_config.load_config() is None
-    assert mock_logger.error.called
+    mock_logger.error.assert_called()
 
 
 @pytest.mark.configuration
@@ -474,7 +475,7 @@ def test_config_exists_new_location(tmp_path, mocker):
     mocker.patch.object(setup_config, "OLD_CONFIG_FILE", str(old_config_path))
 
     # Create config in new location
-    new_config_path.write_text("test: config")
+    new_config_path.write_text("test: config", encoding="utf-8")
 
     exists, path = setup_config.config_exists()
     assert exists is True
@@ -491,7 +492,7 @@ def test_config_exists_old_location(tmp_path, mocker):
     mocker.patch.object(setup_config, "OLD_CONFIG_FILE", str(old_config_path))
 
     # Create config in old location only
-    old_config_path.write_text("test: config")
+    old_config_path.write_text("test: config", encoding="utf-8")
 
     exists, path = setup_config.config_exists()
     assert exists is True
@@ -705,7 +706,7 @@ def test_migrate_config_handles_load_error(tmp_path, mocker):
     mocker.patch("fetchtastic.setup_config.CONFIG_DIR", str(tmp_path))
 
     # Create a stub old config so the migrate routine attempts to read it.
-    old_config_path.write_text("bad: yaml")
+    old_config_path.write_text("bad: yaml", encoding="utf-8")
 
     # Force YAML loading to raise so we cover the error path.
     mocker.patch(
@@ -929,7 +930,7 @@ def test_load_config_rejects_non_mapping_yaml(tmp_path):
     config_dir = tmp_path / "cfg"
     config_dir.mkdir()
     config_path = config_dir / "fetchtastic.yaml"
-    config_path.write_text("- not-a-mapping\n")
+    config_path.write_text("- not-a-mapping\n", encoding="utf-8")
 
     assert setup_config.load_config(str(config_dir)) is None
 
@@ -939,7 +940,7 @@ def test_load_config_rejects_non_mapping_yaml(tmp_path):
 def test_load_config_empty_file_returns_empty_mapping(tmp_path, mocker):
     """Empty config files should return an empty dict instead of crashing."""
     config_path = tmp_path / "fetchtastic.yaml"
-    config_path.write_text("")
+    config_path.write_text("", encoding="utf-8")
     mocker.patch.object(setup_config, "CONFIG_FILE", str(config_path))
     mocker.patch.object(setup_config, "OLD_CONFIG_FILE", str(tmp_path / "old.yaml"))
 

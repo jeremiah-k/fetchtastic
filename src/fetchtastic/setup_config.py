@@ -240,6 +240,32 @@ def _coerce_bool(value: Any, default: bool = False) -> bool:
     return default
 
 
+def _load_yaml_mapping(path: str) -> Optional[Dict[str, Any]]:
+    """
+    Load a YAML file and return a mapping or None when invalid.
+
+    Parameters:
+        path (str): Path to the YAML file.
+
+    Returns:
+        dict | None: Parsed mapping or None when the file cannot be read or parsed.
+    """
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            config = yaml.safe_load(f) or {}
+    except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+        logger.error("Error loading config %s: %s", path, exc)
+        return None
+    if not isinstance(config, dict):
+        logger.error(
+            "Invalid config %s: expected YAML mapping, got %s",
+            path,
+            type(config).__name__,
+        )
+        return None
+    return config
+
+
 def is_fetchtastic_installed_via_pip() -> bool:
     """
     Determine whether Fetchtastic is installed via the system `pip` command.
@@ -392,12 +418,15 @@ def migrate_pip_to_pipx() -> bool:
         else:
             print("   Installed with pipx successfully.")
 
-        # Step 5: Restore configuration
+        # Step 5: Restore configuration (best-effort)
         if config_backup:
             print("5. Restoring configuration...")
-            with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-                f.write(config_backup)
-            print("   Configuration restored.")
+            try:
+                with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+                    f.write(config_backup)
+                print("   Configuration restored.")
+            except OSError as exc:
+                print(f"   Warning: Could not restore configuration: {exc}")
 
         print("\n" + "=" * 50)
         print("MIGRATION COMPLETED SUCCESSFULLY!")
@@ -411,7 +440,9 @@ def migrate_pip_to_pipx() -> bool:
 
     except (OSError, subprocess.SubprocessError, UnicodeDecodeError) as e:
         print(f"Migration failed with error: {e}")
-        print("You can continue using the pip installation.")
+        print(
+            "Your installation may be in a partial state; re-run migration or reinstall manually if needed."
+        )
         return False
 
 
@@ -682,6 +713,8 @@ def _setup_downloads(
                 print("No firmware assets selected. Firmware will not be downloaded.")
                 save_firmware = False
                 config["SAVE_FIRMWARE"] = False
+                config["SELECTED_FIRMWARE_ASSETS"] = []
+                config["CHECK_PRERELEASES"] = False
             else:
                 config["SELECTED_FIRMWARE_ASSETS"] = firmware_selection[
                     "selected_assets"
@@ -717,6 +750,8 @@ def _setup_downloads(
                 print("No APK assets selected. APKs will not be downloaded.")
                 save_apks = False
                 config["SAVE_APKS"] = False
+                config["SELECTED_APK_ASSETS"] = []
+                config["CHECK_APK_PRERELEASES"] = False
             else:
                 config["SELECTED_APK_ASSETS"] = apk_selection["selected_assets"]
 
@@ -3047,18 +3082,8 @@ def load_config(directory: Optional[str] = None) -> Optional[Dict[str, Any]]:
         if not os.path.exists(config_path):
             return None
 
-        try:
-            with open(config_path, "r", encoding="utf-8") as f:
-                config = yaml.safe_load(f) or {}
-        except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
-            logger.error("Error loading config %s: %s", config_path, exc)
-            return None
-        if not isinstance(config, dict):
-            logger.error(
-                "Invalid config %s: expected YAML mapping, got %s",
-                config_path,
-                type(config).__name__,
-            )
+        config = _load_yaml_mapping(config_path)
+        if config is None:
             return None
 
         # Update global variables
@@ -3073,18 +3098,8 @@ def load_config(directory: Optional[str] = None) -> Optional[Dict[str, Any]]:
     else:
         # First check if config exists in the platformdirs location
         if os.path.exists(CONFIG_FILE):
-            try:
-                with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                    config = yaml.safe_load(f) or {}
-            except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
-                logger.error("Error loading config %s: %s", CONFIG_FILE, exc)
-                return None
-            if not isinstance(config, dict):
-                logger.error(
-                    "Invalid config %s: expected YAML mapping, got %s",
-                    CONFIG_FILE,
-                    type(config).__name__,
-                )
+            config = _load_yaml_mapping(CONFIG_FILE)
+            if config is None:
                 return None
 
             # Update BASE_DIR from config
@@ -3095,18 +3110,8 @@ def load_config(directory: Optional[str] = None) -> Optional[Dict[str, Any]]:
 
         # Then check the old location
         elif os.path.exists(OLD_CONFIG_FILE):
-            try:
-                with open(OLD_CONFIG_FILE, "r", encoding="utf-8") as f:
-                    config = yaml.safe_load(f) or {}
-            except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
-                logger.error("Error loading config %s: %s", OLD_CONFIG_FILE, exc)
-                return None
-            if not isinstance(config, dict):
-                logger.error(
-                    "Invalid config %s: expected YAML mapping, got %s",
-                    OLD_CONFIG_FILE,
-                    type(config).__name__,
-                )
+            config = _load_yaml_mapping(OLD_CONFIG_FILE)
+            if config is None:
                 return None
 
             # Update BASE_DIR from config

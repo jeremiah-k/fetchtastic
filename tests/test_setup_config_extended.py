@@ -386,12 +386,10 @@ def test_setup_downloads_partial_run_firmware_forces_menu_without_selection(mock
         "builtins.input",
         side_effect=[
             "y",  # Download firmware releases
-            "n",  # Disable firmware prereleases
-            "n",  # Add channel suffixes
         ],
     )
 
-    mocker.patch("fetchtastic.menu_firmware.run_menu", return_value=None)
+    mock_menu = mocker.patch("fetchtastic.menu_firmware.run_menu", return_value=None)
 
     result_config, save_apks, save_firmware = setup_config._setup_downloads(
         config, is_partial_run=True, wants=lambda section: section == "firmware"
@@ -400,6 +398,9 @@ def test_setup_downloads_partial_run_firmware_forces_menu_without_selection(mock
     assert save_apks is False
     assert save_firmware is False
     assert result_config["SAVE_FIRMWARE"] is False
+    assert result_config["SELECTED_FIRMWARE_ASSETS"] == []
+    assert result_config["CHECK_PRERELEASES"] is False
+    mock_menu.assert_called_once()
 
 
 @pytest.mark.configuration

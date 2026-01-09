@@ -1416,15 +1416,18 @@ def test_run_clean_cancelled(mocker):
     mock_print.assert_any_call("Clean operation cancelled.")
 
 
+@pytest.mark.user_interface
+@pytest.mark.unit
 def test_run_clean_requires_tty(mocker, monkeypatch):
     """Non-interactive sessions should abort clean operations."""
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
     mocker.patch("sys.stdin.isatty", return_value=False)
     mock_logger = mocker.patch("fetchtastic.log_utils.logger")
-    mocker.patch("builtins.input")
+    mock_input = mocker.patch("builtins.input")
 
     cli.run_clean()
 
+    mock_input.assert_not_called()
     mock_logger.error.assert_called_once_with(
         "Clean operation requires an interactive terminal; aborting."
     )
